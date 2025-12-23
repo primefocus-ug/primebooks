@@ -513,7 +513,7 @@
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form id="categoryForm">
+            <form id="categoryForm" onsubmit="return false;">
                 {% csrf_token %}
                 <div class="modal-body">
                     <div class="mb-3">
@@ -540,7 +540,7 @@
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                         <i class="bi bi-x-lg me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-primary" id="saveCategoryBtn">
+                    <button type="button" class="btn btn-primary" id="saveCategoryBtn">
                         <i class="bi bi-check-lg me-1"></i>Create Category
                     </button>
                 </div>
@@ -592,184 +592,19 @@
 
 {% block extra_js %}
 <script>
-
-window.saveCategory = async function() {
-    console.log('saveCategory called'); // Debug log
-
-    const form = document.getElementById('categoryForm');
-    if (!form) {
-        console.error('Category form not found');
-        return;
-    }
-
-    const formData = new FormData(form);
-
-    // Debug: Log form data
-    console.log('Form data:');
-    for (let pair of formData.entries()) {
-        console.log(pair[0] + ': ' + pair[1]);
-    }
-
-    // Validation
-    const nameInput = document.getElementById('category_name');
-    const name = nameInput ? nameInput.value.trim() : '';
-
-    if (!name) {
-        showNotification('Category name is required', 'warning');
-        if (nameInput) {
-            nameInput.classList.add('is-invalid');
-            nameInput.focus();
-        }
-        return;
-    }
-
-    // Ensure category_type is set (defaults to 'service' for services page)
-    if (!formData.get('category_type')) {
-        formData.append('category_type', 'service');
-    }
-
-    // Ensure is_active is set
-    if (!formData.get('is_active')) {
-        formData.append('is_active', 'true');
-    }
-
-    // Show loading state
-    const saveBtn = document.getElementById('saveCategoryBtn');
-    if (!saveBtn) {
-        console.error('Save button not found');
-        return;
-    }
-
-    const originalText = saveBtn.innerHTML;
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<i class="bi bi-spinner bi-spin me-1"></i>Saving...';
-
-    try {
-        console.log('Sending request to:', '{% url "inventory:category_create_ajax" %}');
-
-        const response = await fetch('{% url "inventory:category_create_ajax" %}', {
-            method: 'POST',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRFToken': formData.get('csrfmiddlewaretoken')
-            },
-            body: formData
-        });
-
-        console.log('Response status:', response.status);
-
-        const contentType = response.headers.get('content-type');
-        console.log('Content type:', contentType);
-
-        const responseText = await response.text();
-        console.log('Raw response:', responseText);
-
-        let data;
-        try {
-            data = JSON.parse(responseText);
-        } catch (parseError) {
-            console.error('JSON parse error:', parseError);
-            showNotification('Invalid response from server', 'error');
-            return;
-        }
-
-        console.log('Parsed data:', data);
-
-        if (data.success) {
-            console.log('Category created successfully:', data.category);
-
-            // Add new category to service form select dropdown
-            const categorySelect = document.getElementById('id_category');
-            if (categorySelect) {
-                const option = document.createElement('option');
-                option.value = data.category.id;
-                option.textContent = data.category.name;
-                option.selected = true;
-                categorySelect.appendChild(option);
-                console.log('Added to service form dropdown');
-            } else {
-                console.warn('id_category select not found');
-            }
-
-            // Also update filter dropdown
-            const categoryFilter = document.getElementById('categoryFilter');
-            if (categoryFilter) {
-                const filterOption = document.createElement('option');
-                filterOption.value = data.category.id;
-                filterOption.textContent = data.category.name;
-                categoryFilter.appendChild(filterOption);
-                console.log('Added to filter dropdown');
-            } else {
-                console.warn('categoryFilter select not found');
-            }
-
-            // Close modal
-            const categoryModalElement = document.getElementById('categoryModal');
-            const categoryModal = bootstrap.Modal.getInstance(categoryModalElement);
-            if (categoryModal) {
-                categoryModal.hide();
-            } else {
-                // If instance doesn't exist, create and hide
-                const newModal = new bootstrap.Modal(categoryModalElement);
-                newModal.hide();
-            }
-
-            showNotification('Category "' + data.category.name + '" created successfully', 'success');
-
-            // Reset form
-            form.reset();
-            // Clear any validation errors
-            form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
-
-        } else {
-            console.error('Server returned error:', data);
-            const errorMessage = data.message || data.error || 'Error creating category';
-            showNotification(errorMessage, 'error');
-
-            // Display form errors if any
-            if (data.errors) {
-                displayCategoryFormErrors(data.errors);
-            }
-        }
-    } catch (error) {
-        console.error('Fetch error:', error);
-        showNotification('Error creating category: ' + error.message, 'error');
-    } finally {
-        // Reset button state
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = originalText;
-    }
-};
-
-// Display form errors for category modal
-function displayCategoryFormErrors(errors) {
-    console.log('Displaying form errors:', errors);
-
-    // Clear previous errors
-    document.querySelectorAll('#categoryForm .is-invalid').forEach(el => el.classList.remove('is-invalid'));
-    document.querySelectorAll('#categoryForm .invalid-feedback').forEach(el => el.textContent = '');
-
-    // Display new errors
-    for (const field in errors) {
-        const input = document.querySelector(`#categoryForm [name="${field}"]`);
-        if (input) {
-            input.classList.add('is-invalid');
-
-            // Find or create feedback element
-            let feedback = input.parentElement.querySelector('.invalid-feedback');
-            if (!feedback) {
-                feedback = document.createElement('div');
-                feedback.className = 'invalid-feedback';
-                input.parentElement.appendChild(feedback);
-            }
-
-            feedback.textContent = Array.isArray(errors[field]) ? errors[field][0] : errors[field];
-            feedback.style.display = 'block';
-        }
-    }
+// Utility: Escape HTML (must be defined FIRST)
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return String(text).replace(/[&<>"']/g, m => map[m]);
 }
 
-// Show notification function (must be defined before DOMContentLoaded)
+// Show notification function (must be defined BEFORE DOMContentLoaded)
 function showNotification(message, type = 'info') {
     const toastContainer = document.getElementById('toastContainer');
 
@@ -813,172 +648,355 @@ function showNotification(message, type = 'info') {
     toast.addEventListener('hidden.bs.toast', () => toast.remove());
 }
 
-// Utility: Escape HTML (must be defined before DOMContentLoaded)
-function escapeHtml(text) {
-    const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    };
-    return String(text).replace(/[&<>"']/g, m => map[m]);
+// Display form errors for category modal
+function displayCategoryFormErrors(errors) {
+    console.log('Displaying form errors:', errors);
+
+    // Clear previous errors
+    document.querySelectorAll('#categoryForm .is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    document.querySelectorAll('#categoryForm .invalid-feedback').forEach(el => el.textContent = '');
+
+    // Display new errors
+    for (const field in errors) {
+        const input = document.querySelector(`#categoryForm [name="${field}"]`);
+        if (input) {
+            input.classList.add('is-invalid');
+
+            // Find or create feedback element
+            let feedback = input.parentElement.querySelector('.invalid-feedback');
+            if (!feedback) {
+                feedback = document.createElement('div');
+                feedback.className = 'invalid-feedback d-block';
+                input.parentElement.appendChild(feedback);
+            }
+
+            feedback.textContent = Array.isArray(errors[field]) ? errors[field][0] : errors[field];
+            feedback.style.display = 'block';
+        }
+    }
 }
-document.addEventListener('DOMContentLoaded', function() {
 
-    // State management
-    let currentPage = 1;
-    let perPage = 25;
-    let currentSort = '-created_at';
-    let filters = {
-        search: '{{ current_search }}',
-        category: '{{ current_category }}',
-        tax_rate: '{{ current_tax_rate }}',
-        efris_status: '{{ current_efris_status }}',
-        is_active: '{{ current_is_active }}'
+// GLOBAL saveCategory function
+window.saveCategory = async function() {
+    console.log('=== saveCategory CALLED ===');
+
+    const form = document.getElementById('categoryForm');
+    if (!form) {
+        console.error('Category form not found!');
+        alert('Form not found');
+        return;
+    }
+
+    console.log('Form found:', form);
+
+    const formData = new FormData(form);
+
+    // Debug: Log all form data
+    console.log('Form data entries:');
+    for (let pair of formData.entries()) {
+        console.log(pair[0] + ': ' + pair[1]);
+    }
+
+    // Validation
+    const nameInput = document.getElementById('category_name');
+    const name = nameInput ? nameInput.value.trim() : '';
+
+    console.log('Category name:', name);
+
+    if (!name) {
+        showNotification('Category name is required', 'warning');
+        if (nameInput) {
+            nameInput.classList.add('is-invalid');
+            nameInput.focus();
+        }
+        return;
+    }
+
+    // Ensure category_type is set (defaults to 'service' for services page)
+    if (!formData.get('category_type')) {
+        console.log('Adding category_type: service');
+        formData.set('category_type', 'service');
+    }
+
+    // Ensure is_active is set
+    if (!formData.get('is_active')) {
+        console.log('Adding is_active: true');
+        formData.set('is_active', 'true');
+    }
+
+    // Show loading state
+    const saveBtn = document.getElementById('saveCategoryBtn');
+    if (!saveBtn) {
+        console.error('Save button not found!');
+        return;
+    }
+
+    const originalText = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="bi bi-spinner bi-spin me-1"></i>Saving...';
+    console.log('Sending AJAX request...');
+
+try {
+    const url = '{% url "inventory:category_create_ajax" %}';
+    console.log('Request URL:', url);
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+        },
+        body: formData
+    });
+
+    console.log('Response status:', response.status);
+    console.log('Response headers:', response.headers);
+
+    const contentType = response.headers.get('content-type');
+    console.log('Content type:', contentType);
+
+    const responseText = await response.text();
+    console.log('Raw response:', responseText);
+
+    let data;
+    try {
+        data = JSON.parse(responseText);
+    } catch (parseError) {
+        console.error('JSON parse error:', parseError);
+        console.error('Response was:', responseText);
+        showNotification('Invalid response from server', 'error');
+        return;
+    }
+
+    console.log('Parsed data:', data);
+
+    if (data.success) {
+        console.log('✅ Category created successfully:', data.category);
+
+        // Add new category to service form select dropdown
+        const categorySelect = document.getElementById('id_category');
+        if (categorySelect) {
+            const option = document.createElement('option');
+            option.value = data.category.id;
+            option.textContent = data.category.name;
+            option.selected = true;
+            categorySelect.appendChild(option);
+            console.log('✅ Added to service form dropdown');
+        } else {
+            console.warn('⚠️ id_category select not found');
+        }
+
+        // Also update filter dropdown
+        const categoryFilter = document.getElementById('categoryFilter');
+        if (categoryFilter) {
+            const filterOption = document.createElement('option');
+            filterOption.value = data.category.id;
+            filterOption.textContent = data.category.name;
+            categoryFilter.appendChild(filterOption);
+            console.log('✅ Added to filter dropdown');
+        } else {
+            console.warn('⚠️ categoryFilter select not found');
+        }
+
+        // Close modal
+        const categoryModalElement = document.getElementById('categoryModal');
+        const categoryModal = bootstrap.Modal.getInstance(categoryModalElement);
+        if (categoryModal) {
+            categoryModal.hide();
+            console.log('✅ Modal closed');
+        } else {
+            // If instance doesn't exist, try creating new one
+            console.log('Creating new modal instance...');
+            const newModal = new bootstrap.Modal(categoryModalElement);
+            newModal.hide();
+        }
+
+        showNotification('Category "' + data.category.name + '" created successfully', 'success');
+
+        // Reset form
+        form.reset();
+        // Clear any validation errors
+        form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+        console.log('✅ Form reset');
+
+    } else {
+        console.error('❌ Server returned error:', data);
+        const errorMessage = data.message || data.error || 'Error creating category';
+        showNotification(errorMessage, 'error');
+
+        // Display form errors if any
+        if (data.errors) {
+            displayCategoryFormErrors(data.errors);
+        }
+    }
+} catch (error) {
+    console.error('❌ Fetch error:', error);
+    showNotification('Error creating category: ' + error.message, 'error');
+} finally {
+    // Reset button state
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = originalText;
+    console.log('Button state reset');
+}
     };
+// Services Management with Vanilla JS and Fetch API
+document.addEventListener('DOMContentLoaded', function() {
+console.log('DOM Content Loaded - Initializing...');
+    // State management
+let currentPage = 1;
+let perPage = 25;
+let currentSort = '-created_at';
+let filters = {
+    search: '{{ current_search }}',
+    category: '{{ current_category }}',
+    tax_rate: '{{ current_tax_rate }}',
+    efris_status: '{{ current_efris_status }}',
+    is_active: '{{ current_is_active }}'
+};
 
-    // DOM Elements
-    const servicesTableBody = document.getElementById('servicesTableBody');
-    const paginationContainer = document.getElementById('pagination');
-    const tableInfo = document.getElementById('tableInfo');
-    const selectAllCheckbox = document.getElementById('selectAll');
-    const bulkActionBtn = document.getElementById('bulkActionBtn');
-    const searchInput = document.getElementById('searchInput');
-    const categoryFilter = document.getElementById('categoryFilter');
-    const taxRateFilter = document.getElementById('taxRateFilter');
-    const efrisStatusFilter = document.getElementById('efrisStatusFilter');
-    const activeFilter = document.getElementById('activeFilter');
-    const perPageSelect = document.getElementById('perPageSelect');
-    const refreshBtn = document.getElementById('refreshBtn');
-    const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+// DOM Elements
+const servicesTableBody = document.getElementById('servicesTableBody');
+const paginationContainer = document.getElementById('pagination');
+const tableInfo = document.getElementById('tableInfo');
+const selectAllCheckbox = document.getElementById('selectAll');
+const bulkActionBtn = document.getElementById('bulkActionBtn');
+const searchInput = document.getElementById('searchInput');
+const categoryFilter = document.getElementById('categoryFilter');
+const taxRateFilter = document.getElementById('taxRateFilter');
+const efrisStatusFilter = document.getElementById('efrisStatusFilter');
+const activeFilter = document.getElementById('activeFilter');
+const perPageSelect = document.getElementById('perPageSelect');
+const refreshBtn = document.getElementById('refreshBtn');
+const clearFiltersBtn = document.getElementById('clearFiltersBtn');
 
-    // Initialize
-    loadServices();
-    loadStatistics();
-    setupEventListeners();
+// Initialize
+loadServices();
+loadStatistics();
+setupEventListeners();
 
-    // Setup all event listeners
-    function setupEventListeners() {
-        // Filter inputs
-        searchInput.addEventListener('input', debounce(applyFilters, 500));
-        categoryFilter.addEventListener('change', applyFilters);
-        taxRateFilter.addEventListener('change', applyFilters);
-        efrisStatusFilter.addEventListener('change', applyFilters);
-        activeFilter.addEventListener('change', applyFilters);
-        perPageSelect.addEventListener('change', changePerPage);
+// Setup all event listeners
+function setupEventListeners() {
+    // Filter inputs
+    searchInput.addEventListener('input', debounce(applyFilters, 500));
+    categoryFilter.addEventListener('change', applyFilters);
+    taxRateFilter.addEventListener('change', applyFilters);
+    efrisStatusFilter.addEventListener('change', applyFilters);
+    activeFilter.addEventListener('change', applyFilters);
+    perPageSelect.addEventListener('change', changePerPage);
 
-        // Buttons
-        refreshBtn.addEventListener('click', () => loadServices());
-        clearFiltersBtn.addEventListener('click', clearFilters);
+    // Buttons
+    refreshBtn.addEventListener('click', () => loadServices());
+    clearFiltersBtn.addEventListener('click', clearFilters);
 
-        // Select all checkbox
-        selectAllCheckbox.addEventListener('change', toggleSelectAll);
+    // Select all checkbox
+    selectAllCheckbox.addEventListener('change', toggleSelectAll);
 
-        // Bulk actions
-        bulkActionBtn.addEventListener('click', showBulkActionsModal);
+    // Bulk actions
+    bulkActionBtn.addEventListener('click', showBulkActionsModal);
 
-        // Sort headers
-        document.querySelectorAll('.sortable').forEach(header => {
-            header.addEventListener('click', () => handleSort(header));
+    // Sort headers
+    document.querySelectorAll('.sortable').forEach(header => {
+        header.addEventListener('click', () => handleSort(header));
+    });
+
+    // Modal events
+    const serviceModal = document.getElementById('serviceModal');
+    serviceModal.addEventListener('hidden.bs.modal', resetServiceForm);
+
+    const categoryModal = document.getElementById('categoryModal');
+    categoryModal.addEventListener('hidden.bs.modal', resetCategoryForm);
+
+    // Tax rate change
+    document.getElementById('id_tax_rate').addEventListener('change', handleTaxRateChange);
+
+    // Price calculation
+    document.getElementById('id_unit_price').addEventListener('input', calculateFinalPrice);
+    document.getElementById('id_excise_duty_rate').addEventListener('input', calculateFinalPrice);
+
+    // Auto-generate code
+    document.getElementById('id_name').addEventListener('blur', autoGenerateCode);
+
+    // Form submissions
+    document.getElementById('serviceForm').addEventListener('submit', handleServiceSubmit);
+    document.getElementById('categoryForm').addEventListener('submit', handleCategorySubmit);
+    document.getElementById('bulkActionsForm').addEventListener('submit', handleBulkActions);
+
+    console.log('✅ All event listeners setup complete');
+}
+
+// Load services from API
+async function loadServices() {
+    try {
+        showLoading();
+
+        const params = new URLSearchParams({
+            page: currentPage,
+            per_page: perPage,
+            order_by: currentSort,
+            ...filters
         });
 
-        // Modal events
-        const serviceModal = document.getElementById('serviceModal');
-        serviceModal.addEventListener('hidden.bs.modal', resetServiceForm);
+        const response = await fetch(`/inventory/api/services/?${params}`);
+        const data = await response.json();
 
-        const categoryModal = document.getElementById('categoryModal');
-        categoryModal.addEventListener('hidden.bs.modal', resetCategoryForm);
-
-        // Tax rate change
-        document.getElementById('id_tax_rate').addEventListener('change', handleTaxRateChange);
-
-        // Price calculation
-        document.getElementById('id_unit_price').addEventListener('input', calculateFinalPrice);
-        document.getElementById('id_excise_duty_rate').addEventListener('input', calculateFinalPrice);
-
-        // Auto-generate code
-        document.getElementById('id_name').addEventListener('blur', autoGenerateCode);
-
-        // Form submissions
-        document.getElementById('serviceForm').addEventListener('submit', handleServiceSubmit);
-        document.getElementById('categoryForm').addEventListener('submit', handleCategorySubmit);
-        document.getElementById('bulkActionsForm').addEventListener('submit', handleBulkActions);
-    }
-
-    // Load services from API
-    async function loadServices() {
-        try {
-            showLoading();
-
-            const params = new URLSearchParams({
-                page: currentPage,
-                per_page: perPage,
-                order_by: currentSort,
-                ...filters
-            });
-
-            const response = await fetch(`/inventory/api/services/?${params}`);
-            const data = await response.json();
-
-            if (data.success) {
-                renderServicesTable(data.data);
-                renderPagination(data.pagination);
-                updateTableInfo(data.pagination);
-            } else {
-                showNotification('Error loading services', 'error');
-            }
-        } catch (error) {
-            console.error('Error:', error);
+        if (data.success) {
+            renderServicesTable(data.data);
+            renderPagination(data.pagination);
+            updateTableInfo(data.pagination);
+        } else {
             showNotification('Error loading services', 'error');
-            showEmptyState('Error loading data. Please try again.');
-        } finally {
-            hideLoading();
         }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error loading services', 'error');
+        showEmptyState('Error loading data. Please try again.');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Render services table
+function renderServicesTable(services) {
+    if (services.length === 0) {
+        showEmptyState();
+        return;
     }
 
-    // Render services table
-    function renderServicesTable(services) {
-        if (services.length === 0) {
-            showEmptyState();
-            return;
-        }
-
-        const html = services.map(service => `
-            <tr>
-                <td>
-                    <input type="checkbox" class="form-check-input row-checkbox" value="${service.id}">
-                </td>
-                <td>
-                    <strong>${escapeHtml(service.name)}</strong>
-                </td>
-                <td>
-                    <code>${escapeHtml(service.code)}</code>
-                </td>
-                <td>${service.category.name}</td>
-                <td>UGX ${service.unit_price_formatted}</td>
-                <td class="price-display">UGX ${service.final_price_formatted}</td>
-                <td>${renderEFRISBadge(service.efris_status, service.efris_status_text)}</td>
-                <td>${renderStatusBadge(service.is_active)}</td>
-                <td>
+    const html = services.map(service => `
+        <tr>
+            <td>
+                <input type="checkbox" class="form-check-input row-checkbox" value="${service.id}">
+            </td>
+            <td>
+                <strong>${escapeHtml(service.name)}</strong>
+            </td>
+            <td>
+                <code>${escapeHtml(service.code)}</code>
+            </td>
+            <td>${service.category.name}</td>
+            <td>UGX ${service.unit_price_formatted}</td>
+            <td class="price-display">UGX ${service.final_price_formatted}</td>
+            <td>${renderEFRISBadge(service.efris_status, service.efris_status_text)}</td>
+            <td>${renderStatusBadge(service.is_active)}</td>
+            <td>
                 <div class="btn-group btn-group-sm" role="group">
-                <a href="/en/inventory/services/${service.id}/edit/"
+                    <a href="/en/inventory/services/${service.id}/edit/"
                        class="btn btn-info btn-sm" title="Edit">
                         <i class="bi bi-pencil"></i>
                     </a>
-
-                <a href="${service.detail_url}"
-                                        class="btn btn-primary btn-sm" title="View">
-                <i class="bi bi-eye"></i>
-                </a>
-                <button type="button" class="btn btn-danger btn-sm"
-                                             onclick="deleteService(${service.id}, '${escapeHtml(service.name)}')" title="Delete">
-                <i class="bi bi-trash"></i>
-                </button>
+                    <a href="${service.detail_url}"
+                       class="btn btn-primary btn-sm" title="View">
+                        <i class="bi bi-eye"></i>
+                    </a>
+                    <button type="button" class="btn btn-danger btn-sm"
+                            onclick="deleteService(${service.id}, '${escapeHtml(service.name)}')" title="Delete">
+                        <i class="bi bi-trash"></i>
+                    </button>
                 </div>
-                </td>
-                </tr>
-                `).join('');
+            </td>
+        </tr>
+    `).join('');
+
     servicesTableBody.innerHTML = html;
 
     // Add event listeners to checkboxes
@@ -1341,6 +1359,7 @@ async function handleServiceSubmit(e) {
 // Handle category form submission
 async function handleCategorySubmit(e) {
     e.preventDefault();
+    console.log('Category form submit triggered');
     saveCategory();
 }
 
@@ -1458,44 +1477,6 @@ function displayFormErrors(errors) {
     }
 }
 
-// Show notification
-function showNotification(message, type = 'info') {
-    const toastContainer = document.getElementById('toastContainer');
-
-    const typeClasses = {
-        'success': 'text-bg-success',
-        'error': 'text-bg-danger',
-        'warning': 'text-bg-warning',
-        'info': 'text-bg-info'
-    };
-
-    const icons = {
-        'success': 'bi-check-circle',
-        'error': 'bi-exclamation-circle',
-        'warning': 'bi-exclamation-triangle',
-        'info': 'bi-info-circle'
-    };
-
-    const toast = document.createElement('div');
-    toast.className = `toast align-items-center ${typeClasses[type]} border-0`;
-    toast.setAttribute('role', 'alert');
-    toast.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">
-                <i class="bi ${icons[type]} me-2"></i>
-                ${escapeHtml(message)}
-            </div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
-    `;
-
-    toastContainer.appendChild(toast);
-    const bsToast = new bootstrap.Toast(toast);
-    bsToast.show();
-
-    toast.addEventListener('hidden.bs.toast', () => toast.remove());
-}
-
 // Show loading state
 function showLoading() {
     servicesTableBody.innerHTML = `
@@ -1527,21 +1508,11 @@ function debounce(func, wait) {
     };
 }
 
-// Utility: Escape HTML
-function escapeHtml(text) {
-    const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    };
-    return String(text).replace(/[&<>"']/g, m => map[m]);
-}
-
 // Initialize tooltips
 const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
 tooltipTriggerList.map(el => new bootstrap.Tooltip(el));
-});
+
+console.log('✅ Initialization complete!');
+    });
 </script>
 {% endblock %}

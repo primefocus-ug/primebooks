@@ -545,6 +545,7 @@
             </div>
             <div class="modal-body">
                 <form id="categoryQuickForm">
+                    <!-- Include CSRF token inside the modal form -->
                     {% csrf_token %}
                     <div class="mb-3">
                         <label for="categoryName" class="form-label">Category Name <span class="text-danger">*</span></label>
@@ -559,7 +560,7 @@
                         <select class="form-select" id="categoryType" name="category_type" required>
                             <option value="">Select type...</option>
                             <option value="product">🛍️ Product Category</option>
-                            <option value="service">⚙️ Service Category</option>
+                            <option value="service" selected>⚙️ Service Category</option>
                         </select>
                     </div>
                     <div class="mb-3">
@@ -572,7 +573,7 @@
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                     <i class="bi bi-x"></i> Close
                 </button>
-                <button type="button" class="btn btn-primary" onclick="saveCategory()">
+                <button type="button" class="btn btn-primary" id="saveCategoryBtn">
                     <i class="bi bi-save"></i> Save Category
                 </button>
             </div>
@@ -585,8 +586,8 @@
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // ============================================
-// ADD CATEGORY MODAL FUNCTIONS
+// ============================================
+// UTILITY FUNCTIONS
 // ============================================
 
 function getCookie(name) {
@@ -619,57 +620,99 @@ function showSuccessMessage(message) {
     }, 3000);
 }
 
-// Save category function
+// ============================================
+// SAVE CATEGORY FUNCTION - GLOBAL
+// ============================================
+
 window.saveCategory = function() {
-    const formData = {
-        'name': $('#categoryName').val().trim(),
-        'code': $('#categoryCode').val().trim(),
-        'description': $('#categoryDescription').val().trim(),
-        'category_type': $('#categoryType').val() || 'service', // Default to service for service form
-        'csrfmiddlewaretoken': getCookie('csrftoken')
-    };
+    console.log('🚀 saveCategory() called - Starting category save process');
+
+    // Get CSRF token
+    const csrfToken = getCookie('csrftoken');
+    console.log('🔑 CSRF Token found:', csrfToken ? 'Yes (' + csrfToken.substring(0, 10) + '...)' : 'No');
+
+    // Get form values
+    const name = $('#categoryName').val().trim();
+    const code = $('#categoryCode').val().trim();
+    const description = $('#categoryDescription').val().trim();
+    const categoryType = $('#categoryType').val();
+
+    console.log('📝 Form values:', {
+        name: name,
+        code: code,
+        description: description,
+        categoryType: categoryType
+    });
 
     // Validation
-    if (!formData.name) {
+    if (!name) {
+        console.error('❌ Validation failed: Category name is required');
         alert('Category name is required');
         $('#categoryName').addClass('is-invalid').focus();
-        return;
+        return false;
     }
 
-    if (!formData.category_type) {
+    if (!categoryType) {
+        console.error('❌ Validation failed: Category type is required');
         alert('Please select a category type');
         $('#categoryType').addClass('is-invalid').focus();
-        return;
+        return false;
     }
 
+    const formData = {
+        'name': name,
+        'code': code,
+        'description': description,
+        'category_type': categoryType,
+        'is_active': 'true',
+        'csrfmiddlewaretoken': csrfToken
+    };
+
+    console.log('📤 Final form data to send:', formData);
+
     // Show loading state
-    const $saveBtn = $('#addCategoryModal').find('.btn-primary');
+    const $saveBtn = $('#saveCategoryBtn');
     const originalText = $saveBtn.html();
     $saveBtn.prop('disabled', true).html('<i class="bi bi-hourglass-split fa-spin"></i> Saving...');
 
+    const ajaxUrl = '{% url "inventory:category_create_ajax" %}';
+    console.log('🌐 Sending AJAX request to:', ajaxUrl);
+
+    // Make AJAX request
     $.ajax({
-        url: '{% url "inventory:category_create_ajax" %}',
+        url: ajaxUrl,
         type: 'POST',
         data: formData,
         dataType: 'json',
-        success: function(response) {
-            console.log('Category save response:', response);
+        beforeSend: function(xhr) {
+            console.log('📡 AJAX request being sent with headers');
+            xhr.setRequestHeader('X-CSRFToken', csrfToken);
+        },
+        success: function(response, status, xhr) {
+            console.log('✅ AJAX Success - Status:', status);
+            console.log('📦 Response:', response);
+            console.log('📊 Response headers:', xhr.getAllResponseHeaders());
 
             if (response.success) {
+                console.log('🎉 Category created successfully:', response.category);
+
                 // Add new option to select dropdown
                 const newOption = new Option(
                     response.category.name,
                     response.category.id,
-                    true,
-                    true
+                    true,  // defaultSelected
+                    true   // selected
                 );
 
                 $('#id_category').append(newOption).trigger('change');
+                console.log('✅ Added category to dropdown');
 
                 // Hide modal
-                const modal = bootstrap.Modal.getInstance(document.getElementById('addCategoryModal'));
+                const modalElement = document.getElementById('addCategoryModal');
+                const modal = bootstrap.Modal.getInstance(modalElement);
                 if (modal) {
                     modal.hide();
+                    console.log('✅ Modal hidden');
                 }
 
                 // Reset form
@@ -679,203 +722,323 @@ window.saveCategory = function() {
                 // Show success message
                 showSuccessMessage('Category "' + response.category.name + '" created successfully!');
 
-                // Trigger category validation
-                $('#id_category').trigger('change');
+                // Trigger EFRIS validation for the new category
+                setTimeout(function() {
+                    console.log('🔄 Triggering category change event');
+                    $('#id_category').trigger('change');
+                }, 500);
+
             } else {
-                alert('Error: ' + (response.message || 'Failed to create category'));
+                console.error('❌ Server returned success: false');
+                console.error('Server response:', response);
+                alert('Error: ' + (response.message || response.error || 'Failed to create category'));
             }
         },
         error: function(xhr, status, error) {
-            console.error('Category save error:', xhr.responseText);
-            let errorMessage = 'Error creating category';
+            console.error('❌ AJAX Error');
+            console.error('Status:', status);
+            console.error('Error:', error);
+            console.error('XHR Status:', xhr.status);
+            console.error('XHR Status Text:', xhr.statusText);
+            console.error('Response Text:', xhr.responseText);
+
+            if (xhr.responseJSON) {
+                console.error('Response JSON:', xhr.responseJSON);
+            }
+
+            let errorMessage = 'Error creating category. Status: ' + xhr.status;
 
             if (xhr.responseJSON && xhr.responseJSON.message) {
                 errorMessage = xhr.responseJSON.message;
+            } else if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMessage = xhr.responseJSON.error;
             } else if (xhr.responseText) {
                 try {
                     const response = JSON.parse(xhr.responseText);
-                    errorMessage = response.message || errorMessage;
+                    errorMessage = response.message || response.error || errorMessage;
                 } catch (e) {
-                    errorMessage = xhr.statusText || error;
+                    // Not JSON
+                    errorMessage = xhr.statusText || error || errorMessage;
                 }
             }
 
+            console.error('Final error message:', errorMessage);
             alert(errorMessage);
         },
         complete: function() {
             // Reset button state
             $saveBtn.prop('disabled', false).html(originalText);
+            console.log('✅ Button state reset - process complete');
         }
     });
+
+    return false;
 };
 
-// Set default category type to "service" in modal
-$('#addCategoryModal').on('show.bs.modal', function() {
-    $('#categoryType').val('service');
-});
+// ============================================
+// JQUERY DOCUMENT READY
+// ============================================
 
-// Clear form on modal hide
-$('#addCategoryModal').on('hidden.bs.modal', function() {
-    $('#categoryQuickForm')[0].reset();
-    $('#categoryQuickForm .is-invalid').removeClass('is-invalid');
-});
+$(document).ready(function() {
+    'use strict';
 
-// Allow Enter key to submit modal form
-$('#categoryName, #categoryCode').on('keypress', function(e) {
-    if (e.which === 13) {
+    console.log('✅ Service form JavaScript initialized');
+    console.log('📋 Testing if jQuery is working:', typeof jQuery !== 'undefined');
+    console.log('🔗 AJAX URL available:', '{% url "inventory:category_create_ajax" %}');
+
+    // ============================================
+    // CATEGORY MODAL SETUP
+    // ============================================
+
+    console.log('🔍 Setting up category modal event handlers');
+
+    // Set default category type when modal opens
+    $('#addCategoryModal').on('show.bs.modal', function() {
+        console.log('🔵 Category modal opened');
+        $('#categoryType').val('service');
+    });
+
+    // Clear form when modal closes
+    $('#addCategoryModal').on('hidden.bs.modal', function() {
+        console.log('🔵 Category modal closed - resetting form');
+        $('#categoryQuickForm')[0].reset();
+        $('#categoryQuickForm .is-invalid').removeClass('is-invalid');
+    });
+
+    // Add click handler to the save button
+    $('#saveCategoryBtn').on('click', function(e) {
+        console.log('💾 Save Category button clicked');
+        console.log('Button element:', this);
         e.preventDefault();
+        e.stopPropagation();
         saveCategory();
+    });
+
+    // Also handle form submission
+    $('#categoryQuickForm').on('submit', function(e) {
+        console.log('📝 Category form submitted via Enter key');
+        e.preventDefault();
+        e.stopPropagation();
+        saveCategory();
+    });
+
+    // Allow Enter key in form fields
+    $('#categoryName, #categoryCode, #categoryDescription').on('keypress', function(e) {
+        if (e.which === 13 && !e.shiftKey) {
+            console.log('⌨️ Enter key pressed in', this.id);
+            e.preventDefault();
+            saveCategory();
+        }
+    });
+
+    // Test if modal button works
+    console.log('🔍 Save button found:', $('#saveCategoryBtn').length > 0);
+    console.log('🔍 Modal form found:', $('#categoryQuickForm').length > 0);
+
+    // ============================================
+    // TEST FUNCTION TO VERIFY CLICKS
+    // ============================================
+
+    // Add a simple test to verify clicks work
+    $('#saveCategoryBtn').on('click.test', function() {
+        console.log('🧪 Test: Save button click detected!');
+    });
+
+    // ============================================
+    // PRICE CALCULATION
+    // ============================================
+
+    function updatePricePreview() {
+        const unitPrice = parseFloat($('#id_unit_price').val()) || 0;
+        const discount = parseFloat($('#id_discount_percentage').val()) || 0;
+        const finalPrice = unitPrice - (unitPrice * discount / 100);
+
+        $('#display-unit-price').text('UGX ' + unitPrice.toLocaleString('en-UG', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }));
+
+        $('#display-discount').text(discount.toFixed(2) + '%');
+
+        $('#display-final-price').text('UGX ' + finalPrice.toLocaleString('en-UG', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }));
     }
-});
 
-// Form submission handler
-$('#categoryQuickForm').on('submit', function(e) {
-    e.preventDefault();
-    saveCategory();
-});
-// Wait for jQuery to be ready
-if (typeof jQuery === 'undefined') {
-    console.error('jQuery is not loaded! Please ensure base.html includes jQuery.');
-} else {
-    $(document).ready(function() {
-        'use strict';
+    $('#id_unit_price, #id_discount_percentage').on('input change', updatePricePreview);
 
-        // ============================================
-        // PRICE CALCULATION
-        // ============================================
+    // ============================================
+    // TAX RATE DISPLAY
+    // ============================================
 
-        function updatePricePreview() {
-            const unitPrice = parseFloat($('#id_unit_price').val()) || 0;
-            const discount = parseFloat($('#id_discount_percentage').val()) || 0;
-            const finalPrice = unitPrice - (unitPrice * discount / 100);
+    function updateTaxRateDisplay() {
+        const taxRate = $('#id_tax_rate').val();
+        const taxRateText = $('#id_tax_rate option:selected').text();
+        $('#display-tax-rate').text(taxRateText);
+    }
 
-            $('#display-unit-price').text('UGX ' + unitPrice.toLocaleString('en-UG', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            }));
+    $('#id_tax_rate').on('change', updateTaxRateDisplay);
 
-            $('#display-discount').text(discount.toFixed(2) + '%');
+    // ============================================
+    // UNIT OF MEASURE DISPLAY
+    // ============================================
 
-            $('#display-final-price').text('UGX ' + finalPrice.toLocaleString('en-UG', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            }));
+    function updateUnitMeasureDisplay() {
+        const unitMeasure = $('#id_unit_of_measure option:selected').text();
+        $('#display-unit-measure').text(unitMeasure || '-');
+    }
+
+    $('#id_unit_of_measure').on('change', updateUnitMeasureDisplay);
+
+    // ============================================
+    // EXCISE DUTY FIELD TOGGLE
+    // ============================================
+
+    function toggleExciseDutyField() {
+        const taxRate = $('#id_tax_rate').val();
+        const exciseDutyGroup = $('#excise-duty-group');
+
+        if (taxRate === 'E') {
+            exciseDutyGroup.show();
+            $('#id_excise_duty_rate').prop('required', true);
+        } else {
+            exciseDutyGroup.hide();
+            $('#id_excise_duty_rate').prop('required', false).val('0');
+        }
+    }
+
+    $('#id_tax_rate').on('change', toggleExciseDutyField);
+
+    // ============================================
+    // EFRIS CATEGORY VALIDATION
+    // ============================================
+
+    $('#id_category').on('change', function() {
+        const categoryId = $(this).val();
+        console.log('🔍 Category changed to:', categoryId);
+
+        if (!categoryId) {
+            $('#efris-validation-container').empty();
+            return;
         }
 
-        $('#id_unit_price, #id_discount_percentage').on('input change', updatePricePreview);
+        $.ajax({
+            url: `/en/inventory/api/categories/${categoryId}/`,
+            type: 'GET',
+            success: function(data) {
+                console.log('📊 Category validation data:', data);
 
-        // ============================================
-        // TAX RATE DISPLAY
-        // ============================================
+                let message = '';
+                let alertClass = '';
 
-        function updateTaxRateDisplay() {
-            const taxRate = $('#id_tax_rate').val();
-            const taxRateText = $('#id_tax_rate option:selected').text();
-            $('#display-tax-rate').text(taxRateText);
-        }
-
-        $('#id_tax_rate').on('change', updateTaxRateDisplay);
-
-        // ============================================
-        // UNIT OF MEASURE DISPLAY
-        // ============================================
-
-        function updateUnitMeasureDisplay() {
-            const unitMeasure = $('#id_unit_of_measure option:selected').text();
-            $('#display-unit-measure').text(unitMeasure || '-');
-        }
-
-        $('#id_unit_of_measure').on('change', updateUnitMeasureDisplay);
-
-        // ============================================
-        // EXCISE DUTY FIELD TOGGLE
-        // ============================================
-
-        function toggleExciseDutyField() {
-            const taxRate = $('#id_tax_rate').val();
-            const exciseDutyGroup = $('#excise-duty-group');
-
-            if (taxRate === 'E') {
-                exciseDutyGroup.show();
-                $('#id_excise_duty_rate').prop('required', true);
-            } else {
-                exciseDutyGroup.hide();
-                $('#id_excise_duty_rate').prop('required', false).val('0');
-            }
-        }
-
-        $('#id_tax_rate').on('change', toggleExciseDutyField);
-
-        // ============================================
-        // EFRIS CATEGORY VALIDATION
-        // ============================================
-
-        $('#id_category').on('change', function() {
-            const categoryId = $(this).val();
-
-            if (!categoryId) {
-                $('#efris-validation-container').empty();
-                return;
-            }
-
-            $.ajax({
-                url: `/inventory/api/categories/${categoryId}/`,
-                type: 'GET',
-                success: function(data) {
-                    let message = '';
-                    let alertClass = '';
-
-                    if (!data.efris_commodity_category_code) {
-                        message = '<i class="bi bi-exclamation-triangle me-2"></i>' +
-                                 '{% trans "This category does not have an EFRIS commodity category assigned." %}';
-                        alertClass = 'alert-warning';
-                    } else if (!data.efris_is_leaf_node) {
-                        message = '<i class="bi bi-x-circle me-2"></i>' +
-                                 '{% trans "This category\'s EFRIS commodity category is not a leaf node. Services cannot use non-leaf nodes." %}';
-                        alertClass = 'alert-danger';
-                    } else if (data.category_type !== 'service') {
-                        message = '<i class="bi bi-x-circle me-2"></i>' +
-                                 '{% trans "This is not a service category. Please select a service category." %}';
-                        alertClass = 'alert-danger';
-                    } else {
-                        message = '<i class="bi bi-check-circle me-2"></i>' +
-                                 '{% trans "Valid EFRIS Category:" %} <strong>' + data.efris_commodity_category_name + '</strong>';
-                        alertClass = 'alert-success';
-                    }
-
-                    const alertHtml = `<div class="alert ${alertClass} mt-2">${message}</div>`;
-                    $('#efris-validation-container').html(alertHtml);
-                },
-                error: function() {
-                    console.error('Failed to validate EFRIS category');
+                if (!data.efris_commodity_category_code) {
+                    message = '<i class="bi bi-exclamation-triangle me-2"></i>' +
+                             '{% trans "This category does not have an EFRIS commodity category assigned." %}';
+                    alertClass = 'alert-warning';
+                } else if (!data.efris_is_leaf_node) {
+                    message = '<i class="bi bi-x-circle me-2"></i>' +
+                             '{% trans "This category\'s EFRIS commodity category is not a leaf node. Services cannot use non-leaf nodes." %}';
+                    alertClass = 'alert-danger';
+                } else if (data.category_type !== 'service') {
+                    message = '<i class="bi bi-x-circle me-2"></i>' +
+                             '{% trans "This is not a service category. Please select a service category." %}';
+                    alertClass = 'alert-danger';
+                } else {
+                    message = '<i class="bi bi-check-circle me-2"></i>' +
+                             '{% trans "Valid EFRIS Category:" %} <strong>' + data.efris_commodity_category_name + '</strong>';
+                    alertClass = 'alert-success';
                 }
-            });
-        });
 
-        // ============================================
-        // INITIALIZATION
-        // ============================================
-
-        // Initialize displays on page load
-        updatePricePreview();
-        updateTaxRateDisplay();
-        updateUnitMeasureDisplay();
-        toggleExciseDutyField();
-
-        // Trigger category validation if category is already selected
-        if ($('#id_category').val()) {
-            $('#id_category').trigger('change');
-        }
-
-        // ============================================
-        // FORM SUBMISSION
-        // ============================================
-
-        $('#serviceForm').on('submit', function() {
-            const submitBtn = $(this).find('[type="submit"]:focus');
-            submitBtn.prop('disabled', true).html('<i class="bi bi-hourglass-split me-1"></i> {% trans "Saving..." %}');
+                const alertHtml = `<div class="alert ${alertClass} mt-2">${message}</div>`;
+                $('#efris-validation-container').html(alertHtml);
+            },
+            error: function(xhr) {
+                console.error('❌ Failed to validate EFRIS category:', xhr);
+                $('#efris-validation-container').html(
+                    '<div class="alert alert-danger mt-2">' +
+                    '<i class="bi bi-x-circle me-2"></i>Failed to validate category. Please try again.' +
+                    '</div>'
+                );
+            }
         });
     });
-}
+
+    // ============================================
+    // INITIALIZATION
+    // ============================================
+
+    // Initialize displays on page load
+    updatePricePreview();
+    updateTaxRateDisplay();
+    updateUnitMeasureDisplay();
+    toggleExciseDutyField();
+
+    // Trigger category validation if category is already selected
+    if ($('#id_category').val()) {
+        console.log('🔍 Triggering initial category validation');
+        $('#id_category').trigger('change');
+    }
+
+    // ============================================
+    // FORM SUBMISSION
+    // ============================================
+
+    $('#serviceForm').on('submit', function() {
+        const submitBtn = $(this).find('[type="submit"]:focus');
+        submitBtn.prop('disabled', true).html('<i class="bi bi-hourglass-split me-1"></i> {% trans "Saving..." %}');
+    });
+
+    // ============================================
+    // DEBUGGING HELPERS
+    // ============================================
+
+    // Always show debug button
+    $('body').append(`
+        <div style="position:fixed;bottom:10px;right:10px;z-index:9999;">
+            <button id="debugAjax" class="btn btn-warning btn-sm mb-2">Test AJAX</button>
+            <button id="testClick" class="btn btn-info btn-sm">Test Click</button>
+        </div>
+    `);
+
+    // Test AJAX endpoint
+    $('#debugAjax').on('click', function() {
+        console.log('🧪 Testing AJAX endpoint...');
+        console.log('CSRF Token:', getCookie('csrftoken'));
+
+        const testData = {
+            'name': 'Test Category ' + new Date().getTime(),
+            'category_type': 'service',
+            'csrfmiddlewaretoken': getCookie('csrftoken')
+        };
+
+        console.log('Test data:', testData);
+
+        $.ajax({
+            url: '{% url "inventory:category_create_ajax" %}',
+            type: 'POST',
+            data: testData,
+            beforeSend: function(xhr) {
+                xhr.setRequestHeader('X-CSRFToken', getCookie('csrftoken'));
+            },
+            success: function(response) {
+                console.log('✅ AJAX test successful:', response);
+                alert('AJAX test successful!\nCreated: ' + (response.category ? response.category.name : 'unknown'));
+            },
+            error: function(xhr) {
+                console.error('❌ AJAX test failed:', xhr);
+                alert('AJAX test failed.\nStatus: ' + xhr.status + '\nCheck console for details.');
+            }
+        });
+    });
+
+    // Test if click events work
+    $('#testClick').on('click', function() {
+        console.log('🧪 Test button clicked - JavaScript is working!');
+        alert('JavaScript is working! Check browser console for logs.');
+    });
+
+    console.log('✅ All event handlers attached successfully');
+});
 </script>
 {% endblock %}

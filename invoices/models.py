@@ -982,6 +982,91 @@ class Invoice(models.Model, EFRISInvoiceMixin):
             }
         return None
 
+    @transaction.atomic
+    def allocate_payment_to_schedules(self, payment, user=None):
+        """
+        Allocate payment amount across unpaid schedules (oldest first)
+        """
+        remaining_amount = payment.amount
+
+        # Get unpaid schedules ordered by due date (oldest first)
+        unpaid_schedules = self.payment_schedules.filter(
+            status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+        ).order_by('due_date')
+
+        allocations = []
+
+        for schedule in unpaid_schedules:
+            if remaining_amount <= 0:
+                break
+
+            schedule_outstanding = schedule.amount_outstanding
+            allocate_amount = min(remaining_amount, schedule_outstanding)
+
+            if allocate_amount > 0:
+                # Create allocation record
+                allocation = PaymentAllocation.objects.create(
+                    payment=payment,
+                    payment_schedule=schedule,
+                    allocated_amount=allocate_amount,
+                    notes=f"Auto-allocated from payment #{payment.id}"
+                )
+                allocations.append(allocation)
+
+                # Update schedule
+                schedule.amount_paid += allocate_amount
+                schedule.update_status()
+                schedule.save()
+
+                remaining_amount -= allocate_amount
+
+        # If there's leftover amount, it stays as credit (handle as needed)
+        if remaining_amount > 0:
+            logger.info(f"Payment {payment.id} has {remaining_amount} unallocated credit")
+
+        return allocations, remaining_amount
+
+    @transaction.atomic
+    def process_payment(self, amount, payment_method, transaction_reference=None,
+                        processed_by=None, notes=''):
+        """
+        Process a payment and allocate it to schedules
+        """
+        # Validate amount
+        if amount <= 0:
+            raise ValidationError("Payment amount must be positive")
+
+        # Create payment record
+        payment = InvoicePayment.objects.create(
+            invoice=self,
+            amount=amount,
+            payment_method=payment_method,
+            transaction_reference=transaction_reference,
+            processed_by=processed_by,
+            notes=notes,
+            payment_date=timezone.now().date()
+        )
+
+        # Allocate to schedules
+        allocations, remaining_credit = self.allocate_payment_to_schedules(payment)
+
+        # Update invoice and sale status
+        self.update_payment_status()
+
+        # If invoice is fully paid, trigger completion
+        if self.amount_outstanding <= 0:
+            self.mark_as_fully_paid()
+
+        return payment, allocations, remaining_credit
+
+    def mark_as_fully_paid(self):
+        """Mark invoice as fully paid and complete sale"""
+        self.sale.payment_status = 'PAID'
+        self.sale.status = 'COMPLETED'
+        self.sale.save(update_fields=['payment_status', 'status'])
+
+        logger.info(f"Invoice {self.id} fully paid")
+
     def can_fiscalize(self, user=None):
         """Enhanced fiscalization validation"""
         if self.fiscalization_status == 'fiscalized':
@@ -1339,19 +1424,7 @@ class InvoicePayment(models.Model):
         super().save(*args, **kwargs)
 
         # Also create a Payment record in sales app
-        from sales.models import Payment
-        Payment.objects.create(
-            sale=self.invoice.sale,
-            store=self.invoice.store,
-            amount=self.amount,
-            payment_method=self.payment_method,
-            transaction_reference=self.transaction_reference,
-            is_confirmed=True,
-            confirmed_at=timezone.now(),
-            created_by=self.processed_by,
-            notes=f"Invoice payment: {self.notes or ''}",
-            payment_type='FULL' if self.amount >= self.invoice.total_amount else 'PARTIAL'
-        )
+        self.invoice.update_payment_status()
 
     def delete(self, *args, **kwargs):
         invoice = self.invoice

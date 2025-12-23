@@ -122,36 +122,78 @@ class QuickStockAdjustmentRedirectView(LoginRequiredMixin, PermissionRequiredMix
 
 @login_required
 @require_http_methods(["POST"])
-@permission_required('inventory.add_category', raise_exception=True)
 def category_create_ajax(request):
-    """AJAX endpoint to create category"""
+    """
+    AJAX endpoint for creating categories.
+    CRITICAL: Handles both product and service categories.
+    """
     try:
+        # Get form data
         name = request.POST.get('name', '').strip()
         code = request.POST.get('code', '').strip()
         description = request.POST.get('description', '').strip()
+        category_type = request.POST.get('category_type', 'product').strip()  # 🔥 CRITICAL FIX
+        is_active = request.POST.get('is_active', 'true').lower() == 'true'
 
+        logger.info(f"📝 Creating category: name={name}, type={category_type}")
+
+        # Validate required fields
         if not name:
-            return JsonResponse({'success': False, 'message': 'Category name is required'})
+            return JsonResponse({
+                'success': False,
+                'error': 'Category name is required',
+                'errors': {'name': ['This field is required']}
+            }, status=400)
 
+        # Validate category type
+        if category_type not in ['product', 'service']:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid category type. Must be either "product" or "service"',
+                'errors': {'category_type': ['Invalid category type']}
+            }, status=400)
+
+        # Check permission
+        if not request.user.has_perm('inventory.add_category'):
+            return JsonResponse({
+                'success': False,
+                'error': 'Permission denied'
+            }, status=403)
+
+        # Create category
         category = Category.objects.create(
             name=name,
-            code=code,
+            code=code if code else None,
             description=description,
-            is_active=True
+            category_type=category_type,  # 🔥 CRITICAL: Set the type!
+            is_active=is_active
         )
+
+        logger.info(f"✅ Category created successfully: {category.name} (Type: {category.category_type}, ID: {category.id})")
 
         return JsonResponse({
             'success': True,
+            'message': f'Category "{category.name}" created successfully',
             'category': {
                 'id': category.id,
                 'name': category.name,
-                'code': category.code
+                'code': category.code or '',
+                'category_type': category.category_type,
+                'is_active': category.is_active
             }
         })
 
     except Exception as e:
-        logger.error(f"Error creating category: {str(e)}")
-        return JsonResponse({'success': False, 'message': str(e)})
+        import traceback
+        logger.error(f"❌ Error creating category: {str(e)}")
+        logger.error(traceback.format_exc())
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'message': f'Error creating category: {str(e)}',
+            'traceback': traceback.format_exc() if request.user.is_superuser else None
+        }, status=500)
+
 
 
 @login_required
@@ -2357,35 +2399,41 @@ class CategoryDetailAPIView(RetrieveAPIView):
 
 
 @login_required
-@require_GET
+@require_http_methods(["GET"])
 def category_detail_api(request, pk):
-    """Get category details including EFRIS commodity category."""
+    """Get category details as JSON for validation"""
     try:
-        category = Category.objects.select_related('efris_commodity_category').get(pk=pk)
+        category = Category.objects.get(pk=pk)
 
         data = {
             'id': category.id,
             'name': category.name,
             'code': category.code,
-            'description': category.description,
-            'is_active': category.is_active,
-            'efris_commodity_category': None
+            'category_type': category.category_type,
+            'efris_commodity_category_code': category.efris_commodity_category_code,
+            'efris_commodity_category_name': category.efris_commodity_category_name,
+            'efris_is_leaf_node': category.efris_is_leaf_node,
+            'efris_rate': float(category.efris_rate) if category.efris_rate else 0,
+            'efris_is_exempt': category.efris_is_exempt,
+            'efris_is_zero_rate': category.efris_is_zero_rate,
         }
 
-        if category.efris_commodity_category:
-            data['efris_commodity_category'] = {
-                'id': category.efris_commodity_category.id,
-                'code': category.efris_commodity_category.commodity_category_code,
-                'name': category.efris_commodity_category.commodity_category_name,
-                'is_exempt': category.efris_commodity_category.is_exempt,
-                'is_leaf_node': category.efris_commodity_category.is_leaf_node,
-                'is_zero_rate': category.efris_commodity_category.is_zero_rate
-            }
-
-        return JsonResponse(data)
+        return JsonResponse({
+            'success': True,
+            **data
+        })
 
     except Category.DoesNotExist:
-        return JsonResponse({'error': 'Category not found'}, status=404)
+        return JsonResponse({
+            'success': False,
+            'error': 'Category not found'
+        }, status=404)
+    except Exception as e:
+        logger.error(f"Error in category_detail_api: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
 
 @login_required

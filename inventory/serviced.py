@@ -85,7 +85,12 @@ class ServiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         context['total_services'] = Service.objects.count()
         context['active_services'] = Service.objects.filter(is_active=True).count()
         context['efris_uploaded'] = Service.objects.filter(efris_is_uploaded=True).count()
-        context['categories'] = Category.objects.all()
+
+        # 🔥 CRITICAL FIX: Filter categories by type='service'
+        context['categories'] = Category.objects.filter(
+            category_type='service',
+            is_active=True
+        ).order_by('name')
 
         # Get filter parameters for the template
         context['current_search'] = self.request.GET.get('search', '')
@@ -93,6 +98,11 @@ class ServiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         context['current_tax_rate'] = self.request.GET.get('tax_rate', '')
         context['current_efris_status'] = self.request.GET.get('efris_status', '')
         context['current_is_active'] = self.request.GET.get('is_active', '')
+
+        # Debug logging
+        logger.info(f"📊 Service categories in context: {context['categories'].count()}")
+        for cat in context['categories']:
+            logger.info(f"  - {cat.name} (Type: {cat.category_type}, ID: {cat.id})")
 
         return context
 
@@ -240,10 +250,26 @@ class ServiceCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView)
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         # Add company for VAT enforcement
-        kwargs['company'] = self.request.tenant  # Or however you access Company
+        kwargs['company'] = self.request.tenant
         # Add EFRIS status
         kwargs['efris_enabled'] = self.request.tenant.efris_enabled
         return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # 🔥 CRITICAL FIX: Add service categories to context
+        context['categories'] = Category.objects.filter(
+            category_type='service',
+            is_active=True
+        ).order_by('name')
+
+        context['form_type'] = 'service'
+
+        # Debug logging
+        logger.info(f"📋 Service create form categories: {context['categories'].count()}")
+
+        return context
 
     def get_success_url(self):
         if self.request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -304,7 +330,6 @@ class ServiceCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView)
 
         return super().form_invalid(form)
 
-
 # ===========================================
 # SERVICE UPDATE VIEW
 # ===========================================
@@ -318,11 +343,22 @@ class ServiceUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        # Add company for VAT enforcement
-        kwargs['company'] = self.request.tenant  # Or however you access Company
-        # Add EFRIS status
+        kwargs['company'] = self.request.tenant
         kwargs['efris_enabled'] = self.request.tenant.efris_enabled
         return kwargs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # 🔥 CRITICAL FIX: Add service categories to context
+        context['categories'] = Category.objects.filter(
+            category_type='service',
+            is_active=True
+        ).order_by('name')
+
+        context['form_type'] = 'service'
+
+        return context
 
     def get_success_url(self):
         return reverse('inventory:service_detail', args=[self.object.pk])
