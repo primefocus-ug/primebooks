@@ -161,7 +161,6 @@ def custom_login(request):
 
     context = {
         'form': form,
-        'show_google_login': True,
         'show_2fa': show_2fa,
     }
     return render(request, 'accounts/login.html', context)
@@ -269,7 +268,6 @@ def _handle_regular_login(request):
             return render(request, 'accounts/login.html', {
                 'form': form,
                 'show_2fa': True,
-                'show_google_login': True,
             })
 
     # Initial credential submission
@@ -282,7 +280,6 @@ def _handle_regular_login(request):
             messages.error(request, 'Invalid credentials.')
             return render(request, 'accounts/login.html', {
                 'form': form,
-                'show_google_login': True,
                 'show_2fa': False,
             })
 
@@ -300,7 +297,6 @@ def _handle_regular_login(request):
             return render(request, 'accounts/login.html', {
                 'form': form,
                 'show_2fa': True,
-                'show_google_login': True,
             })
 
         # No 2FA - complete login
@@ -316,7 +312,6 @@ def _handle_regular_login(request):
 
     return render(request, 'accounts/login.html', {
         'form': form,
-        'show_google_login': True,
         'show_2fa': False,
     })
 
