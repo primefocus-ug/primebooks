@@ -2236,7 +2236,6 @@ def user_profile(request):
     recent_activity = get_recent_user_activity(request.user)
 
     # Get social accounts
-    social_accounts = SocialAccount.objects.filter(user=request.user)
 
     context = {
         'user': request.user,

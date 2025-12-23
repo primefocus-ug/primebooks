@@ -1141,7 +1141,6 @@ def public_login_router(request):
 def get_login_context():
     """Get context for login page"""
     return {
-        'google_oauth_enabled': 'allauth.socialaccount.providers.google' in settings.INSTALLED_APPS,
         'page_title': 'Login to Your Account',
         'show_signup_link': getattr(settings, 'ALLOW_PUBLIC_SIGNUP', True),
     }
