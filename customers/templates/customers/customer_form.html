@@ -2,1392 +2,824 @@
 {% load static %}
 {% load i18n %}
 {% load crispy_forms_tags %}
-{% load custom_filters %}
 
-{% block title %}{% if customer %}{% trans "Update Customer" %}{% else %}{% trans "Create New Customer" %}{% endif %} | {{ company.trading_name|default:company.name }}{% endblock %}
+{% block title %}
+    {% if form.instance.pk %}
+        {% trans "Edit Customer" %} - {{ form.instance.name }}
+    {% else %}
+        {% trans "Create New Customer" %}
+    {% endif %}
+{% endblock %}
 
-{% block page_title %}
-<div class="d-flex justify-content-between align-items-center">
-    <h1 class="mb-0">
-        {% if customer %}
-            {% trans "Update Customer" %}: {{ customer.name|default:customer.customer_id }}
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'customers:customer_list' %}">{% trans "Customers" %}</a></li>
+    <li class="breadcrumb-item active">
+        {% if form.instance.pk %}
+            {% trans "Edit Customer" %}
         {% else %}
-            {% trans "Create New Customer" %}
+            {% trans "Create Customer" %}
         {% endif %}
-    </h1>
-    <div class="d-flex gap-2">
-        <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary btn-sm">
-            <i class="fas fa-arrow-left me-1"></i> {% trans "Back to List" %}
-        </a>
-        {% if perms.customers.add_customer and not customer %}
-        <a href="{% url 'customers:customer_import' %}" class="btn btn-outline-info btn-sm">
-            <i class="fas fa-file-import me-1"></i> {% trans "Import" %}
-        </a>
-        {% endif %}
-        {% if customer and perms.customers.delete_customer %}
-        <a href="{% url 'customers:delete' customer.pk %}" class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Are you sure you want to delete this customer?" %}')">
-            <i class="fas fa-trash me-1"></i> {% trans "Delete" %}
-        </a>
-        {% endif %}
-    </div>
-</div>
+    </li>
 {% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/select2.min.css' %}">
-<link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
     .form-section {
-        background: var(--bg-card);
+        background: var(--bg-primary);
         border: 1px solid var(--border-color);
-        border-radius: 8px;
+        border-radius: var(--border-radius);
         padding: 1.5rem;
         margin-bottom: 1.5rem;
-        transition: all 0.3s ease;
+        box-shadow: var(--shadow-sm);
     }
 
-    .form-section:hover {
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-
-    .section-title {
-        font-size: 1.1rem;
-        font-weight: 600;
-        margin-bottom: 1rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 2px solid var(--primary-color);
-        color: var(--text-primary);
+    .form-section-header {
         display: flex;
         align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid var(--primary-500);
     }
 
-    .section-title i {
-        margin-right: 0.5rem;
-        font-size: 1rem;
+    .form-section-header i {
+        color: var(--primary-600);
+        font-size: 1.25rem;
     }
 
-    .required-field::after {
-        content: " *";
-        color: #dc3545;
+    .form-section-header h3 {
+        color: var(--text-primary);
+        font-size: 1.125rem;
+        font-weight: 600;
+        margin: 0;
     }
 
-    .hint-text {
+    .form-section-description {
+        color: var(--text-secondary);
         font-size: 0.875rem;
-        color: var(--text-muted);
-        margin-top: 0.25rem;
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        background: var(--bg-secondary);
+        border-radius: var(--border-radius-sm);
+        border-left: 3px solid var(--primary-500);
+    }
+
+    .required-field label::after {
+        content: " *";
+        color: var(--red-500);
+    }
+
+    .form-actions {
+        background: var(--bg-secondary);
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        margin-top: 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .form-actions .btn {
+        min-width: 120px;
+    }
+
+    .customer-type-selector {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .customer-type-option {
+        position: relative;
+    }
+
+    .customer-type-option input[type="radio"] {
+        position: absolute;
+        opacity: 0;
+    }
+
+    .customer-type-label {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 1rem;
+        border: 2px solid var(--border-color);
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        background: var(--bg-primary);
+        text-align: center;
+    }
+
+    .customer-type-label i {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+        color: var(--text-secondary);
+    }
+
+    .customer-type-label span {
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .customer-type-option input[type="radio"]:checked + .customer-type-label {
+        border-color: var(--primary-500);
+        background: var(--primary-50);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .customer-type-option input[type="radio"]:checked + .customer-type-label i {
+        color: var(--primary-600);
+    }
+
+    .conditional-field {
+        display: none;
+    }
+
+    .conditional-field.show {
         display: block;
     }
 
-    .efris-section {
-        border-left: 4px solid #17a2b8;
-    }
-
-    .credit-section {
-        border-left: 4px solid #28a745;
-    }
-
-    .identification-group {
-        background-color: var(--bg-secondary);
-        border-radius: 6px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .credit-status-badge {
+    .field-help {
         font-size: 0.75rem;
-        padding: 0.25rem 0.5rem;
-        margin-left: 0.5rem;
-        border-radius: 4px;
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
     }
 
-    .credit-status-good {
-        background-color: #d4edda;
-        color: #155724;
-    }
-
-    .credit-status-warning {
-        background-color: #fff3cd;
-        color: #856404;
-    }
-
-    .credit-status-suspended {
-        background-color: #f8d7da;
-        color: #721c24;
-    }
-
-    .credit-status-blocked {
-        background-color: #dc3545;
-        color: white;
-    }
-
-    .form-check-switch {
-        padding-left: 2.5rem;
-    }
-
-    .credit-limit-info {
+    .field-help i {
         font-size: 0.875rem;
-        padding: 0.5rem;
-        border-radius: 4px;
-        background-color: var(--bg-secondary);
     }
 
-    .field-group {
-        margin-bottom: 1rem;
+    .validation-indicator {
+        position: absolute;
+        right: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        display: none;
     }
 
-    /* Responsive adjustments */
+    .validation-indicator.valid {
+        color: var(--green-500);
+        display: block;
+    }
+
+    .validation-indicator.invalid {
+        color: var(--red-500);
+        display: block;
+    }
+
+    .form-group {
+        position: relative;
+        margin-bottom: 1.25rem;
+    }
+
+    .alert-info {
+        background: var(--primary-50);
+        border: 1px solid var(--primary-200);
+        color: var(--primary-700);
+        border-radius: var(--border-radius);
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
     @media (max-width: 768px) {
         .form-section {
             padding: 1rem;
         }
 
-        .section-title {
-            font-size: 1rem;
+        .form-actions {
+            flex-direction: column;
+            align-items: stretch;
         }
-    }
 
-    /* Dark theme adjustments */
-    [data-bs-theme="dark"] .form-section {
-        background-color: var(--bg-card);
-        border-color: var(--border-color);
-    }
+        .form-actions .btn {
+            width: 100%;
+        }
 
-    [data-bs-theme="dark"] .section-title {
-        color: var(--text-primary);
-        border-bottom-color: var(--primary-color);
-    }
-
-    [data-bs-theme="dark"] .identification-group {
-        background-color: var(--bg-secondary);
-    }
-
-    [data-bs-theme="dark"] .credit-limit-info {
-        background-color: var(--bg-secondary);
+        .customer-type-selector {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-lg-8">
-        <div class="card">
-            <div class="card-body">
-                <form method="post" id="customerForm" novalidate>
-                    {% csrf_token %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-10 col-xl-9">
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h3 mb-1">
+                        {% if form.instance.pk %}
+                            <i class="bi bi-pencil-square me-2"></i>{% trans "Edit Customer" %}
+                        {% else %}
+                            <i class="bi bi-person-plus-fill me-2"></i>{% trans "Create New Customer" %}
+                        {% endif %}
+                    </h1>
+                    <p class="text-muted mb-0">
+                        {% trans "Fill in the customer information below. Fields marked with * are required." %}
+                    </p>
+                </div>
+                <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>{% trans "Back to List" %}
+                </a>
+            </div>
 
-                    <!-- Basic Information Section -->
-                    <div class="form-section">
-                        <h3 class="section-title">
-                            <i class="fas fa-user me-2"></i>{% trans "Basic Information" %}
-                        </h3>
+            <!-- eFRIS Information Alert -->
+            {% if EFRIS_ENABLED %}
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>{% trans "eFRIS Requirements:" %}</strong>
+                {% trans "Name and phone are required for all customers. TIN is required for Business, Government, and NGO customers." %}
+            </div>
+            {% endif %}
 
-                        <div class="row">
-                            <!-- Customer Type -->
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.customer_type.id_for_label }}" class="form-label required-field">
-                                    {{ form.customer_type.label }}
+            <!-- Form Start -->
+            <form method="post" id="customerForm" novalidate>
+                {% csrf_token %}
+
+                <!-- Basic Information Section -->
+                <div class="form-section">
+                    <div class="form-section-header">
+                        <i class="bi bi-person-badge"></i>
+                        <h3>{% trans "Basic Information" %}</h3>
+                    </div>
+                    <div class="form-section-description">
+                        <i class="bi bi-info-circle me-1"></i>
+                        {% trans "Name and phone number are required for all customers." %}
+                    </div>
+
+                    <!-- Customer Type Selection -->
+                    <div class="form-group">
+                        <label class="form-label fw-semibold">
+                            {% trans "Customer Type" %} <span class="text-danger">*</span>
+                        </label>
+                        <div class="customer-type-selector">
+                            <div class="customer-type-option">
+                                <input type="radio" name="customer_type" value="INDIVIDUAL"
+                                       id="type_individual"
+                                       {% if not form.instance.pk or form.instance.customer_type == 'INDIVIDUAL' %}checked{% endif %}>
+                                <label for="type_individual" class="customer-type-label">
+                                    <i class="bi bi-person"></i>
+                                    <span>{% trans "Individual" %}</span>
                                 </label>
-                                {{ form.customer_type }}
-                                {% if form.customer_type.help_text %}
-                                    <small class="hint-text">{{ form.customer_type.help_text }}</small>
-                                {% endif %}
-                                {% if form.customer_type.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.customer_type.errors }}
-                                    </div>
-                                {% endif %}
                             </div>
+                            <div class="customer-type-option">
+                                <input type="radio" name="customer_type" value="BUSINESS"
+                                       id="type_business"
+                                       {% if form.instance.customer_type == 'BUSINESS' %}checked{% endif %}>
+                                <label for="type_business" class="customer-type-label">
+                                    <i class="bi bi-building"></i>
+                                    <span>{% trans "Business" %}</span>
+                                </label>
+                            </div>
+                            <div class="customer-type-option">
+                                <input type="radio" name="customer_type" value="GOVERNMENT"
+                                       id="type_government"
+                                       {% if form.instance.customer_type == 'GOVERNMENT' %}checked{% endif %}>
+                                <label for="type_government" class="customer-type-label">
+                                    <i class="bi bi-bank"></i>
+                                    <span>{% trans "Government" %}</span>
+                                </label>
+                            </div>
+                            <div class="customer-type-option">
+                                <input type="radio" name="customer_type" value="NGO"
+                                       id="type_ngo"
+                                       {% if form.instance.customer_type == 'NGO' %}checked{% endif %}>
+                                <label for="type_ngo" class="customer-type-label">
+                                    <i class="bi bi-heart"></i>
+                                    <span>{% trans "NGO" %}</span>
+                                </label>
+                            </div>
+                        </div>
+                        {% if form.customer_type.errors %}
+                            <div class="invalid-feedback d-block">{{ form.customer_type.errors.0 }}</div>
+                        {% endif %}
+                    </div>
 
-                            <!-- Customer Name -->
-                            <div class="col-md-6 mb-3">
+                    <div class="row">
+                        <!-- Customer Name -->
+                        <div class="col-md-6 required-field">
+                            <div class="form-group">
                                 <label for="{{ form.name.id_for_label }}" class="form-label">
-                                    {{ form.name.label }}
+                                    {% trans "Customer Name" %}
                                 </label>
                                 {{ form.name }}
-                                {% if form.name.help_text %}
-                                    <small class="hint-text">{{ form.name.help_text }}</small>
-                                {% endif %}
+                                <span class="validation-indicator" id="name-indicator">
+                                    <i class="bi bi-check-circle-fill"></i>
+                                </span>
                                 {% if form.name.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.name.errors }}
-                                    </div>
+                                    <div class="invalid-feedback d-block">{{ form.name.errors.0 }}</div>
                                 {% endif %}
+                                <div class="field-help">
+                                    <i class="bi bi-info-circle"></i>
+                                    {% trans "Full name of the customer or business" %}
+                                </div>
                             </div>
                         </div>
 
-                        <div class="row">
-                            <!-- Phone Number -->
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.phone.id_for_label }}" class="form-label required-field">
-                                    {{ form.phone.label }}
+                        <!-- Phone Number -->
+                        <div class="col-md-6 required-field">
+                            <div class="form-group">
+                                <label for="{{ form.phone.id_for_label }}" class="form-label">
+                                    {% trans "Phone Number" %}
                                 </label>
                                 {{ form.phone }}
-                                {% if form.phone.help_text %}
-                                    <small class="hint-text">{{ form.phone.help_text }}</small>
-                                {% endif %}
+                                <span class="validation-indicator" id="phone-indicator">
+                                    <i class="bi bi-check-circle-fill"></i>
+                                </span>
                                 {% if form.phone.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.phone.errors }}
-                                    </div>
+                                    <div class="invalid-feedback d-block">{{ form.phone.errors.0 }}</div>
                                 {% endif %}
+                                <div class="field-help">
+                                    <i class="bi bi-info-circle"></i>
+                                    {% trans "Format: +256700000000" %}
+                                </div>
                             </div>
+                        </div>
+                    </div>
 
-                            <!-- Email -->
-                            <div class="col-md-6 mb-3">
+                    <div class="row">
+                        <!-- Email -->
+                        <div class="col-md-6">
+                            <div class="form-group">
                                 <label for="{{ form.email.id_for_label }}" class="form-label">
-                                    {{ form.email.label }}
+                                    {% trans "Email Address" %}
                                 </label>
                                 {{ form.email }}
-                                {% if form.email.help_text %}
-                                    <small class="hint-text">{{ form.email.help_text }}</small>
-                                {% endif %}
                                 {% if form.email.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.email.errors }}
-                                    </div>
+                                    <div class="invalid-feedback d-block">{{ form.email.errors.0 }}</div>
                                 {% endif %}
+                                <div class="field-help">
+                                    <i class="bi bi-info-circle"></i>
+                                    {% trans "Optional - for sending receipts and invoices" %}
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Store Selection -->
-                        <div class="mb-3">
-                            <label for="{{ form.store.id_for_label }}" class="form-label required-field">
-                                {{ form.store.label }}
-                            </label>
-                            {{ form.store }}
-                            {% if form.store.help_text %}
-                                <small class="hint-text">{{ form.store.help_text }}</small>
-                            {% endif %}
-                            {% if form.store.errors %}
-                                <div class="invalid-feedback d-block">
-                                    {{ form.store.errors }}
-                                </div>
-                            {% endif %}
+                        <!-- Confirm Email -->
+                        <div class="col-md-6" id="confirm-email-field" style="display: none;">
+                            <div class="form-group">
+                                <label for="{{ form.confirm_email.id_for_label }}" class="form-label">
+                                    {% trans "Confirm Email" %}
+                                </label>
+                                {{ form.confirm_email }}
+                                {% if form.confirm_email.errors %}
+                                    <div class="invalid-feedback d-block">{{ form.confirm_email.errors.0 }}</div>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Tax Information Section -->
-                    <div class="form-section">
-                        <h3 class="section-title">
-                            <i class="fas fa-file-invoice-dollar me-2"></i>{% trans "Tax Information" %}
-                        </h3>
+                    <!-- Store Selection -->
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="{{ form.store.id_for_label }}" class="form-label">
+                                    {% trans "Store" %}
+                                </label>
+                                {{ form.store }}
+                                {% if form.store.errors %}
+                                    <div class="invalid-feedback d-block">{{ form.store.errors.0 }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-                        <div class="row">
-                            <!-- TIN -->
-                            <div class="col-md-6 mb-3">
+                <!-- Identification Numbers Section -->
+                <div class="form-section">
+                    <div class="form-section-header">
+                        <i class="bi bi-card-list"></i>
+                        <h3>{% trans "Identification Numbers" %}</h3>
+                    </div>
+                    <div class="form-section-description">
+                        <i class="bi bi-info-circle me-1"></i>
+                        {% trans "TIN is required for Business, Government, and NGO customers. All other fields are optional." %}
+                    </div>
+
+                    <div class="row">
+                        <!-- TIN -->
+                        <div class="col-md-6" id="tin-field">
+                            <div class="form-group">
                                 <label for="{{ form.tin.id_for_label }}" class="form-label">
-                                    {{ form.tin.label }}
+                                    {% trans "Tax Identification Number (TIN)" %}
+                                    <span class="text-danger tin-required" style="display: none;">*</span>
                                 </label>
                                 {{ form.tin }}
-                                {% if form.tin.help_text %}
-                                    <small class="hint-text">{{ form.tin.help_text }}</small>
-                                {% endif %}
                                 {% if form.tin.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.tin.errors }}
-                                    </div>
+                                    <div class="invalid-feedback d-block">{{ form.tin.errors.0 }}</div>
                                 {% endif %}
-                            </div>
-
-                            <!-- VAT Registered -->
-                            <div class="col-md-6 mb-3">
-                                <div class="form-check form-switch mt-4">
-                                    {{ form.is_vat_registered }}
-                                    <label class="form-check-label" for="{{ form.is_vat_registered.id_for_label }}">
-                                        {{ form.is_vat_registered.label }}
-                                    </label>
+                                <div class="field-help">
+                                    <i class="bi bi-info-circle"></i>
+                                    <span class="tin-help-text">{% trans "Required for B2B transactions" %}</span>
                                 </div>
-                                {% if form.is_vat_registered.help_text %}
-                                    <small class="hint-text">{{ form.is_vat_registered.help_text }}</small>
-                                {% endif %}
-                                {% if form.is_vat_registered.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.is_vat_registered.errors }}
-                                    </div>
-                                {% endif %}
                             </div>
                         </div>
 
-                        <!-- Business Registration Number (BRN) -->
-                        <div class="mb-3">
-                            <label for="{{ form.brn.id_for_label }}" class="form-label">
-                                {{ form.brn.label }}
-                            </label>
-                            {{ form.brn }}
-                            {% if form.brn.help_text %}
-                                <small class="hint-text">{{ form.brn.help_text }}</small>
-                            {% endif %}
-                            {% if form.brn.errors %}
-                                <div class="invalid-feedback d-block">
-                                    {{ form.brn.errors }}
-                                </div>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <!-- Identification Section -->
-                    <div class="form-section">
-                        <h3 class="section-title">
-                            <i class="fas fa-id-card me-2"></i>{% trans "Identification Details" %}
-                        </h3>
-
-                        <div class="identification-group">
-                            <h6 class="text-muted mb-3">{% trans "Government Issued IDs" %}</h6>
-                            <div class="row">
-                                <!-- NIN -->
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.nin.id_for_label }}" class="form-label">
-                                        {{ form.nin.label }}
-                                    </label>
-                                    {{ form.nin }}
-                                    {% if form.nin.help_text %}
-                                        <small class="hint-text">{{ form.nin.help_text }}</small>
-                                    {% endif %}
-                                    {% if form.nin.errors %}
-                                        <div class="invalid-feedback d-block">
-                                            {{ form.nin.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-
-                                <!-- Passport -->
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.passport_number.id_for_label }}" class="form-label">
-                                        {{ form.passport_number.label }}
-                                    </label>
-                                    {{ form.passport_number }}
-                                    {% if form.passport_number.help_text %}
-                                        <small class="hint-text">{{ form.passport_number.help_text }}</small>
-                                    {% endif %}
-                                    {% if form.passport_number.errors %}
-                                        <div class="invalid-feedback d-block">
-                                            {{ form.passport_number.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <div class="row">
-                                <!-- Driving License -->
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.driving_license.id_for_label }}" class="form-label">
-                                        {{ form.driving_license.label }}
-                                    </label>
-                                    {{ form.driving_license }}
-                                    {% if form.driving_license.help_text %}
-                                        <small class="hint-text">{{ form.driving_license.help_text }}</small>
-                                    {% endif %}
-                                    {% if form.driving_license.errors %}
-                                        <div class="invalid-feedback d-block">
-                                            {{ form.driving_license.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-
-                                <!-- Voter ID -->
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.voter_id.id_for_label }}" class="form-label">
-                                        {{ form.voter_id.label }}
-                                    </label>
-                                    {{ form.voter_id }}
-                                    {% if form.voter_id.help_text %}
-                                        <small class="hint-text">{{ form.voter_id.help_text }}</small>
-                                    {% endif %}
-                                    {% if form.voter_id.errors %}
-                                        <div class="invalid-feedback d-block">
-                                            {{ form.voter_id.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <!-- Alien ID -->
-                            <div class="mb-3">
-                                <label for="{{ form.alien_id.id_for_label }}" class="form-label">
-                                    {{ form.alien_id.label }}
+                        <!-- BRN -->
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="{{ form.brn.id_for_label }}" class="form-label">
+                                    {% trans "Business Registration Number (BRN)" %}
                                 </label>
-                                {{ form.alien_id }}
-                                {% if form.alien_id.help_text %}
-                                    <small class="hint-text">{{ form.alien_id.help_text }}</small>
+                                {{ form.brn }}
+                                {% if form.brn.errors %}
+                                    <div class="invalid-feedback d-block">{{ form.brn.errors.0 }}</div>
                                 {% endif %}
-                                {% if form.alien_id.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.alien_id.errors }}
-                                    </div>
-                                {% endif %}
+                                <div class="field-help">
+                                    <i class="bi bi-info-circle"></i>
+                                    {% trans "Optional - for business customers" %}
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Address Information Section -->
-                    <div class="form-section">
-                        <h3 class="section-title">
-                            <i class="fas fa-map-marker-alt me-2"></i>{% trans "Address Information" %}
-                        </h3>
+                    <div class="row">
+                        <!-- NIN -->
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="{{ form.nin.id_for_label }}" class="form-label">
+                                    {% trans "National ID Number (NIN)" %}
+                                </label>
+                                {{ form.nin }}
+                                {% if form.nin.errors %}
+                                    <div class="invalid-feedback d-block">{{ form.nin.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">
+                                    <i class="bi bi-info-circle"></i>
+                                    {% trans "Optional - for individual customers" %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-                        <div class="row">
-                            <!-- Physical Address -->
-                            <div class="col-md-12 mb-3">
+                <!-- Address Information Section -->
+                <div class="form-section">
+                    <div class="form-section-header">
+                        <i class="bi bi-geo-alt"></i>
+                        <h3>{% trans "Address Information" %}</h3>
+                    </div>
+
+                    <div class="row">
+                        <!-- Physical Address -->
+                        <div class="col-md-12">
+                            <div class="form-group">
                                 <label for="{{ form.physical_address.id_for_label }}" class="form-label">
-                                    {{ form.physical_address.label }}
+                                    {% trans "Physical Address" %}
                                 </label>
                                 {{ form.physical_address }}
-                                {% if form.physical_address.help_text %}
-                                    <small class="hint-text">{{ form.physical_address.help_text }}</small>
-                                {% endif %}
                                 {% if form.physical_address.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.physical_address.errors }}
-                                    </div>
+                                    <div class="invalid-feedback d-block">{{ form.physical_address.errors.0 }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <!-- Postal Address -->
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="{{ form.postal_address.id_for_label }}" class="form-label">
+                                    {% trans "Postal Address" %}
+                                </label>
+                                {{ form.postal_address }}
+                                {% if form.postal_address.errors %}
+                                    <div class="invalid-feedback d-block">{{ form.postal_address.errors.0 }}</div>
                                 {% endif %}
                             </div>
                         </div>
 
-                        <div class="row">
-                            <!-- Postal Address -->
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.postal_address.id_for_label }}" class="form-label">
-                                    {{ form.postal_address.label }}
-                                </label>
-                                {{ form.postal_address }}
-                                {% if form.postal_address.help_text %}
-                                    <small class="hint-text">{{ form.postal_address.help_text }}</small>
-                                {% endif %}
-                                {% if form.postal_address.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.postal_address.errors }}
-                                    </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- District -->
-                            <div class="col-md-6 mb-3">
+                        <!-- District -->
+                        <div class="col-md-3">
+                            <div class="form-group">
                                 <label for="{{ form.district.id_for_label }}" class="form-label">
-                                    {{ form.district.label }}
+                                    {% trans "District" %}
                                 </label>
                                 {{ form.district }}
-                                {% if form.district.help_text %}
-                                    <small class="hint-text">{{ form.district.help_text }}</small>
-                                {% endif %}
                                 {% if form.district.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.district.errors }}
-                                    </div>
+                                    <div class="invalid-feedback d-block">{{ form.district.errors.0 }}</div>
                                 {% endif %}
                             </div>
                         </div>
 
                         <!-- Country -->
-                        <div class="mb-3">
-                            <label for="{{ form.country.id_for_label }}" class="form-label">
-                                {{ form.country.label }}
-                            </label>
-                            {{ form.country }}
-                            {% if form.country.help_text %}
-                                <small class="hint-text">{{ form.country.help_text }}</small>
-                            {% endif %}
-                            {% if form.country.errors %}
-                                <div class="invalid-feedback d-block">
-                                    {{ form.country.errors }}
-                                </div>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <!-- Credit Management Section -->
-                    <div class="form-section credit-section">
-                        <h3 class="section-title">
-                            <i class="fas fa-credit-card me-2"></i>{% trans "Credit Management" %}
-                        </h3>
-
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle me-2"></i>
-                            {% trans "Credit settings allow this customer to make purchases on credit. Use caution when enabling credit features." %}
-                        </div>
-
-                        <div class="row">
-                            <!-- Allow Credit -->
-                            <div class="col-md-6 mb-3">
-                                <div class="form-check form-switch">
-                                    {{ form.allow_credit }}
-                                    <label class="form-check-label fw-bold" for="{{ form.allow_credit.id_for_label }}">
-                                        {{ form.allow_credit.label }}
-                                    </label>
-                                </div>
-                                {% if form.allow_credit.help_text %}
-                                    <small class="hint-text">{{ form.allow_credit.help_text }}</small>
-                                {% endif %}
-                                {% if form.allow_credit.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.allow_credit.errors }}
-                                    </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Credit Days -->
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.credit_days.id_for_label }}" class="form-label">
-                                    {{ form.credit_days.label }}
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label for="{{ form.country.id_for_label }}" class="form-label">
+                                    {% trans "Country" %}
                                 </label>
-                                <div class="input-group">
-                                    {{ form.credit_days }}
-                                    <span class="input-group-text">{% trans "days" %}</span>
-                                </div>
-                                {% if form.credit_days.help_text %}
-                                    <small class="hint-text">{{ form.credit_days.help_text }}</small>
-                                {% endif %}
-                                {% if form.credit_days.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.credit_days.errors }}
-                                    </div>
+                                {{ form.country }}
+                                {% if form.country.errors %}
+                                    <div class="invalid-feedback d-block">{{ form.country.errors.0 }}</div>
                                 {% endif %}
                             </div>
-                        </div>
-
-                        <div class="row">
-                            <!-- Credit Limit -->
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.credit_limit.id_for_label }}" class="form-label">
-                                    {{ form.credit_limit.label }}
-                                </label>
-                                <div class="input-group">
-                                    <span class="input-group-text">UGX</span>
-                                    {{ form.credit_limit }}
-                                </div>
-                                {% if form.credit_limit.help_text %}
-                                    <small class="hint-text">{{ form.credit_limit.help_text }}</small>
-                                {% endif %}
-                                {% if form.credit_limit.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.credit_limit.errors }}
-                                    </div>
-                                {% endif %}
-
-                                <!-- Credit limit info -->
-                                <div class="credit-limit-info mt-2">
-                                    <small class="text-muted">
-                                        <i class="fas fa-info-circle me-1"></i>
-                                        {% trans "Maximum amount this customer can owe at any time" %}
-                                    </small>
-                                </div>
-                            </div>
-
-                            <!-- Credit Status -->
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.credit_status.id_for_label }}" class="form-label">
-                                    {{ form.credit_status.label }}
-                                </label>
-                                {{ form.credit_status }}
-                                {% if form.credit_status.help_text %}
-                                    <small class="hint-text">{{ form.credit_status.help_text }}</small>
-                                {% endif %}
-                                {% if form.credit_status.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.credit_status.errors }}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-
-                        <!-- Last Credit Review -->
-                        <div class="mb-3">
-                            <label for="{{ form.last_credit_review.id_for_label }}" class="form-label">
-                                {{ form.last_credit_review.label }}
-                            </label>
-                            {{ form.last_credit_review }}
-                            {% if form.last_credit_review.help_text %}
-                                <small class="hint-text">{{ form.last_credit_review.help_text }}</small>
-                            {% endif %}
-                            {% if form.last_credit_review.errors %}
-                                <div class="invalid-feedback d-block">
-                                    {{ form.last_credit_review.errors }}
-                                </div>
-                            {% endif %}
-                        </div>
-
-                        {% if customer %}
-                        <!-- Credit Information Display (Read-only for existing customers) -->
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="alert alert-light">
-                                    <h6 class="alert-heading">{% trans "Current Credit Status" %}</h6>
-                                    <div class="d-flex justify-content-between mb-2">
-                                        <span>{% trans "Credit Balance:" %}</span>
-                                        <strong class="text-danger">{{ customer.credit_balance|money }}</strong>
-                                    </div>
-                                    <div class="d-flex justify-content-between mb-2">
-                                        <span>{% trans "Available Credit:" %}</span>
-                                        <strong class="text-success">{{ customer.credit_available|money }}</strong>
-                                    </div>
-                                    <div class="d-flex justify-content-between">
-                                        <span>{% trans "Overdue Amount:" %}</span>
-                                        <strong>{{ customer.overdue_amount|money }}</strong>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="alert alert-light">
-                                    <h6 class="alert-heading">{% trans "Credit Summary" %}</h6>
-                                    <div class="mb-2">
-                                        <span>{% trans "Status:" %}</span>
-                                        <span class="credit-status-badge credit-status-{{ customer.credit_status|lower }}">
-                                            {{ customer.get_credit_status_display }}
-                                        </span>
-                                    </div>
-                                    <div class="mb-2">
-                                        <span>{% trans "Total Outstanding:" %}</span>
-                                        <strong>{{ customer.total_outstanding|money }}</strong>
-                                    </div>
-                                    <div>
-                                        <span>{% trans "Has Overdue Invoices:" %}</span>
-                                        <strong>
-                                            {% if customer.has_overdue_invoices %}
-                                                <i class="fas fa-exclamation-triangle text-warning"></i> {% trans "Yes" %}
-                                            {% else %}
-                                                <i class="fas fa-check text-success"></i> {% trans "No" %}
-                                            {% endif %}
-                                        </strong>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        {% endif %}
-                    </div>
-
-                    <!-- eFRIS Integration Section -->
-                    <div class="form-section efris-section">
-                        <h3 class="section-title">
-                            <i class="fas fa-sync me-2"></i>{% trans "eFRIS Integration" %}
-                        </h3>
-
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle me-2"></i>
-                            {% trans "eFRIS integration allows automatic registration of customers with the Uganda Revenue Authority system for tax compliance." %}
-                        </div>
-
-                        <!-- Auto Sync eFRIS Field -->
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <div class="form-check form-switch">
-                                    {{ form.auto_sync_efris }}
-                                    <label class="form-check-label fw-bold" for="{{ form.auto_sync_efris.id_for_label }}">
-                                        {{ form.auto_sync_efris.label }}
-                                    </label>
-                                </div>
-                                {% if form.auto_sync_efris.help_text %}
-                                    <small class="hint-text">{{ form.auto_sync_efris.help_text }}</small>
-                                {% endif %}
-                                {% if form.auto_sync_efris.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.auto_sync_efris.errors }}
-                                    </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- eFRIS Customer Type -->
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.efris_customer_type.id_for_label }}" class="form-label">
-                                    {{ form.efris_customer_type.label }}
-                                </label>
-                                {{ form.efris_customer_type }}
-                                {% if form.efris_customer_type.help_text %}
-                                    <small class="hint-text">{{ form.efris_customer_type.help_text }}</small>
-                                {% endif %}
-                                {% if form.efris_customer_type.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.efris_customer_type.errors }}
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-
-                        <!-- eFRIS Requirements Info -->
-                        <div class="efris-requirements" id="efrisRequirements">
-                            <div class="alert alert-warning">
-                                <h6 class="alert-heading">{% trans "eFRIS Requirements by Customer Type" %}</h6>
-                                <ul class="mb-0">
-                                    <li><strong>{% trans "Individual" %}:</strong> {% trans "NIN, Passport, or Driving License" %}</li>
-                                    <li><strong>{% trans "Business" %}:</strong> {% trans "TIN or Business Registration Number (BRN)" %}</li>
-                                    <li><strong>{% trans "Government" %}:</strong> {% trans "Government ID or Registration Number" %}</li>
-                                    <li><strong>{% trans "NGO" %}:</strong> {% trans "Registration Certificate Number" %}</li>
-                                </ul>
-                            </div>
-
-                            <!-- Show current customer type requirements -->
-                            <div class="alert alert-light mb-3">
-                                <h6 class="alert-heading">{% trans "Current Selection Requirements" %}</h6>
-                                <div id="efrisRequirementsDetail">
-                                    <p class="mb-0">{% trans "Select a customer type to see specific requirements" %}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {% if customer %}
-                        <!-- eFRIS Status Display for Existing Customers -->
-                        <div class="row">
-                            <div class="col-md-12">
-                                <div class="alert {% if customer.is_efris_registered %}alert-success{% else %}alert-warning{% endif %}">
-                                    <h6 class="alert-heading">{% trans "Current eFRIS Status" %}</h6>
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <strong>{% trans "Status:" %}</strong>
-                                            <span class="badge {% if customer.is_efris_registered %}bg-success{% else %}bg-warning{% endif %}">
-                                                {{ customer.get_efris_status_display }}
-                                            </span>
-                                        </div>
-                                        {% if customer.efris_customer_id %}
-                                        <div class="col-md-6">
-                                            <strong>{% trans "eFRIS ID:" %}</strong>
-                                            <code>{{ customer.efris_customer_id }}</code>
-                                        </div>
-                                        {% endif %}
-                                    </div>
-                                    {% if customer.efris_registered_at %}
-                                    <div class="row mt-2">
-                                        <div class="col-md-6">
-                                            <strong>{% trans "Registered:" %}</strong>
-                                            {{ customer.efris_registered_at|date:"Y-m-d H:i" }}
-                                        </div>
-                                        <div class="col-md-6">
-                                            <strong>{% trans "Last Sync:" %}</strong>
-                                            {{ customer.efris_last_sync|date:"Y-m-d H:i" }}
-                                        </div>
-                                    </div>
-                                    {% endif %}
-                                    {% if customer.efris_sync_error %}
-                                    <div class="mt-2">
-                                        <strong>{% trans "Last Error:" %}</strong>
-                                        <small class="text-danger">{{ customer.efris_sync_error }}</small>
-                                    </div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endif %}
-                    </div>
-
-                    <!-- Status Section -->
-                    <div class="form-section">
-                        <h3 class="section-title">
-                            <i class="fas fa-toggle-on me-2"></i>{% trans "Status & Settings" %}
-                        </h3>
-
-                        <div class="row">
-                            <!-- Is Active -->
-                            <div class="col-md-6 mb-3">
-                                <div class="form-check form-switch">
-                                    {{ form.is_active }}
-                                    <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
-                                        {{ form.is_active.label }}
-                                    </label>
-                                </div>
-                                {% if form.is_active.help_text %}
-                                    <small class="hint-text">{{ form.is_active.help_text }}</small>
-                                {% endif %}
-                                {% if form.is_active.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.is_active.errors }}
-                                    </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Update eFRIS (for existing customers) -->
-                            {% if customer and customer.is_efris_registered %}
-                            <div class="col-md-6 mb-3">
-                                <div class="form-check form-switch">
-                                    {{ form.update_efris }}
-                                    <label class="form-check-label" for="{{ form.update_efris.id_for_label }}">
-                                        {{ form.update_efris.label }}
-                                    </label>
-                                </div>
-                                {% if form.update_efris.help_text %}
-                                    <small class="hint-text">{{ form.update_efris.help_text }}</small>
-                                {% endif %}
-                                {% if form.update_efris.errors %}
-                                    <div class="invalid-feedback d-block">
-                                        {{ form.update_efris.errors }}
-                                    </div>
-                                {% endif %}
-                            </div>
-                            {% endif %}
                         </div>
                     </div>
+                </div>
 
-                    <!-- Form Actions -->
-                    <div class="d-flex justify-content-between mt-4">
-                        <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary">
-                            <i class="fas fa-times me-2"></i>{% trans "Cancel" %}
-                        </a>
-                        <div class="d-flex gap-2">
-                            {% if not customer %}
-                            <button type="submit" name="save_and_add_another" class="btn btn-outline-primary">
-                                <i class="fas fa-plus me-2"></i>{% trans "Save & Add Another" %}
-                            </button>
-                            {% endif %}
-                            <button type="submit" name="save_and_view" class="btn btn-outline-info">
-                                <i class="fas fa-eye me-2"></i>{% trans "Save & View" %}
-                            </button>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-save me-2"></i>
-                                {% if customer %}{% trans "Update Customer" %}{% else %}{% trans "Save Customer" %}{% endif %}
-                            </button>
-                        </div>
-                    </div>
-                </form>
+                <!-- Additional Settings Section -->
+                <div class="form-section">
+    <div class="form-section-header">
+        <i class="bi bi-sliders"></i>
+        <h3>{% trans "Additional Settings" %}</h3>
+    </div>
+
+    <div class="row">
+        <!-- VAT Registered -->
+        <div class="col-md-4">
+            <div class="form-check mb-3">
+                {{ form.is_vat_registered }}
+                <label class="form-check-label" for="{{ form.is_vat_registered.id_for_label }}">
+                    {% trans "VAT Registered" %}
+                </label>
+            </div>
+        </div>
+
+        <!-- Active Status -->
+        <div class="col-md-4">
+            <div class="form-check mb-3">
+                {{ form.is_active }}
+                <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                    {% trans "Active" %}
+                </label>
             </div>
         </div>
     </div>
 
-    <!-- Sidebar with Help & Guidelines -->
-    <div class="col-lg-4">
-        <!-- Customer Creation Guidelines -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-lightbulb me-2"></i>{% trans "Guidelines" %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="alert alert-light mb-3">
-                    <h6 class="alert-heading">{% trans "Required Fields" %}</h6>
-                    <ul class="mb-0">
-                        <li>{% trans "Customer Type" %}</li>
-                        <li>{% trans "Phone Number" %}</li>
-                        <li>{% trans "Branch" %}</li>
-                    </ul>
-                </div>
-
-                <div class="alert alert-light mb-3">
-                    <h6 class="alert-heading">{% trans "Credit Management" %}</h6>
-                    <ul class="mb-0">
-                        <li>{% trans "Enable credit only for trusted customers" %}</li>
-                        <li>{% trans "Set appropriate credit limits based on history" %}</li>
-                        <li>{% trans "Regularly review credit status and payments" %}</li>
-                        <li>{% trans "Monitor overdue invoices closely" %}</li>
-                    </ul>
-                </div>
-
-                <div class="alert alert-light mb-3">
-                    <h6 class="alert-heading">{% trans "eFRIS Integration" %}</h6>
-                    <ul class="mb-0">
-                        <li>{% trans "Enable auto-sync to automatically register with URA" %}</li>
-                        <li>{% trans "TIN/BRN required for Business customers" %}</li>
-                        <li>{% trans "NIN/Passport required for Individual customers" %}</li>
-                        <li>{% trans "Physical address improves registration success" %}</li>
-                    </ul>
-                </div>
-
-                <div class="alert alert-light">
-                    <h6 class="alert-heading">{% trans "Best Practices" %}</h6>
-                    <ul class="mb-0">
-                        <li>{% trans "Collect at least one identification number" %}</li>
-                        <li>{% trans "Verify phone numbers for communication" %}</li>
-                        <li>{% trans "Include email for digital receipts and notifications" %}</li>
-                        <li>{% trans "Keep customer information up to date" %}</li>
-                    </ul>
+    <!-- ADD THE NEW FIELD HERE -->
+    <div class="row">
+        <!-- Allow Credit -->
+        <div class="col-md-4">
+            <div class="form-check mb-3">
+                {{ form.allow_credit }}
+                <label class="form-check-label" for="{{ form.allow_credit.id_for_label }}">
+                    {% trans "Allow Credit Sales" %}
+                </label>
+                <div class="field-help">
+                    <i class="bi bi-info-circle"></i>
+                    {% trans "Whether this customer can buy on credit" %}
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- Customer Type Info -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-users me-2"></i>{% trans "Customer Types" %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="customer-type-info">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="fas fa-user text-primary me-2"></i>
-                        <div>
-                            <strong>{% trans "Individual" %}</strong>
-                            <small class="d-block text-muted">{% trans "Regular consumer customers" %}</small>
-                        </div>
-                    </div>
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="fas fa-building text-success me-2"></i>
-                        <div>
-                            <strong>{% trans "Business" %}</strong>
-                            <small class="d-block text-muted">{% trans "Companies, partnerships, enterprises" %}</small>
-                        </div>
-                    </div>
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="fas fa-landmark text-warning me-2"></i>
-                        <div>
-                            <strong>{% trans "Government" %}</strong>
-                            <small class="d-block text-muted">{% trans "Government agencies, departments" %}</small>
-                        </div>
-                    </div>
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-hands-helping text-info me-2"></i>
-                        <div>
-                            <strong>{% trans "NGO" %}</strong>
-                            <small class="d-block text-muted">{% trans "Non-profit organizations" %}</small>
-                        </div>
-                    </div>
+    <div class="row">
+        <!-- Credit Limit -->
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="{{ form.credit_limit.id_for_label }}" class="form-label">
+                    {% trans "Credit Limit" %}
+                </label>
+                <div class="input-group">
+                    <span class="input-group-text">UGX</span>
+                    {{ form.credit_limit }}
+                </div>
+                {% if form.credit_limit.errors %}
+                    <div class="invalid-feedback d-block">{{ form.credit_limit.errors.0 }}</div>
+                {% endif %}
+                <div class="field-help">
+                    <i class="bi bi-info-circle"></i>
+                    {% trans "Maximum credit amount allowed for this customer" %}
                 </div>
             </div>
         </div>
+    </div>
+</div>
 
-        <!-- Quick Actions -->
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-bolt me-2"></i>{% trans "Quick Actions" %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="d-grid gap-2">
-                    {% if not customer %}
-                    <a href="{% url 'customers:customer_import' %}" class="btn btn-outline-info">
-                        <i class="fas fa-file-import me-2"></i>{% trans "Import Customers" %}
-                    </a>
-                    {% endif %}
-                    <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-primary">
-                        <i class="fas fa-list me-2"></i>{% trans "View All Customers" %}
-                    </a>
-                    {% if customer %}
-                    <a href="{% url 'customers:detail' customer.pk %}" class="btn btn-outline-success">
-                        <i class="fas fa-user me-2"></i>{% trans "View Customer Details" %}
-                    </a>
-                    {% endif %}
-                    <a href="{% url 'customers:efris_dashboard' %}" class="btn btn-outline-warning">
-                        <i class="fas fa-sync me-2"></i>{% trans "eFRIS Dashboard" %}
-                    </a>
-                    {% if customer and customer.allow_credit %}
-                    <a href="{% url 'customers:credit_report' %}?customer={{ customer.pk }}" class="btn btn-outline-danger">
-                        <i class="fas fa-credit-card me-2"></i>{% trans "Credit Report" %}
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Customer Stats (for existing customers) -->
-        {% if customer %}
-        <div class="card mt-4">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-chart-bar me-2"></i>{% trans "Customer Statistics" %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-6 mb-3">
-                        <div class="stat-box">
-                            <h4 class="text-primary mb-1">{{ customer.total_outstanding|money }}</h4>
-                            <small class="text-muted">{% trans "Total Outstanding" %}</small>
-                        </div>
+                <!-- Form Actions -->
+                <div class="form-actions">
+                    <div>
+                        <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-1"></i>{% trans "Cancel" %}
+                        </a>
                     </div>
-                    <div class="col-6 mb-3">
-                        <div class="stat-box">
-                            <h4 class="text-success mb-1">{{ customer.total_paid_amount|money }}</h4>
-                            <small class="text-muted">{% trans "Total Paid" %}</small>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="stat-box">
-                            <h4 class="text-warning mb-1">{{ customer.overdue_amount|money }}</h4>
-                            <small class="text-muted">{% trans "Overdue" %}</small>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="stat-box">
-                            <h4 class="text-info mb-1">{{ customer.credit_available|money }}</h4>
-                            <small class="text-muted">{% trans "Available Credit" %}</small>
-                        </div>
+                    <div class="d-flex gap-2">
+                        <button type="reset" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>{% trans "Reset" %}
+                        </button>
+                        <button type="submit" class="btn btn-primary" id="submitBtn">
+                            <i class="bi bi-check-circle me-1"></i>
+                            {% if form.instance.pk %}
+                                {% trans "Update Customer" %}
+                            {% else %}
+                                {% trans "Create Customer" %}
+                            {% endif %}
+                        </button>
                     </div>
                 </div>
-            </div>
+            </form>
         </div>
-        {% endif %}
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/select2.min.js' %}"></script>
-<script src="{% static 'js/jquery.inputmask.min.js' %}"></script>
 <script>
-$(document).ready(function() {
-    // Initialize Select2 for select fields
-    $('select').select2({
-        theme: 'bootstrap-5',
-        placeholder: '{% trans "Select an option" %}',
-        allowClear: true
-    });
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('customerForm');
+    const customerTypeInputs = document.querySelectorAll('input[name="customer_type"]');
+    const tinField = document.getElementById('tin-field');
+    const emailInput = document.querySelector('input[name="email"]');
+    const confirmEmailField = document.getElementById('confirm-email-field');
+    const nameInput = document.querySelector('input[name="name"]');
+    const phoneInput = document.querySelector('input[name="phone"]');
 
-    // Initialize date picker for last_credit_review
-    $('#{{ form.last_credit_review.id_for_label }}').datepicker({
-        format: 'yyyy-mm-dd',
-        autoclose: true,
-        todayHighlight: true
-    });
+    // Handle customer type changes
+    function updateFieldRequirements() {
+        const selectedType = document.querySelector('input[name="customer_type"]:checked');
+        if (!selectedType) return;
 
-    // Phone number mask
-    $('#{{ form.phone.id_for_label }}').inputmask({
-        mask: '+256 999 999999',
-        placeholder: 'X',
-        showMaskOnHover: false,
-        showMaskOnFocus: true
-    });
+        const type = selectedType.value;
+        const tinRequired = ['BUSINESS', 'GOVERNMENT', 'NGO'].includes(type);
 
-    // TIN input mask
-    $('#{{ form.tin.id_for_label }}').inputmask({
-        mask: 'TIN999999999999',
-        placeholder: '',
-        definitions: {
-            '9': {
-                validator: "[0-9]",
-                cardinality: 1
-            }
-        }
-    });
+        // Update TIN field requirement
+        const tinInput = document.querySelector('input[name="tin"]');
+        const tinLabel = tinField.querySelector('.tin-required');
+        const tinHelp = tinField.querySelector('.tin-help-text');
 
-    // NIN input mask
-    $('#{{ form.nin.id_for_label }}').inputmask({
-        mask: 'CM9999999999AAAA',
-        placeholder: '',
-        definitions: {
-            '9': {
-                validator: "[0-9]",
-                cardinality: 1
-            },
-            'A': {
-                validator: "[A-Z]",
-                cardinality: 1
-            }
-        }
-    });
-
-    // Store validation messages
-    const efrisRequirements = {
-        'INDIVIDUAL': "{% trans 'For Individual customers, please provide at least one of: NIN, Passport Number, Driving License, or Voter ID for eFRIS registration.' %}",
-        'BUSINESS': "{% trans 'For Business customers, TIN or Business Registration Number (BRN) is required for eFRIS registration.' %}",
-        'GOVERNMENT': "{% trans 'For Government customers, please provide official identification or registration number for eFRIS registration.' %}",
-        'NGO': "{% trans 'For NGO customers, please provide registration certificate number for eFRIS registration.' %}",
-    };
-
-    // Toggle credit fields based on allow_credit checkbox
-    $('#{{ form.allow_credit.id_for_label }}').change(function() {
-        const allowCredit = $(this).is(':checked');
-        toggleCreditFields(allowCredit);
-    });
-
-    function toggleCreditFields(enable) {
-        const creditFields = [
-            '#{{ form.credit_limit.id_for_label }}',
-            '#{{ form.credit_days.id_for_label }}',
-            '#{{ form.credit_status.id_for_label }}',
-            '#{{ form.last_credit_review.id_for_label }}'
-        ];
-
-        if (enable) {
-            $(creditFields.join(', ')).prop('disabled', false).closest('.mb-3').show();
+        if (tinRequired) {
+            tinInput.required = true;
+            tinLabel.style.display = 'inline';
+            tinHelp.textContent = '{% trans "Required for this customer type" %}';
+            tinField.classList.add('required-field');
         } else {
-            $(creditFields.join(', ')).prop('disabled', true).closest('.mb-3').hide();
-            // Reset credit status to GOOD when credit is disabled
-            $('#{{ form.credit_status.id_for_label }}').val('GOOD');
+            tinInput.required = false;
+            tinLabel.style.display = 'none';
+            tinHelp.textContent = '{% trans "Optional - required for B2B transactions" %}';
+            tinField.classList.remove('required-field');
         }
     }
 
-    // Initialize credit fields state
-    toggleCreditFields($('#{{ form.allow_credit.id_for_label }}').is(':checked'));
-
-    // Show/hide eFRIS requirements based on customer type
-    $('#{{ form.customer_type.id_for_label }}').change(function() {
-        const customerType = $(this).val();
-        const requirements = efrisRequirements[customerType] || "{% trans 'Select a customer type to see specific requirements' %}";
-
-        $('#efrisRequirementsDetail').html(`<p class="mb-0">${requirements}</p>`);
-
-        // Show/hide identification fields based on customer type
-        if (customerType === 'BUSINESS') {
-            $('.identification-group').hide();
-            $('#{{ form.brn.id_for_label }}').closest('.mb-3').show();
-        } else {
-            $('.identification-group').show();
-            $('#{{ form.brn.id_for_label }}').closest('.mb-3').hide();
-        }
-
-        // Update eFRIS customer type mapping
-        updateEfrisCustomerType(customerType);
-
-        // Highlight required fields for eFRIS
-        updateEfrisRequiredFields(customerType);
+    // Initialize customer type handling
+    customerTypeInputs.forEach(input => {
+        input.addEventListener('change', updateFieldRequirements);
     });
+    updateFieldRequirements();
 
-    // Update eFRIS customer type based on selected customer type
-    function updateEfrisCustomerType(customerType) {
-        const mapping = {
-            'INDIVIDUAL': '1',
-            'BUSINESS': '2',
-            'GOVERNMENT': '3',
-            'NGO': '4'
-        };
-
-        const efrisType = mapping[customerType];
-        if (efrisType && $('#{{ form.efris_customer_type.id_for_label }}').val() === '') {
-            $('#{{ form.efris_customer_type.id_for_label }}').val(efrisType).trigger('change');
-        }
-    }
-
-    // Update eFRIS required fields based on customer type
-    function updateEfrisRequiredFields(customerType) {
-        // Remove all eFRIS required markings first
-        $('.efris-required').removeClass('efris-required');
-        $('.efris-required-text').remove();
-
-        // Add eFRIS required markings based on customer type
-        if (customerType === 'BUSINESS') {
-            $('#{{ form.tin.id_for_label }}').closest('.mb-3').addClass('efris-required');
-            $('#{{ form.brn.id_for_label }}').closest('.mb-3').addClass('efris-required');
-            $('<small class="efris-required-text text-warning d-block mt-1"><i class="fas fa-exclamation-circle me-1"></i>{% trans "Required for eFRIS" %}</small>')
-                .insertAfter('#{{ form.tin.id_for_label }}');
-        } else if (customerType === 'INDIVIDUAL') {
-            $('.identification-group').addClass('efris-required');
-            $('<small class="efris-required-text text-warning d-block mt-1"><i class="fas fa-exclamation-circle me-1"></i>{% trans "At least one required for eFRIS" %}</small>')
-                .insertAfter('#{{ form.alien_id.id_for_label }}');
-        }
-
-        // Always require physical address for eFRIS
-        $('#{{ form.physical_address.id_for_label }}').closest('.mb-3').addClass('efris-required');
-        $('<small class="efris-required-text text-warning d-block mt-1"><i class="fas fa-exclamation-circle me-1"></i>{% trans "Required for eFRIS" %}</small>')
-            .insertAfter('#{{ form.physical_address.id_for_label }}');
-    }
-
-    // Trigger change on page load
-    $('#{{ form.customer_type.id_for_label }}').trigger('change');
-
-    // Form submission handling
-    $('#customerForm').on('submit', function(e) {
-        // Clear previous validation errors
-        $('.is-invalid').removeClass('is-invalid');
-        $('.invalid-feedback').remove();
-
-        // Validate required fields
-        let isValid = true;
-
-        // Check customer type
-        if (!$('#{{ form.customer_type.id_for_label }}').val()) {
-            $('#{{ form.customer_type.id_for_label }}').addClass('is-invalid');
-            $('<div class="invalid-feedback">{% trans "Customer type is required" %}</div>').insertAfter($('#{{ form.customer_type.id_for_label }}'));
-            isValid = false;
-        }
-
-        // Check phone
-        const phone = $('#{{ form.phone.id_for_label }}').val().trim();
-        if (!phone) {
-            $('#{{ form.phone.id_for_label }}').addClass('is-invalid');
-            $('<div class="invalid-feedback">{% trans "Phone number is required" %}</div>').insertAfter($('#{{ form.phone.id_for_label }}'));
-            isValid = false;
-        } else if (!validateUgandaPhone(phone)) {
-            $('#{{ form.phone.id_for_label }}').addClass('is-invalid');
-            $('<div class="invalid-feedback">{% trans "Please enter a valid Uganda phone number" %}</div>').insertAfter($('#{{ form.phone.id_for_label }}'));
-            isValid = false;
-        }
-
-        // Check store
-        if (!$('#{{ form.store.id_for_label }}').val()) {
-            $('#{{ form.store.id_for_label }}').addClass('is-invalid');
-            $('<div class="invalid-feedback">{% trans "Store selection is required" %}</div>').insertAfter($('#{{ form.store.id_for_label }}'));
-            isValid = false;
-        }
-
-        // Validate credit limit if credit is enabled
-        if ($('#{{ form.allow_credit.id_for_label }}').is(':checked')) {
-            const creditLimit = parseFloat($('#{{ form.credit_limit.id_for_label }}').val()) || 0;
-            if (creditLimit < 0) {
-                $('#{{ form.credit_limit.id_for_label }}').addClass('is-invalid');
-                $('<div class="invalid-feedback">{% trans "Credit limit cannot be negative" %}</div>').insertAfter($('#{{ form.credit_limit.id_for_label }}'));
-                isValid = false;
+    // Handle email confirmation
+    if (emailInput) {
+        emailInput.addEventListener('input', function() {
+            if (this.value.trim()) {
+                confirmEmailField.style.display = 'block';
+                document.querySelector('input[name="confirm_email"]').required = true;
+            } else {
+                confirmEmailField.style.display = 'none';
+                document.querySelector('input[name="confirm_email"]').required = false;
             }
-
-            const creditDays = parseInt($('#{{ form.credit_days.id_for_label }}').val()) || 0;
-            if (creditDays < 0) {
-                $('#{{ form.credit_days.id_for_label }}').addClass('is-invalid');
-                $('<div class="invalid-feedback">{% trans "Credit days cannot be negative" %}</div>').insertAfter($('#{{ form.credit_days.id_for_label }}'));
-                isValid = false;
-            }
-        }
-
-        // Validate specific fields
-        if (!validateTIN()) isValid = false;
-        if (!validateEmail()) isValid = false;
-
-        // If eFRIS auto sync is enabled, validate eFRIS requirements
-        const autoSyncEfris = $('#{{ form.auto_sync_efris.id_for_label }}').is(':checked');
-        const customerType = $('#{{ form.customer_type.id_for_label }}').val();
-
-        if (autoSyncEfris) {
-            // Validate eFRIS requirements
-            if (customerType === 'BUSINESS') {
-                const hasTIN = $('#{{ form.tin.id_for_label }}').val().trim();
-                const hasBRN = $('#{{ form.brn.id_for_label }}').val().trim();
-
-                if (!hasTIN && !hasBRN) {
-                    $('#{{ form.tin.id_for_label }}').addClass('is-invalid');
-                    $('<div class="invalid-feedback">{% trans "TIN or BRN is required for eFRIS registration of Business customers" %}</div>').insertAfter($('#{{ form.tin.id_for_label }}'));
-                    isValid = false;
-                }
-            } else if (customerType === 'INDIVIDUAL') {
-                const hasNIN = $('#{{ form.nin.id_for_label }}').val().trim();
-                const hasPassport = $('#{{ form.passport_number.id_for_label }}').val().trim();
-                const hasDrivingLicense = $('#{{ form.driving_license.id_for_label }}').val().trim();
-                const hasVoterID = $('#{{ form.voter_id.id_for_label }}').val().trim();
-
-                if (!hasNIN && !hasPassport && !hasDrivingLicense && !hasVoterID) {
-                    $('.identification-group').addClass('is-invalid');
-                    $('<div class="invalid-feedback">{% trans "At least one identification document is required for eFRIS registration of Individual customers" %}</div>').insertAfter($('#{{ form.alien_id.id_for_label }}'));
-                    isValid = false;
-                }
-            }
-
-            // Validate physical address for eFRIS
-            if (!$('#{{ form.physical_address.id_for_label }}').val().trim()) {
-                $('#{{ form.physical_address.id_for_label }}').addClass('is-invalid');
-                $('<div class="invalid-feedback">{% trans "Physical address is required for eFRIS registration" %}</div>').insertAfter($('#{{ form.physical_address.id_for_label }}'));
-                isValid = false;
-            }
-        }
-
-        if (!isValid) {
-            e.preventDefault();
-
-            // Scroll to first error
-            $('html, body').animate({
-                scrollTop: $('.is-invalid').first().offset().top - 100
-            }, 500);
-
-            // Show error message
-            showNotification('{% trans "Please correct the errors in the form" %}', 'error');
-        } else {
-            // Show loading indicator
-            $('button[type="submit"]').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i>{% trans "Saving..." %}');
-        }
-    });
-
-    // Helper validation functions
-    function validateTIN() {
-        const tin = $('#{{ form.tin.id_for_label }}').val();
-        if (tin && tin.length > 0) {
-            // Remove 'TIN' prefix for validation
-            const tinNumber = tin.replace(/^TIN/i, '');
-            if (!/^[0-9]{9,12}$/.test(tinNumber)) {
-                $('#{{ form.tin.id_for_label }}').addClass('is-invalid');
-                $('<div class="invalid-feedback">{% trans "Please enter a valid TIN number (9-12 digits)" %}</div>').insertAfter($('#{{ form.tin.id_for_label }}'));
-                return false;
-            }
-        }
-        return true;
-    }
-
-    function validateUgandaPhone(phone) {
-        // Uganda phone formats: 07XXXXXXXX, 2567XXXXXXXX, +2567XXXXXXXX
-        // Remove spaces and special characters
-        const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
-        const ugandaRegex = /^(07[0-9]{8}|2567[0-9]{8}|\+2567[0-9]{8})$/;
-        return ugandaRegex.test(cleanPhone);
-    }
-
-    function validateEmail() {
-        const email = $('#{{ form.email.id_for_label }}').val();
-        if (email) {
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
-                $('#{{ form.email.id_for_label }}').addClass('is-invalid');
-                $('<div class="invalid-feedback">{% trans "Please enter a valid email address" %}</div>').insertAfter($('#{{ form.email.id_for_label }}'));
-                return false;
-            }
-        }
-        return true;
-    }
-
-    // Auto-format TIN input to uppercase
-    $('#{{ form.tin.id_for_label }}').on('input', function() {
-        let value = $(this).val().toUpperCase().replace(/[^A-Z0-9]/g, '');
-
-        // Ensure it starts with TIN if it's a number
-        if (/^[0-9]/.test(value) && value.length <= 12) {
-            value = 'TIN' + value;
-        }
-
-        // Limit to 15 characters (TIN + 12 digits)
-        if (value.length > 15) {
-            value = value.substring(0, 15);
-        }
-
-        $(this).val(value);
-    });
-
-    // Auto-format other identification fields to uppercase
-    $('#{{ form.nin.id_for_label }}, #{{ form.brn.id_for_label }}, #{{ form.passport_number.id_for_label }}, #{{ form.driving_license.id_for_label }}, #{{ form.voter_id.id_for_label }}, #{{ form.alien_id.id_for_label }}')
-        .on('input', function() {
-            $(this).val($(this).val().toUpperCase());
         });
 
-    // Credit limit formatting
-    $('#{{ form.credit_limit.id_for_label }}').on('blur', function() {
-        const value = parseFloat($(this).val()) || 0;
-        $(this).val(value.toFixed(2));
-    });
+        // Trigger on load if email has value
+        if (emailInput.value.trim()) {
+            confirmEmailField.style.display = 'block';
+            document.querySelector('input[name="confirm_email"]').required = true;
+        }
+    }
 
-    // Show notification when saving with eFRIS
-    $('button[type="submit"]').on('click', function() {
-        const autoSyncEfris = $('#{{ form.auto_sync_efris.id_for_label }}').is(':checked');
-        if (autoSyncEfris) {
-            console.log('Customer will be synced with eFRIS after creation');
+    // Real-time validation indicators
+    function updateValidationIndicator(input, isValid) {
+        const indicator = document.getElementById(input.name + '-indicator');
+        if (!indicator) return;
+
+        if (isValid) {
+            indicator.classList.remove('invalid');
+            indicator.classList.add('valid');
+            indicator.innerHTML = '<i class="bi bi-check-circle-fill"></i>';
+        } else if (input.value.trim()) {
+            indicator.classList.remove('valid');
+            indicator.classList.add('invalid');
+            indicator.innerHTML = '<i class="bi bi-x-circle-fill"></i>';
+        } else {
+            indicator.classList.remove('valid', 'invalid');
+        }
+    }
+    // Handle credit settings
+const allowCreditCheckbox = document.querySelector('input[name="allow_credit"]');
+const creditLimitField = document.querySelector('.credit-limit-field'); // You'll need to add this class
+
+function toggleCreditLimit() {
+    if (allowCreditCheckbox && creditLimitField) {
+        const isVisible = allowCreditCheckbox.checked;
+        creditLimitField.style.display = isVisible ? 'block' : 'none';
+
+        if (isVisible) {
+            document.querySelector('input[name="credit_limit"]').required = true;
+        } else {
+            document.querySelector('input[name="credit_limit"]').required = false;
+            document.querySelector('input[name="credit_limit"]').value = '0';
+        }
+    }
+}
+
+if (allowCreditCheckbox) {
+    allowCreditCheckbox.addEventListener('change', toggleCreditLimit);
+    toggleCreditLimit(); // Initialize on page load
+}
+
+// Add to the credit limit HTML structure:
+// Add class="credit-limit-field" to the div containing the credit limit field
+    // Validate name
+    if (nameInput) {
+        nameInput.addEventListener('input', function() {
+            const isValid = this.value.trim().length >= 2;
+            updateValidationIndicator(this, isValid);
+        });
+    }
+
+    // Validate phone
+    if (phoneInput) {
+        phoneInput.addEventListener('input', function() {
+            const phoneRegex = /^\+?[0-9]{10,15}$/;
+            const isValid = phoneRegex.test(this.value.replace(/\s/g, ''));
+            updateValidationIndicator(this, isValid);
+        });
+    }
+
+    // Auto-format phone number
+    if (phoneInput) {
+        phoneInput.addEventListener('blur', function() {
+            let phone = this.value.trim();
+            if (phone && !phone.startsWith('+')) {
+                if (phone.startsWith('0')) {
+                    phone = '+256' + phone.substring(1);
+                } else if (phone.startsWith('256')) {
+                    phone = '+' + phone;
+                } else if (!phone.startsWith('+256')) {
+                    phone = '+256' + phone;
+                }
+                this.value = phone;
+            }
+        });
+    }
+
+    // Form submission validation
+    form.addEventListener('submit', function(e) {
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>{% trans "Processing..." %}';
+
+        // Basic validation
+        if (!nameInput.value.trim() || nameInput.value.trim().length < 2) {
+            e.preventDefault();
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>{% if form.instance.pk %}{% trans "Update Customer" %}{% else %}{% trans "Create Customer" %}{% endif %}';
+            showAlert('{% trans "Please enter a valid customer name" %}', 'danger');
+            nameInput.focus();
+            return;
+        }
+
+        if (!phoneInput.value.trim()) {
+            e.preventDefault();
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>{% if form.instance.pk %}{% trans "Update Customer" %}{% else %}{% trans "Create Customer" %}{% endif %}';
+            showAlert('{% trans "Please enter a phone number" %}', 'danger');
+            phoneInput.focus();
+            return;
+        }
+
+        // Check email confirmation
+        const confirmEmail = document.querySelector('input[name="confirm_email"]');
+        if (emailInput.value.trim() && confirmEmail.value !== emailInput.value) {
+            e.preventDefault();
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>{% if form.instance.pk %}{% trans "Update Customer" %}{% else %}{% trans "Create Customer" %}{% endif %}';
+            showAlert('{% trans "Email addresses do not match" %}', 'danger');
+            confirmEmail.focus();
+            return;
         }
     });
 
-    // Calculate credit available if credit limit changes
-    $('#{{ form.credit_limit.id_for_label }}').on('input', function() {
-        const creditLimit = parseFloat($(this).val()) || 0;
-        const creditBalance = parseFloat('{{ customer.credit_balance|default:0 }}');
-        const creditAvailable = Math.max(0, creditLimit - creditBalance);
+    // Helper function to show alerts
+    function showAlert(message, type) {
+        const alertHtml = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle me-2"></i>${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        const container = document.querySelector('.container-fluid');
+        container.insertAdjacentHTML('afterbegin', alertHtml);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 
-        // Update credit available display if showing
-        if ($('#creditAvailableDisplay').length) {
-            $('#creditAvailableDisplay').text(formatCurrency(creditAvailable));
+    // Auto-uppercase for identification numbers
+    const idFields = ['tin', 'nin', 'brn'];
+    idFields.forEach(fieldName => {
+        const field = document.querySelector(`input[name="${fieldName}"]`);
+        if (field) {
+            field.addEventListener('input', function() {
+                this.value = this.value.toUpperCase();
+            });
         }
     });
 });
-
-// Helper function to format currency
-function formatCurrency(amount) {
-    return new Intl.NumberFormat('en-UG', {
-        style: 'currency',
-        currency: 'UGX',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(amount);
-}
-
-// Helper function to get CSRF token
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-}
-
-// Notification function
-function showNotification(message, type) {
-    // Use toastr if available, otherwise use alert
-    if (typeof toastr !== 'undefined') {
-        toastr[type](message);
-    } else {
-        alert(`${type.toUpperCase()}: ${message}`);
-    }
-}
 </script>
 {% endblock %}

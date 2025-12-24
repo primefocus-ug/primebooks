@@ -139,7 +139,6 @@ def handle_invoice_completion(sale, created, old_state):
                 Invoice.objects.create(
                     sale=sale,
                     store=sale.store,
-                    status='SENT',
                     fiscalization_status='pending',
                     created_by=sale.created_by
                 )

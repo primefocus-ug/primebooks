@@ -1592,8 +1592,9 @@ def validate_sale_data(post_data, user, company):
         'due_date': due_date,
     }
 
+
 def validate_items_data(items_json):
-    """Validate items supporting products and services"""
+    """Validate items supporting products and services with custom pricing"""
     try:
         items_data = json.loads(items_json) if items_json else []
     except (json.JSONDecodeError, ValueError):
@@ -1647,10 +1648,26 @@ def validate_items_data(items_json):
             if quantity <= 0:
                 raise ValidationError('Quantity must be greater than 0.')
 
-            # Validate price
+            # ✅ MODIFIED: Accept custom price, validate it's non-negative
             unit_price = Decimal(str(item.get('unit_price', '0')))
             if unit_price < 0:
                 raise ValidationError('Price cannot be negative.')
+
+            # ✅ OPTIONAL: Log price changes for audit
+            if item_type == 'PRODUCT' and product:
+                original_price = product.selling_price
+                if unit_price != original_price:
+                    logger.info(
+                        f"Price override for product {product.name}: "
+                        f"Original={original_price}, Custom={unit_price}"
+                    )
+            elif item_type == 'SERVICE' and service:
+                original_price = service.unit_price
+                if unit_price != original_price:
+                    logger.info(
+                        f"Price override for service {service.name}: "
+                        f"Original={original_price}, Custom={unit_price}"
+                    )
 
             # Validate tax rate
             tax_rate = item.get('tax_rate', 'A')
@@ -1665,7 +1682,7 @@ def validate_items_data(items_json):
 
             validated_item.update({
                 'quantity': quantity,
-                'unit_price': unit_price,
+                'unit_price': unit_price,  # ✅ Use custom price
                 'tax_rate': tax_rate,
                 'discount': discount,
                 'description': item.get('description', '').strip(),
@@ -1687,10 +1704,7 @@ def create_sale_record(request, sale_data, company):
     """Create sale record with correct initial status"""
 
     # Determine initial status based on document type and payment method
-    if sale_data['document_type'] == 'RECEIPT':
-        initial_status = 'COMPLETED'
-        initial_payment_status = 'PAID'
-    elif sale_data['document_type'] == 'INVOICE':
+    if sale_data['document_type'] == 'INVOICE':
         if sale_data['payment_method'] == 'CREDIT':
             initial_status = 'PENDING_PAYMENT'
             initial_payment_status = 'PENDING'
@@ -1711,8 +1725,8 @@ def create_sale_record(request, sale_data, company):
         discount_amount=sale_data['discount_amount'],
         notes=sale_data['notes'],
         due_date=sale_data.get('due_date'),
-        status=initial_status,  # ✅ Set correct status immediately
-        payment_status=initial_payment_status,  # ✅ Set payment status too
+        status=initial_status,
+        payment_status=initial_payment_status,
     )
 
     logger.info(f"Created sale {sale.id} (#{sale.document_number}) with status {initial_status}")
@@ -3961,6 +3975,14 @@ def void_sale(request, sale_id):
         return redirect('sales:void_sale', sale_id=sale_id)
 
 
+import qrcode
+import io
+import base64
+from django.shortcuts import render, get_object_or_404
+from django.contrib.auth.decorators import login_required, permission_required
+from django.http import HttpResponse
+
+
 @login_required
 @permission_required('sales.view_sale', raise_exception=True)
 def print_receipt(request, sale_id):
@@ -4000,54 +4022,171 @@ def print_receipt(request, sale_id):
             'total': str(item.line_total),
         })
 
+    # --- Generate QR Code with EFRIS verification URL ---
+    qr_data = None
+    qr_image_src = None
+
+    # Check if we have EFRIS information for QR code
+    if sale.is_fiscalized and sale.efris_invoice_number and hasattr(sale, 'verification_code'):
+        # Try to get the verification URL using your store's environment
+        try:
+            # Get store configuration
+            store_config = sale.store.effective_efris_config if hasattr(sale.store, 'effective_efris_config') else {}
+            is_production = store_config.get('is_production', False)
+
+            if is_production:
+                base_url = "https://efrisws.ura.go.ug/"
+            else:
+                base_url = "https://efristest.ura.go.ug"
+
+            # Build the verification URL using your pattern
+            qr_data = f"{base_url}/site_new/#/invoiceValidation?invoiceNo={sale.efris_invoice_number}&antiFakeCode={sale.verification_code}"
+
+        except Exception as e:
+            # Fallback to basic data if URL generation fails
+            qr_data = f"Receipt: {sale.document_number}\n"
+            qr_data += f"Date: {sale.created_at.strftime('%Y-%m-%d')}\n"
+            qr_data += f"Amount: {sale.total_amount} {sale.currency}\n"
+            if sale.efris_invoice_number:
+                qr_data += f"EFRIS: {sale.efris_invoice_number}"
+
+    # If no EFRIS data, create basic receipt QR code
+    if not qr_data:
+        qr_data = f"Receipt: {sale.document_number}\n"
+        qr_data += f"Store: {sale.store.name}\n"
+        qr_data += f"Date: {sale.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+        qr_data += f"Amount: {sale.total_amount} {sale.currency}\n"
+        qr_data += f"TID: {sale.transaction_id}"
+
+    # Generate QR code image
+    try:
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=8,  # Increased for better visibility on A4
+            border=4,
+        )
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+
+        # Create PIL image with optimized settings for printing
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+
+        # Save to bytes
+        buffer = io.BytesIO()
+        qr_img.save(buffer, format='PNG', optimize=True)
+        buffer.seek(0)
+
+        # Convert to base64 for embedding in HTML
+        qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+        qr_image_src = f"data:image/png;base64,{qr_base64}"
+
+    except Exception as e:
+        # Log error but don't crash
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"QR code generation failed: {str(e)}")
+        qr_image_src = None
+    # --- End QR Code Generation ---
+
     # Get or create receipt
     if not receipt:
+        # Build receipt data structure
+        receipt_data = {
+            'sale_data': {
+                'document_number': sale.document_number,
+                'document_type': sale.document_type,
+                'document_type_display': sale.get_document_type_display(),
+                'transaction_id': str(sale.transaction_id),
+                'created_at': sale.created_at.isoformat(),
+                'subtotal': str(sale.subtotal),
+                'tax_amount': str(sale.tax_amount),
+                'discount_amount': str(sale.discount_amount),
+                'total_amount': str(sale.total_amount),
+                'payment_method': sale.get_payment_method_display(),
+                'currency': sale.currency,
+                'is_fiscalized': sale.is_fiscalized,
+                'efris_invoice_number': sale.efris_invoice_number or '',
+                'verification_code': getattr(sale, 'verification_code', '') or '',
+                'qr_data': qr_data,  # Store the QR code data for debugging
+            },
+            'items': items_list,
+            'customer': {
+                'name': sale.customer.name if sale.customer else 'Walk-in Customer',
+                'phone': sale.customer.phone if sale.customer else '',
+                'email': getattr(sale.customer, 'email', '') if sale.customer else '',
+                'tin': getattr(sale.customer, 'tin', '') if sale.customer else '',
+            },
+            'store': {
+                'name': sale.store.name,
+                'address': getattr(sale.store, 'address', ''),
+                'phone': getattr(sale.store, 'phone', ''),
+                'tin': getattr(sale.store, 'tin', ''),
+            }
+        }
+
+        # Create receipt record
+        from .models import Receipt
         receipt = Receipt.objects.create(
             sale=sale,
             receipt_number=f"RCP-{sale.document_number}",
             printed_by=request.user,
-            receipt_data={
-                'sale_data': {
-                    'document_number': sale.document_number,
-                    'document_type': sale.document_type,
-                    'document_type_display': sale.get_document_type_display(),
-                    'transaction_id': str(sale.transaction_id),
-                    'created_at': sale.created_at.isoformat(),
-                    'subtotal': str(sale.subtotal),
-                    'tax_amount': str(sale.tax_amount),
-                    'discount_amount': str(sale.discount_amount),
-                    'total_amount': str(sale.total_amount),
-                    'payment_method': sale.get_payment_method_display(),
-                    'currency': sale.currency,
-                    'is_fiscalized': sale.is_fiscalized,
-                    'efris_invoice_number': sale.efris_invoice_number or '',
-                    'verification_code': sale.verification_code or '',
-                },
-                'items': items_list,
-                'customer': {
-                    'name': sale.customer.name if sale.customer else 'Walk-in Customer',
-                    'phone': sale.customer.phone if sale.customer else '',
-                    'email': getattr(sale.customer, 'email', '') if sale.customer else '',
-                    'tin': getattr(sale.customer, 'tin', '') if sale.customer else '',
-                },
-                'store': {
-                    'name': sale.store.name,
-                    'address': getattr(sale.store, 'address', ''),
-                    'phone': getattr(sale.store, 'phone', ''),
-                    'tin': getattr(sale.store, 'tin', ''),
-                }
-            }
+            receipt_data=receipt_data
         )
     else:
+        # Update existing receipt
         receipt.print_count += 1
         receipt.is_duplicate = True
+        receipt.last_printed_by = request.user
         receipt.save()
 
+    # Prepare context for template
     context = {
         'sale': sale,
         'receipt': receipt,
         'is_duplicate': receipt.is_duplicate,
+        'qr_image_src': qr_image_src,
+        'qr_data': qr_data,  # Pass for debugging/display
+        'total_paid': sale.total_amount,  # Assuming full payment for receipt
+        'balance_due': 0,  # Assuming receipt is for completed sales
     }
+
+    # Add store details
+    if hasattr(sale.store, 'phone'):
+        context['store_phone'] = sale.store.phone
+    if hasattr(sale.store, 'address'):
+        context['store_address'] = sale.store.address
+    if hasattr(sale.store, 'tin'):
+        context['store_tin'] = sale.store.tin
+
+    # Add customer details
+    if sale.customer:
+        context['customer_name'] = sale.customer.name
+        context['customer_phone'] = sale.customer.phone
+        if hasattr(sale.customer, 'email'):
+            context['customer_email'] = sale.customer.email
+        if hasattr(sale.customer, 'tin'):
+            context['customer_tin'] = sale.customer.tin
+
+    # Add EFRIS verification URL if available
+    if sale.is_fiscalized and sale.efris_invoice_number and hasattr(sale, 'verification_code'):
+        try:
+            store_config = sale.store.effective_efris_config if hasattr(sale.store, 'effective_efris_config') else {}
+            is_production = store_config.get('is_production', False)
+
+            if is_production:
+                base_url = "https://efrisws.ura.go.ug/"
+            else:
+                base_url = "https://efristest.ura.go.ug"
+
+            context[
+                'efris_verification_url'] = f"{base_url}/site_new/#/invoiceValidation?invoiceNo={sale.efris_invoice_number}&antiFakeCode={sale.verification_code}"
+
+        except Exception as e:
+            # Log but continue without URL
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to generate EFRIS URL: {str(e)}")
 
     return render(request, 'sales/receipt.html', context)
 

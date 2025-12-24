@@ -8,7 +8,7 @@ import uuid
 from django.conf import settings
 from decimal import InvalidOperation
 from django.db import transaction, IntegrityError
-from django.db.models import F
+from django.db.models import F, Sum
 from decimal import Decimal, ROUND_HALF_UP
 from inventory.models import Stock, StockMovement
 from datetime import timedelta
@@ -556,7 +556,6 @@ class Sale(models.Model, EFRISSaleMixin):
                                                                              '_determine_business_type') else 'B2C',
                     operator_name=self.created_by.get_full_name() if self.created_by else 'System',
                     created_by=self.created_by,
-                    status='SENT',
                     auto_fiscalize=True
                 )
 
@@ -944,6 +943,65 @@ class Sale(models.Model, EFRISSaleMixin):
         self.fiscalization_status = 'failed'
         self.save(update_fields=['fiscalization_error', 'fiscalization_status'])
 
+    def update_payment_status(self):
+        """Update payment status based on payments"""
+        from django.db.models import Sum
+        from decimal import Decimal
+
+        # Calculate total paid
+        total_paid = self.payments.aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0')
+
+        total_amount = Decimal(str(self.total_amount or 0))
+        total_paid = Decimal(str(total_paid))
+
+        # Determine status
+        if total_paid >= total_amount:
+            self.payment_status = 'PAID'
+            if self.status != 'CANCELLED':
+                self.status = 'COMPLETED'
+        elif total_paid > Decimal('0'):
+            self.payment_status = 'PARTIALLY_PAID'
+            if self.status == 'DRAFT':
+                self.status = 'PENDING_PAYMENT'
+        else:
+            self.payment_status = 'PENDING'
+
+        # Check overdue
+        if self.payment_status in ['PENDING', 'PARTIALLY_PAID']:
+            if self.due_date and self.due_date < timezone.now().date():
+                self.payment_status = 'OVERDUE'
+
+        self.save(update_fields=['payment_status', 'status'])
+
+        logger.info(
+            f"Updated sale {self.id} payment status to {self.payment_status}, "
+            f"status to {self.status}"
+        )
+
+    def calculate_payment_status(self):
+        """Calculate payment status without saving (for use in Payment model)"""
+        from django.db.models import Sum
+        from decimal import Decimal
+
+        total_paid = self.payments.filter(is_confirmed=True).aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0')
+
+        total_amount = self.total_amount or Decimal('0')
+
+        if total_paid >= total_amount:
+            return 'PAID'
+        elif total_paid > 0:
+            return 'PARTIALLY_PAID'
+        elif self.document_type == 'INVOICE' and self.due_date:
+            today = timezone.now().date()
+            if self.due_date < today:
+                return 'OVERDUE'
+
+        return 'PENDING'
+
     @transaction.atomic
     def void_sale(self, reason):
         """Void a sale and restore stock atomically"""
@@ -1103,6 +1161,20 @@ class SaleItem(models.Model):
                                 related_name='sale_items')
     service = models.ForeignKey('inventory.Service', on_delete=models.PROTECT, related_name='sale_items', null=True,
                                 blank=True)
+    original_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Original product/service price before any override'
+    )
+
+    price_override_reason = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        help_text='Reason for price override'
+    )
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     unit_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     total_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
@@ -1177,7 +1249,14 @@ class SaleItem(models.Model):
             raise ValidationError("Item type cannot be determined - no product or service")
 
     def save(self, *args, **kwargs):
-        # Calculate totals with proper rounding
+        # ✅ Track original price before override
+        if not self.pk:  # Only on creation
+            if self.product:
+                self.original_price = self.product.selling_price
+            elif self.service:
+                self.original_price = self.service.unit_price
+
+        # Calculate totals with proper rounding (using custom unit_price)
         self.total_price = (self.unit_price * self.quantity).quantize(
             Decimal('0.01'), rounding=ROUND_HALF_UP
         )
@@ -1194,7 +1273,6 @@ class SaleItem(models.Model):
                 Decimal('0.01'), rounding=ROUND_HALF_UP
             )
         elif self.tax_rate == 'E':
-            # Only products can have excise duty
             if self.product_id and self.product and getattr(self.product, 'excise_duty_rate', None):
                 excise_rate = self.product.excise_duty_rate / Decimal('100')
                 self.tax_amount = (final_price / (Decimal('1') + excise_rate) * excise_rate).quantize(
@@ -1208,7 +1286,7 @@ class SaleItem(models.Model):
         # Run model validation
         self.full_clean()
 
-        # Only deduct stock for new PRODUCT items in completed sales (not proforma/estimate)
+        # Only deduct stock for new PRODUCT items in completed sales
         is_new = not self.pk
         should_deduct_stock = (
                 is_new and
@@ -1217,14 +1295,12 @@ class SaleItem(models.Model):
                 self.item_type == 'PRODUCT' and
                 self.product_id is not None and
                 self.sale.document_type in ['RECEIPT', 'INVOICE'] and
-                not self.stock_deducted  # <-- CRITICAL: Check if already deducted
+                not self.stock_deducted
         )
 
-        # ========== FIX: Prevent duplicate calls ==========
         skip_deduction = getattr(self, '_skip_deduction', False)
         if should_deduct_stock and not skip_deduction:
             self.deduct_stock()
-        # ===================================================
 
         super().save(*args, **kwargs)
 
@@ -1556,15 +1632,22 @@ class Payment(models.Model):
                 raise ValidationError(f"Payment amount {self.amount} exceeds outstanding amount {outstanding}")
 
     def save(self, *args, **kwargs):
+        """Save payment and update sale status without circular dependency"""
+        # Run validation
         self.clean()
+
+        is_new = not self.pk
+
+        # Save the payment
         super().save(*args, **kwargs)
 
-        # Update sale payment status
-        if self.sale.is_invoice:
-            self.sale.update_payment_status()
-
-            if self.sale.customer:
-                self.sale.customer.update_credit_balance()
+        # Update sale payment status (use a delayed approach)
+        if is_new and self.sale:
+            try:
+                # Use a safer method that doesn't trigger circular save
+                self._update_sale_payment_status()
+            except Exception as e:
+                logger.error(f"Error updating sale payment status for payment {self.id}: {e}")
 
     def update_payment_status(self):
         """Update sale payment status based on payments"""
@@ -1585,6 +1668,54 @@ class Payment(models.Model):
             self.sale.payment_status = 'PENDING'
 
         self.sale.save(update_fields=['payment_status', 'status'])
+
+    def _update_sale_payment_status(self):
+        """Helper method to update sale payment status without circular dependency"""
+        from django.db.models import Sum
+        from decimal import Decimal
+
+        # Recalculate payment status without calling sale.save()
+        sale = self.sale
+
+        # Calculate total paid
+        total_paid = sale.payments.filter(is_confirmed=True).aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0')
+
+        total_amount = sale.total_amount or Decimal('0')
+
+        # Determine new status
+        new_payment_status = sale.payment_status
+        new_status = sale.status
+
+        if total_paid >= total_amount:
+            new_payment_status = 'PAID'
+            if sale.status in ['DRAFT', 'PENDING_PAYMENT']:
+                new_status = 'COMPLETED'
+        elif total_paid > 0:
+            new_payment_status = 'PARTIALLY_PAID'
+        else:
+            new_payment_status = 'PENDING'
+
+        # Check overdue
+        if sale.document_type == 'INVOICE' and sale.due_date:
+            today = timezone.now().date()
+            if sale.due_date < today:
+                if new_payment_status in ['PENDING', 'PARTIALLY_PAID']:
+                    new_payment_status = 'OVERDUE'
+
+        # Update sale directly using update() to avoid save() recursion
+        if new_payment_status != sale.payment_status or new_status != sale.status:
+            Sale.objects.filter(pk=sale.pk).update(
+                payment_status=new_payment_status,
+                status=new_status,
+                updated_at=timezone.now()
+            )
+
+            # Refresh the sale instance
+            self.sale.refresh_from_db()
+
+            logger.info(f"Updated sale {sale.id} payment status to {new_payment_status}")
 
 
 class Cart(models.Model):

@@ -218,30 +218,46 @@ class Customer(models.Model,EFRISCustomerMixin):
     def clean(self):
         super().clean()
 
-        # Validate based on customer type
-        if self.customer_type == 'BUSINESS':
-            if not self.tin and not self.brn:
-                raise ValidationError(_("Business customers must have either TIN or BRN"))
+        # Ensure name and phone are strings and not empty
+        if not self.name or not str(self.name).strip():
+            raise ValidationError(_("Customer name is required"))
 
+        if not self.phone or not str(self.phone).strip():
+            raise ValidationError(_("Customer phone number is required"))
+
+        # Validate based on customer type
+        if self.customer_type in ['BUSINESS', 'GOVERNMENT', 'NGO']:
+            # Ensure TIN is a string and not empty
+            tin_value = str(self.tin).strip() if self.tin else ''
+            if not tin_value:
+                raise ValidationError(
+                    _("Business, Government, and NGO customers must have a Tax Identification Number (TIN)")
+                )
+
+        # eFRIS validation
         if self.efris_status == 'REGISTERED' and not self.efris_customer_id:
             raise ValidationError(_("Registered customers must have eFRIS Customer ID"))
 
     def save(self, *args, **kwargs):
-        # Normalize identification numbers
-        if self.tin:
-            self.tin = self.tin.upper().strip()
-        if self.nin:
-            self.nin = self.nin.upper().strip()
-        if self.brn:
-            self.brn = self.brn.upper().strip()
-        if self.passport_number:
-            self.passport_number = self.passport_number.upper().strip()
-        if self.driving_license:
-            self.driving_license = self.driving_license.upper().strip()
-        if self.voter_id:
-            self.voter_id = self.voter_id.upper().strip()
-        if self.alien_id:
-            self.alien_id = self.alien_id.upper().strip()
+        # Helper function to safely normalize identification numbers
+        def normalize_identification(value):
+            if value is None:
+                return ''
+            # Convert to string if it's not already
+            if not isinstance(value, str):
+                value = str(value)
+            # Strip whitespace and check if empty
+            value = value.strip()
+            return value.upper() if value else ''
+
+        # Normalize identification numbers safely
+        self.tin = normalize_identification(self.tin)
+        self.nin = normalize_identification(self.nin)
+        self.brn = normalize_identification(self.brn)
+        self.passport_number = normalize_identification(self.passport_number)
+        self.driving_license = normalize_identification(self.driving_license)
+        self.voter_id = normalize_identification(self.voter_id)
+        self.alien_id = normalize_identification(self.alien_id)
 
         # Set eFRIS customer type based on customer type
         if not self.efris_customer_type:
@@ -252,6 +268,9 @@ class Customer(models.Model,EFRISCustomerMixin):
                 'NGO': '4',
             }
             self.efris_customer_type = efris_mapping.get(self.customer_type, '1')
+
+        # Validate before saving
+        self.clean()
 
         super().save(*args, **kwargs)
 
@@ -394,42 +413,50 @@ class Customer(models.Model,EFRISCustomerMixin):
 
     @property
     def can_sync_to_efris(self):
-        """Check if customer has required data for eFRIS sync"""
-        basic_info = self.name and self.phone
+        """Check if customer has required data for eFRIS sync according to new requirements"""
+        # All customers require name and phone
+        if not (self.name and self.phone):
+            return False
 
-        if self.customer_type == 'BUSINESS':
-            return basic_info and (self.tin or self.brn)
-        elif self.customer_type == 'INDIVIDUAL':
-            return basic_info and (self.nin or self.passport_number)
+        # Business/Government customers require TIN
+        if self.customer_type in ['BUSINESS', 'GOVERNMENT']:
+            return bool(self.tin)
 
-        return basic_info
+        # Individual customers - only name and phone required
+        return True
 
     def get_efris_payload(self):
         """Generate payload for eFRIS customer registration/update"""
         payload = {
-            'customerName': self.name,
+            'customerName': self.name.strip(),
             'customerType': self.efris_customer_type,
-            'phoneNo': self.phone,
-            'email': self.email or '',
-            'address': self.physical_address or self.postal_address or '',
+            'phoneNo': self.phone.strip(),
+            'email': self.email.strip() if self.email else '',
+            'address': (self.physical_address or self.postal_address or '').strip(),
         }
 
-        if self.customer_type == 'BUSINESS':
-            if self.tin:
-                payload['tin'] = self.tin
-            if self.brn:
-                payload['businessRegistrationNo'] = self.brn
-        else:
+        # Add required TIN for business/government
+        if self.customer_type in ['BUSINESS', 'GOVERNMENT'] and self.tin:
+            payload['tin'] = self.tin.strip()
+
+        # Add optional identification numbers
+        if self.customer_type == 'INDIVIDUAL':
             if self.nin:
-                payload['nin'] = self.nin
+                payload['nin'] = self.nin.strip()
             if self.passport_number:
-                payload['passportNo'] = self.passport_number
-            if self.driving_license:
-                payload['drivingLicenseNo'] = self.driving_license
-            if self.voter_id:
-                payload['voterIdNo'] = self.voter_id
-            if self.alien_id:
-                payload['alienIdNo'] = self.alien_id
+                payload['passportNo'] = self.passport_number.strip()
+
+        # Add BRN if available (but not required)
+        if self.brn:
+            payload['businessRegistrationNo'] = self.brn.strip()
+
+        # Add other optional identifiers
+        if self.driving_license:
+            payload['drivingLicenseNo'] = self.driving_license.strip()
+        if self.voter_id:
+            payload['voterIdNo'] = self.voter_id.strip()
+        if self.alien_id:
+            payload['alienIdNo'] = self.alien_id.strip()
 
         return payload
 

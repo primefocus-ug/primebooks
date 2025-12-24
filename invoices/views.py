@@ -73,12 +73,11 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                         Q(sale__customer__name__icontains=search)
                     )
 
-                # FIX: Use both status and payment_status
+                # ✅ FIX: Correct status filtering
                 status = form.cleaned_data.get('status')
                 if status:
-                    # Map to sale status/payment_status
                     queryset = queryset.filter(
-                        Q(sale__status__in=status) | Q(sale__payment_status__in=status)
+                        Q(sale__status=status) | Q(sale__payment_status=status)
                     )
 
                 document_type = form.cleaned_data.get('document_type')
@@ -110,12 +109,12 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 if form.cleaned_data.get('is_fiscalized'):
                     queryset = queryset.filter(is_fiscalized=True)
 
-                # ADD: Filter by payment method (credit vs cash)
+                # ✅ FIX: Filter by payment method through sale
                 payment_method = form.cleaned_data.get('payment_method')
                 if payment_method:
                     queryset = queryset.filter(sale__payment_method=payment_method)
 
-                # ADD: Filter by credit status
+                # ✅ FIX: Filter by credit status through sale
                 credit_status = form.cleaned_data.get('credit_status')
                 if credit_status:
                     if credit_status == 'CREDIT_ONLY':
@@ -145,7 +144,7 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         # Get the filtered queryset
         queryset = self.get_queryset()
 
-        # ADD: Credit invoice statistics
+        # ✅ FIX: Access payment_method through sale
         credit_invoices = queryset.filter(sale__payment_method='CREDIT')
         cash_invoices = queryset.filter(sale__payment_method__in=['CASH', 'CARD', 'BANK_TRANSFER'])
 
@@ -184,7 +183,7 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             'paid_credit': credit_invoices.filter(
                 sale__payment_status='PAID'
             ).count(),
-            'overdue_details': overdue_details[:5],  # Top 5 overdue
+            'overdue_details': overdue_details[:5],
             'cash_invoices_count': cash_invoices.count(),
             'cash_invoices_amount': cash_invoices.aggregate(
                 Sum('sale__total_amount')
@@ -195,7 +194,7 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             ),
         }
 
-        # Add top credit customers
+        # ✅ FIX: Access customer through sale
         top_credit_customers = credit_invoices.values(
             'sale__customer__id', 'sale__customer__name', 'sale__customer__phone'
         ).annotate(
@@ -206,7 +205,7 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
         context['top_credit_customers'] = top_credit_customers
 
-        # Add payment status breakdown for credit invoices
+        # ✅ FIX: Payment status breakdown through sale
         credit_payment_stats = credit_invoices.values(
             'sale__payment_status'
         ).annotate(
@@ -217,8 +216,10 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         context['credit_payment_stats'] = [
             {
                 'status': stat['sale__payment_status'],
-                'status_display': dict(Sale.PAYMENT_STATUS_CHOICES).get(stat['sale__payment_status'],
-                                                                        stat['sale__payment_status']),
+                'status_display': dict(Sale.PAYMENT_STATUS_CHOICES).get(
+                    stat['sale__payment_status'],
+                    stat['sale__payment_status']
+                ),
                 'count': stat['count'],
                 'total': stat['total'] or 0,
                 'percentage': (stat['count'] / max(credit_invoices.count(), 1) * 100)
@@ -227,6 +228,214 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ]
 
         return context
+
+
+@login_required
+@permission_required('invoices.change_invoice')
+def cancel_invoice(request, pk):
+    """Cancel/void an invoice"""
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('invoices:list')
+
+    with tenant_context(company):
+        invoice = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company),
+            pk=pk
+        )
+
+        if request.method == 'POST':
+            reason = request.POST.get('reason', '')
+            if not reason:
+                messages.error(request, 'Please provide a cancellation reason')
+                return redirect('invoices:detail', pk=invoice.pk)
+
+            try:
+                success = invoice.cancel_invoice(reason, request.user)
+                if success:
+                    messages.success(request, 'Invoice cancelled successfully')
+                else:
+                    messages.error(request, 'Failed to cancel invoice')
+            except ValidationError as e:
+                messages.error(request, str(e))
+            except Exception as e:
+                logger.error(f"Error cancelling invoice {invoice.id}: {e}")
+                messages.error(request, 'An error occurred while cancelling the invoice')
+
+            return redirect('invoices:detail', pk=invoice.pk)
+
+        # GET request - show confirmation modal
+        return render(request, 'invoices/partials/cancel_modal.html', {'invoice': invoice})
+
+
+@login_required
+@permission_required('invoices.change_invoice')
+def mark_as_paid(request, pk):
+    """Mark invoice as fully paid"""
+    company = get_current_tenant(request)
+    if not company:
+        return JsonResponse({'success': False, 'error': 'No company context'})
+
+    with tenant_context(company):
+        invoice = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company),
+            pk=pk
+        )
+
+        if request.method == 'POST':
+            try:
+                # Use JSON for AJAX requests
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    data = json.loads(request.body) if request.body else {}
+                    confirm = data.get('confirm', False)
+                else:
+                    confirm = request.POST.get('confirm', False)
+
+                if not confirm:
+                    return JsonResponse({
+                        'success': False,
+                        'error': 'Confirmation required'
+                    })
+
+                with transaction.atomic():
+                    # Get payment method from request or default to cash
+                    payment_method = 'CASH'
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        data = json.loads(request.body) if request.body else {}
+                        payment_method = data.get('payment_method', 'CASH')
+                    else:
+                        payment_method = request.POST.get('payment_method', 'CASH')
+
+                    # ✅ DEBUG: Log before payment
+                    logger.info(
+                        f"BEFORE PAYMENT - Invoice {invoice.id}: "
+                        f"Total: {invoice.sale.total_amount}, "
+                        f"Paid: {invoice.amount_paid}, "
+                        f"Outstanding: {invoice.amount_outstanding}, "
+                        f"Status: {invoice.sale.payment_status}"
+                    )
+
+                    # Create payment for full outstanding amount
+                    outstanding = invoice.amount_outstanding
+                    if outstanding > 0:
+                        payment, allocations, remaining = invoice.apply_payment(
+                            amount=outstanding,
+                            payment_method=payment_method,
+                            user=request.user,
+                            transaction_ref=f"MANUAL-PAY-{invoice.invoice_number}",
+                            notes='Marked as fully paid'
+                        )
+
+                        # Force refresh
+                        invoice.refresh_from_db()
+                        invoice.sale.refresh_from_db()
+
+                        # Force status update
+                        invoice.update_payment_status(commit=True)
+
+                        # Refresh again
+                        invoice.refresh_from_db()
+                        invoice.sale.refresh_from_db()
+
+                    # ✅ DEBUG: Log after payment
+                    logger.info(
+                        f"AFTER PAYMENT - Invoice {invoice.id}: "
+                        f"Total: {invoice.sale.total_amount}, "
+                        f"Paid: {invoice.amount_paid}, "
+                        f"Outstanding: {invoice.amount_outstanding}, "
+                        f"Status: {invoice.sale.payment_status}"
+                    )
+
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({
+                            'success': True,
+                            'message': f'Invoice marked as paid successfully. Status: {invoice.sale.get_payment_status_display()}',
+                            'new_status': invoice.sale.payment_status,
+                            'amount_paid': float(invoice.amount_paid),
+                            'amount_outstanding': float(invoice.amount_outstanding)
+                        })
+                    else:
+                        messages.success(request, 'Invoice marked as paid successfully')
+                        return redirect('invoices:detail', pk=invoice.pk)
+
+            except Exception as e:
+                logger.error(f"Error marking invoice {invoice.id} as paid: {e}", exc_info=True)
+                error_msg = f'An error occurred: {str(e)}'
+
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        'success': False,
+                        'error': error_msg
+                    })
+                else:
+                    messages.error(request, error_msg)
+                    return redirect('invoices:detail', pk=invoice.pk)
+
+        # GET request - show confirmation
+        return render(request, 'invoices/partials/mark_paid_modal.html', {'invoice': invoice})
+
+
+@login_required
+@permission_required('invoices.view_invoicepayment')
+def payment_reconciliation(request):
+    """View to reconcile payments"""
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('invoices:list')
+
+    with tenant_context(company):
+        # Get payments that need reconciliation
+        payments = InvoicePayment.objects.filter(
+            invoice__sale__store__company=company
+        ).select_related(
+            'invoice', 'invoice__sale', 'processed_by'
+        ).order_by('-payment_date')
+
+        # Get summary
+        summary = {
+            'total_payments': payments.count(),
+            'total_amount': payments.aggregate(Sum('amount'))['amount__sum'] or 0,
+            'allocated_payments': payments.filter(is_allocated=True).count(),
+            'unallocated_payments': payments.filter(is_allocated=False).count(),
+            'unallocated_amount': payments.filter(is_allocated=False).aggregate(
+                Sum('amount')
+            )['amount__sum'] or 0,
+        }
+
+        context = {
+            'payments': payments,
+            'summary': summary,
+        }
+
+        return render(request, 'invoices/payment_reconciliation.html', context)
+
+
+@login_required
+@permission_required('invoices.change_invoicepayment')
+def allocate_payment(request, payment_id):
+    """Manually allocate an unallocated payment"""
+    company = get_current_tenant(request)
+    if not company:
+        return JsonResponse({'success': False, 'error': 'No company context'})
+
+    with tenant_context(company):
+        payment = get_object_or_404(
+            InvoicePayment.objects.filter(
+                invoice__sale__store__company=company,
+                is_allocated=False
+            ),
+            pk=payment_id
+        )
+
+        try:
+            payment.allocate_payment()
+            messages.success(request, f'Payment #{payment.id} allocated successfully')
+        except Exception as e:
+            messages.error(request, f'Error allocating payment: {str(e)}')
+
+        return redirect('invoices:payment_reconciliation')
 
 
 class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
@@ -569,6 +778,181 @@ def customer_credit_detail(request, customer_id):
         }
 
         return render(request, 'invoices/customer_credit_detail.html', context)
+
+
+@login_required
+@permission_required('invoices.view_invoice')
+def export_invoice_pdf(request, pk):
+    """Export single invoice to PDF"""
+    company = get_current_tenant(request)
+    if not company:
+        return HttpResponse('No company context', status=403)
+
+    with tenant_context(company):
+        invoice = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company),
+            pk=pk
+        )
+
+        # Create PDF response
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="invoice_{invoice.invoice_number}.pdf"'
+
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from io import BytesIO
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        elements = []
+
+        # Styles
+        styles = getSampleStyleSheet()
+
+        # Header
+        elements.append(Paragraph(f"Invoice #{invoice.invoice_number}", styles['Heading1']))
+        elements.append(Spacer(1, 12))
+
+        # Company and Customer Info
+        company_data = [
+            ['From:', f'{company.name}', 'To:', f'{invoice.customer.name if invoice.customer else "Walk-in Customer"}'],
+            ['Address:', f'{company.physical_address or ""}', 'Address:',
+             f'{invoice.customer.physical_address if invoice.customer and invoice.customer.physical_address else ""}'],
+            ['Phone:', f'{company.phone or ""}', 'Phone:',
+             f'{invoice.customer.phone if invoice.customer and invoice.customer.phone else ""}'],
+            ['Email:', f'{company.email or ""}', 'Email:',
+             f'{invoice.customer.email if invoice.customer and invoice.customer.email else ""}'],
+            ['TIN:', f'{company.tin or ""}', 'TIN:',
+             f'{invoice.customer.tin if invoice.customer and invoice.customer.tin else ""}'],
+        ]
+
+        company_table = Table(company_data, colWidths=[1 * inch, 2 * inch, 1 * inch, 2 * inch])
+        company_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(company_table)
+        elements.append(Spacer(1, 20))
+
+        # Invoice Details
+        details_data = [
+            ['Invoice Date:', invoice.issue_date.strftime('%B %d, %Y') if invoice.issue_date else 'N/A'],
+            ['Due Date:', invoice.due_date.strftime('%B %d, %Y') if invoice.due_date else 'N/A'],
+            ['Status:', invoice.sale.get_payment_status_display()],
+            ['Payment Method:', invoice.sale.get_payment_method_display()],
+        ]
+
+        if invoice.is_fiscalized and invoice.fiscal_document_number:
+            details_data.append(['Fiscal No:', invoice.fiscal_document_number])
+            details_data.append(['Verification Code:', invoice.verification_code or 'N/A'])
+
+        details_table = Table(details_data, colWidths=[1.5 * inch, 3 * inch])
+        details_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(details_table)
+        elements.append(Spacer(1, 20))
+
+        # Items Table
+        items_header = ['Item', 'Quantity', 'Unit Price', 'Total']
+        items_data = [items_header]
+
+        for item in invoice.sale.items.all():
+            item_name = item.product.name if item.product else item.service.name if item.service else item.description
+            items_data.append([
+                item_name,
+                str(item.quantity),
+                f"{item.unit_price:,.2f}",
+                f"{item.total_price:,.2f}"
+            ])
+
+        items_table = Table(items_data, colWidths=[3 * inch, 1 * inch, 1.5 * inch, 1.5 * inch])
+        items_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+            ('ALIGN', (0, 1), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ]))
+        elements.append(items_table)
+        elements.append(Spacer(1, 20))
+
+        # Totals
+        totals_data = [
+            ['Subtotal:', f"{invoice.subtotal:,.2f}"],
+            ['Tax:', f"{invoice.tax_amount:,.2f}"],
+        ]
+
+        if invoice.discount_amount and invoice.discount_amount > 0:
+            totals_data.append(['Discount:', f"-{invoice.discount_amount:,.2f}"])
+
+        totals_data.append(['Total Amount:', f"{invoice.total_amount:,.2f}"])
+        totals_data.append(['Amount Paid:', f"{invoice.amount_paid:,.2f}"])
+        totals_data.append(['Balance Due:', f"{invoice.amount_outstanding:,.2f}"])
+
+        totals_table = Table(totals_data, colWidths=[2 * inch, 1.5 * inch])
+        totals_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, -2), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -2), 11),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, -1), (-1, -1), 12),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        elements.append(totals_table)
+
+        # Notes
+        if invoice.sale.notes:
+            elements.append(Spacer(1, 20))
+            elements.append(Paragraph("Notes:", styles['Heading3']))
+            elements.append(Paragraph(invoice.sale.notes, styles['Normal']))
+
+        # EFRIS Information
+        if invoice.is_fiscalized:
+            elements.append(Spacer(1, 20))
+            elements.append(Paragraph("EFRIS Information:", styles['Heading3']))
+            efris_data = [
+                ['Fiscal Document Number:', invoice.fiscal_document_number],
+                ['Verification Code:', invoice.verification_code or 'N/A'],
+                ['Fiscalization Date:',
+                 invoice.fiscalization_time.strftime('%B %d, %Y %H:%M') if invoice.fiscalization_time else 'N/A'],
+            ]
+            efris_table = Table(efris_data, colWidths=[2 * inch, 3 * inch])
+            efris_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            elements.append(efris_table)
+
+        # Build PDF
+        doc.build(elements)
+        pdf_data = buffer.getvalue()
+        buffer.close()
+        response.write(pdf_data)
+
+        return response
 
 
 @login_required
@@ -1103,32 +1487,72 @@ def add_payment(request, pk):
         if request.method == 'POST':
             form = InvoicePaymentForm(request.POST, invoice=invoice)
             if form.is_valid():
-                payment = form.save(commit=False)
-                payment.invoice = invoice
-                payment.processed_by = request.user
-                payment.save()
+                try:
+                    with transaction.atomic():
+                        # Use invoice's apply_payment method
+                        payment, allocations, remaining = invoice.apply_payment(
+                            amount=form.cleaned_data['amount'],
+                            payment_method=form.cleaned_data['payment_method'],
+                            user=request.user,
+                            transaction_ref=form.cleaned_data.get('transaction_reference'),
+                            notes=form.cleaned_data.get('notes', '')
+                        )
 
-                messages.success(
-                    request,
-                    f'Payment of {payment.amount:,.2f} recorded successfully.'
-                )
+                        # ✅ FIX: Force refresh and update status
+                        invoice.refresh_from_db()
+                        invoice.sale.refresh_from_db()
+
+                        # Double-check status update
+                        invoice.update_payment_status(commit=True)
+
+                        # Refresh again to get final status
+                        invoice.refresh_from_db()
+                        invoice.sale.refresh_from_db()
+
+                        success_message = f'Payment of {payment.amount:,.2f} recorded successfully.'
+                        if remaining > 0:
+                            success_message += f' Note: {remaining:,.2f} remains unallocated.'
+
+                        # Add status info to message
+                        success_message += f' Payment Status: {invoice.sale.get_payment_status_display()}'
+
+                        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                            return JsonResponse({
+                                'success': True,
+                                'message': success_message,
+                                'payment_id': payment.id,
+                                'new_status': invoice.sale.payment_status,
+                                'amount_outstanding': float(invoice.amount_outstanding),
+                                'amount_paid': float(invoice.amount_paid)
+                            })
+
+                        messages.success(request, success_message)
+                        return redirect('invoices:detail', pk=invoice.pk)
+
+                except ValidationError as e:
+                    error_message = str(e)
+                except Exception as e:
+                    logger.error(f"Error processing payment: {e}", exc_info=True)
+                    error_message = f'Error processing payment: {str(e)}'
 
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                     return JsonResponse({
-                        'success': True,
-                        'message': 'Payment recorded successfully',
-                        'new_status': invoice.status,
-                        'amount_outstanding': float(invoice.amount_outstanding)
+                        'success': False,
+                        'error': error_message
                     })
 
-                return redirect('invoices:detail', pk=invoice.pk)
+                messages.error(request, error_message)
+            else:
+                # Form is invalid
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        'success': False,
+                        'errors': form.errors
+                    })
 
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return JsonResponse({
-                    'success': False,
-                    'errors': form.errors
-                })
+                messages.error(request, 'Please correct the errors below.')
 
+    # GET request or form errors
     return redirect('invoices:detail', pk=invoice.pk)
 
 

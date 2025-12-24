@@ -53,7 +53,37 @@
 .credit-limit {
     color: var(--bs-primary);
 }
+/* Price editing styles */
+.cart-item-details .form-label {
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+}
 
+.cart-item-details .input-group-sm .form-control {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.5rem;
+}
+
+.cart-item-details .input-group-sm .btn {
+    padding: 0.25rem 0.5rem;
+}
+
+.price-changed-indicator {
+    background: #fff3cd;
+    border-left: 3px solid #ffc107;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+.cart-item-price-breakdown {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+}
 .credit-balance {
     color: var(--bs-warning);
 }
@@ -3211,14 +3241,15 @@ function addToCart(item) {
             code: item.code,
             quantity: 1,
             unit_price: item.final_price,
-            original_price: item.original_price || item.final_price,
+            original_price: item.final_price,  // ✅ Store original price
             tax_rate: parseFloat(item.tax_rate) || 18,
             tax_code: item.tax_code || 'A',
             discount_percentage: item.discount_percentage || 0,
             discount_amount: 0,
             unit: item.unit_of_measure || 'pcs',
             stock_available: item.stock?.available || null,
-            stock_unit: item.stock?.unit || null
+            stock_unit: item.stock?.unit || null,
+            price_override_reason: ''  // ✅ For tracking why price was changed
         };
 
         SaleState.cart.push(cartItem);
@@ -3246,7 +3277,72 @@ function updateCartItemQuantity(index, newQuantity) {
     item.quantity = newQuantity;
     updateCartDisplay();
 }
+/**
+ * Update item price in cart
+ */
+function updateItemPrice(index, newPrice) {
+    const item = SaleState.cart[index];
 
+    if (!item) {
+        showError('Item not found');
+        return;
+    }
+
+    // Validate price
+    if (isNaN(newPrice) || newPrice < 0) {
+        showError('Please enter a valid price');
+        // Reset to current price
+        updateCartDisplay();
+        return;
+    }
+
+    // Confirm if price is significantly different
+    const priceDifference = Math.abs(newPrice - item.original_price);
+    const percentChange = (priceDifference / item.original_price) * 100;
+
+    if (percentChange > 20) {
+        const direction = newPrice > item.original_price ? 'increased' : 'decreased';
+        if (!confirm(
+            `Price ${direction} by ${percentChange.toFixed(1)}%\n\n` +
+            `Original: ${formatCurrency(item.original_price)}\n` +
+            `New: ${formatCurrency(newPrice)}\n\n` +
+            `Continue with this price?`
+        )) {
+            updateCartDisplay();
+            return;
+        }
+    }
+
+    // Update price
+    item.unit_price = newPrice;
+
+    // Log price change for audit
+    console.log(`Price changed for ${item.name}: ${item.original_price} → ${newPrice}`);
+
+    // Show notification
+    if (newPrice !== item.original_price) {
+        const change = newPrice > item.original_price ? 'increased' : 'decreased';
+        showToast(`Price ${change} for ${item.name}`, 'info');
+    }
+
+    updateCartDisplay();
+}
+
+/**
+ * Reset item price to original
+ */
+function resetItemPrice(index) {
+    const item = SaleState.cart[index];
+
+    if (!item) {
+        showError('Item not found');
+        return;
+    }
+
+    item.unit_price = item.original_price;
+    showToast(`Price reset to original for ${item.name}`, 'info');
+    updateCartDisplay();
+}
 function removeFromCart(index) {
     const item = SaleState.cart[index];
     SaleState.cart.splice(index, 1);
@@ -3299,6 +3395,7 @@ function updateCartDisplay() {
     cartItems.innerHTML = SaleState.cart.map((item, index) => {
         const itemTotal = calculateItemTotal(item);
         const isProduct = item.item_type === 'PRODUCT';
+        const priceChanged = item.unit_price !== item.original_price;
 
         return `
             <div class="cart-item">
@@ -3320,10 +3417,43 @@ function updateCartDisplay() {
                         ` : ''}
                     </div>
 
-                    <div class="cart-item-price-breakdown">
-                        ${formatCurrency(item.unit_price)} × ${item.quantity}
-                        ${item.tax_rate > 0 ? ` | Tax: ${formatCurrency(itemTotal.tax)} (${item.tax_rate}%)` : ''}
+                    <!-- ✅ NEW: Editable Price Field -->
+                    <div class="mt-2">
+                        <label class="form-label" style="font-size: 0.75rem;">Price per unit:</label>
+                        <div class="input-group input-group-sm">
+                            <input type="number"
+                                   class="form-control"
+                                   value="${item.unit_price}"
+                                   min="0"
+                                   step="0.01"
+                                   onchange="updateItemPrice(${index}, parseFloat(this.value))"
+                                   style="max-width: 120px;">
+                            ${priceChanged ? `
+                                <button class="btn btn-outline-secondary"
+                                        type="button"
+                                        onclick="resetItemPrice(${index})"
+                                        title="Reset to original price">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                        ${priceChanged ? `
+                            <small class="text-muted">
+                                Original: ${formatCurrency(item.original_price)}
+                                ${item.unit_price > item.original_price ?
+                                    `<span class="text-success">(+${formatCurrency(item.unit_price - item.original_price)})</span>` :
+                                    `<span class="text-warning">(-${formatCurrency(item.original_price - item.unit_price)})</span>`
+                                }
+                            </small>
+                        ` : ''}
+                    </div>
+
+                    <div class="cart-item-price-breakdown mt-2">
+                        ${formatCurrency(item.unit_price)} × ${item.quantity} = ${formatCurrency(itemTotal.subtotal)}
+                        ${item.tax_rate > 0 ? ` | Tax (${item.tax_rate}%): ${formatCurrency(itemTotal.tax)} included` : ''}
                         ${item.discount_amount > 0 ? ` | Discount: -${formatCurrency(item.discount_amount)}` : ''}
+                        <br>
+                        <small class="text-muted">Net Amount: ${formatCurrency(itemTotal.taxableAmount)}</small>
                     </div>
 
                     <div class="cart-item-controls">
@@ -3367,15 +3497,31 @@ function updateCartDisplay() {
 function calculateItemTotal(item) {
     const subtotal = item.unit_price * item.quantity;
     const discountAmount = item.discount_amount || 0;
-    const taxableAmount = subtotal - discountAmount;
-    const tax = taxableAmount * (item.tax_rate / 100);
-    const total = taxableAmount + tax;
+    const priceAfterDiscount = subtotal - discountAmount;
+
+    // ✅ FIXED: Extract tax from tax-inclusive price
+    let tax = 0;
+    let taxableAmount = priceAfterDiscount;
+
+    if (item.tax_rate > 0) {
+        // For 18% VAT: tax = price / 1.18 * 0.18
+        // This extracts the tax component from the inclusive price
+        const taxMultiplier = item.tax_rate / 100;
+        tax = (priceAfterDiscount / (1 + taxMultiplier)) * taxMultiplier;
+
+        // The taxable amount (net amount) is price minus tax
+        taxableAmount = priceAfterDiscount - tax;
+    }
+
+    // Total remains the same as priceAfterDiscount (tax-inclusive)
+    const total = priceAfterDiscount;
 
     return {
-        subtotal: subtotal,
-        discount: discountAmount,
-        tax: tax,
-        total: total
+        subtotal: subtotal,           // Unit price × quantity
+        discount: discountAmount,     // Any discount applied
+        taxableAmount: taxableAmount, // Net amount (price without tax)
+        tax: tax,                     // Tax extracted from price
+        total: total                  // Final total (same as priceAfterDiscount)
     };
 }
 
@@ -3383,16 +3529,17 @@ function updateSummary() {
     let subtotal = 0;
     let totalTax = 0;
     let totalDiscount = 0;
-    let total = 0;
+    let netAmount = 0;  // Amount before tax
 
     SaleState.cart.forEach(item => {
         const itemTotal = calculateItemTotal(item);
-        subtotal += itemTotal.subtotal;
-        totalTax += itemTotal.tax;
-        totalDiscount += itemTotal.discount;
-        total += itemTotal.total;
+        subtotal += itemTotal.subtotal;        // Total price before discount
+        totalTax += itemTotal.tax;             // Tax extracted from price
+        totalDiscount += itemTotal.discount;   // Discounts applied
+        netAmount += itemTotal.taxableAmount;  // Net amount (without tax)
     });
 
+    // Apply global discount if any
     let globalDiscount = 0;
     if (SaleState.discount.value > 0) {
         if (SaleState.discount.type === 'percentage') {
@@ -3400,12 +3547,32 @@ function updateSummary() {
         } else {
             globalDiscount = Math.min(SaleState.discount.value, subtotal);
         }
-        subtotal -= globalDiscount;
-        total -= globalDiscount;
+
+        // Recalculate tax after global discount
+        const discountedSubtotal = subtotal - globalDiscount;
+        totalTax = 0;
+
+        SaleState.cart.forEach(item => {
+            if (item.tax_rate > 0) {
+                const itemProportion = (item.unit_price * item.quantity) / subtotal;
+                const itemDiscountedPrice = discountedSubtotal * itemProportion;
+                const taxMultiplier = item.tax_rate / 100;
+                const itemTax = (itemDiscountedPrice / (1 + taxMultiplier)) * taxMultiplier;
+                totalTax += itemTax;
+            }
+        });
+
+        subtotal = discountedSubtotal;
     }
 
     totalDiscount += globalDiscount;
 
+    // ✅ CRITICAL: Total = Subtotal (which is already tax-inclusive)
+    // We don't ADD tax, we just show what portion of the price is tax
+    const total = subtotal;
+    netAmount = total - totalTax;  // Net amount is total minus tax
+
+    // Update display
     const summarySubtotal = document.getElementById('summarySubtotal');
     const summaryTax = document.getElementById('summaryTax');
     const summaryDiscount = document.getElementById('summaryDiscount');
@@ -3416,6 +3583,7 @@ function updateSummary() {
     if (summaryDiscount) summaryDiscount.textContent = formatCurrency(totalDiscount);
     if (summaryTotal) summaryTotal.textContent = formatCurrency(total);
 
+    // Update hidden form fields
     const itemsData = document.getElementById('itemsData');
     const subtotalAmount = document.getElementById('subtotalAmount');
     const taxAmount = document.getElementById('taxAmount');
@@ -3424,10 +3592,10 @@ function updateSummary() {
     const discountTypeField = document.getElementById('discountTypeField');
 
     if (itemsData) itemsData.value = JSON.stringify(SaleState.cart);
-    if (subtotalAmount) subtotalAmount.value = subtotal;
-    if (taxAmount) taxAmount.value = totalTax;
-    if (discountAmount) discountAmount.value = totalDiscount;
-    if (totalAmount) totalAmount.value = total;
+    if (subtotalAmount) subtotalAmount.value = subtotal.toFixed(2);
+    if (taxAmount) taxAmount.value = totalTax.toFixed(2);
+    if (discountAmount) discountAmount.value = totalDiscount.toFixed(2);
+    if (totalAmount) totalAmount.value = total.toFixed(2);
     if (discountTypeField) discountTypeField.value = SaleState.discount.type;
 
     validatePaymentMethod();

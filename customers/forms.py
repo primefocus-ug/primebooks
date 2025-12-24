@@ -25,7 +25,7 @@ class CustomerForm(forms.ModelForm):
         fields = [
             'customer_type', 'name', 'store', 'email', 'phone', 'tin', 'nin', 'brn',
             'physical_address', 'postal_address', 'district', 'country',
-            'is_vat_registered', 'credit_limit', 'is_active'
+            'is_vat_registered', 'credit_limit', 'is_active', 'allow_credit'
         ]
         widgets = {
             'customer_type': forms.RadioSelect(attrs={'class': 'form-check-inline'}),
@@ -83,6 +83,9 @@ class CustomerForm(forms.ModelForm):
             'is_active': forms.CheckboxInput(attrs={
                 'class': 'form-check-input'
             }),
+            'allow_credit': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
         }
 
     def __init__(self, *args, **kwargs):
@@ -98,36 +101,61 @@ class CustomerForm(forms.ModelForm):
         email = cleaned_data.get('email')
         confirm_email = cleaned_data.get('confirm_email')
         customer_type = cleaned_data.get('customer_type')
+        name = cleaned_data.get('name')
+        phone = cleaned_data.get('phone')
         tin = cleaned_data.get('tin')
-        brn = cleaned_data.get('brn')
-        nin = cleaned_data.get('nin')
 
         # Email confirmation validation
         if email and confirm_email and email != confirm_email:
             raise ValidationError(_("Email addresses do not match."))
 
-        # Business type validations
+        # Basic requirements for all customers
+        if not name or not name.strip():
+            self.add_error('name', _("Customer name is required."))
+
+        if not phone or not phone.strip():
+            self.add_error('phone', _("Phone number is required."))
+
+        # Business/Government/NGO requirements
         if customer_type in ['BUSINESS', 'GOVERNMENT', 'NGO']:
             if not tin:
-                self.add_error('tin', _("TIN is required for business customers."))
-            if customer_type == 'BUSINESS' and not brn:
-                self.add_error('brn', _("BRN is required for business customers."))
+                self.add_error('tin', _("TIN is required for Business, Government, and NGO customers."))
 
-        # Individual type validations
-        if customer_type == 'INDIVIDUAL' and not nin:
-            self.add_error('nin', _("NIN is required for individual customers."))
+        # Individual customers - all fields optional except name and phone
+        # No validation needed for NIN or other fields
 
         return cleaned_data
 
     def clean_phone(self):
         phone = self.cleaned_data.get('phone')
-        if phone and not phone.startswith('+'):
-            # Auto-add Uganda country code if not provided
-            if phone.startswith('0'):
-                phone = '+256' + phone[1:]
-            else:
-                phone = '+256' + phone
+        if phone:
+            phone = phone.strip()
+            if not phone.startswith('+'):
+                # Auto-add Uganda country code if not provided
+                if phone.startswith('0'):
+                    phone = '+256' + phone[1:]
+                elif phone.startswith('256'):
+                    phone = '+' + phone
+                else:
+                    phone = '+256' + phone
         return phone
+
+    def clean_name(self):
+        name = self.cleaned_data.get('name')
+        if name:
+            name = name.strip()
+            if len(name) < 2:
+                raise ValidationError(_("Customer name must be at least 2 characters long."))
+        return name
+
+    def clean_tin(self):
+        tin = self.cleaned_data.get('tin')
+        if tin:
+            tin = tin.upper().strip()
+            # Basic TIN format validation (can be customized based on country requirements)
+            if len(tin) < 3:
+                raise ValidationError(_("TIN appears to be too short."))
+        return tin
 
 
 class CustomerSearchForm(forms.Form):
@@ -276,18 +304,23 @@ class BulkCustomerActionForm(forms.Form):
     """Form for bulk actions on customers"""
 
     ACTION_CHOICES = [
+        ('', '--- Select Action ---'),
         ('activate', _('Activate Selected')),
         ('deactivate', _('Deactivate Selected')),
         ('add_to_group', _('Add to Group')),
         ('remove_from_group', _('Remove from Group')),
         ('export', _('Export Selected')),
         ('delete', _('Delete Selected')),
+        ('update_credit_limit', _('Update Credit Limit')),
+        ('enable_credit', _('Enable Credit')),
+        ('disable_credit', _('Disable Credit')),
     ]
 
     action = forms.ChoiceField(
         choices=ACTION_CHOICES,
         widget=forms.Select(attrs={'class': 'form-select'}),
-        label=_('Action')
+        label=_('Action'),
+        required=True
     )
 
     group = forms.ModelChoiceField(
@@ -296,6 +329,19 @@ class BulkCustomerActionForm(forms.Form):
         empty_label=_('Select Group'),
         widget=forms.Select(attrs={'class': 'form-select'}),
         label=_('Customer Group')
+    )
+
+    credit_limit = forms.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control',
+            'placeholder': '0.00',
+            'min': '0'
+        }),
+        label=_('New Credit Limit'),
+        help_text=_('Required when updating credit limits')
     )
 
     selected_customers = forms.CharField(widget=forms.HiddenInput())
@@ -309,9 +355,30 @@ class BulkCustomerActionForm(forms.Form):
                 Column('action', css_class='col-md-6'),
                 Column('group', css_class='col-md-6'),
             ),
+            Row(
+                Column('credit_limit', css_class='col-md-6'),
+                css_class='credit-limit-field',
+            ),
             'selected_customers',
             Submit('submit', _('Apply Action'), css_class='btn btn-warning')
         )
+
+        # Add JavaScript to show/hide credit_limit field
+        self.helper.layout[1].css_class = 'd-none'  # Initially hide credit_limit field
+
+    def clean(self):
+        cleaned_data = super().clean()
+        action = cleaned_data.get('action')
+        credit_limit = cleaned_data.get('credit_limit')
+
+        # Validate credit limit when updating
+        if action == 'update_credit_limit':
+            if credit_limit is None:
+                self.add_error('credit_limit', _('Credit limit is required for this action.'))
+            elif credit_limit < 0:
+                self.add_error('credit_limit', _('Credit limit cannot be negative.'))
+
+        return cleaned_data
 
 
 class CustomerImportForm(forms.Form):
@@ -429,11 +496,21 @@ class EFRISCustomerForm(forms.ModelForm):
         # Add CSS classes and help text for eFRIS requirements
         self.fields['name'].help_text = _('Required for eFRIS registration')
         self.fields['phone'].help_text = _('Required for eFRIS registration')
+        self.fields['tin'].help_text = _('Required for Business, Government, and NGO customers')
+
+        # Update the identification field help text
+        self.fields['nin'].help_text = _('Optional for individual customers')
+        self.fields['brn'].help_text = _('Optional for business customers')
+        self.fields['passport_number'].help_text = _('Optional identification')
+        self.fields['driving_license'].help_text = _('Optional identification')
+        self.fields['voter_id'].help_text = _('Optional identification')
+        self.fields['alien_id'].help_text = _('Optional identification')
 
         self.helper = FormHelper()
         self.helper.layout = Layout(
             Fieldset(
                 _('Basic Information'),
+                HTML('<p class="text-muted"><small>Name and phone are required for all customers</small></p>'),
                 Row(
                     Column('name', css_class='col-md-6'),
                     Column('phone', css_class='col-md-6'),
@@ -445,7 +522,8 @@ class EFRISCustomerForm(forms.ModelForm):
             ),
             Fieldset(
                 _('Identification Numbers'),
-                HTML('<p class="text-muted"><small>At least one identification number is required</small></p>'),
+                HTML(
+                    '<p class="text-muted"><small>TIN is required for Business, Government, and NGO customers. All other fields are optional.</small></p>'),
                 Row(
                     Column('tin', css_class='col-md-6'),
                     Column('brn', css_class='col-md-6'),
@@ -478,29 +556,21 @@ class EFRISCustomerForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         customer_type = cleaned_data.get('customer_type')
+        name = cleaned_data.get('name')
+        phone = cleaned_data.get('phone')
+        tin = cleaned_data.get('tin')
 
-        # Business validations
+        # Basic requirements for all customers
+        if not name or not name.strip():
+            self.add_error('name', _('Customer name is required'))
+
+        if not phone or not phone.strip():
+            self.add_error('phone', _('Phone number is required'))
+
+        # Business/Government/NGO requirements
         if customer_type in ['BUSINESS', 'GOVERNMENT', 'NGO']:
-            tin = cleaned_data.get('tin')
-            brn = cleaned_data.get('brn')
-
             if not tin:
-                self.add_error('tin', _('TIN is required for business customers'))
-            if customer_type == 'BUSINESS' and not brn:
-                self.add_error('brn', _('BRN is required for business customers'))
-
-        # Individual validations
-        elif customer_type == 'INDIVIDUAL':
-            nin = cleaned_data.get('nin')
-            passport = cleaned_data.get('passport_number')
-            driving_license = cleaned_data.get('driving_license')
-            voter_id = cleaned_data.get('voter_id')
-            alien_id = cleaned_data.get('alien_id')
-
-            if not any([nin, passport, driving_license, voter_id, alien_id]):
-                raise ValidationError(
-                    _('Individual customers must have at least one form of identification')
-                )
+                self.add_error('tin', _('TIN is required for Business, Government, and NGO customers'))
 
         return cleaned_data
 

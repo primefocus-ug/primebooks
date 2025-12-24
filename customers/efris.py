@@ -25,19 +25,21 @@ class EFRISCustomerMixin:
         }
 
     def validate_for_efris(self) -> Tuple[bool, List[str]]:
-        """Validate customer data for EFRIS"""
+        """Validate customer data for EFRIS according to new requirements"""
         errors = []
 
+        # Basic requirements for all customers
         if not self.name or not self.name.strip():
             errors.append("Customer name is required")
 
         if not self.phone or not self.phone.strip():
-            errors.append("Customer phone is required")
+            errors.append("Customer phone number is required")
 
-        # Business customer validation
-        if getattr(self, 'customer_type', '').upper() == 'BUSINESS':
-            if not self.tin and not getattr(self, 'brn', None):
-                errors.append("Business customers must have TIN or BRN")
+        # Business/Government requirements
+        customer_type = getattr(self, 'customer_type', '').upper()
+        if customer_type in ['BUSINESS', 'GOVERNMENT']:
+            if not getattr(self, 'tin', None):
+                errors.append("Business and Government customers must have TIN for eFRIS registration")
 
         return len(errors) == 0, errors
 

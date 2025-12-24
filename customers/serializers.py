@@ -63,23 +63,31 @@ class CustomerSerializer(serializers.ModelSerializer):
         )
 
     def validate(self, data):
-        customer_type = data.get('customer_type')
+        customer_type = data.get('customer_type', self.instance.customer_type if self.instance else None)
+        name = data.get('name', self.instance.name if self.instance else None)
+        phone = data.get('phone', self.instance.phone if self.instance else None)
 
-        # Business type validations
-        if customer_type == 'BUSINESS':
-            if not data.get('tin') and not data.get('brn'):
-                raise serializers.ValidationError(
-                    "Business customers must have either TIN or BRN."
-                )
+        # Basic requirements for all customers
+        if name and not name.strip():
+            raise serializers.ValidationError({
+                'name': "Customer name is required."
+            })
 
-        # Individual type validations
-        if customer_type == 'INDIVIDUAL':
-            if not any([data.get('nin'), data.get('passport_number'),
-                        data.get('driving_license'), data.get('voter_id')]):
-                raise serializers.ValidationError(
-                    "Individual customers must have at least one form of identification "
-                    "(NIN, Passport, Driving License, or Voter ID)."
-                )
+        if phone and not phone.strip():
+            raise serializers.ValidationError({
+                'phone': "Phone number is required."
+            })
+
+        # Business/Government/NGO requirements
+        if customer_type in ['BUSINESS', 'GOVERNMENT', 'NGO']:
+            tin = data.get('tin', self.instance.tin if self.instance else None)
+            if not tin:
+                raise serializers.ValidationError({
+                    'tin': "TIN is required for Business, Government, and NGO customers."
+                })
+
+        # Individual customers - no specific identification requirements
+        # All identification fields are optional
 
         # Credit limit validation
         credit_limit = data.get('credit_limit')
@@ -103,6 +111,13 @@ class CustomerSerializer(serializers.ModelSerializer):
             })
 
         return data
+
+    def validate_name(self, value):
+        if value and len(value.strip()) < 2:
+            raise serializers.ValidationError(
+                "Customer name must be at least 2 characters long."
+            )
+        return value.strip() if value else value
 
     def validate_phone(self, value):
         if value:
@@ -129,6 +144,35 @@ class CustomerSerializer(serializers.ModelSerializer):
             return phone
         return value
 
+    def validate_tin(self, value):
+        if value:
+            value = value.upper().strip()
+            if len(value) < 3:
+                raise serializers.ValidationError(
+                    "TIN appears to be too short."
+                )
+        return value
+
+    def validate_nin(self, value):
+        if value:
+            value = value.upper().strip()
+        return value
+
+    def validate_brn(self, value):
+        if value:
+            value = value.upper().strip()
+        return value
+
+    def validate_passport_number(self, value):
+        if value:
+            value = value.upper().strip()
+        return value
+
+    def validate_driving_license(self, value):
+        if value:
+            value = value.upper().strip()
+        return value
+
     def get_can_purchase_on_credit(self, obj):
         """Serialize the can_purchase_on_credit property"""
         can_purchase, reason = obj.can_purchase_on_credit
@@ -151,6 +195,14 @@ class CustomerSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
+        # Normalize identification numbers
+        identification_fields = ['tin', 'nin', 'brn', 'passport_number',
+                                 'driving_license', 'voter_id', 'alien_id']
+
+        for field in identification_fields:
+            if field in validated_data and validated_data[field]:
+                validated_data[field] = validated_data[field].upper().strip()
+
         # Update credit available if credit limit changes
         if 'credit_limit' in validated_data:
             new_limit = validated_data['credit_limit']

@@ -560,8 +560,9 @@ def bulk_update_credit_limits(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+
 class CustomerCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
-    """Create new customer with validation and optional eFRIS sync"""
+    """Create new customer with validation"""
     model = Customer
     form_class = CustomerForm
     permission_required = 'customers.add_customer'
@@ -577,31 +578,7 @@ class CustomerCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView
         response = super().form_valid(form)
         customer = self.object
 
-        # Auto sync to eFRIS if requested
-        auto_sync_efris = form.cleaned_data.get('auto_sync_efris', False)
-        if auto_sync_efris and customer.can_sync_to_efris:
-            try:
-                service = EFRISCustomerService()
-                result = service.register_customer(customer)
-                if result['success']:
-                    messages.success(
-                        self.request,
-                        _('Customer created and synced to eFRIS successfully.')
-                    )
-                else:
-                    messages.warning(
-                        self.request,
-                        _('Customer created but eFRIS sync failed: %(error)s') % {
-                            'error': result.get('error', 'Unknown error')}
-                    )
-            except Exception as e:
-                messages.warning(
-                    self.request,
-                    _('Customer created but eFRIS sync failed: %(error)s') % {'error': str(e)}
-                )
-        else:
-            messages.success(self.request, _('Customer created successfully.'))
-
+        messages.success(self.request, _('Customer created successfully.'))
         return response
 
     def form_invalid(self, form):
@@ -610,7 +587,7 @@ class CustomerCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView
 
 
 class CustomerUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
-    """Update existing customer with eFRIS sync option"""
+    """Update existing customer"""
     model = Customer
     form_class = CustomerForm
     permission_required = 'customers.change_customer'
@@ -626,33 +603,7 @@ class CustomerUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView
 
     def form_valid(self, form):
         response = super().form_valid(form)
-        customer = self.object
-
-        # Check if eFRIS update is requested
-        update_efris = form.cleaned_data.get('update_efris', False)
-        if update_efris and customer.is_efris_registered:
-            try:
-                service = EFRISCustomerService()
-                result = service.update_customer(customer)
-                if result['success']:
-                    messages.success(
-                        self.request,
-                        _('Customer updated and synced to eFRIS successfully.')
-                    )
-                else:
-                    messages.warning(
-                        self.request,
-                        _('Customer updated but eFRIS sync failed: %(error)s') % {
-                            'error': result.get('error', 'Unknown error')}
-                    )
-            except Exception as e:
-                messages.warning(
-                    self.request,
-                    _('Customer updated but eFRIS sync failed: %(error)s') % {'error': str(e)}
-                )
-        else:
-            messages.success(self.request, _('Customer updated successfully.'))
-
+        messages.success(self.request, _('Customer updated successfully.'))
         return response
 
 
@@ -662,6 +613,7 @@ def sync_customer_to_efris(request, pk):
     """Sync individual customer to eFRIS"""
     customer = get_object_or_404(Customer, pk=pk)
 
+    # Use the updated validation from model
     if not customer.can_sync_to_efris:
         messages.error(
             request,
@@ -699,8 +651,26 @@ def sync_customer_to_efris(request, pk):
     return redirect('customers:detail', pk=pk)
 
 
+def validate_customer_data(customer_type, name, phone, tin=None):
+    """
+    Validate customer data according to new requirements
+    Returns: (is_valid, error_message)
+    """
+    if not name or not name.strip():
+        return False, "Customer name is required"
+
+    if not phone or not phone.strip():
+        return False, "Phone number is required"
+
+    if customer_type in ['BUSINESS', 'GOVERNMENT', 'NGO']:
+        if not tin or not tin.strip():
+            return False, f"TIN is required for {customer_type} customers"
+
+    return True, "Valid"
+
+
 @login_required
-@permission_required('customers.add_customer',raise_exception=True)
+@permission_required('customers.add_customer', raise_exception=True)
 @require_http_methods(["POST"])
 def bulk_customer_action(request):
     """Handle bulk actions on customers including eFRIS sync"""
@@ -725,12 +695,13 @@ def bulk_customer_action(request):
             messages.success(request, _('Selected customers deactivated.'))
 
         elif action == 'sync_to_efris':
-            # Bulk sync to eFRIS
-            eligible_customers = customers.filter(
-                efris_status__in=['NOT_REGISTERED', 'FAILED']
-            )
+            # Filter customers who can be synced using updated validation
+            eligible_customers = [
+                c for c in customers
+                if c.can_sync_to_efris and c.efris_status in ['NOT_REGISTERED', 'FAILED']
+            ]
 
-            if not eligible_customers.exists():
+            if not eligible_customers:
                 messages.warning(request, _('No customers eligible for eFRIS sync.'))
                 return redirect('customers:customer_list')
 
@@ -740,16 +711,13 @@ def bulk_customer_action(request):
                 error_count = 0
 
                 for customer in eligible_customers:
-                    if customer.can_sync_to_efris:
-                        try:
-                            result = service.register_customer(customer)
-                            if result['success']:
-                                success_count += 1
-                            else:
-                                error_count += 1
-                        except:
+                    try:
+                        result = service.register_customer(customer)
+                        if result['success']:
+                            success_count += 1
+                        else:
                             error_count += 1
-                    else:
+                    except Exception as e:
                         error_count += 1
 
                 if success_count > 0:
@@ -801,6 +769,54 @@ def bulk_customer_action(request):
             count = customers.count()
             customers.delete()
             messages.success(request, _('%(count)d customers deleted.') % {'count': count})
+
+        elif action == 'update_credit_limit':
+            # New action to bulk update credit limits
+            try:
+                credit_limit = form.cleaned_data.get('credit_limit')
+                if credit_limit is not None:
+                    customers.update(credit_limit=credit_limit)
+
+                    # Create credit statements for each customer
+                    for customer in customers:
+                        CustomerCreditStatement.objects.create(
+                            customer=customer,
+                            transaction_type='ADJUSTMENT',
+                            amount=credit_limit - customer.credit_limit,
+                            balance_before=customer.credit_limit,
+                            balance_after=credit_limit,
+                            description=f"Bulk credit limit update to {credit_limit}",
+                            created_by=request.user,
+                            reference_number=f"BULK_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        )
+
+                    messages.success(
+                        request,
+                        _('Credit limits updated for %(count)d customers.') % {'count': customers.count()}
+                    )
+            except Exception as e:
+                messages.error(
+                    request,
+                    _('Error updating credit limits: %(error)s') % {'error': str(e)}
+                )
+
+        elif action == 'enable_credit':
+            customers.update(allow_credit=True)
+            messages.success(
+                request,
+                _('Credit enabled for %(count)d customers.') % {'count': customers.count()}
+            )
+
+        elif action == 'disable_credit':
+            customers.update(allow_credit=False)
+            messages.success(
+                request,
+                _('Credit disabled for %(count)d customers.') % {'count': customers.count()}
+            )
+
+    else:
+        # Form validation failed
+        messages.error(request, _('Invalid form data. Please check your selections.'))
 
     return redirect('customers:customer_list')
 
@@ -1007,8 +1023,9 @@ class CustomerNoteViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
 
+
 @login_required
-@permission_required('customers.add_customer',raise_exception=True)
+@permission_required('customers.add_customer', raise_exception=True)
 def customer_import(request):
     """Import customers from CSV/Excel file"""
     if request.method == 'POST':
@@ -1031,17 +1048,34 @@ def customer_import(request):
                 for index, row in df.iterrows():
                     try:
                         # Map CSV columns to model fields
+                        customer_type = row.get('customer_type', 'INDIVIDUAL')
+                        name = row.get('name', '').strip()
+                        phone = row.get('phone', '').strip()
+                        tin = row.get('tin', '').strip()
+
+                        # Validate required fields based on customer type
+                        if not name:
+                            raise ValueError("Customer name is required")
+                        if not phone:
+                            raise ValueError("Phone number is required")
+
+                        # Business/Government/NGO validation
+                        if customer_type in ['BUSINESS', 'GOVERNMENT', 'NGO']:
+                            if not tin:
+                                raise ValueError(f"TIN is required for {customer_type} customers")
+
                         data = {
-                            'name': row.get('name', ''),
-                            'customer_type': row.get('customer_type', 'INDIVIDUAL'),
-                            'email': row.get('email', ''),
-                            'phone': row.get('phone', ''),
-                            'tin': row.get('tin', ''),
-                            'nin': row.get('nin', ''),
-                            'brn': row.get('brn', ''),
-                            'physical_address': row.get('physical_address', ''),
-                            'district': row.get('district', ''),
-                            'country': row.get('country', 'Uganda'),
+                            'name': name,
+                            'customer_type': customer_type,
+                            'email': row.get('email', '').strip(),
+                            'phone': phone,
+                            'tin': tin,
+                            'nin': row.get('nin', '').strip().upper(),
+                            'brn': row.get('brn', '').strip().upper(),
+                            'physical_address': row.get('physical_address', '').strip(),
+                            'district': row.get('district', '').strip(),
+                            'country': row.get('country', 'Uganda').strip(),
+                            'store_id': form.cleaned_data.get('store'),
                         }
 
                         # Try to find existing customer
@@ -1070,7 +1104,7 @@ def customer_import(request):
 
                 if errors:
                     messages.warning(request,
-                                     _('Import completed with errors: %(errors)s') % {'errors': ', '.join(errors)})
+                                     _('Import completed with errors: %(errors)s') % {'errors': ', '.join(errors[:5])})
 
                 messages.success(request, _('Import completed. Created: %(created)d, Updated: %(updated)d') % {
                     'created': created_count, 'updated': updated_count

@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 @login_required
 def download_sample_customers_csv(request):
-    """Generate CSV sample file for customers"""
+    """Generate CSV sample file for customers - UPDATED VERSION"""
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="sample_customers.csv"'
 
@@ -45,42 +45,53 @@ def download_sample_customers_csv(request):
         'Name*', 'Customer Type*', 'Phone*', 'Email', 'TIN', 'NIN', 'BRN',
         'Physical Address', 'Postal Address', 'District', 'Country',
         'Is VAT Registered', 'Credit Limit', 'Store Name*',
-        'Passport Number', 'Driving License', 'Voter ID', 'Alien ID',
-        'EFRIS Customer Type', 'Auto Sync EFRIS'
+        'Passport Number', 'Driving License', 'Voter ID', 'Alien ID'
     ]
     writer.writerow(headers)
 
-    # Sample data rows
+    # Sample data rows with new requirements
     sample_data = [
+        # Individual - only name and phone required
         [
             'John Doe', 'INDIVIDUAL', '+256700123456', 'john.doe@email.com', '',
             'CM1234567890ABC', '', '123 Main Street, Kampala', 'P.O. Box 1234',
             'Kampala', 'Uganda', 'No', '0', 'Main Store',
-            '', '', '', '', '1', 'Yes'
+            '', '', '', ''
         ],
+        # Business - requires TIN
         [
             'ABC Technologies Ltd', 'BUSINESS', '+256700987654', 'info@abctech.com',
             '1000123456', '', 'BN2023/12345', 'Plot 45, Industrial Area',
             'P.O. Box 5678', 'Kampala', 'Uganda', 'Yes', '5000000', 'Main Store',
-            '', '', '', '', '2', 'Yes'
+            '', '', '', ''
         ],
+        # Government - requires TIN
         [
             'Ministry of Health', 'GOVERNMENT', '+256700111222', 'moh@gov.ug',
             '9000111222', '', 'GOVT-MOH-2023', 'Plot 6, Lourdel Road',
             'P.O. Box 7272', 'Kampala', 'Uganda', 'No', '0', 'Main Store',
-            '', '', '', '', '3', 'Yes'
+            '', '', '', ''
         ],
+        # NGO - requires TIN (not BRN)
         [
             'Save The Children Uganda', 'NGO', '+256700333444', 'info@stc.org',
-            '', '', 'NGO-2020/789', 'Plot 15, Kololo', 'P.O. Box 4444',
+            'NGO-2020/789', '', '', 'Plot 15, Kololo', 'P.O. Box 4444',
             'Kampala', 'Uganda', 'No', '1000000', 'Main Store',
-            '', '', '', '', '4', 'Yes'
+            '', '', '', ''
         ],
+        # Individual tourist - only name and phone required
         [
             'Jane Smith (Tourist)', 'INDIVIDUAL', '+447700123456', 'jane@email.com',
             '', '', '', 'Hotel Africana, Kampala', '',
             'Kampala', 'United Kingdom', 'No', '0', 'Downtown Branch',
-            'AB1234567', '', '', '', '1', 'No'
+            'AB1234567', '', '', ''
+        ],
+        # Business without BRN - allowed, only TIN required
+        [
+            'Small Business Ltd', 'BUSINESS', '+256700555666', 'info@smallbusiness.com',
+            '1000999888', '', '', 'Plot 22, Nakawa', 'P.O. Box 9999',
+            'Kampala', 'Uganda', 'No', '100000', 'Downtown Branch',
+            '', '', '', ''
         ],
     ]
 
@@ -88,7 +99,6 @@ def download_sample_customers_csv(request):
         writer.writerow(row)
 
     return response
-
 
 @login_required
 def download_sample_customers_excel(request):
@@ -231,61 +241,49 @@ def download_sample_customers_excel(request):
     row += 2
 
     instructions = [
-        ('Purpose:', 'Use this template to import customer data into your system'),
-        ('', 'with optional automatic EFRIS synchronization'),
-        ('', ''),
         ('Required Fields:', 'Fields marked with * (red header) are mandatory:'),
         ('', '- Name: Full customer name'),
         ('', '- Customer Type: INDIVIDUAL, BUSINESS, GOVERNMENT, or NGO'),
         ('', '- Phone: Valid phone number (e.g., +256700123456)'),
         ('', '- Store Name: Must match an existing store in your system'),
         ('', ''),
-        ('Customer Types:', ''),
-        ('', 'INDIVIDUAL - Regular individual customers'),
-        ('', 'BUSINESS - Registered businesses (requires TIN or BRN)'),
-        ('', 'GOVERNMENT - Government agencies'),
-        ('', 'NGO - Non-profit organizations'),
+        ('Customer Type Requirements:', ''),
+        ('', '- INDIVIDUAL: Only name and phone required'),
+        ('', '- BUSINESS: Name, phone, and TIN required'),
+        ('', '- GOVERNMENT: Name, phone, and TIN required'),
+        ('', '- NGO: Name, phone, and TIN required'),
         ('', ''),
-        ('Identification Numbers:', ''),
-        ('', 'TIN - Tax Identification Number (for businesses)'),
-        ('', 'NIN - National ID Number (for Ugandan individuals)'),
-        ('', 'BRN - Business Registration Number'),
-        ('', 'Passport Number - For foreign nationals'),
-        ('', 'Driving License, Voter ID, Alien ID - Alternative IDs'),
+        ('TIN Requirements:', 'TIN is required for BUSINESS, GOVERNMENT, and NGO customers'),
+        ('', 'BRN is optional for all customer types'),
+        ('', ''),
+        ('Identification Numbers:', 'All identification fields are optional:'),
+        ('', '- TIN: Tax Identification Number (required for Business/Government/NGO)'),
+        ('', '- NIN: National ID Number (optional for individuals)'),
+        ('', '- BRN: Business Registration Number (optional)'),
+        ('', '- Passport Number: For foreign nationals (optional)'),
+        ('', '- Driving License, Voter ID, Alien ID: Alternative IDs (optional)'),
         ('', ''),
         ('VAT Registration:', ''),
         ('', 'Use "Yes" or "No" for VAT registered status'),
-        ('', 'Typically "Yes" for businesses with TIN'),
         ('', ''),
         ('Credit Limit:', 'Enter numeric value (default: 0)'),
         ('', 'Maximum credit amount allowed for this customer'),
-        ('', ''),
-        ('EFRIS Integration:', ''),
-        ('', 'EFRIS Customer Type codes:'),
-        ('', '  1 = Individual'),
-        ('', '  2 = Business'),
-        ('', '  3 = Government'),
-        ('', '  4 = NGO'),
-        ('', ''),
-        ('', 'Auto Sync EFRIS: Use "Yes" to automatically sync to EFRIS'),
-        ('', 'after import (requires valid TIN/NIN/BRN)'),
-        ('', ''),
-        ('Data Validation:', ''),
-        ('', '- Phone numbers must be valid format'),
-        ('', '- Email addresses must be valid format'),
-        ('', '- TIN/NIN/BRN will be auto-formatted to uppercase'),
-        ('', '- Business customers should have TIN or BRN'),
         ('', ''),
         ('Import Behavior:', ''),
         ('', '- Existing customers (matched by phone) can be updated'),
         ('', '- New customers will be created'),
         ('', '- Invalid rows will be skipped with error messages'),
         ('', ''),
+        ('Validation Rules:', ''),
+        ('', '- All customers: Name and phone required'),
+        ('', '- Business/Government/NGO: TIN required'),
+        ('', '- All other fields are optional'),
+        ('', '- Store names must match exactly (case-insensitive)'),
+        ('', ''),
         ('Tips:', ''),
         ('', '- Keep phone numbers unique for each customer'),
         ('', '- Use consistent formatting'),
         ('', '- Test with a few rows first'),
-        ('', '- Store names must match exactly (case-insensitive)'),
         ('', '- Review validation results before final import'),
     ]
 
@@ -311,10 +309,10 @@ def download_sample_customers_excel(request):
     row += 1
 
     customer_types = [
-        ('INDIVIDUAL', 'Regular individual customers - requires NIN or Passport'),
-        ('BUSINESS', 'Registered businesses - requires TIN or BRN'),
-        ('GOVERNMENT', 'Government agencies - requires TIN'),
-        ('NGO', 'Non-profit organizations - requires BRN'),
+        ('INDIVIDUAL', 'Individual customers - requires only name and phone'),
+        ('BUSINESS', 'Registered businesses - requires name, phone, and TIN'),
+        ('GOVERNMENT', 'Government agencies - requires name, phone, and TIN'),
+        ('NGO', 'Non-profit organizations - requires name, phone, and TIN'),
     ]
 
     for code, desc in customer_types:
@@ -748,7 +746,7 @@ def validate_customer_row(row_data, mapped_columns, row_number):
     errors = []
     cleaned = {}
 
-    # Required fields
+    # Required fields for all customers
     required_fields = ['name', 'customer_type', 'phone', 'store_name']
 
     for field in required_fields:
@@ -758,7 +756,7 @@ def validate_customer_row(row_data, mapped_columns, row_number):
                 value = row_data.get(file_header)
                 break
 
-        if not value or (isinstance(value, str) and not value.strip()):
+        if value is None or (isinstance(value, str) and not value.strip()):
             field_display = field.replace('_', ' ').title()
             errors.append(f"{field_display} is required")
         else:
@@ -773,15 +771,18 @@ def validate_customer_row(row_data, mapped_columns, row_number):
             continue
 
         value = row_data.get(file_header)
-        if value and isinstance(value, str):
-            value = value.strip()
 
-        if not value:
+        # Skip None values
+        if value is None:
             continue
 
         try:
+            # Convert all values to string for consistency
+            if isinstance(value, (int, float, Decimal)):
+                value = str(value)
+
             if standard_name == 'customer_type':
-                value = str(value).upper().strip()
+                value = value.upper().strip()
                 if value not in ['INDIVIDUAL', 'BUSINESS', 'GOVERNMENT', 'NGO']:
                     errors.append(f"Invalid customer type '{value}'. Must be INDIVIDUAL, BUSINESS, GOVERNMENT, or NGO")
                 else:
@@ -791,19 +792,27 @@ def validate_customer_row(row_data, mapped_columns, row_number):
                 # Basic phone validation
                 phone_str = str(value).strip().replace(' ', '').replace('-', '')
                 if not phone_str.startswith('+'):
-                    phone_str = '+256' + phone_str if phone_str.startswith('0') else '+' + phone_str
+                    if phone_str.startswith('0'):
+                        phone_str = '+256' + phone_str[1:]
+                    elif phone_str.startswith('256'):
+                        phone_str = '+' + phone_str
+                    else:
+                        phone_str = '+256' + phone_str
                 cleaned[standard_name] = phone_str
 
             elif standard_name == 'email':
                 # Basic email validation
-                if '@' in str(value):
-                    cleaned[standard_name] = str(value).lower().strip()
-                else:
+                email_str = str(value).strip()
+                if email_str and '@' in email_str:
+                    cleaned[standard_name] = email_str.lower()
+                elif email_str:
                     errors.append(f"Invalid email format: {value}")
+                else:
+                    cleaned[standard_name] = ''
 
             elif standard_name in ['is_vat_registered', 'auto_sync_efris']:
-                value_lower = str(value).lower().strip()
-                cleaned[standard_name] = value_lower in ['yes', 'true', '1', 'y']
+                value_str = str(value).lower().strip()
+                cleaned[standard_name] = value_str in ['yes', 'true', '1', 'y', 'on']
 
             elif standard_name == 'credit_limit':
                 try:
@@ -814,28 +823,44 @@ def validate_customer_row(row_data, mapped_columns, row_number):
                     errors.append(f"Invalid credit limit: {value}")
 
             elif standard_name == 'efris_customer_type':
-                value = str(value).strip()
-                if value not in ['1', '2', '3', '4']:
+                value_str = str(value).strip()
+                if value_str and value_str not in ['1', '2', '3', '4']:
                     errors.append(f"Invalid EFRIS customer type '{value}'. Must be 1, 2, 3, or 4")
                 else:
-                    cleaned[standard_name] = value
+                    cleaned[standard_name] = value_str
+
+            elif standard_name in ['tin', 'nin', 'brn', 'passport_number',
+                                   'driving_license', 'voter_id', 'alien_id']:
+                # Convert identification numbers to string and clean
+                value_str = str(value).strip() if value else ''
+                cleaned[standard_name] = value_str.upper() if value_str else ''
+
+            elif standard_name in ['physical_address', 'postal_address', 'district', 'country', 'store_name']:
+                # Convert to string and strip
+                cleaned[standard_name] = str(value).strip() if value else ''
 
             else:
-                cleaned[standard_name] = value
+                # For any other fields, just store as string
+                cleaned[standard_name] = str(value).strip() if value else ''
 
         except Exception as e:
             errors.append(f"Error processing {standard_name}: {str(e)}")
 
-    # Business logic validation
-    if cleaned.get('customer_type') == 'BUSINESS':
-        if not cleaned.get('tin') and not cleaned.get('brn'):
-            errors.append("Business customers must have either TIN or BRN")
+    # Business logic validation according to new requirements
+    customer_type = cleaned.get('customer_type')
+    tin = cleaned.get('tin', '')
+
+    # Business/Government/NGO require TIN
+    if customer_type in ['BUSINESS', 'GOVERNMENT', 'NGO']:
+        if not tin or not tin.strip():
+            errors.append(f"{customer_type} customers must have TIN")
+
+    # Individual customers - no TIN requirement
+    # All other fields optional
 
     is_valid = len(errors) == 0
     return is_valid, errors, cleaned
 
-
-# Replace your customer_import and process_customer_import functions with these fixed versions
 
 @login_required
 @permission_required('customers.add_customer', raise_exception=True)
@@ -1057,13 +1082,15 @@ def process_customer_import(file_obj, conflict_resolution, auto_sync_efris, user
                 else:
                     # Create new customer
                     try:
+                        # In the process_customer_import function, when creating customer_data:
                         customer_data = {
                             'name': cleaned_data['name'],
                             'customer_type': cleaned_data['customer_type'],
                             'phone': cleaned_data['phone'],
                             'store': store,
                             'email': cleaned_data.get('email', ''),
-                            'tin': cleaned_data.get('tin', ''),
+                            # Convert TIN to string if it exists
+                            'tin': str(cleaned_data.get('tin', '')) if cleaned_data.get('tin') else '',
                             'nin': cleaned_data.get('nin', ''),
                             'brn': cleaned_data.get('brn', ''),
                             'physical_address': cleaned_data.get('physical_address', ''),

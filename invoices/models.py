@@ -245,14 +245,21 @@ class Invoice(models.Model, EFRISInvoiceMixin):
         return f"Invoice Detail for {self.sale.document_number}"
 
     def clean(self):
-        """Model-level validation"""
+        """Validate invoice data"""
         super().clean()
 
-        if self.fiscalization_status == 'fiscalized' and not self.fiscal_document_number:
-            raise ValidationError("Fiscal document number is required for fiscalized invoices")
+        # Remove the incorrect validation that references self.invoice_id
+        # This validation doesn't belong in the Invoice model
+
+        # Add any Invoice-specific validation here if needed
+        # For example:
+        if self.sale and self.sale.is_voided:
+            raise ValidationError("Cannot create invoice for a voided sale")
 
         if self.efris_document_type in ['2', '3'] and not self.original_fdn:
-            raise ValidationError("Original FDN is required for credit/debit notes")
+            raise ValidationError({
+                'original_fdn': _('Original Fiscal Document Number is required for credit/debit notes')
+            })
 
     def save(self, *args, **kwargs):
         # Auto-populate store from sale
@@ -530,13 +537,16 @@ class Invoice(models.Model, EFRISInvoiceMixin):
 
     @property
     def amount_paid(self):
-        """Get amount paid from related sale"""
-        return self.sale.amount_paid if self.sale else Decimal('0')
+        """Calculate total amount paid for this invoice"""
+        from django.db.models import Sum
+        return self.payments.aggregate(total=Sum('amount'))['total'] or Decimal('0')
 
     @property
     def amount_outstanding(self):
-        """Get outstanding amount from related sale"""
-        return self.sale.amount_outstanding if self.sale else Decimal('0')
+        """Calculate outstanding amount for this invoice"""
+        total = self.total_amount or Decimal('0')
+        paid = self.amount_paid
+        return max(Decimal('0'), total - paid)
 
     @property
     def is_overdue(self):
@@ -843,8 +853,6 @@ class Invoice(models.Model, EFRISInvoiceMixin):
         """Get payment status from related sale"""
         return self.sale.payment_status if self.sale else 'PENDING'
 
-    # Add to invoices/models.py - Invoice model
-
     def create_payment_schedule(self, installments=1, first_due_date=None):
         """
         Create payment schedule for invoice
@@ -889,6 +897,160 @@ class Invoice(models.Model, EFRISInvoiceMixin):
             )
 
         logger.info(f"Created {installments} payment schedules for invoice {self.id}")
+
+    def allocate_payment_to_schedules(self, payment, user=None):
+        """
+        Allocate payment amount across unpaid schedules (oldest first)
+        Returns: (allocations, remaining_amount)
+        """
+        remaining_amount = payment.amount
+        allocations = []
+
+        # Get unpaid schedules ordered by due date (oldest first)
+        unpaid_schedules = self.payment_schedules.filter(
+            status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+        ).order_by('due_date')
+
+        for schedule in unpaid_schedules:
+            if remaining_amount <= 0:
+                break
+
+            schedule_outstanding = schedule.amount_outstanding
+            allocate_amount = min(remaining_amount, schedule_outstanding)
+
+            if allocate_amount > 0:
+                # Create allocation record
+                allocation = PaymentAllocation.objects.create(
+                    payment=payment,
+                    payment_schedule=schedule,
+                    allocated_amount=allocate_amount,
+                    notes=f"Auto-allocated from payment #{payment.id}"
+                )
+                allocations.append(allocation)
+
+                # Update schedule
+                schedule.amount_paid += allocate_amount
+                schedule.update_status()
+                schedule.save()
+
+                remaining_amount -= allocate_amount
+
+        return allocations, remaining_amount
+
+    def apply_payment(self, amount, payment_method, user, transaction_ref=None, notes=''):
+        """
+        Apply payment to invoice and update all related records
+        Returns: (payment, allocations, remaining_credit)
+        """
+        with transaction.atomic():
+            # Validate amount
+            if amount <= 0:
+                raise ValidationError("Payment amount must be positive")
+
+            current_outstanding = self.amount_outstanding
+            if amount > current_outstanding:
+                raise ValidationError(
+                    f"Payment amount {amount} exceeds outstanding amount {current_outstanding}"
+                )
+
+            # Create payment record
+            payment = InvoicePayment.objects.create(
+                invoice=self,
+                amount=amount,
+                payment_method=payment_method,
+                transaction_reference=transaction_ref,
+                processed_by=user,
+                notes=notes,
+                payment_date=timezone.now().date()
+            )
+
+            # Allocate to schedules if they exist
+            allocations = []
+            remaining_credit = Decimal('0')
+            if hasattr(self, 'payment_schedules') and self.payment_schedules.exists():
+                allocations, remaining_credit = self.allocate_payment_to_schedules(payment, user)
+
+            # Mark payment as allocated
+            payment.is_allocated = True
+            payment.allocated_date = timezone.now()
+            payment.save(update_fields=['is_allocated', 'allocated_date'])
+
+            # ✅ FIX: Force refresh and update status
+            self.refresh_from_db()
+            self.sale.refresh_from_db()
+
+            # Update payment status
+            new_status = self.update_payment_status(commit=True)
+
+            # ✅ FIX: Refresh again to verify
+            self.refresh_from_db()
+            self.sale.refresh_from_db()
+
+            # ✅ DEBUG: Log final state
+            logger.info(
+                f"Payment applied to invoice {self.invoice_number}: "
+                f"Amount: {amount}, "
+                f"Total Paid: {self.amount_paid}, "
+                f"Outstanding: {self.amount_outstanding}, "
+                f"Payment Status: {self.sale.payment_status}, "
+                f"Status: {self.sale.status}"
+            )
+
+            # Create sales Payment record
+            from sales.models import Payment as SalePayment
+            try:
+                sale_payment = SalePayment.objects.create(
+                    sale=self.sale,
+                    store=self.sale.store,
+                    amount=amount,
+                    payment_method=payment_method,
+                    transaction_reference=transaction_ref,
+                    is_confirmed=True,
+                    confirmed_at=timezone.now(),
+                    created_by=user,
+                    payment_type='FULL' if amount >= self.total_amount else 'PARTIAL',
+                    notes=f"Invoice payment - {notes or ''}"
+                )
+
+                # ✅ FIX: Update sale status again after creating sale payment
+                self.sale.update_payment_status()
+
+            except Exception as e:
+                logger.error(f"Error creating sales Payment record: {e}", exc_info=True)
+
+            # Update customer credit balance if applicable
+            if self.sale.customer and self.sale.customer.allow_credit:
+                try:
+                    self.sale.customer.update_credit_balance()
+                except Exception as e:
+                    logger.error(f"Error updating customer credit balance: {e}")
+
+            logger.info(
+                f"Payment of {amount} applied to invoice {self.invoice_number}. "
+                f"New status: {self.sale.payment_status}"
+            )
+
+            return payment, allocations, remaining_credit
+
+    def mark_as_fully_paid(self, user=None):
+        """Mark invoice as fully paid"""
+        if self.sale.payment_status != 'PAID':
+            # Apply payment for remaining balance
+            remaining = self.amount_outstanding
+            if remaining > 0:
+                self.apply_payment(
+                    amount=remaining,
+                    payment_method='CASH',  # Default
+                    user=user,
+                    notes='Marked as fully paid'
+                )
+
+            # Update status
+            self.sale.payment_status = 'PAID'
+            self.sale.status = 'COMPLETED'
+            self.sale.save(update_fields=['payment_status', 'status', 'updated_at'])
+
+            logger.info(f"Invoice {self.id} marked as fully paid by {user}")
 
     def allocate_payment(self, payment_amount, payment_method='CASH',
                          transaction_reference=None, processed_by=None, notes=''):
@@ -944,26 +1106,86 @@ class Invoice(models.Model, EFRISInvoiceMixin):
 
             return invoice_payment
 
-    def update_payment_status(self):
-        """Update invoice payment status based on all payments"""
-        total_paid = self.amount_paid
-        total_amount = self.total_amount
+    def update_payment_status(self, commit=True):
+        """
+        Update invoice and sale payment status based on all payments
+        """
+        from django.db.models import Sum
+        from decimal import Decimal
 
-        if total_paid >= total_amount:
-            self.sale.payment_status = 'PAID'
-            self.sale.status = 'COMPLETED'
-        elif total_paid > 0:
-            self.sale.payment_status = 'PARTIALLY_PAID'
+        # Calculate total paid from ALL payments
+        total_paid = self.payments.aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0')
 
-            # Check if any schedule is overdue
-            if self.payment_schedules.filter(status='OVERDUE').exists():
-                self.sale.payment_status = 'OVERDUE'
-        elif self.days_overdue > 0:
-            self.sale.payment_status = 'OVERDUE'
+        # ✅ FIX: Ensure we're comparing decimals properly
+        total_amount = Decimal(str(self.sale.total_amount or 0))
+        total_paid = Decimal(str(total_paid))
+
+        # Calculate outstanding with proper decimal handling
+        amount_outstanding = max(Decimal('0'), total_amount - total_paid)
+
+        # ✅ DEBUG LOG
+        logger.info(
+            f"Payment Status Calculation for Invoice {self.invoice_number}: "
+            f"Total Amount: {total_amount}, "
+            f"Total Paid: {total_paid}, "
+            f"Outstanding: {amount_outstanding}, "
+            f"Comparison: {total_paid} >= {total_amount} = {total_paid >= total_amount}"
+        )
+
+        # Determine payment status with explicit decimal comparison
+        if amount_outstanding == Decimal('0') or total_paid >= total_amount:
+            new_payment_status = 'PAID'
+            new_status = 'COMPLETED'
+        elif total_paid > Decimal('0'):
+            new_payment_status = 'PARTIALLY_PAID'
+            new_status = 'PENDING_PAYMENT'
         else:
-            self.sale.payment_status = 'PENDING'
+            new_payment_status = 'PENDING'
+            new_status = 'PENDING_PAYMENT'
 
-        self.sale.save(update_fields=['payment_status', 'status'])
+        # Check if overdue (only if not fully paid)
+        if new_payment_status != 'PAID':
+            if self.sale.due_date and self.sale.due_date < timezone.now().date():
+                if new_payment_status in ['PENDING', 'PARTIALLY_PAID']:
+                    new_payment_status = 'OVERDUE'
+
+        # ✅ DEBUG LOG
+        logger.info(
+            f"Payment Status Decision for Invoice {self.invoice_number}: "
+            f"New Payment Status: {new_payment_status}, "
+            f"New Status: {new_status}"
+        )
+
+        # Update sale fields
+        old_payment_status = self.sale.payment_status
+        old_status = self.sale.status
+
+        self.sale.payment_status = new_payment_status
+        self.sale.status = new_status
+
+        if commit:
+            # Save sale with explicit field updates
+            self.sale.save(update_fields=['payment_status', 'status', 'updated_at'])
+
+            # ✅ VERIFY the save worked
+            self.sale.refresh_from_db()
+
+            logger.info(
+                f"Invoice {self.invoice_number} status updated: "
+                f"Payment Status: {old_payment_status} → {self.sale.payment_status}, "
+                f"Status: {old_status} → {self.sale.status}"
+            )
+
+            # Update customer credit balance if applicable
+            if self.sale.customer and self.sale.customer.allow_credit:
+                try:
+                    self.sale.customer.update_credit_balance()
+                except Exception as e:
+                    logger.error(f"Error updating customer credit balance: {e}")
+
+        return new_payment_status
 
     def get_next_schedule_due(self):
         """Get next unpaid payment schedule"""
@@ -1004,49 +1226,15 @@ class Invoice(models.Model, EFRISInvoiceMixin):
             }
         return None
 
-    @transaction.atomic
-    def allocate_payment_to_schedules(self, payment, user=None):
-        """
-        Allocate payment amount across unpaid schedules (oldest first)
-        """
-        remaining_amount = payment.amount
+    @property
+    def get_total_paid(self):
+        """Get total amount paid for this invoice"""
+        return self.amount_paid
 
-        # Get unpaid schedules ordered by due date (oldest first)
-        unpaid_schedules = self.payment_schedules.filter(
-            status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
-        ).order_by('due_date')
-
-        allocations = []
-
-        for schedule in unpaid_schedules:
-            if remaining_amount <= 0:
-                break
-
-            schedule_outstanding = schedule.amount_outstanding
-            allocate_amount = min(remaining_amount, schedule_outstanding)
-
-            if allocate_amount > 0:
-                # Create allocation record
-                allocation = PaymentAllocation.objects.create(
-                    payment=payment,
-                    payment_schedule=schedule,
-                    allocated_amount=allocate_amount,
-                    notes=f"Auto-allocated from payment #{payment.id}"
-                )
-                allocations.append(allocation)
-
-                # Update schedule
-                schedule.amount_paid += allocate_amount
-                schedule.update_status()
-                schedule.save()
-
-                remaining_amount -= allocate_amount
-
-        # If there's leftover amount, it stays as credit (handle as needed)
-        if remaining_amount > 0:
-            logger.info(f"Payment {payment.id} has {remaining_amount} unallocated credit")
-
-        return allocations, remaining_amount
+    @property
+    def get_balance_due(self):
+        """Get balance due for this invoice"""
+        return self.amount_outstanding
 
     @transaction.atomic
     def process_payment(self, amount, payment_method, transaction_reference=None,
@@ -1081,13 +1269,22 @@ class Invoice(models.Model, EFRISInvoiceMixin):
 
         return payment, allocations, remaining_credit
 
-    def mark_as_fully_paid(self):
-        """Mark invoice as fully paid and complete sale"""
-        self.sale.payment_status = 'PAID'
-        self.sale.status = 'COMPLETED'
-        self.sale.save(update_fields=['payment_status', 'status'])
 
-        logger.info(f"Invoice {self.id} fully paid")
+    def get_payment_summary(self):
+        """Get detailed payment summary"""
+        total_paid = self.payments.filter(is_allocated=True).aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0')
+
+        return {
+            'total_amount': self.total_amount,
+            'amount_paid': total_paid,
+            'amount_outstanding': self.total_amount - total_paid,
+            'payment_count': self.payments.filter(is_allocated=True).count(),
+            'payment_percentage': (total_paid / self.total_amount * 100) if self.total_amount > 0 else 0,
+            'has_credit': self.payments.filter(is_allocated=False).exists(),
+        }
+
 
     def can_fiscalize(self, user=None):
         """Enhanced fiscalization validation"""
@@ -1399,7 +1596,9 @@ class InvoicePayment(models.Model):
         default=timezone.now,
         verbose_name=_("Payment Date")
     )
-
+    is_allocated = models.BooleanField(default=False)
+    allocated_date = models.DateTimeField(null=True, blank=True)
+    allocation_notes = models.TextField(blank=True, null=True)
     notes = models.TextField(
         blank=True,
         null=True,
@@ -1426,27 +1625,127 @@ class InvoicePayment(models.Model):
         ordering = ['-payment_date']
 
     def clean(self):
-        """Validate payment amount does not exceed outstanding amount"""
+        """Validate payment amount"""
         super().clean()
 
-        if self.invoice:
-            outstanding = self.invoice.amount_outstanding
-            if self.pk:  # Include previous payment amount if updating
-                current_payment = InvoicePayment.objects.filter(pk=self.pk).first()
-                if current_payment:
-                    outstanding += current_payment.amount
+        if not self.invoice_id:
+            return
 
-            if self.amount > outstanding:
-                raise ValidationError({
-                    'amount': _('Payment amount cannot exceed outstanding invoice amount')
-                })
+        # Check if amount exceeds outstanding
+        outstanding = self.invoice.amount_outstanding
+
+        # If updating existing payment, add back current amount
+        if self.pk:
+            try:
+                current_payment = InvoicePayment.objects.get(pk=self.pk)
+                outstanding += current_payment.amount
+            except InvoicePayment.DoesNotExist:
+                pass
+
+        if self.amount > outstanding:
+            raise ValidationError({
+                'amount': f'Payment amount ({self.amount}) cannot exceed outstanding invoice amount ({outstanding})'
+            })
 
     def save(self, *args, **kwargs):
+        """Save payment with proper validation and update invoice status"""
+        # Run validation
         self.clean()
+
+        is_new = not self.pk
+
+        # Save the payment
         super().save(*args, **kwargs)
 
-        # Also create a Payment record in sales app
-        self.invoice.update_payment_status()
+        # ✅ FIX: Always update invoice payment status after saving
+        if is_new:
+            try:
+                # Refresh invoice to get latest payment data
+                self.invoice.refresh_from_db()
+
+                # Force update of payment status
+                self.invoice.update_payment_status(commit=True)
+
+                # Refresh sale to verify update
+                self.invoice.sale.refresh_from_db()
+
+                logger.info(
+                    f"Updated payment status for invoice {self.invoice.invoice_number} "
+                    f"after payment {self.id}. "
+                    f"Payment Status: {self.invoice.sale.payment_status}, "
+                    f"Amount Paid: {self.invoice.amount_paid}, "
+                    f"Amount Outstanding: {self.invoice.amount_outstanding}"
+                )
+            except Exception as e:
+                logger.error(f"Error updating payment status after saving payment {self.id}: {e}", exc_info=True)
+
+    def allocate_payment(self):
+        """Allocate this payment to the invoice's payment schedules"""
+        if self.is_allocated:
+            return
+
+        invoice = self.invoice
+
+        # Allocate payment to schedules if they exist
+        if hasattr(invoice, 'payment_schedules'):
+            allocations, remaining_credit = invoice.allocate_payment_to_schedules(self)
+
+        # Mark payment as allocated
+        self.is_allocated = True
+        self.allocated_date = timezone.now()
+
+        # Save without triggering another save() cycle
+        super(InvoicePayment, self).save(update_fields=['is_allocated', 'allocated_date'])
+
+    def allocate_to_invoice(self):
+        """Allocate payment to the invoice and update status"""
+        if self.is_allocated:
+            return
+
+        invoice = self.invoice
+
+        # Allocate to payment schedules if they exist
+        allocations = []
+        remaining = Decimal('0')
+        if hasattr(invoice, 'payment_schedules') and invoice.payment_schedules.exists():
+            allocations, remaining = invoice.allocate_payment_to_schedules(self, self.processed_by)
+
+            # Log remaining amount if any
+            if remaining > 0:
+                logger.info(f"Payment {self.id} has {remaining} unallocated amount")
+
+        # Mark as allocated
+        self.is_allocated = True
+        self.allocated_date = timezone.now()
+
+        # Save without triggering save() again
+        super(InvoicePayment, self).save(update_fields=['is_allocated', 'allocated_date'])
+
+        # Force update of invoice payment status
+        invoice.update_payment_status()
+
+        # Create sales Payment record
+        try:
+            from sales.models import Payment as SalePayment
+            SalePayment.objects.create(
+                sale=invoice.sale,
+                store=invoice.sale.store,
+                amount=self.amount,
+                payment_method=self.payment_method,
+                transaction_reference=self.transaction_reference,
+                is_confirmed=True,
+                confirmed_at=timezone.now(),
+                created_by=self.processed_by,
+                payment_type='FULL' if self.amount >= invoice.total_amount else 'PARTIAL',
+                notes=f"Invoice payment - {self.notes or ''}"
+            )
+
+            # Update sale payment status again to ensure consistency
+            invoice.sale.update_payment_status()
+
+        except Exception as e:
+            logger.error(f"Failed to create sales Payment record: {e}")
+
 
     def delete(self, *args, **kwargs):
         invoice = self.invoice

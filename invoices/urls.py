@@ -18,6 +18,10 @@ urlpatterns = [
     # Invoice CRUD operations
     path('create/', views.InvoiceCreateView.as_view(), name='create'),
     path('<int:pk>/', views.InvoiceDetailView.as_view(), name='detail'),
+    path('<int:pk>/cancel/', views.cancel_invoice, name='cancel'),
+    path('<int:pk>/mark-paid/', views.mark_as_paid, name='mark_as_paid'),
+    path('<int:pk>/send-reminder/', views.send_payment_reminder, name='send_reminder'),
+    path('<int:pk>/export-pdf/', views.export_invoice_pdf, name='export_pdf_single'),
     path('<int:pk>/edit/', views.InvoiceUpdateView.as_view(), name='edit'),
     path('<int:pk>/duplicate/', views.duplicate_invoice, name='duplicate'),
     path('<int:pk>/print/', views.invoice_print_view, name='print'),
@@ -35,6 +39,8 @@ urlpatterns = [
     path('api/dashboard/chart-data/', views.dashboard_chart_data, name='dashboard_chart_data'),
     path('api/dashboard/metrics/', views.dashboard_metrics, name='dashboard_metrics'),
     path('api/analytics/', views.analytics_api, name='analytics_api'),
+    path('payments/reconciliation/', views.payment_reconciliation, name='payment_reconciliation'),
+    path('payments/<int:payment_id>/allocate/', views.allocate_payment, name='allocate_payment'),
 
     # Export functions
     path('export/csv/', views.export_invoices_csv, name='export_csv'),

@@ -11,7 +11,7 @@ from efris.models import FiscalizationAudit
 
 
 @admin.register(Invoice)
-class InvoiceAdmin(TenantAdminMixin, admin.ModelAdmin):
+class InvoiceAdmin( admin.ModelAdmin):
     """Enhanced admin for invoices with EFRIS support"""
 
     list_display = [
