@@ -1,3 +1,4 @@
+from django.core.files.base import ContentFile
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required, permission_required
@@ -41,7 +42,7 @@ from django.db.models import Q, Avg
 import json
 import secrets
 import zipfile
-from io import BytesIO
+from io import BytesIO, StringIO
 from datetime import datetime
 from .utils import (
     get_visible_users,
@@ -70,7 +71,7 @@ from django_tenants.utils import tenant_context
 # For PDF generation
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.colors import HexColor
@@ -2238,7 +2239,6 @@ def user_profile(request):
         'company_memberships': company_memberships,
         'profile_completion': profile_completion,
         'recent_activity': recent_activity,
-        'social_accounts': social_accounts,
         'has_password': request.user.has_usable_password(),
     }
 
