@@ -400,29 +400,31 @@ def notify_security_alerts(sender, instance, created, **kwargs):
             return
 
         with schema_context(schema_name):
-            # Notify the user
-            SecurityNotifications.notify_suspicious_activity(instance.user, instance)
+            # CHANGED: Remove email from channels - only send in-app
+            NotificationService.create_notification(
+                recipient=instance.user,
+                title='Suspicious Activity Detected',
+                message=f'Unusual activity detected: {instance.description}',
+                notification_type='ALERT',
+                priority='URGENT',
+                related_object=instance,
+                action_text='Review Activity',
+                action_url=f'/security/alerts/{instance.id}/',
+                channels=['in_app'],  # CHANGED: Remove 'email'
+                tenant_schema=schema_name
+            )
 
-            # Also notify admins for high-severity alerts
+            # Also notify admins for high-severity alerts (IN-APP ONLY)
             if hasattr(instance, 'severity') and instance.severity in ['HIGH', 'CRITICAL']:
                 if hasattr(instance, 'store') and instance.store:
-                    # FIX 1: Use User model with company filter
                     from django.contrib.auth import get_user_model
                     User = get_user_model()
 
                     admins = User.objects.filter(
-                        company=instance.store.company,  # This assumes User has a 'company' field
+                        company=instance.store.company,
                         is_staff=True,
                         is_active=True
                     ).only('id', 'email', 'first_name', 'last_name')
-
-                    # If that doesn't work, try:
-                    # FIX 2: Use staff from all company stores
-                    admins = User.objects.filter(
-                        stores__company=instance.store.company,
-                        is_staff=True,
-                        is_active=True
-                    ).distinct().only('id', 'email', 'first_name', 'last_name')
 
                     for admin in admins:
                         NotificationService.create_notification(
@@ -434,12 +436,12 @@ def notify_security_alerts(sender, instance, created, **kwargs):
                             related_object=instance,
                             action_text='Review',
                             action_url=f'/security/alerts/{instance.id}/',
+                            channels=['in_app'],  # CHANGED: Remove 'email'
                             tenant_schema=schema_name
                         )
 
     except Exception as e:
         logger.error(f"Error in notify_security_alerts: {e}", exc_info=True)
-
 
 # ============= MESSAGING NOTIFICATIONS =============
 

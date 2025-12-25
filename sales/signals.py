@@ -36,7 +36,6 @@ def track_sale_state(sender, instance, **kwargs):
             pass
 
 
-# Update in your signals.py or wherever post_save signals are defined
 
 @receiver(post_save, sender=Sale)
 def handle_sale_completion(sender, instance, created, **kwargs):

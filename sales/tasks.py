@@ -1100,7 +1100,7 @@ def send_fiscalization_notification(invoice_id, success=True, error=None):
                 pass
 
 @shared_task
-def send_document_notification(sale_id, notification_type, user_id=None):
+def send_document_notification(sale_id, notification_type, user_id=None, send_email=False):  # Added send_email param
     """
     Send notification for document (receipt/invoice/proforma)
     """
@@ -1143,25 +1143,29 @@ def send_document_notification(sale_id, notification_type, user_id=None):
             if sale.customer:
                 message += f"\nCustomer: {sale.customer.name}"
 
-            # Get recipients
-            recipients = []
-            if sale.created_by and sale.created_by.email:
-                recipients.append(sale.created_by.email)
+            # CHANGED: Only send email if explicitly requested
+            if send_email:
+                # Get recipients
+                recipients = []
+                if sale.created_by and sale.created_by.email:
+                    recipients.append(sale.created_by.email)
 
-            if user and user.email:
-                recipients.append(user.email)
+                if user and user.email:
+                    recipients.append(user.email)
 
-            # Send email if recipients exist
-            if recipients:
-                send_mail(
-                    subject=subject,
-                    message=message,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=list(set(recipients)),
-                    fail_silently=True
-                )
+                # Send email if recipients exist
+                if recipients:
+                    send_mail(
+                        subject=subject,
+                        message=message,
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        recipient_list=list(set(recipients)),
+                        fail_silently=True
+                    )
+                    logger.info(f"Sent {notification_type} email for sale {sale.document_number}")
 
-            logger.info(f"Sent {notification_type} notification for sale {sale.document_number}")
+            # Always log (for debugging)
+            logger.info(f"Processed {notification_type} notification for sale {sale.document_number}")
 
     except Exception as e:
         logger.error(f"Error sending document notification for sale {sale_id}: {e}")
@@ -1172,7 +1176,6 @@ def send_document_notification(sale_id, notification_type, user_id=None):
                 connection.set_schema(initial_schema)
             except:
                 pass
-
 
 @shared_task
 def bulk_fiscalize_pending_invoices_all_tenants():

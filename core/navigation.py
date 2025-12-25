@@ -1,3 +1,5 @@
+
+
 class NavigationItem:
     def __init__(self, name, url_name=None, url=None, icon=None, permission=None,
                  children=None, visible_func=None, css_class="", url_params=None,
@@ -81,7 +83,8 @@ NAVIGATION_ITEMS = [
     NavigationItem(
         name="Users Dashboard",
         url_name="user_dashboard",
-        icon="bi bi-speedometer2"
+        icon="bi bi-speedometer2",
+        permission="accounts.view_customuser"
     ),
     NavigationItem(
         name="Create Sale",
@@ -93,7 +96,9 @@ NAVIGATION_ITEMS = [
         name="Create Expense",
         url_name="expenses:expense_create",
         icon="bi bi-plus-circle",
-        permission="expenses.add_expense"
+        permission="expenses.add_expense",
+        
+
     ),
     NavigationItem(
         name="Profile & Settings",
@@ -124,7 +129,7 @@ NAVIGATION_ITEMS = [
     NavigationItem(
         name="User Management",
         icon="bi bi-people",
-        permission="accounts.view_customuser",
+        permission="accounts.add_customuser",
         children=[
             NavigationItem(
                 name="All Users",
@@ -167,6 +172,7 @@ NAVIGATION_ITEMS = [
     NavigationItem(
         name="Company",
         icon="bi bi-building",
+        permission="company.view_company",
         children=[
             NavigationItem(
                 name="Dashboard",
@@ -290,11 +296,13 @@ NAVIGATION_ITEMS = [
                 name="All Products",
                 url_name="inventory:product_list",
                 icon="bi bi-basket",
+                permission="inventory.view_product"
             ),
             NavigationItem(
                 name="Add Product",
                 url_name="inventory:product_create",
                 icon="bi bi-plus-circle",
+                permission="inventory.add_product"
             ),
             NavigationItem(
                 name="Stock Adjustment",
@@ -306,30 +314,36 @@ NAVIGATION_ITEMS = [
                 name="Bulk Import",
                 url_name="inventory:product_import",
                 icon="bi bi-upload",
+                permission="inventory.add_product"
             ),
             NavigationItem(
                 name="All Categories",
                 url_name="inventory:category_list",
                 icon="bi bi-list-ul",
+                permission="inventory.view_category"
             ),
             NavigationItem(
                 name="Add Category",
                 url_name="inventory:category_create",
                 icon="bi bi-plus-circle",
+                permission="inventory.add_category"
             ),
             NavigationItem(
                 name="Suppliers",
                 icon="bi bi-truck",
+                permission="inventory.add_supplier",
                 children=[
                     NavigationItem(
                         name="All Suppliers",
                         url_name="inventory:supplier_list",
                         icon="bi bi-person-lines-fill",
+                        permission="inventory.view_supplier"
                     ),
                     NavigationItem(
                         name="Add Supplier",
                         url_name="inventory:supplier_create",
                         icon="bi bi-plus-circle",
+                        permission="inventory.add_supplier"
                     ),
                 ],
             ),
@@ -367,17 +381,20 @@ NAVIGATION_ITEMS = [
                         name="Low Stock Report",
                         url_name="stores:low_stock_alert",
                         icon="bi bi-exclamation-triangle",
-                        css_class="text-warning"
+                        css_class="text-warning",
+                        permission="inventory.view_stock"
                     ),
                     NavigationItem(
                         name="Inventory Valuation",
                         url_name="inventory:valuation_report",
-                        icon="bi bi-calculator"
+                        icon="bi bi-calculator",
+                        permission="inventory.view_stock"
                     ),
                     NavigationItem(
                         name="Movement Analytics",
                         url_name="inventory:movement_analytics",
-                        icon="bi bi-graph-up-arrow"
+                        icon="bi bi-graph-up-arrow",
+                        permission="inventory.view_stock"
                     ),
                 ]
             ),
@@ -386,16 +403,19 @@ NAVIGATION_ITEMS = [
     NavigationItem(
             name="Services",
             icon="bi bi-briefcase",
+            permission="inventory.view_service",
             children=[
                 NavigationItem(
                     name="All Services",
                     url_name="inventory:service_list",
                     icon="bi bi-list-task",
+                    permission="inventory.view_service",
                 ),
                 NavigationItem(
                     name="Add Service",
                     url_name="inventory:service_create",
                     icon="bi bi-plus-circle",
+                    permission="inventory.add_service"
                 ),
             ],
         ),
@@ -427,36 +447,43 @@ NAVIGATION_ITEMS = [
     NavigationItem(
         name="Finance & Expenses",
         icon="bi bi-cash-stack",
+        permission="expenses.view_expense",
         children=[
             NavigationItem(
                 name="Dashboard",
                 url_name="expenses:dashboard",
                 icon="bi bi-speedometer2",
+                permission="expenses.view_expense",
             ),
             NavigationItem(
                 name="Create Expense",
                 url_name="expenses:expense_create",
                 icon="bi bi-coin",
+                permission="expenses.add_expense"
             ),
             NavigationItem(
                 name="Expense List",
                 url_name="expenses:expense_list",
                 icon="bi bi-coin",
+                permission="expenses.view_expense",
             ),
             NavigationItem(
                 name="Reports",
                 url_name="expenses:reports",
                 icon="bi bi-file-earmark-bar-graph",
+                permission="expenses.view_expense",
             ),
             NavigationItem(
                 name="Expense Category",
                 url_name="expenses:category_create",
                 icon="bi bi-coin",
+                permission="expenses.add_expensecategory"
             ),
             NavigationItem(
                 name="Category List",
                 url_name="expenses:category_list",
                 icon="bi bi-coin",
+                permission="expenses.view_expensecategory"
             ),
 
         ],),
@@ -627,7 +654,7 @@ NAVIGATION_ITEMS = [
                 name="Create Invoice",
                 url_name="sales:create_sale",
                 icon="bi bi-plus-circle",
-                permission="invoices.add_invoice"
+                permission="sales.add_sale"
             ),
             NavigationItem(
                 name="Invoice Analytics",
@@ -639,7 +666,7 @@ NAVIGATION_ITEMS = [
                 name="Payments",
                 url_name="invoices:payments",
                 icon="bi bi-credit-card",
-                permission="invoices.view_payment"
+                permission="invoices.view_invoicepayment"
             ),
         ]
     ),

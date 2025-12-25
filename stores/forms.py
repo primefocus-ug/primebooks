@@ -1020,7 +1020,9 @@ class StoreDeviceForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)  # 👈 IMPORTANT
         super().__init__(*args, **kwargs)
+
         self.helper = FormHelper()
         self.helper.layout = Layout(
             Fieldset(
@@ -1028,12 +1030,10 @@ class StoreDeviceForm(forms.ModelForm):
                 Row(
                     Column('store', css_class='form-group col-md-6 mb-3'),
                     Column('device_type', css_class='form-group col-md-6 mb-3'),
-                    css_class='form-row'
                 ),
                 Row(
                     Column('name', css_class='form-group col-md-6 mb-3'),
                     Column('device_number', css_class='form-group col-md-6 mb-3'),
-                    css_class='form-row'
                 ),
                 Row(
                     Column('serial_number', css_class='form-group col-md-8 mb-3'),
@@ -1041,7 +1041,6 @@ class StoreDeviceForm(forms.ModelForm):
                         Field('is_active', css_class='form-check-input mt-4'),
                         css_class='form-group col-md-4 mb-3'
                     ),
-                    css_class='form-row'
                 ),
                 'notes',
             ),
