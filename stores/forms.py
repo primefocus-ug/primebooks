@@ -349,17 +349,41 @@ class StoreForm(forms.ModelForm):
     class Meta:
         model = Store
         fields = [
-            'company', 'name', 'code', 'physical_address', 'location_gps',
-            'latitude', 'longitude', 'region', 'phone', 'secondary_phone',
-            'email', 'logo', 'efris_enabled',
-            'is_active', 'store_type', 'is_main_branch', 'accessible_by_all',
+            # Basic Information
+            'company', 'name', 'code', 'store_type', 'is_main_branch', 'accessible_by_all',
+
+            # Location Information
+            'physical_address', 'location', 'location_gps',
+            'latitude', 'longitude', 'region',
+
+            # Contact Information
+            'phone', 'secondary_phone', 'email', 'logo',
+
+            # Store Management
+            'allows_sales', 'allows_inventory',
+            'manager_name', 'manager_phone',
+            'operating_hours', 'timezone', 'sort_order', 'notes',
+
+            # Staff Assignments
+            'staff', 'store_managers',
+
+            # Identifiers
+            'nin', 'tin', 'device_serial_number',
+
+            # EFRIS Basic Settings
+            'efris_enabled', 'efris_device_number',
+            'is_registered_with_efris', 'efris_registration_date',
+            'efris_last_sync', 'last_stock_sync',
+            'auto_fiscalize_sales', 'allow_manual_fiscalization',
+            'report_stock_movements',
+
+            # Status
+            'is_active',
 
             # EFRIS Configuration Toggle
             'use_company_efris',
 
             # Store-specific EFRIS fields
-            'tin',
-            'efris_device_number',
             'store_efris_private_key',
             'store_efris_public_certificate',
             'store_efris_key_password',
@@ -372,15 +396,30 @@ class StoreForm(forms.ModelForm):
             'store_efris_last_sync',
         ]
         widgets = {
+            # Basic Information
+            'company': forms.Select(attrs={'class': 'form-select'}),
+            'name': forms.TextInput(attrs={
+                'placeholder': 'Store name',
+                'class': 'form-control'
+            }),
+            'code': forms.TextInput(attrs={
+                'placeholder': 'Auto-generated if left blank',
+                'class': 'form-control'
+            }),
+            'store_type': forms.Select(attrs={'class': 'form-select'}),
+            'is_main_branch': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'accessible_by_all': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+
+            # Location Information
             'physical_address': forms.Textarea(attrs={
                 'rows': 3,
                 'placeholder': 'Enter full physical address...',
                 'class': 'form-control',
                 'id': 'physical_address_field'
             }),
-            'tin': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Tax Identification Number'
+            'location': forms.TextInput(attrs={
+                'placeholder': 'Location/Area',
+                'class': 'form-control'
             }),
             'location_gps': forms.TextInput(attrs={
                 'placeholder': 'e.g., 0.347596, 32.582520',
@@ -399,20 +438,14 @@ class StoreForm(forms.ModelForm):
                 'class': 'form-control',
                 'id': 'longitude_field'
             }),
-            'name': forms.TextInput(attrs={
-                'placeholder': 'Store name',
-                'class': 'form-control'
-            }),
-            'code': forms.TextInput(attrs={
-                'placeholder': 'Auto-generated if left blank',
-                'class': 'form-control'
-            }),
             'region': forms.TextInput(attrs={
                 'placeholder': 'Region or District',
                 'class': 'form-control',
                 'id': 'region_field',
                 'list': 'regions_datalist'
             }),
+
+            # Contact Information
             'phone': forms.TextInput(attrs={
                 'placeholder': '+256XXXXXXXXX',
                 'class': 'form-control'
@@ -425,19 +458,94 @@ class StoreForm(forms.ModelForm):
                 'placeholder': 'store@example.com',
                 'class': 'form-control'
             }),
+            'logo': forms.FileInput(attrs={'class': 'form-control'}),
+
+            # Store Management
+            'allows_sales': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'allows_inventory': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'manager_name': forms.TextInput(attrs={
+                'placeholder': 'Store Manager Name',
+                'class': 'form-control'
+            }),
+            'manager_phone': forms.TextInput(attrs={
+                'placeholder': '+256XXXXXXXXX',
+                'class': 'form-control'
+            }),
+            'operating_hours': forms.Textarea(attrs={
+                'rows': 4,
+                'placeholder': 'Operating hours in JSON format',
+                'class': 'form-control',
+                'style': 'font-family: monospace;'
+            }),
+            'timezone': forms.Select(attrs={'class': 'form-select'}),
+            'sort_order': forms.NumberInput(attrs={
+                'placeholder': '0',
+                'class': 'form-control'
+            }),
+            'notes': forms.Textarea(attrs={
+                'rows': 3,
+                'placeholder': 'Additional notes about the store...',
+                'class': 'form-control'
+            }),
+
+            # Staff Assignments
+            'staff': forms.SelectMultiple(attrs={
+                'class': 'form-select',
+                'size': '5'
+            }),
+            'store_managers': forms.SelectMultiple(attrs={
+                'class': 'form-select',
+                'size': '5'
+            }),
+
+            # Identifiers
+            'nin': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'National Identification Number'
+            }),
+            'tin': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Tax Identification Number'
+            }),
+            'device_serial_number': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Device Serial Number'
+            }),
+
+            # EFRIS Basic Settings
+            'efris_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'efris_device_number': forms.TextInput(attrs={
                 'placeholder': 'EFRIS Device Number',
                 'class': 'form-control'
             }),
-            # ✅ NEW: Accessible by all checkbox
-            'accessible_by_all': forms.CheckboxInput(attrs={
-                'class': 'form-check-input'
+            'is_registered_with_efris': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'efris_registration_date': forms.DateTimeInput(attrs={
+                'class': 'form-control',
+                'type': 'datetime-local'
             }),
+            'efris_last_sync': forms.DateTimeInput(attrs={
+                'class': 'form-control',
+                'type': 'datetime-local'
+            }),
+            'last_stock_sync': forms.DateTimeInput(attrs={
+                'class': 'form-control',
+                'type': 'datetime-local'
+            }),
+            'auto_fiscalize_sales': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'allow_manual_fiscalization': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'report_stock_movements': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+
+            # Status
+            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+
+            # EFRIS Configuration Toggle
             'use_company_efris': forms.CheckboxInput(attrs={
                 'class': 'form-check-input',
                 'id': 'id_use_company_efris',
                 'onchange': 'toggleEFRISFields(this.checked)'
             }),
+
+            # Store-specific EFRIS fields
             'store_efris_private_key': forms.Textarea(attrs={
                 'class': 'form-control',
                 'rows': 6,
@@ -479,12 +587,6 @@ class StoreForm(forms.ModelForm):
                 'class': 'form-control',
                 'type': 'datetime-local'
             }),
-            'efris_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            'is_main_branch': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            'logo': forms.FileInput(attrs={'class': 'form-control'}),
-            'company': forms.Select(attrs={'class': 'form-select'}),
-            'store_type': forms.Select(attrs={'class': 'form-select'}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -504,20 +606,46 @@ class StoreForm(forms.ModelForm):
         self.fields['use_company_efris'].help_text = _(
             'Use company-wide EFRIS configuration. Uncheck to use store-specific settings.'
         )
+        self.fields['allows_sales'].help_text = _(
+            'Check if this store is allowed to make sales'
+        )
+        self.fields['allows_inventory'].help_text = _(
+            'Check if this store manages its own inventory'
+        )
+        self.fields['operating_hours'].help_text = _(
+            'Enter operating hours in JSON format. Example: {"monday": {"is_open": true, "open_time": "08:00", "close_time": "18:00"}}'
+        )
+
+        # Filter staff and store_managers by company if available
+        if self.instance and self.instance.company:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            company_users = User.objects.filter(
+                company_id=self.instance.company.company_id,
+                is_active=True
+            )
+            self.fields['staff'].queryset = company_users
+            self.fields['store_managers'].queryset = company_users
 
         # Organize fields into sections for better UX
         self.field_groups = {
             'basic': ['name', 'code', 'store_type', 'is_main_branch', 'accessible_by_all'],
-            'location': ['physical_address', 'geocode_address', 'latitude', 'longitude', 'region'],
+            'location': ['physical_address', 'location', 'geocode_address', 'latitude', 'longitude', 'region'],
             'contact': ['phone', 'secondary_phone', 'email'],
+            'management': ['allows_sales', 'allows_inventory', 'manager_name', 'manager_phone',
+                           'operating_hours', 'timezone', 'sort_order', 'notes'],
+            'staff': ['staff', 'store_managers'],
+            'identifiers': ['nin', 'tin', 'device_serial_number'],
+            'efris_basic': ['efris_enabled', 'efris_device_number', 'is_registered_with_efris',
+                            'efris_registration_date', 'efris_last_sync', 'last_stock_sync',
+                            'auto_fiscalize_sales', 'allow_manual_fiscalization', 'report_stock_movements'],
             'efris_toggle': ['use_company_efris', 'copy_from_company'],
             'efris_store': [
-                'tin', 'efris_device_number',
-                 'store_efris_private_key',
-                'store_efris_public_certificate', 'store_efris_key_password',
-                'store_efris_certificate_fingerprint', 'store_efris_is_production',
-                'store_efris_integration_mode', 'store_auto_fiscalize_sales',
-                'store_auto_sync_products', 'store_efris_is_active'
+                'store_efris_private_key', 'store_efris_public_certificate',
+                'store_efris_key_password', 'store_efris_certificate_fingerprint',
+                'store_efris_is_production', 'store_efris_integration_mode',
+                'store_auto_fiscalize_sales', 'store_auto_sync_products',
+                'store_efris_is_active', 'store_efris_last_sync'
             ]
         }
 
@@ -576,6 +704,8 @@ class StoreForm(forms.ModelForm):
 
         if commit:
             instance.save()
+            # Save ManyToMany fields
+            self.save_m2m()
 
         return instance
 
@@ -590,6 +720,27 @@ class StoreForm(forms.ModelForm):
         if phone and not phone.startswith('+'):
             raise forms.ValidationError(_('Phone number must start with country code (+)'))
         return phone
+
+    def clean_manager_phone(self):
+        phone = self.cleaned_data.get('manager_phone')
+        if phone and not phone.startswith('+'):
+            raise forms.ValidationError(_('Manager phone number must start with country code (+)'))
+        return phone
+
+    def clean_operating_hours(self):
+        operating_hours = self.cleaned_data.get('operating_hours')
+        if operating_hours:
+            # If it's already a dict, return it
+            if isinstance(operating_hours, dict):
+                return operating_hours
+            # If it's a string, try to parse it as JSON
+            if isinstance(operating_hours, str):
+                import json
+                try:
+                    return json.loads(operating_hours)
+                except json.JSONDecodeError:
+                    raise forms.ValidationError(_('Invalid JSON format for operating hours'))
+        return operating_hours
 
 
 from django import forms
