@@ -18,16 +18,26 @@
 {% endblock %}
 
 {% block breadcrumbs %}
+{% if perms.inventory.view_product %}
 <li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">Dashboard</a></li>
+{% endif %}
 <li class="breadcrumb-item">
     {% if form_type == 'category' %}
+    {% if perms.inventory.view_category %}
         <a href="{% url 'inventory:category_list' %}">Categories</a>
+    {% endif %}
     {% elif form_type == 'supplier' %}
+    {% if perms.inventory.view_supplier %}
         <a href="{% url 'inventory:supplier_list' %}">Suppliers</a>
+    {% endif %}
     {% elif form_type == 'product' %}
+    {% if perms.inventory.view_product %}
         <a href="{% url 'inventory:product_list' %}">Products</a>
+    {% endif %}
     {% elif form_type == 'stock' %}
+    {% if perms.inventory.view_stock %}
         <a href="{% url 'inventory:stock_list' %}">Stock</a>
+    {% endif %}
     {% endif %}
 </li>
 <li class="breadcrumb-item active">
@@ -628,6 +638,7 @@
 {% block content %}
 <div class="row">
     <div class="col-lg-8">
+        {% if perms.inventory.add_product %}
         <a href="{% url 'inventory:product_import' %}"
            style="
               display:inline-block;
@@ -640,6 +651,7 @@
            ">
             Bulk Import
         </a>
+        {% endif %}
 
         <div class="card shadow">
             <div class="card-header">
@@ -657,24 +669,32 @@
             <!-- Quick Switch Tabs -->
             <ul class="nav nav-tabs px-3 pt-3" role="tablist" id="quickSwitchTabs">
                 <li class="nav-item" role="presentation">
+                    {% if perms.inventory.add_product %}
                     <a class="nav-link {% if form_type == 'product' %}active{% endif %}" data-type="product" href="{% url 'inventory:product_create' %}">
                         <i class="fas fa-box"></i> Product
                     </a>
+                    {% endif %}
                 </li>
                 <li class="nav-item" role="presentation">
+                    {% if perms.inventory.add_category %}
                     <a class="nav-link {% if form_type == 'category' %}active{% endif %}" data-type="category" href="{% url 'inventory:category_create' %}">
                         <i class="fas fa-tags"></i> Category
                     </a>
+                    {% endif %}
                 </li>
                 <li class="nav-item" role="presentation">
+                    {% if perms.inventory.add_supplier %}
                     <a class="nav-link {% if form_type == 'supplier' %}active{% endif %}" data-type="supplier" href="{% url 'inventory:supplier_create' %}">
                         <i class="fas fa-truck"></i> Supplier
                     </a>
+                    {% endif %}
                 </li>
                 <li class="nav-item" role="presentation">
+                    {% if perms.inventory.add_stock %}
                     <a class="nav-link {% if form_type == 'stock' %}active{% endif %}" data-type="stock" href="{% url 'inventory:stock_create' %}">
                         <i class="fas fa-warehouse"></i> Stock
                     </a>
+                    {% endif %}
                 </li>
             </ul>
 
@@ -920,9 +940,11 @@
                             {% endif %}
                         </div>
                         <div class="d-flex justify-content-between mt-4">
+                            {% if perms.inventory.view_product %}
                             <a href="{% url 'inventory:product_list' %}" class="btn btn-outline-secondary">
                                 <i class="fas fa-arrow-left"></i> Back
                             </a>
+                            {% endif %}
                             <div>
                                 <button type="button" class="btn btn-outline-info" id="previewBtn">
                                     <i class="fas fa-eye"></i> Preview
@@ -1171,9 +1193,11 @@ Fiscal Receipt
 
                         <!-- Form Actions -->
                         <div class="d-flex justify-content-between mt-4">
+                            {% if perms.inventory.view_category %}
                             <a href="{% url 'inventory:category_list' %}" class="btn btn-outline-secondary">
                                 <i class="fas fa-arrow-left"></i> Back to Categories
                             </a>
+                            {% endif %}
                             <div>
                                 <button type="button" class="btn btn-outline-info" id="validateCategoryBtn">
                                     <i class="fas fa-check-circle"></i> Validate
@@ -1261,9 +1285,11 @@ Fiscal Receipt
                             </div>
                         </div>
                         <div class="d-flex justify-content-between mt-4">
+                            {% if perms.inventory.view_supplier %}
                             <a href="{% url 'inventory:supplier_list' %}" class="btn btn-outline-secondary">
                                 <i class="fas fa-arrow-left"></i> Back
                             </a>
+                            {% endif %}
                             <button type="submit" class="btn btn-primary">
                                 <i class="fas fa-save"></i> {% if object %}Update{% else %}Save{% endif %} Supplier
                             </button>
@@ -1442,14 +1468,18 @@ Fiscal Receipt
                         </div>
                         {% endif %}
                         <div class="d-flex justify-content-between mt-4">
+                            {% if perms.inventory.view_stock %}
                             <a href="{% url 'inventory:stock_list' %}" class="btn btn-outline-secondary">
                                 <i class="fas fa-arrow-left"></i> Back to Stock List
                             </a>
+                            {% endif %}
                             <div>
                                 {% if object %}
+                                {% if perms.inventory.add_stockmovement %}
                                 <a href="{% url 'inventory:movement_create' %}?stock={{ object.pk }}" class="btn btn-outline-info">
                                     <i class="fas fa-exchange-alt"></i> Record Movement
                                 </a>
+                                {% endif %}
                                 {% endif %}
                                 <button type="submit" class="btn btn-primary">
                                     <i class="fas fa-save"></i> {% if object %}Update{% else %}Save{% endif %} Stock
@@ -1592,13 +1622,17 @@ Fiscal Receipt
                 </div>
                 <div class="card-body">
                     <div class="d-grid gap-2 totall">
+                        {% if perms.inventory.view_stock %}
                         <a href="{% url 'inventory:stock_list' %}" class="btn btn-outline-secondary btn-sm">
                             <i class="fas fa-list totall"></i> View All Stock
                         </a>
+                        {% endif %}
                         {% if object %}
+                        {% if perms.inventory.add_stockmovement %}
                         <a href="{% url 'inventory:movement_create' %}?stock={{ object.pk }}" class="btn btn-outline-success btn-sm">
                             <i class="fas fa-plus totall"></i> Add Movement
                         </a>
+                        {% endif %}
                         <button class="btn btn-outline-info btn-sm" onclick="recordPhysicalCount({{ object.pk }})">
                             <i class="fas fa-clipboard-check"></i> Physical Count
                         </button>
@@ -1615,18 +1649,26 @@ Fiscal Receipt
                 </div>
                 <div class="card-body">
                     <div class="d-grid gap-2">
+                        {% if perms.inventory.view_product %}
                         <a href="{% url 'inventory:product_list' %}" class="btn btn-outline-secondary btn-sm">
                             <i class="fas fa-list"></i> View Products
                         </a>
+                        {% endif %}
+                        {% if perms.inventory.view_category %}
                         <a href="{% url 'inventory:category_list' %}" class="btn btn-outline-secondary btn-sm">
                             <i class="fas fa-list"></i> View Categories
                         </a>
+                        {% endif %}
+                        {% if perms.inventory.view_supplier %}
                         <a href="{% url 'inventory:supplier_list' %}" class="btn btn-outline-secondary btn-sm">
                             <i class="fas fa-list"></i> View Suppliers
                         </a>
+                        {% endif %}
+                        {% if perms.inventory.view_stock %}
                         <a href="{% url 'inventory:stock_list' %}" class="btn btn-outline-secondary btn-sm">
                             <i class="fas fa-list"></i> View Stock
                         </a>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -1731,10 +1773,18 @@ Fiscal Receipt
         <i class="fas fa-plus"></i>
     </button>
     <ul class="dropdown-menu dropdown-menu-end">
+        {% if perms.inventory.add_product %}
         <li><a class="dropdown-item" href="{% url 'inventory:product_create' %}"><i class="fas fa-box text-primary"></i> Add Product</a></li>
+        {% endif %}
+        {% if perms.inventory.add_category %}
         <li><a class="dropdown-item" href="{% url 'inventory:category_create' %}"><i class="fas fa-tags text-success"></i> Add Category</a></li>
+        {% endif %}
+        {% if perms.inventory.add_supplier %}
         <li><a class="dropdown-item" href="{% url 'inventory:supplier_create' %}"><i class="fas fa-truck text-info"></i> Add Supplier</a></li>
+        {% endif %}
+        {% if perms.inventory.add_product %}
         <li><a class="dropdown-item" href="{% url 'inventory:stock_create' %}"><i class="fas fa-warehouse text-warning"></i> Add Stock</a></li>
+        {% endif %}
     </ul>
 </div>
 

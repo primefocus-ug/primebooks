@@ -1507,8 +1507,6 @@ def import_session_status_api(request, session_id):
         return JsonResponse({'error': 'Internal server error'}, status=500)
 
 
-# inventory/views.py (Update the dashboard view section)
-
 @login_required
 @permission_required('inventory.view_product', raise_exception=True)
 def inventory_dashboard(request):
