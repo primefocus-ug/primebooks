@@ -137,7 +137,7 @@ def create_customer_ajax(request):
 
 @login_required
 def search_products_and_services(request):
-    """Combined search for products and services within tenant context"""
+    """Combined search for products and services with pagination"""
     try:
         company = get_current_tenant(request)
         if not company:
@@ -147,6 +147,16 @@ def search_products_and_services(request):
             query = request.GET.get('q', '').strip()
             store_id = request.GET.get('store_id')
             item_type = request.GET.get('item_type', 'all')
+
+            # ✅ NEW: Get pagination parameters
+            try:
+                page = int(request.GET.get('page', 1))
+                if page < 1:
+                    page = 1
+            except (ValueError, TypeError):
+                page = 1
+
+            limit = 10  # ✅ Fixed at 10 items per page
 
             # Validate store access
             store = None
@@ -190,7 +200,10 @@ def search_products_and_services(request):
                         store_inventory__quantity__gt=0
                     )
 
-                products = products_query.select_related('category', 'supplier')[:20]
+                # ✅ Get total count BEFORE slicing
+                products_count = products_query.count()
+
+                products = products_query.select_related('category', 'supplier')
 
                 for product in products:
                     stock_info = None
@@ -226,7 +239,8 @@ def search_products_and_services(request):
             # Search services
             if item_type in ['service', 'all']:
                 services_query = Service.objects.filter(
-                    is_active=True,   )
+                    is_active=True,
+                )
 
                 if query:
                     services_query = services_query.filter(
@@ -235,7 +249,10 @@ def search_products_and_services(request):
                         Q(description__icontains=query)
                     )
 
-                services = services_query.select_related('category')[:10]
+                # ✅ Get total count BEFORE slicing
+                services_count = services_query.count()
+
+                services = services_query.select_related('category')
 
                 for service in services:
                     items_data.append({
@@ -253,7 +270,32 @@ def search_products_and_services(request):
                         'has_stock': True,
                     })
 
-            return JsonResponse({'items': items_data})
+            # ✅ Calculate pagination
+            total_items = len(items_data)
+            start_index = (page - 1) * limit
+            end_index = start_index + limit
+
+            # Slice the items for current page
+            paginated_items = items_data[start_index:end_index]
+
+            # ✅ Calculate pagination metadata
+            total_pages = (total_items + limit - 1) // limit  # Ceiling division
+            has_next = page < total_pages
+            has_previous = page > 1
+
+            return JsonResponse({
+                'items': paginated_items,
+                'pagination': {
+                    'total': total_items,
+                    'page': page,
+                    'limit': limit,
+                    'total_pages': total_pages,
+                    'has_next': has_next,
+                    'has_previous': has_previous,
+                    'start_index': start_index + 1 if paginated_items else 0,
+                    'end_index': min(end_index, total_items)
+                }
+            })
 
     except Exception as e:
         logger.error(f"Error in combined search: {e}", exc_info=True)
