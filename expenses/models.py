@@ -124,6 +124,11 @@ class Expense(models.Model):
         ('PAID', _('Paid')),
         ('CANCELLED', _('Cancelled')),
     ]
+    CATEGORY_CHOICES = [
+        ('RENT', "Rent"),
+        ('UTILITIES', "Utilities"),
+        ('SALARY', "Salaries"),
+    ]
 
     PAYMENT_METHODS = [
         ('CASH', _('Cash')),
@@ -160,10 +165,9 @@ class Expense(models.Model):
         help_text=_("Detailed description of the expense")
     )
 
-    category = models.ForeignKey(
-        ExpenseCategory,
-        on_delete=models.PROTECT,
-        related_name='expenses',
+    category = models.CharField(
+        max_length=20,
+        choices=CATEGORY_CHOICES,
         verbose_name=_("Category")
     )
 

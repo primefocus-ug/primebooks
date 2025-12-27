@@ -347,8 +347,8 @@ class EFRISSaleMixin:
 class Sale(models.Model, EFRISSaleMixin):
     # ==================== NEW: Document Type System ====================
     DOCUMENT_TYPE_CHOICES = [
-        ('RECEIPT', 'Receipt (Immediate Payment)'),
-        ('INVOICE', 'Invoice (Credit Sale)'),
+        ('RECEIPT', 'Receipt'),
+        ('INVOICE', 'Invoice'),
         ('PROFORMA', 'Proforma/Quotation'),
         ('ESTIMATE', 'Estimate'),
     ]

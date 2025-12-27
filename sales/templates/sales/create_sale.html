@@ -1152,7 +1152,7 @@ body {
                         <input type="text" class="form-control" id="productSearchBar"
                                placeholder="{% trans 'Search products or services... (Press F1)' %}"
                                aria-label="Product search">
-                        <button class="btn btn-outline-secondary" type="button" onclick="clearProductSearch()">
+                        <button  class="btn btn-outline-secondary" type="button" onclick="clearProductSearch()">
                             <i class="bi bi-x"></i>
                         </button>
                     </div>
@@ -1173,18 +1173,18 @@ body {
                     <div id="productsEmpty" class="text-center py-4" style="display: none;">
                         <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
                         <p class="mt-2">{% trans "No items found" %}</p>
-                        <button class="btn btn-sm btn-outline-primary mt-2" onclick="resetProductFilters()">
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="resetProductFilters()">
                             <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Reset Filters" %}
                         </button>
                     </div>
 
                     <!-- Pagination -->
                     <div class="d-flex justify-content-between align-items-center mt-3" id="productsPagination" style="display: none;">
-                        <button class="btn btn-sm btn-outline-primary" onclick="loadPreviousPage()">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadPreviousPage()">
                             <i class="bi bi-chevron-left"></i> {% trans "Previous" %}
                         </button>
                         <span class="text-muted" id="paginationInfo"></span>
-                        <button class="btn btn-sm btn-outline-primary" onclick="loadNextPage()">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadNextPage()">
                             {% trans "Next" %} <i class="bi bi-chevron-right"></i>
                         </button>
                     </div>
@@ -1602,7 +1602,7 @@ body {
                         <div class="col-4">
                             <small class="text-muted">Actions</small>
                             <div>
-                                <button class="btn btn-sm btn-outline-danger" onclick="clearAllDrafts()">
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearAllDrafts()">
                                     <i class="bi bi-trash"></i> Clear All
                                 </button>
                             </div>
@@ -1618,7 +1618,7 @@ body {
                     <i class="bi bi-folder-x" style="font-size: 3rem; opacity: 0.3;"></i>
                     <h5 class="mt-3">No saved drafts</h5>
                     <p class="text-muted">Save your current sale as a draft to continue later</p>
-                    <button class="btn btn-primary" onclick="saveAsDraft()">
+                    <button type="button" class="btn btn-primary" onclick="saveAsDraft()">
                         <i class="bi bi-save me-2"></i>Save Current as Draft
                     </button>
                 </div>
@@ -2804,10 +2804,18 @@ async function queryEFRISTaxpayer() {
     const queryBtn = document.getElementById('efrisQueryBtn');
     const queryLoading = document.getElementById('efrisQueryLoading');
     const results = document.getElementById('efrisQueryResults');
+    const errorDiv = document.getElementById('efrisError');
+    const errorMessage = document.getElementById('efrisErrorMessage');
 
-    if (!tinInput || !queryBtn) return;
+    if (!tinInput || !queryBtn) {
+        console.error('EFRIS elements not found');
+        return;
+    }
 
     const tin = tinInput.value.trim();
+
+    // Clear previous errors
+    if (errorDiv) errorDiv.style.display = 'none';
 
     if (!tin) {
         showError('Please enter TIN');
@@ -2825,26 +2833,30 @@ async function queryEFRISTaxpayer() {
     if (results) results.style.display = 'none';
 
     try {
-        const csrfToken = getCookie('csrftoken');
+        // ✅ FIX 1: Get CSRF token from form (like Document 3)
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+
         if (!csrfToken) {
             throw new Error('CSRF token missing. Please refresh the page.');
         }
 
         const formData = new FormData();
         formData.append('tin', tin);
-        formData.append('csrfmiddlewaretoken', csrfToken);
 
-        const response = await fetch('/efris/taxpayer-query/', {
+        // ✅ FIX 2: Use Django URL template tag
+        const response = await fetch('{% url "efris:taxpayer_query" %}', {
             method: 'POST',
             body: formData,
             headers: {
+                'X-CSRFToken': csrfToken,
                 'X-Requested-With': 'XMLHttpRequest'
             },
             credentials: 'same-origin'
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${response.statusText}\n${errorText}`);
         }
 
         const data = await response.json();
@@ -2856,13 +2868,18 @@ async function queryEFRISTaxpayer() {
         }
     } catch (error) {
         console.error('EFRIS query error:', error);
+
+        // Show error in both places
+        if (errorDiv && errorMessage) {
+            errorMessage.textContent = error.message;
+            errorDiv.style.display = 'block';
+        }
         showError(`EFRIS query failed: ${error.message}`);
     } finally {
         queryBtn.disabled = false;
         if (queryLoading) queryLoading.style.display = 'none';
     }
 }
-
 function getCookie(name) {
     let cookieValue = null;
     if (document.cookie && document.cookie !== '') {
@@ -2940,7 +2957,7 @@ async function createCustomerFromEFRIS(taxpayer) {
     formData.append('from_efris', 'true');
 
     try {
-        const response = await fetch('/sales/create-customer-ajax/', {
+        const response = await fetch('/customers/api/customers/', {
             method: 'POST',
             body: formData,
             headers: {
@@ -3060,11 +3077,11 @@ async function saveNewCustomer() {
     const formData = new FormData(form);
 
     try {
-        const response = await fetch('/sales/create-customer-ajax/', {
+        const response = await fetch('{% url "sales:create_customer_ajax" %}', {
             method: 'POST',
             body: formData,
             headers: {
-                'X-CSRFToken': getCookie('csrftoken')
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
             }
         });
 
@@ -3086,7 +3103,20 @@ async function saveNewCustomer() {
         saveBtn.disabled = false;
     }
 }
-
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
 // ====== MISSING FUNCTIONS END HERE ======
 // Display items
 function displayItems(items) {
