@@ -14,8 +14,10 @@ from django.contrib.auth.mixins import PermissionRequiredMixin, LoginRequiredMix
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
 from django.urls import reverse_lazy
 from decimal import InvalidOperation
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 import io
+from django.utils.translation import gettext_lazy as _
+import logging
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -29,7 +31,7 @@ from .forms import (
     ExpenseFilterForm, ExpenseCommentForm, BulkExpenseActionForm
 )
 from .utils import (
-    get_expense_statistics, get_budget_analysis,
+    get_expense_statistics,
     validate_expense_approval, export_expenses_to_excel,
     get_expense_insights, generate_expense_report_pdf
 )
@@ -39,7 +41,7 @@ from .permissions import (
 )
 from accounts.utils import log_action
 
-
+logger=logging.getLogger(__name__)
 # ============================================================================
 # EXPENSE LIST & DASHBOARD VIEWS
 # ============================================================================
@@ -48,9 +50,9 @@ from accounts.utils import log_action
 @permission_required('expenses.view_expense',raise_exception=True)
 def expense_list(request):
     """List expenses with advanced filtering and pagination"""
-    # Base queryset with optimized select_related
+    # Base queryset with optimized select_related - REMOVE 'category'
     expenses = Expense.objects.select_related(
-        'category', 'created_by', 'store', 'approved_by', 'paid_by'
+        'created_by', 'store', 'approved_by', 'paid_by'  # Removed 'category'
     ).prefetch_related('attachments')
 
     # Filter by user unless they have view_all permission
@@ -142,7 +144,7 @@ def expense_list(request):
 
     context = {
         'expenses': expenses_page,
-        'categories': ExpenseCategory.objects.filter(is_active=True),
+        'categories': Expense.CATEGORY_CHOICES,  # Changed from ExpenseCategory queryset
         'stats': stats,
         'filter_form': filter_form,
         'filters': request.GET.dict(),
@@ -153,7 +155,7 @@ def expense_list(request):
 
 
 @login_required
-@permission_required('expenses.view_expense',raise_exception=True)
+@permission_required('expenses.view_expense', raise_exception=True)
 def expense_dashboard(request):
     """Enhanced expense dashboard with comprehensive insights"""
     # Date ranges
@@ -230,11 +232,17 @@ def expense_dashboard(request):
 
     # Category breakdown for current month
     category_breakdown = month_expenses.values(
-        'category__name', 'category__color_code', 'category__icon'
+        'category'
     ).annotate(
         total=Sum('amount'),
         count=Count('id')
     ).order_by('-total')[:8]
+
+    # Add display names and colors to category breakdown
+    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
+    for item in category_breakdown:
+        item['category_display'] = category_choices_dict.get(item['category'], item['category'])
+        item['color_code'] = get_category_color(item['category'])
 
     # Monthly trend (last 6 months)
     six_months_ago = today - timedelta(days=180)
@@ -249,7 +257,7 @@ def expense_dashboard(request):
 
     # Recent expenses
     recent_expenses = user_expenses.select_related(
-        'category', 'store', 'approved_by'
+        'created_by', 'store', 'approved_by'
     ).prefetch_related('attachments').order_by('-created_at')[:10]
 
     # Pending approvals (if user can approve)
@@ -260,13 +268,8 @@ def expense_dashboard(request):
         ).exclude(
             created_by=request.user
         ).select_related(
-            'created_by', 'category', 'store'
+            'created_by', 'store'
         ).order_by('-submitted_at')[:10]
-
-    # Budget analysis (if user can view all expenses)
-    budget_analysis = []
-    if request.user.has_perm('expenses.view_all_expenses'):
-        budget_analysis = get_budget_analysis()[:5]
 
     # Top vendors
     top_vendors = month_expenses.values('vendor_name').annotate(
@@ -289,7 +292,6 @@ def expense_dashboard(request):
         'monthly_trend': monthly_trend,
         'recent_expenses': recent_expenses,
         'pending_approvals': pending_approvals,
-        'budget_analysis': budget_analysis,
         'top_vendors': top_vendors,
         'payment_breakdown': payment_breakdown,
     }
@@ -297,98 +299,151 @@ def expense_dashboard(request):
     return render(request, 'expenses/dashboard.html', context)
 
 
+def get_category_color(category_code):
+    """Helper function to get color for category"""
+    color_map = {
+        'STAFF_WELFARE': '#FF6B6B',
+        'RENT_EXPENSE': '#4ECDC4',
+        'OFFICE_SUPPLIES': '#45B7D1',
+        'UTILITIES': '#96CEB4',
+        'BANK_CHARGES': '#FFEAA7',
+        'MORE': '#DDA0DD',
+    }
+    return color_map.get(category_code, '#cccccc')
+
 # ============================================================================
 # EXPENSE CRUD VIEWS
 # ============================================================================
-
 @login_required
-@permission_required('expenses.add_expense',raise_exception=True)
+@permission_required('expenses.add_expense', raise_exception=True)
 @transaction.atomic
 def expense_create(request):
     """Create new expense with comprehensive validation"""
     if request.method == 'POST':
+        # Check if user can submit (not just create draft)
+        action = request.POST.get('action', 'draft')
+        if action == 'submit' and not request.user.has_perm('expenses.submit_expense'):
+            messages.error(request, _('You do not have permission to submit expenses for approval.'))
+            return redirect('expenses:expense_create')
+
         form = ExpenseForm(request.POST, request.FILES, user=request.user)
 
         if form.is_valid():
-            expense = form.save(commit=False)
-            expense.created_by = request.user
+            try:
+                expense = form.save(commit=False)
+                expense.created_by = request.user
 
-            # Set store if user has one
-            if hasattr(request.user, 'store') and request.user.store:
-                expense.store = request.user.store
+                # Set store from user's default store if not specified
+                if not expense.store and hasattr(request.user, 'store') and request.user.store:
+                    expense.store = request.user.store
 
-            # Determine status based on action
-            action = request.POST.get('action', 'draft')
+                # Determine status based on action
+                if action == 'submit':
+                    expense.status = 'SUBMITTED'
+                    expense.submitted_at = timezone.now()
 
-            if action == 'submit':
-                expense.status = 'SUBMITTED'
-                expense.submitted_at = timezone.now()
+                    # Check for auto-approval
+                    auto_approve_amount = get_auto_approval_threshold(expense.category)
+                    if auto_approve_amount and expense.amount <= auto_approve_amount:
+                        expense.status = 'APPROVED'
+                        expense.approved_by = request.user
+                        expense.approved_at = timezone.now()
+                        messages.info(request, _('Expense auto-approved based on category threshold.'))
+                else:
+                    expense.status = 'DRAFT'
 
-                # Check if auto-approval applies
-                if expense.category.approval_threshold and \
-                        expense.amount < expense.category.approval_threshold:
-                    expense.status = 'APPROVED'
-                    expense.approved_by = request.user
-                    expense.approved_at = timezone.now()
-                    messages.info(request, 'Expense auto-approved based on category threshold.')
-            else:
-                expense.status = 'DRAFT'
+                # Save the expense instance first
+                expense.save()
 
-            expense.save()
+                # Handle file attachments (the form.save() should handle this, but do it here too)
+                if request.FILES.get('attachments'):
+                    for uploaded_file in request.FILES.getlist('attachments'):
+                        # Check if an attachment with this filename already exists
+                        existing = ExpenseAttachment.objects.filter(
+                            expense=expense,
+                            file__icontains=uploaded_file.name
+                        ).exists()
+                        if not existing:
+                            ExpenseAttachment.objects.create(
+                                expense=expense,
+                                file=uploaded_file,
+                                uploaded_by=request.user,
+                                file_name=uploaded_file.name
+                            )
 
-            # Handle multiple file attachments
-            files = request.FILES.getlist('attachments')
-            for file in files:
-                ExpenseAttachment.objects.create(
-                    expense=expense,
-                    file=file,
-                    uploaded_by=request.user
-                )
-
-            # Log action
-            log_action(
-                request,
-                'expense_created',
-                f'Created expense: {expense.expense_number}',
-                content_object=expense
-            )
-
-            # Send notification
-            if action == 'submit':
-                send_expense_update_notification(expense, 'submitted')
-                messages.success(
+                # Log action
+                log_action(
                     request,
-                    f'Expense {expense.expense_number} created and submitted successfully!'
-                )
-            else:
-                messages.success(
-                    request,
-                    f'Expense {expense.expense_number} saved as draft!'
+                    'expense_created',
+                    f'Created expense: {expense.expense_number}',
+                    content_object=expense
                 )
 
-            # Redirect based on action
-            if request.POST.get('save_and_new'):
-                return redirect('expenses:expense_create')
-            else:
-                return redirect('expenses:expense_detail', pk=expense.pk)
+                # Send notification (commented out as per your code)
+                if action == 'submit':
+                    # send_expense_update_notification(expense, 'submitted')
+                    messages.success(
+                        request,
+                        _(f'Expense {expense.expense_number} created and submitted successfully!')
+                    )
+                else:
+                    messages.success(
+                        request,
+                        _(f'Expense {expense.expense_number} saved as draft!')
+                    )
+
+                # Redirect based on action
+                if request.POST.get('save_and_new'):
+                    return redirect('expenses:expense_create')
+                else:
+                    return redirect('expenses:expense_detail', pk=expense.pk)
+
+            except ValidationError as e:
+                # Handle validation errors from the model
+                logger.error(f"Validation error creating expense: {str(e)}")
+                messages.error(request, _(f'Validation error: {str(e)}'))
+            except Exception as e:
+                logger.error(f"Error creating expense: {str(e)}", exc_info=True)
+                messages.error(request, _('Error creating expense. Please try again.'))
         else:
-            messages.error(request, 'Please correct the errors below.')
+            # Log form errors for debugging
+            logger.debug(f"Form errors: {form.errors}")
+            messages.error(request, _('Please correct the errors below.'))
     else:
         # Pre-fill expense date with today
         initial = {
             'expense_date': timezone.now().date(),
             'currency': 'UGX'
         }
+
+        # Pre-fill store if user has a default store
+        if hasattr(request.user, 'store') and request.user.store:
+            initial['store'] = request.user.store
+
         form = ExpenseForm(initial=initial, user=request.user)
 
     context = {
         'form': form,
-        'categories': ExpenseCategory.objects.filter(is_active=True).order_by('sort_order', 'name'),
-        'title': 'Create Expense',
+        'category_choices': Expense.CATEGORY_CHOICES,
+        'payment_methods': Expense.PAYMENT_METHODS,
+        'title': _('Create Expense'),
+        'can_submit': request.user.has_perm('expenses.submit_expense'),
     }
 
     return render(request, 'expenses/expense_form.html', context)
 
+def get_auto_approval_threshold(category_code):
+    """Get auto-approval threshold for a category"""
+    # Define thresholds based on your business rules
+    thresholds = {
+        'STAFF_WELFARE': 100000,  # 100,000 UGX
+        'RENT_EXPENSE': 500000,    # 500,000 UGX
+        'OFFICE_SUPPLIES': 50000,  # 50,000 UGX
+        'UTILITIES': 200000,       # 200,000 UGX
+        'BANK_CHARGES': 10000,     # 10,000 UGX
+        'MORE': 0,                 # No auto-approval
+    }
+    return thresholds.get(category_code)
 
 @login_required
 @permission_required('expenses.change_expense',raise_exception=True)
@@ -437,7 +492,7 @@ def expense_edit(request, pk):
     context = {
         'form': form,
         'expense': expense,
-        'categories': ExpenseCategory.objects.filter(is_active=True).order_by('sort_order', 'name'),
+        'category_choices': Expense.CATEGORY_CHOICES,
         'title': 'Edit Expense',
     }
 
@@ -451,7 +506,7 @@ def expense_detail(request, pk):
     """View expense details with comprehensive information"""
     expense = get_object_or_404(
         Expense.objects.select_related(
-            'category', 'created_by', 'approved_by', 'paid_by', 'store'
+             'created_by', 'approved_by', 'paid_by', 'store'
         ).prefetch_related('attachments', 'comments__user'),
         pk=pk
     )
@@ -1138,8 +1193,8 @@ def expense_reports(request):
         user=None if request.user.has_perm('expenses.view_all_expenses') else request.user
     )
 
-    # Budget analysis
-    budget_analysis = get_budget_analysis()
+    # Remove budget_analysis since it depends on ExpenseCategory
+    # budget_analysis = get_budget_analysis()
 
     # Category-wise breakdown
     expenses = Expense.objects.filter(
@@ -1148,12 +1203,18 @@ def expense_reports(request):
     )
 
     category_breakdown = expenses.values(
-        'category__name', 'category__color_code'
+        'category'  # Changed from 'category__name', 'category__color_code'
     ).annotate(
         total_amount=Sum('amount'),
         count=Count('id'),
         avg_amount=Avg('amount')
     ).order_by('-total_amount')
+
+    # Add display names to category breakdown
+    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
+    for item in category_breakdown:
+        item['category_display'] = category_choices_dict.get(item['category'], item['category'])
+        item['color_code'] = get_category_color(item['category'])
 
     # Store-wise breakdown
     store_breakdown = expenses.exclude(
@@ -1190,7 +1251,7 @@ def expense_reports(request):
     context = {
         'stats': stats,
         'insights': insights,
-        'budget_analysis': budget_analysis,
+        # 'budget_analysis': budget_analysis,  # Removed
         'category_breakdown': category_breakdown,
         'store_breakdown': store_breakdown,
         'monthly_trend': monthly_trend,
@@ -1202,6 +1263,18 @@ def expense_reports(request):
 
     return render(request, 'expenses/reports.html', context)
 
+
+def get_category_color(category_code):
+    """Helper function to get color for category"""
+    color_map = {
+        'STAFF_WELFARE': '#FF6B6B',
+        'RENT_EXPENSE': '#4ECDC4',
+        'OFFICE_SUPPLIES': '#45B7D1',
+        'UTILITIES': '#96CEB4',
+        'BANK_CHARGES': '#FFEAA7',
+        'MORE': '#DDA0DD',
+    }
+    return color_map.get(category_code, '#cccccc')
 
 @login_required
 def expense_export_excel(request):
@@ -1224,9 +1297,9 @@ def expense_export_excel(request):
 @login_required
 def expense_export_pdf(request):
     """Export expenses to PDF"""
-    # Get filtered expenses
+    # Get filtered expenses - REMOVE 'category' from select_related
     expenses = Expense.objects.select_related(
-        'category', 'created_by', 'store'
+        'created_by', 'store'  # Removed 'category'
     )
 
     # Apply user filter
@@ -1235,14 +1308,14 @@ def expense_export_pdf(request):
 
     # Apply filters from request
     status = request.GET.get('status')
-    category_id = request.GET.get('category')
+    category_code = request.GET.get('category')  # Changed from category_id
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
 
     if status:
         expenses = expenses.filter(status=status)
-    if category_id:
-        expenses = expenses.filter(category_id=category_id)
+    if category_code:
+        expenses = expenses.filter(category=category_code)  # Changed from category_id
     if date_from:
         expenses = expenses.filter(expense_date__gte=date_from)
     if date_to:
@@ -1297,12 +1370,18 @@ def expense_export_pdf(request):
     if expenses.exists():
         data = [['#', 'Date', 'Description', 'Category', 'Amount', 'Status']]
 
+        # Get category display names mapping
+        category_choices_dict = dict(Expense.CATEGORY_CHOICES)
+
         for i, expense in enumerate(expenses, 1):
+            # Get category display name
+            category_display = category_choices_dict.get(expense.category, expense.category)
+
             data.append([
                 str(i),
                 expense.expense_date.strftime('%Y-%m-%d'),
                 expense.title[:30],
-                expense.category.name[:20],
+                category_display[:20],
                 f"{expense.amount:,.2f}",
                 expense.get_status_display()
             ])
@@ -1335,13 +1414,12 @@ def expense_export_pdf(request):
 
     return response
 
-
 @login_required
 def expense_print(request, pk):
     """Generate printable expense report"""
     expense = get_object_or_404(
         Expense.objects.select_related(
-            'category', 'created_by', 'approved_by', 'paid_by', 'store'
+            'created_by', 'approved_by', 'paid_by', 'store'  # Removed 'category'
         ).prefetch_related('attachments'),
         pk=pk
     )
@@ -1362,8 +1440,6 @@ def expense_print(request, pk):
     }
 
     return render(request, 'expenses/expense_print.html', context)
-
-
 # ============================================================================
 # API ENDPOINTS (AJAX)
 # ============================================================================
@@ -1412,7 +1488,7 @@ def expense_category_summary(request):
         expenses = expenses.filter(expense_date__lte=date_to)
 
     summary = expenses.values(
-        'category__name', 'category__color_code'
+        'category'
     ).annotate(
         total=Sum('amount'),
         count=Count('id')

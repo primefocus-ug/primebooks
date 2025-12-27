@@ -1,6 +1,7 @@
 from math import radians, sin, cos, atan2, sqrt
 from accounts.models import AuditLog
 from django.db import models
+from django.db.models import F
 from django.core.validators import RegexValidator, MinValueValidator
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
@@ -1931,3 +1932,278 @@ class DeviceFingerprint(models.Model):
         """Decrease trust score due to suspicious activity"""
         self.trust_score = max(0, self.trust_score - 20)
         self.save(update_fields=['trust_score'])
+
+
+class StockStore(models.Model):
+    """
+    Central warehouse/stock store that supplies branches.
+    This is a special type of store that holds company-wide inventory.
+    """
+
+    # Link to company
+    company = models.ForeignKey(
+        'company.Company',
+        on_delete=models.CASCADE,
+        related_name='stock_stores',
+        verbose_name=_("Company")
+    )
+
+    # Basic Information
+    name = models.CharField(
+        max_length=255,
+        verbose_name=_("StockStore Name"),
+        help_text=_("e.g., 'Main Warehouse', 'Central Depot'")
+    )
+
+    code = models.CharField(
+        max_length=20,
+        unique=True,
+        verbose_name=_("StockStore Code"),
+        help_text=_("Unique identifier, e.g., 'WH-001'")
+    )
+
+    description = models.TextField(
+        blank=True,
+        verbose_name=_("Description")
+    )
+
+    # Location
+    physical_address = models.TextField(
+        verbose_name=_("Physical Address")
+    )
+
+    region = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name=_("Region/District")
+    )
+
+    latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        blank=True,
+        null=True
+    )
+
+    longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        blank=True,
+        null=True
+    )
+
+    # Contact Information
+    phone = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        validators=[RegexValidator(r'^\+?[0-9]+$', _('Enter a valid phone number.'))],
+        verbose_name=_("Primary Phone")
+    )
+
+    email = models.EmailField(
+        blank=True,
+        null=True,
+        verbose_name=_("Email")
+    )
+
+    # Manager Information
+    manager_name = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name=_("Warehouse Manager")
+    )
+
+    manager_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        validators=[RegexValidator(r'^\+?[0-9]+$', _('Enter a valid phone number.'))],
+        verbose_name=_("Manager Phone")
+    )
+
+    # StockStore Configuration
+    is_main_stockstore = models.BooleanField(
+        default=False,
+        verbose_name=_("Main StockStore"),
+        help_text=_("Primary warehouse for the company")
+    )
+
+    auto_approve_transfers = models.BooleanField(
+        default=False,
+        verbose_name=_("Auto-Approve Transfers"),
+        help_text=_("Automatically approve transfer requests to branches")
+    )
+
+    requires_manager_approval = models.BooleanField(
+        default=True,
+        verbose_name=_("Requires Manager Approval"),
+        help_text=_("Transfers need manager approval")
+    )
+
+    min_stock_alert_enabled = models.BooleanField(
+        default=True,
+        verbose_name=_("Enable Low Stock Alerts"),
+        help_text=_("Alert when stock falls below threshold")
+    )
+
+    # Access Control
+    staff = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name='accessible_stockstores',
+        verbose_name=_("Warehouse Staff"),
+        help_text=_("Users who can access this stockstore")
+    )
+
+    managers = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name='managed_stockstores',
+        verbose_name=_("Warehouse Managers"),
+        help_text=_("Users who can manage this stockstore")
+    )
+
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name=_("Active")
+    )
+
+    # Metadata
+    notes = models.TextField(
+        blank=True,
+        verbose_name=_("Notes")
+    )
+
+    sort_order = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Used for ordering in lists")
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("Created At")
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name=_("Updated At")
+    )
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_stockstores',
+        verbose_name=_("Created By")
+    )
+
+    class Meta:
+        verbose_name = _("Stock Store (Warehouse)")
+        verbose_name_plural = _("Stock Stores (Warehouses)")
+        ordering = ['-is_main_stockstore', 'sort_order', 'name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'code'],
+                name='unique_stockstore_code_per_company'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['company', 'is_active']),
+            models.Index(fields=['is_main_stockstore']),
+            models.Index(fields=['code']),
+        ]
+
+    def __str__(self):
+        indicator = "🏢 [MAIN]" if self.is_main_stockstore else "🏪"
+        return f"{indicator} {self.name}"
+
+    def save(self, *args, **kwargs):
+        # Auto-generate code if not provided
+        if not self.code:
+            import uuid
+            self.code = f"WH-{uuid.uuid4().hex[:6].upper()}"
+
+        # Ensure only one main stockstore per company
+        if self.is_main_stockstore and self.company:
+            StockStore.objects.filter(
+                company=self.company,
+                is_main_stockstore=True
+            ).exclude(id=self.id).update(is_main_stockstore=False)
+
+        super().save(*args, **kwargs)
+
+    @property
+    def total_inventory_value(self):
+        """Calculate total value of inventory in this stockstore"""
+        from django.db.models import Sum, F
+        from inventory.models import StockStoreInventory
+
+        total = StockStoreInventory.objects.filter(
+            stockstore=self
+        ).aggregate(
+            total=Sum(F('quantity') * F('product__cost_price'))
+        )['total']
+
+        return total or 0
+
+    @property
+    def total_products(self):
+        """Count unique products in this stockstore"""
+        from inventory.models import StockStoreInventory
+        return StockStoreInventory.objects.filter(stockstore=self).count()
+
+    @property
+    def low_stock_items_count(self):
+        """Count items below minimum threshold"""
+        from inventory.models import StockStoreInventory
+        return StockStoreInventory.objects.filter(
+            stockstore=self,
+            quantity__lte=F('low_stock_threshold')
+        ).count()
+
+    def get_inventory_summary(self):
+        """Get detailed inventory summary"""
+        from django.db.models import Sum, Count, F
+        from inventory.models import StockStoreInventory
+
+        inventory = StockStoreInventory.objects.filter(stockstore=self)
+
+        return {
+            'total_products': inventory.count(),
+            'total_quantity': inventory.aggregate(Sum('quantity'))['quantity__sum'] or 0,
+            'low_stock_count': inventory.filter(
+                quantity__lte=F('low_stock_threshold')
+            ).count(),
+            'out_of_stock_count': inventory.filter(quantity=0).count(),
+            'total_value': self.total_inventory_value,
+        }
+
+    def can_supply_branch(self, product, quantity):
+        """Check if stockstore can supply requested quantity to a branch"""
+        from inventory.models import StockStoreInventory
+
+        try:
+            stock = StockStoreInventory.objects.get(
+                stockstore=self,
+                product=product
+            )
+            return stock.quantity >= quantity
+        except StockStoreInventory.DoesNotExist:
+            return False
+
+    def get_available_quantity(self, product):
+        """Get available quantity for a product"""
+        from inventory.models import StockStoreInventory
+
+        try:
+            stock = StockStoreInventory.objects.get(
+                stockstore=self,
+                product=product
+            )
+            return stock.quantity
+        except StockStoreInventory.DoesNotExist:
+            return 0

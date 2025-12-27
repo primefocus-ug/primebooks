@@ -446,6 +446,30 @@ def role_edit(request, pk):
     return render(request, 'accounts/role_form.html', context)
 
 
+from collections import defaultdict
+from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.models import Permission
+from django.shortcuts import get_object_or_404, redirect, render
+from django.contrib import messages
+from django.conf import settings
+
+RBAC_ALLOWED_APPS = {
+    'accounts',
+    'company',
+    'inventory',
+    'invoices',
+    'sales',
+    'stores',
+    'reports',
+    'customers',
+    'branches',
+    'expenses',
+    'efris',
+    'notifications',
+    'finance',
+}
+
+
 @login_required
 @permission_required('accounts.add_role', raise_exception=True)
 def role_permissions(request, pk):
@@ -457,7 +481,7 @@ def role_permissions(request, pk):
         pk=pk
     )
 
-    # Check access
+    # Access checks
     if role.company and role.company != company:
         messages.error(request, "You don't have access to this role.")
         return redirect('role_list')
@@ -466,12 +490,20 @@ def role_permissions(request, pk):
         messages.error(request, "System role permissions cannot be modified.")
         return redirect('role_detail', pk=pk)
 
+    # -------------------------------
+    # POST: update permissions (SECURE)
+    # -------------------------------
     if request.method == 'POST':
         selected_permissions = request.POST.getlist('permissions')
 
-        # Update permissions
         permission_ids = [int(p) for p in selected_permissions]
-        permissions = Permission.objects.filter(id__in=permission_ids)
+
+        # IMPORTANT: restrict permissions again on POST
+        permissions = Permission.objects.filter(
+            id__in=permission_ids,
+            content_type__app_label__in=RBAC_ALLOWED_APPS
+        )
+
         role.group.permissions.set(permissions)
 
         messages.success(
@@ -481,16 +513,25 @@ def role_permissions(request, pk):
         )
         return redirect('role_detail', pk=pk)
 
-    # Get all permissions grouped by app and model
-    all_permissions = Permission.objects.select_related('content_type').order_by(
-        'content_type__app_label',
-        'content_type__model',
-        'codename'
+    # --------------------------------
+    # GET: list permissions (FILTERED)
+    # --------------------------------
+    all_permissions = (
+        Permission.objects.filter(
+            content_type__app_label__in=RBAC_ALLOWED_APPS
+        )
+        .select_related('content_type')
+        .order_by(
+            'content_type__app_label',
+            'content_type__model',
+            'codename'
+        )
     )
 
-    # Group permissions by app -> model
     permission_structure = defaultdict(lambda: defaultdict(list))
-    current_permissions = set(role.group.permissions.values_list('id', flat=True))
+    current_permissions = set(
+        role.group.permissions.values_list('id', flat=True)
+    )
 
     for perm in all_permissions:
         app_label = perm.content_type.app_label
@@ -500,11 +541,10 @@ def role_permissions(request, pk):
             'id': perm.id,
             'name': perm.name,
             'codename': perm.codename,
-            'action': perm.codename.split('_')[0],  # add, change, delete, view
+            'action': perm.codename.split('_', 1)[0],
             'selected': perm.id in current_permissions,
         })
 
-    # Convert to regular dict for template
     permission_structure = {
         app: dict(models) for app, models in permission_structure.items()
     }
@@ -516,6 +556,7 @@ def role_permissions(request, pk):
     }
 
     return render(request, 'accounts/role_permissions.html', context)
+
 
 
 @login_required

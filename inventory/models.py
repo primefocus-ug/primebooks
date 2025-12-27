@@ -2257,3 +2257,1031 @@ class ImportResult(models.Model):
     
     def __str__(self):
         return f"{self.result_type}: {self.product_name or 'Row ' + str(self.row_number)}"
+
+
+class StoreTransferRequest(models.Model):
+    """Request to transfer stock between stores within same company"""
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Approval'),
+        ('APPROVED', 'Approved'),
+        ('IN_TRANSIT', 'In Transit'),
+        ('COMPLETED', 'Completed'),
+        ('REJECTED', 'Rejected'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    transfer_number = models.CharField(max_length=50, unique=True)
+
+    # Stores
+    from_store = models.ForeignKey('stores.Store', on_delete=models.PROTECT,
+                                   related_name='store_outgoing_transfers')
+    to_store = models.ForeignKey('stores.Store', on_delete=models.PROTECT,
+                                 related_name='store_incoming_transfers')
+
+    # Requester info
+    requested_by = models.ForeignKey(User, on_delete=models.PROTECT,
+                                     related_name='transfer_requests')
+    requested_at = models.DateTimeField(auto_now_add=True)
+
+    # Approval workflow
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL,
+                                    null=True, blank=True,
+                                    related_name='approved_transfers')
+    approved_at = models.DateTimeField(null=True, blank=True)
+
+    # Fulfillment
+    dispatched_by = models.ForeignKey(User, on_delete=models.SET_NULL,
+                                      null=True, blank=True,
+                                      related_name='dispatched_transfers')
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+
+    received_by = models.ForeignKey(User, on_delete=models.SET_NULL,
+                                    null=True, blank=True,
+                                    related_name='received_transfers')
+    received_at = models.DateTimeField(null=True, blank=True)
+
+    # Notes
+    reason = models.TextField(help_text="Reason for transfer")
+    notes = models.TextField(blank=True)
+    rejection_reason = models.TextField(blank=True)
+
+    # Reference to sale if this is for a customer order
+    related_sale = models.ForeignKey('sales.Sale', on_delete=models.SET_NULL,
+                                     null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class StoreTransferItem(models.Model):
+    """Individual items in a store transfer"""
+
+    transfer = models.ForeignKey(StoreTransferRequest, on_delete=models.CASCADE,
+                                 related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+
+    quantity_requested = models.DecimalField(max_digits=12, decimal_places=3)
+    quantity_approved = models.DecimalField(max_digits=12, decimal_places=3,
+                                            null=True, blank=True)
+    quantity_sent = models.DecimalField(max_digits=12, decimal_places=3,
+                                        null=True, blank=True)
+    quantity_received = models.DecimalField(max_digits=12, decimal_places=3,
+                                            null=True, blank=True)
+
+    # Track stock movements
+    source_stock_movement = models.ForeignKey('StockMovement',
+                                              on_delete=models.SET_NULL,
+                                              null=True, blank=True,
+                                              related_name='transfer_source')
+    destination_stock_movement = models.ForeignKey('StockMovement',
+                                                   on_delete=models.SET_NULL,
+                                                   null=True, blank=True,
+                                                   related_name='transfer_destination')
+
+    notes = models.TextField(blank=True)
+
+
+class CrossCompanyProcurement(models.Model):
+    """Record of procurement from another company"""
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('REQUESTED', 'Requested'),
+        ('CONFIRMED', 'Confirmed by Supplier'),
+        ('IN_TRANSIT', 'In Transit'),
+        ('RECEIVED', 'Received'),
+        ('INVOICED', 'Invoiced to Customer'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    procurement_number = models.CharField(max_length=50, unique=True)
+
+    # Reference to public schema transaction
+    cross_company_transaction_id = models.CharField(max_length=50, blank=True,
+                                                    help_text="ID from CrossCompanyTransaction")
+
+    # Supplier company info (stored as reference)
+    supplier_company_id = models.CharField(max_length=10,
+                                           help_text="Company ID of supplier")
+    supplier_company_name = models.CharField(max_length=255)
+    supplier_tin = models.CharField(max_length=20, blank=True)
+
+    # Our store receiving the items
+    receiving_store = models.ForeignKey('stores.Store', on_delete=models.PROTECT)
+
+    # Status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+
+    # Related to customer sale
+    customer_sale = models.ForeignKey('sales.Sale', on_delete=models.SET_NULL,
+                                      null=True, blank=True,
+                                      help_text="Sale that triggered this procurement")
+
+    # Financial
+    total_cost = models.DecimalField(max_digits=15, decimal_places=2)
+    markup_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0,
+                                            help_text="Markup for customer invoice")
+
+    # Timestamps
+    requested_at = models.DateTimeField(auto_now_add=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+
+    requested_by = models.ForeignKey(User, on_delete=models.PROTECT)
+
+    notes = models.TextField(blank=True)
+
+
+class CrossCompanyProcurementItem(models.Model):
+    """Items in cross-company procurement"""
+
+    procurement = models.ForeignKey(CrossCompanyProcurement, on_delete=models.CASCADE,
+                                    related_name='items')
+
+    # Product info from supplier
+    supplier_product_code = models.CharField(max_length=100)
+    product_name = models.CharField(max_length=255)
+
+    # Our product (if we have it in our system)
+    our_product = models.ForeignKey(Product, on_delete=models.SET_NULL,
+                                    null=True, blank=True)
+
+    quantity = models.DecimalField(max_digits=12, decimal_places=3)
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=2)
+    unit_selling_price = models.DecimalField(max_digits=12, decimal_places=2,
+                                             help_text="Price to charge customer")
+
+    # Tax handling
+    tax_rate = models.CharField(max_length=1, choices=Product.TAX_RATE_CHOICES)
+
+
+class StockStoreInventory(models.Model):
+    """
+    Inventory held in central StockStore/Warehouse.
+    Similar to Stock model but for warehouses instead of branches.
+    """
+
+    stockstore = models.ForeignKey(
+        'stores.StockStore',
+        on_delete=models.CASCADE,
+        related_name='inventory_items',
+        verbose_name=_("StockStore")
+    )
+
+    product = models.ForeignKey(
+        'inventory.Product',
+        on_delete=models.CASCADE,
+        related_name='stockstore_inventory',
+        verbose_name=_("Product")
+    )
+
+    # Quantity tracking
+    quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name=_("Quantity Available")
+    )
+
+    # Reorder management for warehouse
+    low_stock_threshold = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=100,  # Higher threshold for warehouses
+        verbose_name=_("Low Stock Threshold"),
+        help_text=_("Alert when stock falls below this level")
+    )
+
+    reorder_quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=500,  # Warehouses order in bulk
+        verbose_name=_("Reorder Quantity")
+    )
+
+    # Reserved stock (for pending transfers)
+    reserved_quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name=_("Reserved Quantity"),
+        help_text=_("Quantity reserved for pending transfers")
+    )
+
+    # Physical count tracking
+    last_physical_count = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name=_("Last Physical Count")
+    )
+
+    last_physical_count_quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        default=0,
+        verbose_name=_("Last Physical Count Quantity")
+    )
+
+    # Timestamps
+    last_updated = models.DateTimeField(
+        auto_now=True,
+        verbose_name=_("Last Updated")
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("Created At")
+    )
+
+    # Metadata
+    notes = models.TextField(
+        blank=True,
+        verbose_name=_("Notes")
+    )
+
+    class Meta:
+        verbose_name = _("StockStore Inventory")
+        verbose_name_plural = _("StockStore Inventory")
+        constraints = [
+            models.UniqueConstraint(
+                fields=['stockstore', 'product'],
+                name='unique_stockstore_product_inventory'
+            )
+        ]
+        ordering = ['product__name']
+        indexes = [
+            models.Index(fields=['stockstore', 'product']),
+            models.Index(fields=['quantity']),
+            models.Index(fields=['reserved_quantity']),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} at {self.stockstore.name} - {self.quantity} units"
+
+    @property
+    def available_quantity(self):
+        """Quantity available for allocation (not reserved)"""
+        return self.quantity - self.reserved_quantity
+
+    @property
+    def is_low_stock(self):
+        """Check if stock is below threshold"""
+        return self.quantity <= self.low_stock_threshold
+
+    @property
+    def needs_reorder(self):
+        """Check if stock needs to be reordered"""
+        return self.is_low_stock
+
+    @property
+    def status(self):
+        """Get current stock status"""
+        if self.quantity == 0:
+            return 'Out of Stock'
+        elif self.is_low_stock:
+            return 'Low Stock'
+        elif self.quantity <= self.low_stock_threshold * 2:
+            return 'Medium Stock'
+        else:
+            return 'Good Stock'
+
+    @property
+    def stock_percentage(self):
+        """Stock percentage compared to threshold"""
+        if not self.low_stock_threshold or self.low_stock_threshold <= 0:
+            return 100
+        percentage = (self.quantity / self.low_stock_threshold) * 100
+        return min(100, max(0, round(percentage)))
+
+    def reserve_quantity(self, quantity):
+        """Reserve quantity for a transfer"""
+        if quantity > self.available_quantity:
+            raise ValueError(
+                f"Cannot reserve {quantity}. Only {self.available_quantity} available."
+            )
+
+        self.reserved_quantity += quantity
+        self.save(update_fields=['reserved_quantity'])
+
+    def release_reservation(self, quantity):
+        """Release reserved quantity (e.g., if transfer cancelled)"""
+        self.reserved_quantity = max(0, self.reserved_quantity - quantity)
+        self.save(update_fields=['reserved_quantity'])
+
+    def deduct_stock(self, quantity, release_reservation=True):
+        """Deduct stock after transfer completion"""
+        if quantity > self.quantity:
+            raise ValueError(
+                f"Cannot deduct {quantity}. Only {self.quantity} in stock."
+            )
+
+        self.quantity -= quantity
+        if release_reservation:
+            self.reserved_quantity = max(0, self.reserved_quantity - quantity)
+        self.save(update_fields=['quantity', 'reserved_quantity'])
+
+    def add_stock(self, quantity):
+        """Add stock (e.g., from purchases)"""
+        self.quantity += quantity
+        self.save(update_fields=['quantity'])
+
+
+class StockTransferRequest(models.Model):
+    """
+    Transfer request - can be:
+    1. StockStore -> Branch
+    2. Branch -> Branch
+    3. Branch -> StockStore (returns)
+    """
+
+    TRANSFER_TYPES = [
+        ('WAREHOUSE_TO_BRANCH', 'Warehouse to Branch'),
+        ('BRANCH_TO_BRANCH', 'Branch to Branch'),
+        ('BRANCH_TO_WAREHOUSE', 'Branch to Warehouse (Return)'),
+    ]
+
+    STATUS_CHOICES = [
+        ('DRAFT', 'Draft'),
+        ('PENDING', 'Pending Approval'),
+        ('APPROVED', 'Approved'),
+        ('IN_TRANSIT', 'In Transit'),
+        ('COMPLETED', 'Completed'),
+        ('REJECTED', 'Rejected'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    PRIORITY_CHOICES = [
+        ('LOW', 'Low'),
+        ('NORMAL', 'Normal'),
+        ('HIGH', 'High'),
+        ('URGENT', 'Urgent'),
+    ]
+
+    # Core Information
+    transfer_number = models.CharField(
+        max_length=50,
+        unique=True,
+        verbose_name=_("Transfer Number")
+    )
+
+    transfer_type = models.CharField(
+        max_length=30,
+        choices=TRANSFER_TYPES,
+        verbose_name=_("Transfer Type")
+    )
+
+    # Source and Destination
+    # For StockStore -> Branch or Branch -> StockStore
+    source_stockstore = models.ForeignKey(
+        'stores.StockStore',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='stock_outgoing_transfers',
+        verbose_name=_("Source StockStore")
+    )
+
+    destination_stockstore = models.ForeignKey(
+        'stores.StockStore',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='stock_incoming_transfers',
+        verbose_name=_("Destination StockStore")
+    )
+
+    # For Branch -> Branch or Branch -> Warehouse
+    source_store = models.ForeignKey(
+        'stores.Store',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='stock_outgoing_transfers',
+        verbose_name=_("Source Branch")
+    )
+
+    destination_store = models.ForeignKey(
+        'stores.Store',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='incoming_transfers',
+        verbose_name=_("Destination Branch")
+    )
+
+    # Request Information
+    requested_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name='transfer_requests_created',
+        verbose_name=_("Requested By")
+    )
+
+    requested_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("Requested At")
+    )
+
+    priority = models.CharField(
+        max_length=10,
+        choices=PRIORITY_CHOICES,
+        default='NORMAL',
+        verbose_name=_("Priority")
+    )
+
+    reason = models.TextField(
+        verbose_name=_("Reason for Transfer"),
+        help_text=_("Why is this transfer needed?")
+    )
+
+    # Approval Workflow
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='DRAFT',
+        verbose_name=_("Status")
+    )
+
+    approved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transfer_requests_approved',
+        verbose_name=_("Approved By")
+    )
+
+    approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Approved At")
+    )
+
+    approval_notes = models.TextField(
+        blank=True,
+        verbose_name=_("Approval Notes")
+    )
+
+    rejection_reason = models.TextField(
+        blank=True,
+        verbose_name=_("Rejection Reason")
+    )
+
+    # Dispatch Information
+    dispatched_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transfers_dispatched',
+        verbose_name=_("Dispatched By")
+    )
+
+    dispatched_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Dispatched At")
+    )
+
+    dispatch_notes = models.TextField(
+        blank=True,
+        verbose_name=_("Dispatch Notes")
+    )
+
+    # Receipt Information
+    received_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transfers_received',
+        verbose_name=_("Received By")
+    )
+
+    received_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Received At")
+    )
+
+    receipt_notes = models.TextField(
+        blank=True,
+        verbose_name=_("Receipt Notes")
+    )
+
+    # Related Documents
+    related_sale = models.ForeignKey(
+        'sales.Sale',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='related_transfers',
+        verbose_name=_("Related Sale"),
+        help_text=_("If transfer is for a customer order")
+    )
+
+    delivery_note_number = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name=_("Delivery Note Number")
+    )
+
+    # Transport Information
+    vehicle_number = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name=_("Vehicle Number")
+    )
+
+    driver_name = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name=_("Driver Name")
+    )
+
+    driver_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        verbose_name=_("Driver Phone")
+    )
+
+    expected_delivery_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Expected Delivery Date")
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("Created At")
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name=_("Updated At")
+    )
+
+    # Additional Notes
+    notes = models.TextField(
+        blank=True,
+        verbose_name=_("Additional Notes")
+    )
+
+    class Meta:
+        verbose_name = _("Stock Transfer Request")
+        verbose_name_plural = _("Stock Transfer Requests")
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['transfer_number']),
+            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=['transfer_type', 'status']),
+            models.Index(fields=['source_stockstore', 'status']),
+            models.Index(fields=['destination_store', 'status']),
+            models.Index(fields=['requested_by', 'status']),
+            models.Index(fields=['priority', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.transfer_number} - {self.get_transfer_type_display()} ({self.get_status_display()})"
+
+    def save(self, *args, **kwargs):
+        # Auto-generate transfer number
+        if not self.transfer_number:
+            from django.utils import timezone
+            timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
+            import random
+            random_suffix = random.randint(1000, 9999)
+            self.transfer_number = f"TRF-{timestamp}-{random_suffix}"
+
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        """Validate transfer request"""
+        from django.core.exceptions import ValidationError
+
+        # Validate source and destination based on transfer type
+        if self.transfer_type == 'WAREHOUSE_TO_BRANCH':
+            if not self.source_stockstore or not self.destination_store:
+                raise ValidationError(
+                    "Warehouse to Branch transfer requires source stockstore and destination branch"
+                )
+        elif self.transfer_type == 'BRANCH_TO_BRANCH':
+            if not self.source_store or not self.destination_store:
+                raise ValidationError(
+                    "Branch to Branch transfer requires source and destination branches"
+                )
+            if self.source_store == self.destination_store:
+                raise ValidationError(
+                    "Source and destination branches cannot be the same"
+                )
+        elif self.transfer_type == 'BRANCH_TO_WAREHOUSE':
+            if not self.source_store or not self.destination_stockstore:
+                raise ValidationError(
+                    "Branch to Warehouse transfer requires source branch and destination stockstore"
+                )
+
+    @property
+    def source_name(self):
+        """Get source location name"""
+        if self.source_stockstore:
+            return self.source_stockstore.name
+        elif self.source_store:
+            return self.source_store.name
+        return "Unknown"
+
+    @property
+    def destination_name(self):
+        """Get destination location name"""
+        if self.destination_stockstore:
+            return self.destination_stockstore.name
+        elif self.destination_store:
+            return self.destination_store.name
+        return "Unknown"
+
+    @property
+    def total_items(self):
+        """Get total number of items in transfer"""
+        return self.items.count()
+
+    @property
+    def total_quantity(self):
+        """Get total quantity of all items"""
+        from django.db.models import Sum
+        return self.items.aggregate(
+            total=Sum('quantity_requested')
+        )['total'] or 0
+
+    @property
+    def can_be_approved(self):
+        """Check if transfer can be approved"""
+        return self.status == 'PENDING' and self.items.exists()
+
+    @property
+    def can_be_dispatched(self):
+        """Check if transfer can be dispatched"""
+        return self.status == 'APPROVED'
+
+    @property
+    def can_be_received(self):
+        """Check if transfer can be received"""
+        return self.status == 'IN_TRANSIT'
+
+    def submit_for_approval(self):
+        """Submit draft transfer for approval"""
+        if self.status != 'DRAFT':
+            raise ValueError("Only draft transfers can be submitted")
+
+        if not self.items.exists():
+            raise ValueError("Cannot submit transfer without items")
+
+        self.status = 'PENDING'
+        self.save(update_fields=['status'])
+
+    def approve(self, approved_by, notes=''):
+        """Approve transfer request"""
+        if not self.can_be_approved:
+            raise ValueError("Transfer cannot be approved in current status")
+
+        # Check if source has sufficient stock
+        for item in self.items.all():
+            if self.source_stockstore:
+                available = self.source_stockstore.get_available_quantity(item.product)
+                if available < item.quantity_requested:
+                    raise ValueError(
+                        f"Insufficient stock for {item.product.name}. "
+                        f"Available: {available}, Requested: {item.quantity_requested}"
+                    )
+
+        # Reserve stock
+        for item in self.items.all():
+            if self.source_stockstore:
+                try:
+                    stock = StockStoreInventory.objects.get(
+                        stockstore=self.source_stockstore,
+                        product=item.product
+                    )
+                    stock.reserve_quantity(item.quantity_requested)
+                    item.quantity_approved = item.quantity_requested
+                    item.save()
+                except StockStoreInventory.DoesNotExist:
+                    raise ValueError(f"Product {item.product.name} not found in warehouse")
+
+        self.status = 'APPROVED'
+        self.approved_by = approved_by
+        self.approved_at = timezone.now()
+        self.approval_notes = notes
+        self.save()
+
+    def reject(self, rejected_by, reason):
+        """Reject transfer request"""
+        if self.status not in ['PENDING', 'DRAFT']:
+            raise ValueError("Only pending or draft transfers can be rejected")
+
+        self.status = 'REJECTED'
+        self.approved_by = rejected_by
+        self.approved_at = timezone.now()
+        self.rejection_reason = reason
+        self.save()
+
+    def dispatch(self, dispatched_by, notes=''):
+        """Dispatch approved transfer"""
+        if not self.can_be_dispatched:
+            raise ValueError("Transfer cannot be dispatched in current status")
+
+        # Create stock movements at source
+        for item in self.items.all():
+            movement_type = 'TRANSFER_OUT'
+
+            if self.source_stockstore:
+                # Deduct from warehouse
+                stock = StockStoreInventory.objects.get(
+                    stockstore=self.source_stockstore,
+                    product=item.product
+                )
+                stock.deduct_stock(item.quantity_approved)
+                item.quantity_sent = item.quantity_approved
+                item.save()
+
+                # Create movement log
+                StockStoreMovement.objects.create(
+                    stockstore=self.source_stockstore,
+                    product=item.product,
+                    movement_type=movement_type,
+                    quantity=-item.quantity_approved,
+                    reference=self.transfer_number,
+                    notes=f"Transfer to {self.destination_name}",
+                    created_by=dispatched_by,
+                    transfer_request=self
+                )
+
+            elif self.source_store:
+                # Deduct from branch
+                stock = Stock.objects.get(
+                    store=self.source_store,
+                    product=item.product
+                )
+                # Will be handled by StockMovement signal
+                StockMovement.objects.create(
+                    product=item.product,
+                    store=self.source_store,
+                    movement_type=movement_type,
+                    quantity=-item.quantity_approved,
+                    reference=self.transfer_number,
+                    notes=f"Transfer to {self.destination_name}",
+                    created_by=dispatched_by
+                )
+                item.quantity_sent = item.quantity_approved
+                item.save()
+
+        self.status = 'IN_TRANSIT'
+        self.dispatched_by = dispatched_by
+        self.dispatched_at = timezone.now()
+        self.dispatch_notes = notes
+        self.save()
+
+    def receive(self, received_by, actual_quantities=None, notes=''):
+        """Receive transfer at destination"""
+        if not self.can_be_received:
+            raise ValueError("Transfer cannot be received in current status")
+
+        # Create stock movements at destination
+        for item in self.items.all():
+            quantity = actual_quantities.get(item.id) if actual_quantities else item.quantity_sent
+            movement_type = 'TRANSFER_IN'
+
+        if self.destination_stockstore:
+            # Add to warehouse
+            stock, created = StockStoreInventory.objects.get_or_create(
+                stockstore=self.destination_stockstore,
+                product=item.product,
+                defaults={'quantity': 0}
+            )
+            stock.add_stock(quantity)
+            item.quantity_received = quantity
+            item.save()
+
+            # Create movement log
+            StockStoreMovement.objects.create(
+                stockstore=self.destination_stockstore,
+                product=item.product,
+                movement_type=movement_type,
+                quantity=quantity,
+                reference=self.transfer_number,
+                notes=f"Transfer from {self.source_name}",
+                created_by=received_by,
+                transfer_request=self
+            )
+
+        elif self.destination_store:
+            # Add to branch - StockMovement will handle stock update
+            StockMovement.objects.create(
+                product=item.product,
+                store=self.destination_store,
+                movement_type=movement_type,
+                quantity=quantity,
+                reference=self.transfer_number,
+                notes=f"Transfer from {self.source_name}",
+                created_by=received_by
+            )
+            item.quantity_received = quantity
+            item.save()
+
+        self.status = 'COMPLETED'
+        self.received_by = received_by
+        self.received_at = timezone.now()
+        self.receipt_notes = notes
+        self.save()
+
+
+    def cancel(self, cancelled_by, reason):
+        """Cancel transfer and release reservations"""
+        if self.status in ['COMPLETED', 'CANCELLED']:
+            raise ValueError("Cannot cancel completed or already cancelled transfer")
+
+        # Release reservations
+        if self.status == 'APPROVED' and self.source_stockstore:
+            for item in self.items.all():
+                try:
+                    stock = StockStoreInventory.objects.get(
+                        stockstore=self.source_stockstore,
+                        product=item.product
+                    )
+                    stock.release_reservation(item.quantity_approved or 0)
+                except StockStoreInventory.DoesNotExist:
+                    pass
+
+        self.status = 'CANCELLED'
+        self.rejection_reason = f"Cancelled by {cancelled_by.get_full_name()}: {reason}"
+        self.save()
+
+
+class StockTransferItem(models.Model):
+    transfer = models.ForeignKey(
+        StockTransferRequest,
+        on_delete=models.CASCADE,
+        related_name='items',
+        verbose_name=_("Transfer")
+    )
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        verbose_name=_("Product")
+    )
+
+    # Quantities at different stages
+    quantity_requested = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        validators=[MinValueValidator(0)],
+        verbose_name=_("Quantity Requested")
+    )
+
+    quantity_approved = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        verbose_name=_("Quantity Approved"),
+        help_text=_("May differ from requested")
+    )
+
+    quantity_sent = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        verbose_name=_("Quantity Sent")
+    )
+
+    quantity_received = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        verbose_name=_("Quantity Received"),
+        help_text=_("Actual quantity received at destination")
+    )
+
+    # Notes for this item
+    notes = models.TextField(
+        blank=True,
+        verbose_name=_("Item Notes")
+    )
+
+    damage_notes = models.TextField(
+        blank=True,
+        verbose_name=_("Damage/Discrepancy Notes")
+    )
+
+    class Meta:
+        verbose_name = _("Transfer Item")
+        verbose_name_plural = _("Transfer Items")
+        ordering = ['product__name']
+        indexes = [
+            models.Index(fields=['transfer', 'product']),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} - {self.quantity_requested} units"
+
+    @property
+    def has_discrepancy(self):
+        """Check if there's a discrepancy between sent and received"""
+        if self.quantity_sent and self.quantity_received:
+            return self.quantity_sent != self.quantity_received
+        return False
+
+class StockStoreMovement(models.Model):
+    MOVEMENT_TYPES = [
+        ('PURCHASE', 'Purchase/Receipt'),
+        ('TRANSFER_OUT', 'Transfer Out to Branch'),
+        ('TRANSFER_IN', 'Transfer In from Branch'),
+        ('ADJUSTMENT', 'Inventory Adjustment'),
+        ('RETURN', 'Return from Branch'),
+        ('DAMAGE', 'Damaged Stock'),
+        ('LOSS', 'Stock Loss'),
+    ]
+
+    stockstore = models.ForeignKey(
+        'stores.StockStore',
+        on_delete=models.CASCADE,
+        related_name='stock_movements',
+        verbose_name=_("StockStore")
+    )
+
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='stockstore_movements',
+        verbose_name=_("Product")
+    )
+
+    movement_type = models.CharField(
+        max_length=20,
+        choices=MOVEMENT_TYPES,
+        verbose_name=_("Movement Type")
+    )
+
+    quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        verbose_name=_("Quantity"),
+        help_text=_("Positive for additions, negative for deductions")
+    )
+
+    reference = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name=_("Reference Number")
+    )
+
+    notes = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_("Notes")
+    )
+
+    # Link to transfer if applicable
+    transfer_request = models.ForeignKey(
+        StockTransferRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='warehouse_movements',
+        verbose_name=_("Related Transfer")
+    )
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        verbose_name=_("Created By")
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("Created At")
+    )
+
+    class Meta:
+        verbose_name = _("StockStore Movement")
+        verbose_name_plural = _("StockStore Movements")
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['stockstore', 'created_at']),
+            models.Index(fields=['product', 'created_at']),
+            models.Index(fields=['movement_type', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.movement_type} - {self.product.name} ({self.quantity}) at {self.stockstore.name}"

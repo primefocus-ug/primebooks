@@ -1370,6 +1370,77 @@ class Company(TenantMixin,EFRISCompanyMixin):
         return True, "Action allowed"
 
 
+class CompanyRelationship(models.Model):
+    """Define relationships between companies for procurement"""
+
+    RELATIONSHIP_TYPES = [
+        ('SUPPLIER', 'Supplier'),
+        ('CUSTOMER', 'Customer'),
+        ('PARTNER', 'Business Partner'),
+        ('COMPETITOR', 'Competitor'),
+    ]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE,
+                                related_name='business_relationships')
+    related_company = models.ForeignKey(Company, on_delete=models.CASCADE,
+                                        related_name='related_to')
+    relationship_type = models.CharField(max_length=20, choices=RELATIONSHIP_TYPES)
+
+    # Credit terms
+    credit_limit = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    payment_terms_days = models.IntegerField(default=30)
+
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [['company', 'related_company', 'relationship_type']]
+
+
+class CrossCompanyTransaction(models.Model):
+    """Track transactions between companies (in public schema)"""
+
+    TRANSACTION_TYPES = [
+        ('PROCUREMENT', 'Procurement'),
+        ('SALE', 'Sale'),
+        ('TRANSFER', 'Transfer'),
+    ]
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('CONFIRMED', 'Confirmed'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    transaction_number = models.CharField(max_length=50, unique=True)
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+
+    # Companies involved
+    source_company = models.ForeignKey(Company, on_delete=models.PROTECT,
+                                       related_name='outgoing_transactions')
+    destination_company = models.ForeignKey(Company, on_delete=models.PROTECT,
+                                            related_name='incoming_transactions')
+
+    # Transaction details (JSON for flexibility)
+    transaction_data = models.JSONField(default=dict)
+
+    # References to tenant-specific records
+    source_reference_id = models.CharField(max_length=50, blank=True,
+                                           help_text="Sale/Transfer ID in source company")
+    destination_reference_id = models.CharField(max_length=50, blank=True,
+                                                help_text="Purchase ID in destination company")
+
+    # Financial
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2)
+    currency = models.CharField(max_length=3, default='UGX')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
 class Domain(DomainMixin):
     """
     Domain model for django-tenants.

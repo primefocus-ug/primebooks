@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-exchange-alt"></i> {{ page_title }}</h2>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{% url 'inventory:transfer_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> New Transfer
+            </a>
+        </div>
+    </div>
+    
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h3>{{ summary.total }}</h3>
+                    <p class="text-muted mb-0">Total Transfers</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-warning">
+                <div class="card-body">
+                    <h3 class="text-warning">{{ summary.pending }}</h3>
+                    <p class="text-muted mb-0">Pending Approval</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-info">
+                <div class="card-body">
+                    <h3 class="text-info">{{ summary.in_transit }}</h3>
+                    <p class="text-muted mb-0">In Transit</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-success">
+                <div class="card-body">
+                    <h3 class="text-success">{{ summary.completed }}</h3>
+                    <p class="text-muted mb-0">Completed</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="">All Statuses</option>
+                        <option value="PENDING" {% if status_filter == 'PENDING' %}selected{% endif %}>Pending</option>
+                        <option value="APPROVED" {% if status_filter == 'APPROVED' %}selected{% endif %}>Approved</option>
+                        <option value="IN_TRANSIT" {% if status_filter == 'IN_TRANSIT' %}selected{% endif %}>In Transit</option>
+                        <option value="COMPLETED" {% if status_filter == 'COMPLETED' %}selected{% endif %}>Completed</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Transfer Type</label>
+                    <select name="type" class="form-select">
+                        <option value="">All Types</option>
+                        <option value="WAREHOUSE_TO_BRANCH" {% if transfer_type == 'WAREHOUSE_TO_BRANCH' %}selected{% endif %}>
+                            Warehouse → Branch
+                        </option>
+                        <option value="BRANCH_TO_BRANCH" {% if transfer_type == 'BRANCH_TO_BRANCH' %}selected{% endif %}>
+                            Branch → Branch
+                        </option>
+                        <option value="BRANCH_TO_WAREHOUSE" {% if transfer_type == 'BRANCH_TO_WAREHOUSE' %}selected{% endif %}>
+                            Branch → Warehouse
+                        </option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Search</label>
+                    <input type="text" name="search" class="form-control" 
+                           placeholder="Transfer number or reason" value="{{ search }}">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-search"></i> Filter
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Transfers Table -->
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Transfer #</th>
+                            <th>Type</th>
+                            <th>From</th>
+                            <th>To</th>
+                            <th>Items</th>
+                            <th>Status</th>
+                            <th>Priority</th>
+                            <th>Requested</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for transfer in transfers %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'inventory:transfer_detail' transfer.pk %}">
+                                    {{ transfer.transfer_number }}
+                                </a>
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">
+                                    {{ transfer.get_transfer_type_display }}
+                                </span>
+                            </td>
+                            <td>{{ transfer.source_name }}</td>
+                            <td>{{ transfer.destination_name }}</td>
+                            <td>{{ transfer.total_items }}</td>
+                            <td>
+                                {% if transfer.status == 'PENDING' %}
+                                    <span class="badge bg-warning">Pending</span>
+                                {% elif transfer.status == 'APPROVED' %}
+                                    <span class="badge bg-info">Approved</span>
+                                {% elif transfer.status == 'IN_TRANSIT' %}
+                                    <span class="badge bg-primary">In Transit</span>
+                                {% elif transfer.status == 'COMPLETED' %}
+                                    <span class="badge bg-success">Completed</span>
+                                {% elif transfer.status == 'REJECTED' %}
+                                    <span class="badge bg-danger">Rejected</span>
+                                {% elif transfer.status == 'CANCELLED' %}
+                                    <span class="badge bg-dark">Cancelled</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if transfer.priority == 'URGENT' %}
+                                    <span class="badge bg-danger">{{ transfer.priority }}</span>
+                                {% elif transfer.priority == 'HIGH' %}
+                                    <span class="badge bg-warning">{{ transfer.priority }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ transfer.priority }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <small>{{ transfer.created_at|date:"M d, Y" }}</small><br>
+                                <small class="text-muted">by {{ transfer.requested_by.get_full_name }}</small>
+                            </td>
+                            <td>
+                                <a href="{% url 'inventory:transfer_detail' transfer.pk %}" 
+                                   class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="9" class="text-center text-muted">
+                                No transfers found
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            {% if transfers.has_other_pages %}
+            <nav>
+                <ul class="pagination justify-content-center">
+                    {% if transfers.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ transfers.previous_page_number }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    
+                    {% for num in transfers.paginator.page_range %}
+                        {% if transfers.number == num %}
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                        {% else %}
+                        <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if transfers.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ transfers.next_page_number }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

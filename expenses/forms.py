@@ -3,6 +3,27 @@ from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 from decimal import Decimal
 from .models import Expense, ExpenseCategory, ExpenseAttachment, ExpenseComment
+from django.utils import timezone
+from django import forms
+import os
+from django.utils.translation import gettext_lazy as _
+from django.core.exceptions import ValidationError
+from decimal import Decimal
+from .models import Expense
+
+class MultipleClearableFileInput(forms.ClearableFileInput):
+    allow_multiple_selected = True  # <- This is required
+
+    def __init__(self, attrs=None):
+        default_attrs = {'multiple': True}
+        if attrs:
+            default_attrs.update(attrs)
+        super().__init__(attrs=default_attrs)
+
+    def value_from_datadict(self, data, files, name):
+        if hasattr(files, 'getlist'):
+            return files.getlist(name)
+        return None
 
 
 class ExpenseForm(forms.ModelForm):
@@ -10,33 +31,37 @@ class ExpenseForm(forms.ModelForm):
 
     attachments = forms.FileField(
         required=False,
-        widget=forms.ClearableFileInput(attrs={
+        widget=MultipleClearableFileInput(attrs={
             'class': 'form-control',
-            'accept': 'image/*,.pdf,.doc,.docx,.xls,.xlsx'
+            'accept': 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt',
+            'multiple': True
         }),
         label=_("Attachments"),
-        help_text=_("You can upload files (images, PDFs, documents)")
+        help_text=_("Upload receipts or supporting documents (max 10MB each, max 10 files)")
     )
 
     class Meta:
         model = Expense
         fields = [
             'title', 'description', 'category', 'amount', 'currency',
-            'tax_rate', 'expense_date', 'due_date', 'vendor_name',
-            'vendor_phone', 'vendor_email', 'vendor_tin', 'reference_number',
+            'expense_date', 'due_date', 'store',
+            'vendor_name', 'vendor_phone', 'vendor_email', 'vendor_tin',
+            'reference_number', 'payment_method', 'payment_reference',
             'is_reimbursable', 'is_recurring', 'is_billable', 'notes'
         ]
         widgets = {
             'title': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': _('Enter expense title'),
-                'required': True
+                'required': True,
+                'maxlength': '200'
             }),
             'description': forms.Textarea(attrs={
                 'class': 'form-control',
                 'rows': 4,
                 'placeholder': _('Describe the expense in detail'),
-                'required': True
+                'required': True,
+                'maxlength': '5000'
             }),
             'category': forms.Select(attrs={
                 'class': 'form-select',
@@ -50,14 +75,8 @@ class ExpenseForm(forms.ModelForm):
                 'required': True
             }),
             'currency': forms.Select(attrs={
-                'class': 'form-select'
-            }),
-            'tax_rate': forms.NumberInput(attrs={
-                'class': 'form-control',
-                'step': '0.01',
-                'min': '0',
-                'max': '100',
-                'placeholder': '0.00'
+                'class': 'form-select',
+                'required': True
             }),
             'expense_date': forms.DateInput(attrs={
                 'class': 'form-control',
@@ -70,28 +89,42 @@ class ExpenseForm(forms.ModelForm):
             }),
             'vendor_name': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': _('Vendor/Supplier name')
+                'placeholder': _('Vendor/Supplier name'),
+                'maxlength': '200'
             }),
             'vendor_phone': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': _('Phone number')
+                'placeholder': _('Phone number'),
+                'maxlength': '20'
             }),
             'vendor_email': forms.EmailInput(attrs={
                 'class': 'form-control',
-                'placeholder': _('Email address')
+                'placeholder': _('Email address'),
+                'maxlength': '254'
             }),
             'vendor_tin': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': _('Tax Identification Number')
+                'placeholder': _('Tax Identification Number'),
+                'maxlength': '20'
             }),
             'reference_number': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': _('Receipt or invoice number')
+                'placeholder': _('Receipt or invoice number'),
+                'maxlength': '100'
+            }),
+            'payment_method': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'payment_reference': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Transaction ID or reference'),
+                'maxlength': '100'
             }),
             'notes': forms.Textarea(attrs={
                 'class': 'form-control',
                 'rows': 3,
-                'placeholder': _('Additional notes')
+                'placeholder': _('Additional notes'),
+                'maxlength': '2000'
             }),
             'is_reimbursable': forms.CheckboxInput(attrs={
                 'class': 'form-check-input'
@@ -102,43 +135,231 @@ class ExpenseForm(forms.ModelForm):
             'is_billable': forms.CheckboxInput(attrs={
                 'class': 'form-check-input'
             }),
+            'store': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+        }
+        help_texts = {
+            'reference_number': _('If available, enter receipt/invoice number'),
+            'is_reimbursable': _('Check if this expense should be reimbursed to you'),
+            'is_billable': _('Check if this expense can be billed to a customer'),
+            'payment_reference': _('Enter transaction ID, cheque number, or other payment reference'),
+        }
+        labels = {
+            'payment_reference': _('Payment Reference/Txn ID'),
         }
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
+        self.is_edit = kwargs.pop('is_edit', False)
+        self.is_admin = kwargs.pop('is_admin', False)
         super().__init__(*args, **kwargs)
 
-        # Filter active categories only
-        self.fields['category'].queryset = ExpenseCategory.objects.filter(
-            is_active=True
-        ).order_by('sort_order', 'name')
+        # Set category choices with default option
+        self.fields['category'].choices = [('', _('-- Select Category --'))] + list(Expense.CATEGORY_CHOICES)
+
+        # Set payment method choices with default option
+        self.fields['payment_method'].choices = [('', _('-- Select Payment Method --'))] + list(Expense.PAYMENT_METHODS)
 
         # Set currency choices
         self.fields['currency'].choices = [
+            ('', _('-- Select Currency --')),
             ('UGX', _('UGX - Uganda Shilling')),
             ('USD', _('USD - US Dollar')),
             ('EUR', _('EUR - Euro')),
             ('GBP', _('GBP - British Pound')),
         ]
 
+        # Set store field queryset
+        if self.user:
+            self.fields['store'].queryset = self.get_user_stores(self.user)
+            self.fields['store'].empty_label = _('-- Select Store/Branch --')
+
+        # For existing expense, add read-only expense_number field
+        if self.instance and self.instance.pk:
+            self.fields['expense_number'] = forms.CharField(
+                initial=self.instance.expense_number,
+                widget=forms.TextInput(attrs={
+                    'class': 'form-control',
+                    'readonly': 'readonly'
+                }),
+                label=_("Expense Number"),
+                required=False
+            )
+
+        # Add admin notes field only for admin users
+        if self.is_admin:
+            self.fields['admin_notes'] = forms.CharField(
+                required=False,
+                widget=forms.Textarea(attrs={
+                    'class': 'form-control',
+                    'rows': 2,
+                    'placeholder': _('Internal notes (not visible to creator)'),
+                    'maxlength': '1000'
+                }),
+                label=_("Admin Notes"),
+                help_text=_("Internal notes not visible to expense creator")
+            )
+            # Add to Meta.fields for proper validation
+            if 'admin_notes' not in self.Meta.fields:
+                self.Meta.fields.append('admin_notes')
+
+        # Make certain fields read-only based on status
+        if self.instance and self.instance.pk and self.instance.status != 'DRAFT':
+            readonly_fields = ['amount', 'category', 'expense_date', 'vendor_name']
+            for field in readonly_fields:
+                if field in self.fields:
+                    self.fields[field].widget.attrs['readonly'] = True
+                    self.fields[field].widget.attrs['class'] += ' bg-light'
+
+        # Add CSS classes for styling
+        for field_name, field in self.fields.items():
+            if field_name not in ['is_reimbursable', 'is_recurring', 'is_billable']:
+                if 'class' not in field.widget.attrs:
+                    field.widget.attrs['class'] = 'form-control'
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs['class'] = 'form-select'
+
+        # Add placeholder for vendor TIN
+        self.fields['vendor_tin'].widget.attrs['placeholder'] = _('TIN, VAT Number, or Tax ID')
+
+    def get_user_stores(self, user):
+        """Get stores that the user has access to"""
+        from stores.models import Store
+
+        try:
+            if user.is_superuser or self.is_admin:
+                return Store.objects.filter(is_active=True).order_by('name')
+            elif hasattr(user, 'profile') and hasattr(user.profile, 'stores'):
+                # If user has profile with store access
+                return user.profile.stores.filter(is_active=True).order_by('name')
+            elif hasattr(user, 'store'):
+                # If user is directly associated with a store
+                return Store.objects.filter(id=user.store.id, is_active=True)
+            else:
+                # Default: show all active stores
+                return Store.objects.filter(is_active=True).order_by('name')
+        except Exception:
+            return Store.objects.filter(is_active=True).order_by('name')
+
+    def clean_attachments(self):
+        """Validate uploaded files"""
+        attachments = self.files.getlist('attachments') if self.files else []
+
+        # Limit number of files
+        max_files = 10
+        if len(attachments) > max_files:
+            raise ValidationError(_(f'Maximum {max_files} files allowed'))
+
+        # Validate each file
+        for attachment in attachments:
+            # Check file size (10MB limit - increased from 5MB)
+            if attachment.size > 10 * 1024 * 1024:
+                raise ValidationError(_(f'File "{attachment.name}" exceeds 10MB limit'))
+
+            # Check file extension
+            allowed_extensions = [
+                '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp',
+                '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt'
+            ]
+            ext = os.path.splitext(attachment.name)[1].lower()
+            if ext not in allowed_extensions:
+                raise ValidationError(_(
+                    f'File type {ext} not allowed. Allowed types: {", ".join(allowed_extensions)}'
+                ))
+
+        return attachments
+
     def clean_amount(self):
         amount = self.cleaned_data.get('amount')
-        if amount and amount <= 0:
+        if amount is not None and amount <= 0:
             raise ValidationError(_("Amount must be greater than zero"))
         return amount
 
+    def clean_vendor_email(self):
+        email = self.cleaned_data.get('vendor_email')
+        if email and not email.strip():
+            return ''
+        return email
+
+    def clean_vendor_phone(self):
+        phone = self.cleaned_data.get('vendor_phone')
+        if phone:
+            # Basic phone number validation (remove non-digits)
+            phone_digits = ''.join(filter(str.isdigit, phone))
+            if len(phone_digits) < 9:
+                raise ValidationError(_("Please enter a valid phone number"))
+        return phone
+
     def clean(self):
         cleaned_data = super().clean()
+
+        # Validate date logic
         expense_date = cleaned_data.get('expense_date')
         due_date = cleaned_data.get('due_date')
 
-        if expense_date and due_date and due_date < expense_date:
-            raise ValidationError({
-                'due_date': _("Due date cannot be before expense date")
-            })
+        if expense_date and due_date:
+            if due_date < expense_date:
+                self.add_error('due_date',
+                               _("Payment due date cannot be before the expense date")
+                               )
+
+        # Validate payment reference based on payment method
+        payment_method = cleaned_data.get('payment_method')
+        payment_reference = cleaned_data.get('payment_reference')
+
+        if payment_method and payment_method != 'CASH':
+            if not payment_reference or not payment_reference.strip():
+                self.add_error('payment_reference',
+                               _(f"Payment reference is required for {self.get_payment_method_display(payment_method)}")
+                               )
 
         return cleaned_data
 
+    def get_payment_method_display(self, value):
+        """Get display name for payment method"""
+        choices_dict = dict(Expense.PAYMENT_METHODS)
+        return choices_dict.get(value, value)
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+
+        # Set the user who created/updated the expense
+        if self.user and not instance.pk:
+            instance.created_by = self.user
+
+        # Set admin notes if provided and user is admin
+        if self.is_admin and 'admin_notes' in self.cleaned_data:
+            instance.admin_notes = self.cleaned_data['admin_notes']
+
+        if commit:
+            instance.save()
+
+            # Handle file attachments
+            if self.files and 'attachments' in self.files:
+                self.save_attachments(instance)
+
+        return instance
+
+    def save_attachments(self, expense):
+        """Save uploaded attachments"""
+        from .models import ExpenseAttachment
+
+        for uploaded_file in self.files.getlist('attachments'):
+            # Check if file already exists for this expense
+            existing = ExpenseAttachment.objects.filter(
+                expense=expense,
+                file=uploaded_file.name
+            ).exists()
+
+            if not existing:
+                attachment = ExpenseAttachment(
+                    expense=expense,
+                    file=uploaded_file,
+                    uploaded_by=self.user,
+                    file_name=uploaded_file.name
+                )
+                attachment.save()
 
 class ExpenseFilterForm(forms.Form):
     """Form for filtering expenses"""

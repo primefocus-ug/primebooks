@@ -9,6 +9,13 @@ from stores.models import Store
 from company.models import EFRISCommodityCategory
 from django.utils.translation import gettext_lazy as _
 import logging
+from django.forms import inlineformset_factory
+from stores.models import StockStore
+from .models import (
+     StockTransferRequest, StockTransferItem,
+    StockStoreInventory
+)
+from stores.models import Store
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -2364,3 +2371,144 @@ class StockImportMappingForm(forms.Form):
                     if field_value in column_lower or any(word in column_lower for word in field_value.split('_')):
                         self.fields[field_name].initial = field_value
                         break
+
+
+
+class StockStoreForm(forms.ModelForm):
+    class Meta:
+        model = StockStore
+        fields = [
+            'name', 'code', 'description', 'physical_address', 'region',
+            'latitude', 'longitude', 'phone', 'email',
+            'manager_name', 'manager_phone',
+            'is_main_stockstore', 'auto_approve_transfers',
+            'requires_manager_approval', 'min_stock_alert_enabled',
+            'staff', 'managers', 'notes'
+        ]
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 3}),
+            'physical_address': forms.Textarea(attrs={'rows': 3}),
+            'notes': forms.Textarea(attrs={'rows': 3}),
+            'staff': forms.CheckboxSelectMultiple(),
+            'managers': forms.CheckboxSelectMultiple(),
+        }
+
+
+class StockTransferRequestForm(forms.ModelForm):
+    class Meta:
+        model = StockTransferRequest
+        fields = [
+            'transfer_type', 'source_stockstore', 'destination_stockstore',
+            'source_store', 'destination_store', 'priority', 'reason',
+            'expected_delivery_date', 'vehicle_number', 'driver_name',
+            'driver_phone', 'notes'
+        ]
+        widgets = {
+            'reason': forms.Textarea(attrs={'rows': 3}),
+            'notes': forms.Textarea(attrs={'rows': 3}),
+            'expected_delivery_date': forms.DateInput(attrs={'type': 'date'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        self.company = kwargs.pop('company', None)
+        super().__init__(*args, **kwargs)
+
+        # Filter querysets by company
+        if self.company:
+            self.fields['source_stockstore'].queryset = StockStore.objects.filter(
+                company=self.company, is_active=True
+            )
+            self.fields['destination_stockstore'].queryset = StockStore.objects.filter(
+                company=self.company, is_active=True
+            )
+            self.fields['source_store'].queryset = Store.objects.filter(
+                company=self.company, is_active=True
+            )
+            self.fields['destination_store'].queryset = Store.objects.filter(
+                company=self.company, is_active=True
+            )
+
+        # Dynamic field visibility based on transfer type
+        self.fields['source_stockstore'].required = False
+        self.fields['destination_stockstore'].required = False
+        self.fields['source_store'].required = False
+        self.fields['destination_store'].required = False
+
+    def clean(self):
+        cleaned_data = super().clean()
+        transfer_type = cleaned_data.get('transfer_type')
+
+        if transfer_type == 'WAREHOUSE_TO_BRANCH':
+            if not cleaned_data.get('source_stockstore'):
+                self.add_error('source_stockstore', 'Source warehouse is required')
+            if not cleaned_data.get('destination_store'):
+                self.add_error('destination_store', 'Destination branch is required')
+
+        elif transfer_type == 'BRANCH_TO_BRANCH':
+            if not cleaned_data.get('source_store'):
+                self.add_error('source_store', 'Source branch is required')
+            if not cleaned_data.get('destination_store'):
+                self.add_error('destination_store', 'Destination branch is required')
+
+        elif transfer_type == 'BRANCH_TO_WAREHOUSE':
+            if not cleaned_data.get('source_store'):
+                self.add_error('source_store', 'Source branch is required')
+            if not cleaned_data.get('destination_stockstore'):
+                self.add_error('destination_stockstore', 'Destination warehouse is required')
+
+        return cleaned_data
+
+
+class StockTransferItemForm(forms.ModelForm):
+    class Meta:
+        model = StockTransferItem
+        fields = ['product', 'quantity_requested', 'notes']
+        widgets = {
+            'notes': forms.Textarea(attrs={'rows': 2}),
+        }
+
+
+StockTransferItemFormSet = inlineformset_factory(
+    StockTransferRequest,
+    StockTransferItem,
+    form=StockTransferItemForm,
+    extra=1,
+    can_delete=True
+)
+
+
+class ReceiveTransferForm(forms.Form):
+    receipt_notes = forms.CharField(
+        widget=forms.Textarea(attrs={'rows': 3}),
+        required=False,
+        label='Receipt Notes'
+    )
+
+    def __init__(self, *args, **kwargs):
+        self.transfer = kwargs.pop('transfer')
+        super().__init__(*args, **kwargs)
+
+        # Add a field for each item
+        for item in self.transfer.items.all():
+            field_name = f'quantity_{item.id}'
+            self.fields[field_name] = forms.DecimalField(
+                label=f'{item.product.name} (Sent: {item.quantity_sent})',
+                initial=item.quantity_sent,
+                max_digits=12,
+                decimal_places=3,
+                min_value=0
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        actual_quantities = {}
+
+        for item in self.transfer.items.all():
+            field_name = f'quantity_{item.id}'
+            quantity = cleaned_data.get(field_name)
+            if quantity is not None:
+                actual_quantities[item.id] = quantity
+
+        cleaned_data['actual_quantities'] = actual_quantities
+        return cleaned_data

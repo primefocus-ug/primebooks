@@ -12,7 +12,7 @@ import pandas as pd
 from io import BytesIO
 import os
 
-from .models import Expense, ExpenseCategory
+from .models import Expense  # Removed ExpenseCategory import
 from notifications.models import Notification
 
 User = get_user_model()
@@ -27,7 +27,7 @@ def send_pending_approval_reminders():
     pending_expenses = Expense.objects.filter(
         status='SUBMITTED',
         submitted_at__lte=three_days_ago
-    ).select_related('created_by', 'category')
+    ).select_related('created_by')  # Removed 'category' from select_related
 
     if not pending_expenses.exists():
         logger.info("No pending expenses found for reminders")
@@ -69,7 +69,7 @@ def send_overdue_payment_alerts():
     overdue_expenses = Expense.objects.filter(
         status='APPROVED',
         due_date__lt=today
-    ).select_related('created_by', 'category', 'store')
+    ).select_related('created_by', 'store')  # Removed 'category' from select_related
 
     if not overdue_expenses.exists():
         logger.info("No overdue expenses found")
@@ -138,13 +138,17 @@ def generate_monthly_expense_report():
 
     reports_sent = 0
 
+    # Get category choices for display names
+    from .models import Expense
+    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
+
     for user in users:
         # Get user's expenses for last month
         expenses = Expense.objects.filter(
             created_by=user,
             expense_date__gte=first_day_last_month,
             expense_date__lte=last_day_last_month
-        ).select_related('category', 'store')
+        ).select_related('store')  # Removed 'category' from select_related
 
         if not expenses.exists():
             continue
@@ -158,13 +162,15 @@ def generate_monthly_expense_report():
             status__in=['SUBMITTED', 'APPROVED']
         ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
 
-        # Category breakdown
-        category_breakdown = expenses.values(
-            'category__name', 'category__color_code'
-        ).annotate(
+        # Category breakdown - UPDATED
+        category_breakdown = expenses.values('category').annotate(
             total=Sum('amount'),
             count=Count('id')
         ).order_by('-total')
+
+        # Add display names to category breakdown
+        for item in category_breakdown:
+            item['category_display'] = category_choices_dict.get(item['category'], item['category'])
 
         # Status breakdown
         status_breakdown = expenses.values('status').annotate(
@@ -208,63 +214,12 @@ def generate_monthly_expense_report():
     return f"Sent reports to {reports_sent} users"
 
 
-@shared_task
-def check_budget_utilization():
-    """Check and alert for categories exceeding budget thresholds"""
-    categories = ExpenseCategory.objects.filter(
-        is_active=True,
-        monthly_budget__isnull=False,
-        monthly_budget__gt=0
-    )
-
-    alerts_sent = 0
-
-    for category in categories:
-        spent = category.get_monthly_spent()
-        budget = category.monthly_budget
-
-        if budget and budget > 0:
-            utilization = (spent / budget * 100)
-
-            # Alert at 80%, 90%, and 100% thresholds
-            alert_threshold = None
-            if utilization >= 100:
-                alert_threshold = 100
-            elif utilization >= 90:
-                alert_threshold = 90
-            elif utilization >= 80:
-                alert_threshold = 80
-
-            if alert_threshold:
-                # Get relevant users (admins and users with view_all_expenses permission)
-                relevant_users = User.objects.filter(
-                    Q(is_staff=True) |
-                    Q(user_permissions__codename='view_all_expenses') |
-                    Q(groups__permissions__codename='view_all_expenses'),
-                    is_active=True
-                ).distinct()
-
-                severity = 'critical' if alert_threshold >= 100 else 'warning'
-
-                for user in relevant_users:
-                    Notification.objects.create(
-                        recipient=user,
-                        notification_type='budget_alert',
-                        title=f"Budget Alert: {category.name} ({alert_threshold}%)",
-                        message=f"Category '{category.name}' has used {utilization:.1f}% of monthly budget ({spent:,.2f} / {budget:,.2f})",
-                        action_url=f'/expenses/categories/{category.id}/',
-                        metadata={
-                            'category_id': category.id,
-                            'utilization': float(utilization),
-                            'spent': float(spent),
-                            'budget': float(budget),
-                            'severity': severity
-                        }
-                    )
-                    alerts_sent += 1
-
-    logger.info(f"Budget utilization check completed. Sent {alerts_sent} alerts")
-    return f"Budget check completed. Sent {alerts_sent} alerts"
+# Remove or comment out budget-related tasks since ExpenseCategory is removed
+# @shared_task
+# def check_budget_utilization():
+#     """Check and alert for categories exceeding budget thresholds"""
+#     # This function no longer works since ExpenseCategory model was removed
+#     return "Budget check disabled - ExpenseCategory model removed"
 
 
 @shared_task
@@ -300,6 +255,7 @@ def cleanup_old_draft_expenses():
 
 @shared_task
 def export_expenses_to_excel_task(user_id, filters=None):
+    from expenses.models import Expense
     """Export expenses to Excel file asynchronously"""
     try:
         user = User.objects.get(id=user_id)
@@ -315,7 +271,7 @@ def export_expenses_to_excel_task(user_id, filters=None):
         if filters.get('status'):
             expenses = expenses.filter(status=filters['status'])
         if filters.get('category'):
-            expenses = expenses.filter(category_id=filters['category'])
+            expenses = expenses.filter(category=filters['category'])  # Changed from category_id to category
         if filters.get('date_from'):
             expenses = expenses.filter(expense_date__gte=filters['date_from'])
         if filters.get('date_to'):
@@ -323,21 +279,27 @@ def export_expenses_to_excel_task(user_id, filters=None):
         if filters.get('store'):
             expenses = expenses.filter(store_id=filters['store'])
 
-        # Select related to optimize queries
+        # Select related to optimize queries - REMOVED 'category' from select_related
         expenses = expenses.select_related(
-            'category', 'store', 'created_by', 'approved_by', 'paid_by'
+            'store', 'created_by', 'approved_by', 'paid_by'  # Removed 'category'
         ).order_by('-expense_date')
+
+        # Get category display names
+        from .models import Expense
+        category_choices_dict = dict(Expense.CATEGORY_CHOICES)
 
         # Prepare data for export
         data = []
         for expense in expenses:
+            # Get category display name
+            category_display = category_choices_dict.get(expense.category, expense.category)
+
             data.append({
                 'Expense Number': expense.expense_number,
                 'Title': expense.title,
                 'Description': expense.description,
-                'Category': expense.category.name,
+                'Category': category_display,  # Use display name
                 'Amount': float(expense.amount),
-                'Tax Amount': float(expense.tax_amount),
                 'Total Amount': float(expense.total_amount),
                 'Currency': expense.currency,
                 'Expense Date': expense.expense_date.isoformat(),
@@ -412,7 +374,6 @@ def send_export_notification(user_id, filename, record_count):
         user = User.objects.get(id=user_id)
 
         subject = "Your expense export is ready"
-        download_url = f"{settings.SITE_URL}/media/exports/{filename}"
 
         context = {
             'user': user,
@@ -494,7 +455,7 @@ def send_pending_approval_reminder(expense_id):
     """Send reminder for specific pending expense"""
     try:
         expense = Expense.objects.select_related(
-            'created_by', 'category', 'store'
+            'created_by', 'store'  # Removed 'category' from select_related
         ).get(id=expense_id)
 
         # Get approvers
@@ -514,7 +475,6 @@ def send_pending_approval_reminder(expense_id):
                 'approver': approver,
                 'expense': expense,
                 'days_pending': days_pending,
-                'approval_url': f"{settings.SITE_URL}/expenses/{expense.id}/"
             }
 
             html_message = render_to_string('expenses/emails/approval_reminder.html', context)
@@ -638,69 +598,9 @@ def send_expense_status_notifications():
     logger.info(f"Sent {total_notifications} status notifications")
     return f"Sent {total_notifications} status notifications"
 
-
-@shared_task
-def generate_budget_reports():
-    """Generate budget utilization reports for managers"""
-
-    # Get all categories with budgets
-    categories = ExpenseCategory.objects.filter(
-        is_active=True,
-        monthly_budget__isnull=False,
-        monthly_budget__gt=0
-    )
-
-    # Get managers/admins
-    managers = User.objects.filter(
-        Q(is_staff=True) |
-        Q(user_permissions__codename='view_all_expenses') |
-        Q(groups__permissions__codename='view_all_expenses'),
-        is_active=True
-    ).distinct()
-
-    report_data = []
-
-    for category in categories:
-        spent = category.get_monthly_spent()
-        budget = category.monthly_budget
-        utilization = (spent / budget * 100) if budget > 0 else 0
-
-        report_data.append({
-            'category': category.name,
-            'budget': budget,
-            'spent': spent,
-            'remaining': budget - spent,
-            'utilization': utilization,
-            'status': 'Over Budget' if spent > budget else 'Within Budget'
-        })
-
-    # Sort by utilization
-    report_data.sort(key=lambda x: x['utilization'], reverse=True)
-
-    # Send report to each manager
-    for manager in managers:
-        context = {
-            'user': manager,
-            'report_data': report_data,
-            'total_budget': sum(item['budget'] for item in report_data),
-            'total_spent': sum(item['spent'] for item in report_data),
-            'categories_over_budget': [item for item in report_data if item['spent'] > item['budget']]
-        }
-
-        html_message = render_to_string('expenses/emails/budget_report.html', context)
-        plain_message = render_to_string('expenses/emails/budget_report.txt', context)
-
-        try:
-            send_mail(
-                subject='Monthly Budget Utilization Report',
-                message=plain_message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[manager.email],
-                html_message=html_message,
-                fail_silently=True
-            )
-        except Exception as e:
-            logger.error(f"Failed to send budget report to {manager.email}: {str(e)}")
-
-    logger.info(f"Sent budget reports to {managers.count()} managers")
-    return f"Sent budget reports to {managers.count()} managers"
+# Remove or comment out budget-related tasks since ExpenseCategory is removed
+# @shared_task
+# def generate_budget_reports():
+#     """Generate budget utilization reports for managers"""
+#     # This function no longer works since ExpenseCategory model was removed
+#     return "Budget reports disabled - ExpenseCategory model removed"

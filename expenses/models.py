@@ -125,9 +125,12 @@ class Expense(models.Model):
         ('CANCELLED', _('Cancelled')),
     ]
     CATEGORY_CHOICES = [
-        ('RENT', "Rent"),
-        ('UTILITIES', "Utilities"),
-        ('SALARY', "Salaries"),
+        ('STAFF_WELFARE', _("Staff Welfare")),
+        ('RENT_EXPENSE', _("Rent Expense")),
+        ('OFFICE_SUPPLIES', _("Office Supplies")),
+        ('UTILITIES', _("Utilities")),
+        ('BANK_CHARGES', _("Bank Charges")),
+        ('MORE', _("More")),
     ]
 
     PAYMENT_METHODS = [
@@ -183,23 +186,6 @@ class Expense(models.Model):
         max_length=3,
         default='UGX',
         verbose_name=_("Currency")
-    )
-
-    # Tax information
-    tax_amount = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)],
-        verbose_name=_("Tax Amount")
-    )
-
-    tax_rate = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)],
-        verbose_name=_("Tax Rate (%)")
     )
 
     # Dates
@@ -387,12 +373,6 @@ class Expense(models.Model):
         if not self.expense_number:
             self.expense_number = self.generate_expense_number()
 
-        # Calculate tax if rate is provided
-        if self.tax_rate and not self.tax_amount:
-            self.tax_amount = (self.amount * self.tax_rate / 100).quantize(
-                Decimal('0.01')
-            )
-
         super().save(*args, **kwargs)
 
     def generate_expense_number(self):
@@ -463,7 +443,7 @@ class Expense(models.Model):
     @property
     def total_amount(self):
         """Total amount including tax"""
-        return self.amount + self.tax_amount
+        return self.amount
 
     @property
     def is_overdue(self):

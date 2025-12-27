@@ -8,7 +8,7 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from .models import Expense, ExpenseCategory
+from .models import Expense  # Removed ExpenseCategory import
 
 
 def get_expense_statistics(user=None, date_from=None, date_to=None):
@@ -46,20 +46,28 @@ def get_expense_statistics(user=None, date_from=None, date_to=None):
             'percentage': (count / stats['total_expenses'] * 100) if stats['total_expenses'] > 0 else 0
         }
 
-    # Category breakdown
-    category_data = expenses.values('category__name', 'category__color_code').annotate(
+    # Category breakdown - UPDATED
+    category_data = expenses.values('category').annotate(  # Changed from 'category__name', 'category__color_code'
         total=Sum('amount'),
         count=Count('id'),
         avg=Avg('amount')
     ).order_by('-total')
 
+    # Get category display names
+    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
+
     for item in category_data:
-        stats['category_breakdown'][item['category__name']] = {
+        category_code = item['category']
+        category_display = category_choices_dict.get(category_code, category_code)
+        color_code = get_category_color(category_code)  # Add this helper function
+
+        stats['category_breakdown'][category_display] = {
             'amount': item['total'],
             'count': item['count'],
             'average': item['avg'],
-            'color': item['category__color_code'],
-            'percentage': (item['total'] / stats['total_amount'] * 100) if stats['total_amount'] > 0 else 0
+            'color': color_code,
+            'percentage': (item['total'] / stats['total_amount'] * 100) if stats['total_amount'] > 0 else 0,
+            'code': category_code  # Keep the original code
         }
 
     # Monthly trend (last 6 months)
@@ -84,38 +92,11 @@ def get_expense_statistics(user=None, date_from=None, date_to=None):
     return stats
 
 
-def get_budget_analysis():
-    """Get budget utilization analysis for all categories"""
-    categories = ExpenseCategory.objects.filter(
-        is_active=True,
-        monthly_budget__isnull=False,
-        monthly_budget__gt=0
-    )
-
-    analysis = []
-
-    for category in categories:
-        spent = category.get_monthly_spent()
-        budget = category.monthly_budget
-        utilization = category.get_budget_utilization()
-        remaining = budget - spent
-
-        analysis.append({
-            'category': category,
-            'budget': budget,
-            'spent': spent,
-            'remaining': remaining,
-            'utilization': utilization,
-            'status': get_budget_status(utilization),
-            'is_over_budget': spent > budget,
-            'variance': spent - budget,
-            'expense_count': category.expenses.filter(
-                expense_date__year=timezone.now().year,
-                expense_date__month=timezone.now().month
-            ).count()
-        })
-
-    return sorted(analysis, key=lambda x: x['utilization'] or 0, reverse=True)
+# Remove or comment out get_budget_analysis function since it depends on ExpenseCategory
+# def get_budget_analysis():
+#     """Get budget utilization analysis for all categories"""
+#     # This function no longer works since ExpenseCategory model was removed
+#     return []
 
 
 def get_budget_status(utilization):
@@ -187,6 +168,18 @@ def get_user_expense_summary(user, year=None, month=None):
         expense_date__month=month
     )
 
+    # Get category display names
+    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
+
+    category_breakdown = expenses.values('category').annotate(
+        total=Sum('amount'),
+        count=Count('id')
+    ).order_by('-total')
+
+    # Add display names to category breakdown
+    for item in category_breakdown:
+        item['category_display'] = category_choices_dict.get(item['category'], item['category'])
+
     summary = {
         'period': f"{calendar.month_name[month]} {year}",
         'total_count': expenses.count(),
@@ -203,10 +196,7 @@ def get_user_expense_summary(user, year=None, month=None):
             is_reimbursable=True,
             status__in=['APPROVED', 'PAID']
         ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0'),
-        'category_breakdown': expenses.values('category__name').annotate(
-            total=Sum('amount'),
-            count=Count('id')
-        ).order_by('-total')
+        'category_breakdown': category_breakdown
     }
 
     return summary
@@ -221,7 +211,7 @@ def export_expenses_to_excel(expenses, filename=None):
     # Define headers
     headers = [
         'Expense Number', 'Date', 'Title', 'Category', 'Amount', 'Currency',
-        'Tax Amount', 'Total Amount', 'Status', 'Created By', 'Vendor',
+        'Total Amount', 'Status', 'Created By', 'Vendor',
         'Reference Number', 'Store', 'Payment Method', 'Submitted At',
         'Approved At', 'Approved By', 'Paid At', 'Notes'
     ]
@@ -238,6 +228,9 @@ def export_expenses_to_excel(expenses, filename=None):
         bottom=Side(style='thin')
     )
 
+    # Get category display names
+    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
+
     # Add headers
     for col_num, header in enumerate(headers, 1):
         cell = sheet.cell(row=1, column=col_num)
@@ -249,14 +242,16 @@ def export_expenses_to_excel(expenses, filename=None):
 
     # Add data
     for row_num, expense in enumerate(expenses, 2):
+        # Get category display name
+        category_display = category_choices_dict.get(expense.category, expense.category)
+
         data_row = [
             expense.expense_number,
             expense.expense_date.strftime('%Y-%m-%d'),
             expense.title,
-            expense.category.name,
+            category_display,  # Use display name
             float(expense.amount),
             expense.currency,
-            float(expense.tax_amount),
             float(expense.total_amount),
             expense.get_status_display(),
             expense.created_by.get_full_name(),
@@ -277,11 +272,11 @@ def export_expenses_to_excel(expenses, filename=None):
             cell.border = thin_border
 
             # Format numbers
-            if col_num in [5, 7, 8]:  # Amount columns
+            if col_num in [5, 7]:  # Amount columns
                 cell.number_format = '#,##0.00'
 
             # Align text
-            if col_num in [1, 2, 6, 9]:  # Centered columns
+            if col_num in [1, 2, 6, 8]:  # Centered columns
                 cell.alignment = Alignment(horizontal='center')
 
     # Adjust column widths
@@ -329,19 +324,10 @@ def validate_expense_approval(expense, user):
     if expense.approved_by:
         errors.append("This expense has already been approved")
 
-    # Check approval threshold and budget
-    if expense.category.approval_threshold:
-        if expense.amount >= expense.category.approval_threshold:
-            warnings.append(f"This expense exceeds the approval threshold of {expense.category.approval_threshold}")
-
-    # Check budget utilization
-    if expense.category.monthly_budget:
-        spent = expense.category.get_monthly_spent()
-        if spent + expense.amount > expense.category.monthly_budget:
-            warnings.append(f"Approving this expense will exceed the monthly budget for {expense.category.name}")
-
     # Check for missing attachments
-    if expense.category.requires_approval and not expense.attachments.exists():
+    # Since ExpenseCategory is removed, you might want to create a mapping for which categories require approval
+    # For now, we'll check a basic condition
+    if not expense.attachments.exists():
         warnings.append("This expense has no attachments")
 
     # Check for missing vendor
@@ -441,18 +427,22 @@ def get_expense_insights(user=None):
             })
 
     # Most expensive category
-    category_totals = expenses.values('category__name', 'category__id').annotate(
+    category_totals = expenses.values('category').annotate(  # Changed from 'category__name'
         total=Sum('amount')
     ).order_by('-total')
 
     if category_totals:
+        # Get display name for top category
+        category_choices_dict = dict(Expense.CATEGORY_CHOICES)
         top_category = category_totals[0]
+        category_display = category_choices_dict.get(top_category['category'], top_category['category'])
+
         insights.append({
             'type': 'top_category',
             'icon': 'trending-up',
-            'message': f"Highest spending category: {top_category['category__name']}",
+            'message': f"Highest spending category: {category_display}",
             'value': float(top_category['total']),
-            'category_id': top_category['category__id']
+            'category_code': top_category['category']  # Store code instead of ID
         })
 
     # Spending trend
@@ -481,25 +471,6 @@ def get_expense_insights(user=None):
             'value': float(change_percent),
             'severity': severity
         })
-
-    # Budget alerts
-    overbudget_categories = ExpenseCategory.objects.filter(
-        is_active=True,
-        monthly_budget__isnull=False
-    )
-
-    for category in overbudget_categories:
-        spent = category.get_monthly_spent()
-        if category.monthly_budget and spent > category.monthly_budget:
-            overage = spent - category.monthly_budget
-            insights.append({
-                'type': 'budget_exceeded',
-                'icon': 'alert-circle',
-                'message': f'{category.name} is over budget by {float(overage):,.2f}',
-                'value': float(overage),
-                'severity': 'error',
-                'category_id': category.id
-            })
 
     # Pending reimbursements
     if user:
@@ -561,6 +532,9 @@ def generate_expense_report_pdf(expenses, title="Expense Report"):
         alignment=TA_CENTER
     )
 
+    # Get category display names
+    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
+
     # Title
     elements.append(Paragraph(title, title_style))
     elements.append(Spacer(1, 0.3 * inch))
@@ -592,11 +566,14 @@ def generate_expense_report_pdf(expenses, title="Expense Report"):
         data = [['#', 'Date', 'Description', 'Category', 'Amount', 'Status']]
 
         for i, expense in enumerate(expenses[:50], 1):  # Limit to 50 for PDF
+            # Get category display name
+            category_display = category_choices_dict.get(expense.category, expense.category)
+
             data.append([
                 str(i),
                 expense.expense_date.strftime('%Y-%m-%d'),
                 expense.title[:30] + '...' if len(expense.title) > 30 else expense.title,
-                expense.category.name[:20],
+                category_display[:20],
                 f"{expense.amount:,.2f}",
                 expense.get_status_display()
             ])
@@ -630,7 +607,7 @@ def generate_export_filename(user, file_type='xlsx'):
     return f'expenses_export_{user.id}_{timestamp}.{file_type}'
 
 
-def validate_expense_amount(amount, category=None):
+def validate_expense_amount(amount, category_code=None):
     """Validate expense amount against various rules"""
     errors = []
     warnings = []
@@ -644,19 +621,9 @@ def validate_expense_amount(amount, category=None):
         if amount > Decimal('10000000'):  # 10 million threshold
             warnings.append("This is an unusually large amount. Please verify.")
 
-        if category and category.monthly_budget:
-            spent_this_month = category.get_monthly_spent()
-            if spent_this_month + amount > category.monthly_budget:
-                warnings.append(
-                    f"This expense will exceed the monthly budget for {category.name}. "
-                    f"Current: {spent_this_month:,.2f}, Budget: {category.monthly_budget:,.2f}"
-                )
-
-        if category and category.approval_threshold:
-            if amount >= category.approval_threshold:
-                warnings.append(
-                    f"This expense requires approval (threshold: {category.approval_threshold:,.2f})"
-                )
+        # If you want to implement budget checking, you'll need to store budget data differently
+        # since ExpenseCategory is removed
+        # You could create a settings dict or database table for category budgets
 
     except (ValueError, InvalidOperation):
         errors.append("Invalid amount format")
@@ -666,3 +633,16 @@ def validate_expense_amount(amount, category=None):
         'errors': errors,
         'warnings': warnings
     }
+
+
+def get_category_color(category_code):
+    """Helper function to get color for category"""
+    color_map = {
+        'STAFF_WELFARE': '#FF6B6B',
+        'RENT_EXPENSE': '#4ECDC4',
+        'OFFICE_SUPPLIES': '#45B7D1',
+        'UTILITIES': '#96CEB4',
+        'BANK_CHARGES': '#FFEAA7',
+        'MORE': '#DDA0DD',
+    }
+    return color_map.get(category_code, '#cccccc')
