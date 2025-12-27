@@ -379,7 +379,6 @@ def send_export_notification(user_id, filename, record_count):
             'user': user,
             'filename': filename,
             'record_count': record_count,
-            'download_url': download_url,
             'expiry_hours': 24
         }
 
@@ -401,7 +400,6 @@ def send_export_notification(user_id, filename, record_count):
             notification_type='export_complete',
             title='Expense Export Complete',
             message=f'Your expense export ({record_count} records) is ready for download',
-            action_url=download_url
         )
 
         logger.info(f"Sent export notification to user {user_id}")
