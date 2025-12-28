@@ -14,10 +14,72 @@ from .models import Company
 
 logger = logging.getLogger(__name__)
 
+from django import forms
+from datetime import timedelta
+
+
+class CompanyAdminForm(forms.ModelForm):
+    """Custom form for Company admin with validation"""
+
+    class Meta:
+        model = Company
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        is_trial = cleaned_data.get('is_trial')
+        subscription_starts_at = cleaned_data.get('subscription_starts_at')
+        subscription_ends_at = cleaned_data.get('subscription_ends_at')
+
+        # If converting from trial to paid, ensure dates are set
+        if not is_trial and self.instance.pk:
+            try:
+                old_instance = Company.objects.get(pk=self.instance.pk)
+
+                # Converting from trial to paid
+                if old_instance.is_trial and not is_trial:
+                    # Auto-set subscription dates if not provided
+                    if not subscription_starts_at:
+                        cleaned_data['subscription_starts_at'] = timezone.now().date()
+                        self.add_error(
+                            None,
+                            forms.ValidationError(
+                                'Converting from trial to paid subscription. '
+                                'Subscription start date auto-set to today. '
+                                'Please set subscription end date.',
+                                code='trial_conversion'
+                            )
+                        )
+
+                    if not subscription_ends_at:
+                        # Suggest a default end date
+                        start_date = subscription_starts_at or timezone.now().date()
+                        suggested_end = start_date + timedelta(days=30)
+                        self.add_error(
+                            'subscription_ends_at',
+                            forms.ValidationError(
+                                f'Please set subscription end date. Suggested: {suggested_end}',
+                                code='missing_end_date'
+                            )
+                        )
+            except Company.DoesNotExist:
+                pass
+
+        # If not trial, ensure subscription end date is set
+        if not is_trial and not subscription_ends_at:
+            self.add_error(
+                'subscription_ends_at',
+                forms.ValidationError(
+                    'Subscription end date is required for paid subscriptions.',
+                    code='missing_subscription_end'
+                )
+            )
+
+        return cleaned_data
 
 class CompanyAdmin(PublicModelAdmin):
     """Admin interface for Company (Tenant)"""
-
+    form_class = CompanyAdminForm
     # Add custom actions to the class
     actions = [
         'reactivate_companies',

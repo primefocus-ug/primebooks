@@ -91,19 +91,19 @@ class PlanLimitsMiddleware:
         return response
 
     def _get_user_count(self, company):
-        from accounts.models import CustomUser
-        return CustomUser.objects.filter(company=company, is_hidden=False).count()
+        """Use cached property instead of direct query"""
+        return company.active_users_count
 
     def _get_available_users(self, company):
         if not company.plan:
             return 0
-        current = self._get_user_count(company)
-        return max(0, company.plan.max_users - current)
+        return max(0, company.plan.max_users - company.active_users_count)
 
     def _check_users_exceeded(self, company):
         if not company.plan:
             return False
-        return self._get_user_count(company) >= company.plan.max_users
+        return company.active_users_count >= company.plan.max_users
+
 
     def _get_available_branches(self, company):
         if not company.plan:

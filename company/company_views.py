@@ -2326,10 +2326,15 @@ class AdvancedSearchView(LoginRequiredMixin, PermissionRequiredMixin, TemplateVi
         context['companies'] = self.perform_search()
         return context
 
+
+
 @login_required
 def company_expired_view(request):
     """View for expired companies"""
     company = request.user.company
+
+    # Force refresh company status
+    company.force_status_refresh()
 
     # Calculate days expired and determine expiration type
     expiration_date = None
@@ -2367,6 +2372,9 @@ def company_suspended_view(request):
     """View for suspended companies"""
     company = request.user.company
 
+    # Force refresh company status
+    company.force_status_refresh()
+
     grace_days_left = 0
     if company.grace_period_ends_at:
         grace_days_left = max(0, (company.grace_period_ends_at - timezone.now().date()).days)
@@ -2388,8 +2396,13 @@ def company_deactivated_view(request):
 def billing_view(request):
     """Billing and subscription management view"""
     company = request.user.company
+
+    # Force refresh company status
+    company.force_status_refresh()
+
     plans = SubscriptionPlan.objects.filter(is_active=True).order_by('sort_order', 'price')
 
+    # FIXED: Use cached property and filter for active users
     context = {
         'company': company,
         'current_plan': company.plan,
@@ -2397,7 +2410,7 @@ def billing_view(request):
         'usage_stats': {
             'storage_used': company.storage_used_mb,
             'storage_percentage': company.storage_usage_percentage,
-            'users_count': CustomUser.objects.filter(company=company).count(),
+            'users_count': company.active_users_count,  # FIXED: Use cached property
             'branches_count': company.branches_count,
         }
     }
@@ -2405,8 +2418,9 @@ def billing_view(request):
 
 
 @login_required
+@transaction.atomic
 def upgrade_plan_view(request):
-    """Plan upgrade view"""
+    """Plan upgrade view with transaction protection"""
     if request.method == 'POST':
         plan_id = request.POST.get('plan_id')
         billing_cycle = request.POST.get('billing_cycle', 'MONTHLY')
@@ -2414,15 +2428,27 @@ def upgrade_plan_view(request):
         try:
             plan = SubscriptionPlan.objects.get(id=plan_id, is_active=True)
 
-            # Here you would integrate with your payment processor
-            # For now, we'll just simulate the upgrade
+            # Get company with lock to prevent concurrent modifications
+            company = Company.objects.select_for_update().get(
+                company_id=request.user.company.company_id
+            )
 
-            company = request.user.company
+            # Validate upgrade
+            if company.plan and plan.price <= company.plan.price:
+                messages.warning(
+                    request,
+                    'Please use the subscription management page for plan changes.'
+                )
+                return redirect('companies:subscription_dashboard')
+
+            # Store old plan for logging
+            old_plan = company.plan
+
+            # Update company plan
             company.plan = plan
 
             if plan.name != 'FREE':
                 # Calculate subscription period based on billing cycle
-                from datetime import timedelta
                 duration_days = {
                     'MONTHLY': 30,
                     'QUARTERLY': 90,
@@ -2435,36 +2461,79 @@ def upgrade_plan_view(request):
                 company.grace_period_ends_at = company.subscription_ends_at + timedelta(days=7)
                 company.status = 'ACTIVE'
                 company.is_active = True
+                company.next_billing_date = company.subscription_ends_at
 
+            # Save with status update
             company.save()
 
-            messages.success(request, f'Successfully upgraded to {plan.display_name or plan.get_name_display()}!')
-            logger.info(f"Company {company.company_id} upgraded to plan {plan.name}")
+            # Clear all caches after upgrade
+            company._clear_all_caches()
+
+            # Reactivate users if they were deactivated
+            if company.is_active:
+                company.reactivate_all_users()
+
+            messages.success(
+                request,
+                f'Successfully upgraded to {plan.display_name or plan.get_name_display()}!'
+            )
+
+            logger.info(
+                f"Company {company.company_id} upgraded from "
+                f"{old_plan.name if old_plan else 'None'} to {plan.name}"
+            )
 
             return redirect('companies:billing')
 
         except SubscriptionPlan.DoesNotExist:
             messages.error(request, 'Invalid plan selected.')
+            logger.error(f"Invalid plan selected: {plan_id}")
+
+        except Company.DoesNotExist:
+            messages.error(request, 'Company not found.')
+            logger.error(f"Company not found for user {request.user.id}")
+
+        except Exception as e:
+            messages.error(request, 'An error occurred during the upgrade.')
+            logger.error(f"Error upgrading plan: {e}", exc_info=True)
 
     return redirect('companies:billing')
 
+
 @staff_member_required
+@transaction.atomic
 def admin_suspend_company(request, company_id):
     """Admin action to suspend a company"""
-    if not request.user.is_saas_admin:
+    if not getattr(request.user, 'is_saas_admin', False):
         return HttpResponseForbidden('Permission denied')
 
     if request.method == 'POST':
-        company = get_object_or_404(Company, company_id=company_id)
+        # Get company with lock
+        company = get_object_or_404(
+            Company.objects.select_for_update(),
+            company_id=company_id
+        )
+
         reason = request.POST.get('reason', 'Suspended by administrator')
 
+        # Suspend the company
         company.suspend_for_misbehavior(reason, suspended_by=request.user)
 
+        # Clear all caches
+        company._clear_all_caches()
+
         messages.success(request, f'Company {company.display_name} has been suspended.')
-        logger.warning(f"Admin {request.user} suspended company {company_id}: {reason}")
+        logger.warning(
+            f"Admin {request.user.username} suspended company {company_id}: {reason}"
+        )
 
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'status': 'success', 'message': 'Company suspended'})
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Company suspended',
+                'company_id': company_id,
+                'company_name': company.display_name
+            })
 
         return redirect('companies:company_list')
 
@@ -2472,33 +2541,91 @@ def admin_suspend_company(request, company_id):
 
 
 @staff_member_required
+@transaction.atomic
 def admin_reactivate_company(request, company_id):
     """Admin action to reactivate a company"""
-    if not request.user.is_saas_admin:
+    if not getattr(request.user, 'is_saas_admin', False):
         return HttpResponseForbidden('Permission denied')
 
     if request.method == 'POST':
-        company = get_object_or_404(Company, company_id=company_id)
+        # Get company with lock
+        company = get_object_or_404(
+            Company.objects.select_for_update(),
+            company_id=company_id
+        )
+
         reason = request.POST.get('reason', 'Reactivated by administrator')
+        days = int(request.POST.get('days', 30))  # Default 30 days
+        grace_days = int(request.POST.get('grace_days', 7))  # Default 7 days grace
 
-        company.reactivate_company(reason)
+        # Use the reallow_company method for full reactivation
+        company.reallow_company(reason=reason, days=days, grace_days=grace_days)
 
-        messages.success(request, f'Company {company.display_name} has been reactivated.')
-        logger.info(f"Admin {request.user} reactivated company {company_id}: {reason}")
+        # Clear all caches
+        company._clear_all_caches()
+
+        # Force status refresh
+        company.force_status_refresh()
+
+        messages.success(
+            request,
+            f'Company {company.display_name} has been reactivated for {days} days.'
+        )
+        logger.info(
+            f"Admin {request.user.username} reactivated company {company_id}: {reason}"
+        )
 
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'status': 'success', 'message': 'Company reactivated'})
+            return JsonResponse({
+                'status': 'success',
+                'message': 'Company reactivated',
+                'company_id': company_id,
+                'company_name': company.display_name,
+                'subscription_ends_at': company.subscription_ends_at.isoformat() if company.subscription_ends_at else None
+            })
 
         return redirect('companies:company_list')
 
     return HttpResponseForbidden()
 
+
+@staff_member_required
+def admin_extend_grace_period(request, company_id):
+    """Admin action to extend grace period"""
+    if not getattr(request.user, 'is_saas_admin', False):
+        return HttpResponseForbidden('Permission denied')
+
+    if request.method == 'POST':
+        company = get_object_or_404(Company, company_id=company_id)
+        days = int(request.POST.get('days', 7))
+
+        company.extend_grace_period(days=days)
+
+        messages.success(
+            request,
+            f'Extended grace period for {company.display_name} by {days} days.'
+        )
+        logger.info(
+            f"Admin {request.user.username} extended grace period for "
+            f"company {company_id} by {days} days"
+        )
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'status': 'success',
+                'message': f'Grace period extended by {days} days',
+                'grace_period_ends_at': company.grace_period_ends_at.isoformat() if company.grace_period_ends_at else None
+            })
+
+        return redirect('companies:company_list')
+
+    return HttpResponseForbidden()
 
 
 @staff_member_required
 def company_analytics_view(request):
     """Analytics view for company status (SaaS admin only)"""
-    if not request.user.is_saas_admin:
+    if not getattr(request.user, 'is_saas_admin', False):
         return HttpResponseForbidden('Permission denied')
 
     # Get company statistics
@@ -2523,25 +2650,81 @@ def company_analytics_view(request):
     ).filter(
         Q(trial_ends_at__lte=today + timedelta(days=7), is_trial=True) |
         Q(subscription_ends_at__lte=today + timedelta(days=7), is_trial=False)
-    ).order_by('trial_ends_at', 'subscription_ends_at')
+    ).select_related('plan').order_by('trial_ends_at', 'subscription_ends_at')
 
     in_grace_period = Company.objects.filter(
         status='SUSPENDED',
         grace_period_ends_at__gte=today
-    ).order_by('grace_period_ends_at')
+    ).select_related('plan').order_by('grace_period_ends_at')
 
     recently_expired = Company.objects.filter(
         status='EXPIRED'
-    ).order_by('-subscription_ends_at', '-trial_ends_at')[:20]
+    ).select_related('plan').order_by('-subscription_ends_at', '-trial_ends_at')[:20]
+
+    # Calculate additional metrics
+    revenue_stats = {
+        'total_companies': stats['total'],
+        'paying_customers': stats['active'] + stats['suspended'],  # Companies with paid plans
+        'trial_conversions': stats['active'],  # Companies that converted from trial
+    }
 
     context = {
         'stats': stats,
+        'revenue_stats': revenue_stats,
         'expiring_soon': expiring_soon[:10],
         'in_grace_period': in_grace_period,
         'recently_expired': recently_expired,
     }
 
     return render(request, 'admin/company_analytics.html', context)
+
+
+@staff_member_required
+def company_detail_admin(request, company_id):
+    """Detailed view of a company for admin"""
+    if not getattr(request.user, 'is_saas_admin', False):
+        return HttpResponseForbidden('Permission denied')
+
+    company = get_object_or_404(
+        Company.objects.select_related('plan'),
+        company_id=company_id
+    )
+
+    # Force refresh status
+    company.force_status_refresh()
+
+    # Get usage statistics
+    usage_stats = {
+        'users': {
+            'current': company.active_users_count,
+            'limit': company.plan.max_users if company.plan else 0,
+            'percentage': (
+                        company.active_users_count / company.plan.max_users * 100) if company.plan and company.plan.max_users > 0 else 0
+        },
+        'branches': {
+            'current': company.branches_count,
+            'limit': company.plan.max_branches if company.plan else 0,
+            'percentage': (
+                        company.branches_count / company.plan.max_branches * 100) if company.plan and company.plan.max_branches > 0 else 0
+        },
+        'storage': {
+            'current': company.storage_used_mb,
+            'limit': company.plan.max_storage_gb * 1024 if company.plan else 0,
+            'percentage': company.storage_usage_percentage
+        }
+    }
+
+    # Get restrictions
+    restrictions = company.get_access_restrictions()
+
+    context = {
+        'company': company,
+        'usage_stats': usage_stats,
+        'restrictions': restrictions,
+        'status_display': company.access_status_display,
+    }
+
+    return render(request, 'admin/company_detail.html', context)
 
 
 # API endpoint for checking company status

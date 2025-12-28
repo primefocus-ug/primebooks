@@ -1,6 +1,7 @@
 import logging
 from decimal import Decimal
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.http import JsonResponse, Http404
@@ -186,6 +187,48 @@ class SubscriptionPlansView(LoginRequiredMixin, ListView):
 
         return context
 
+@login_required
+def get_subscription_limits(request):
+    """API endpoint to get current subscription limits"""
+    company = getattr(request.user, 'company', None)
+    if not company:
+        return JsonResponse({'error': 'No company found'}, status=404)
+
+    # Force refresh limits
+    company.force_status_refresh()
+
+    limits = {
+        'users': {
+            'current': company.active_users_count,
+            'limit': company.plan.max_users if company.plan else 0,
+            'available': max(0, (company.plan.max_users if company.plan else 0) - company.active_users_count),
+            'exceeded': company.active_users_count >= (company.plan.max_users if company.plan else 0),
+            'percentage': round((company.active_users_count / company.plan.max_users * 100) if company.plan and company.plan.max_users > 0 else 0, 1)
+        },
+        'branches': {
+            'current': company.branches_count,
+            'limit': company.plan.max_branches if company.plan else 0,
+            'available': max(0, (company.plan.max_branches if company.plan else 0) - company.branches_count),
+            'exceeded': company.branches_count >= (company.plan.max_branches if company.plan else 0),
+            'percentage': round((company.branches_count / company.plan.max_branches * 100) if company.plan and company.plan.max_branches > 0 else 0, 1)
+        },
+        'storage': {
+            'current_mb': company.storage_used_mb,
+            'limit_gb': company.plan.max_storage_gb if company.plan else 0,
+            'percentage': round(company.storage_usage_percentage, 1),
+            'exceeded': company.storage_usage_percentage >= 100,
+        }
+    }
+
+    return JsonResponse({
+        'success': True,
+        'limits': limits,
+        'plan': {
+            'name': company.plan.display_name if company.plan else 'No Plan',
+            'status': company.status,
+            'is_active': company.is_active
+        }
+    })
 
 class SubscriptionUpgradeView(LoginRequiredMixin, View):
     """

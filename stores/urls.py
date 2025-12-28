@@ -13,11 +13,11 @@ urlpatterns = [
     path('stores/', views.StoreListView.as_view(), name='store_list'),
     path('no-access/', views.NoStoreAccessView.as_view(), name='no_store_access'),
     path('check-access/', views.CheckStoreAccessView.as_view(), name='check_access'),
-    path('stores/create/', views.StoreCreateView.as_view(), name='store_creatte'),
+    path('stores/create/', views.StoreCreateView.as_view(), name='store_create'),
     path('stores/<int:pk>/', views.StoreDetailView.as_view(), name='store_detail'),
     path('stores/<int:pk>/edit/', views.StoreUpdateView.as_view(), name='store_edit'),
     path('stores/<int:pk>/delete/', views.StoreDeleteView.as_view(), name='store_delete'),
-    path('create/', view.store_create, name='store_create'),
+    path('create/', view.store_create, name='store_creatte'),
     path('<int:pk>/edit/', view.store_update, name='store_update'),
     path('<int:pk>/staff/', view.store_staff_assignment, name='store_staff_assignment'),
 

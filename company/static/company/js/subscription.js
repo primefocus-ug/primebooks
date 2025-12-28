@@ -1,14 +1,9 @@
-// static/company/js/subscription.js
-/**
- * Subscription Management Interface
- * Handles plan upgrades, downgrades, renewals, and cancellations
- */
-
 class SubscriptionManager {
     constructor() {
         this.currentPlan = null;
         this.selectedPlan = null;
         this.billingCycle = 'MONTHLY';
+        this.limits = window.planLimits || {};
 
         this.init();
     }
@@ -20,6 +15,106 @@ class SubscriptionManager {
         this.setupRenewalHandler();
         this.setupCancellationHandler();
         this.loadUsageChart();
+        this.updateLimitBadges();  // NEW
+        this.startLimitMonitoring();  // NEW
+    }
+
+    /**
+     * NEW: Update limit badges in real-time
+     */
+    updateLimitBadges() {
+        // Update user limit badge
+        if (this.limits.users) {
+            const userBadge = document.getElementById('user-limit-badge');
+            if (userBadge) {
+                const percentage = (this.limits.users.current / this.limits.users.limit) * 100;
+                userBadge.innerHTML = `${this.limits.users.current}/${this.limits.users.limit}`;
+
+                // Update color based on usage
+                userBadge.className = 'badge';
+                if (percentage >= 100) {
+                    userBadge.classList.add('bg-danger');
+                } else if (percentage >= 80) {
+                    userBadge.classList.add('bg-warning');
+                } else {
+                    userBadge.classList.add('bg-success');
+                }
+            }
+        }
+
+        // Update branch limit badge
+        if (this.limits.branches) {
+            const branchBadge = document.getElementById('branch-limit-badge');
+            if (branchBadge) {
+                const percentage = (this.limits.branches.current / this.limits.branches.limit) * 100;
+                branchBadge.innerHTML = `${this.limits.branches.current}/${this.limits.branches.limit}`;
+
+                branchBadge.className = 'badge';
+                if (percentage >= 100) {
+                    branchBadge.classList.add('bg-danger');
+                } else if (percentage >= 80) {
+                    branchBadge.classList.add('bg-warning');
+                } else {
+                    branchBadge.classList.add('bg-success');
+                }
+            }
+        }
+
+        // Update storage limit badge
+        if (this.limits.storage) {
+            const storageBadge = document.getElementById('storage-limit-badge');
+            if (storageBadge) {
+                const percentage = this.limits.storage.percentage;
+                storageBadge.innerHTML = `${percentage.toFixed(1)}%`;
+
+                storageBadge.className = 'badge';
+                if (percentage >= 100) {
+                    storageBadge.classList.add('bg-danger');
+                } else if (percentage >= 80) {
+                    storageBadge.classList.add('bg-warning');
+                } else {
+                    storageBadge.classList.add('bg-success');
+                }
+            }
+        }
+    }
+
+    /**
+     * NEW: Start monitoring limits every 30 seconds
+     */
+    startLimitMonitoring() {
+        setInterval(() => {
+            this.refreshLimits();
+        }, 30000); // Check every 30 seconds
+    }
+
+    /**
+     * NEW: Refresh limits from server
+     */
+    async refreshLimits() {
+        try {
+            const response = await fetch('/companies/subscription/limits/', {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.limits = data.limits;
+                this.updateLimitBadges();
+
+                // Update window.planLimits for other scripts
+                window.planLimits = data.limits;
+
+                // Trigger custom event
+                window.dispatchEvent(new CustomEvent('limitsUpdated', {
+                    detail: this.limits
+                }));
+            }
+        } catch (error) {
+            console.error('Error refreshing limits:', error);
+        }
     }
 
     /**
@@ -60,21 +155,26 @@ class SubscriptionManager {
 
             let displayPrice = basePrice;
             let periodText = '/month';
+            let savings = 0;
 
             if (this.billingCycle === 'QUARTERLY') {
                 displayPrice = basePrice * 3;
                 periodText = '/quarter';
             } else if (this.billingCycle === 'YEARLY') {
-                displayPrice = basePrice * 12;
+                const yearlyPrice = basePrice * 12;
+                savings = yearlyPrice * 0.1; // 10% discount
+                displayPrice = yearlyPrice - savings;
                 periodText = '/year';
-
-                // Show discount
-                const discount = displayPrice * 0.1; // 10% discount
-                displayPrice -= discount;
 
                 const discountBadge = card.querySelector('.discount-badge');
                 if (discountBadge) {
+                    discountBadge.textContent = `Save $${savings.toFixed(2)}`;
                     discountBadge.classList.remove('d-none');
+                }
+            } else {
+                const discountBadge = card.querySelector('.discount-badge');
+                if (discountBadge) {
+                    discountBadge.classList.add('d-none');
                 }
             }
 
@@ -98,7 +198,7 @@ class SubscriptionManager {
 
                 const planId = btn.dataset.planId;
                 const planName = btn.dataset.planName;
-                const action = btn.dataset.action; // upgrade, downgrade, current
+                const action = btn.dataset.action;
 
                 if (action === 'current') {
                     this.showNotification('info', 'This is your current plan');
@@ -124,11 +224,9 @@ class SubscriptionManager {
         const modal = document.getElementById('upgrade-confirmation-modal');
         if (!modal) return;
 
-        // Populate modal
         document.getElementById('upgrade-plan-name').textContent = this.selectedPlan.name;
         document.getElementById('upgrade-billing-cycle').value = this.billingCycle;
 
-        // Load cost breakdown
         this.loadUpgradeCost();
 
         const bsModal = new bootstrap.Modal(modal);
@@ -136,9 +234,15 @@ class SubscriptionManager {
     }
 
     async loadUpgradeCost() {
+        const loader = document.getElementById('cost-breakdown-loader');
+        const container = document.getElementById('cost-breakdown');
+
+        if (loader) loader.classList.remove('d-none');
+        if (container) container.classList.add('d-none');
+
         try {
             const response = await fetch(
-                `/companies/subscription/upgrade/${this.selectedPlan.id}/cost/?billing_cycle=${this.billingCycle}`,
+                `/companies/subscription/upgrade/${this.selectedPlan.id}/?billing_cycle=${this.billingCycle}`,
                 {
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest'
@@ -146,13 +250,30 @@ class SubscriptionManager {
                 }
             );
 
-            const data = await response.json();
-
-            if (data.success) {
-                this.displayCostBreakdown(data.breakdown);
+            if (!response.ok) {
+                throw new Error('Failed to load cost breakdown');
             }
+
+            const html = await response.text();
+
+            // Extract cost data from the response
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const costData = doc.querySelector('#cost-data');
+
+            if (costData) {
+                const breakdown = JSON.parse(costData.textContent);
+                this.displayCostBreakdown(breakdown);
+            }
+
         } catch (error) {
             console.error('Error loading upgrade cost:', error);
+            if (container) {
+                container.innerHTML = '<div class="alert alert-danger">Unable to load cost breakdown</div>';
+            }
+        } finally {
+            if (loader) loader.classList.add('d-none');
+            if (container) container.classList.remove('d-none');
         }
     }
 
@@ -161,26 +282,27 @@ class SubscriptionManager {
         if (!container) return;
 
         container.innerHTML = `
-            <div class="mb-2">
-                <span>Plan Cost:</span>
-                <span class="float-end">$${breakdown.plan_cost.toFixed(2)}</span>
-            </div>
-            ${breakdown.setup_fee > 0 ? `
-                <div class="mb-2">
-                    <span>Setup Fee:</span>
-                    <span class="float-end">$${breakdown.setup_fee.toFixed(2)}</span>
+            <div class="list-group">
+                <div class="list-group-item d-flex justify-content-between">
+                    <span>Plan Cost:</span>
+                    <span class="fw-bold">$${breakdown.upgrade_cost.toFixed(2)}</span>
                 </div>
-            ` : ''}
-            ${breakdown.proration_credit > 0 ? `
-                <div class="mb-2 text-success">
-                    <span>Prorated Credit:</span>
-                    <span class="float-end">-$${breakdown.proration_credit.toFixed(2)}</span>
+                ${breakdown.setup_fee > 0 ? `
+                    <div class="list-group-item d-flex justify-content-between">
+                        <span>Setup Fee:</span>
+                        <span class="fw-bold">$${breakdown.setup_fee.toFixed(2)}</span>
+                    </div>
+                ` : ''}
+                ${breakdown.proration_credit > 0 ? `
+                    <div class="list-group-item d-flex justify-content-between text-success">
+                        <span>Prorated Credit:</span>
+                        <span class="fw-bold">-$${breakdown.proration_credit.toFixed(2)}</span>
+                    </div>
+                ` : ''}
+                <div class="list-group-item d-flex justify-content-between bg-light">
+                    <span class="fw-bold">Total Due Today:</span>
+                    <span class="h5 mb-0 text-primary">$${(breakdown.upgrade_cost + breakdown.setup_fee - breakdown.proration_credit).toFixed(2)}</span>
                 </div>
-            ` : ''}
-            <hr>
-            <div class="fw-bold">
-                <span>Total Due:</span>
-                <span class="float-end">$${breakdown.total.toFixed(2)}</span>
             </div>
         `;
     }
@@ -189,10 +311,8 @@ class SubscriptionManager {
         const modal = document.getElementById('downgrade-confirmation-modal');
         if (!modal) return;
 
-        // Populate modal
         document.getElementById('downgrade-plan-name').textContent = this.selectedPlan.name;
 
-        // Load downgrade validation
         this.validateDowngrade();
 
         const bsModal = new bootstrap.Modal(modal);
@@ -200,9 +320,16 @@ class SubscriptionManager {
     }
 
     async validateDowngrade() {
+        const loader = document.getElementById('downgrade-validation-loader');
+        const issuesContainer = document.getElementById('downgrade-issues');
+        const confirmBtn = document.getElementById('confirm-downgrade-btn');
+
+        if (loader) loader.classList.remove('d-none');
+        if (issuesContainer) issuesContainer.classList.add('d-none');
+
         try {
             const response = await fetch(
-                `/companies/subscription/downgrade/${this.selectedPlan.id}/validate/`,
+                `/companies/subscription/downgrade/${this.selectedPlan.id}/`,
                 {
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest'
@@ -210,41 +337,68 @@ class SubscriptionManager {
                 }
             );
 
-            const data = await response.json();
+            const html = await response.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
 
-            const issuesContainer = document.getElementById('downgrade-issues');
-            const confirmBtn = document.getElementById('confirm-downgrade-btn');
+            // Extract issues from the response
+            const issuesData = doc.querySelector('#downgrade-data');
 
-            if (data.can_downgrade) {
-                issuesContainer.innerHTML = '<div class="alert alert-success">No issues found. You can proceed with the downgrade.</div>';
-                confirmBtn.disabled = false;
-            } else {
-                issuesContainer.innerHTML = `
-                    <div class="alert alert-warning">
-                        <strong>Cannot downgrade yet. Please resolve these issues:</strong>
-                        <ul class="mt-2 mb-0">
-                            ${data.issues.map(issue => `
-                                <li>${issue.message}<br><small class="text-muted">${issue.action}</small></li>
-                            `).join('')}
-                        </ul>
-                    </div>
-                `;
-                confirmBtn.disabled = true;
+            if (issuesData) {
+                const data = JSON.parse(issuesData.textContent);
+
+                if (data.can_downgrade) {
+                    issuesContainer.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle me-2"></i>
+                            No issues found. You can proceed with the downgrade.
+                        </div>
+                    `;
+                    confirmBtn.disabled = false;
+                } else {
+                    issuesContainer.innerHTML = `
+                        <div class="alert alert-warning">
+                            <strong><i class="bi bi-exclamation-triangle me-2"></i>Cannot downgrade yet</strong>
+                            <p class="mb-2">Please resolve these issues first:</p>
+                            <ul class="mb-0">
+                                ${data.issues.map(issue => `
+                                    <li class="mb-2">
+                                        <strong>${issue.message}</strong><br>
+                                        <small class="text-muted">${issue.action}</small>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `;
+                    confirmBtn.disabled = true;
+                }
+
+                // Show lost features
+                if (data.lost_features && data.lost_features.length > 0) {
+                    const featuresHtml = `
+                        <div class="alert alert-info mt-3">
+                            <strong><i class="bi bi-info-circle me-2"></i>Features you will lose:</strong>
+                            <ul class="mt-2 mb-0">
+                                ${data.lost_features.map(f => `<li>${f}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                    issuesContainer.innerHTML += featuresHtml;
+                }
             }
 
-            // Show lost features
-            if (data.lost_features && data.lost_features.length > 0) {
-                document.getElementById('lost-features').innerHTML = `
-                    <div class="alert alert-info">
-                        <strong>Features you will lose:</strong>
-                        <ul class="mt-2 mb-0">
-                            ${data.lost_features.map(f => `<li>${f}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
-            }
         } catch (error) {
             console.error('Error validating downgrade:', error);
+            issuesContainer.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle me-2"></i>
+                    Unable to validate downgrade. Please try again.
+                </div>
+            `;
+            confirmBtn.disabled = true;
+        } finally {
+            if (loader) loader.classList.add('d-none');
+            if (issuesContainer) issuesContainer.classList.remove('d-none');
         }
     }
 
@@ -260,7 +414,6 @@ class SubscriptionManager {
             return;
         }
 
-        // Show loading
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
 
@@ -286,7 +439,9 @@ class SubscriptionManager {
             if (data.success) {
                 this.showNotification('success', 'Plan upgraded successfully!');
 
-                // Redirect after 2 seconds
+                // Refresh limits immediately
+                await this.refreshLimits();
+
                 setTimeout(() => {
                     window.location.href = '/companies/subscription/dashboard/';
                 }, 2000);
@@ -430,7 +585,7 @@ class SubscriptionManager {
     async confirmCancellation() {
         const btn = document.getElementById('confirm-cancellation-btn');
         const reason = document.getElementById('cancellation-reason').value;
-        const immediate = document.getElementById('immediate-cancellation').checked;
+        const immediate = document.getElementById('immediate-cancellation')?.checked || false;
 
         if (!reason.trim()) {
             this.showNotification('warning', 'Please provide a reason for cancellation');
@@ -484,7 +639,6 @@ class SubscriptionManager {
 
         const ctx = canvas.getContext('2d');
 
-        // Get data from data attributes
         const usersData = parseFloat(canvas.dataset.users || 0);
         const branchesData = parseFloat(canvas.dataset.branches || 0);
         const storageData = parseFloat(canvas.dataset.storage || 0);
@@ -496,16 +650,18 @@ class SubscriptionManager {
                 datasets: [{
                     label: 'Usage %',
                     data: [usersData, branchesData, storageData],
-                    backgroundColor: [
-                        'rgba(54, 162, 235, 0.5)',
-                        'rgba(255, 206, 86, 0.5)',
-                        'rgba(75, 192, 192, 0.5)'
-                    ],
-                    borderColor: [
-                        'rgba(54, 162, 235, 1)',
-                        'rgba(255, 206, 86, 1)',
-                        'rgba(75, 192, 192, 1)'
-                    ],
+                    backgroundColor: function(context) {
+                        const value = context.parsed.y;
+                        if (value >= 100) return 'rgba(220, 53, 69, 0.5)';
+                        if (value >= 80) return 'rgba(255, 193, 7, 0.5)';
+                        return 'rgba(25, 135, 84, 0.5)';
+                    },
+                    borderColor: function(context) {
+                        const value = context.parsed.y;
+                        if (value >= 100) return 'rgba(220, 53, 69, 1)';
+                        if (value >= 80) return 'rgba(255, 193, 7, 1)';
+                        return 'rgba(25, 135, 84, 1)';
+                    },
                     borderWidth: 2
                 }]
             },
@@ -526,6 +682,13 @@ class SubscriptionManager {
                 plugins: {
                     legend: {
                         display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.parsed.y.toFixed(1) + '% used';
+                            }
+                        }
                     }
                 }
             }
@@ -536,16 +699,59 @@ class SubscriptionManager {
      * Utility Methods
      */
     getCsrfToken() {
-        return document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+        return document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
+               document.querySelector('meta[name="csrf-token"]')?.content || '';
     }
 
     showNotification(type, message) {
-        // Reuse the notification system from company-profile.js
-        if (window.companyProfile) {
-            window.companyProfile.showNotification(type, message);
-        } else {
-            alert(message);
-        }
+        // Create toast notification
+        const toastContainer = document.getElementById('toast-container') || this.createToastContainer();
+
+        const toastId = 'toast-' + Date.now();
+        const iconMap = {
+            success: 'bi-check-circle-fill',
+            error: 'bi-x-circle-fill',
+            warning: 'bi-exclamation-triangle-fill',
+            info: 'bi-info-circle-fill'
+        };
+
+        const bgMap = {
+            success: 'bg-success',
+            error: 'bg-danger',
+            warning: 'bg-warning',
+            info: 'bg-info'
+        };
+
+        const toastHtml = `
+            <div id="${toastId}" class="toast align-items-center text-white ${bgMap[type]} border-0" role="alert">
+                <div class="d-flex">
+                    <div class="toast-body">
+                        <i class="bi ${iconMap[type]} me-2"></i>
+                        ${message}
+                    </div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                </div>
+            </div>
+        `;
+
+        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+
+        const toastElement = document.getElementById(toastId);
+        const toast = new bootstrap.Toast(toastElement, { delay: 5000 });
+        toast.show();
+
+        toastElement.addEventListener('hidden.bs.toast', () => {
+            toastElement.remove();
+        });
+    }
+
+    createToastContainer() {
+        const container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container position-fixed top-0 end-0 p-3';
+        container.style.zIndex = '9999';
+        document.body.appendChild(container);
+        return container;
     }
 }
 

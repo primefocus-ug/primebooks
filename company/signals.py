@@ -1,4 +1,4 @@
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 from django.core.mail import send_mail, EmailMultiAlternatives
 from django.template.loader import render_to_string
@@ -9,20 +9,17 @@ from asgiref.sync import async_to_sync
 from decimal import Decimal
 import json
 import logging
-from django.db.models.signals import post_save, pre_save
-from django.dispatch import receiver
-from django.utils import timezone
-from .tasks import setup_efris_for_company, sync_company_to_efris
-from .models import Company
-from branches.models import CompanyBranch
-from sales.models import Sale
-from stores.models import DeviceOperatorLog
-from inventory.models import Stock
-from accounts.models import CustomUser
 from django.core.exceptions import ValidationError
-from stores.models import Store
+from django.db import transaction
+
+from .models import Company
+from stores.models import Store, DeviceOperatorLog
+from accounts.models import CustomUser
+from sales.models import Sale
+from inventory.models import Stock
 
 logger = logging.getLogger(__name__)
+
 
 class DecimalEncoder(json.JSONEncoder):
     """Custom JSON encoder for Decimal types"""
@@ -36,11 +33,16 @@ class DecimalEncoder(json.JSONEncoder):
 channel_layer = get_channel_layer()
 
 
+# ============================================================================
+# USER LIMIT ENFORCEMENT
+# ============================================================================
+
 @receiver(pre_save, sender=CustomUser)
 def check_user_limit_on_create(sender, instance, **kwargs):
-    '''
-    Prevent user creation if limit reached
-    '''
+    """
+    Prevent user creation if limit reached.
+    Uses SELECT FOR UPDATE to prevent race conditions.
+    """
     # Only check on new user creation
     if instance.pk:
         return
@@ -50,7 +52,7 @@ def check_user_limit_on_create(sender, instance, **kwargs):
         return
 
     # Skip for SaaS admins
-    if instance.is_saas_admin:
+    if getattr(instance, 'is_saas_admin', False):
         return
 
     company = instance.company
@@ -59,25 +61,67 @@ def check_user_limit_on_create(sender, instance, **kwargs):
     if not company.plan:
         raise ValidationError('Company has no active plan')
 
-    # Count existing users
-    current_users = CustomUser.objects.filter(
-        company=company,
-        is_hidden=False
-    ).count()
+    # Get fresh company with lock to prevent race conditions
+    try:
+        with transaction.atomic():
+            # Lock the company row to prevent concurrent user creation
+            locked_company = Company.objects.select_for_update().get(
+                pk=company.pk
+            )
 
-    # Check limit
-    if current_users >= company.plan.max_users:
-        raise ValidationError(
-            f'User limit reached ({current_users}/{company.plan.max_users}). '
-            f'Please upgrade your plan to add more users.'
-        )
+            # Count existing ACTIVE users (not hidden)
+            current_users = CustomUser.objects.filter(
+                company=locked_company,
+                is_active=True,  # FIXED: Added is_active check
+                is_hidden=False
+            ).count()
 
+            # Check limit
+            if current_users >= locked_company.plan.max_users:
+                raise ValidationError(
+                    f'User limit reached ({current_users}/{locked_company.plan.max_users}). '
+                    f'Please upgrade your plan to add more users.'
+                )
+
+    except Company.DoesNotExist:
+        raise ValidationError('Company not found')
+
+
+@receiver(post_save, sender=CustomUser)
+def clear_user_cache_on_save(sender, instance, created, **kwargs):
+    """Clear company user count cache when user is created or updated"""
+    if not instance.company:
+        return
+
+    # Clear the user count cache
+    instance.company.clear_user_count_cache()
+
+    # If user status changed, also clear general cache
+    if not created:
+        instance.company._clear_cache()
+
+
+@receiver(post_delete, sender=CustomUser)
+def clear_user_cache_on_delete(sender, instance, **kwargs):
+    """Clear company user count cache when user is deleted"""
+    if not instance.company:
+        return
+
+    # Clear the user count cache
+    instance.company.clear_user_count_cache()
+    instance.company._clear_cache()
+
+
+# ============================================================================
+# BRANCH/STORE LIMIT ENFORCEMENT
+# ============================================================================
 
 @receiver(pre_save, sender=Store)
 def check_branch_limit_on_create(sender, instance, **kwargs):
-    '''
-    Prevent branch/store creation if limit reached
-    '''
+    """
+    Prevent branch/store creation if limit reached.
+    Uses SELECT FOR UPDATE to prevent race conditions.
+    """
     # Only check on new store creation
     if instance.pk:
         return
@@ -92,31 +136,60 @@ def check_branch_limit_on_create(sender, instance, **kwargs):
     if not company.plan:
         raise ValidationError('Company has no active plan')
 
-    # Count existing branches
-    current_branches = Store.objects.filter(company=company).count()
+    # Get fresh company with lock to prevent race conditions
+    try:
+        with transaction.atomic():
+            # Lock the company row to prevent concurrent branch creation
+            locked_company = Company.objects.select_for_update().get(
+                pk=company.pk
+            )
 
-    # Check limit
-    if current_branches >= company.plan.max_branches:
-        raise ValidationError(
-            f'Branch limit reached ({current_branches}/{company.plan.max_branches}). '
-            f'Please upgrade your plan to add more branches.'
-        )
+            # Count existing active branches
+            current_branches = Store.objects.filter(
+                company=locked_company,
+                is_active=True  # FIXED: Added is_active check
+            ).count()
+
+            # Check limit
+            if current_branches >= locked_company.plan.max_branches:
+                raise ValidationError(
+                    f'Branch limit reached ({current_branches}/{locked_company.plan.max_branches}). '
+                    f'Please upgrade your plan to add more branches.'
+                )
+
+    except Company.DoesNotExist:
+        raise ValidationError('Company not found')
 
 
-from django.db import transaction
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from company.models import Company
-import logging
+@receiver(post_save, sender=Store)
+def clear_branch_cache_on_save(sender, instance, created, **kwargs):
+    """Clear company branch count cache when store is created or updated"""
+    if not instance.company:
+        return
 
-logger = logging.getLogger(__name__)
+    # Clear the branch count cache
+    instance.company._clear_cache()
 
+
+@receiver(post_delete, sender=Store)
+def clear_branch_cache_on_delete(sender, instance, **kwargs):
+    """Clear company branch count cache when store is deleted"""
+    if not instance.company:
+        return
+
+    # Clear the branch count cache
+    instance.company._clear_cache()
+
+
+# ============================================================================
+# EFRIS SIGNALS
+# ============================================================================
 
 @receiver(post_save, sender=Company)
 def handle_company_efris_changes(sender, instance, created, **kwargs):
     """Handle EFRIS-related changes when company is saved"""
 
-    # Import here to avoid circular imports - FIX THE PATH
+    # Import here to avoid circular imports
     from company.tasks import setup_efris_for_company, sync_company_to_efris
 
     if created:
@@ -142,8 +215,7 @@ def handle_company_efris_changes(sender, instance, created, **kwargs):
     else:
         # Existing company updated - check for EFRIS changes
         try:
-            from django.db.models import ObjectDoesNotExist
-
+            # Get the old instance from the transaction
             old_instance = Company.objects.filter(pk=instance.pk).first()
 
             if not old_instance:
@@ -188,21 +260,56 @@ def handle_company_efris_changes(sender, instance, created, **kwargs):
                 exc_info=True
             )
 
+
 @receiver(pre_save, sender=Company)
 def validate_efris_configuration(sender, instance, **kwargs):
     """Validate EFRIS configuration before saving"""
 
     if instance.efris_enabled:
-        # Validate business data completeness
-        can_use, errors = instance.can_use_efris()
+        # Check configuration completeness
+        errors = instance.get_efris_configuration_errors()
 
-        if not can_use:
+        if errors:
             logger.warning(
-                f"Company {instance.company_id} EFRIS validation failed: {errors}"
+                f"Company {instance.company_id} EFRIS validation failed: {', '.join(errors)}"
             )
             # Don't prevent saving, but log the issue
             # You could also set efris_is_active = False here
 
+
+# ============================================================================
+# COMPANY STATUS CHANGE SIGNALS
+# ============================================================================
+
+@receiver(post_save, sender=Company)
+def handle_company_status_change(sender, instance, **kwargs):
+    """Send notifications when company status changes"""
+    try:
+        update_fields = kwargs.get('update_fields')
+
+        if update_fields and 'status' in update_fields:
+            # Company status was updated
+            if instance.status == 'EXPIRED':
+                # Send expiration email
+                from .tasks import send_expiration_notification
+                transaction.on_commit(
+                    lambda: send_expiration_notification.delay(instance.company_id)
+                )
+
+            elif instance.status == 'SUSPENDED':
+                # Send suspension email
+                from .tasks import send_suspension_notification
+                transaction.on_commit(
+                    lambda: send_suspension_notification.delay(instance.company_id)
+                )
+
+    except Exception as e:
+        logger.error(f"Error handling company status change: {e}", exc_info=True)
+
+
+# ============================================================================
+# REAL-TIME WEBSOCKET SIGNALS
+# ============================================================================
 
 @receiver(post_save, sender=Sale)
 def sale_created_handler(sender, instance, created, **kwargs):
@@ -211,7 +318,6 @@ def sale_created_handler(sender, instance, created, **kwargs):
         return
 
     try:
-        # Get company from the store's branch
         company = instance.store.company
 
         # Send update to company dashboard
@@ -224,15 +330,15 @@ def sale_created_handler(sender, instance, created, **kwargs):
                     'sale_id': instance.id,
                     'amount': float(instance.total_amount),
                     'store_name': instance.store.name,
-                    'branch_name': instance.store.company.name,
+                    'branch_name': instance.store.name,
                     'timestamp': instance.created_at.isoformat()
                 }
             }
         )
 
-        # Send update to branch analytics if applicable
+        # Send update to branch analytics
         async_to_sync(channel_layer.group_send)(
-            f'branch_analytics_{instance.store.company.pk}',
+            f'branch_analytics_{instance.store.pk}',
             {
                 'type': 'analytics_update',
                 'data': {
@@ -245,17 +351,16 @@ def sale_created_handler(sender, instance, created, **kwargs):
         )
 
     except Exception as e:
-        print(f"Error sending sale update: {e}")
+        logger.error(f"Error sending sale update: {e}", exc_info=True)
 
 
-@receiver(post_save, sender=Stock)  # Updated sender
+@receiver(post_save, sender=Stock)
 def inventory_updated_handler(sender, instance, created, **kwargs):
     """Handle inventory updates - send low stock alerts"""
     try:
         # Check if item is low stock or out of stock
         if instance.quantity <= instance.low_stock_threshold:
             company = instance.store.company
-
             alert_type = 'out_of_stock' if instance.quantity == 0 else 'low_stock'
 
             async_to_sync(channel_layer.group_send)(
@@ -266,15 +371,14 @@ def inventory_updated_handler(sender, instance, created, **kwargs):
                     'message': f"{instance.product.name if hasattr(instance, 'product') else 'Product'} is {'out of stock' if instance.quantity == 0 else 'running low'} at {instance.store.name}",
                     'data': {
                         'store_name': instance.store.name,
-                        'branch_name': instance.store.company.name,
-                        'quantity': float(instance.quantity),  # Ensure float conversion
-                        'threshold': float(instance.low_stock_threshold)  # Ensure float conversion
+                        'quantity': float(instance.quantity),
+                        'threshold': float(instance.low_stock_threshold)
                     }
                 }
             )
 
     except Exception as e:
-        print(f"Error sending inventory alert: {e}")
+        logger.error(f"Error sending inventory alert: {e}", exc_info=True)
 
 
 @receiver(post_save, sender=DeviceOperatorLog)
@@ -284,33 +388,17 @@ def device_activity_handler(sender, instance, created, **kwargs):
         return
 
     try:
-        # Check if device exists and has store
         if not instance.device or not instance.device.store:
-            print(f"Device or store is None for DeviceOperatorLog {instance.id}")
             return
 
-        # Check if store exists (should always exist based on FK constraint)
         store = instance.device.store
         if not store.company:
-            print(f"Store {store.id} has no company")
             return
 
         company = store.company
+        company_id = company.company_id
 
-        # Get company_id - use schema_name if available
-        company_id = getattr(company, 'company_id', getattr(company, 'schema_name', None))
-        if not company_id:
-            print(f"No company_id found for company {company.id}")
-            return
-
-        # Prepare user name
         user_name = instance.user.get_full_name() or instance.user.username
-
-        # Prepare store name
-        store_name = store.name
-
-        # Get branch name if exists (backward compatibility)
-        branch_name = store.name  # Use store name as fallback
 
         async_to_sync(channel_layer.group_send)(
             f'company_dashboard_{company_id}',
@@ -320,50 +408,25 @@ def device_activity_handler(sender, instance, created, **kwargs):
                     'event_type': 'device_activity',
                     'user_name': user_name,
                     'action': instance.action.replace('_', ' ').title(),
-                    'store_name': store_name,
-                    'branch_name': branch_name,
+                    'store_name': store.name,
                     'timestamp': instance.timestamp.isoformat(),
                     'device_name': instance.device.name if instance.device else 'Unknown Device'
                 }
             }
         )
 
-    except AttributeError as e:
-        print(f"AttributeError in device_activity_handler: {e}")
     except Exception as e:
-        print(f"Error sending device activity update: {e}")
-
-@receiver(post_save, sender=CompanyBranch)
-def branch_updated_handler(sender, instance, created, **kwargs):
-    """Handle branch creation/updates"""
-    try:
-        event_type = 'branch_created' if created else 'branch_updated'
-
-        async_to_sync(channel_layer.group_send)(
-            f'company_dashboard_{instance.company.company_id}',
-            {
-                'type': 'branch_update',
-                'branch_id': instance.id,
-                'data': {
-                    'event_type': event_type,
-                    'branch_name': instance.name,
-                    'branch_code': instance.code,
-                    'is_active': instance.is_active,
-                    'is_main_branch': instance.is_main_branch,
-                    'location': instance.location
-                }
-            }
-        )
-
-    except Exception as e:
-        print(f"Error sending branch update: {e}")
+        logger.error(f"Error sending device activity update: {e}", exc_info=True)
 
 
 @receiver(post_save, sender=CustomUser)
 def employee_updated_handler(sender, instance, created, **kwargs):
-    """Handle employee creation/updates."""
-    if instance.is_hidden or instance.is_saas_admin:
-        return  # Skip hidden or SaaS admin users
+    """Handle employee creation/updates"""
+    if getattr(instance, 'is_hidden', False) or getattr(instance, 'is_saas_admin', False):
+        return
+
+    if not instance.company:
+        return
 
     try:
         event_type = 'employee_joined' if created else 'employee_updated'
@@ -375,19 +438,21 @@ def employee_updated_handler(sender, instance, created, **kwargs):
                 'data': {
                     'event_type': event_type,
                     'user_name': instance.get_full_name() or instance.username,
-                    'user_role': getattr(instance.primary_role, 'name', None),
+                    'user_role': getattr(instance.primary_role, 'name', None) if hasattr(instance,
+                                                                                         'primary_role') else None,
                     'is_active': instance.is_active,
-                    'timestamp': (
-                        instance.date_joined.isoformat()
-                        if created
-                        else getattr(instance, 'updated_at', instance.date_joined).isoformat()
-                    ),
+                    'timestamp': instance.date_joined.isoformat() if created else timezone.now().isoformat(),
                 },
             },
         )
 
     except Exception as e:
-        print(f"Error sending employee update: {e}")
+        logger.error(f"Error sending employee update: {e}", exc_info=True)
+
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
 
 def send_performance_alert(company_id, alert_type, message, data=None):
     """Send performance alerts to company dashboard"""
@@ -402,7 +467,7 @@ def send_performance_alert(company_id, alert_type, message, data=None):
             }
         )
     except Exception as e:
-        print(f"Error sending performance alert: {e}")
+        logger.error(f"Error sending performance alert: {e}", exc_info=True)
 
 
 def broadcast_company_update(company_id, update_data):
@@ -416,22 +481,4 @@ def broadcast_company_update(company_id, update_data):
             }
         )
     except Exception as e:
-        print(f"Error broadcasting company update: {e}")
-
-
-@receiver(post_save, sender=Company)
-def handle_company_status_change(sender, instance, **kwargs):
-    """Send notifications when company status changes"""
-    try:
-        if kwargs.get('update_fields') and 'status' in kwargs['update_fields']:
-            # Company status was updated
-            if instance.status == 'EXPIRED':
-                # Send expiration email - use the task from tasks.py
-                from .tasks import send_expiration_notification
-                send_expiration_notification.delay(instance.company_id)
-            elif instance.status == 'SUSPENDED':
-                # Send suspension email - use the task from tasks.py
-                from .tasks import send_suspension_notification
-                send_suspension_notification.delay(instance.company_id)
-    except Exception as e:
-        logger.error(f"Error handling company status change: {e}")
+        logger.error(f"Error broadcasting company update: {e}", exc_info=True)

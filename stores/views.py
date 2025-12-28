@@ -732,7 +732,7 @@ class SwitchStoreView(LoginRequiredMixin, View):
                 store=store
             )
 
-            return redirect(request.GET.get('next', 'dashboard:home'))
+            return redirect(request.GET.get('next', 'user_dashboard'))
 
         except Store.DoesNotExist:
             messages.error(request, "Store not found.")
@@ -1173,7 +1173,7 @@ class StoreDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         return context
 
 
-class StoreCreateView(CompanyFieldLockMixin,LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class StoreCreateView(CompanyFieldLockMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     """Create a new store"""
 
     model = Store
@@ -1202,11 +1202,9 @@ class StoreCreateView(CompanyFieldLockMixin,LoginRequiredMixin, PermissionRequir
             messages.success(self.request, f'Store "{form.instance.name}" created successfully!')
             return response
         except ValidationError as e:
-            # Handle the branch limit validation error from the signal
             messages.error(self.request, str(e))
             return self.form_invalid(form)
         except Exception as e:
-            # Handle any other unexpected errors
             messages.error(self.request, f'Error creating store: {str(e)}')
             return self.form_invalid(form)
 
@@ -1215,11 +1213,15 @@ class StoreCreateView(CompanyFieldLockMixin,LoginRequiredMixin, PermissionRequir
         return super().form_invalid(form)
 
     def get_context_data(self, **kwargs):
-        """Add branch limit context to template"""
+        """Add branch limit and EFRIS status context to template"""
         context = super().get_context_data(**kwargs)
 
+        # Check EFRIS status
+        efris_is_enabled = False
         if hasattr(self.request.user, 'company') and self.request.user.company:
             company = self.request.user.company
+            efris_is_enabled = getattr(company, 'efris_enabled', False)
+
             current_stores = Store.objects.filter(company=company).count()
             context.update({
                 'current_stores': current_stores,
@@ -1227,11 +1229,14 @@ class StoreCreateView(CompanyFieldLockMixin,LoginRequiredMixin, PermissionRequir
                 'can_create_more': current_stores < getattr(company.plan, 'branch_limit', 0) if hasattr(company,
                                                                                                         'plan') else True
             })
+        elif hasattr(self.request, 'tenant'):
+            efris_is_enabled = getattr(self.request.tenant, 'efris_enabled', False)
 
+        context['efris_is_enabled'] = efris_is_enabled
         return context
 
 
-class StoreUpdateView(CompanyFieldLockMixin,LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class StoreUpdateView(CompanyFieldLockMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     """Update an existing store"""
 
     model = Store
@@ -1263,6 +1268,19 @@ class StoreUpdateView(CompanyFieldLockMixin,LoginRequiredMixin, PermissionRequir
         messages.error(self.request, 'Please correct the errors below.')
         return super().form_invalid(form)
 
+    def get_context_data(self, **kwargs):
+        """Add EFRIS status context to template"""
+        context = super().get_context_data(**kwargs)
+
+        # Check EFRIS status
+        efris_is_enabled = False
+        if self.object and self.object.company:
+            efris_is_enabled = getattr(self.object.company, 'efris_enabled', False)
+        elif hasattr(self.request, 'tenant'):
+            efris_is_enabled = getattr(self.request.tenant, 'efris_enabled', False)
+
+        context['efris_is_enabled'] = efris_is_enabled
+        return context
 
 class StoreDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     """Delete a store."""

@@ -420,6 +420,8 @@ class SubscriptionPlan(models.Model):
         return base_features
 
 
+
+
 class CompanyQuerySet(models.QuerySet):
     def active(self):
         """Return companies with active access."""
@@ -683,7 +685,45 @@ class Company(TenantMixin,EFRISCompanyMixin):
             )
             self.plan = free_plan
 
-        # Set grace period for new subscriptions
+        # NEW: Handle manual transition from trial to paid subscription
+        # This prevents auto-expiring when admin unchecks is_trial
+        if not skip_status_update and self.pk:  # Only for existing companies
+            try:
+                old_instance = Company.objects.get(pk=self.pk)
+
+                # Check if admin is manually converting from trial to paid
+                if old_instance.is_trial and not self.is_trial:
+                    # Admin is converting trial to paid subscription
+                    # Set subscription dates if not already set
+                    if not self.subscription_starts_at:
+                        self.subscription_starts_at = timezone.now().date()
+
+                    if not self.subscription_ends_at:
+                        # Default to 30 days subscription
+                        from datetime import timedelta
+                        self.subscription_ends_at = self.subscription_starts_at + timedelta(days=30)
+
+                    # Set grace period
+                    if not self.grace_period_ends_at and self.subscription_ends_at:
+                        from datetime import timedelta
+                        self.grace_period_ends_at = self.subscription_ends_at + timedelta(days=7)
+
+                    # Set next billing date
+                    if not self.next_billing_date:
+                        self.next_billing_date = self.subscription_ends_at
+
+                    # Ensure company is active
+                    self.status = 'ACTIVE'
+                    self.is_active = True
+
+                    logger.info(
+                        f"Company {self.company_id} manually converted from trial to paid subscription. "
+                        f"Subscription ends: {self.subscription_ends_at}"
+                    )
+            except Company.DoesNotExist:
+                pass
+
+        # Set grace period for new subscriptions (if not already set)
         if self.subscription_ends_at and not self.grace_period_ends_at:
             from datetime import timedelta
             self.grace_period_ends_at = self.subscription_ends_at + timedelta(days=7)
@@ -693,6 +733,7 @@ class Company(TenantMixin,EFRISCompanyMixin):
             self.check_and_update_access_status()
 
         result = super().save(*args, **kwargs)
+
         # Clear cache when company is updated
         self._clear_cache()
 
@@ -702,6 +743,7 @@ class Company(TenantMixin,EFRISCompanyMixin):
         """Clear cached data for this company."""
         cache_keys = [
             f'company_{self.company_id}_branches_count',
+            f'company_{self.company_id}_active_users_count',  # ADD THIS
             f'company_{self.company_id}_storage_usage',
             f'company_{self.company_id}_efris_status',
         ]
@@ -714,6 +756,31 @@ class Company(TenantMixin,EFRISCompanyMixin):
         return self.name
 
 
+    @property
+    def active_users_count(self):
+        """Get cached active users count."""
+        cache_key = f'company_{self.company_id}_active_users_count'
+        count = cache.get(cache_key)
+        if count is None:
+            User = get_user_model()
+            count = User.objects.filter(
+                company=self,
+                is_active=True,
+                is_hidden=False
+            ).count()
+            cache.set(cache_key, count, 300)  # Cache for 5 minutes
+        return count
+
+    def clear_user_count_cache(self):
+        """Clear user count cache"""
+        cache_key = f'company_{self.company_id}_active_users_count'
+        cache.delete(cache_key)
+
+    def can_add_user(self):
+        """Check if company can add more users."""
+        if not self.plan:
+            return False
+        return self.active_users_count < self.plan.max_users
 
     @property
     def efris_config(self):
@@ -1068,16 +1135,28 @@ class Company(TenantMixin,EFRISCompanyMixin):
 
         # Check subscription status
         else:
+            # FIXED: Check if subscription dates are set before comparing
             if not self.subscription_ends_at:
-                self.status = 'EXPIRED'
-                self.is_active = False
+                # No subscription end date set - this is likely a manual conversion
+                # Check if subscription_starts_at exists
+                if self.subscription_starts_at:
+                    # Admin just set start date, assume active for now
+                    self.status = 'ACTIVE'
+                    self.is_active = True
+                else:
+                    # No dates at all - mark as expired
+                    self.status = 'EXPIRED'
+                    self.is_active = False
             elif self.subscription_ends_at >= today:
+                # Valid subscription
                 self.status = 'ACTIVE'
                 self.is_active = True
             elif self.grace_period_ends_at and self.grace_period_ends_at >= today:
+                # In grace period
                 self.status = 'SUSPENDED'
                 self.is_active = False
             else:
+                # Expired
                 self.status = 'EXPIRED'
                 self.is_active = False
 
@@ -1085,10 +1164,15 @@ class Company(TenantMixin,EFRISCompanyMixin):
         if not self.is_active and self.status in ['ACTIVE', 'TRIAL']:
             self.status = 'SUSPENDED'
 
-        # Save if changed
+        # Save if changed (using update_fields to avoid recursion)
         status_changed = (old_status != self.status or old_is_active != self.is_active)
-        if status_changed:
-            self.save(update_fields=['status', 'is_active', 'updated_at'])
+        if status_changed and self.pk:
+            # Use update_fields to prevent recursion
+            Company.objects.filter(pk=self.pk).update(
+                status=self.status,
+                is_active=self.is_active,
+                updated_at=timezone.now()
+            )
 
             if not self.is_active:
                 self.deactivate_all_users()
@@ -1202,10 +1286,12 @@ class Company(TenantMixin,EFRISCompanyMixin):
 
         logger.info(f"Company {self.company_id} reactivated: {reason}")
 
+
     def _clear_all_caches(self):
         """Clear all cached data for this company."""
         cache_keys = [
             f'company_{self.company_id}_branches_count',
+            f'company_{self.company_id}_active_users_count',  # ADD THIS
             f'company_{self.company_id}_storage_usage',
             f'company_{self.company_id}_efris_status',
             f'company_{self.company_id}_status',
@@ -1219,7 +1305,7 @@ class Company(TenantMixin,EFRISCompanyMixin):
 
         # Also clear any tenant-specific caches
         with schema_context(self.schema_name):
-            cache.clear()  # Clear all cache for this tenant
+            cache.clear()
 
     def force_status_refresh(self):
         """Force refresh of status from database and clear caches"""

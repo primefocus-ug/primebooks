@@ -379,6 +379,7 @@ class StoreForm(forms.ModelForm):
 
             # Status
             'is_active',
+            'store_efris_integration_mode',
 
             # EFRIS Configuration Toggle
             'use_company_efris',
@@ -389,7 +390,6 @@ class StoreForm(forms.ModelForm):
             'store_efris_key_password',
             'store_efris_certificate_fingerprint',
             'store_efris_is_production',
-            'store_efris_integration_mode',
             'store_auto_fiscalize_sales',
             'store_auto_sync_products',
             'store_efris_is_active',
@@ -544,6 +544,9 @@ class StoreForm(forms.ModelForm):
                 'id': 'id_use_company_efris',
                 'onchange': 'toggleEFRISFields(this.checked)'
             }),
+            'store_efris_integration_mode': forms.Select(attrs={
+                'class': 'form-select'
+            }),
 
             # Store-specific EFRIS fields
             'store_efris_private_key': forms.Textarea(attrs={
@@ -571,9 +574,7 @@ class StoreForm(forms.ModelForm):
             'store_efris_is_production': forms.CheckboxInput(attrs={
                 'class': 'form-check-input'
             }),
-            'store_efris_integration_mode': forms.Select(attrs={
-                'class': 'form-select'
-            }),
+
             'store_auto_fiscalize_sales': forms.CheckboxInput(attrs={
                 'class': 'form-check-input'
             }),
@@ -593,6 +594,17 @@ class StoreForm(forms.ModelForm):
         self.user = kwargs.pop('user', None)
         self.tenant = kwargs.pop('tenant', None)
         super().__init__(*args, **kwargs)
+
+        # Mark EFRIS fields as not required by default
+        # They'll only be validated if EFRIS is enabled
+        efris_fields = [
+            'tin', 'nin', 'efris_device_number',
+            'store_efris_private_key', 'store_efris_public_certificate',
+            'store_efris_key_password'
+        ]
+        for field_name in efris_fields:
+            if field_name in self.fields:
+                self.fields[field_name].required = False
 
         # Set initial values
         if self.instance and self.instance.pk:
@@ -637,22 +649,50 @@ class StoreForm(forms.ModelForm):
             'staff': ['staff', 'store_managers'],
             'identifiers': ['nin', 'tin', 'device_serial_number'],
             'efris_basic': ['efris_enabled', 'efris_device_number', 'is_registered_with_efris',
-                            'efris_registration_date', 'efris_last_sync', 'last_stock_sync',
+                            'efris_registration_date', 'efris_last_sync', 'last_stock_sync','store_efris_integration_mode',
                             'auto_fiscalize_sales', 'allow_manual_fiscalization', 'report_stock_movements'],
             'efris_toggle': ['use_company_efris', 'copy_from_company'],
             'efris_store': [
                 'store_efris_private_key', 'store_efris_public_certificate',
                 'store_efris_key_password', 'store_efris_certificate_fingerprint',
-                'store_efris_is_production', 'store_efris_integration_mode',
+                'store_efris_is_production',
                 'store_auto_fiscalize_sales', 'store_auto_sync_products',
                 'store_efris_is_active', 'store_efris_last_sync'
             ]
         }
 
+    def _is_efris_enabled(self):
+        """
+        Check if EFRIS is enabled at company or store level
+        Returns True if EFRIS should be enforced
+        """
+        # Check if efris_enabled checkbox is checked in the form
+        efris_enabled = self.cleaned_data.get('efris_enabled', False)
+
+        # If form has efris enabled, return True
+        if efris_enabled:
+            return True
+
+        # Check company-level EFRIS
+        if self.instance and self.instance.company:
+            company = self.instance.company
+            if hasattr(company, 'efris_enabled') and company.efris_enabled:
+                return True
+
+        # Check tenant-level EFRIS
+        if self.tenant and hasattr(self.tenant, 'efris_enabled'):
+            if self.tenant.efris_enabled:
+                return True
+
+        return False
+
     def clean(self):
         cleaned_data = super().clean()
         use_company_efris = cleaned_data.get('use_company_efris', True)
         copy_from_company = cleaned_data.get('copy_from_company', False)
+
+        # Check if EFRIS is enabled
+        efris_enabled = self._is_efris_enabled()
 
         # Handle copying from company
         if copy_from_company and self.instance and self.instance.pk:
@@ -669,8 +709,9 @@ class StoreForm(forms.ModelForm):
         if latitude and longitude:
             cleaned_data['location_gps'] = f"{latitude}, {longitude}"
 
-        # Validate store-specific EFRIS config if not using company config
-        if not use_company_efris:
+        # ✅ ONLY validate EFRIS fields if EFRIS is enabled AND not using company EFRIS
+        if efris_enabled and not use_company_efris:
+            # Validate store-specific EFRIS fields only when NOT using company config
             required_store_fields = {
                 'tin': 'TIN number',
                 'store_efris_private_key': 'Private Key',
@@ -684,14 +725,45 @@ class StoreForm(forms.ModelForm):
                         _(f'{label} is required when using store-specific EFRIS configuration.')
                     )
 
-            # Validate TIN (can use store or company)
+            # Additional validation for TIN if not provided at store level
             if not cleaned_data.get('tin') and self.instance:
                 company_config = self.instance.get_company_efris_config()
                 if not company_config.get('tin'):
                     self.add_error(
                         'tin',
-                        _('Either store TIN or company TIN must be provided.')
+                        _('TIN must be provided at either store or company level for EFRIS.')
                     )
+
+        # ✅ If using company EFRIS, just validate that company has basic config (optional warning)
+        # We don't enforce this strictly to allow saving the store
+        if efris_enabled and use_company_efris and self.instance and self.instance.company:
+            company_config = self.instance.get_company_efris_config()
+
+            # Check if company has minimum required EFRIS fields
+            missing_company_fields = []
+            if not company_config.get('tin'):
+                missing_company_fields.append('TIN')
+            if not company_config.get('efris_private_key'):
+                missing_company_fields.append('Private Key')
+            if not company_config.get('efris_public_certificate'):
+                missing_company_fields.append('Public Certificate')
+
+            # ✅ Only add a warning, don't block saving
+            if missing_company_fields:
+                # Add as a non-field error (warning) instead of blocking
+                from django.forms.utils import ErrorList
+                if not hasattr(self, '_warnings'):
+                    self._warnings = []
+
+                warning_msg = _(
+                    f'Note: Company EFRIS configuration is incomplete. Missing: {", ".join(missing_company_fields)}. '
+                    f'EFRIS features may not work until company configuration is complete.'
+                )
+                self._warnings.append(warning_msg)
+
+                # Optionally, you can still add this as a non-blocking error for visibility
+                # but don't raise ValidationError
+                # self.add_error(None, warning_msg)
 
         return cleaned_data
 
@@ -741,7 +813,6 @@ class StoreForm(forms.ModelForm):
                 except json.JSONDecodeError:
                     raise forms.ValidationError(_('Invalid JSON format for operating hours'))
         return operating_hours
-
 
 from django import forms
 from django.utils.translation import gettext_lazy as _
