@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Add Inventory" %} - {{ stockstore.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'inventory:stockstore_list' %}">{% trans "Warehouses" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'inventory:stockstore_detail' stockstore.pk %}">{{ stockstore.name }}</a></li>
+<li class="breadcrumb-item active">{% trans "Add Inventory" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">
+                        <i class="bi bi-plus-circle me-2"></i>{% trans "Add Inventory to" %} {{ stockstore.name }}
+                    </h4>
+                </div>
+                <div class="card-body">
+                    {% if messages %}
+                    <div class="mb-4">
+                        {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    
+                    <form method="post" id="addInventoryForm">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label for="product" class="form-label">
+                                {% trans "Product" %} <span class="text-danger">*</span>
+                            </label>
+                            <select name="product" id="product" class="form-select" required>
+                                <option value="">{% trans "Select Product" %}</option>
+                                {% for product in products %}
+                                <option value="{{ product.pk }}">
+                                    {{ product.name }} - {{ product.sku }}
+                                </option>
+                                {% empty %}
+                                <option value="" disabled>{% trans "No products available" %}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">{% trans "Select the product to add to inventory" %}</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="quantity" class="form-label">
+                                {% trans "Quantity" %} <span class="text-danger">*</span>
+                            </label>
+                            <input type="number" name="quantity" id="quantity" 
+                                   class="form-control" step="0.001" min="0.001" required
+                                   placeholder="{% trans 'Enter quantity to add' %}">
+                            <div class="form-text">{% trans "Enter the quantity to add to warehouse inventory" %}</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="reference" class="form-label">
+                                {% trans "Reference" %}
+                            </label>
+                            <input type="text" name="reference" id="reference" 
+                                   class="form-control" placeholder="{% trans 'e.g., PO-123, Invoice-456, GRN-789' %}"
+                                   maxlength="100">
+                            <div class="form-text">{% trans "Optional reference number for tracking (purchase order, invoice, etc.)" %}</div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="notes" class="form-label">
+                                {% trans "Notes" %}
+                            </label>
+                            <textarea name="notes" id="notes" class="form-control" rows="3"
+                                      placeholder="{% trans 'Add any additional notes about this inventory addition...' %}"
+                                      maxlength="500"></textarea>
+                            <div class="form-text">{% trans "Optional notes about this inventory addition" %}</div>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            {% trans "This will:" %}
+                            <ul class="mb-0 mt-2">
+                                <li>{% trans "Add the specified quantity to the warehouse inventory" %}</li>
+                                <li>{% trans "Create a movement record with type 'PURCHASE'" %}</li>
+                                <li>{% trans "Update the product's total available quantity" %}</li>
+                            </ul>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2">
+                            <a href="{% url 'inventory:stockstore_detail' stockstore.pk %}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle me-1"></i>{% trans "Cancel" %}
+                            </a>
+                            <button type="submit" class="btn btn-primary" id="submitBtn">
+                                <i class="bi bi-check-circle me-1"></i>{% trans "Add Inventory" %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            {% if products %}
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-box-seam me-2"></i>{% trans "Available Products" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Product" %}</th>
+                                    <th>{% trans "SKU" %}</th>
+                                    <th>{% trans "Current Stock" %}</th>
+                                    <th>{% trans "Status" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for product in products|slice:":10" %}
+                                <tr>
+                                    <td>{{ product.name }}</td>
+                                    <td><code>{{ product.sku }}</code></td>
+                                    <td>
+                                        {% with inventory=product.stockstore_inventory.first %}
+                                        {% if inventory and inventory.stockstore_id == stockstore.pk %}
+                                        <span class="badge bg-secondary">{{ inventory.quantity }}</span>
+                                        {% else %}
+                                        <span class="badge bg-light text-dark">{% trans "Not in stock" %}</span>
+                                        {% endif %}
+                                        {% endwith %}
+                                    </td>
+                                    <td>
+                                        {% if product.is_active %}
+                                        <span class="badge bg-success">{% trans "Active" %}</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">{% trans "Inactive" %}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if products|length > 10 %}
+                    <div class="text-center mt-2">
+                        <small class="text-muted">
+                            {% trans "Showing 10 of" %} {{ products|length }} {% trans "products" %}
+                        </small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('addInventoryForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const quantityInput = document.getElementById('quantity');
+        
+        // Form submission handler
+        form.addEventListener('submit', function(e) {
+            // Prevent multiple submissions
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>{% trans "Adding..." %}';
+            
+            // Validate quantity
+            const quantity = parseFloat(quantityInput.value);
+            if (quantity <= 0) {
+                e.preventDefault();
+                alert('{% trans "Please enter a valid quantity greater than 0" %}');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>{% trans "Add Inventory" %}';
+            }
+        });
+        
+        // Auto-select first product if only one exists
+        const productSelect = document.getElementById('product');
+        if (productSelect.options.length === 2) { // 1 option + 1 placeholder
+            productSelect.selectedIndex = 1;
+        }
+        
+        // Focus on quantity field after product selection
+        productSelect.addEventListener('change', function() {
+            if (this.value) {
+                quantityInput.focus();
+            }
+        });
+    });
+</script>
+{% endblock %}

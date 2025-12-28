@@ -1,0 +1,406 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% trans "Receive Transfer" %} - {{ transfer.transfer_number }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'inventory:transfer_list' %}">{% trans "Stock Transfers" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'inventory:transfer_detail' transfer.pk %}">{{ transfer.transfer_number }}</a></li>
+<li class="breadcrumb-item active">{% trans "Receive" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">
+                        <i class="bi bi-box-arrow-in-right me-2"></i>{% trans "Receive Transfer" %}
+                    </h4>
+                    <small class="text-muted">{{ transfer.transfer_number }} - {{ transfer.destination_name }}</small>
+                </div>
+                <div class="card-body">
+                    <!-- Transfer Summary -->
+                    <div class="alert alert-info mb-4">
+                        <div class="d-flex">
+                            <div class="flex-shrink-0">
+                                <i class="bi bi-info-circle fs-3"></i>
+                            </div>
+                            <div class="flex-grow-1 ms-3">
+                                <h5 class="alert-heading">{% trans "Receiving Transfer" %}</h5>
+                                <p class="mb-0">
+                                    {% trans "You are receiving a transfer from" %} <strong>{{ transfer.source_name }}</strong>.
+                                    {% trans "Please verify the received quantities against the dispatched quantities." %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Transfer Information -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-title">{% trans "Transfer Details" %}</h6>
+                                    <dl class="row mb-0">
+                                        <dt class="col-sm-4">{% trans "Transfer #" %}</dt>
+                                        <dd class="col-sm-8">{{ transfer.transfer_number }}</dd>
+                                        
+                                        <dt class="col-sm-4">{% trans "Dispatched By" %}</dt>
+                                        <dd class="col-sm-8">{{ transfer.dispatched_by.get_full_name|default:"-" }}</dd>
+                                        
+                                        <dt class="col-sm-4">{% trans "Dispatched At" %}</dt>
+                                        <dd class="col-sm-8">{{ transfer.dispatched_at|date:"Y-m-d H:i"|default:"-" }}</dd>
+                                        
+                                        {% if transfer.driver_name %}
+                                        <dt class="col-sm-4">{% trans "Driver" %}</dt>
+                                        <dd class="col-sm-8">{{ transfer.driver_name }}</dd>
+                                        {% endif %}
+                                        
+                                        {% if transfer.vehicle_number %}
+                                        <dt class="col-sm-4">{% trans "Vehicle" %}</dt>
+                                        <dd class="col-sm-8">{{ transfer.vehicle_number }}</dd>
+                                        {% endif %}
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-title">{% trans "Items Summary" %}</h6>
+                                    <dl class="row mb-0">
+                                        <dt class="col-sm-4">{% trans "Total Items" %}</dt>
+                                        <dd class="col-sm-8">{{ transfer.total_items }}</dd>
+                                        
+                                        <dt class="col-sm-4">{% trans "Total Quantity" %}</dt>
+                                        <dd class="col-sm-8">{{ transfer.total_quantity }}</dd>
+                                        
+                                        <dt class="col-sm-4">{% trans "Priority" %}</dt>
+                                        <dd class="col-sm-8">
+                                            {% if transfer.priority == 'URGENT' %}
+                                            <span class="badge bg-danger">{% trans "Urgent" %}</span>
+                                            {% elif transfer.priority == 'HIGH' %}
+                                            <span class="badge bg-warning">{% trans "High" %}</span>
+                                            {% elif transfer.priority == 'NORMAL' %}
+                                            <span class="badge bg-primary">{% trans "Normal" %}</span>
+                                            {% else %}
+                                            <span class="badge bg-secondary">{% trans "Low" %}</span>
+                                            {% endif %}
+                                        </dd>
+                                        
+                                        <dt class="col-sm-4">{% trans "Expected" %}</dt>
+                                        <dd class="col-sm-8">
+                                            {% if transfer.expected_delivery_date %}
+                                            {{ transfer.expected_delivery_date|date:"Y-m-d" }}
+                                            {% else %}
+                                            <span class="text-muted">{% trans "Not specified" %}</span>
+                                            {% endif %}
+                                        </dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Receiving Form -->
+                    <form method="post" id="receiveForm">
+                        {% csrf_token %}
+                        
+                        <!-- Items Receiving Table -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>{% trans "Receive Items" %}</h5>
+                                <small class="text-muted">{% trans "Enter actual quantities received" %}</small>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>{% trans "Product" %}</th>
+                                                <th>{% trans "SKU" %}</th>
+                                                <th>{% trans "Requested" %}</th>
+                                                <th>{% trans "Dispatched" %}</th>
+                                                <th>{% trans "Received" %}</th>
+                                                <th>{% trans "Discrepancy" %}</th>
+                                                <th>{% trans "Damage Notes" %}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for item in transfer.items.all %}
+                                            <tr>
+                                                <td>
+                                                    <strong>{{ item.product.name }}</strong>
+                                                    {% if item.notes %}
+                                                    <small class="text-muted d-block">{{ item.notes }}</small>
+                                                    {% endif %}
+                                                </td>
+                                                <td><code>{{ item.product.sku }}</code></td>
+                                                <td>{{ item.quantity_requested }}</td>
+                                                <td>
+                                                    <span class="{% if item.quantity_sent %}fw-bold{% else %}text-muted{% endif %}">
+                                                        {{ item.quantity_sent|default:"-" }}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <input type="number" 
+                                                           name="actual_quantity_{{ item.id }}"
+                                                           class="form-control form-control-sm quantity-input"
+                                                           value="{{ item.quantity_sent|default:item.quantity_requested }}"
+                                                           step="0.001"
+                                                           min="0"
+                                                           data-item-id="{{ item.id }}"
+                                                           data-dispatched="{{ item.quantity_sent|default:0 }}">
+                                                </td>
+                                                <td>
+                                                    <span class="discrepancy-badge" id="discrepancy_{{ item.id }}">
+                                                        <span class="badge bg-light text-dark">-</span>
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <textarea name="damage_notes_{{ item.id }}" 
+                                                              class="form-control form-control-sm"
+                                                              rows="1"
+                                                              placeholder="{% trans 'Any damage notes...' %}"></textarea>
+                                                </td>
+                                            </tr>
+                                            {% empty %}
+                                            <tr>
+                                                <td colspan="7" class="text-center py-4">
+                                                    <div class="text-muted">
+                                                        <i class="bi bi-box-seam display-4"></i>
+                                                        <p class="mt-2">{% trans "No items in this transfer" %}</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                
+                                <div class="alert alert-warning mt-3">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                    {% trans "Note: If received quantity differs from dispatched quantity, the system will record the discrepancy." %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Receipt Notes -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="bi bi-chat-text me-2"></i>{% trans "Receipt Notes" %}</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label for="{{ form.receipt_notes.id_for_label }}" class="form-label">
+                                        {{ form.receipt_notes.label }}
+                                    </label>
+                                    {{ form.receipt_notes }}
+                                    {% if form.receipt_notes.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.receipt_notes.errors }}
+                                    </div>
+                                    {% endif %}
+                                    <div class="form-text">{% trans "Add any notes about the condition of items, packaging, or delivery" %}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Summary -->
+                        <div class="card mb-4 bg-light">
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-3 text-center">
+                                        <h6 class="text-muted">{% trans "Total Items" %}</h6>
+                                        <h3 id="totalItems" class="mb-0">{{ transfer.total_items }}</h3>
+                                    </div>
+                                    <div class="col-md-3 text-center">
+                                        <h6 class="text-muted">{% trans "Dispatched Qty" %}</h6>
+                                        <h3 id="totalDispatched" class="mb-0">{{ transfer.total_quantity }}</h3>
+                                    </div>
+                                    <div class="col-md-3 text-center">
+                                        <h6 class="text-muted">{% trans "Received Qty" %}</h6>
+                                        <h3 id="totalReceived" class="mb-0">0.000</h3>
+                                    </div>
+                                    <div class="col-md-3 text-center">
+                                        <h6 class="text-muted">{% trans "Discrepancy" %}</h6>
+                                        <h3 id="totalDiscrepancy" class="mb-0">0.000</h3>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="d-flex justify-content-between gap-2">
+                            <a href="{% url 'inventory:transfer_detail' transfer.pk %}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle me-1"></i>{% trans "Cancel" %}
+                            </a>
+                            <div>
+                                <button type="button" class="btn btn-warning" id="partialReceiveBtn" data-bs-toggle="modal" data-bs-target="#partialReceiveModal">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>{% trans "Partial Receive" %}
+                                </button>
+                                <button type="submit" class="btn btn-success">
+                                    <i class="bi bi-check-circle me-1"></i>{% trans "Complete Receipt" %}
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Partial Receive Modal -->
+<div class="modal fade" id="partialReceiveModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Partial Receipt" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>{% trans "Are you sure you want to mark this as a partial receipt?" %}</p>
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    {% trans "Partial receipt will:" %}
+                    <ul class="mb-0 mt-2">
+                        <li>{% trans "Record discrepancies for items with missing quantities" %}</li>
+                        <li>{% trans "Keep the transfer status as 'In Transit'" %}</li>
+                        <li>{% trans "Allow you to receive remaining quantities later" %}</li>
+                    </ul>
+                </div>
+                <div class="mb-3">
+                    <label for="partial_notes" class="form-label">{% trans "Notes for Partial Receipt" %}</label>
+                    <textarea name="partial_notes" id="partial_notes" class="form-control" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+                <button type="button" class="btn btn-warning" id="confirmPartialReceive">{% trans "Confirm Partial Receipt" %}</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const quantityInputs = document.querySelectorAll('.quantity-input');
+    const totalReceived = document.getElementById('totalReceived');
+    const totalDiscrepancy = document.getElementById('totalDiscrepancy');
+    const totalDispatched = document.getElementById('totalDispatched');
+    const form = document.getElementById('receiveForm');
+    const partialReceiveBtn = document.getElementById('confirmPartialReceive');
+    
+    let totalDispatchedQty = parseFloat('{{ transfer.total_quantity }}') || 0;
+    
+    // Update totals
+    function updateTotals() {
+        let receivedTotal = 0;
+        let discrepancyTotal = 0;
+        
+        quantityInputs.forEach(input => {
+            const received = parseFloat(input.value) || 0;
+            const dispatched = parseFloat(input.dataset.dispatched) || 0;
+            receivedTotal += received;
+            discrepancyTotal += (dispatched - received);
+            
+            // Update individual discrepancy badge
+            const discrepancy = dispatched - received;
+            const badge = document.getElementById(`discrepancy_${input.dataset.itemId}`);
+            if (badge) {
+                let badgeClass = 'bg-light text-dark';
+                let text = '-';
+                
+                if (discrepancy > 0) {
+                    badgeClass = 'bg-warning text-dark';
+                    text = `-${discrepancy.toFixed(3)}`;
+                } else if (discrepancy < 0) {
+                    badgeClass = 'bg-info text-dark';
+                    text = `+${Math.abs(discrepancy).toFixed(3)}`;
+                }
+                
+                badge.innerHTML = `<span class="badge ${badgeClass}">${text}</span>`;
+            }
+        });
+        
+        // Update totals display
+        totalReceived.textContent = receivedTotal.toFixed(3);
+        totalDiscrepancy.textContent = Math.abs(discrepancyTotal).toFixed(3);
+        
+        // Update discrepancy color
+        if (discrepancyTotal > 0) {
+            totalDiscrepancy.className = 'mb-0 text-warning';
+        } else if (discrepancyTotal < 0) {
+            totalDiscrepancy.className = 'mb-0 text-info';
+        } else {
+            totalDiscrepancy.className = 'mb-0';
+        }
+    }
+    
+    // Initialize totals
+    updateTotals();
+    
+    // Add event listeners to quantity inputs
+    quantityInputs.forEach(input => {
+        input.addEventListener('input', updateTotals);
+        input.addEventListener('change', updateTotals);
+    });
+    
+    // Form submission
+    form.addEventListener('submit', function(e) {
+        // Convert form data to actual_quantities JSON
+        const actualQuantities = {};
+        quantityInputs.forEach(input => {
+            const itemId = input.dataset.itemId;
+            const quantity = parseFloat(input.value) || 0;
+            actualQuantities[itemId] = quantity;
+        });
+        
+        // Create hidden input for actual_quantities
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'actual_quantities';
+        hiddenInput.value = JSON.stringify(actualQuantities);
+        form.appendChild(hiddenInput);
+        
+        // Disable submit button to prevent double submission
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+    });
+    
+    // Partial receive
+    if (partialReceiveBtn) {
+        partialReceiveBtn.addEventListener('click', function() {
+            // Add partial receive flag
+            const partialFlag = document.createElement('input');
+            partialFlag.type = 'hidden';
+            partialFlag.name = 'partial_receive';
+            partialFlag.value = 'true';
+            form.appendChild(partialFlag);
+            
+            // Add partial notes
+            const partialNotes = document.getElementById('partial_notes');
+            if (partialNotes.value) {
+                const notesInput = document.createElement('input');
+                notesInput.type = 'hidden';
+                notesInput.name = 'partial_notes';
+                notesInput.value = partialNotes.value;
+                form.appendChild(notesInput);
+            }
+            
+            // Submit form
+            form.submit();
+        });
+    }
+});
+</script>
+{% endblock %}

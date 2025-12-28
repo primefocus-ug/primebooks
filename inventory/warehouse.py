@@ -229,8 +229,9 @@ def transfer_list(request):
             Q(reason__icontains=search)
         )
 
-    # Separate by user role
-    if request.user.role == 'CASHIER':
+    # FIXED: Use primary_role instead of role attribute
+    primary_role = request.user.primary_role
+    if primary_role and primary_role.group.name == 'CASHIER':
         # Cashiers see transfers for their stores
         user_stores = request.user.stores.all()
         transfers = transfers.filter(
@@ -263,7 +264,6 @@ def transfer_list(request):
         'page_title': 'Stock Transfers'
     }
     return render(request, 'inventory/transfer_list.html', context)
-
 
 @login_required
 def transfer_detail(request, pk):

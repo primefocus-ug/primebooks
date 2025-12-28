@@ -1,0 +1,626 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Transfer Activity Report" %}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Transfer Report" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="mb-0">
+                    <i class="bi bi-truck me-2"></i>{% trans "Transfer Activity Report" %}
+                </h1>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                        <i class="bi bi-download me-1"></i>{% trans "Export" %}
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-file-text me-2"></i>{% trans "PDF Report" %}</a></li>
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-file-earmark-excel me-2"></i>{% trans "Excel" %}</a></li>
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-filetype-csv me-2"></i>{% trans "CSV" %}</a></li>
+                    </ul>
+                </div>
+            </div>
+            <p class="text-muted mb-0">{{ date_from }} - {{ date_to }}</p>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    <label for="date_from" class="form-label">{% trans "Date From" %}</label>
+                    <input type="date" name="date_from" id="date_from" class="form-control" value="{{ date_from }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="date_to" class="form-label">{% trans "Date To" %}</label>
+                    <input type="date" name="date_to" id="date_to" class="form-control" value="{{ date_to }}">
+                </div>
+                <div class="col-md-4">
+                    <label for="search" class="form-label">{% trans "Search" %}</label>
+                    <input type="text" name="search" id="search" class="form-control" placeholder="{% trans 'Search transfers...' %}">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-filter me-1"></i>{% trans "Filter" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-2 col-md-4 mb-4">
+            <div class="card border-start border-primary border-4">
+                <div class="card-body">
+                    <h6 class="text-muted fw-normal">{% trans "Total Transfers" %}</h6>
+                    <h4 class="mb-0">
+                        {% with total=by_type|length %}
+                        {% if total > 0 %}
+                        {{ total }}
+                        {% else %}
+                        0
+                        {% endif %}
+                        {% endwith %}
+                    </h4>
+                </div>
+            </div>
+        </div>
+        
+        {% for type_data in by_type %}
+        <div class="col-xl-2 col-md-4 mb-4">
+            <div class="card border-start 
+                {% if type_data.transfer_type == 'WAREHOUSE_TO_BRANCH' %}border-info
+                {% elif type_data.transfer_type == 'BRANCH_TO_BRANCH' %}border-secondary
+                {% elif type_data.transfer_type == 'BRANCH_TO_WAREHOUSE' %}border-warning
+                {% else %}border-primary{% endif %} border-4">
+                <div class="card-body">
+                    <h6 class="text-muted fw-normal">
+                        {% if type_data.transfer_type == 'WAREHOUSE_TO_BRANCH' %}
+                        {% trans "Warehouse → Branch" %}
+                        {% elif type_data.transfer_type == 'BRANCH_TO_BRANCH' %}
+                        {% trans "Branch → Branch" %}
+                        {% elif type_data.transfer_type == 'BRANCH_TO_WAREHOUSE' %}
+                        {% trans "Branch → Warehouse" %}
+                        {% else %}
+                        {{ type_data.transfer_type }}
+                        {% endif %}
+                    </h6>
+                    <h4 class="mb-0">{{ type_data.count }}</h4>
+                    <small class="text-muted">
+                        {% trans "Completed:" %} {{ type_data.completed }}
+                    </small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Tabs -->
+    <div class="card">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" id="transferReportTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview" type="button">
+                        <i class="bi bi-bar-chart me-1"></i>{% trans "Overview" %}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="performance-tab" data-bs-toggle="tab" data-bs-target="#performance" type="button">
+                        <i class="bi bi-speedometer me-1"></i>{% trans "Performance" %}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="daily-tab" data-bs-toggle="tab" data-bs-target="#daily" type="button">
+                        <i class="bi bi-calendar me-1"></i>{% trans "Daily Volume" %}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="status-tab" data-bs-toggle="tab" data-bs-target="#status" type="button">
+                        <i class="bi bi-pie-chart me-1"></i>{% trans "Status Analysis" %}
+                    </button>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body">
+            <div class="tab-content" id="transferReportTabsContent">
+                <!-- Overview Tab -->
+                <div class="tab-pane fade show active" id="overview" role="tabpanel">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">{% trans "Transfers by Type" %}</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>{% trans "Type" %}</th>
+                                                    <th>{% trans "Count" %}</th>
+                                                    <th>{% trans "Completed" %}</th>
+                                                    <th>{% trans "Completion %" %}</th>
+                                                    <th>{% trans "Avg. Time" %}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for type_data in by_type %}
+                                                <tr>
+                                                    <td>
+                                                        {% if type_data.transfer_type == 'WAREHOUSE_TO_BRANCH' %}
+                                                        <span class="badge bg-info">{% trans "Warehouse → Branch" %}</span>
+                                                        {% elif type_data.transfer_type == 'BRANCH_TO_BRANCH' %}
+                                                        <span class="badge bg-secondary">{% trans "Branch → Branch" %}</span>
+                                                        {% elif type_data.transfer_type == 'BRANCH_TO_WAREHOUSE' %}
+                                                        <span class="badge bg-warning">{% trans "Branch → Warehouse" %}</span>
+                                                        {% else %}
+                                                        <span class="badge bg-primary">{{ type_data.transfer_type }}</span>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>{{ type_data.count }}</td>
+                                                    <td>{{ type_data.completed }}</td>
+                                                    <td>
+                                                        {% if type_data.count %}
+                                                        {{ type_data.completed|div:type_data.count|floatformat:2|mul:100 }}%
+                                                        {% else %}
+                                                        0%
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        {% if type_data.avg_completion_time %}
+                                                        {{ type_data.avg_completion_time|floatformat:1 }} {% trans "hours" %}
+                                                        {% else %}
+                                                        <span class="text-muted">-</span>
+                                                        {% endif %}
+                                                    </td>
+                                                </tr>
+                                                {% empty %}
+                                                <tr>
+                                                    <td colspan="5" class="text-center text-muted">
+                                                        {% trans "No transfer type data available" %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">{% trans "Warehouse Performance" %}</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>{% trans "Warehouse" %}</th>
+                                                    <th>{% trans "Total" %}</th>
+                                                    <th>{% trans "Completed" %}</th>
+                                                    <th>{% trans "Rate" %}</th>
+                                                    <th>{% trans "Avg Items" %}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for warehouse in warehouse_performance %}
+                                                <tr>
+                                                    <td>{{ warehouse.source_stockstore__name }}</td>
+                                                    <td>{{ warehouse.total_transfers }}</td>
+                                                    <td>{{ warehouse.completed }}</td>
+                                                    <td>
+                                                        {% if warehouse.total_transfers %}
+                                                        {{ warehouse.completed|div:warehouse.total_transfers|floatformat:2|mul:100 }}%
+                                                        {% else %}
+                                                        0%
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>{{ warehouse.avg_items|floatformat:1|default:"-" }}</td>
+                                                </tr>
+                                                {% empty %}
+                                                <tr>
+                                                    <td colspan="5" class="text-center text-muted">
+                                                        {% trans "No warehouse performance data" %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Performance Tab -->
+                <div class="tab-pane fade" id="performance" role="tabpanel">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">{% trans "Top Performing Warehouses" %}</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>{% trans "Warehouse" %}</th>
+                                                    <th>{% trans "Transfers" %}</th>
+                                                    <th>{% trans "Completed" %}</th>
+                                                    <th>{% trans "Success Rate" %}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for warehouse in warehouse_performance %}
+                                                <tr>
+                                                    <td>{{ warehouse.source_stockstore__name }}</td>
+                                                    <td>{{ warehouse.total_transfers }}</td>
+                                                    <td>{{ warehouse.completed }}</td>
+                                                    <td>
+                                                        <div class="d-flex align-items-center">
+                                                            <div class="progress flex-grow-1 me-2" style="height: 6px;">
+                                                                {% with max_rate=100 %}
+                                                                {% if warehouse.total_transfers %}
+                                                                {% widthratio warehouse.completed warehouse.total_transfers 100 as width %}
+                                                                <div class="progress-bar 
+                                                                    {% if width >= 90 %}bg-success
+                                                                    {% elif width >= 70 %}bg-primary
+                                                                    {% elif width >= 50 %}bg-warning
+                                                                    {% else %}bg-danger{% endif %}" 
+                                                                    style="width: {{ width }}%">
+                                                                </div>
+                                                                {% else %}
+                                                                <div class="progress-bar bg-secondary" style="width: 0%"></div>
+                                                                {% endif %}
+                                                                {% endwith %}
+                                                            </div>
+                                                            <span class="text-muted small">
+                                                                {% if warehouse.total_transfers %}
+                                                                {{ warehouse.completed|div:warehouse.total_transfers|floatformat:2|mul:100 }}%
+                                                                {% else %}
+                                                                0%
+                                                                {% endif %}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {% empty %}
+                                                <tr>
+                                                    <td colspan="4" class="text-center text-muted">
+                                                        {% trans "No warehouse performance data" %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">{% trans "Branch Receiving Performance" %}</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>{% trans "Branch" %}</th>
+                                                    <th>{% trans "Requested" %}</th>
+                                                    <th>{% trans "Received" %}</th>
+                                                    <th>{% trans "Receipt Rate" %}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for branch in branch_performance %}
+                                                <tr>
+                                                    <td>{{ branch.destination_store__name }}</td>
+                                                    <td>{{ branch.total_requested }}</td>
+                                                    <td>{{ branch.total_received }}</td>
+                                                    <td>
+                                                        <div class="d-flex align-items-center">
+                                                            <div class="progress flex-grow-1 me-2" style="height: 6px;">
+                                                                {% with max_rate=100 %}
+                                                                {% if branch.total_requested %}
+                                                                {% widthratio branch.total_received branch.total_requested 100 as width %}
+                                                                <div class="progress-bar 
+                                                                    {% if width >= 90 %}bg-success
+                                                                    {% elif width >= 70 %}bg-primary
+                                                                    {% elif width >= 50 %}bg-warning
+                                                                    {% else %}bg-danger{% endif %}" 
+                                                                    style="width: {{ width }}%">
+                                                                </div>
+                                                                {% else %}
+                                                                <div class="progress-bar bg-secondary" style="width: 0%"></div>
+                                                                {% endif %}
+                                                                {% endwith %}
+                                                            </div>
+                                                            <span class="text-muted small">
+                                                                {% if branch.total_requested %}
+                                                                {{ branch.total_received|div:branch.total_requested|floatformat:2|mul:100 }}%
+                                                                {% else %}
+                                                                0%
+                                                                {% endif %}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {% empty %}
+                                                <tr>
+                                                    <td colspan="4" class="text-center text-muted">
+                                                        {% trans "No branch performance data" %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Daily Volume Tab -->
+                <div class="tab-pane fade" id="daily" role="tabpanel">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0">{% trans "Daily Transfer Volume" %}</h6>
+                            <small class="text-muted">{{ date_from }} - {{ date_to }}</small>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>{% trans "Date" %}</th>
+                                            <th>{% trans "Total Transfers" %}</th>
+                                            <th>{% trans "Completed" %}</th>
+                                            <th>{% trans "Completion Rate" %}</th>
+                                            <th>{% trans "Trend" %}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for day in daily_volume %}
+                                        <tr>
+                                            <td>{{ day.day }}</td>
+                                            <td>{{ day.count }}</td>
+                                            <td>{{ day.completed }}</td>
+                                            <td>
+                                                {% if day.count %}
+                                                {{ day.completed|div:day.count|floatformat:2|mul:100 }}%
+                                                {% else %}
+                                                0%
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if day.count > 10 %}
+                                                <span class="badge bg-success">{% trans "High" %}</span>
+                                                {% elif day.count > 5 %}
+                                                <span class="badge bg-primary">{% trans "Medium" %}</span>
+                                                {% elif day.count > 0 %}
+                                                <span class="badge bg-warning">{% trans "Low" %}</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">{% trans "None" %}</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% empty %}
+                                        <tr>
+                                            <td colspan="5" class="text-center py-4">
+                                                <div class="text-muted">
+                                                    <i class="bi bi-calendar display-4"></i>
+                                                    <p class="mt-2">{% trans "No daily volume data available" %}</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Analysis Tab -->
+                <div class="tab-pane fade" id="status" role="tabpanel">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">{% trans "Transfers by Status" %}</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>{% trans "Status" %}</th>
+                                                    <th>{% trans "Count" %}</th>
+                                                    <th>{% trans "Percentage" %}</th>
+                                                    <th>{% trans "Trend" %}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for status_data in by_status %}
+                                                <tr>
+                                                    <td>
+                                                        {% if status_data.status == 'COMPLETED' %}
+                                                        <span class="badge bg-success">{% trans "Completed" %}</span>
+                                                        {% elif status_data.status == 'IN_TRANSIT' %}
+                                                        <span class="badge bg-info">{% trans "In Transit" %}</span>
+                                                        {% elif status_data.status == 'APPROVED' %}
+                                                        <span class="badge bg-primary">{% trans "Approved" %}</span>
+                                                        {% elif status_data.status == 'PENDING' %}
+                                                        <span class="badge bg-warning">{% trans "Pending" %}</span>
+                                                        {% elif status_data.status == 'DRAFT' %}
+                                                        <span class="badge bg-light text-dark">{% trans "Draft" %}</span>
+                                                        {% elif status_data.status == 'REJECTED' %}
+                                                        <span class="badge bg-danger">{% trans "Rejected" %}</span>
+                                                        {% elif status_data.status == 'CANCELLED' %}
+                                                        <span class="badge bg-dark">{% trans "Cancelled" %}</span>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>{{ status_data.count }}</td>
+                                                    <td>
+                                                        {% with total=by_type|length %}
+                                                        {% if total %}
+                                                        {{ status_data.count|div:total|floatformat:2|mul:100 }}%
+                                                        {% else %}
+                                                        0%
+                                                        {% endif %}
+                                                        {% endwith %}
+                                                    </td>
+                                                    <td>
+                                                        <div class="progress" style="height: 10px;">
+                                                            {% with total=by_type|length %}
+                                                            {% if total %}
+                                                            {% widthratio status_data.count total 100 as width %}
+                                                            <div class="progress-bar 
+                                                                {% if status_data.status == 'COMPLETED' %}bg-success
+                                                                {% elif status_data.status == 'IN_TRANSIT' %}bg-info
+                                                                {% elif status_data.status == 'APPROVED' %}bg-primary
+                                                                {% elif status_data.status == 'PENDING' %}bg-warning
+                                                                {% elif status_data.status == 'REJECTED' %}bg-danger
+                                                                {% elif status_data.status == 'CANCELLED' %}bg-dark
+                                                                {% else %}bg-secondary{% endif %}" 
+                                                                style="width: {{ width }}%">
+                                                            </div>
+                                                            {% endif %}
+                                                            {% endwith %}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                {% empty %}
+                                                <tr>
+                                                    <td colspan="4" class="text-center text-muted">
+                                                        {% trans "No status data available" %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">{% trans "Performance Metrics" %}</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="list-group">
+                                        {% with total=by_type|length %}
+                                        <div class="list-group-item">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <span>{% trans "Overall Completion Rate" %}</span>
+                                                <span class="badge 
+                                                    {% if transfer_stats.completed|default:0|div:total|floatformat:2|mul:100 >= 90 %}bg-success
+                                                    {% elif transfer_stats.completed|default:0|div:total|floatformat:2|mul:100 >= 70 %}bg-primary
+                                                    {% elif transfer_stats.completed|default:0|div:total|floatformat:2|mul:100 >= 50 %}bg-warning
+                                                    {% else %}bg-danger{% endif %}">
+                                                    {% if total %}
+                                                    {{ transfer_stats.completed|default:0|div:total|floatformat:2|mul:100 }}%
+                                                    {% else %}
+                                                    0%
+                                                    {% endif %}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="list-group-item">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <span>{% trans "Average Completion Time" %}</span>
+                                                <span class="badge bg-info">
+                                                    {% with avg_time=by_type.0.avg_completion_time %}
+                                                    {% if avg_time %}
+                                                    {{ avg_time|floatformat:1 }} {% trans "hours" %}
+                                                    {% else %}
+                                                    -
+                                                    {% endif %}
+                                                    {% endwith %}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="list-group-item">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <span>{% trans "Pending Approval Rate" %}</span>
+                                                <span class="badge 
+                                                    {% if transfer_stats.pending|default:0|div:total|floatformat:2|mul:100 > 30 %}bg-danger
+                                                    {% elif transfer_stats.pending|default:0|div:total|floatformat:2|mul:100 > 20 %}bg-warning
+                                                    {% else %}bg-success{% endif %}">
+                                                    {% if total %}
+                                                    {{ transfer_stats.pending|default:0|div:total|floatformat:2|mul:100 }}%
+                                                    {% else %}
+                                                    0%
+                                                    {% endif %}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="list-group-item">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <span>{% trans "Cancellation Rate" %}</span>
+                                                <span class="badge 
+                                                    {% if transfer_stats.cancelled|default:0|div:total|floatformat:2|mul:100 > 10 %}bg-danger
+                                                    {% elif transfer_stats.cancelled|default:0|div:total|floatformat:2|mul:100 > 5 %}bg-warning
+                                                    {% else %}bg-success{% endif %}">
+                                                    {% if total %}
+                                                    {{ transfer_stats.cancelled|default:0|div:total|floatformat:2|mul:100 }}%
+                                                    {% else %}
+                                                    0%
+                                                    {% endif %}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {% endwith %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.icon-circle {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+}
+
+.list-group-item {
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+}
+
+.list-group-item:first-child {
+    border-top: none;
+}
+</style>
+{% endblock %}

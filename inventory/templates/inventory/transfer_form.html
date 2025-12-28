@@ -1,0 +1,301 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% trans "Create Stock Transfer" %}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'inventory:transfer_list' %}">{% trans "Stock Transfers" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Create Transfer" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">
+                        <i class="bi bi-truck me-2"></i>{% trans "Create Stock Transfer" %}
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <form method="post" id="transferForm" data-products-url="{% url 'inventory:check_availability' %}">
+                        {% csrf_token %}
+                        
+                        <!-- Transfer Information -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                {{ form.transfer_type|as_crispy_field }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.priority|as_crispy_field }}
+                            </div>
+                        </div>
+
+                        <!-- Dynamic Location Fields -->
+                        <div id="locationFields">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+
+                        <!-- Reason -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                {{ form.reason|as_crispy_field }}
+                            </div>
+                        </div>
+
+                        <!-- Transfer Items -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>{% trans "Transfer Items" %}</h5>
+                                <small class="text-muted">{% trans "Add items to be transferred" %}</small>
+                            </div>
+                            <div class="card-body">
+                                <div id="formset-container">
+                                    {{ formset.management_form }}
+                                    <div id="empty-form" style="display: none;">
+                                        {{ formset.empty_form|crispy }}
+                                    </div>
+                                    
+                                    <div id="items-container">
+                                        {% for form in formset %}
+                                        <div class="item-form border p-3 mb-3 rounded">
+                                            {{ form|crispy }}
+                                            {% if not forloop.first %}
+                                            <button type="button" class="btn btn-sm btn-danger remove-item">
+                                                <i class="bi bi-trash"></i> {% trans "Remove" %}
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                
+                                <button type="button" id="add-item" class="btn btn-outline-primary mt-2">
+                                    <i class="bi bi-plus-circle me-1"></i>{% trans "Add Item" %}
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Additional Information -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                {{ form.expected_delivery_date|as_crispy_field }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.notes|as_crispy_field }}
+                            </div>
+                        </div>
+
+                        <!-- Transport Information -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="bi bi-truck me-2"></i>{% trans "Transport Information (Optional)" %}</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        {{ form.vehicle_number|as_crispy_field }}
+                                    </div>
+                                    <div class="col-md-4">
+                                        {{ form.driver_name|as_crispy_field }}
+                                    </div>
+                                    <div class="col-md-4">
+                                        {{ form.driver_phone|as_crispy_field }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="d-flex justify-content-between gap-2">
+                            <a href="{% url 'inventory:transfer_list' %}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle me-1"></i>{% trans "Cancel" %}
+                            </a>
+                            <div>
+                                <button type="submit" name="save_draft" class="btn btn-outline-primary">
+                                    <i class="bi bi-save me-1"></i>{% trans "Save as Draft" %}
+                                </button>
+                                <button type="submit" name="submit_for_approval" class="btn btn-primary">
+                                    <i class="bi bi-send-check me-1"></i>{% trans "Submit for Approval" %}
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const transferType = document.getElementById('id_transfer_type');
+    const locationFields = document.getElementById('locationFields');
+    const formsetContainer = document.getElementById('formset-container');
+    const itemsContainer = document.getElementById('items-container');
+    const addItemBtn = document.getElementById('add-item');
+    const totalForms = document.getElementById('id_form-TOTAL_FORMS');
+    const emptyForm = document.getElementById('empty-form').innerHTML;
+    
+    let formCount = parseInt(totalForms.value);
+
+    // Update location fields based on transfer type
+    function updateLocationFields() {
+        const type = transferType.value;
+        let html = '';
+        
+        switch(type) {
+            case 'WAREHOUSE_TO_BRANCH':
+                html = `
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            {{ form.source_stockstore|as_crispy_field }}
+                        </div>
+                        <div class="col-md-6">
+                            {{ form.destination_store|as_crispy_field }}
+                        </div>
+                    </div>
+                `;
+                break;
+            case 'BRANCH_TO_BRANCH':
+                html = `
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            {{ form.source_store|as_crispy_field }}
+                        </div>
+                        <div class="col-md-6">
+                            {{ form.destination_store|as_crispy_field }}
+                        </div>
+                    </div>
+                `;
+                break;
+            case 'BRANCH_TO_WAREHOUSE':
+                html = `
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            {{ form.source_store|as_crispy_field }}
+                        </div>
+                        <div class="col-md-6">
+                            {{ form.destination_stockstore|as_crispy_field }}
+                        </div>
+                    </div>
+                `;
+                break;
+        }
+        
+        locationFields.innerHTML = html;
+        
+        // Initialize Select2 if needed
+        if (typeof $ !== 'undefined' && $.fn.select2) {
+            $('select').select2({
+                theme: 'bootstrap-5',
+                width: '100%'
+            });
+        }
+    }
+
+    // Add item form
+    addItemBtn.addEventListener('click', function() {
+        const newForm = emptyForm.replace(/__prefix__/g, formCount);
+        const div = document.createElement('div');
+        div.className = 'item-form border p-3 mb-3 rounded';
+        div.innerHTML = newForm;
+        
+        // Add remove button
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn-sm btn-danger remove-item';
+        removeBtn.innerHTML = '<i class="bi bi-trash"></i> {% trans "Remove" %}';
+        removeBtn.addEventListener('click', function() {
+            div.remove();
+            updateFormCount(-1);
+        });
+        
+        div.appendChild(removeBtn);
+        itemsContainer.appendChild(div);
+        
+        formCount++;
+        totalForms.value = formCount;
+        
+        // Initialize product select
+        const productSelect = div.querySelector('select[id$="product"]');
+        if (productSelect && typeof $ !== 'undefined' && $.fn.select2) {
+            $(productSelect).select2({
+                theme: 'bootstrap-5',
+                width: '100%'
+            });
+        }
+    });
+
+    // Remove item
+    itemsContainer.addEventListener('click', function(e) {
+        if (e.target.closest('.remove-item')) {
+            e.target.closest('.item-form').remove();
+            updateFormCount(-1);
+        }
+    });
+
+    // Update form count
+    function updateFormCount(delta) {
+        formCount += delta;
+        totalForms.value = formCount;
+    }
+
+    // Check product availability
+    function checkAvailability(productId, quantity) {
+        const form = document.getElementById('transferForm');
+        const url = form.dataset.productsUrl;
+        
+        if (!productId || !quantity) return;
+        
+        fetch(`${url}?product_id=${productId}&quantity=${quantity}`)
+            .then(response => response.json())
+            .then(data => {
+                console.log('Availability:', data);
+                // Update UI with availability info
+            })
+            .catch(error => console.error('Error:', error));
+    }
+
+    // Event listeners
+    if (transferType) {
+        updateLocationFields();
+        transferType.addEventListener('change', updateLocationFields);
+    }
+
+    // Form validation
+    const form = document.getElementById('transferForm');
+    form.addEventListener('submit', function(e) {
+        const productSelects = itemsContainer.querySelectorAll('select[id$="product"]');
+        let hasItems = false;
+        
+        productSelects.forEach(select => {
+            if (select.value) hasItems = true;
+        });
+        
+        if (!hasItems) {
+            e.preventDefault();
+            alert('{% trans "Please add at least one item to the transfer." %}');
+            return false;
+        }
+        
+        // Disable buttons to prevent double submission
+        const buttons = form.querySelectorAll('button[type="submit"]');
+        buttons.forEach(button => {
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+        });
+    });
+});
+</script>
+
+{% if form.media %}
+{{ form.media }}
+{% endif %}
+{% endblock %}

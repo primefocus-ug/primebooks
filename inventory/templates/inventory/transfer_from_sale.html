@@ -1,0 +1,184 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Create Transfer for Sale" %} #{{ sale.invoice_number }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'inventory:transfer_list' %}">{% trans "Stock Transfers" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Transfer for Sale" %} #{{ sale.invoice_number }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">
+                        <i class="bi bi-cart-check me-2"></i>{% trans "Create Transfer to Fulfill Sale" %}
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <!-- Sale Information -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0">{% trans "Sale Information" %}</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <strong>{% trans "Invoice Number" %}</strong>
+                                    <p>{{ sale.invoice_number }}</p>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>{% trans "Store" %}</strong>
+                                    <p>{{ sale.store.name }}</p>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>{% trans "Customer" %}</strong>
+                                    <p>{{ sale.customer_name|default:"Walk-in" }}</p>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>{% trans "Date" %}</strong>
+                                    <p>{{ sale.sale_date|date:"Y-m-d H:i" }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Out of Stock Items -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-warning text-dark">
+                            <h5 class="mb-0">
+                                <i class="bi bi-exclamation-triangle me-2"></i>{% trans "Out of Stock Items" %}
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            {% if out_of_stock_items %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>{% trans "Product" %}</th>
+                                            <th>{% trans "SKU" %}</th>
+                                            <th>{% trans "Sale Quantity" %}</th>
+                                            <th>{% trans "Available in Store" %}</th>
+                                            <th>{% trans "Needed" %}</th>
+                                            <th>{% trans "Available in Warehouse" %}</th>
+                                            <th>{% trans "Can Fulfill" %}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in out_of_stock_items %}
+                                        <tr class="{% if item.warehouse_available >= item.needed %}table-success{% else %}table-danger{% endif %}">
+                                            <td>{{ item.product.name }}</td>
+                                            <td><code>{{ item.product.sku }}</code></td>
+                                            <td>{{ item.needed|add:item.available }}</td>
+                                            <td>{{ item.available }}</td>
+                                            <td>
+                                                <strong>{{ item.needed }}</strong>
+                                                {% if item.available > 0 %}
+                                                <br><small class="text-muted">({% trans "partial stock available" %})</small>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {{ item.warehouse_available }}
+                                                <br>
+                                                <small class="text-muted">{{ item.warehouse.name }}</small>
+                                            </td>
+                                            <td>
+                                                {% if item.warehouse_available >= item.needed %}
+                                                <span class="badge bg-success">{% trans "Yes" %}</span>
+                                                {% else %}
+                                                <span class="badge bg-danger">{% trans "No" %}</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div class="alert alert-info mt-3">
+                                <i class="bi bi-info-circle me-2"></i>
+                                {% trans "This transfer will be created with URGENT priority and automatically submitted for approval." %}
+                            </div>
+                            {% else %}
+                            <div class="text-center py-4">
+                                <div class="text-success mb-3">
+                                    <i class="bi bi-check-circle display-4"></i>
+                                </div>
+                                <h4>{% trans "All items are in stock!" %}</h4>
+                                <p class="text-muted">{% trans "No transfer needed for this sale." %}</p>
+                                <a href="#" class="btn btn-primary" onclick="window.history.back()">
+                                    <i class="bi bi-arrow-left me-1"></i>{% trans "Go Back" %}
+                                </a>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Create Transfer Form -->
+                    {% if out_of_stock_items %}
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">{% trans "Create Transfer Request" %}</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="post">
+                                {% csrf_token %}
+                                
+                                <div class="row mb-4">
+                                    <div class="col-md-6">
+                                        <label class="form-label">{% trans "Source Warehouse" %}</label>
+                                        <select name="source_stockstore" class="form-select" required>
+                                            <option value="">{% trans "Select Warehouse" %}</option>
+                                            {% for item in out_of_stock_items %}
+                                            {% if item.warehouse_available >= item.needed %}
+                                            <option value="{{ item.warehouse.pk }}">
+                                                {{ item.warehouse.name }} - {% trans "Has" %} {{ item.warehouse_available }} {{ item.product.name }}
+                                            </option>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </select>
+                                        <div class="form-text">{% trans "Select the warehouse that has all required items" %}</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">{% trans "Destination Store" %}</label>
+                                        <input type="text" class="form-control" value="{{ sale.store.name }}" disabled>
+                                        <input type="hidden" name="destination_store" value="{{ sale.store.pk }}">
+                                    </div>
+                                </div>
+
+                                <div class="alert alert-warning">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                    <strong>{% trans "Important" %}:</strong>
+                                    {% trans "This transfer will include all out-of-stock items from the sale. The transfer will be created with:" %}
+                                    <ul class="mb-0 mt-2">
+                                        <li>{% trans "Type: Warehouse to Branch" %}</li>
+                                        <li>{% trans "Priority: Urgent" %}</li>
+                                        <li>{% trans "Reason: Fulfill sale" %} #{{ sale.invoice_number }}</li>
+                                        <li>{% trans "Status: Automatically submitted for approval" %}</li>
+                                    </ul>
+                                </div>
+
+                                <div class="d-flex justify-content-end gap-2">
+                                    <a href="#" class="btn btn-secondary" onclick="window.history.back()">
+                                        <i class="bi bi-x-circle me-1"></i>{% trans "Cancel" %}
+                                    </a>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-check-circle me-1"></i>{% trans "Create Transfer Request" %}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

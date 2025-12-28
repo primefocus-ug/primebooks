@@ -1489,6 +1489,16 @@ def add_payment(request, pk):
             if form.is_valid():
                 try:
                     with transaction.atomic():
+                        # ✅ DEBUG: Log before payment
+                        logger.info(
+                            f"📝 BEFORE PAYMENT - Invoice {invoice.id}: "
+                            f"Total: {invoice.sale.total_amount}, "
+                            f"Paid: {invoice.amount_paid}, "
+                            f"Outstanding: {invoice.amount_outstanding}, "
+                            f"Payment Status: {invoice.sale.payment_status}, "
+                            f"Status: {invoice.sale.status}"
+                        )
+
                         # Use invoice's apply_payment method
                         payment, allocations, remaining = invoice.apply_payment(
                             amount=form.cleaned_data['amount'],
@@ -1498,16 +1508,26 @@ def add_payment(request, pk):
                             notes=form.cleaned_data.get('notes', '')
                         )
 
-                        # ✅ FIX: Force refresh and update status
+                        # ✅ CRITICAL: Force multiple refreshes
                         invoice.refresh_from_db()
                         invoice.sale.refresh_from_db()
 
-                        # Double-check status update
+                        # ✅ Force status update again
                         invoice.update_payment_status(commit=True)
 
-                        # Refresh again to get final status
+                        # ✅ Refresh again
                         invoice.refresh_from_db()
                         invoice.sale.refresh_from_db()
+
+                        # ✅ DEBUG: Log after payment
+                        logger.info(
+                            f"✅ AFTER PAYMENT - Invoice {invoice.id}: "
+                            f"Total: {invoice.sale.total_amount}, "
+                            f"Paid: {invoice.amount_paid}, "
+                            f"Outstanding: {invoice.amount_outstanding}, "
+                            f"Payment Status: {invoice.sale.payment_status}, "
+                            f"Status: {invoice.sale.status}"
+                        )
 
                         success_message = f'Payment of {payment.amount:,.2f} recorded successfully.'
                         if remaining > 0:
@@ -1532,7 +1552,7 @@ def add_payment(request, pk):
                 except ValidationError as e:
                     error_message = str(e)
                 except Exception as e:
-                    logger.error(f"Error processing payment: {e}", exc_info=True)
+                    logger.error(f"❌ Error processing payment: {e}", exc_info=True)
                     error_message = f'Error processing payment: {str(e)}'
 
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':

@@ -1,0 +1,502 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Stock Movement Report" %}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Stock Movement Report" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="mb-0">
+                    <i class="bi bi-arrow-left-right me-2"></i>{% trans "Stock Movement Report" %}
+                </h1>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                        <i class="bi bi-download me-1"></i>{% trans "Export" %}
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-file-text me-2"></i>{% trans "PDF Report" %}</a></li>
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-file-earmark-excel me-2"></i>{% trans "Excel" %}</a></li>
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-filetype-csv me-2"></i>{% trans "CSV" %}</a></li>
+                    </ul>
+                </div>
+            </div>
+            <p class="text-muted mb-0">{{ date_from }} - {{ date_to }}</p>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-2">
+                    <label for="date_from" class="form-label">{% trans "Date From" %}</label>
+                    <input type="date" name="date_from" id="date_from" class="form-control" value="{{ date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label for="date_to" class="form-label">{% trans "Date To" %}</label>
+                    <input type="date" name="date_to" id="date_to" class="form-control" value="{{ date_to }}">
+                </div>
+                <div class="col-md-4">
+                    <label for="stockstore" class="form-label">{% trans "Warehouse" %}</label>
+                    <select name="stockstore" id="stockstore" class="form-select">
+                        <option value="">{% trans "All Warehouses" %}</option>
+                        {% for stockstore in stockstores %}
+                        <option value="{{ stockstore.pk }}" {% if selected_stockstore == stockstore.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ stockstore.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="search" class="form-label">{% trans "Search" %}</label>
+                    <input type="text" name="search" id="search" class="form-control" placeholder="{% trans 'Search products...' %}">
+                </div>
+                <div class="col-md-1 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-filter"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-2 col-md-4 mb-4">
+            <div class="card border-start border-primary border-4">
+                <div class="card-body text-center">
+                    <h6 class="text-muted fw-normal">{% trans "Total Movements" %}</h6>
+                    <h4 class="mb-0">{{ movements.paginator.count }}</h4>
+                </div>
+            </div>
+        </div>
+        
+        {% for type_data in by_type %}
+        <div class="col-xl-2 col-md-4 mb-4">
+            <div class="card border-start 
+                {% if type_data.movement_type == 'PURCHASE' %}border-success
+                {% elif type_data.movement_type == 'TRANSFER_OUT' %}border-info
+                {% elif type_data.movement_type == 'TRANSFER_IN' %}border-primary
+                {% elif type_data.movement_type == 'ADJUSTMENT' %}border-warning
+                {% elif type_data.movement_type == 'RETURN' %}border-secondary
+                {% else %}border-danger{% endif %} border-4">
+                <div class="card-body text-center">
+                    <h6 class="text-muted fw-normal">
+                        {% if type_data.movement_type == 'PURCHASE' %}
+                        {% trans "Purchases" %}
+                        {% elif type_data.movement_type == 'TRANSFER_OUT' %}
+                        {% trans "Transfers Out" %}
+                        {% elif type_data.movement_type == 'TRANSFER_IN' %}
+                        {% trans "Transfers In" %}
+                        {% elif type_data.movement_type == 'ADJUSTMENT' %}
+                        {% trans "Adjustments" %}
+                        {% elif type_data.movement_type == 'RETURN' %}
+                        {% trans "Returns" %}
+                        {% else %}
+                        {{ type_data.movement_type }}
+                        {% endif %}
+                    </h6>
+                    <h4 class="mb-0">{{ type_data.count }}</h4>
+                    <small class="text-muted">
+                        {{ type_data.total_quantity|floatformat:3 }}
+                    </small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Tabs -->
+    <div class="card">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" id="movementTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="movements-tab" data-bs-toggle="tab" data-bs-target="#movements" type="button">
+                        <i class="bi bi-list-ul me-1"></i>{% trans "All Movements" %}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="analysis-tab" data-bs-toggle="tab" data-bs-target="#analysis" type="button">
+                        <i class="bi bi-pie-chart me-1"></i>{% trans "Analysis" %}
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="top-products-tab" data-bs-toggle="tab" data-bs-target="#top-products" type="button">
+                        <i class="bi bi-graph-up me-1"></i>{% trans "Top Products" %}
+                    </button>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body">
+            <div class="tab-content" id="movementTabsContent">
+                <!-- All Movements Tab -->
+                <div class="tab-pane fade show active" id="movements" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Date/Time" %}</th>
+                                    <th>{% trans "Warehouse" %}</th>
+                                    <th>{% trans "Product" %}</th>
+                                    <th>{% trans "Movement Type" %}</th>
+                                    <th>{% trans "Quantity" %}</th>
+                                    <th>{% trans "Reference" %}</th>
+                                    <th>{% trans "Created By" %}</th>
+                                    <th>{% trans "Notes" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for movement in movements %}
+                                <tr>
+                                    <td>
+                                        <small>{{ movement.created_at|date:"Y-m-d" }}</small><br>
+                                        <small class="text-muted">{{ movement.created_at|time:"H:i" }}</small>
+                                    </td>
+                                    <td>{{ movement.stockstore.name }}</td>
+                                    <td>
+                                        <strong>{{ movement.product.name }}</strong><br>
+                                        <small class="text-muted">{{ movement.product.sku }}</small>
+                                    </td>
+                                    <td>
+                                        {% if movement.movement_type == 'PURCHASE' %}
+                                        <span class="badge bg-success">{% trans "Purchase" %}</span>
+                                        {% elif movement.movement_type == 'TRANSFER_OUT' %}
+                                        <span class="badge bg-info">{% trans "Transfer Out" %}</span>
+                                        {% elif movement.movement_type == 'TRANSFER_IN' %}
+                                        <span class="badge bg-primary">{% trans "Transfer In" %}</span>
+                                        {% elif movement.movement_type == 'ADJUSTMENT' %}
+                                        <span class="badge bg-warning">{% trans "Adjustment" %}</span>
+                                        {% elif movement.movement_type == 'RETURN' %}
+                                        <span class="badge bg-secondary">{% trans "Return" %}</span>
+                                        {% elif movement.movement_type == 'DAMAGE' %}
+                                        <span class="badge bg-danger">{% trans "Damage" %}</span>
+                                        {% elif movement.movement_type == 'LOSS' %}
+                                        <span class="badge bg-dark">{% trans "Loss" %}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="{% if movement.quantity > 0 %}text-success{% else %}text-danger{% endif %} fw-bold">
+                                            {% if movement.quantity > 0 %}+{% endif %}{{ movement.quantity }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if movement.reference %}
+                                        <small>{{ movement.reference }}</small>
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ movement.created_by.get_full_name }}</td>
+                                    <td>
+                                        {% if movement.notes %}
+                                        <small>{{ movement.notes|truncatechars:50 }}</small>
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="8" class="text-center py-4">
+                                        <div class="text-muted">
+                                            <i class="bi bi-arrow-left-right display-4"></i>
+                                            <p class="mt-2">{% trans "No stock movements found" %}</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    {% if movements.has_other_pages %}
+                    <nav aria-label="Page navigation" class="mt-4">
+                        <ul class="pagination justify-content-center">
+                            {% if movements.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page=1&date_from={{ date_from }}&date_to={{ date_to }}{% if selected_stockstore %}&stockstore={{ selected_stockstore }}{% endif %}">
+                                    {% trans "First" %}
+                                </a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ movements.previous_page_number }}&date_from={{ date_from }}&date_to={{ date_to }}{% if selected_stockstore %}&stockstore={{ selected_stockstore }}{% endif %}">
+                                    <i class="bi bi-chevron-left"></i>
+                                </a>
+                            </li>
+                            {% endif %}
+                            
+                            {% for num in movements.paginator.page_range %}
+                                {% if movements.number == num %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ num }}</span>
+                                </li>
+                                {% elif num > movements.number|add:'-3' and num < movements.number|add:'3' %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ num }}&date_from={{ date_from }}&date_to={{ date_to }}{% if selected_stockstore %}&stockstore={{ selected_stockstore }}{% endif %}">
+                                        {{ num }}
+                                    </a>
+                                </li>
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% if movements.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ movements.next_page_number }}&date_from={{ date_from }}&date_to={{ date_to }}{% if selected_stockstore %}&stockstore={{ selected_stockstore }}{% endif %}">
+                                    <i class="bi bi-chevron-right"></i>
+                                </a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ movements.paginator.num_pages }}&date_from={{ date_from }}&date_to={{ date_to }}{% if selected_stockstore %}&stockstore={{ selected_stockstore }}{% endif %}">
+                                    {% trans "Last" %}
+                                </a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+
+                <!-- Analysis Tab -->
+                <div class="tab-pane fade" id="analysis" role="tabpanel">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">{% trans "Movement by Warehouse" %}</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>{% trans "Warehouse" %}</th>
+                                                    <th>{% trans "Movements" %}</th>
+                                                    <th>{% trans "Inbound" %}</th>
+                                                    <th>{% trans "Outbound" %}</th>
+                                                    <th>{% trans "Net" %}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for warehouse in by_warehouse %}
+                                                <tr>
+                                                    <td>{{ warehouse.stockstore__name }}</td>
+                                                    <td>{{ warehouse.count }}</td>
+                                                    <td class="text-success">+{{ warehouse.inbound|floatformat:3|default:"0.000" }}</td>
+                                                    <td class="text-danger">{{ warehouse.outbound|floatformat:3|default:"0.000" }}</td>
+                                                    <td>
+                                                        {% with net=warehouse.inbound|add:warehouse.outbound %}
+                                                        <span class="fw-bold {% if net > 0 %}text-success{% elif net < 0 %}text-danger{% else %}text-muted{% endif %}">
+                                                            {% if net > 0 %}+{% endif %}{{ net|floatformat:3 }}
+                                                        </span>
+                                                        {% endwith %}
+                                                    </td>
+                                                </tr>
+                                                {% empty %}
+                                                <tr>
+                                                    <td colspan="5" class="text-center text-muted">
+                                                        {% trans "No warehouse movement data" %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">{% trans "Movement by Type" %}</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>{% trans "Type" %}</th>
+                                                    <th>{% trans "Count" %}</th>
+                                                    <th>{% trans "Total Qty" %}</th>
+                                                    <th>{% trans "Avg Qty" %}</th>
+                                                    <th>{% trans "Trend" %}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for type_data in by_type %}
+                                                <tr>
+                                                    <td>
+                                                        {% if type_data.movement_type == 'PURCHASE' %}
+                                                        <span class="badge bg-success">{% trans "Purchase" %}</span>
+                                                        {% elif type_data.movement_type == 'TRANSFER_OUT' %}
+                                                        <span class="badge bg-info">{% trans "Transfer Out" %}</span>
+                                                        {% elif type_data.movement_type == 'TRANSFER_IN' %}
+                                                        <span class="badge bg-primary">{% trans "Transfer In" %}</span>
+                                                        {% elif type_data.movement_type == 'ADJUSTMENT' %}
+                                                        <span class="badge bg-warning">{% trans "Adjustment" %}</span>
+                                                        {% elif type_data.movement_type == 'RETURN' %}
+                                                        <span class="badge bg-secondary">{% trans "Return" %}</span>
+                                                        {% else %}
+                                                        <span class="badge bg-danger">{{ type_data.movement_type }}</span>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>{{ type_data.count }}</td>
+                                                    <td>{{ type_data.total_quantity|floatformat:3 }}</td>
+                                                    <td>
+                                                        {% if type_data.count %}
+                                                        {{ type_data.total_quantity|div:type_data.count|floatformat:3 }}
+                                                        {% else %}
+                                                        -
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        {% with max_count=by_type.0.count %}
+                                                        {% if max_count %}
+                                                        <div class="progress" style="height: 10px;">
+                                                            {% widthratio type_data.count max_count 100 as width %}
+                                                            <div class="progress-bar 
+                                                                {% if type_data.movement_type == 'PURCHASE' %}bg-success
+                                                                {% elif type_data.movement_type == 'TRANSFER_OUT' %}bg-info
+                                                                {% elif type_data.movement_type == 'TRANSFER_IN' %}bg-primary
+                                                                {% elif type_data.movement_type == 'ADJUSTMENT' %}bg-warning
+                                                                {% elif type_data.movement_type == 'RETURN' %}bg-secondary
+                                                                {% else %}bg-danger{% endif %}" 
+                                                                style="width: {{ width }}%">
+                                                            </div>
+                                                        </div>
+                                                        {% endif %}
+                                                        {% endwith %}
+                                                    </td>
+                                                </tr>
+                                                {% empty %}
+                                                <tr>
+                                                    <td colspan="5" class="text-center text-muted">
+                                                        {% trans "No movement type data" %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top Products Tab -->
+                <div class="tab-pane fade" id="top-products" role="tabpanel">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0">{% trans "Top Products by Movement" %}</h6>
+                            <small class="text-muted">{% trans "Most frequently moved products" %}</small>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>{% trans "Product" %}</th>
+                                            <th>{% trans "SKU" %}</th>
+                                            <th>{% trans "Movements" %}</th>
+                                            <th>{% trans "Total Qty" %}</th>
+                                            <th>{% trans "Avg Qty" %}</th>
+                                            <th>{% trans "Activity" %}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for product in top_products %}
+                                        <tr>
+                                            <td>{{ forloop.counter }}</td>
+                                            <td>
+                                                <strong>{{ product.product__name }}</strong>
+                                            </td>
+                                            <td><code>{{ product.product__sku }}</code></td>
+                                            <td>{{ product.movement_count }}</td>
+                                            <td>
+                                                <span class="{% if product.total_quantity > 0 %}text-success{% else %}text-danger{% endif %}">
+                                                    {{ product.total_quantity|floatformat:3 }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                {% if product.movement_count %}
+                                                {{ product.total_quantity|div:product.movement_count|floatformat:3 }}
+                                                {% else %}
+                                                -
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <div class="progress flex-grow-1 me-2" style="height: 6px;">
+                                                        {% with max_count=top_products.0.movement_count %}
+                                                        {% if max_count %}
+                                                        {% widthratio product.movement_count max_count 100 as width %}
+                                                        <div class="progress-bar 
+                                                            {% if forloop.counter <= 3 %}bg-success
+                                                            {% elif forloop.counter <= 6 %}bg-primary
+                                                            {% elif forloop.counter <= 10 %}bg-warning
+                                                            {% else %}bg-info{% endif %}" 
+                                                            style="width: {{ width }}%">
+                                                        </div>
+                                                        {% endif %}
+                                                        {% endwith %}
+                                                    </div>
+                                                    <span class="text-muted small">
+                                                        {% with max_count=top_products.0.movement_count %}
+                                                        {% if max_count %}
+                                                        {{ product.movement_count|div:max_count|floatformat:2|mul:100 }}%
+                                                        {% else %}
+                                                        0%
+                                                        {% endif %}
+                                                        {% endwith %}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% empty %}
+                                        <tr>
+                                            <td colspan="7" class="text-center py-4">
+                                                <div class="text-muted">
+                                                    <i class="bi bi-graph-up display-4"></i>
+                                                    <p class="mt-2">{% trans "No product movement data" %}</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.nav-tabs .nav-link {
+    font-weight: 500;
+}
+
+.nav-tabs .nav-link.active {
+    font-weight: 600;
+}
+
+.progress {
+    background-color: #e9ecef;
+    border-radius: 10px;
+}
+</style>
+{% endblock %}

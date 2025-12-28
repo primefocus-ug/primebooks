@@ -1,0 +1,258 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{{ stockstore.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'inventory:stockstore_list' %}">{% trans "Warehouses" %}</a></li>
+<li class="breadcrumb-item active">{{ stockstore.name }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-building me-2"></i>{{ stockstore.name }}
+                {% if stockstore.is_main_stockstore %}
+                <span class="badge bg-primary">{% trans "Main Warehouse" %}</span>
+                {% endif %}
+            </h2>
+            {% if stockstore.code %}
+            <p class="text-muted mb-0">{% trans "Code:" %} {{ stockstore.code }}</p>
+            {% endif %}
+        </div>
+        <div>
+            <a href="{% url 'inventory:stockstore_inventory_add' stockstore.pk %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i>{% trans "Add Inventory" %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Total Products" %}</p>
+                            <h3 class="mb-0">{{ summary.total_products }}</h3>
+                        </div>
+                        <i class="bi bi-box-seam fs-1 text-primary"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Total Stock" %}</p>
+                            <h3 class="mb-0">{{ summary.total_quantity|floatformat:0 }}</h3>
+                        </div>
+                        <i class="bi bi-boxes fs-1 text-info"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Low Stock" %}</p>
+                            <h3 class="mb-0 text-warning">{{ summary.low_stock_count }}</h3>
+                        </div>
+                        <i class="bi bi-exclamation-triangle fs-1 text-warning"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Pending Transfers" %}</p>
+                            <h3 class="mb-0">{{ pending_outgoing|add:pending_incoming }}</h3>
+                            <small class="text-muted">
+                                ↑{{ pending_outgoing }} / ↓{{ pending_incoming }}
+                            </small>
+                        </div>
+                        <i class="bi bi-arrow-left-right fs-1 text-success"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters and Search -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-6">
+                    <input type="text" name="search" class="form-control"
+                           placeholder="{% trans 'Search products...' %}"
+                           value="{{ search }}">
+                </div>
+                <div class="col-md-3">
+                    <select name="status" class="form-select">
+                        <option value="">{% trans "All Stock Levels" %}</option>
+                        <option value="low" {% if status_filter == 'low' %}selected{% endif %}>
+                            {% trans "Low Stock" %}
+                        </option>
+                        <option value="out" {% if status_filter == 'out' %}selected{% endif %}>
+                            {% trans "Out of Stock" %}
+                        </option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-1"></i>{% trans "Filter" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Inventory Table -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">{% trans "Inventory" %}</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>{% trans "Product" %}</th>
+                            <th>{% trans "Category" %}</th>
+                            <th class="text-end">{% trans "Quantity" %}</th>
+                            <th class="text-end">{% trans "Reserved" %}</th>
+                            <th class="text-end">{% trans "Available" %}</th>
+                            <th class="text-end">{% trans "Threshold" %}</th>
+                            <th class="text-center">{% trans "Status" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in inventory %}
+                        <tr>
+                            <td>
+                                <div class="fw-bold">{{ item.product.name }}</div>
+                                <small class="text-muted">{{ item.product.sku }}</small>
+                            </td>
+                            <td>{{ item.product.category.name }}</td>
+                            <td class="text-end">{{ item.quantity|floatformat:2 }}</td>
+                            <td class="text-end">{{ item.reserved_quantity|floatformat:2 }}</td>
+                            <td class="text-end">{{ item.available_quantity|floatformat:2 }}</td>
+                            <td class="text-end">{{ item.low_stock_threshold|floatformat:2 }}</td>
+                            <td class="text-center">
+                                {% if item.quantity == 0 %}
+                                <span class="badge bg-danger">{% trans "Out of Stock" %}</span>
+                                {% elif item.available_quantity <= item.low_stock_threshold %}
+                                <span class="badge bg-warning">{% trans "Low Stock" %}</span>
+                                {% else %}
+                                <span class="badge bg-success">{% trans "Good" %}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center py-4">
+                                <i class="bi bi-inbox fs-1 text-muted d-block mb-2"></i>
+                                <p class="text-muted">{% trans "No inventory items found" %}</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% if inventory.has_other_pages %}
+        <div class="card-footer">
+            <nav>
+                <ul class="pagination justify-content-center mb-0">
+                    {% if inventory.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ inventory.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                            {% trans "Previous" %}
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    <li class="page-item active">
+                        <span class="page-link">
+                            {% trans "Page" %} {{ inventory.number }} {% trans "of" %} {{ inventory.paginator.num_pages }}
+                        </span>
+                    </li>
+
+                    {% if inventory.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ inventory.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">
+                            {% trans "Next" %}
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Recent Movements -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">{% trans "Recent Stock Movements" %}</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Product" %}</th>
+                            <th>{% trans "Type" %}</th>
+                            <th class="text-end">{% trans "Quantity" %}</th>
+                            <th>{% trans "Reference" %}</th>
+                            <th>{% trans "By" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for movement in recent_movements %}
+                        <tr>
+                            <td>{{ movement.created_at|date:"M d, Y H:i" }}</td>
+                            <td>{{ movement.product.name }}</td>
+                            <td>
+                                <span class="badge bg-secondary">
+                                    {{ movement.get_movement_type_display }}
+                                </span>
+                            </td>
+                            <td class="text-end">
+                                {% if movement.quantity > 0 %}
+                                <span class="text-success">+{{ movement.quantity|floatformat:2 }}</span>
+                                {% else %}
+                                <span class="text-danger">{{ movement.quantity|floatformat:2 }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ movement.reference|default:"-" }}</td>
+                            <td>{{ movement.created_by.get_full_name|default:movement.created_by.username }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center py-3">
+                                <p class="text-muted mb-0">{% trans "No recent movements" %}</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
