@@ -7,20 +7,24 @@ from datetime import datetime, timedelta
 from .services import EnhancedEFRISAPIClient
 from company.models import Company
 import json
+import logging
 
-
+logger=logging.getLogger(__name__)
 
 @login_required
 def credit_note_application(request):
-    """T110 - Apply Credit Note"""
+    """T110 - Apply Credit Note (Detailed Form)"""
     company = request.tenant
 
+    if not company.efris_enabled:
+        messages.error(request, "EFRIS is not enabled for your company")
+        return redirect('dashboard')
+
     if request.method == 'POST':
-        # Get form data
         original_invoice_no = request.POST.get('original_invoice_no')
         reason_code = request.POST.get('reason_code')
         reason = request.POST.get('reason')
-        credit_type = request.POST.get('credit_type')  # 'full' or 'partial'
+        credit_type = request.POST.get('credit_type', 'full')
 
         contact_name = request.POST.get('contact_name')
         contact_mobile = request.POST.get('contact_mobile')
@@ -31,7 +35,6 @@ def credit_note_application(request):
             with EnhancedEFRISAPIClient(company) as client:
                 # Build credit note data
                 if credit_type == 'full':
-                    # Full credit note
                     build_result = client.build_credit_note_from_invoice(
                         original_invoice_no=original_invoice_no,
                         reason_code=reason_code,
@@ -43,7 +46,6 @@ def credit_note_application(request):
                     )
                 else:
                     # Partial credit note
-                    # Get item quantities from form
                     credit_items = []
                     item_count = int(request.POST.get('item_count', 0))
 
@@ -52,10 +54,18 @@ def credit_note_application(request):
                         item_qty = request.POST.get(f'item_qty_{i}')
 
                         if item_name and item_qty:
+                            qty_value = float(item_qty)
+                            if qty_value > 0:
+                                qty_value = -qty_value
+
                             credit_items.append({
                                 'item': item_name,
-                                'qty': float(item_qty)
+                                'qty': qty_value
                             })
+
+                    if not credit_items:
+                        messages.error(request, "No items selected for partial credit note")
+                        return redirect('efris:credit_note_application')
 
                     build_result = client.build_credit_note_from_invoice(
                         original_invoice_no=original_invoice_no,
@@ -77,25 +87,43 @@ def credit_note_application(request):
                 result = client.t110_apply_credit_note(credit_note_data)
 
                 if result.get('success'):
+                    # Save record
+                    try:
+                        from efris.models import CreditNoteApplication
+                        CreditNoteApplication.objects.create(
+                            company=company,
+                            original_invoice_no=original_invoice_no,
+                            original_invoice_id=credit_note_data.get('oriInvoiceId', ''),
+                            reason_code=reason_code,
+                            reason=reason,
+                            reference_no=result.get('reference_no'),
+                            status='PENDING',
+                            application_data=credit_note_data,
+                            response_data=result.get('data', {})
+                        )
+                    except Exception as db_error:
+                        logger.warning(f"Failed to save credit note record: {db_error}")
+
                     messages.success(
                         request,
-                        f"Credit note application submitted successfully. "
-                        f"Reference No: {result.get('reference_no')}"
+                        f"✓ Credit note submitted! Reference: {result.get('reference_no')}"
                     )
-                    return redirect('efris:credit_note_applications')
+                    return redirect('efris:dashboard')
                 else:
                     messages.error(request, f"Application failed: {result.get('error')}")
+
         except Exception as e:
+            logger.error(f"Credit note application error: {e}", exc_info=True)
             messages.error(request, f"Error: {str(e)}")
 
-    # GET request - show form
+    # GET request
     return render(request, 'efris/advanced/credit_note_application.html', {
         'page_title': 'Apply Credit Note',
         'reason_codes': [
-            ('101', 'Return of products due to expiry or damage, etc.'),
+            ('101', 'Return of products due to expiry or damage'),
             ('102', 'Cancellation of the purchase'),
-            ('103', 'Invoice amount wrongly stated due to miscalculation'),
-            ('104', 'Partial or complete waive off of the product sale'),
+            ('103', 'Invoice amount wrongly stated'),
+            ('104', 'Partial or complete waive off'),
             ('105', 'Others (Please specify)')
         ]
     })
@@ -104,51 +132,209 @@ def credit_note_application(request):
 @login_required
 @require_http_methods(["POST"])
 def api_get_invoice_for_credit_note(request):
-    """AJAX endpoint to fetch invoice details for credit note"""
+    """
+    AJAX endpoint to fetch invoice details for credit note from local database
+    (T186 is disabled by URA - using local data instead)
+    """
     company = request.tenant
+
     try:
         data = json.loads(request.body)
         invoice_no = data.get('invoice_no')
 
-        with EnhancedEFRISAPIClient(company) as client:
-            result = client.t186_query_invoice_remain_details(invoice_no)
+        if not invoice_no:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invoice number is required'
+            }, status=400)
 
-            if result.get('success'):
-                # Extract relevant data for form
-                goods_details = result.get('goods_details', [])
-                items = [
-                    {
-                        'item': g.get('item'),
-                        'itemCode': g.get('itemCode'),
-                        'qty': g.get('qty'),
-                        'remainQty': g.get('remainQty'),
-                        'unitPrice': g.get('unitPrice'),
-                        'total': g.get('total'),
-                        'remainAmount': g.get('remainAmount')
-                    }
-                    for g in goods_details
-                ]
+        # Import models
+        from invoices.models import Invoice
+        from sales.models import Sale
 
-                return JsonResponse({
-                    'success': True,
-                    'invoice': {
-                        'invoiceNo': invoice_no,
-                        'items': items,
-                        'currency': result.get('basic_information', {}).get('currency'),
-                        'grossAmount': result.get('summary', {}).get('grossAmount'),
-                        'buyer': result.get('buyer_details', {}).get('buyerLegalName')
-                    }
-                })
-            else:
+        # Try to find invoice by fiscal document number
+        invoice = Invoice.objects.filter(
+            fiscal_document_number=invoice_no
+        ).select_related('sale', 'store').first()
+
+        # Verify it belongs to the current company
+        if invoice:
+            invoice_company = None
+            if invoice.sale and hasattr(invoice.sale, 'company'):
+                invoice_company = invoice.sale.company
+            elif invoice.store and hasattr(invoice.store, 'company'):
+                invoice_company = invoice.store.company
+
+            # If invoice doesn't belong to current company, treat as not found
+            if invoice_company and invoice_company != company:
+                invoice = None
+
+            # Check if invoice has EFRIS IDs (required for credit note)
+            if invoice:
+                efris_invoice_id = getattr(invoice, 'efris_invoice_id', '') or ''
+                if not efris_invoice_id:
+                    return JsonResponse({
+                        'success': False,
+                        'error': f'Invoice {invoice_no} has not been uploaded to EFRIS yet. '
+                                 f'Please upload via T109 first before creating a credit note.'
+                    })
+
+        # If not found, try Sale by document_number
+        if not invoice:
+            sale = Sale.objects.filter(
+                document_number=invoice_no,
+                company=company
+            ).select_related('customer').prefetch_related('items__product', 'items__service').first()
+
+            if not sale:
                 return JsonResponse({
                     'success': False,
-                    'error': result.get('error', 'Invoice not found')
+                    'error': f'Invoice {invoice_no} not found in local database'
                 })
 
-    except Exception as e:
+            # Check if sale has EFRIS IDs
+            efris_invoice_id = getattr(sale, 'efris_invoice_id', '') or ''
+            if not efris_invoice_id:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Sale {invoice_no} has not been uploaded to EFRIS yet. '
+                             f'Please upload via T109 first before creating a credit note.'
+                })
+
+            # Build response from Sale
+            items = []
+            for item in sale.items.all():
+                # Determine item details based on product or service
+                if hasattr(item, 'product') and item.product:
+                    item_name = item.product.name
+                    item_code = getattr(item.product, 'sku', '')
+                    unit_of_measure = getattr(item.product, 'unit_of_measure', 'PCS')
+                elif hasattr(item, 'service') and item.service:
+                    item_name = item.service.name
+                    item_code = getattr(item.service, 'code', '')
+                    unit_of_measure = getattr(item.service, 'unit_of_measure', 'PCS')
+                else:
+                    item_name = getattr(item, 'description', 'Unknown Item')
+                    item_code = ''
+                    unit_of_measure = 'PCS'
+
+                qty = float(getattr(item, 'quantity', 0))
+                unit_price = float(getattr(item, 'unit_price', 0))
+                total = qty * unit_price
+
+                items.append({
+                    'item': item_name,
+                    'itemCode': item_code,
+                    'qty': qty,
+                    'remainQty': qty,
+                    'unitOfMeasure': unit_of_measure,
+                    'unitPrice': f"{unit_price:.2f}",
+                    'total': f"{total:.2f}",
+                    'remainAmount': f"{total:.2f}",
+                    'taxRate': getattr(item, 'tax_rate', '18%')
+                })
+
+            return JsonResponse({
+                'success': True,
+                'invoice': {
+                    'invoiceNo': invoice_no,
+                    'efrisInvoiceId': efris_invoice_id,
+                    'items': items,
+                    'currency': getattr(sale, 'currency', 'UGX'),
+                    'grossAmount': f"{float(getattr(sale, 'total_amount', 0)):.2f}",
+                    'buyer': sale.customer.name if sale.customer else 'Walk-in Customer'
+                }
+            })
+
+        # Build response from Invoice
+        items = []
+        efris_invoice_id = getattr(invoice, 'efris_invoice_id', '') or ''
+
+        # Check if invoice has a related sale with items
+        if invoice.sale:
+            sale_items = invoice.sale.items.select_related('product', 'service').all()
+
+            if not sale_items.exists():
+                # If no sale items, return error - we need items to credit
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Invoice {invoice_no} has no line items to credit'
+                })
+
+            # Process sale items
+            for item in sale_items:
+                # Determine item details
+                if hasattr(item, 'product') and item.product:
+                    item_name = item.product.name
+                    item_code = getattr(item.product, 'sku', '')
+                    unit_of_measure = getattr(item.product, 'unit_of_measure', 'PCS')
+                elif hasattr(item, 'service') and item.service:
+                    item_name = item.service.name
+                    item_code = getattr(item.service, 'code', '')
+                    unit_of_measure = getattr(item.service, 'unit_of_measure', 'PCS')
+                else:
+                    item_name = getattr(item, 'description', 'Unknown Item')
+                    item_code = ''
+                    unit_of_measure = 'PCS'
+
+                qty = float(getattr(item, 'quantity', 0))
+                unit_price = float(getattr(item, 'unit_price', 0))
+                total = qty * unit_price
+
+                items.append({
+                    'item': item_name,
+                    'itemCode': item_code,
+                    'qty': qty,
+                    'remainQty': qty,
+                    'unitOfMeasure': unit_of_measure,
+                    'unitPrice': f"{unit_price:.2f}",
+                    'total': f"{total:.2f}",
+                    'remainAmount': f"{total:.2f}",
+                    'taxRate': getattr(item, 'tax_rate', '18%')
+                })
+        else:
+            # No sale associated
+            return JsonResponse({
+                'success': False,
+                'error': f'Invoice {invoice_no} has no associated sale data'
+            })
+
+        # Get buyer details
+        buyer_name = 'Walk-in Customer'
+        currency = 'UGX'
+        gross_amount = 0
+
+        if invoice.sale:
+            if invoice.sale.customer:
+                buyer_name = invoice.sale.customer.name
+            currency = getattr(invoice.sale, 'currency', 'UGX')
+            gross_amount = float(getattr(invoice.sale, 'total_amount', 0))
+
+        return JsonResponse({
+            'success': True,
+            'invoice': {
+                'invoiceNo': invoice_no,
+                'efrisInvoiceId': efris_invoice_id,
+                'items': items,
+                'currency': currency,
+                'grossAmount': f"{gross_amount:.2f}",
+                'buyer': buyer_name
+            }
+        })
+
+    except json.JSONDecodeError:
         return JsonResponse({
             'success': False,
-            'error': str(e)
+            'error': 'Invalid JSON data'
+        }, status=400)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error fetching invoice for credit note: {e}", exc_info=True)
+
+        return JsonResponse({
+            'success': False,
+            'error': f'Server error: {str(e)}'
         }, status=500)
 
 
@@ -170,16 +356,76 @@ def credit_note_application_status(request, reference_no):
                 applications = result.get('applications', [])
                 if applications:
                     application = applications[0]
+
+                    # Add status display based on correct mapping
+                    status_mapping = {
+                        '101': 'Pending/Submitted',
+                        '102': 'Approved',
+                        '103': 'Rejected',
+                        '104': 'Voided/Cancelled',
+                        '105': 'Processed',
+                    }
+
+                    app_status = application.get('approveStatus')
+                    application['status_display'] = status_mapping.get(app_status, f"Unknown ({app_status})")
+
+                    # Add reason description if available
+                    reason_codes = {
+                        '101': 'Sales Return',
+                        '102': 'Sales Allowance/Discount',
+                        '103': 'Price Adjustment',
+                        '104': 'Goods/Service Not Received',
+                        '105': 'Others',
+                    }
+
+                    reason_code = application.get('invoiceApplyCategoryCode')
+                    if reason_code in reason_codes:
+                        application['reason_description'] = reason_codes[reason_code]
+
+                    # Try to get detailed info from T112 using the ID field
+                    application_id = application.get('id')
+                    detailed_info = {}
+                    if application_id:
+                        try:
+                            detail_result = client.t112_query_credit_note_application_detail(application_id)
+                            if detail_result.get('success'):
+                                detailed_info = detail_result.get('application_detail', {})
+                                logger.info(f"T112 details retrieved for ID {application_id}")
+                            else:
+                                logger.warning(f"T112 failed for ID {application_id}: {detail_result.get('error')}")
+                        except Exception as detail_error:
+                            logger.warning(f"Could not get T112 details for ID {application_id}: {detail_error}")
+
+                    # Merge detailed info with application data
+                    if detailed_info:
+                        application['detailed_reason'] = detailed_info.get('reason')
+                        application['approveRemarks'] = detailed_info.get('approveRemarks')
+                        application['remarks'] = detailed_info.get('remarks')
+                        application['contactName'] = detailed_info.get('contactName')
+                        application['contactEmail'] = detailed_info.get('contactEmail')
+                        application['contactMobileNum'] = detailed_info.get('contactMobileNum')
+
+                    # Add some debug info for troubleshooting
+                    application['debug_info'] = {
+                        'reference_no_from_url': reference_no,
+                        'application_id': application_id,
+                        'has_t112_details': bool(detailed_info),
+                        'approve_status': app_status,
+                    }
+
                     return render(request, 'efris/advanced/credit_note_status.html', {
-                        'page_title': 'Credit Note Application Status',
+                        'page_title': f'Credit Note Status: {reference_no}',
                         'application': application,
-                        'reference_no': reference_no
+                        'reference_no': reference_no,
+                        'company': company,
+                        'debug': request.GET.get('debug', False),
                     })
                 else:
                     messages.warning(request, f"No application found with reference: {reference_no}")
             else:
                 messages.error(request, f"Query failed: {result.get('error')}")
     except Exception as e:
+        logger.error(f"Status check failed for {reference_no}: {e}", exc_info=True)
         messages.error(request, f"Error: {str(e)}")
 
     return redirect('efris:credit_note_applications')

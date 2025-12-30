@@ -301,6 +301,7 @@ def certificate_upload_view(request):
     if request.method == 'POST':
         try:
             certificate_file = request.FILES.get('certificate_file')
+            manual_verify_string = request.POST.get('verify_string', '')
 
             if not certificate_file:
                 messages.error(request, "Please select a certificate file")
@@ -311,12 +312,18 @@ def certificate_upload_view(request):
                 messages.error(request, "File must be .crt or .cer format")
                 return redirect('efris:certificate_upload')
 
+            # Check file size (max 10MB)
+            if certificate_file.size > 10 * 1024 * 1024:
+                messages.error(request, "File size must be less than 10MB")
+                return redirect('efris:certificate_upload')
+
             # Read and encode file
             import base64
             file_content = base64.b64encode(certificate_file.read()).decode('utf-8')
 
             # Upload to EFRIS
             client = EnhancedEFRISAPIClient(company)
+
             result = client.t136_upload_certificate_public_key(
                 file_name=certificate_file.name,
                 file_content=file_content
@@ -324,15 +331,25 @@ def certificate_upload_view(request):
 
             if result.get('success'):
                 messages.success(request, f"Certificate {certificate_file.name} uploaded successfully")
+                # Log the success
+                logger.info(f"Certificate uploaded: {certificate_file.name}, size: {certificate_file.size} bytes")
             else:
-                messages.error(request, f"Upload failed: {result.get('error')}")
+                error_msg = result.get('error', 'Unknown error')
+                error_code = result.get('error_code')
+
+                if error_code == '2096':
+                    messages.error(request, f"Upload failed: VerifyString error. Please check TIN configuration.")
+                else:
+                    messages.error(request, f"Upload failed: {error_msg}")
+
+                # Add debug info for troubleshooting
+                logger.error(f"Certificate upload failed: {error_msg} (code: {error_code})")
 
         except Exception as e:
             logger.error(f"Certificate upload failed: {e}", exc_info=True)
             messages.error(request, f"Error: {str(e)}")
 
     return render(request, 'efris/certificate_upload.html', context)
-
 
 @login_required
 def taxpayer_exemption_check_view(request):
@@ -528,7 +545,10 @@ def invoice_search_view(request):
 
 
 @login_required
-def invoice_detail_view(request, invoice_number):
+def invoice_detail_view(request, invoice_no):
+    """
+    Display detailed invoice information from EFRIS via T108
+    """
     company = request.tenant
 
     if not company.efris_enabled:
@@ -536,32 +556,40 @@ def invoice_detail_view(request, invoice_number):
         return redirect('dashboard')
 
     try:
-        client = EnhancedEFRISAPIClient(company)
-        result = client.t108_query_invoice_detail(invoice_no)
+        with EnhancedEFRISAPIClient(company) as client:
+            # Query invoice details from EFRIS
+            result = client.t108_query_invoice_detail(invoice_no)
 
-        if result.get('success'):
-            context = {
-                'page_title': f'Invoice {invoice_number}',
-                'invoice': result.get('invoice_data'),
-                'invoice_no': invoice_number,
-                'company': company
-            }
-            return render(request, 'efris/invoice_detail.html', context)
-        else:
-            messages.error(request, f"Failed to load invoice: {result.get('error')}")
-            return redirect('efris:invoice_search')
+            if result.get('success'):
+                invoice_data = result.get('invoice')
+
+                if not invoice_data:
+                    messages.error(request, f"Invoice {invoice_no} not found in EFRIS")
+                    return redirect('efris:normal_invoices')
+
+                context = {
+                    'page_title': f'Invoice Details - {invoice_no}',
+                    'invoice': invoice_data,
+                    'invoice_no': invoice_no,
+                    'company': company
+                }
+                return render(request, 'efris/invoice_detail.html', context)
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                messages.error(request, f"Failed to load invoice: {error_msg}")
+                return redirect('efris:normal_invoices')
 
     except Exception as e:
-        logger.error(f"Invoice detail failed: {e}", exc_info=True)
-        messages.error(request, f"Error: {str(e)}")
-        return redirect('efris:invoice_search')
-
+        logger.error(f"Invoice detail view failed for {invoice_no}: {e}", exc_info=True)
+        messages.error(request, f"Error loading invoice: {str(e)}")
+        return redirect('efris:normal_invoices')
 
 @login_required
 def normal_invoices_view(request):
     """
     T107 - Normal Invoices View
     Display invoices eligible for credit/debit notes
+    Also handles direct credit note creation from this page
     """
     company = request.tenant
 
@@ -569,9 +597,77 @@ def normal_invoices_view(request):
         messages.error(request, "EFRIS is not enabled for your company")
         return redirect('dashboard')
 
+    # Handle POST - Quick credit note creation
+    if request.method == 'POST':
+        invoice_no = request.POST.get('invoice_no')
+        invoice_id = request.POST.get('invoice_id')
+        reason_code = request.POST.get('reason_code', '102')  # Default: Cancellation
+        reason = request.POST.get('reason', '')
+
+        try:
+            with EnhancedEFRISAPIClient(company) as client:
+                # Build full credit note from invoice
+                build_result = client.build_credit_note_from_invoice(
+                    original_invoice_no=invoice_no,
+                    reason_code=reason_code,
+                    reason=reason if reason_code == '105' else None,
+                    contact_name=request.user.get_full_name() or request.user.username,
+                    contact_email=request.user.email,
+                    remarks=f"Credit note for invoice {invoice_no}"
+                )
+
+                if not build_result.get('success'):
+                    messages.error(request, f"Failed to build credit note: {build_result.get('error')}")
+                    return redirect('efris:normal_invoices')
+
+                # Apply credit note
+                credit_note_data = build_result['credit_note_data']
+                result = client.t110_apply_credit_note(credit_note_data)
+
+                if result.get('success'):
+                    # Save credit note application record
+                    try:
+                        from efris.models import CreditNoteApplication
+                        CreditNoteApplication.objects.create(
+                            company=company,
+                            original_invoice_no=invoice_no,
+                            original_invoice_id=invoice_id,
+                            reason_code=reason_code,
+                            reason=reason,
+                            reference_no=result.get('reference_no'),
+                            status='PENDING',
+                            application_data=credit_note_data,
+                            response_data=result.get('data', {})
+                        )
+                    except Exception as db_error:
+                        logger.warning(f"Failed to save credit note record: {db_error}")
+
+                    messages.success(
+                        request,
+                        f"✓ Credit note application submitted successfully! "
+                        f"Reference No: {result.get('reference_no')}"
+                    )
+                    return redirect('efris:normal_invoices')
+                else:
+                    messages.error(request, f"Application failed: {result.get('error')}")
+
+        except Exception as e:
+            logger.error(f"Credit note application error: {e}", exc_info=True)
+            messages.error(request, f"Error: {str(e)}")
+
+        return redirect('efris:normal_invoices')
+
+    # GET request - Display invoices
     context = {
         'page_title': 'Normal Invoices (Eligible for Credit/Debit Notes)',
-        'company': company
+        'company': company,
+        'reason_codes': [
+            ('101', 'Return of products due to expiry or damage'),
+            ('102', 'Cancellation of the purchase'),
+            ('103', 'Invoice amount wrongly stated'),
+            ('104', 'Partial or complete waive off'),
+            ('105', 'Others (specify reason)')
+        ]
     }
 
     try:
@@ -607,7 +703,6 @@ def normal_invoices_view(request):
 # CREDIT/DEBIT NOTE APPLICATION VIEWS
 # ============================================================================
 
-# Update in efris/views.py
 
 @login_required
 def credit_note_applications_view(request):
@@ -651,7 +746,44 @@ def credit_note_applications_view(request):
         )
 
         if result.get('success'):
-            context['applications'] = result.get('applications', [])
+            applications = result.get('applications', [])
+
+            # Map status codes to descriptions based on ACTUAL API behavior
+            status_codes = {
+                '101': 'Pending/Submitted',  # From actual API behavior
+                '102': 'Approved',  # From actual API behavior and logs
+                '103': 'Rejected',
+                '104': 'Voided/Cancelled',
+                '105': 'Processed',
+            }
+
+            # Map reason codes to descriptions
+            reason_codes = {
+                '101': 'Sales Return',
+                '102': 'Sales Allowance/Discount',
+                '103': 'Price Adjustment',
+                '104': 'Goods/Service Not Received',
+                '105': 'Others',
+            }
+
+            for app in applications:
+                # Handle both camelCase and snake_case field names
+                app_status = app.get('approveStatus') or app.get('approve_status')
+                app['approve_status'] = app_status
+
+                if app_status in status_codes:
+                    app['status_display'] = status_codes[app_status]
+                else:
+                    app['status_display'] = f"Unknown ({app_status})"
+
+                # Map reason code
+                reason_code = app.get('invoiceApplyCategoryCode') or app.get('invoice_apply_category_code')
+                if reason_code in reason_codes:
+                    app['reason_description'] = reason_codes[reason_code]
+                else:
+                    app['reason_description'] = f"Code: {reason_code}"
+
+            context['applications'] = applications
             context['pagination'] = result.get('pagination', {})
             context['filters'] = {
                 'approve_status': approve_status,
@@ -660,6 +792,17 @@ def credit_note_applications_view(request):
                 'end_date': end_date,
                 'query_type': query_type
             }
+
+            # Add status options for filter - based on ACTUAL API
+            context['status_options'] = [
+                ('', 'All Status'),
+                ('101', 'Pending/Submitted'),
+                ('102', 'Approved'),
+                ('103', 'Rejected'),
+                ('104', 'Voided/Cancelled'),
+                ('105', 'Processed'),
+            ]
+
         else:
             messages.error(request, f"Failed to load applications: {result.get('error')}")
 
@@ -688,24 +831,131 @@ def credit_note_application_detail_view(request, application_id):
         # Get basic application info (T112)
         basic_result = client.t112_query_credit_note_application_detail(application_id)
 
-        # Get detailed goods/tax info (T118)
-        detail_result = client.t118_query_credit_debit_note_detail(application_id)
+        # Also get from T111 for comparison
+        list_result = client.t111_query_credit_note_applications(
+            query_type="1",
+            page_size=1,
+            reference_no=application_id  # Try searching by application_id
+        )
 
-        if basic_result.get('success') and detail_result.get('success'):
-            context = {
-                'page_title': f'Application {application_id}',
-                'application': basic_result.get('application_detail'),
-                'goods_details': detail_result.get('goods_details', []),
-                'tax_details': detail_result.get('tax_details', []),
-                'summary': detail_result.get('summary', {}),
-                'payment_methods': detail_result.get('payment_methods', []),
-                'basic_info': detail_result.get('basic_information', {}),
-                'application_id': application_id,
-                'company': company
+        # Debug: Log both responses
+        logger.info(f"T112 Response status: {basic_result.get('application_detail', {}).get('approveStatusCode')}")
+        logger.info(f"T111 Response: {list_result}")
+
+        if basic_result.get('success'):
+            application_data = basic_result.get('application_detail', {})
+
+            # Extract basic information from the actual API response
+            basic_info = {
+                'application_id': application_data.get('id') or application_id,
+                'original_invoice_no': application_data.get('oriInvoiceNo') or
+                                       application_data.get('toinvoiceNo'),
+                'credit_note_no': application_data.get('referenceNo'),
+                'application_date': application_data.get('applicationTime'),
+                'status': application_data.get('approveStatusCode'),
+                'approve_status': application_data.get('approveStatusCode'),
+                'currency': application_data.get('currency') or 'UGX',
+                'reason_code': application_data.get('invoiceApplyCategoryCode'),
+                'reason': application_data.get('remarks'),
+                'contact_name': application_data.get('contactName'),
+                'contact_mobile': application_data.get('mobilePhone'),
+                'contact_email': application_data.get('contactEmail'),
+                'remarks': application_data.get('remarks'),
+                'gross_amount': float(application_data.get('totalAmount') or 0),
+                'net_amount': 0,
+                'tax_amount': 0,
+                'applicant_tin': application_data.get('tin'),
+                'applicant_name': application_data.get('legalName'),
+                'buyer_tin': application_data.get('buyerTin'),
+                'buyer_name': application_data.get('buyerLegalName'),
+                'buyer_email': application_data.get('buyerEmailAddress'),
+                'buyer_mobile': application_data.get('buyerMobilePhone'),
+                'approve_remarks': application_data.get('approveRemarks'),
+                'issued_date': application_data.get('issuedDate'),
+                'task_id': application_data.get('taskId'),
+                'address': application_data.get('address'),
             }
+
+            # Process detail result
+            goods_details = []
+            tax_details = []
+            payment_methods = []
+            summary = {}
+
+            detail_result = client.t118_query_credit_debit_note_detail(application_id)
+            if detail_result.get('success'):
+                # Goods details
+                goods_details = detail_result.get('goods_details', [])
+
+                # Tax details
+                tax_details = detail_result.get('tax_details', [])
+
+                # Payment methods
+                payment_methods = detail_result.get('payment_methods', [])
+
+                # Summary from detail
+                detail_summary = detail_result.get('summary', {})
+                summary = {
+                    'gross_amount': float(detail_summary.get('grossAmount') or 0),
+                    'net_amount': float(detail_summary.get('netAmount') or 0),
+                    'tax_amount': float(detail_summary.get('taxAmount') or 0),
+                    'previous_gross_amount': float(detail_summary.get('previousGrossAmount') or 0),
+                    'previous_net_amount': float(detail_summary.get('previousNetAmount') or 0),
+                    'previous_tax_amount': float(detail_summary.get('previousTaxAmount') or 0),
+                    'remarks': detail_summary.get('remarks'),
+                    'item_count': len(goods_details),
+                }
+
+                # Update basic info with amounts from detail
+                basic_info['net_amount'] = summary['net_amount']
+                basic_info['tax_amount'] = summary['tax_amount']
+
+            # Map reason code to description
+            reason_codes = {
+                '101': 'Sales Return',
+                '102': 'Sales Allowance/Discount',
+                '103': 'Price Adjustment',
+                '104': 'Goods/Service Not Received',
+                '105': 'Others',
+            }
+            if basic_info['reason_code'] in reason_codes:
+                basic_info['reason_description'] = reason_codes[basic_info['reason_code']]
+
+            # Map approve status code to description
+            status_codes = {
+                '101': 'Pending',
+                '102': 'Approved',
+                '103': 'Rejected',
+                '104': 'Cancelled',
+                '105': 'Processed',
+            }
+            if basic_info['approve_status'] in status_codes:
+                basic_info['status'] = status_codes[basic_info['approve_status']]
+
+            # Add T111 comparison data for debugging
+            t111_status = None
+            if list_result.get('success'):
+                applications = list_result.get('applications', [])
+                if applications:
+                    t111_status = applications[0].get('approve_status')
+                    logger.info(f"T111 status: {t111_status}")
+
+            context = {
+                'page_title': f'Credit Note Application {application_id}',
+                'application': basic_info,
+                'goods_details': goods_details,
+                'tax_details': tax_details,
+                'summary': summary,
+                'payment_methods': payment_methods,
+                'application_id': application_id,
+                'company': company,
+                'debug': request.GET.get('debug', False),
+                't111_status': t111_status,  # For debugging
+            }
+
             return render(request, 'efris/credit_note_application_detail.html', context)
         else:
-            error = basic_result.get('error') or detail_result.get('error')
+            error = basic_result.get('error') or "Unknown error"
             messages.error(request, f"Failed to load application: {error}")
             return redirect('efris:credit_note_applications')
 
@@ -1029,12 +1279,11 @@ def excise_duty_list_view(request):
 # ============================================================================
 # BATCH UPLOAD VIEWS
 # ============================================================================
-
 @login_required
 def batch_invoice_upload_view(request):
     """
     T129 - Batch Invoice Upload
-    Upload multiple invoices at once
+    Upload multiple invoices at once and UPDATE the database
     """
     company = request.tenant
 
@@ -1057,22 +1306,23 @@ def batch_invoice_upload_view(request):
                 return redirect('efris:batch_invoice_upload')
 
             # Prepare batch data
-            # This assumes you have a method to get invoice data
             from invoices.models import Invoice
+            from sales.models import Sale
             from .services import EFRISDataTransformer
 
             invoices_data = []
+            invoice_mapping = {}  # ✅ MAP invoice data to Invoice objects
             transformer = EFRISDataTransformer(company)
 
-            for invoice_id in invoice_ids:
+            for idx, invoice_id in enumerate(invoice_ids):
                 try:
-                    invoice = Invoice.objects.get(id=invoice_id)
+                    invoice = Invoice.objects.select_related('sale').get(id=invoice_id)
                     invoice_data = transformer.build_invoice_data(invoice)
 
                     # Convert to JSON string
                     invoice_content = json.dumps(invoice_data, separators=(',', ':'))
 
-                    # Create signature (simplified - use proper signing in production)
+                    # Create signature
                     client = EnhancedEFRISAPIClient(company)
                     private_key = client._load_private_key()
                     signature = client.security_manager.sign_content(
@@ -1080,16 +1330,21 @@ def batch_invoice_upload_view(request):
                         algorithm="SHA1"
                     )
 
-                    invoices_data.append({
+                    invoice_payload = {
                         "invoiceContent": invoice_content,
                         "invoiceSignature": signature
-                    })
+                    }
+
+                    invoices_data.append(invoice_payload)
+
+                    # ✅ CRITICAL: Map the index to the invoice object
+                    invoice_mapping[idx] = invoice
 
                 except Invoice.DoesNotExist:
                     logger.warning(f"Invoice {invoice_id} not found")
                     continue
                 except Exception as e:
-                    logger.error(f"Failed to prepare invoice {invoice_id}: {e}")
+                    logger.error(f"Failed to prepare invoice {invoice_id}: {e}", exc_info=True)
                     continue
 
             if not invoices_data:
@@ -1101,16 +1356,88 @@ def batch_invoice_upload_view(request):
             result = client.t129_batch_invoice_upload(invoices_data)
 
             if result.get('success'):
-                success_count = result.get('successful_count', 0)
-                failed_count = result.get('failed_count', 0)
+                success_count = 0
+                failed_count = 0
 
+                # ✅ CRITICAL FIX: Process each individual result
+                results_list = result.get('results', [])
+
+                for idx, invoice_result in enumerate(results_list):
+                    try:
+                        # Get the corresponding invoice
+                        invoice = invoice_mapping.get(idx)
+
+                        if not invoice:
+                            logger.warning(f"No invoice mapping found for index {idx}")
+                            continue
+
+                        # Check if this invoice was successful
+                        invoice_return_code = invoice_result.get('invoiceReturnCode') or invoice_result.get(
+                            'returnCode')
+
+                        if invoice_return_code == '00':
+                            # ✅ SUCCESS: Update the invoice and sale
+                            success_count += 1
+
+                            # Update Invoice model - Use 'fiscalized' not 'success'
+                            invoice.fiscal_document_number = invoice_result.get('invoiceNo', '')
+                            invoice.fiscal_number = invoice_result.get('invoiceNo', '')  # Keep in sync
+                            invoice.verification_code = invoice_result.get('antifakeCode', '')
+                            invoice.qr_code = invoice_result.get('qrCode', '')
+                            invoice.is_fiscalized = True
+                            invoice.fiscalization_time = timezone.now()
+                            invoice.fiscalization_status = 'fiscalized'  # ✅ FIXED: Use 'fiscalized' not 'success'
+                            invoice.fiscalization_error = None
+                            invoice.save(update_fields=[
+                                'fiscal_document_number', 'fiscal_number',
+                                'verification_code', 'qr_code', 'is_fiscalized',
+                                'fiscalization_time', 'fiscalization_status', 'fiscalization_error'
+                            ])
+
+                            # ✅ CRITICAL: Update the Sale model too
+                            if invoice.sale:
+                                sale = invoice.sale
+                                sale.efris_invoice_number = invoice_result.get('invoiceNo', '')
+                                sale.verification_code = invoice_result.get('antifakeCode', '')
+                                sale.qr_code = invoice_result.get('qrCode', '')
+                                sale.is_fiscalized = True
+                                sale.fiscalization_time = timezone.now()
+                                sale.fiscalization_status = 'fiscalized'  # ✅ FIXED: Use 'fiscalized' not 'success'
+                                sale.save(update_fields=[
+                                    'efris_invoice_number', 'verification_code', 'qr_code',
+                                    'is_fiscalized', 'fiscalization_time', 'fiscalization_status'
+                                ])
+
+                            logger.info(f"✅ Successfully updated Invoice {invoice.id} and Sale {invoice.sale_id}")
+
+                        else:
+                            # ❌ FAILED: Log the error
+                            failed_count += 1
+                            error_msg = invoice_result.get('invoiceReturnMessage') or invoice_result.get(
+                                'returnMessage', 'Unknown error')
+
+                            invoice.fiscalization_status = 'failed'
+                            invoice.fiscalization_error = error_msg
+                            invoice.save(update_fields=['fiscalization_status', 'fiscalization_error'])
+
+                            if invoice.sale:
+                                invoice.sale.fiscalization_status = 'failed'
+                                invoice.sale.save(update_fields=['fiscalization_status'])
+
+                            logger.error(f"❌ Invoice {invoice.id} failed: {error_msg}")
+
+                    except Exception as e:
+                        failed_count += 1
+                        logger.error(f"Error processing result for index {idx}: {e}", exc_info=True)
+
+                # Show summary message
                 messages.success(
                     request,
                     f"Batch upload completed: {success_count} successful, {failed_count} failed"
                 )
 
                 # Store results for display
-                request.session['batch_upload_results'] = result.get('results', [])
+                request.session['batch_upload_results'] = results_list
                 return redirect('efris:batch_upload_results')
             else:
                 messages.error(request, f"Batch upload failed: {result.get('error')}")
@@ -1123,8 +1450,9 @@ def batch_invoice_upload_view(request):
     try:
         from invoices.models import Invoice
         pending_invoices = Invoice.objects.filter(
-            is_fiscalized=False
-        ).order_by('-created_at')[:50]
+            is_fiscalized=False,
+            sale__status__in=['COMPLETED', 'PAID']  # Only completed sales
+        ).select_related('sale', 'sale__customer', 'sale__store').order_by('-created_at')[:50]
 
         context['pending_invoices'] = pending_invoices
     except Exception as e:

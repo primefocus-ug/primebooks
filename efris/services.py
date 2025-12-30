@@ -6594,8 +6594,8 @@ class EnhancedEFRISAPIClient:
     def t136_upload_certificate_public_key(
             self,
             file_name: str,
-            file_content: str,
-            verify_string: Optional[str] = None
+            certificate_path: str = None,
+            file_content: str = None
     ) -> Dict[str, Any]:
         """
         T136 - Certificate Public Key Upload
@@ -6603,9 +6603,8 @@ class EnhancedEFRISAPIClient:
 
         Args:
             file_name: Certificate file name (must end with .crt or .cer)
-            file_content: Base64 encoded certificate content
-            verify_string: Optional verification string 
-                (TIN top 10 + yymmdd as AES Key to encrypt file name)
+            certificate_path: Full path to certificate file (mutually exclusive with file_content)
+            file_content: Base64 encoded certificate content (mutually exclusive with certificate_path)
 
         Returns:
             Dict with upload result
@@ -6618,6 +6617,48 @@ class EnhancedEFRISAPIClient:
                     "error": "File name must end with .crt or .cer"
                 }
 
+            # Get certificate content
+            if certificate_path and file_content:
+                return {
+                    "success": False,
+                    "error": "Provide either certificate_path OR file_content, not both"
+                }
+
+            if certificate_path:
+                # Read certificate from file
+                try:
+                    with open(certificate_path, 'rb') as f:
+                        cert_bytes = f.read()
+                    file_content_b64 = base64.b64encode(cert_bytes).decode('utf-8')
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "error": f"Failed to read certificate file: {e}"
+                    }
+            elif file_content:
+                # Use provided base64 content
+                file_content_b64 = file_content
+            else:
+                return {
+                    "success": False,
+                    "error": "Either certificate_path or file_content must be provided"
+                }
+
+            # Build verifyString: TIN (first 10 digits) + date (yyMMdd)
+            from datetime import datetime
+            current_date = datetime.now().strftime('%y%m%d')
+
+            # Get TIN from company
+            tin = str(self.company.tin)[:10] if hasattr(self.company, 'tin') else '0000000000'
+
+            # verifyString format
+            verify_string = f"{tin}{current_date}"
+
+            logger.info(
+                f"T136 verifyString: {verify_string} (TIN: {tin}, Date: {current_date})"
+            )
+            logger.info(f"Certificate file size (base64): {len(file_content_b64)} chars")
+
             # Ensure authentication
             auth_result = self.ensure_authenticated()
             if not auth_result.get("success"):
@@ -6629,27 +6670,58 @@ class EnhancedEFRISAPIClient:
             # Build request content
             content = {
                 "fileName": file_name,
-                "fileContent": file_content
+                "fileContent": file_content_b64,
+                "verifyString": verify_string
             }
-
-            if verify_string:
-                content["verifyString"] = verify_string
 
             logger.info(f"Uploading certificate (T136): {file_name}")
 
-            # Make request (not encrypted per documentation)
-            request_data = self._build_request("T136", content, encrypt=False)
+            # ✅ CRITICAL: Need to see if _build_request handles content properly
+            # Let's log the raw content before building request
+            import json
+            logger.debug(f"T136 raw content (first 200 chars): {json.dumps(content)[:200]}")
+
+            # Try with encryption (most EFRIS endpoints require it)
+            request_data = self._build_request("T136", content, encrypt=True)
+
+            # Log the request data structure
+            logger.debug(f"T136 request data type: {type(request_data)}")
+            if isinstance(request_data, dict):
+                logger.debug(f"T136 request data keys: {request_data.keys()}")
+                if 'data' in request_data and 'content' in request_data['data']:
+                    # Check if content looks like JSON
+                    content_str = str(request_data['data']['content'])
+                    if content_str.startswith('{') or content_str.startswith('['):
+                        logger.debug("Request content appears to be JSON")
+                    else:
+                        logger.debug(f"Request content preview: {content_str[:200]}")
+
+            # Make HTTP request
             response = self._make_http_request(request_data)
 
             if response.status_code != 200:
                 return {
                     "success": False,
-                    "error": f"HTTP {response.status_code}"
+                    "error": f"HTTP {response.status_code}",
+                    "response_text": response.text[:500]
                 }
 
-            response_data = response.json()
+            # Log response for debugging
+            logger.debug(f"T136 response (first 500 chars): {response.text[:500]}")
+
+            try:
+                response_data = response.json()
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse response as JSON: {e}")
+                return {
+                    "success": False,
+                    "error": f"Invalid JSON response: {e}",
+                    "response_text": response.text[:500]
+                }
+
             return_info = response_data.get('returnStateInfo', {})
             return_code = return_info.get('returnCode', '99')
+            error_message = return_info.get('returnMessage', 'Upload failed')
 
             if return_code == '00':
                 logger.info(f"T136 upload successful: {file_name}")
@@ -6659,8 +6731,19 @@ class EnhancedEFRISAPIClient:
                     "file_name": file_name
                 }
             else:
-                error_message = return_info.get('returnMessage', 'Upload failed')
                 logger.error(f"T136 failed: {return_code} - {error_message}")
+
+                # Special handling for JSON format error
+                if 'json' in error_message.lower() or 'illegal' in error_message.lower():
+                    # The issue might be in how we're building the request
+                    # Let's examine the _build_request method
+                    logger.error("JSON format error detected. Check request structure.")
+
+                    # Try alternative approach: build raw JSON without encryption
+                    # Some EFRIS endpoints expect raw JSON in 'data'->'content'
+                    alternative_content = json.dumps(content, ensure_ascii=False)
+                    logger.debug(f"Alternative raw content (first 300 chars): {alternative_content[:300]}")
+
                 return {
                     "success": False,
                     "error": error_message,
@@ -7194,7 +7277,6 @@ class EnhancedEFRISAPIClient:
                     "error": "invoiceApplyCategoryCode must be '101' for credit note"
                 }
 
-
             goods_details = credit_note_data.get('goodsDetails', [])
             if not goods_details:
                 return {
@@ -7317,9 +7399,10 @@ class EnhancedEFRISAPIClient:
     ) -> Dict[str, Any]:
         """
         Helper method to build credit note data from an original invoice
+        Fetches invoice details from EFRIS using T108
 
         Args:
-            original_invoice_no: Original invoice number
+            original_invoice_no: Original invoice number (fiscal document number)
             reason_code: Credit note reason (101-105)
             reason: Reason text (required if reason_code=105)
             credit_items: Optional list of items to credit with quantities
@@ -7334,216 +7417,718 @@ class EnhancedEFRISAPIClient:
             Dict with complete credit note data ready for T110
         """
         try:
-            # Query original invoice details using T186
-            invoice_result = self.t186_query_invoice_remain_details(original_invoice_no)
+            logger.info(f"Fetching invoice {original_invoice_no} from EFRIS (T108)")
+
+            # ✅ Fetch invoice from EFRIS using T108
+            invoice_result = self.t108_query_invoice_detail(original_invoice_no)
 
             if not invoice_result.get('success'):
                 return {
                     "success": False,
-                    "error": f"Failed to retrieve original invoice: {invoice_result.get('error')}"
+                    "error": f"Failed to fetch invoice from EFRIS: {invoice_result.get('error')}"
                 }
 
-            original_invoice = invoice_result
+            invoice_data = invoice_result.get('invoice', {})
 
-            # Build credit note data
-            from datetime import datetime
-
-            credit_note_data = {
-                "oriInvoiceId": original_invoice['basic_information'].get('invoiceId'),
-                "oriInvoiceNo": original_invoice_no,
-                "reasonCode": reason_code,
-                "applicationTime": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                "invoiceApplyCategoryCode": "101",  # Credit Note
-                "currency": original_invoice['basic_information'].get('currency', 'UGX'),
-                "contactName": contact_name or "",
-                "contactMobileNum": contact_mobile or "",
-                "contactEmail": contact_email or "",
-                "source": "103",  # WebService API
-                "remarks": remarks or f"Credit note for invoice {original_invoice_no}",
-                "sellersReferenceNo": original_invoice['seller_details'].get('referenceNo', ''),
-            }
-
-            if reason:
-                credit_note_data["reason"] = reason
-
-            # Build goods details (negative quantities)
-            goods_details = []
-            original_goods = original_invoice.get('goods_details', [])
-
-            if credit_items:
-                # Credit specific items with specified quantities
-                for credit_item in credit_items:
-                    # Find matching original item
-                    original_item = next(
-                        (g for g in original_goods if g.get('item') == credit_item.get('item')),
-                        None
-                    )
-
-                    if not original_item:
-                        return {
-                            "success": False,
-                            "error": f"Item '{credit_item.get('item')}' not found in original invoice"
-                        }
-
-                    qty = float(credit_item.get('qty', 0))
-                    if qty >= 0:
-                        return {
-                            "success": False,
-                            "error": "Credit quantities must be negative"
-                        }
-
-                    # Calculate amounts based on credit quantity
-                    unit_price = float(original_item.get('unitPrice', 0))
-                    total = qty * unit_price
-                    tax_rate = float(original_item.get('taxRate', 0))
-                    tax = total * tax_rate
-
-                    goods_detail = {
-                        "item": original_item.get('item'),
-                        "itemCode": original_item.get('itemCode'),
-                        "qty": str(qty),
-                        "unitOfMeasure": original_item.get('unitOfMeasure'),
-                        "unitPrice": str(unit_price),
-                        "total": f"{total:.2f}",
-                        "taxRate": str(tax_rate),
-                        "tax": f"{tax:.2f}",
-                        "orderNumber": original_item.get('orderNumber'),
-                        "deemedFlag": original_item.get('deemedFlag', '2'),
-                        "exciseFlag": original_item.get('exciseFlag', '2'),
-                        "categoryId": original_item.get('categoryId', ''),
-                        "categoryName": original_item.get('categoryName', ''),
-                        "goodsCategoryId": original_item.get('goodsCategoryId', ''),
-                        "goodsCategoryName": original_item.get('goodsCategoryName', ''),
-                        "exciseRate": original_item.get('exciseRate', ''),
-                        "exciseRule": original_item.get('exciseRule', ''),
-                        "exciseTax": original_item.get('exciseTax', ''),
-                        "pack": original_item.get('pack', ''),
-                        "stick": original_item.get('stick', ''),
-                        "exciseUnit": original_item.get('exciseUnit', ''),
-                        "exciseCurrency": original_item.get('exciseCurrency', ''),
-                        "exciseRateName": original_item.get('exciseRateName', ''),
-                        "vatApplicableFlag": original_item.get('vatApplicableFlag', '1')
-                    }
-
-                    goods_details.append(goods_detail)
-            else:
-                # Credit entire invoice - negate all items
-                for original_item in original_goods:
-                    qty = -abs(float(original_item.get('qty', 0)))
-                    total = -abs(float(original_item.get('total', 0)))
-                    tax = -abs(float(original_item.get('tax', 0)))
-
-                    goods_detail = {
-                        "item": original_item.get('item'),
-                        "itemCode": original_item.get('itemCode'),
-                        "qty": str(qty),
-                        "unitOfMeasure": original_item.get('unitOfMeasure'),
-                        "unitPrice": original_item.get('unitPrice'),
-                        "total": f"{total:.2f}",
-                        "taxRate": original_item.get('taxRate'),
-                        "tax": f"{tax:.2f}",
-                        "orderNumber": original_item.get('orderNumber'),
-                        "deemedFlag": original_item.get('deemedFlag', '2'),
-                        "exciseFlag": original_item.get('exciseFlag', '2'),
-                        "categoryId": original_item.get('categoryId', ''),
-                        "categoryName": original_item.get('categoryName', ''),
-                        "goodsCategoryId": original_item.get('goodsCategoryId', ''),
-                        "goodsCategoryName": original_item.get('goodsCategoryName', ''),
-                        "exciseRate": original_item.get('exciseRate', ''),
-                        "exciseRule": original_item.get('exciseRule', ''),
-                        "exciseTax": original_item.get('exciseTax', ''),
-                        "pack": original_item.get('pack', ''),
-                        "stick": original_item.get('stick', ''),
-                        "exciseUnit": original_item.get('exciseUnit', ''),
-                        "exciseCurrency": original_item.get('exciseCurrency', ''),
-                        "exciseRateName": original_item.get('exciseRateName', ''),
-                        "vatApplicableFlag": original_item.get('vatApplicableFlag', '1')
-                    }
-
-                    goods_details.append(goods_detail)
-
-            credit_note_data["goodsDetails"] = goods_details
-
-            # Build tax details (negative amounts)
-            tax_details = []
-            original_tax_details = original_invoice.get('tax_details', [])
-
-            for original_tax in original_tax_details:
-                net_amount = -abs(float(original_tax.get('netAmount', 0)))
-                tax_amount = -abs(float(original_tax.get('taxAmount', 0)))
-                gross_amount = -abs(float(original_tax.get('grossAmount', 0)))
-
-                tax_detail = {
-                    "taxCategoryCode": original_tax.get('taxCategoryCode', '01'),
-                    "netAmount": f"{net_amount:.2f}",
-                    "taxRate": original_tax.get('taxRate'),
-                    "taxAmount": f"{tax_amount:.2f}",
-                    "grossAmount": f"{gross_amount:.2f}",
-                    "exciseUnit": original_tax.get('exciseUnit', ''),
-                    "exciseCurrency": original_tax.get('exciseCurrency', ''),
-                    "taxRateName": original_tax.get('taxRateName', '')
+            if not invoice_data:
+                return {
+                    "success": False,
+                    "error": f"Invoice {original_invoice_no} not found in EFRIS"
                 }
 
-                tax_details.append(tax_detail)
-
-            credit_note_data["taxDetails"] = tax_details
-
-            # Build summary (negative amounts)
-            original_summary = original_invoice.get('summary', {})
-            net_amount = -abs(float(original_summary.get('netAmount', 0)))
-            tax_amount = -abs(float(original_summary.get('taxAmount', 0)))
-            gross_amount = -abs(float(original_summary.get('grossAmount', 0)))
-
-            credit_note_data["summary"] = {
-                "netAmount": f"{net_amount:.2f}",
-                "taxAmount": f"{tax_amount:.2f}",
-                "grossAmount": f"{gross_amount:.2f}",
-                "itemCount": str(len(goods_details)),
-                "modeCode": original_summary.get('modeCode', '1'),
-                "qrCode": ""
-            }
-
-            # Build payment way (positive amounts for credit note)
-            pay_way = []
-            original_pay_way = original_invoice.get('pay_way', [])
-
-            for idx, payment in enumerate(original_pay_way):
-                pay_way.append({
-                    "paymentMode": payment.get('paymentMode'),
-                    "paymentAmount": payment.get('paymentAmount'),
-                    "orderNumber": chr(97 + idx)  # a, b, c...
-                })
-
-            credit_note_data["payWay"] = pay_way
-
-            # Copy buyer details
-            credit_note_data["buyerDetails"] = original_invoice.get('buyer_details', {})
-
-            # Copy basic information
-            basic_info = original_invoice.get('basic_information', {})
-            credit_note_data["basicInformation"] = {
-                "operator": basic_info.get('operator', 'System'),
-                "invoiceKind": basic_info.get('invoiceKind', '1'),
-                "invoiceIndustryCode": basic_info.get('invoiceIndustryCode', '101'),
-                "branchId": basic_info.get('branchId', ''),
-                "currencyRate": basic_info.get('currencyRate', '')
-            }
-
-            # Copy import services seller if applicable
-            if original_invoice.get('import_services_seller'):
-                credit_note_data["importServicesSeller"] = original_invoice['import_services_seller']
-
-            return {
-                "success": True,
-                "credit_note_data": credit_note_data
-            }
+            # ✅ Build credit note from EFRIS data
+            return self._build_credit_note_from_efris_data(
+                invoice_data,
+                reason_code,
+                reason,
+                credit_items,
+                contact_name,
+                contact_mobile,
+                contact_email,
+                remarks
+            )
 
         except Exception as e:
-            logger.error(f"Failed to build credit note from invoice: {e}", exc_info=True)
+            logger.error(f"Failed to build credit note: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e)
             }
+
+    def _build_credit_note_from_efris_data(
+            self,
+            invoice_data: Dict,
+            reason_code: str,
+            reason: Optional[str],
+            credit_items: Optional[List[Dict]],
+            contact_name: Optional[str],
+            contact_mobile: Optional[str],
+            contact_email: Optional[str],
+            remarks: Optional[str]
+    ) -> Dict[str, Any]:
+        """Build credit note from T108 invoice data"""
+        from datetime import datetime
+        from decimal import Decimal, ROUND_HALF_UP
+
+        # Extract basic information
+        basic_info = invoice_data.get('basicInformation', {})
+
+        # Extract EFRIS IDs from basicInformation section
+        ori_invoice_id = basic_info.get('invoiceId')
+        ori_invoice_no = basic_info.get('invoiceNo')
+
+        if not ori_invoice_id or not ori_invoice_no:
+            raise Exception(
+                f"Invoice data missing required IDs: "
+                f"invoiceId={ori_invoice_id}, invoiceNo={ori_invoice_no}"
+            )
+
+        logger.info(
+            f"Building credit note for Invoice ID: {ori_invoice_id}, "
+            f"FDN: {ori_invoice_no}"
+        )
+
+        # Build credit note structure
+        credit_note_data = {
+            "oriInvoiceId": ori_invoice_id,
+            "oriInvoiceNo": ori_invoice_no,
+            "reasonCode": reason_code,
+            "applicationTime": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "invoiceApplyCategoryCode": "101",  # Credit Note
+            "currency": basic_info.get('currency', 'UGX'),
+            "contactName": contact_name or "",
+            "contactMobileNum": contact_mobile or "",
+            "contactEmail": contact_email or "",
+            "source": "103",  # WebService API
+            "remarks": remarks or f"Credit note for {ori_invoice_no}",
+            "sellersReferenceNo": "",
+        }
+
+        if reason:
+            credit_note_data["reason"] = reason
+
+        # Build goods details from invoice items
+        goods_details = []
+        invoice_items = invoice_data.get('goodsDetails', [])
+
+        if not invoice_items:
+            raise Exception(f"Invoice {ori_invoice_no} has no line items")
+
+        if credit_items:
+            # Partial credit note
+            for credit_item in credit_items:
+                # Find matching item in invoice
+                matching_item = next(
+                    (item for item in invoice_items
+                     if item.get('item') == credit_item.get('item')),
+                    None
+                )
+
+                if not matching_item:
+                    raise Exception(
+                        f"Item '{credit_item.get('item')}' not found in invoice"
+                    )
+
+                # Get original values from invoice
+                orig_qty = Decimal(str(matching_item.get('qty', 0)))
+                orig_unit_price = Decimal(str(matching_item.get('unitPrice', 0)))
+                orig_tax_rate = Decimal(str(matching_item.get('taxRate', 0)))
+
+                # Credit quantity (negative)
+                credit_qty = Decimal(str(credit_item.get('qty', 0)))
+                if credit_qty > 0:
+                    credit_qty = -credit_qty
+
+                # Calculate total and tax using Decimal for precision
+                total = (credit_qty * orig_unit_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                tax = (total * orig_tax_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+                goods_details.append({
+                    "item": matching_item.get('item'),
+                    "itemCode": matching_item.get('itemCode', ''),
+                    "qty": str(credit_qty),
+                    "unitOfMeasure": matching_item.get('unitOfMeasure', 'PCS'),
+                    "unitPrice": str(orig_unit_price),
+                    "total": str(total),
+                    "taxRate": str(orig_tax_rate),
+                    "tax": str(tax),
+                    "orderNumber": matching_item.get('orderNumber', '1'),
+                    "deemedFlag": matching_item.get('deemedFlag', '2'),
+                    "exciseFlag": matching_item.get('exciseFlag', '2'),
+                    "goodsCategoryId": matching_item.get('goodsCategoryId', ''),
+                    "goodsCategoryName": matching_item.get('goodsCategoryName', ''),
+                })
+        else:
+            # Full credit note - negate all items EXACTLY as they appear in original
+            for item in invoice_items:
+                # ✅ Use EXACT values from original invoice, just negate them
+                orig_qty = Decimal(str(item.get('qty', 0)))
+                orig_unit_price = Decimal(str(item.get('unitPrice', 0)))
+                orig_total = Decimal(str(item.get('total', 0)))
+                orig_tax = Decimal(str(item.get('tax', 0)))
+                orig_tax_rate = Decimal(str(item.get('taxRate', 0)))
+
+                # Negate the values
+                credit_qty = -orig_qty
+                credit_total = -orig_total
+                credit_tax = -orig_tax
+
+                goods_details.append({
+                    "item": item.get('item'),
+                    "itemCode": item.get('itemCode', ''),
+                    "qty": str(credit_qty),
+                    "unitOfMeasure": item.get('unitOfMeasure', 'PCS'),
+                    "unitPrice": str(orig_unit_price),
+                    "total": str(credit_total),
+                    "taxRate": str(orig_tax_rate),
+                    "tax": str(credit_tax),
+                    "orderNumber": item.get('orderNumber', '1'),
+                    "deemedFlag": item.get('deemedFlag', '2'),
+                    "exciseFlag": item.get('exciseFlag', '2'),
+                    "goodsCategoryId": item.get('goodsCategoryId', ''),
+                    "goodsCategoryName": item.get('goodsCategoryName', ''),
+                })
+
+        credit_note_data["goodsDetails"] = goods_details
+
+        # Build tax details
+        tax_details = self._build_tax_details_from_goods(goods_details)
+        credit_note_data["taxDetails"] = tax_details
+
+        # Build summary
+        summary = self._build_summary_from_tax_details_dict(tax_details, len(goods_details))
+        credit_note_data["summary"] = summary
+
+        # Payment way
+        credit_note_data["payWay"] = [{
+            "paymentMode": "102",  # Cash
+            "paymentAmount": str(abs(Decimal(summary['grossAmount']))),
+            "orderNumber": "a"
+        }]
+
+        # Buyer details from invoice
+        buyer_details = invoice_data.get('buyerDetails', {})
+        credit_note_data["buyerDetails"] = {
+            "buyerTin": buyer_details.get('buyerTin', ''),
+            "buyerType": buyer_details.get('buyerType', '1'),
+            "buyerLegalName": buyer_details.get('buyerLegalName', 'Walk-in Customer'),
+        }
+
+        # Basic information
+        credit_note_data["basicInformation"] = {
+            "operator": basic_info.get('operator', 'System'),
+            "invoiceKind": basic_info.get('invoiceKind', '1'),
+            "invoiceIndustryCode": basic_info.get('invoiceIndustryCode', '101'),
+        }
+
+        return {
+            "success": True,
+            "credit_note_data": credit_note_data
+        }
+
+    def _build_credit_note_from_invoice_model(
+            self,
+            invoice,
+            reason_code: str,
+            reason: Optional[str],
+            credit_items: Optional[List[Dict]],
+            contact_name: Optional[str],
+            contact_mobile: Optional[str],
+            contact_email: Optional[str],
+            remarks: Optional[str]
+    ) -> Dict[str, Any]:
+        """Build credit note from Invoice model object"""
+        from datetime import datetime
+
+        # ✅ Get EFRIS IDs for the ORIGINAL invoice being credited
+        ori_invoice_id = getattr(invoice, 'efris_invoice_id', '') or ''
+        ori_invoice_no = getattr(invoice, 'fiscal_document_number', '') or ''
+
+        # ⚠️ Both must be present for credit note WITH original FDN
+        if not ori_invoice_id or not ori_invoice_no:
+            raise Exception(
+                f"Cannot create credit note: Missing EFRIS invoice reference. "
+                f"Invoice ID: '{ori_invoice_id}', Invoice No: '{ori_invoice_no}'. "
+                f"The original invoice must have been uploaded to EFRIS via T109 first."
+            )
+
+        logger.info(
+            f"Building credit note for Invoice ID: {ori_invoice_id}, "
+            f"FDN: {ori_invoice_no}"
+        )
+
+        credit_note_data = {
+            "oriInvoiceId": ori_invoice_id,
+            "oriInvoiceNo": ori_invoice_no,
+            "reasonCode": reason_code,
+            "applicationTime": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "invoiceApplyCategoryCode": "101",  # Credit Note
+            "currency": getattr(invoice, 'currency', 'UGX'),
+            "contactName": contact_name or "",
+            "contactMobileNum": contact_mobile or "",
+            "contactEmail": contact_email or "",
+            "source": "103",  # WebService API
+            "remarks": remarks or f"Credit note for {ori_invoice_no}",
+            "sellersReferenceNo": "",
+        }
+
+        if reason:
+            credit_note_data["reason"] = reason
+
+        # Build goods details from invoice or related sale
+        goods_details = []
+
+        # Check if invoice has a related sale with items
+        if hasattr(invoice, 'sale') and invoice.sale:
+            sale = invoice.sale
+            items = sale.items.all() if hasattr(sale, 'items') else []
+
+            if credit_items:
+                # Credit specific items (partial credit note)
+                for credit_item in credit_items:
+                    item = next(
+                        (i for i in items if (
+                                (hasattr(i, 'product') and i.product and i.product.name == credit_item.get('item')) or
+                                (hasattr(i, 'service') and i.service and i.service.name == credit_item.get('item'))
+                        )),
+                        None
+                    )
+
+                    if not item:
+                        raise Exception(f"Item '{credit_item.get('item')}' not found in invoice {ori_invoice_no}")
+
+                    qty = float(credit_item.get('qty', 0))
+                    if qty >= 0:
+                        raise Exception(f"Credit quantity must be negative, got {qty}")
+
+                    unit_price = float(getattr(item, 'unit_price', 0))
+                    total = qty * unit_price
+                    tax_rate = self._get_numeric_tax_rate(getattr(item, 'tax_rate', '18%'))
+                    tax = total * (tax_rate / 100)
+
+                    # Determine item details
+                    if hasattr(item, 'product') and item.product:
+                        item_name = item.product.name
+                        item_code = getattr(item.product, 'sku', '')
+                        unit_of_measure = getattr(item.product, 'unit_of_measure', 'PCS')
+                    elif hasattr(item, 'service') and item.service:
+                        item_name = item.service.name
+                        item_code = getattr(item.service, 'code', '')
+                        unit_of_measure = getattr(item.service, 'unit_of_measure', 'PCS')
+                    else:
+                        item_name = getattr(item, 'description', 'Unknown Item')
+                        item_code = ''
+                        unit_of_measure = 'PCS'
+
+                    goods_details.append({
+                        "item": item_name,
+                        "itemCode": item_code,
+                        "qty": str(qty),
+                        "unitOfMeasure": unit_of_measure,
+                        "unitPrice": str(unit_price),
+                        "total": f"{total:.2f}",
+                        "taxRate": f"{tax_rate / 100:.4f}",
+                        "tax": f"{tax:.2f}",
+                        "orderNumber": str(item.id),
+                        "deemedFlag": "2",
+                        "exciseFlag": "2",
+                        "goodsCategoryId": "",
+                        "goodsCategoryName": "",
+                    })
+            else:
+                # Credit entire invoice/sale (full credit note)
+                for item in items:
+                    qty = -abs(float(getattr(item, 'quantity', 0)))
+                    unit_price = float(getattr(item, 'unit_price', 0))
+                    total = qty * unit_price
+                    tax_rate = self._get_numeric_tax_rate(getattr(item, 'tax_rate', '18%'))
+                    tax = total * (tax_rate / 100)
+
+                    # Determine item name and code
+                    if hasattr(item, 'product') and item.product:
+                        item_name = item.product.name
+                        item_code = getattr(item.product, 'sku', '')
+                        unit_of_measure = getattr(item.product, 'unit_of_measure', 'PCS')
+                    elif hasattr(item, 'service') and item.service:
+                        item_name = item.service.name
+                        item_code = getattr(item.service, 'code', '')
+                        unit_of_measure = getattr(item.service, 'unit_of_measure', 'PCS')
+                    else:
+                        item_name = getattr(item, 'description', 'Unknown Item')
+                        item_code = ''
+                        unit_of_measure = 'PCS'
+
+                    goods_details.append({
+                        "item": item_name,
+                        "itemCode": item_code,
+                        "qty": str(qty),
+                        "unitOfMeasure": unit_of_measure,
+                        "unitPrice": str(unit_price),
+                        "total": f"{total:.2f}",
+                        "taxRate": f"{tax_rate / 100:.4f}",
+                        "tax": f"{tax:.2f}",
+                        "orderNumber": str(item.id),
+                        "deemedFlag": "2",
+                        "exciseFlag": "2",
+                        "goodsCategoryId": "",
+                        "goodsCategoryName": "",
+                    })
+        else:
+            # If no sale items, create a single item from invoice total
+            # Get invoice amount - you need to determine the correct field name
+            invoice_amount = 0
+            if hasattr(invoice, 'total_amount'):
+                invoice_amount = float(invoice.total_amount)
+            elif hasattr(invoice, 'amount'):
+                invoice_amount = float(invoice.amount)
+            elif hasattr(invoice, 'gross_amount'):
+                invoice_amount = float(invoice.gross_amount)
+            else:
+                raise Exception("Cannot determine invoice amount from invoice model")
+
+            qty = -1  # Single item (negative for credit)
+            tax_rate = self._get_numeric_tax_rate('18%')  # Default tax rate
+
+            # Calculate net and tax from gross
+            # gross = net + tax
+            # gross = net + (net * tax_rate)
+            # gross = net * (1 + tax_rate)
+            # net = gross / (1 + tax_rate)
+            net_amount = invoice_amount / (1 + (tax_rate / 100))
+            tax_amount = invoice_amount - net_amount
+
+            # Make negative for credit note
+            total = -abs(invoice_amount)
+            tax = -abs(tax_amount)
+
+            goods_details.append({
+                "item": f"Credit for Invoice {ori_invoice_no}",
+                "itemCode": "",
+                "qty": str(qty),
+                "unitOfMeasure": "PCS",
+                "unitPrice": f"{abs(invoice_amount):.2f}",
+                "total": f"{total:.2f}",
+                "taxRate": f"{tax_rate / 100:.4f}",
+                "tax": f"{tax:.2f}",
+                "orderNumber": str(invoice.id),
+                "deemedFlag": "2",
+                "exciseFlag": "2",
+                "goodsCategoryId": "",
+                "goodsCategoryName": "",
+            })
+
+        if not goods_details:
+            raise Exception("No items found to credit")
+
+        credit_note_data["goodsDetails"] = goods_details
+
+        # Build tax details
+        tax_details = self._build_tax_details_from_goods(goods_details)
+        credit_note_data["taxDetails"] = tax_details
+
+        # Build summary
+        summary = self._build_summary_from_tax_details_dict(tax_details, len(goods_details))
+        credit_note_data["summary"] = summary
+
+        # Build payment way
+        credit_note_data["payWay"] = [{
+            "paymentMode": "102",  # Cash
+            "paymentAmount": f"{abs(float(summary['grossAmount'])):.2f}",
+            "orderNumber": "a"
+        }]
+
+        # Buyer details - try to get from invoice or related sale
+        buyer_tin = ""
+        buyer_name = "Walk-in Customer"
+
+        if hasattr(invoice, 'customer') and invoice.customer:
+            buyer_name = getattr(invoice.customer, 'name', buyer_name)
+            buyer_tin = getattr(invoice.customer, 'tin', buyer_tin) or ""
+        elif hasattr(invoice, 'sale') and invoice.sale and hasattr(invoice.sale, 'customer') and invoice.sale.customer:
+            buyer_name = getattr(invoice.sale.customer, 'name', buyer_name)
+            buyer_tin = getattr(invoice.sale.customer, 'tin', buyer_tin) or ""
+
+        credit_note_data["buyerDetails"] = {
+            "buyerTin": buyer_tin,
+            "buyerType": "1" if not buyer_tin else "0",  # 0: B2B (has TIN), 1: B2C (no TIN)
+            "buyerLegalName": buyer_name,
+        }
+
+        # Basic information
+        credit_note_data["basicInformation"] = {
+            "operator": "System",
+            "invoiceKind": "1",
+            "invoiceIndustryCode": "101",
+        }
+
+        return credit_note_data
+
+    def _build_credit_note_from_sale(
+            self,
+            sale,
+            reason_code: str,
+            reason: Optional[str],
+            credit_items: Optional[List[Dict]],
+            contact_name: Optional[str],
+            contact_mobile: Optional[str],
+            contact_email: Optional[str],
+            remarks: Optional[str]
+    ) -> Dict[str, Any]:
+        """Build credit note from Sale object"""
+        from datetime import datetime
+
+        # ✅ Get EFRIS IDs for the ORIGINAL sale/invoice being credited
+        ori_invoice_id = getattr(sale, 'efris_invoice_id', '') or ''
+        ori_invoice_no = getattr(sale, 'fiscal_document_number', '') or getattr(sale, 'document_number', '') or ''
+
+        # ⚠️ Both must be present for credit note WITH original FDN
+        if not ori_invoice_id or not ori_invoice_no:
+            raise Exception(
+                f"Cannot create credit note: Missing EFRIS invoice reference. "
+                f"Sale ID: '{ori_invoice_id}', Document No: '{ori_invoice_no}'. "
+                f"The original sale/invoice must have been uploaded to EFRIS via T109 first."
+            )
+
+        logger.info(
+            f"Building credit note for Sale ID: {ori_invoice_id}, "
+            f"FDN: {ori_invoice_no}"
+        )
+
+        credit_note_data = {
+            "oriInvoiceId": ori_invoice_id,
+            "oriInvoiceNo": ori_invoice_no,
+            "reasonCode": reason_code,
+            "applicationTime": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "invoiceApplyCategoryCode": "101",  # Credit Note
+            "currency": getattr(sale, 'currency', 'UGX'),
+            "contactName": contact_name or "",
+            "contactMobileNum": contact_mobile or "",
+            "contactEmail": contact_email or "",
+            "source": "103",  # WebService API
+            "remarks": remarks or f"Credit note for {ori_invoice_no}",
+            "sellersReferenceNo": "",
+        }
+
+        if reason:
+            credit_note_data["reason"] = reason
+
+        # Build goods details from sale items
+        goods_details = []
+        items = sale.items.all()
+
+        if credit_items:
+            # Credit specific items (partial credit note)
+            for credit_item in credit_items:
+                item = next(
+                    (i for i in items if (
+                            (hasattr(i, 'product') and i.product and i.product.name == credit_item.get('item')) or
+                            (hasattr(i, 'service') and i.service and i.service.name == credit_item.get('item'))
+                    )),
+                    None
+                )
+
+                if not item:
+                    raise Exception(f"Item '{credit_item.get('item')}' not found in sale {ori_invoice_no}")
+
+                qty = float(credit_item.get('qty', 0))
+                if qty >= 0:
+                    raise Exception(f"Credit quantity must be negative, got {qty}")
+
+                unit_price = float(getattr(item, 'unit_price', 0))
+                total = qty * unit_price
+                tax_rate = self._get_numeric_tax_rate(getattr(item, 'tax_rate', '18%'))
+                tax = total * (tax_rate / 100)
+
+                # Determine item details
+                if hasattr(item, 'product') and item.product:
+                    item_name = item.product.name
+                    item_code = getattr(item.product, 'sku', '')
+                    unit_of_measure = getattr(item.product, 'unit_of_measure', 'PCS')
+                elif hasattr(item, 'service') and item.service:
+                    item_name = item.service.name
+                    item_code = getattr(item.service, 'code', '')
+                    unit_of_measure = getattr(item.service, 'unit_of_measure', 'PCS')
+                else:
+                    item_name = getattr(item, 'description', 'Unknown Item')
+                    item_code = ''
+                    unit_of_measure = 'PCS'
+
+                goods_details.append({
+                    "item": item_name,
+                    "itemCode": item_code,
+                    "qty": str(qty),
+                    "unitOfMeasure": unit_of_measure,
+                    "unitPrice": str(unit_price),
+                    "total": f"{total:.2f}",
+                    "taxRate": f"{tax_rate / 100:.4f}",
+                    "tax": f"{tax:.2f}",
+                    "orderNumber": str(item.id),
+                    "deemedFlag": "2",
+                    "exciseFlag": "2",
+                    "goodsCategoryId": "",
+                    "goodsCategoryName": "",
+                })
+        else:
+            # Credit entire sale (full credit note)
+            for item in items:
+                qty = -abs(float(getattr(item, 'quantity', 0)))
+                unit_price = float(getattr(item, 'unit_price', 0))
+                total = qty * unit_price
+                tax_rate = self._get_numeric_tax_rate(getattr(item, 'tax_rate', '18%'))
+                tax = total * (tax_rate / 100)
+
+                # Determine item details
+                if hasattr(item, 'product') and item.product:
+                    item_name = item.product.name
+                    item_code = getattr(item.product, 'sku', '')
+                    unit_of_measure = getattr(item.product, 'unit_of_measure', 'PCS')
+                elif hasattr(item, 'service') and item.service:
+                    item_name = item.service.name
+                    item_code = getattr(item.service, 'code', '')
+                    unit_of_measure = getattr(item.service, 'unit_of_measure', 'PCS')
+                else:
+                    item_name = getattr(item, 'description', 'Unknown Item')
+                    item_code = ''
+                    unit_of_measure = 'PCS'
+
+                goods_details.append({
+                    "item": item_name,
+                    "itemCode": item_code,
+                    "qty": str(qty),
+                    "unitOfMeasure": unit_of_measure,
+                    "unitPrice": str(unit_price),
+                    "total": f"{total:.2f}",
+                    "taxRate": f"{tax_rate / 100:.4f}",
+                    "tax": f"{tax:.2f}",
+                    "orderNumber": str(item.id),
+                    "deemedFlag": "2",
+                    "exciseFlag": "2",
+                    "goodsCategoryId": "",
+                    "goodsCategoryName": "",
+                })
+
+        if not goods_details:
+            raise Exception("No items found to credit")
+
+        credit_note_data["goodsDetails"] = goods_details
+
+        # Build tax details
+        tax_details = self._build_tax_details_from_goods(goods_details)
+        credit_note_data["taxDetails"] = tax_details
+
+        # Build summary
+        summary = self._build_summary_from_tax_details_dict(tax_details, len(goods_details))
+        credit_note_data["summary"] = summary
+
+        # Build payment way
+        credit_note_data["payWay"] = [{
+            "paymentMode": "102",  # Cash
+            "paymentAmount": f"{abs(float(summary['grossAmount'])):.2f}",
+            "orderNumber": "a"
+        }]
+
+        # Buyer details
+        buyer_tin = ""
+        buyer_name = "Walk-in Customer"
+
+        if hasattr(sale, 'customer') and sale.customer:
+            buyer_name = getattr(sale.customer, 'name', buyer_name)
+            buyer_tin = getattr(sale.customer, 'tin', buyer_tin) or ""
+
+        credit_note_data["buyerDetails"] = {
+            "buyerTin": buyer_tin,
+            "buyerType": "1" if not buyer_tin else "0",  # 0: B2B (has TIN), 1: B2C (no TIN)
+            "buyerLegalName": buyer_name,
+        }
+
+        # Basic information
+        credit_note_data["basicInformation"] = {
+            "operator": "System",
+            "invoiceKind": "1",
+            "invoiceIndustryCode": "101",
+        }
+
+        return credit_note_data
+
+    def _build_tax_details_from_goods(self, goods_details: List[Dict]) -> List[Dict]:
+        """Build tax details from goods details"""
+        from decimal import Decimal
+
+        tax_groups = {}
+
+        for goods in goods_details:
+            tax_rate = str(goods.get('taxRate', '0'))
+
+            if tax_rate not in tax_groups:
+                tax_groups[tax_rate] = {
+                    'rate': tax_rate,
+                    'net_amount': Decimal('0'),
+                    'tax_amount': Decimal('0')
+                }
+
+            total = Decimal(str(goods.get('total', '0')))
+            tax = Decimal(str(goods.get('tax', '0')))
+
+            tax_groups[tax_rate]['net_amount'] += (total - tax)
+            tax_groups[tax_rate]['tax_amount'] += tax
+
+        tax_details = []
+        for rate_key, amounts in tax_groups.items():
+            net = amounts['net_amount']
+            tax = amounts['tax_amount']
+            gross = net + tax
+
+            # Determine tax category code
+            rate_decimal = Decimal(rate_key)
+            if rate_decimal == Decimal('0.18'):
+                tax_code = "01"  # Standard 18%
+            elif rate_decimal == Decimal('0'):
+                tax_code = "02"  # Zero rated
+            else:
+                tax_code = "01"
+
+            tax_details.append({
+                "taxCategoryCode": tax_code,
+                "netAmount": str(net),
+                "taxRate": rate_key,
+                "taxAmount": str(tax),
+                "grossAmount": str(gross),
+                "taxRateName": f"Rate ({Decimal(rate_key) * 100}%)"
+            })
+
+        return tax_details
+
+    def _build_summary_from_tax_details_dict(self, tax_details: List[Dict], item_count: int) -> Dict:
+        """Build summary from tax details"""
+        from decimal import Decimal
+
+        total_net = Decimal('0')
+        total_tax = Decimal('0')
+        total_gross = Decimal('0')
+
+        for tax_detail in tax_details:
+            total_net += Decimal(tax_detail['netAmount'])
+            total_tax += Decimal(tax_detail['taxAmount'])
+            total_gross += Decimal(tax_detail['grossAmount'])
+
+        return {
+            "netAmount": f"{total_net:.2f}",
+            "taxAmount": f"{total_tax:.2f}",
+            "grossAmount": f"{total_gross:.2f}",
+            "itemCount": str(item_count),
+            "modeCode": "1",
+            "qrCode": ""
+        }
+
+    def _get_numeric_tax_rate(self, tax_rate_value) -> float:
+        """Convert tax rate to numeric"""
+        if isinstance(tax_rate_value, str):
+            mapping = {'A': 18.0, 'B': 0.0, 'C': 0.0, 'D': 18.0, 'E': 18.0}
+            return mapping.get(tax_rate_value.upper(), 18.0)
+        try:
+            return float(tax_rate_value or 18)
+        except (ValueError, TypeError):
+            return 18.0
 
     def t111_query_credit_note_applications(
             self,
@@ -8462,7 +9047,6 @@ class EnhancedEFRISAPIClient:
                 "results": []
             }
 
-    # Update in services.py
 
     def search_invoices_by_date_range(
             self,
@@ -8681,6 +9265,16 @@ class EnhancedEFRISAPIClient:
     # ============================================================================
 
     def t108_query_invoice_detail(self, invoice_no: str) -> Dict[str, Any]:
+        """
+        T108 - Query Invoice Details
+        Retrieve complete invoice information from EFRIS
+
+        Args:
+            invoice_no: Invoice number (fiscal document number)
+
+        Returns:
+            Dict with invoice details
+        """
         try:
             # Ensure authentication
             auth_result = self.ensure_authenticated()
@@ -8693,21 +9287,29 @@ class EnhancedEFRISAPIClient:
             # Build request content
             content = {"invoiceNo": invoice_no}
 
-            logger.info(f"Querying invoice detail for: {invoice_no}")
+            logger.info(f"Querying invoice detail (T108) for: {invoice_no}")
 
-            # Make encrypted request
+            # Make encrypted request (both request and response are encrypted)
             response = self._make_request("T108", content, encrypt=True)
 
-            logger.info(f"Invoice {invoice_no} detail retrieved successfully")
+            # Check if invoice data exists
+            if not response:
+                return {
+                    "success": False,
+                    "error": f"Invoice {invoice_no} not found",
+                    "invoice_no": invoice_no
+                }
+
+            logger.info(f"T108 query successful for invoice {invoice_no}")
 
             return {
                 "success": True,
-                "invoice_data": response,
+                "invoice": response,  # ✅ Changed from invoice_data to invoice
                 "invoice_no": invoice_no
             }
 
         except Exception as e:
-            logger.error(f"T108 query failed: {e}", exc_info=True)
+            logger.error(f"T108 query failed for {invoice_no}: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),

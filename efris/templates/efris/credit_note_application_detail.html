@@ -1,0 +1,720 @@
+{% extends "efris/base.html" %}
+{% load static %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+    .detail-card {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 0.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+
+    .detail-card-header {
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        padding: 1rem 1.5rem;
+        border-radius: 0.5rem 0.5rem 0 0;
+    }
+
+    .detail-card-body {
+        padding: 1.5rem;
+    }
+
+    .status-badge {
+        font-size: 0.8rem;
+        padding: 0.25rem 0.75rem;
+    }
+
+    .info-grid {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 0.75rem;
+        align-items: start;
+    }
+
+    @media (max-width: 768px) {
+        .info-grid {
+            grid-template-columns: 1fr;
+            gap: 0.25rem;
+        }
+    }
+
+    .info-label {
+        font-weight: 600;
+        color: #495057;
+    }
+
+    .info-value {
+        color: #212529;
+        word-break: break-word;
+    }
+
+    .goods-table th {
+        background-color: #f8f9fa;
+        border-top: 2px solid #dee2e6;
+        font-weight: 600;
+    }
+
+    .amount-cell {
+        text-align: right;
+        font-family: 'Courier New', monospace;
+    }
+
+    .negative-amount {
+        color: #dc3545;
+        font-weight: 600;
+    }
+
+    .positive-amount {
+        color: #28a745;
+        font-weight: 600;
+    }
+
+    .tax-breakdown {
+        background: #f8f9fa;
+        border-radius: 0.25rem;
+        padding: 1rem;
+    }
+
+    .action-buttons .btn {
+        min-width: 120px;
+    }
+
+    .status-101 { background-color: #fff3cd; color: #856404; border-color: #ffeaa7; }
+    .status-102 { background-color: #d1ecf1; color: #0c5460; border-color: #bee5eb; }
+    .status-103 { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+    .status-104 { background-color: #6c757d; color: white; border-color: #545b62; }
+    .status-105 { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
+
+    .data-missing {
+        color: #6c757d;
+        font-style: italic;
+    }
+
+    .comparison-grid {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 1rem;
+        align-items: center;
+    }
+
+    .comparison-arrow {
+        font-size: 1.5rem;
+        color: #6c757d;
+        text-align: center;
+    }
+</style>
+{% endblock %}
+
+{% block efris_content %}
+<div class="container-fluid">
+    <!-- Header Section -->
+    <!-- Header Section -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-0">
+            <i class="fas fa-file-invoice text-primary me-2"></i>
+            Credit Note Application: {{ application_id }}
+            {% if t111_status and t111_status != application.approve_status %}
+                <small class="text-warning ms-2">
+                    <i class="fas fa-exclamation-triangle"></i> Status mismatch detected
+                </small>
+            {% endif %}
+        </h4>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item">
+                    <a href="{% url 'efris:dashboard' %}">EFRIS</a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="{% url 'efris:credit_note_applications' %}">Credit Notes</a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">Application Detail</li>
+            </ol>
+        </nav>
+    </div>
+
+    <div>
+        {% if application.approve_status == '101' or application.approve_status == '1' %}
+            <span class="badge status-badge status-101">PENDING</span>
+        {% elif application.approve_status == '102' or application.approve_status == '2' %}
+            <span class="badge status-badge status-102">APPROVED</span>
+        {% elif application.approve_status == '103' or application.approve_status == '3' %}
+            <span class="badge status-badge status-103">REJECTED</span>
+        {% elif application.approve_status == '104' or application.approve_status == '4' %}
+            <span class="badge status-badge status-104">CANCELLED</span>
+        {% elif application.approve_status == '105' %}
+            <span class="badge status-badge status-105">PROCESSED</span>
+        {% else %}
+            <span class="badge bg-secondary status-badge">{{ application.approve_status|default:"UNKNOWN" }}</span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Status Mismatch Warning -->
+{% if t111_status and t111_status != application.approve_status %}
+<div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <strong>Status Mismatch Detected:</strong>
+    <ul class="mb-0 mt-2">
+        <li>T112 Detail API Status: <strong>{{ application.status }}</strong> ({{ application.approve_status }})</li>
+        <li>T111 List API Status: <strong>{{ t111_status }}</strong></li>
+    </ul>
+    <small class="text-muted">This might indicate a timing issue or API caching. The T112 detail API is usually more accurate.</small>
+</div>
+{% endif %}
+
+    <!-- Alert Messages -->
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                <i class="fas fa-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' or message.tags == 'danger' %}exclamation-circle{% else %}info-circle{% endif %} me-2"></i>
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Basic Information Card -->
+    <div class="detail-card">
+        <div class="detail-card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-info-circle text-primary me-2"></i>
+                Application Information
+            </h5>
+        </div>
+        <div class="detail-card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Application ID:</span>
+                        <span class="info-value font-monospace">{{ application.application_id }}</span>
+                    </div>
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Original Invoice:</span>
+                        <span class="info-value">
+                            {% if application.original_invoice_no %}
+                                <span class="text-primary">{{ application.original_invoice_no }}</span>
+                            {% else %}
+                                <span class="data-missing">No original invoice</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Credit Note No:</span>
+                        <span class="info-value">
+                            {% if application.credit_note_no %}
+                                <span class="text-success font-monospace">{{ application.credit_note_no }}</span>
+                            {% else %}
+                                <span class="data-missing">Not yet assigned</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Application Date:</span>
+                        <span class="info-value">
+                            {% if application.application_date %}
+                                {{ application.application_date }}
+                            {% else %}
+                                <span class="data-missing">Date not available</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Issued Date:</span>
+                        <span class="info-value">
+                            {% if application.issued_date %}
+                                {{ application.issued_date }}
+                            {% else %}
+                                <span class="data-missing">Date not available</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Task ID:</span>
+                        <span class="info-value font-monospace">
+                            {{ application.task_id|default:"N/A" }}
+                        </span>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Status:</span>
+                        <span class="info-value">
+                            {% if application.approve_status == '101' %}
+                                <span class="badge status-101">Pending Approval</span>
+                            {% elif application.approve_status == '102' %}
+                                <span class="badge status-102">Approved</span>
+                            {% elif application.approve_status == '103' %}
+                                <span class="badge status-103">Rejected</span>
+                            {% elif application.approve_status == '104' %}
+                                <span class="badge status-104">Cancelled</span>
+                            {% elif application.approve_status == '105' %}
+                                <span class="badge status-105">Processed</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ application.status|default:"Status unknown" }}</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Applicant:</span>
+                        <span class="info-value">
+                            {{ application.applicant_name|default:"N/A" }}<br>
+                            <small class="text-muted">TIN: {{ application.applicant_tin|default:"N/A" }}</small>
+                        </span>
+                    </div>
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Buyer:</span>
+                        <span class="info-value">
+                            {{ application.buyer_name|default:"N/A" }}<br>
+                            <small class="text-muted">
+                                TIN: {{ application.buyer_tin|default:"N/A" }}<br>
+                                Email: {{ application.buyer_email|default:"N/A" }}<br>
+                                Mobile: {{ application.buyer_mobile|default:"N/A" }}
+                            </small>
+                        </span>
+                    </div>
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Currency:</span>
+                        <span class="info-value">{{ application.currency }}</span>
+                    </div>
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Reason:</span>
+                        <span class="info-value">
+                            <strong>{{ application.reason_code }}</strong> - {{ application.reason_description }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            {% if application.approve_remarks %}
+                <div class="mt-3">
+                    <span class="info-label">Approval Remarks:</span>
+                    <div class="info-value mt-1 p-3 bg-light rounded border">
+                        <i class="fas fa-comment-alt text-muted me-2"></i>
+                        {{ application.approve_remarks }}
+                    </div>
+                </div>
+            {% endif %}
+
+            {% if application.address %}
+                <div class="mt-3">
+                    <span class="info-label">Address:</span>
+                    <div class="info-value mt-1">
+                        {{ application.address }}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Financial Summary Card -->
+    <div class="detail-card">
+        <div class="detail-card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-chart-bar text-primary me-2"></i>
+                Financial Summary - Credit Note vs Original Invoice
+            </h5>
+        </div>
+        <div class="detail-card-body">
+            <!-- Comparison View -->
+            <div class="comparison-grid mb-4">
+                <!-- Original Invoice -->
+                <div class="card">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="fas fa-file-invoice me-2"></i>Original Invoice</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Net Amount:</span>
+                            <span class="fw-bold">{{ summary.previous_net_amount|floatformat:2|intcomma }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Tax Amount:</span>
+                            <span class="fw-bold">{{ summary.previous_tax_amount|floatformat:2|intcomma }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between border-top pt-2">
+                            <span class="fw-bold">Gross Amount:</span>
+                            <span class="fw-bold fs-5">{{ summary.previous_gross_amount|floatformat:2|intcomma }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Arrow -->
+                <div class="comparison-arrow">
+                    <i class="fas fa-arrow-right"></i>
+                </div>
+
+                <!-- Credit Note -->
+                <div class="card border-primary">
+                    <div class="card-header bg-primary text-white">
+                        <h6 class="mb-0"><i class="fas fa-undo me-2"></i>Credit Note</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Net Amount:</span>
+                            <span class="fw-bold negative-amount">{{ summary.net_amount|floatformat:2|intcomma }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Tax Amount:</span>
+                            <span class="fw-bold negative-amount">{{ summary.tax_amount|floatformat:2|intcomma }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between border-top pt-2">
+                            <span class="fw-bold">Gross Amount:</span>
+                            <span class="fw-bold fs-5 negative-amount">{{ summary.gross_amount|floatformat:2|intcomma }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tax Breakdown -->
+            <div class="tax-breakdown">
+                <h6 class="mb-3">
+                    <i class="fas fa-percentage me-2"></i>Tax Breakdown
+                </h6>
+                {% if tax_details %}
+                    {% for tax in tax_details %}
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>
+                            {% if tax.taxCategory %}
+                                {{ tax.taxCategory }}
+                            {% elif tax.taxCategoryCode %}
+                                Tax Category {{ tax.taxCategoryCode }}
+                            {% else %}
+                                Tax {{ forloop.counter }}
+                            {% endif %}
+                            {% if tax.taxRate %}
+                                <small>({{ tax.taxRate|floatformat:2 }}%)</small>
+                            {% endif %}
+                        </span>
+                        <span class="fw-bold">
+                            {% with tax_amount=tax.taxAmount|default:0 %}
+                            {% if tax_amount < 0 %}
+                                <span class="negative-amount">{{ tax_amount|floatformat:2|intcomma }}</span>
+                            {% else %}
+                                {{ tax_amount|floatformat:2|intcomma }}
+                            {% endif %}
+                            {% endwith %}
+                        </span>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-3">
+                        <i class="fas fa-info-circle text-muted me-2"></i>
+                        <span class="data-missing">No tax details available</span>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Goods Details Card -->
+    <div class="detail-card">
+        <div class="detail-card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fas fa-boxes text-primary me-2"></i>
+                Goods & Services Details
+                <span class="badge bg-secondary ms-2">{{ goods_details|length }} item(s)</span>
+            </h5>
+        </div>
+        <div class="detail-card-body">
+            {% if goods_details %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 goods-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Item Description</th>
+                            <th>Category</th>
+                            <th class="text-end">Qty</th>
+                            <th class="text-end">Unit Price</th>
+                            <th class="text-end">Tax Rate</th>
+                            <th class="text-end">Tax Amount</th>
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in goods_details %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            <td>
+                                <div>
+                                    <strong>{{ item.itemName|default:"Unnamed Item" }}</strong><br>
+                                    <small class="text-muted">Code: {{ item.itemCode|default:"N/A" }}</small>
+                                </div>
+                            </td>
+                            <td>
+                                <small>{{ item.goodsCategoryName|default:"N/A" }}</small>
+                            </td>
+                            <td class="amount-cell">
+                                {% with qty=item.qty|default:0 %}
+                                {% if qty < 0 %}
+                                    <span class="negative-amount">{{ qty|floatformat:2 }}</span>
+                                {% else %}
+                                    {{ qty|floatformat:2 }}
+                                {% endif %}
+                                {% endwith %}
+                            </td>
+                            <td class="amount-cell">
+                                {{ item.unitPrice|default:0|floatformat:2|intcomma }}
+                            </td>
+                            <td class="amount-cell">
+                                {% with rate=item.taxRate|default:0 %}
+                                {{ rate|floatformat:2 }}%
+                                {% endwith %}
+                            </td>
+                            <td class="amount-cell">
+                                {% with tax=item.tax|default:0 %}
+                                {% if tax < 0 %}
+                                    <span class="negative-amount">{{ tax|floatformat:2|intcomma }}</span>
+                                {% else %}
+                                    {{ tax|floatformat:2|intcomma }}
+                                {% endif %}
+                                {% endwith %}
+                            </td>
+                            <td class="amount-cell">
+                                {% with total=item.total|default:0 %}
+                                {% if total < 0 %}
+                                    <span class="negative-amount fw-bold">{{ total|floatformat:2|intcomma }}</span>
+                                {% else %}
+                                    <span class="fw-bold">{{ total|floatformat:2|intcomma }}</span>
+                                {% endif %}
+                                {% endwith %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-active">
+                            <td colspan="6" class="text-end fw-bold">Totals:</td>
+                            <td class="amount-cell fw-bold">
+                                {% if summary.tax_amount < 0 %}
+                                    <span class="negative-amount">{{ summary.tax_amount|floatformat:2|intcomma }}</span>
+                                {% else %}
+                                    {{ summary.tax_amount|floatformat:2|intcomma }}
+                                {% endif %}
+                            </td>
+                            <td class="amount-cell fw-bold">
+                                {% if summary.gross_amount < 0 %}
+                                    <span class="negative-amount">{{ summary.gross_amount|floatformat:2|intcomma }}</span>
+                                {% else %}
+                                    {{ summary.gross_amount|floatformat:2|intcomma }}
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No Goods Details Available</h5>
+                <p class="text-muted">This application doesn't contain any goods or services details.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Payment Information -->
+    {% if payment_methods %}
+    <div class="detail-card">
+        <div class="detail-card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-credit-card text-primary me-2"></i>
+                Payment Information
+            </h5>
+        </div>
+        <div class="detail-card-body">
+            <div class="row">
+                {% for payment in payment_methods %}
+                <div class="col-md-4 mb-3">
+                    <div class="card border">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="card-title mb-0">
+                                    {% if payment.paymentMode == '101' %}
+                                        <i class="fas fa-money-bill-wave me-2"></i>Cash
+                                    {% elif payment.paymentMode == '102' %}
+                                        <i class="fas fa-credit-card me-2"></i>Credit Card
+                                    {% elif payment.paymentMode == '103' %}
+                                        <i class="fas fa-university me-2"></i>Bank Transfer
+                                    {% elif payment.paymentMode == '104' %}
+                                        <i class="fas fa-mobile-alt me-2"></i>Mobile Money
+                                    {% else %}
+                                        <i class="fas fa-wallet me-2"></i>Payment {{ payment.paymentMode }}
+                                    {% endif %}
+                                </h6>
+                                <span class="badge bg-light text-dark">
+                                    {{ forloop.counter }}
+                                </span>
+                            </div>
+                            <div class="mb-2">
+                                <small class="text-muted d-block">Amount:</small>
+                                <div class="h5 fw-bold">
+                                    {% with amount=payment.paymentAmount|default:0 %}
+                                    {% if amount < 0 %}
+                                        <span class="negative-amount">{{ amount|floatformat:2|intcomma }}</span>
+                                    {% else %}
+                                        {{ amount|floatformat:2|intcomma }}
+                                    {% endif %}
+                                    {% endwith %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Additional Information -->
+    <div class="detail-card">
+        <div class="detail-card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-sticky-note text-primary me-2"></i>
+                Additional Information
+            </h5>
+        </div>
+        <div class="detail-card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="border-bottom pb-2 mb-3">
+                        <i class="fas fa-user me-2"></i>Contact Information
+                    </h6>
+                    <div class="info-grid mb-2">
+                        <span class="info-label">Name:</span>
+                        <span class="info-value">{{ application.contact_name|default:"Not specified" }}</span>
+                    </div>
+                    <div class="info-grid mb-2">
+                        <span class="info-label">Mobile:</span>
+                        <span class="info-value">{{ application.contact_mobile|default:"Not specified" }}</span>
+                    </div>
+                    <div class="info-grid">
+                        <span class="info-label">Email:</span>
+                        <span class="info-value">{{ application.contact_email|default:"Not specified" }}</span>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <h6 class="border-bottom pb-2 mb-3">
+                        <i class="fas fa-comment me-2"></i>Remarks
+                    </h6>
+                    <div class="bg-light rounded p-3 border">
+                        {% if application.remarks %}
+                            {{ application.remarks|linebreaks }}
+                        {% else %}
+                            <span class="data-missing">No remarks provided</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="detail-card">
+        <div class="detail-card-body">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-2"></i> Back to Applications
+                    </a>
+
+                </div>
+
+                <div class="d-flex gap-2">
+                    {% if application.approve_status == '101' %} {# Pending #}
+                        <form method="POST" action="{% url 'efris:credit_note_application_detail' application_id %}"
+                              style="display: inline;"
+                              onsubmit="return confirm('Refresh application status?')">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="refresh_status">
+                            <button type="submit" class="btn btn-warning">
+                                <i class="fas fa-sync-alt me-2"></i> Refresh Status
+                            </button>
+                        </form>
+
+                        <a href="{% url 'efris:approve_credit_note' application_id %}"
+                           class="btn btn-success"
+                           onclick="return confirm('Approve this credit note application?')">
+                            <i class="fas fa-check me-2"></i> Approve
+                        </a>
+
+                        <a href="{% url 'efris:cancel_credit_debit_note' %}"
+                           class="btn btn-danger"
+                           onclick="return confirm('Cancel this application? This action cannot be undone.')">
+                            <i class="fas fa-times me-2"></i> Cancel
+                        </a>
+                    {% endif %}
+
+                    {% if application.credit_note_no %}
+                        <a href="#" class="btn btn-success" onclick="alert('Download feature coming soon!')">
+                            <i class="fas fa-download me-2"></i> Download
+                        </a>
+                    {% endif %}
+
+                    <button type="button" class="btn btn-primary" onclick="window.print()">
+                        <i class="fas fa-print me-2"></i> Print
+                    </button>
+
+                    <!-- Debug button -->
+                    {% if debug %}
+                    <a href="?debug=true" class="btn btn-info">
+                        <i class="fas fa-bug me-2"></i> Debug
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Information -->
+    <div class="text-center text-muted small mt-3">
+        <i class="fas fa-info-circle me-1"></i>
+        Application ID: {{ application_id }} |
+        Status: {{ application.status|default:"Unknown" }} |
+        Viewed on {% now "Y-m-d H:i:s" %} |
+        Company: {{ company.name }}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Initialize tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
+
+// Auto-refresh notification for pending applications (every 60 seconds)
+{% if application.approve_status == '101' %}
+setTimeout(() => {
+    const notification = document.createElement('div');
+    notification.className = 'alert alert-info alert-dismissible fade show position-fixed top-0 end-0 m-3';
+    notification.style.zIndex = '1060';
+    notification.innerHTML = `
+        <i class="fas fa-clock me-2"></i>
+        Application status is pending.
+        <a href="#" onclick="location.reload(); return false;" class="alert-link">Refresh now</a> to check for updates.
+        <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
+    `;
+    document.body.appendChild(notification);
+
+    // Auto-remove after 10 seconds
+    setTimeout(() => {
+        if (notification.parentElement) {
+            notification.remove();
+        }
+    }, 10000);
+}, 60000);
+{% endif %}
+</script>
+{% endblock %}

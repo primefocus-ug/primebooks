@@ -1,97 +1,422 @@
 {% extends "efris/base.html" %}
 {% load static %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+    .status-card {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 0.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
+
+    .status-card-header {
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        padding: 1rem 1.5rem;
+        border-radius: 0.5rem 0.5rem 0 0;
+    }
+
+    .status-card-body {
+        padding: 1.5rem;
+    }
+
+    .info-label {
+        font-weight: 600;
+        color: #495057;
+        min-width: 180px;
+    }
+
+    .info-value {
+        color: #212529;
+        word-break: break-word;
+    }
+
+    .status-badge {
+        font-size: 0.9rem;
+        padding: 0.35rem 0.85rem;
+    }
+
+    .status-pending { background-color: #fff3cd; color: #856404; border-color: #ffeaa7; }
+    .status-approved { background-color: #d1ecf1; color: #0c5460; border-color: #bee5eb; }
+    .status-rejected { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+    .status-voided { background-color: #6c757d; color: white; border-color: #545b62; }
+    .status-processed { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
+
+    .negative-amount {
+        color: #dc3545;
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
 
 {% block efris_content %}
-<div class="efris-card">
-    <div class="card-body">
-        <h5 class="card-title">
-            <i class="fas fa-info-circle"></i> Credit Note Application Status
-        </h5>
-
-        {% if application %}
-        <div class="row mt-4">
-            <div class="col-md-6">
-                <h6 class="text-muted">Application Information</h6>
-                <dl class="row">
-                    <dt class="col-sm-5">Reference No:</dt>
-                    <dd class="col-sm-7"><code>{{ application.referenceNo }}</code></dd>
-
-                    <dt class="col-sm-5">Original Invoice:</dt>
-                    <dd class="col-sm-7">
-                        <a href="{% url 'efris:invoice_remain_details' application.oriInvoiceNo %}">
-                            {{ application.oriInvoiceNo }}
-                        </a>
-                    </dd>
-
-                    <dt class="col-sm-5">Application Date:</dt>
-                    <dd class="col-sm-7">{{ application.applicationTime }}</dd>
-
-                    <dt class="col-sm-5">Status:</dt>
-                    <dd class="col-sm-7">
-                        {% if application.approveStatus == '101' %}
-                            <span class="badge bg-success">Approved</span>
-                        {% elif application.approveStatus == '102' %}
-                            <span class="badge bg-warning">Pending</span>
-                        {% elif application.approveStatus == '103' %}
-                            <span class="badge bg-danger">Rejected</span>
-                        {% elif application.approveStatus == '104' %}
-                            <span class="badge bg-secondary">Voided</span>
-                        {% else %}
-                            <span class="badge bg-secondary">{{ application.approveStatus }}</span>
-                        {% endif %}
-                    </dd>
-                </dl>
-            </div>
-
-            <div class="col-md-6">
-                <h6 class="text-muted">Financial Details</h6>
-                <dl class="row">
-                    <dt class="col-sm-5">Currency:</dt>
-                    <dd class="col-sm-7">{{ application.currency }}</dd>
-
-                    <dt class="col-sm-5">Net Amount:</dt>
-                    <dd class="col-sm-7">{{ application.netAmount }}</dd>
-
-                    <dt class="col-sm-5">Tax Amount:</dt>
-                    <dd class="col-sm-7">{{ application.taxAmount }}</dd>
-
-                    <dt class="col-sm-5">Gross Amount:</dt>
-                    <dd class="col-sm-7">
-                        <strong class="text-danger">{{ application.grossAmount }}</strong>
-                    </dd>
-                </dl>
-            </div>
+<div class="container-fluid">
+    <!-- Header Section -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-0">
+                <i class="fas fa-info-circle text-primary me-2"></i>
+                Credit Note Application Status
+            </h4>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'efris:dashboard' %}">EFRIS</a>
+                    </li>
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'efris:credit_note_applications' %}">Credit Notes</a>
+                    </li>
+                    <li class="breadcrumb-item active" aria-current="page">Status Check</li>
+                </ol>
+            </nav>
         </div>
 
-        {% if application.reason %}
-        <div class="alert alert-info mt-3">
-            <strong>Reason:</strong> {{ application.reason }}
-        </div>
-        {% endif %}
-
-        {% if application.approveStatus == '103' and application.rejectReason %}
-        <div class="alert alert-danger mt-3">
-            <strong>Rejection Reason:</strong> {{ application.rejectReason }}
-        </div>
-        {% endif %}
-
-        <div class="mt-4">
-            <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-primary">
-                <i class="fas fa-arrow-left"></i> Back to Applications
-            </a>
-
-            {% if application.approveStatus == '102' %}
-            <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-danger">
-                <i class="fas fa-ban"></i> Void Application
-            </a>
+        <div>
+            {% if application.approveStatus == '101' %}
+                <span class="badge status-badge status-pending">PENDING/SUBMITTED</span>
+            {% elif application.approveStatus == '102' %}
+                <span class="badge status-badge status-approved">APPROVED</span>
+            {% elif application.approveStatus == '103' %}
+                <span class="badge status-badge status-rejected">REJECTED</span>
+            {% elif application.approveStatus == '104' %}
+                <span class="badge status-badge status-voided">VOIDED/CANCELLED</span>
+            {% elif application.approveStatus == '105' %}
+                <span class="badge status-badge status-processed">PROCESSED</span>
+            {% else %}
+                <span class="badge bg-secondary status-badge">{{ application.approveStatus|default:"UNKNOWN" }}</span>
             {% endif %}
         </div>
-
-        {% else %}
-        <div class="alert alert-warning">
-            <i class="fas fa-exclamation-triangle"></i> Application not found.
-        </div>
-        {% endif %}
     </div>
+
+    <!-- Alert Messages -->
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                <i class="fas fa-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' or message.tags == 'danger' %}exclamation-circle{% else %}info-circle{% endif %} me-2"></i>
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    {% if application %}
+    <!-- Basic Information Card -->
+    <div class="status-card">
+        <div class="status-card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-info-circle text-primary me-2"></i>
+                Application Information
+            </h5>
+        </div>
+        <div class="status-card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="d-flex mb-3">
+                        <span class="info-label">Reference No:</span>
+                        <span class="info-value ms-2 font-monospace">{{ application.referenceNo|default:reference_no }}</span>
+                    </div>
+                    <div class="d-flex mb-3">
+                        <span class="info-label">Application ID:</span>
+                        <span class="info-value ms-2 font-monospace">{{ application.id|default:"N/A" }}</span>
+                    </div>
+                    <div class="d-flex mb-3">
+                        <span class="info-label">Original Invoice:</span>
+                        <span class="info-value ms-2">
+                            {% if application.oriInvoiceNo %}
+                                <a href="{% url 'efris:invoice_remain_details' application.oriInvoiceNo %}"
+                                   class="text-decoration-none">
+                                    {{ application.oriInvoiceNo }}
+                                    <i class="fas fa-external-link-alt ms-1 text-muted"></i>
+                                </a>
+                            {% else %}
+                                <span class="text-muted">No original invoice</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="d-flex mb-3">
+                        <span class="info-label">Application Date:</span>
+                        <span class="info-value ms-2">{{ application.applicationTime|default:"N/A" }}</span>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex mb-3">
+                        <span class="info-label">Status:</span>
+                        <span class="info-value ms-2">
+                            {{ application.status_display|default:"Status unknown" }}
+                        </span>
+                    </div>
+                    <div class="d-flex mb-3">
+                        <span class="info-label">Buyer:</span>
+                        <span class="info-value ms-2">
+                            {{ application.buyerLegalName|default:"N/A" }}<br>
+                            <small class="text-muted">TIN: {{ application.buyerTin|default:"N/A" }}</small>
+                        </span>
+                    </div>
+                    <div class="d-flex mb-3">
+                        <span class="info-label">Currency:</span>
+                        <span class="info-value ms-2">{{ application.currency|default:"UGX" }}</span>
+                    </div>
+                    <div class="d-flex mb-3">
+                        <span class="info-label">Category:</span>
+                        <span class="info-value ms-2">
+                            {% if application.invoiceApplyCategoryCode == '101' %}
+                                <span class="badge bg-success">Credit Note</span>
+                            {% elif application.invoiceApplyCategoryCode == '102' %}
+                                <span class="badge bg-warning">Debit Note</span>
+                            {% elif application.invoiceApplyCategoryCode == '103' %}
+                                <span class="badge bg-info">Cancel Debit</span>
+                            {% elif application.invoiceApplyCategoryCode == '104' %}
+                                <span class="badge bg-secondary">Cancel Credit</span>
+                            {% else %}
+                                <span class="badge bg-dark">{{ application.invoiceApplyCategoryCode|default:"N/A" }}</span>
+                            {% endif %}
+                            {% if application.reason_description %}
+                                <br><small class="text-muted">{{ application.reason_description }}</small>
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Financial Information Card -->
+    <div class="status-card">
+        <div class="status-card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-chart-bar text-primary me-2"></i>
+                Financial Information
+            </h5>
+        </div>
+        <div class="status-card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card bg-light mb-3">
+                        <div class="card-body text-center">
+                            <h6 class="text-muted mb-2">Gross Amount</h6>
+                            <h4 class="mb-0">
+                                {% if application.grossAmount %}
+                                    {% if application.grossAmount < 0 %}
+                                        <span class="negative-amount">{{ application.grossAmount|floatformat:2|intcomma }}</span>
+                                    {% else %}
+                                        {{ application.grossAmount|floatformat:2|intcomma }}
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </h4>
+                            <small class="text-muted">{{ application.currency|default:"UGX" }}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card bg-light mb-3">
+                        <div class="card-body text-center">
+                            <h6 class="text-muted mb-2">Original Amount</h6>
+                            <h4 class="mb-0">
+                                {% if application.oriGrossAmount %}
+                                    {{ application.oriGrossAmount|floatformat:2|intcomma }}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </h4>
+                            <small class="text-muted">{{ application.currency|default:"UGX" }}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card border-primary">
+                        <div class="card-body text-center">
+                            <h6 class="text-muted mb-2">Difference</h6>
+                            <h4 class="mb-0">
+                                {% if application.grossAmount and application.oriGrossAmount %}
+                                    {% with diff=application.grossAmount|add:application.oriGrossAmount %}
+                                        {% if diff < 0 %}
+                                            <span class="negative-amount">{{ diff|floatformat:2|intcomma }}</span>
+                                        {% else %}
+                                            {{ diff|floatformat:2|intcomma }}
+                                        {% endif %}
+                                    {% endwith %}
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </h4>
+                            <small class="text-muted">Credit Amount</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Information Card -->
+    <div class="status-card">
+        <div class="status-card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-sticky-note text-primary me-2"></i>
+                Additional Information
+            </h5>
+        </div>
+        <div class="status-card-body">
+            {% if application.detailed_reason or application.approveRemarks or application.remarks %}
+            <div class="row">
+                {% if application.detailed_reason %}
+                <div class="col-md-6 mb-3">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-comment-alt me-2"></i>Reason
+                    </h6>
+                    <div class="bg-light rounded p-3 border">
+                        {{ application.detailed_reason|linebreaks }}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if application.approveRemarks %}
+                <div class="col-md-6 mb-3">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-comment-dots me-2"></i>Approval Remarks
+                    </h6>
+                    <div class="bg-light rounded p-3 border">
+                        {{ application.approveRemarks|linebreaks }}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if application.remarks %}
+                <div class="col-md-6 mb-3">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-sticky-note me-2"></i>Remarks
+                    </h6>
+                    <div class="bg-light rounded p-3 border">
+                        {{ application.remarks|linebreaks }}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="text-center py-3">
+                <i class="fas fa-info-circle text-muted fa-2x mb-3"></i>
+                <p class="text-muted mb-0">No additional information available</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="status-card">
+        <div class="status-card-body">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-2"></i> Back to Applications
+                    </a>
+
+                    <a href="{% url 'efris:credit_note_application_detail' application.id %}"
+                       class="btn btn-outline-primary ms-2">
+                        <i class="fas fa-eye me-2"></i> View Full Details
+                    </a>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <!-- Refresh Status Button -->
+                    <form method="POST" action="{% url 'efris:credit_note_application_status' reference_no %}"
+                          style="display: inline;"
+                          onsubmit="return confirm('Refresh application status?')">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="refresh">
+                        <button type="submit" class="btn btn-warning">
+                            <i class="fas fa-sync-alt me-2"></i> Refresh Status
+                        </button>
+                    </form>
+
+                    <!-- Void Button for Pending applications -->
+                    {% if application.approveStatus == '101' %}
+                    <a href="{% url 'efris:void_credit_note_application' %}"
+                       class="btn btn-danger"
+                       onclick="return confirm('Are you sure you want to void this application? This action cannot be undone.')">
+                        <i class="fas fa-ban me-2"></i> Void Application
+                    </a>
+                    {% endif %}
+
+                    <!-- Print Button -->
+                    <button type="button" class="btn btn-primary" onclick="window.print()">
+                        <i class="fas fa-print me-2"></i> Print
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Information -->
+    <div class="text-center text-muted small mt-3">
+        <i class="fas fa-clock me-1"></i>
+        Status checked on {% now "Y-m-d H:i:s" %} |
+        Reference: {{ reference_no }} |
+        Company: {{ company.name }}
+    </div>
+
+    {% else %}
+    <!-- No Application Found -->
+    <div class="status-card">
+        <div class="status-card-body text-center py-5">
+            <i class="fas fa-search fa-3x text-muted mb-3"></i>
+            <h4 class="text-muted mb-3">Application Not Found</h4>
+            <p class="text-muted mb-4">
+                No credit note application found with reference: <strong>{{ reference_no }}</strong>
+            </p>
+            <div>
+                <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-primary">
+                    <i class="fas fa-arrow-left me-2"></i> Back to Applications
+                </a>
+                <a href="{% url 'efris:credit_note_application' %}" class="btn btn-outline-primary ms-2">
+                    <i class="fas fa-plus me-2"></i> Create New Credit Note
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Initialize tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
+
+// Auto-refresh for pending applications
+{% if application.approveStatus == '101' %}
+setTimeout(function() {
+    if (confirm('Application is still pending. Would you like to refresh the status?')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = window.location.href;
+
+        const csrfToken = document.createElement('input');
+        csrfToken.type = 'hidden';
+        csrfToken.name = 'csrfmiddlewaretoken';
+        csrfToken.value = '{{ csrf_token }}';
+
+        const actionInput = document.createElement('input');
+        actionInput.type = 'hidden';
+        actionInput.name = 'action';
+        actionInput.value = 'refresh';
+
+        form.appendChild(csrfToken);
+        form.appendChild(actionInput);
+        document.body.appendChild(form);
+        form.submit();
+    }
+}, 30000); // 30 seconds
+{% endif %}
+</script>
 {% endblock %}

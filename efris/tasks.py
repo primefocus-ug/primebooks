@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.core.cache import cache
 import logging
+import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from .services import (
@@ -352,6 +353,148 @@ def sync_stock_to_efris_async(company_id: int, stock_ids: List[int]) -> Dict[str
             'stock_ids': stock_ids
         }
 
+
+@shared_task(bind=True, max_retries=3)
+def batch_fiscalize_invoices(self, invoice_ids, company_id):
+    """
+    Celery task to fiscalize multiple invoices in batch
+    """
+    try:
+        from invoices.models import Invoice
+        from company.models import Company
+        from .services import EFRISDataTransformer,EnhancedEFRISAPIClient
+
+        company = Company.objects.get(id=company_id)
+
+        if not company.efris_enabled:
+            return {
+                'success': False,
+                'error': 'EFRIS not enabled'
+            }
+
+        # Prepare batch data
+        invoices_data = []
+        invoice_mapping = {}
+        transformer = EFRISDataTransformer(company)
+        client = EnhancedEFRISAPIClient(company)
+
+        for idx, invoice_id in enumerate(invoice_ids):
+            try:
+                invoice = Invoice.objects.select_related('sale').get(id=invoice_id)
+
+                # Skip if already fiscalized
+                if invoice.is_fiscalized:
+                    logger.info(f"Skipping already fiscalized invoice {invoice_id}")
+                    continue
+
+                invoice_data = transformer.build_invoice_data(invoice)
+                invoice_content = json.dumps(invoice_data, separators=(',', ':'))
+
+                signature = client.security_manager.sign_content(
+                    invoice_content,
+                    algorithm="SHA1"
+                )
+
+                invoices_data.append({
+                    "invoiceContent": invoice_content,
+                    "invoiceSignature": signature
+                })
+
+                invoice_mapping[len(invoices_data) - 1] = invoice
+
+            except Invoice.DoesNotExist:
+                logger.warning(f"Invoice {invoice_id} not found")
+                continue
+            except Exception as e:
+                logger.error(f"Failed to prepare invoice {invoice_id}: {e}", exc_info=True)
+                continue
+
+        if not invoices_data:
+            return {
+                'success': False,
+                'error': 'No valid invoices to upload'
+            }
+
+        # Upload batch
+        result = client.t129_batch_invoice_upload(invoices_data)
+
+        if not result.get('success'):
+            return result
+
+        # Process results
+        success_count = 0
+        failed_count = 0
+        results_list = result.get('results', [])
+
+        for idx, invoice_result in enumerate(results_list):
+            try:
+                invoice = invoice_mapping.get(idx)
+
+                if not invoice:
+                    continue
+
+                invoice_return_code = (
+                        invoice_result.get('invoiceReturnCode') or
+                        invoice_result.get('returnCode')
+                )
+
+                if invoice_return_code == '00':
+                    # Success - update database with 'fiscalized' status
+                    success_count += 1
+
+                    invoice.fiscal_document_number = invoice_result.get('invoiceNo', '')
+                    invoice.fiscal_number = invoice_result.get('invoiceNo', '')
+                    invoice.verification_code = invoice_result.get('antifakeCode', '')
+                    invoice.qr_code = invoice_result.get('qrCode', '')
+                    invoice.is_fiscalized = True
+                    invoice.fiscalization_time = timezone.now()
+                    invoice.fiscalization_status = 'fiscalized'  # ✅ FIXED
+                    invoice.fiscalization_error = None
+                    invoice.save()
+
+                    # Update sale
+                    if invoice.sale:
+                        sale = invoice.sale
+                        sale.efris_invoice_number = invoice.fiscal_document_number
+                        sale.verification_code = invoice.verification_code
+                        sale.qr_code = invoice.qr_code
+                        sale.is_fiscalized = True
+                        sale.fiscalization_time = timezone.now()
+                        sale.fiscalization_status = 'fiscalized'  # ✅ FIXED
+                        sale.save()
+
+                    logger.info(f"✅ Fiscalized Invoice {invoice.id}")
+
+                else:
+                    # Failed
+                    failed_count += 1
+                    error_msg = (
+                            invoice_result.get('invoiceReturnMessage') or
+                            invoice_result.get('returnMessage', 'Unknown error')
+                    )
+
+                    invoice.fiscalization_status = 'failed'
+                    invoice.fiscalization_error = error_msg
+                    invoice.save()
+
+                    logger.error(f"❌ Invoice {invoice.id} failed: {error_msg}")
+
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Error processing result {idx}: {e}", exc_info=True)
+
+        return {
+            'success': True,
+            'total': len(invoices_data),
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'results': results_list
+        }
+
+    except Exception as e:
+        logger.error(f"Batch fiscalization task failed: {e}", exc_info=True)
+        # Retry with exponential backoff
+        raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
 
 @shared_task
 def process_efris_queue_async() -> Dict[str, Any]:
