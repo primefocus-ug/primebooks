@@ -13,7 +13,6 @@ from .efris_api import (  # All from efris_api.py
     EFRISCategoryAutocompleteView,
     EFRISCategoryDetailView,
     EFRISCategoryStatsView,
-    CategoryDetailAPIView,
 )
 
 app_name = 'inventory'
@@ -60,7 +59,7 @@ urlpatterns = [
 
     # Category API (User's categories - must come after EFRIS to avoid conflicts)
     path('api/categories/<int:pk>/',
-         CategoryDetailAPIView.as_view(),
+         views.CategoryDetailAPIView.as_view(),
          name='category_detail_api'),
 
     path('efris/category-tree/', efris_api.EFRISCategoryTreeView.as_view(), name='efris_category_tree'),

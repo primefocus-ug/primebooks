@@ -1666,7 +1666,6 @@ def efris_dashboard_view(request):
     return render(request, 'efris/dashboarded.html', context)
 
 
-# Update in efris/views.py
 
 @login_required
 def efris_reports_view(request):

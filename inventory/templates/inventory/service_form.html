@@ -222,7 +222,11 @@
     </label>
     <div class="input-group">
         {{ form.category }}
-
+        {% if perms.inventory.add_category %}
+        <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#addCategoryModal">
+            <i class="bi bi-plus-lg"></i>
+        </button>
+        {% endif %}
     </div>
     {% if form.category.help_text %}
     <div class="form-text">{{ form.category.help_text }}</div>
@@ -673,10 +677,10 @@ window.saveCategory = function() {
 
     console.log('📤 Final form data to send:', formData);
 
-    // Show loading state
+    // Show loading state - FIXED: Use Bootstrap Icons
     const $saveBtn = $('#saveCategoryBtn');
     const originalText = $saveBtn.html();
-    $saveBtn.prop('disabled', true).html('<i class="bi bi-hourglass-split fa-spin"></i> Saving...');
+    $saveBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Saving...');
 
     const ajaxUrl = '{% url "inventory:category_create_ajax" %}';
     console.log('🌐 Sending AJAX request to:', ajaxUrl);
@@ -694,7 +698,6 @@ window.saveCategory = function() {
         success: function(response, status, xhr) {
             console.log('✅ AJAX Success - Status:', status);
             console.log('📦 Response:', response);
-            console.log('📊 Response headers:', xhr.getAllResponseHeaders());
 
             if (response.success) {
                 console.log('🎉 Category created successfully:', response.category);
@@ -710,12 +713,16 @@ window.saveCategory = function() {
                 $('#id_category').append(newOption).trigger('change');
                 console.log('✅ Added category to dropdown');
 
-                // Hide modal
+                // Hide modal - FIXED: Better modal handling
                 const modalElement = document.getElementById('addCategoryModal');
-                const modal = bootstrap.Modal.getInstance(modalElement);
-                if (modal) {
+                if (modalElement) {
+                    const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
                     modal.hide();
                     console.log('✅ Modal hidden');
+
+                    // Remove backdrop manually (Bootstrap 5 bug workaround)
+                    $('.modal-backdrop').remove();
+                    $('body').removeClass('modal-open');
                 }
 
                 // Reset form
@@ -745,10 +752,6 @@ window.saveCategory = function() {
             console.error('XHR Status Text:', xhr.statusText);
             console.error('Response Text:', xhr.responseText);
 
-            if (xhr.responseJSON) {
-                console.error('Response JSON:', xhr.responseJSON);
-            }
-
             let errorMessage = 'Error creating category. Status: ' + xhr.status;
 
             if (xhr.responseJSON && xhr.responseJSON.message) {
@@ -760,7 +763,6 @@ window.saveCategory = function() {
                     const response = JSON.parse(xhr.responseText);
                     errorMessage = response.message || response.error || errorMessage;
                 } catch (e) {
-                    // Not JSON
                     errorMessage = xhr.statusText || error || errorMessage;
                 }
             }
@@ -786,8 +788,8 @@ $(document).ready(function() {
     'use strict';
 
     console.log('✅ Service form JavaScript initialized');
-    console.log('📋 Testing if jQuery is working:', typeof jQuery !== 'undefined');
-    console.log('🔗 AJAX URL available:', '{% url "inventory:category_create_ajax" %}');
+    console.log('📋 jQuery version:', $.fn.jquery);
+    console.log('📋 Bootstrap available:', typeof bootstrap !== 'undefined');
 
     // ============================================
     // CATEGORY MODAL SETUP
@@ -808,21 +810,22 @@ $(document).ready(function() {
         $('#categoryQuickForm .is-invalid').removeClass('is-invalid');
     });
 
-    // Add click handler to the save button
-    $('#saveCategoryBtn').on('click', function(e) {
-        console.log('💾 Save Category button clicked');
-        console.log('Button element:', this);
+    // CRITICAL FIX: Add click handler using multiple methods
+    $('#saveCategoryBtn').off('click').on('click', function(e) {
+        console.log('💾 Save Category button clicked - Event triggered!');
         e.preventDefault();
         e.stopPropagation();
         saveCategory();
+        return false;
     });
 
     // Also handle form submission
-    $('#categoryQuickForm').on('submit', function(e) {
-        console.log('📝 Category form submitted via Enter key');
+    $('#categoryQuickForm').off('submit').on('submit', function(e) {
+        console.log('📝 Category form submitted');
         e.preventDefault();
         e.stopPropagation();
         saveCategory();
+        return false;
     });
 
     // Allow Enter key in form fields
@@ -834,18 +837,12 @@ $(document).ready(function() {
         }
     });
 
-    // Test if modal button works
-    console.log('🔍 Save button found:', $('#saveCategoryBtn').length > 0);
-    console.log('🔍 Modal form found:', $('#categoryQuickForm').length > 0);
-
-    // ============================================
-    // TEST FUNCTION TO VERIFY CLICKS
-    // ============================================
-
-    // Add a simple test to verify clicks work
-    $('#saveCategoryBtn').on('click.test', function() {
-        console.log('🧪 Test: Save button click detected!');
-    });
+    // Verify button exists
+    if ($('#saveCategoryBtn').length === 0) {
+        console.error('❌ Save button NOT FOUND in DOM!');
+    } else {
+        console.log('✅ Save button found in DOM');
+    }
 
     // ============================================
     // PRICE CALCULATION
@@ -937,19 +934,19 @@ $(document).ready(function() {
 
                 if (!data.efris_commodity_category_code) {
                     message = '<i class="bi bi-exclamation-triangle me-2"></i>' +
-                             '{% trans "This category does not have an EFRIS commodity category assigned." %}';
+                             'This category does not have an EFRIS commodity category assigned.';
                     alertClass = 'alert-warning';
                 } else if (!data.efris_is_leaf_node) {
                     message = '<i class="bi bi-x-circle me-2"></i>' +
-                             '{% trans "This category\'s EFRIS commodity category is not a leaf node. Services cannot use non-leaf nodes." %}';
+                             'This category\'s EFRIS commodity category is not a leaf node. Services cannot use non-leaf nodes.';
                     alertClass = 'alert-danger';
                 } else if (data.category_type !== 'service') {
                     message = '<i class="bi bi-x-circle me-2"></i>' +
-                             '{% trans "This is not a service category. Please select a service category." %}';
+                             'This is not a service category. Please select a service category.';
                     alertClass = 'alert-danger';
                 } else {
                     message = '<i class="bi bi-check-circle me-2"></i>' +
-                             '{% trans "Valid EFRIS Category:" %} <strong>' + data.efris_commodity_category_name + '</strong>';
+                             'Valid EFRIS Category: <strong>' + data.efris_commodity_category_name + '</strong>';
                     alertClass = 'alert-success';
                 }
 
@@ -989,56 +986,7 @@ $(document).ready(function() {
 
     $('#serviceForm').on('submit', function() {
         const submitBtn = $(this).find('[type="submit"]:focus');
-        submitBtn.prop('disabled', true).html('<i class="bi bi-hourglass-split me-1"></i> {% trans "Saving..." %}');
-    });
-
-    // ============================================
-    // DEBUGGING HELPERS
-    // ============================================
-
-    // Always show debug button
-    $('body').append(`
-        <div style="position:fixed;bottom:10px;right:10px;z-index:9999;">
-            <button id="debugAjax" class="btn btn-warning btn-sm mb-2">Test AJAX</button>
-            <button id="testClick" class="btn btn-info btn-sm">Test Click</button>
-        </div>
-    `);
-
-    // Test AJAX endpoint
-    $('#debugAjax').on('click', function() {
-        console.log('🧪 Testing AJAX endpoint...');
-        console.log('CSRF Token:', getCookie('csrftoken'));
-
-        const testData = {
-            'name': 'Test Category ' + new Date().getTime(),
-            'category_type': 'service',
-            'csrfmiddlewaretoken': getCookie('csrftoken')
-        };
-
-        console.log('Test data:', testData);
-
-        $.ajax({
-            url: '{% url "inventory:category_create_ajax" %}',
-            type: 'POST',
-            data: testData,
-            beforeSend: function(xhr) {
-                xhr.setRequestHeader('X-CSRFToken', getCookie('csrftoken'));
-            },
-            success: function(response) {
-                console.log('✅ AJAX test successful:', response);
-                alert('AJAX test successful!\nCreated: ' + (response.category ? response.category.name : 'unknown'));
-            },
-            error: function(xhr) {
-                console.error('❌ AJAX test failed:', xhr);
-                alert('AJAX test failed.\nStatus: ' + xhr.status + '\nCheck console for details.');
-            }
-        });
-    });
-
-    // Test if click events work
-    $('#testClick').on('click', function() {
-        console.log('🧪 Test button clicked - JavaScript is working!');
-        alert('JavaScript is working! Check browser console for logs.');
+        submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Saving...');
     });
 
     console.log('✅ All event handlers attached successfully');

@@ -9129,7 +9129,7 @@ class EnhancedEFRISAPIClient:
             approve_status="102",  # Pending/Submitted
             invoice_apply_category_code="101",  # Credit note
             query_type="1",  # My applications
-            page_size=100
+            page_size=10
         )
 
 
