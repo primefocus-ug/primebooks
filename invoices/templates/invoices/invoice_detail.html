@@ -927,6 +927,11 @@ document.addEventListener('DOMContentLoaded', function() {
     if (sendReminderBtn) {
         sendReminderBtn.addEventListener('click', function() {
             if (confirm('Send payment reminder to customer?')) {
+                // Show loading state
+                const originalText = sendReminderBtn.innerHTML;
+                sendReminderBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Sending...';
+                sendReminderBtn.disabled = true;
+
                 fetch('{% url "invoices:send_reminder" invoice.pk %}', {
                     method: 'POST',
                     headers: {
@@ -934,20 +939,85 @@ document.addEventListener('DOMContentLoaded', function() {
                         'Content-Type': 'application/json',
                     }
                 })
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
                 .then(data => {
+                    // Show Bootstrap toast
+                    showToast(
+                        data.success ? 'success' : 'danger',
+                        data.success ? '✅ Reminder Sent' : '❌ Failed',
+                        data.success ? data.message : (data.error || 'Failed to send reminder')
+                    );
+
                     if (data.success) {
-                        alert(data.message);
-                    } else {
-                        alert(data.error || 'Failed to send reminder');
+                        // Optionally update UI
+                        const reminderBadge = document.getElementById('reminderBadge');
+                        if (reminderBadge) {
+                            reminderBadge.innerHTML = '<i class="bi bi-envelope-check me-1"></i>Reminder Sent';
+                            reminderBadge.classList.remove('bg-secondary');
+                            reminderBadge.classList.add('bg-success');
+                        }
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('An error occurred');
+                    showToast(
+                        'danger',
+                        '❌ Error',
+                        'An error occurred while sending the reminder.'
+                    );
+                })
+                .finally(() => {
+                    // Restore button state
+                    sendReminderBtn.innerHTML = originalText;
+                    sendReminderBtn.disabled = false;
                 });
             }
         });
+
+        // Function to show Bootstrap toast
+        function showToast(type, title, message) {
+            const toastId = 'toast-' + Date.now();
+            const toastHTML = `
+                <div id="${toastId}" class="toast align-items-center text-bg-${type} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <strong>${title}</strong><br>
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                </div>
+            `;
+
+            // Create toast container if it doesn't exist
+            let toastContainer = document.querySelector('.toast-container');
+            if (!toastContainer) {
+                toastContainer = document.createElement('div');
+                toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+                document.body.appendChild(toastContainer);
+            }
+
+            // Add toast to container
+            toastContainer.innerHTML += toastHTML;
+
+            // Show toast
+            const toastEl = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(toastEl, {
+                autohide: true,
+                delay: 5000
+            });
+            toast.show();
+
+            // Remove toast from DOM after it's hidden
+            toastEl.addEventListener('hidden.bs.toast', function () {
+                this.remove();
+            });
+        }
     }
 
     // Theme-aware styling

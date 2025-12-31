@@ -8,6 +8,9 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from .managers import ProductCategoryManager, ServiceCategoryManager
 from .efris import EFRISProductMixin
+import logging
+
+logger=logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -158,7 +161,8 @@ class Category(models.Model):
         """Validate category data before saving"""
         super().clean()
 
-        # Only validate EFRIS commodity category if provided AND sync is enabled
+        # ✅ FIXED: Only validate EFRIS fields if auto_sync is enabled
+        # If auto_sync is off, skip EFRIS validation entirely
         if self.efris_commodity_category_code and self.efris_auto_sync:
             from company.models import EFRISCommodityCategory
             try:
@@ -347,11 +351,34 @@ class Category(models.Model):
 
     def save(self, *args, **kwargs):
         """Override save to handle EFRIS sync logic."""
+
+        # Get EFRIS enabled status from company
+        from django_tenants.utils import get_tenant_model
+        from django.db import connection
+
+        try:
+            Company = get_tenant_model()
+            current_company = Company.objects.get(schema_name=connection.schema_name)
+            efris_enabled = current_company.efris_enabled
+        except (Company.DoesNotExist, AttributeError):
+            efris_enabled = False
+
+        # ✅ If EFRIS is disabled, clear EFRIS fields
+        if not efris_enabled:
+            self.efris_auto_sync = False
+            self.efris_commodity_category_code = None
+            self.efris_is_uploaded = False
+
+        # Track changes for EFRIS sync
         if self.pk:
             old_instance = Category.objects.filter(pk=self.pk).first()
             if old_instance and old_instance.efris_commodity_category_code != self.efris_commodity_category_code:
-                self.efris_is_uploaded = False
-                should_cascade = True
+                # Only mark for re-upload if EFRIS is enabled and auto-sync is on
+                if efris_enabled and self.efris_auto_sync:
+                    self.efris_is_uploaded = False
+                    should_cascade = True
+                else:
+                    should_cascade = False
             else:
                 should_cascade = False
         else:
@@ -1633,10 +1660,12 @@ class Service(models.Model):
                 'category': _("Selected category is not a service category. Please select a service category.")
             })
 
-        # Only validate EFRIS fields if EFRIS is explicitly enabled
-        if efris_enabled:
+        # ✅ FIXED: Only validate EFRIS fields if BOTH conditions are true:
+        # 1. EFRIS is enabled for the company
+        # 2. Auto-sync is enabled for this service
+        if efris_enabled and self.efris_auto_sync_enabled:
             # Validate category is set when EFRIS sync is enabled
-            if self.efris_auto_sync_enabled and not self.category:
+            if not self.category:
                 raise ValidationError({
                     'category': _("Service category is required when EFRIS auto-sync is enabled.")
                 })
@@ -1850,9 +1879,20 @@ class Service(models.Model):
     def save(self, *args, **kwargs):
         """Override save to handle EFRIS sync logic and VAT enforcement"""
 
-        # Store original values for comparison
-        original_tax_rate = self.tax_rate
+        # Store original values for comparison (only if instance already exists)
+        original_tax_rate = None
+        original_unit_price = None
+        original_category_id = None
         tax_rate_changed_by_vat = False
+
+        if self.pk:
+            try:
+                old_instance = Service.objects.get(pk=self.pk)
+                original_tax_rate = old_instance.tax_rate
+                original_unit_price = old_instance.unit_price
+                original_category_id = old_instance.category_id
+            except Service.DoesNotExist:
+                pass
 
         # VAT ENFORCEMENT LOGIC
         from django_tenants.utils import get_tenant_model
@@ -1862,35 +1902,62 @@ class Service(models.Model):
             Company = get_tenant_model()
             current_company = Company.objects.get(schema_name=connection.schema_name)
 
+            # ✅ Set EFRIS status for clean() validation
+            self._efris_enabled = current_company.efris_enabled
+
+            # Enforce VAT compliance
             if not current_company.is_vat_enabled and self.tax_rate != 'B':
                 self.tax_rate = 'B'
+                self.excise_duty_rate = 0  # Also reset excise duty
                 tax_rate_changed_by_vat = True
 
         except (Company.DoesNotExist, AttributeError):
             # Fallback if tenant context not available
-            pass
+            self._efris_enabled = False
 
-        # EXISTING EFRIS SYNC LOGIC
-        if self.pk:
-            old_instance = Service.objects.filter(pk=self.pk).first()
-            if old_instance:
-                # Check if price or critical fields changed
-                price_changed = old_instance.unit_price != self.unit_price
-                tax_changed = old_instance.tax_rate != self.tax_rate
-                category_changed = old_instance.category_id != self.category_id
+        # EFRIS SYNC LOGIC - Only mark for re-upload if changes occurred
+        if self.pk and old_instance:
+            # Check if critical fields changed
+            price_changed = original_unit_price != self.unit_price
+            tax_changed = original_tax_rate != self.tax_rate
+            category_changed = original_category_id != self.category_id
 
-                # Mark for EFRIS sync if any critical field changed OR if tax rate was changed by VAT enforcement
-                if price_changed or tax_changed or category_changed or tax_rate_changed_by_vat:
+
+            if (price_changed or tax_changed or category_changed or tax_rate_changed_by_vat):
+                if self.efris_auto_sync_enabled and self._efris_enabled:
                     self.efris_is_uploaded = False
+                    logger.info(
+                        f"Service '{self.name}' marked for EFRIS re-upload due to changes: "
+                        f"price_changed={price_changed}, tax_changed={tax_changed}, "
+                        f"category_changed={category_changed}, vat_enforced={tax_rate_changed_by_vat}"
+                    )
         else:
-            # For new instances, if VAT enforcement changed tax rate, mark for EFRIS sync
-            if tax_rate_changed_by_vat:
+            # New instance - mark for EFRIS upload if auto-sync is enabled
+            if self.efris_auto_sync_enabled and self._efris_enabled:
                 self.efris_is_uploaded = False
+                logger.info(f"New service '{self.name}' marked for EFRIS upload")
 
-        # Run validation
-        self.full_clean()
+        # ✅ If EFRIS is disabled, ensure EFRIS flags are off
+        if not self._efris_enabled:
+            self.efris_auto_sync_enabled = False
+            self.efris_is_uploaded = False
 
+        # Run full validation (this will call clean())
+        try:
+            self.full_clean()
+        except ValidationError as e:
+            logger.error(f"Validation error saving service '{self.name}': {e}")
+            raise
+
+        # Save the instance
         super().save(*args, **kwargs)
+
+        logger.info(
+            f"Service saved: {self.name} (ID: {self.pk}) - "
+            f"EFRIS enabled: {self._efris_enabled}, "
+            f"Auto-sync: {self.efris_auto_sync_enabled}, "
+            f"Uploaded: {self.efris_is_uploaded}"
+        )
 
     @property
     def effective_tax_rate(self):

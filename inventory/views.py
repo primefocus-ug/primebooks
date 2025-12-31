@@ -2293,6 +2293,7 @@ def toggle_category_status(request, pk):
 
 
 class CategoryCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+    """Create view for categories with EFRIS support"""
     model = Category
     form_class = CategoryForm
     template_name = 'inventory/unified_form.html'
@@ -2300,40 +2301,124 @@ class CategoryCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRe
     permission_required = 'inventory.add_category'
 
     def get_form_kwargs(self):
+        """Pass EFRIS status and request to form"""
         kwargs = super().get_form_kwargs()
-        kwargs['efris_enabled'] = getattr(self.request, 'efris', {}).get('enabled', False)
+
+        # Get EFRIS status from tenant
+        efris_enabled = False
+        try:
+            efris_enabled = self.request.tenant.efris_enabled
+        except AttributeError:
+            # Fallback to request attribute if tenant not available
+            efris_enabled = getattr(self.request, 'efris', {}).get('enabled', False)
+
+        kwargs['efris_enabled'] = efris_enabled
         kwargs['request'] = self.request
+
+        logger.debug(f"CategoryCreateView - EFRIS enabled: {efris_enabled}")
+
         return kwargs
 
     def get_context_data(self, **kwargs):
+        """Add context for template"""
         context = super().get_context_data(**kwargs)
         context['form_type'] = 'category'
-        context['show_efris_fields'] = context.get('efris_enabled', False)
+
+        # Get EFRIS status
+        efris_enabled = False
+        try:
+            efris_enabled = self.request.tenant.efris_enabled
+        except AttributeError:
+            efris_enabled = getattr(self.request, 'efris', {}).get('enabled', False)
+
+        context['efris_enabled'] = efris_enabled
+        context['show_efris_fields'] = efris_enabled
+
+        logger.debug(f"CategoryCreateView context - EFRIS enabled: {efris_enabled}")
+
         return context
 
     def form_valid(self, form):
-        # Debug logging
-        print("=" * 50)
-        print("Form is valid!")
-        print(f"EFRIS Code from form: {form.cleaned_data.get('efris_commodity_category_code')}")
-        print(f"Category will be saved with code: {form.instance.efris_commodity_category_code}")
-        print("=" * 50)
+        """Handle valid form submission"""
+        try:
+            # Set created_by if available
+            if hasattr(self.request, 'user'):
+                form.instance.created_by = self.request.user
 
-        messages.success(self.request, 'Category created successfully!')
-        return super().form_valid(form)
+            # Get EFRIS status
+            efris_enabled = False
+            try:
+                efris_enabled = self.request.tenant.efris_enabled
+            except AttributeError:
+                efris_enabled = getattr(self.request, 'efris', {}).get('enabled', False)
+
+            # Debug logging
+            logger.info("=" * 50)
+            logger.info("CategoryCreateView - Form is valid!")
+            logger.info(f"EFRIS enabled: {efris_enabled}")
+            logger.info(f"Category type: {form.cleaned_data.get('category_type')}")
+            logger.info(f"Category name: {form.cleaned_data.get('name')}")
+            logger.info(f"EFRIS auto-sync: {form.cleaned_data.get('efris_auto_sync')}")
+            logger.info(f"EFRIS code from form: {form.cleaned_data.get('efris_commodity_category_code')}")
+            logger.info(f"Category will be saved with code: {form.instance.efris_commodity_category_code}")
+            logger.info("=" * 50)
+
+            response = super().form_valid(form)
+
+            messages.success(
+                self.request,
+                f'Category "{form.instance.name}" created successfully!'
+            )
+
+            logger.info(f"Category created: {form.instance.name} (ID: {form.instance.id})")
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error creating category: {str(e)}", exc_info=True)
+            messages.error(
+                self.request,
+                f'Error creating category: {str(e)}'
+            )
+            return self.form_invalid(form)
 
     def form_invalid(self, form):
-        # Debug logging
-        print("=" * 50)
-        print("Form is INVALID!")
-        print(f"Form errors: {form.errors}")
-        print(f"POST data: {self.request.POST}")
-        print("=" * 50)
+        """Handle invalid form submission"""
+        # Get EFRIS status
+        efris_enabled = False
+        try:
+            efris_enabled = self.request.tenant.efris_enabled
+        except AttributeError:
+            efris_enabled = getattr(self.request, 'efris', {}).get('enabled', False)
 
-        messages.error(self.request, 'Please correct the errors below.')
+        # Debug logging
+        logger.error("=" * 50)
+        logger.error("CategoryCreateView - Form is INVALID!")
+        logger.error(f"EFRIS enabled: {efris_enabled}")
+        logger.error(f"Form errors: {form.errors}")
+        logger.error(f"Form non-field errors: {form.non_field_errors()}")
+        logger.error(f"POST data: {dict(self.request.POST)}")
+        logger.error(f"Category type: {self.request.POST.get('category_type')}")
+        logger.error(f"EFRIS auto-sync: {self.request.POST.get('efris_auto_sync')}")
+        logger.error(f"EFRIS code: {self.request.POST.get('efris_commodity_category_code')}")
+        logger.error("=" * 50)
+
+        # Add specific error messages
+        for field, errors in form.errors.items():
+            for error in errors:
+                if field == '__all__':
+                    messages.error(self.request, f'{error}')
+                else:
+                    messages.error(self.request, f'{field}: {error}')
+
+        if not form.errors:
+            messages.error(self.request, 'Please correct the errors below.')
+
         return super().form_invalid(form)
 
+
 class CategoryUpdateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+    """Update view for categories with EFRIS support"""
     model = Category
     form_class = CategoryForm
     template_name = 'inventory/unified_form.html'
@@ -2343,19 +2428,128 @@ class CategoryUpdateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRe
     def get_form_kwargs(self):
         """Pass EFRIS status and request to form"""
         kwargs = super().get_form_kwargs()
-        kwargs['efris_enabled'] = getattr(self.request, 'efris', {}).get('enabled', False)
+
+        # Get EFRIS status from tenant
+        efris_enabled = False
+        try:
+            efris_enabled = self.request.tenant.efris_enabled
+        except AttributeError:
+            # Fallback to request attribute if tenant not available
+            efris_enabled = getattr(self.request, 'efris', {}).get('enabled', False)
+
+        kwargs['efris_enabled'] = efris_enabled
         kwargs['request'] = self.request
+
+        logger.debug(f"CategoryUpdateView - EFRIS enabled: {efris_enabled}")
+        logger.debug(f"Editing category: {self.object.name} (ID: {self.object.id})")
+
         return kwargs
 
     def get_context_data(self, **kwargs):
+        """Add context for template"""
         context = super().get_context_data(**kwargs)
         context['form_type'] = 'category'
-        context['show_efris_fields'] = context.get('efris_enabled', False)
+
+        # Get EFRIS status
+        efris_enabled = False
+        try:
+            efris_enabled = self.request.tenant.efris_enabled
+        except AttributeError:
+            efris_enabled = getattr(self.request, 'efris', {}).get('enabled', False)
+
+        context['efris_enabled'] = efris_enabled
+        context['show_efris_fields'] = efris_enabled
+
+        # Add current category info to context
+        context['current_category'] = self.object
+
+        logger.debug(f"CategoryUpdateView context - EFRIS enabled: {efris_enabled}")
+        logger.debug(f"Current EFRIS code: {self.object.efris_commodity_category_code}")
+
         return context
 
     def form_valid(self, form):
-        messages.success(self.request, 'Category updated successfully!')
-        return super().form_valid(form)
+        """Handle valid form submission"""
+        try:
+            # Get EFRIS status
+            efris_enabled = False
+            try:
+                efris_enabled = self.request.tenant.efris_enabled
+            except AttributeError:
+                efris_enabled = getattr(self.request, 'efris', {}).get('enabled', False)
+
+            # Track changes
+            old_efris_code = self.object.efris_commodity_category_code
+            new_efris_code = form.cleaned_data.get('efris_commodity_category_code')
+
+            # Debug logging
+            logger.info("=" * 50)
+            logger.info("CategoryUpdateView - Form is valid!")
+            logger.info(f"EFRIS enabled: {efris_enabled}")
+            logger.info(f"Category: {form.instance.name}")
+            logger.info(f"Old EFRIS code: {old_efris_code}")
+            logger.info(f"New EFRIS code: {new_efris_code}")
+            logger.info(f"EFRIS code changed: {old_efris_code != new_efris_code}")
+            logger.info("=" * 50)
+
+            response = super().form_valid(form)
+
+            # Check if EFRIS code changed
+            if old_efris_code != new_efris_code and efris_enabled:
+                messages.warning(
+                    self.request,
+                    f'EFRIS category changed. Associated products may need to be re-synced.'
+                )
+
+            messages.success(
+                self.request,
+                f'Category "{form.instance.name}" updated successfully!'
+            )
+
+            logger.info(f"Category updated: {form.instance.name} (ID: {form.instance.id})")
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error updating category: {str(e)}", exc_info=True)
+            messages.error(
+                self.request,
+                f'Error updating category: {str(e)}'
+            )
+            return self.form_invalid(form)
+
+    def form_invalid(self, form):
+        """Handle invalid form submission"""
+        # Get EFRIS status
+        efris_enabled = False
+        try:
+            efris_enabled = self.request.tenant.efris_enabled
+        except AttributeError:
+            efris_enabled = getattr(self.request, 'efris', {}).get('enabled', False)
+
+        # Debug logging
+        logger.error("=" * 50)
+        logger.error("CategoryUpdateView - Form is INVALID!")
+        logger.error(f"EFRIS enabled: {efris_enabled}")
+        logger.error(f"Category: {self.object.name}")
+        logger.error(f"Form errors: {form.errors}")
+        logger.error(f"Form non-field errors: {form.non_field_errors()}")
+        logger.error(f"POST data: {dict(self.request.POST)}")
+        logger.error("=" * 50)
+
+        # Add specific error messages
+        for field, errors in form.errors.items():
+            for error in errors:
+                if field == '__all__':
+                    messages.error(self.request, f'{error}')
+                else:
+                    messages.error(self.request, f'{field}: {error}')
+
+        if not form.errors:
+            messages.error(self.request, 'Please correct the errors below.')
+
+        return super().form_invalid(form)
+
 
 class CategoryDeleteView(LoginRequiredMixin,PermissionRequiredMixin, DeleteView):
     model = Category

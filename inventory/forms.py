@@ -203,15 +203,14 @@ class ServiceForm(VATAwareFormMixin,forms.ModelForm):
                     self.fields[field_name].required = False
                     self.fields[field_name].initial = False
 
-            # Update category help text for non-EFRIS mode
-            self.fields['category'].help_text = _("Select a service category")
-            self.fields['category'].required = False  # Category optional without EFRIS
+            # ✅ FIXED: Category is optional when EFRIS is disabled
+            self.fields['category'].help_text = _("Select a service category (optional)")
+            self.fields['category'].required = False
         else:
-            # EFRIS is enabled - make category REQUIRED
-            self.fields['category'].required = True
+            self.fields['category'].required = False
             self.fields['category'].help_text = _(
-                "Service category is required for EFRIS compliance. "
-                "Select a category with an assigned EFRIS commodity category (leaf nodes only)."
+                "Service category (required for smooth separation of concerns). "
+                "If its missing, Navigate to Inventory, Add Category and fill in details, Select category type as service & Save."
             )
 
         # Add CSS classes to all fields
@@ -223,7 +222,7 @@ class ServiceForm(VATAwareFormMixin,forms.ModelForm):
     def clean(self):
         """Additional cross-field validation with VAT awareness"""
         cleaned_data = super().clean()
-        efris_auto_sync = cleaned_data.get('efris_auto_sync_enabled')
+        efris_auto_sync = cleaned_data.get('efris_auto_sync_enabled', False)
         category = cleaned_data.get('category')
         tax_rate = cleaned_data.get('tax_rate')
 
@@ -231,14 +230,15 @@ class ServiceForm(VATAwareFormMixin,forms.ModelForm):
         if not self.is_vat_enabled and tax_rate != 'B':
             self.add_error('tax_rate', "Only zero rate (B) is allowed when VAT is disabled.")
 
-        # ===== EFRIS VALIDATION (only if EFRIS enabled) =====
+        # ✅ FIXED: EFRIS validation only if BOTH EFRIS enabled AND auto-sync is ON
         if self.efris_enabled and efris_auto_sync:
             if not category:
                 raise ValidationError({
-                    'efris_auto_sync_enabled': 'Please select a category before enabling EFRIS auto-sync.'
+                    'category': 'Please select a category before enabling EFRIS auto-sync.'
                 })
 
-            if not hasattr(category, 'efris_commodity_category_code') or not category.efris_commodity_category_code:
+            if category and (not hasattr(category,
+                                         'efris_commodity_category_code') or not category.efris_commodity_category_code):
                 raise ValidationError({
                     'efris_auto_sync_enabled': (
                         f"Category '{category.name}' must have an EFRIS commodity category assigned "
@@ -250,11 +250,11 @@ class ServiceForm(VATAwareFormMixin,forms.ModelForm):
         if not self.efris_enabled:
             cleaned_data['efris_auto_sync_enabled'] = False
 
-        # Ensure required fields are present
+        # ✅ FIXED: Make category required only if EFRIS is enabled AND auto-sync is ON
         required_fields = ['name', 'code', 'unit_price', 'tax_rate', 'unit_of_measure']
 
-        # Add category to required fields if EFRIS is enabled
-        if self.efris_enabled:
+        # Only add category to required fields if EFRIS enabled AND auto-sync is ON
+        if self.efris_enabled and efris_auto_sync:
             required_fields.append('category')
 
         for field in required_fields:
@@ -266,35 +266,46 @@ class ServiceForm(VATAwareFormMixin,forms.ModelForm):
     def clean_category(self):
         """Validate category is a service category with valid EFRIS settings (if EFRIS enabled)"""
         category = self.cleaned_data.get('category')
+        efris_auto_sync = self.cleaned_data.get('efris_auto_sync_enabled', False)
 
-        # If EFRIS is disabled, category is optional - skip validation
+        # If EFRIS is disabled, category is optional - skip EFRIS validation
         if not self.efris_enabled:
+            # Still validate it's a service category if provided
+            if category and category.category_type != 'service':
+                raise ValidationError(
+                    _("Selected category is not a service category. "
+                      "Please select a service category.")
+                )
             return category
 
-        # EFRIS is enabled - category is REQUIRED
-        if not category:
-            raise ValidationError(_("Service category is required when EFRIS is enabled."))
+        # ✅ FIXED: EFRIS is enabled - only enforce category requirement if auto-sync is ON
+        if efris_auto_sync and not category:
+            raise ValidationError(_("Service category is required when EFRIS auto-sync is enabled."))
 
-        # Validate it's a service category
-        if category.category_type != 'service':
-            raise ValidationError(
-                _("Selected category is not a service category. "
-                  "Please select a service category.")
-            )
+        # If category is provided, validate it
+        if category:
+            # Validate it's a service category
+            if category.category_type != 'service':
+                raise ValidationError(
+                    _("Selected category is not a service category. "
+                      "Please select a service category.")
+                )
 
-        # Validate EFRIS commodity category exists
-        if not category.efris_commodity_category_code:
-            raise ValidationError(
-                _("Selected category does not have an EFRIS commodity category assigned. "
-                  "Please update the category settings first or select a different category.")
-            )
+            # ✅ FIXED: Only validate EFRIS category if auto-sync is enabled
+            if efris_auto_sync:
+                # Validate EFRIS commodity category exists
+                if not category.efris_commodity_category_code:
+                    raise ValidationError(
+                        _("Selected category does not have an EFRIS commodity category assigned. "
+                          "Please update the category settings first or disable EFRIS auto-sync.")
+                    )
 
-        # Validate it's a leaf node
-        if not category.efris_is_leaf_node:
-            raise ValidationError(
-                _("Selected category's EFRIS commodity category is not a leaf node. "
-                  "Only leaf nodes (terminal categories) can be used for services.")
-            )
+                # Validate it's a leaf node
+                if not category.efris_is_leaf_node:
+                    raise ValidationError(
+                        _("Selected category's EFRIS commodity category is not a leaf node. "
+                          "Only leaf nodes (terminal categories) can be used for services.")
+                    )
 
         return category
 
@@ -559,7 +570,7 @@ class CategoryForm(forms.ModelForm):
         # Initialize with current EFRIS code if editing
         if self.instance and self.instance.pk and self.instance.efris_commodity_category_code:
             self.fields['efris_commodity_category_code'].initial = self.instance.efris_commodity_category_code
-            
+
             # Also set the ModelChoiceField initial value
             try:
                 efris_cat = EFRISCommodityCategory.objects.get(
@@ -569,7 +580,7 @@ class CategoryForm(forms.ModelForm):
             except EFRISCommodityCategory.DoesNotExist:
                 pass
 
-        # Handle EFRIS disabled state
+        # ✅ FIXED: Handle EFRIS disabled state
         if not self.efris_enabled:
             efris_fields = ['efris_commodity_category', 'efris_commodity_category_code', 'efris_auto_sync']
             for field_name in efris_fields:
@@ -577,6 +588,7 @@ class CategoryForm(forms.ModelForm):
                     self.fields[field_name].required = False
                     if field_name == 'efris_auto_sync':
                         self.fields[field_name].initial = False
+                        self.fields[field_name].widget = forms.HiddenInput()
 
     def _filter_efris_categories_by_type(self, category_type):
         """Filter EFRIS categories based on category type (product/service)"""
@@ -600,7 +612,7 @@ class CategoryForm(forms.ModelForm):
         efris_code = cleaned_data.get('efris_commodity_category_code')
         category_type = cleaned_data.get('category_type')
 
-        # Validate EFRIS fields if enabled
+        # ✅ FIXED: Only validate EFRIS if enabled AND auto-sync is on
         if self.efris_enabled and efris_auto_sync:
             if not efris_code:
                 raise ValidationError({
@@ -612,7 +624,7 @@ class CategoryForm(forms.ModelForm):
                 efris_cat = EFRISCommodityCategory.objects.get(
                     commodity_category_code=efris_code
                 )
-                
+
                 # Validate category type matches
                 efris_type = 'service' if efris_cat.service_mark == '101' else 'product'
                 if category_type != efris_type:
@@ -628,16 +640,17 @@ class CategoryForm(forms.ModelForm):
                         'efris_commodity_category_code':
                             'Selected EFRIS category is not a leaf node. Only terminal categories can be used.'
                     })
-                    
+
             except EFRISCommodityCategory.DoesNotExist:
                 raise ValidationError({
                     'efris_commodity_category_code': 'Invalid EFRIS commodity category code.'
                 })
 
-        # If EFRIS disabled, clear values
-        if not self.efris_enabled:
+        # ✅ If EFRIS disabled OR auto-sync off, clear EFRIS values
+        if not self.efris_enabled or not efris_auto_sync:
             cleaned_data['efris_auto_sync'] = False
-            cleaned_data['efris_commodity_category_code'] = None
+            if not self.efris_enabled:
+                cleaned_data['efris_commodity_category_code'] = None
 
         return cleaned_data
 
