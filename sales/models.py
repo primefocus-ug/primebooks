@@ -21,32 +21,67 @@ class EFRISSaleMixin:
     """Sale-specific EFRIS methods - ALL sales can be fiscalized"""
 
     def can_fiscalize(self, user=None):
-        """Check if sale can be fiscalized - ALL completed sales can be fiscalized"""
+        """
+        Check if sale can be fiscalized
+        ENHANCED: Better validation and error messages
+        """
+        # Already fiscalized check
         if self.is_fiscalized:
             return False, "Sale is already fiscalized"
 
-        if not self.status in ['COMPLETED', 'PAID']:
-            return False, "Only completed or paid sales can be fiscalized"
+        # Status check
+        if self.status not in ['COMPLETED', 'PAID']:
+            return False, f"Only completed or paid sales can be fiscalized. Current status: {self.status}"
 
+        # Void/Refund checks
         if self.is_voided:
             return False, "Voided sales cannot be fiscalized"
 
         if self.is_refunded:
             return False, "Refunded sales cannot be fiscalized"
 
+        # Amount validation
         if not self.total_amount or self.total_amount <= 0:
             return False, "Sale must have a positive total amount"
 
-        # Check if company has EFRIS enabled
-        store_config = self.store.effective_efris_config
-        if not store_config.get('enabled', False):
-            return False, "EFRIS is not enabled for this store"
+        # Items check
+        if not self.items.exists():
+            return False, "Sale must have at least one item"
 
-        # Check age - sales older than 30 days may have issues
+        # Store configuration check
+        try:
+            store_config = self.store.effective_efris_config
+
+            if not store_config.get('enabled', False):
+                return False, "EFRIS is not enabled for this store"
+
+            if not store_config.get('is_active', False):
+                return False, "EFRIS configuration is not active for this store"
+
+        except Exception as e:
+            logger.error(f"Error checking EFRIS config: {e}")
+            return False, f"Error checking EFRIS configuration: {str(e)}"
+
+        # Age check - sales older than 30 days may have issues
         if self.created_at:
             days_old = (timezone.now().date() - self.created_at.date()).days
             if days_old > 30:
                 return False, f"Sale is too old ({days_old} days). Maximum recommended age is 30 days"
+
+        # User permission check (if provided)
+        if user:
+            if not hasattr(user, 'has_perm'):
+                return False, "Invalid user object provided"
+
+            if not user.has_perm('sales.can_fiscalize_sales'):
+                return False, "User does not have permission to fiscalize sales"
+
+        # Customer validation for B2B/B2G
+        if self.customer:
+            customer_type = getattr(self.customer, 'customer_type', None)
+            if customer_type in ['BUSINESS', 'GOVERNMENT']:
+                if not getattr(self.customer, 'tin', None):
+                    return False, f"{customer_type} customers must have a TIN for fiscalization"
 
         return True, "Sale can be fiscalized"
 
@@ -70,7 +105,7 @@ class EFRISSaleMixin:
         else:
             # Non-VAT company issues Simplified Invoices/Receipts (invoiceKind = '2')
             efris_invoice_kind = '2'  # Simplified Invoice/Receipt
-            efris_invoice_type = '2'  # Simplified Invoice
+            efris_invoice_type = '1'  # Simplified Invoice
 
         # Log the determination for debugging
         import logging
@@ -130,8 +165,13 @@ class EFRISSaleMixin:
                     except:
                         pass
 
-                category_id = product.category.efris_commodity_category_code
-                category_name = product_efris_data.get('efris_commodity_category_id', 'General Goods')
+                # ✅ FIX: Use item.product (not undefined 'product')
+                if item.product.category:
+                    category_id = item.product.category.efris_commodity_category_code
+                    category_name = product_efris_data.get('efris_commodity_category_name', 'General Goods')
+                else:
+                    category_id = "101113010000000000"  # Default product category
+                    category_name = "General Goods"
             else:
                 # Service
                 item_name = item.service.name
@@ -146,8 +186,13 @@ class EFRISSaleMixin:
                     except:
                         pass
 
-                category_id = service.category.efris_commodity_category_code
-                category_name = service_efris_data.get('efris_commodity_category_id', 'General Services')
+                # ✅ FIX: Use item.service (not undefined 'service')
+                if item.service.category:
+                    category_id = item.service.category.efris_commodity_category_code
+                    category_name = service_efris_data.get('efris_commodity_category_name', 'General Services')
+                else:
+                    category_id = "100000000000000000"  # Default service category
+                    category_name = "General Services"
 
             goods_detail = {
                 "item": item_name,

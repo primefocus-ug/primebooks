@@ -1311,7 +1311,7 @@ def batch_invoice_upload_view(request):
             from .services import EFRISDataTransformer
 
             invoices_data = []
-            invoice_mapping = {}  # ✅ MAP invoice data to Invoice objects
+            invoice_mapping = {}
             transformer = EFRISDataTransformer(company)
 
             for idx, invoice_id in enumerate(invoice_ids):
@@ -1336,8 +1336,6 @@ def batch_invoice_upload_view(request):
                     }
 
                     invoices_data.append(invoice_payload)
-
-                    # ✅ CRITICAL: Map the index to the invoice object
                     invoice_mapping[idx] = invoice
 
                 except Invoice.DoesNotExist:
@@ -1359,7 +1357,6 @@ def batch_invoice_upload_view(request):
                 success_count = 0
                 failed_count = 0
 
-                # ✅ CRITICAL FIX: Process each individual result
                 results_list = result.get('results', [])
 
                 for idx, invoice_result in enumerate(results_list):
@@ -1376,39 +1373,68 @@ def batch_invoice_upload_view(request):
                             'returnCode')
 
                         if invoice_return_code == '00':
-                            # ✅ SUCCESS: Update the invoice and sale
+                            # ✅ CRITICAL FIX: Parse the invoiceContent JSON string
+                            invoice_content_str = invoice_result.get('invoiceContent', '{}')
+
+                            try:
+                                invoice_content = json.loads(invoice_content_str)
+
+                                # Extract fiscal data from nested structure
+                                basic_info = invoice_content.get('basicInformation', {})
+                                summary = invoice_content.get('summary', {})
+
+                                fiscal_invoice_no = basic_info.get('invoiceNo', '')
+                                fiscal_antifake_code = basic_info.get('antifakeCode', '')
+                                fiscal_qr_code = summary.get('qrCode', '')
+
+                                logger.info(
+                                    f"📋 Extracted fiscal data - InvoiceNo: {fiscal_invoice_no}, AntifakeCode: {fiscal_antifake_code}")
+
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Failed to parse invoiceContent JSON: {e}")
+                                fiscal_invoice_no = ''
+                                fiscal_antifake_code = ''
+                                fiscal_qr_code = ''
+
+                            # ✅ SUCCESS: Update the invoice
                             success_count += 1
 
-                            # Update Invoice model - Use 'fiscalized' not 'success'
-                            invoice.fiscal_document_number = invoice_result.get('invoiceNo', '')
-                            invoice.fiscal_number = invoice_result.get('invoiceNo', '')  # Keep in sync
-                            invoice.verification_code = invoice_result.get('antifakeCode', '')
-                            invoice.qr_code = invoice_result.get('qrCode', '')
+                            invoice.fiscal_document_number = fiscal_invoice_no
+                            invoice.fiscal_number = fiscal_invoice_no
+                            invoice.verification_code = fiscal_antifake_code
+                            invoice.qr_code = fiscal_qr_code
                             invoice.is_fiscalized = True
                             invoice.fiscalization_time = timezone.now()
-                            invoice.fiscalization_status = 'fiscalized'  # ✅ FIXED: Use 'fiscalized' not 'success'
+                            invoice.fiscalization_status = 'fiscalized'
                             invoice.fiscalization_error = None
+                            invoice.created_by = request.user  # ✅ Track who fiscalized
+
                             invoice.save(update_fields=[
                                 'fiscal_document_number', 'fiscal_number',
                                 'verification_code', 'qr_code', 'is_fiscalized',
-                                'fiscalization_time', 'fiscalization_status', 'fiscalization_error'
+                                'fiscalization_time', 'fiscalization_status',
+                                'fiscalization_error', 'fiscalized_by'
                             ])
 
                             # ✅ CRITICAL: Update the Sale model too
                             if invoice.sale:
                                 sale = invoice.sale
-                                sale.efris_invoice_number = invoice_result.get('invoiceNo', '')
-                                sale.verification_code = invoice_result.get('antifakeCode', '')
-                                sale.qr_code = invoice_result.get('qrCode', '')
+                                sale.efris_invoice_number = fiscal_invoice_no
+                                sale.verification_code = fiscal_antifake_code
+                                sale.qr_code = fiscal_qr_code
                                 sale.is_fiscalized = True
                                 sale.fiscalization_time = timezone.now()
-                                sale.fiscalization_status = 'fiscalized'  # ✅ FIXED: Use 'fiscalized' not 'success'
+                                sale.fiscalization_status = 'fiscalized'
+                                sale.fiscalized_by = request.user  # ✅ Track who fiscalized
+
                                 sale.save(update_fields=[
                                     'efris_invoice_number', 'verification_code', 'qr_code',
-                                    'is_fiscalized', 'fiscalization_time', 'fiscalization_status'
+                                    'is_fiscalized', 'fiscalization_time', 'fiscalization_status',
+                                    'fiscalized_by'
                                 ])
 
-                            logger.info(f"✅ Successfully updated Invoice {invoice.id} and Sale {invoice.sale_id}")
+                            logger.info(
+                                f"✅ Successfully updated Invoice {invoice.id} and Sale {invoice.sale_id} with fiscal data")
 
                         else:
                             # ❌ FAILED: Log the error
@@ -1451,7 +1477,7 @@ def batch_invoice_upload_view(request):
         from invoices.models import Invoice
         pending_invoices = Invoice.objects.filter(
             is_fiscalized=False,
-            sale__status__in=['COMPLETED', 'PAID']  # Only completed sales
+            sale__status__in=['COMPLETED', 'PAID']
         ).select_related('sale', 'sale__customer', 'sale__store').order_by('-created_at')[:50]
 
         context['pending_invoices'] = pending_invoices

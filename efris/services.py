@@ -2070,12 +2070,24 @@ class EFRISDataTransformer:
         self.tin = getattr(company, 'tin', '')
 
     def get_numeric_tax_rate(self, tax_rate_value):
-        """Convert EFRIS tax rate codes to numeric values"""
+        """
+        Convert EFRIS tax rate codes to numeric values
+        UPDATED: Return None for non-VAT companies (they use exempt category)
+        """
+        # Get company VAT status
+        is_vat_enabled = getattr(self.company, 'is_vat_enabled', False)
+
+        # Non-VAT companies use EXEMPT category (no tax calculation)
+        # Return None to signal exempt status
+        if not is_vat_enabled:
+            return None  # Will be handled as exempt in builders
+
+        # VAT companies can use standard rates
         if isinstance(tax_rate_value, str):
             tax_rate_mapping = {
                 'A': 18.0,  # Standard VAT
-                'B': 0.0,   # Zero rate
-                'C': 0.0,   # Exempt
+                'B': 0.0,  # Zero rate
+                'C': 0.0,  # Exempt
                 'D': 18.0,  # Deemed
                 'E': 18.0,  # Standard
             }
@@ -2085,52 +2097,10 @@ class EFRISDataTransformer:
         except (ValueError, TypeError):
             return 18.0
 
-    """def build_invoice_data(self, invoice) -> Dict[str, Any]:
-        try:
-            # Build sections
-            seller_details = self._build_seller_details()
-            basic_info = self._build_basic_info(invoice)
-            buyer_details = self._build_buyer_details(invoice)
-            goods_details = self._build_goods_details(invoice)
-            tax_details = self._build_tax_details(invoice)
-
-            # CRITICAL: Calculate summary from tax_details to ensure exact match
-            summary = self._build_summary_from_tax_details(invoice, tax_details)
-
-            invoice_data = {
-                "sellerDetails": seller_details,
-                "basicInformation": basic_info,
-                "buyerDetails": buyer_details,
-                "goodsDetails": goods_details,
-                "taxDetails": tax_details,
-                "summary": summary
-            }
-
-            # Validate payWay exists
-            if 'payWay' not in invoice_data['summary']:
-                logger.error("Missing payWay in summary!")
-                raise Exception("Payment modes (payWay) are required")
-
-            logger.info(
-                f"Built invoice data for {getattr(invoice, 'number', 'unknown')}",
-                extra={
-                    'invoice_no': invoice_data['basicInformation']['invoiceNo'],
-                    'gross_amount': invoice_data['summary']['grossAmount'],
-                    'tax_amount': invoice_data['summary']['taxAmount'],
-                    'payment_count': len(invoice_data['summary']['payWay'])
-                }
-            )
-
-            return invoice_data
-
-        except Exception as e:
-            logger.error(f"Invoice data building failed: {e}", exc_info=True)
-            raise Exception(f"Failed to build invoice data: {e}")"""
-
     def build_invoice_data(self, sale_or_invoice) -> Dict[str, Any]:
         """
         Build complete T109 data structure for ANY sale document (Receipt or Invoice)
-        UPDATED: Works with both Sale (receipts) and Invoice objects
+        UPDATED: Works with both Sale (receipts) and Invoice objects + VAT compliance validation
         """
         try:
             # ✅ Determine if we're working with Sale or Invoice
@@ -2142,6 +2112,17 @@ class EFRISDataTransformer:
                 # This is a Sale object (receipt)
                 sale = sale_or_invoice
                 invoice = None
+
+            # ✅ VALIDATE TAX COMPLIANCE FIRST
+            is_valid, errors = self.validate_tax_compliance(sale_or_invoice)
+            if not is_valid:
+                logger.error(
+                    f"Tax compliance validation failed for {sale.document_type} {sale.document_number}",
+                    extra={'errors': errors}
+                )
+                # Log warning but don't raise - we'll force 0% in the builders
+                for error in errors:
+                    logger.warning(f"Tax compliance issue: {error}")
 
             # Build sections using Sale data
             seller_details = self._build_seller_details()
@@ -2171,7 +2152,9 @@ class EFRISDataTransformer:
                     'document_type': sale.document_type,
                     'document_no': sale.document_number,
                     'gross_amount': sale_data['summary']['grossAmount'],
-                    'payment_count': len(sale_data['summary']['payWay'])
+                    'tax_amount': sale_data['summary']['taxAmount'],
+                    'payment_count': len(sale_data['summary']['payWay']),
+                    'vat_enabled': getattr(sale.store.company, 'is_vat_enabled', False) if sale.store else False
                 }
             )
 
@@ -2180,6 +2163,52 @@ class EFRISDataTransformer:
         except Exception as e:
             logger.error(f"Sale data building failed: {e}", exc_info=True)
             raise Exception(f"Failed to build sale data: {e}")
+
+    def validate_tax_compliance(self, sale_or_invoice) -> Tuple[bool, List[str]]:
+        """
+        Validate tax compliance before EFRIS upload
+        CRITICAL: Non-VAT companies MUST use 0% tax only
+
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+        """
+        errors = []
+
+        # Get company VAT status
+        if hasattr(sale_or_invoice, 'sale') and sale_or_invoice.sale:
+            company = sale_or_invoice.sale.store.company if sale_or_invoice.sale.store else None
+        elif hasattr(sale_or_invoice, 'store'):
+            company = sale_or_invoice.store.company
+        else:
+            company = self.company
+
+        is_vat_enabled = getattr(company, 'is_vat_enabled', False)
+
+        # Get items
+        if hasattr(sale_or_invoice, 'sale') and sale_or_invoice.sale:
+            items = sale_or_invoice.sale.items.all()
+        else:
+            items = sale_or_invoice.items.all()
+
+        # Check tax rates for non-VAT companies
+        if not is_vat_enabled:
+            for item in items:
+                tax_rate_raw = item.tax_rate
+                # Check if original tax rate is not 0%
+                if tax_rate_raw not in ['B', 'C', '0', '0.0', '0%', 0, 0.0]:
+                    item_name = ''
+                    if hasattr(item, 'product') and item.product:
+                        item_name = item.product.name
+                    elif hasattr(item, 'service') and item.service:
+                        item_name = item.service.name
+
+                    errors.append(
+                        f"Non-VAT company error: Item '{item_name}' "
+                        f"has tax rate '{tax_rate_raw}' but MUST be 0%. "
+                        f"This will be automatically corrected to prevent EFRIS Error [3087]."
+                    )
+
+        return len(errors) == 0, errors
 
     def _build_basic_info_from_sale(self, sale, invoice=None) -> Dict[str, Any]:
         """
@@ -2252,7 +2281,7 @@ class EFRISDataTransformer:
                 'ESTIMATE': '4',  # Estimate
             }.get(sale.document_type, '2')
 
-            efris_invoice_type = '2'  # Simplified Invoice
+            efris_invoice_type = '1'  # Simplified Invoice
 
         # Log for debugging
         logger.info(
@@ -2310,13 +2339,16 @@ class EFRISDataTransformer:
     def _build_goods_details_from_sale(self, sale) -> List[Dict[str, Any]]:
         """
         Build goods details from Sale items
-        UPDATED: Support both Product and Service items
+        UPDATED: Support both Product and Service items + Non-VAT exempt handling
         """
         goods_details = []
         items = sale.items.all()  # SaleItem queryset
 
         if not items:
             raise Exception("Sale must have at least one item")
+
+        # Check VAT status ONCE at the start
+        is_vat_enabled = getattr(sale.store.company, 'is_vat_enabled', False) if sale.store else False
 
         for idx, item in enumerate(items, 0):
             try:
@@ -2366,13 +2398,32 @@ class EFRISDataTransformer:
                 unit_price = float(item.unit_price)
                 line_total = quantity * unit_price
 
-                # Tax calculation
+                # Tax calculation - CRITICAL: Non-VAT companies use EXEMPT
                 tax_rate_raw = item.tax_rate
-                tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
 
-                # Calculate net and tax from gross (line_total)
-                net_amount = line_total / (1 + tax_rate / 100)
-                tax_amount = line_total - net_amount
+                if is_vat_enabled:
+                    # VAT companies: use normal tax rates
+                    tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
+                    net_amount = line_total / (1 + tax_rate / 100)
+                    tax_amount = line_total - net_amount
+                    tax_rate_str = f"{tax_rate / 100:.4f}"
+                else:
+                    # Non-VAT companies: EXEMPT (no tax calculation)
+                    # Total = Net (no tax component)
+                    tax_rate = None
+                    net_amount = line_total
+                    tax_amount = 0.0
+                    tax_rate_str = "-"  # EFRIS uses "-" for exempt
+
+                    if tax_rate_raw not in ['B', 'C', '0', '0.0', '0%', '-']:
+                        logger.warning(
+                            f"Non-VAT company: using EXEMPT tax for item {item_name}",
+                            extra={
+                                'original_tax_rate': tax_rate_raw,
+                                'item_index': idx,
+                                'sale_id': sale.id
+                            }
+                        )
 
                 # Build goods detail
                 goods_detail = {
@@ -2383,7 +2434,7 @@ class EFRISDataTransformer:
                     "unitOfMeasure": unit_of_measure,
                     "unitPrice": f"{unit_price:.2f}",
                     "total": f"{line_total:.2f}",
-                    "taxRate": f"{tax_rate / 100:.4f}",
+                    "taxRate": tax_rate_str,  # "-" for non-VAT, "0.1800" for VAT
                     "tax": f"{tax_amount:.2f}",
                     "orderNumber": idx,
                     "discountFlag": "2",
@@ -2397,7 +2448,7 @@ class EFRISDataTransformer:
                 discount_amount = float(getattr(item, 'discount_amount', 0) or 0)
                 if discount_amount > 0:
                     goods_detail["discountTotal"] = f"{discount_amount:.2f}"
-                    goods_detail["discountTaxRate"] = goods_detail["taxRate"]
+                    goods_detail["discountTaxRate"] = tax_rate_str
                 else:
                     goods_detail["discountTotal"] = ""
 
@@ -2428,27 +2479,45 @@ class EFRISDataTransformer:
         return goods_details
 
     def _build_tax_details_from_sale(self, sale) -> List[Dict[str, Any]]:
-        """Build tax details from Sale items"""
+        """
+        Build tax details from Sale items
+        UPDATED: Use EXEMPT category for non-VAT companies
+        """
         items = sale.items.all()
+
+        # Check VAT status
+        is_vat_enabled = getattr(sale.store.company, 'is_vat_enabled', False) if sale.store else False
 
         # Group items by tax rate
         tax_categories = {}
 
         for item in items:
             tax_rate_raw = item.tax_rate
-            tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
+
+            if is_vat_enabled:
+                # VAT companies: use normal tax rates
+                tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
+                rate_key = f"{tax_rate:.2f}"
+            else:
+                # Non-VAT companies: all items are EXEMPT
+                tax_rate = None
+                rate_key = "EXEMPT"
 
             # Calculate amounts
             quantity = float(item.quantity)
             unit_price = float(item.unit_price)
             line_total = quantity * unit_price
 
-            # Split into net and tax
-            net_amount = line_total / (1 + tax_rate / 100)
-            tax_amount = line_total - net_amount
+            if is_vat_enabled and tax_rate is not None:
+                # Split into net and tax
+                net_amount = line_total / (1 + tax_rate / 100)
+                tax_amount = line_total - net_amount
+            else:
+                # EXEMPT: total = net, no tax
+                net_amount = line_total
+                tax_amount = 0.0
 
             # Group by tax rate
-            rate_key = f"{tax_rate:.2f}"
             if rate_key not in tax_categories:
                 tax_categories[rate_key] = {
                     'rate': tax_rate,
@@ -2467,57 +2536,36 @@ class EFRISDataTransformer:
             tax = amounts['tax_amount']
             gross = net + tax
 
-            # Determine tax category code
-            if rate == 18.0:
-                tax_category_code = "01"
-                tax_rate_name = "Standard Rate (18%)"
-            elif rate == 0.0:
-                tax_category_code = "02"
-                tax_rate_name = "Zero Rate (0%)"
+            if rate_key == "EXEMPT":
+                # Non-VAT: EXEMPT category
+                tax_details.append({
+                    "netAmount": f"{net:.2f}",
+                    "taxRate": "-",  # EFRIS uses "-" for exempt
+                    "taxAmount": f"{tax:.2f}",
+                    "grossAmount": f"{gross:.2f}",
+                    "taxRateName": "Non-VAT Exempt"
+                })
             else:
-                tax_category_code = "01"
-                tax_rate_name = f"Rate ({rate}%)"
+                # VAT companies: normal tax categories
+                if rate == 18.0:
+                    tax_category_code = "01"
+                    tax_rate_name = "Standard Rate (18%)"
+                elif rate == 0.0:
+                    tax_category_code = "02"
+                    tax_rate_name = "Zero Rate (0%)"
+                else:
+                    tax_category_code = "01"
+                    tax_rate_name = f"Rate ({rate}%)"
 
-            tax_details.append({
-                "taxCategoryCode": tax_category_code,
-                "netAmount": f"{net:.2f}",
-                "taxRate": f"{rate / 100:.4f}",
-                "taxAmount": f"{tax:.2f}",
-                "grossAmount": f"{gross:.2f}",
-                "taxRateName": tax_rate_name
-            })
+                tax_details.append({
+                    "netAmount": f"{net:.2f}",
+                    "taxRate": f"{rate / 100:.4f}",
+                    "taxAmount": f"{tax:.2f}",
+                    "grossAmount": f"{gross:.2f}",
+                    "taxRateName": tax_rate_name
+                })
 
         return tax_details
-
-    def _build_summary_from_tax_details(self, sale, tax_details: List[Dict]) -> Dict[str, Any]:
-        """Build summary from tax_details"""
-        from decimal import Decimal
-
-        # Sum from tax_details
-        total_net = Decimal('0')
-        total_tax = Decimal('0')
-        total_gross = Decimal('0')
-
-        for tax_detail in tax_details:
-            total_net += Decimal(tax_detail['netAmount'])
-            total_tax += Decimal(tax_detail['taxAmount'])
-            total_gross += Decimal(tax_detail['grossAmount'])
-
-        # Get item count
-        item_count = sale.items.count()
-
-        # Build payment modes
-        payment_modes = self._build_payment_modes_from_sale(sale, float(total_gross))
-
-        return {
-            "netAmount": f"{total_net:.2f}",
-            "taxAmount": f"{total_tax:.2f}",
-            "grossAmount": f"{total_gross:.2f}",
-            "itemCount": str(item_count),
-            "modeCode": "1",
-            "remarks": sale.notes or f"{sale.get_document_type_display()} via EFRIS",
-            "payWay": payment_modes
-        }
 
     def _build_payment_modes_from_sale(self, sale, total_amount: float) -> List[Dict]:
         """Build payment modes from Sale"""
@@ -2678,14 +2726,52 @@ class EFRISDataTransformer:
                 'System'
         )
 
+        # ========== CRITICAL FIX: VAT-aware invoiceKind and invoiceType ==========
+        # Get company VAT status
+        company = invoice.company if hasattr(invoice, 'company') else None
+        if not company and hasattr(invoice, 'store') and invoice.store:
+            company = invoice.store.company
+
+        is_vat_enabled = getattr(company, 'is_vat_enabled', False) if company else False
+
+        if is_vat_enabled:
+            # VAT registered company - MUST use Tax Invoice (invoiceKind='1')
+            efris_invoice_kind = {
+                'RECEIPT': '1',  # Tax Invoice (immediate payment)
+                'INVOICE': '1',  # Tax Invoice (credit sale)
+                'PROFORMA': '4',  # Proforma
+                'ESTIMATE': '4',  # Estimate (same as proforma)
+            }.get(getattr(invoice, 'document_type', 'INVOICE'), '1')
+
+            efris_invoice_type = '1'  # Tax Invoice
+        else:
+            # Non-VAT registered company - Use Simplified Invoice/Receipt
+            efris_invoice_kind = {
+                'RECEIPT': '2',  # Simplified Receipt
+                'INVOICE': '2',  # Simplified Invoice
+                'PROFORMA': '4',  # Proforma
+                'ESTIMATE': '4',  # Estimate
+            }.get(getattr(invoice, 'document_type', 'INVOICE'), '2')
+
+            efris_invoice_type = '1'  # Simplified Invoice
+
+        # Log for debugging
+        logger.info(
+            f"EFRIS Basic Info for {invoice_no}: "
+            f"invoiceKind={efris_invoice_kind}, "
+            f"invoiceType={efris_invoice_type}, "
+            f"VAT={is_vat_enabled}, "
+            f"DocType={getattr(invoice, 'document_type', 'INVOICE')}"
+        )
+
         return {
             "deviceNo": self.device_no,
             "invoiceNo": '',  # Now guaranteed to have a value
             "issuedDate": issued_date_str,
             "operator": operator,
             "currency": getattr(invoice, 'currency_code', None) or 'UGX',
-            "invoiceType": "1",
-            "invoiceKind": "1",
+            "invoiceType": efris_invoice_type,  # ✅ Now dynamic based on VAT
+            "invoiceKind": efris_invoice_kind,  # ✅ Now VAT-aware
             "dataSource": "103",
             "invoiceIndustryCode": "101"
         }
@@ -2769,31 +2855,28 @@ class EFRISDataTransformer:
     def _build_goods_details(self, invoice) -> List[Dict[str, Any]]:
         """
         Build goods details matching EFRIS T109 specification exactly
-        FIXED: Support both Product and Service models with proper field mapping
+        UPDATED: Support both Product and Service models + Non-VAT exempt handling
         """
         goods_details = []
         items = self._get_invoice_items(invoice)
         invoice_no = getattr(invoice, 'number', None) or getattr(invoice, 'invoice_number', None)
 
         if not invoice_no:
-            # Generate a temporary invoice number if none exists
             invoice_no = f"INV-{timezone.now().strftime('%Y%m%d')}-{getattr(invoice, 'id', 0):06d}"
             logger.warning(f"Invoice has no number, using generated: {invoice_no}")
 
         if not items:
             raise Exception("Invoice must have at least one item")
 
-        # ✅ Use enumerate starting from 0
+        # Check VAT status ONCE at the start
+        is_vat_enabled = getattr(self.company, 'is_vat_enabled', False)
+
         for idx, item in enumerate(items, 0):
             try:
-                # ✅ Try to get PRODUCT first
                 product = getattr(item, 'product', None)
-
-                # ✅ If no product, try to get SERVICE
                 service = getattr(item, 'service', None) if not product else None
 
                 if product:
-                    # ========== PRODUCT PROCESSING ==========
                     item_code = getattr(product, 'efris_goods_code', None)
                     if not item_code:
                         item_code = f"{getattr(product, 'sku', 'PROD')}{product.id}"
@@ -2801,7 +2884,6 @@ class EFRISDataTransformer:
                     item_name = product.name[:200]
                     unit_of_measure = product.unit_of_measure
 
-                    # Get category info
                     if product.category:
                         goods_category_id = product.category.efris_commodity_category_code or ''
                         goods_category_name = product.category.efris_commodity_category_code or ''
@@ -2809,53 +2891,61 @@ class EFRISDataTransformer:
                         goods_category_id = ''
                         goods_category_name = ''
 
-                    # Check excise
                     has_excise = getattr(product, 'has_excise_tax', False)
                     excise_entity = product
 
                 elif service:
-                    # ========== SERVICE PROCESSING ==========
-                    # Use service code directly
                     item_code = service.efris_service_code
-
                     item_name = service.name[:200]
                     unit_of_measure = service.unit_of_measure
 
-                    # Get category info from service's category
                     if service.category:
-                        # Service category has efris_category_id
                         goods_category_id = service.category.efris_commodity_category_code or ''
                         goods_category_name = service.category.efris_commodity_category_code or ''
                     else:
-                        # Default fallback for services without category
-                        goods_category_id = '100000000000000000'  # Default service category
+                        goods_category_id = '100000000000000000'
                         goods_category_name = 'General Services'
 
-                    # Services typically don't have excise tax
                     has_excise = False
-                    if service.tax_rate == 'E':  # Excise Duty rate
+                    if service.tax_rate == 'E':
                         has_excise = True
                         excise_entity = service
                     else:
                         excise_entity = None
 
                 else:
-                    # Neither product nor service found
                     raise Exception(f"Item {idx} has no product or service - cannot fiscalize")
 
-                # ========== COMMON PROCESSING (applies to both) ==========
-                # Get amounts (same for both products and services)
+                # Get amounts
                 quantity = float(getattr(item, 'quantity', 1))
                 unit_price = float(getattr(item, 'unit_price', 0) or getattr(item, 'price', 0))
                 line_total = quantity * unit_price
 
-                # Tax calculation
+                # Tax calculation - CRITICAL: Non-VAT uses EXEMPT
                 tax_rate_raw = getattr(item, 'tax_rate', 'A')
-                tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
 
-                # Calculate net and tax from gross (line_total)
-                net_amount = line_total / (1 + tax_rate / 100)
-                tax_amount = line_total - net_amount
+                if is_vat_enabled:
+                    tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
+                    net_amount = line_total / (1 + tax_rate / 100)
+                    tax_amount = line_total - net_amount
+                    tax_rate_str = f"{tax_rate / 100:.4f}"
+                else:
+                    # Non-VAT: EXEMPT
+                    tax_rate = None
+                    net_amount = line_total
+                    tax_amount = 0.0
+                    tax_rate_str = "-"
+
+                    if tax_rate_raw not in ['B', 'C', '0', '0.0', '0%', '-']:
+                        logger.warning(
+                            f"Non-VAT company: using EXEMPT tax for item",
+                            extra={
+                                'item_code': item_code,
+                                'item_name': item_name,
+                                'original_tax_rate': tax_rate_raw,
+                                'invoice_id': getattr(invoice, 'id', None)
+                            }
+                        )
 
                 # Build goods detail
                 goods_detail = {
@@ -2866,7 +2956,7 @@ class EFRISDataTransformer:
                     "unitOfMeasure": unit_of_measure,
                     "unitPrice": f"{unit_price:.2f}",
                     "total": f"{line_total:.2f}",
-                    "taxRate": f"{tax_rate / 100:.4f}",
+                    "taxRate": tax_rate_str,
                     "tax": f"{tax_amount:.2f}",
                     "orderNumber": idx,
                     "discountFlag": "2",
@@ -2880,7 +2970,7 @@ class EFRISDataTransformer:
                 discount_amount = float(getattr(item, 'discount_amount', 0) or 0)
                 if discount_amount > 0:
                     goods_detail["discountTotal"] = f"{discount_amount:.2f}"
-                    goods_detail["discountTaxRate"] = goods_detail["taxRate"]
+                    goods_detail["discountTaxRate"] = tax_rate_str
                 else:
                     goods_detail["discountTotal"] = ""
 
@@ -2893,7 +2983,6 @@ class EFRISDataTransformer:
                     goods_detail["exciseRule"] = str(getattr(excise_entity, 'excise_rule', '1'))
                     goods_detail["exciseTax"] = f"{float(getattr(excise_entity, 'excise_tax', 0)):.2f}"
                 else:
-                    # Empty strings for non-excise items
                     goods_detail["categoryId"] = ""
                     goods_detail["categoryName"] = ""
                     goods_detail["exciseCurrency"] = ""
@@ -2903,52 +2992,49 @@ class EFRISDataTransformer:
                     goods_detail["exciseUnit"] = ""
                     goods_detail["exciseDutyCode"] = ""
 
-                logger.debug(
-                    f"Item {idx}: {item_name}, "
-                    f"orderNumber={idx}, "
-                    f"itemCode={item_code}, "
-                    f"type={'PRODUCT' if product else 'SERVICE'}, "
-                    f"categoryId={goods_category_id}"
-                )
-
                 goods_details.append(goods_detail)
 
             except Exception as e:
                 logger.error(f"Failed to process item {idx}: {e}", exc_info=True)
                 raise Exception(f"Item {idx} processing failed: {e}")
 
-        # ✅ Log order numbers for verification
-        order_numbers = [item.get('orderNumber') for item in goods_details]
-        logger.debug(f"Built goods_details with order numbers: {order_numbers}")
-
         return goods_details
 
     def _build_tax_details(self, invoice) -> List[Dict[str, Any]]:
         """
         Build tax details summary by tax category
-        EFRIS validates: grossAmount = netAmount + taxAmount for each category
+        UPDATED: Use EXEMPT category for non-VAT companies
         """
         items = self._get_invoice_items(invoice)
+
+        # Check VAT status
+        is_vat_enabled = getattr(self.company, 'is_vat_enabled', False)
 
         # Group items by tax rate
         tax_categories = {}
 
         for item in items:
-            # Get tax rate
             tax_rate_raw = getattr(item, 'tax_rate', 'A')
-            tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
+
+            if is_vat_enabled:
+                tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
+                rate_key = f"{tax_rate:.2f}"
+            else:
+                tax_rate = None
+                rate_key = "EXEMPT"
 
             # Calculate amounts
             quantity = float(getattr(item, 'quantity', 1))
             unit_price = float(getattr(item, 'unit_price', 0) or getattr(item, 'price', 0))
             line_total = quantity * unit_price
 
-            # Split into net and tax
-            net_amount = line_total / (1 + tax_rate / 100)
-            tax_amount = line_total - net_amount
+            if is_vat_enabled and tax_rate is not None:
+                net_amount = line_total / (1 + tax_rate / 100)
+                tax_amount = line_total - net_amount
+            else:
+                net_amount = line_total
+                tax_amount = 0.0
 
-            # Group by tax rate
-            rate_key = f"{tax_rate:.2f}"
             if rate_key not in tax_categories:
                 tax_categories[rate_key] = {
                     'rate': tax_rate,
@@ -2965,41 +3051,56 @@ class EFRISDataTransformer:
             rate = amounts['rate']
             net = amounts['net_amount']
             tax = amounts['tax_amount']
-            gross = net + tax  # ← CRITICAL: This must match the formula
+            gross = net + tax
 
-            # Determine tax category code
-            if rate == 18.0:
-                tax_category_code = "01"  # Standard Rate
-                tax_rate_name = "Standard Rate (18%)"
-            elif rate == 0.0:
-                tax_category_code = "02"  # Zero Rate
-                tax_rate_name = "Zero Rate (0%)"
+            if rate_key == "EXEMPT":
+                tax_details.append({
+                    "netAmount": f"{net:.2f}",
+                    "taxRate": "-",
+                    "taxAmount": f"{tax:.2f}",
+                    "grossAmount": f"{gross:.2f}",
+                    "taxRateName": "Non-VAT Exempt"
+                })
             else:
-                tax_category_code = "01"
-                tax_rate_name = f"Rate ({rate}%)"
+                if rate == 18.0:
+                    tax_category_code = "01"
+                    tax_rate_name = "Standard Rate (18%)"
+                elif rate == 0.0:
+                    tax_category_code = "02"
+                    tax_rate_name = "Zero Rate (0%)"
+                else:
+                    tax_category_code = "01"
+                    tax_rate_name = f"Rate ({rate}%)"
 
-            tax_details.append({
-                "taxCategoryCode": tax_category_code,
-                "netAmount": f"{net:.2f}",
-                "taxRate": f"{rate / 100:.4f}",  # 0.18 for 18%
-                "taxAmount": f"{tax:.2f}",
-                "grossAmount": f"{gross:.2f}",  # ← Must equal netAmount + taxAmount
-                "taxRateName": tax_rate_name
-            })
+                tax_details.append({
+                    "netAmount": f"{net:.2f}",
+                    "taxRate": f"{rate / 100:.4f}",
+                    "taxAmount": f"{tax:.2f}",
+                    "grossAmount": f"{gross:.2f}",
+                    "taxRateName": tax_rate_name
+                })
 
         # Fallback if no items
         if not tax_details:
             subtotal = float(getattr(invoice, 'subtotal', 0))
             tax_amount = float(getattr(invoice, 'tax_amount', 0))
 
-            tax_details.append({
-                "taxCategoryCode": "01" if tax_amount > 0 else "02",
-                "netAmount": f"{subtotal:.2f}",
-                "taxRate": "0.18" if tax_amount > 0 else "0.00",
-                "taxAmount": f"{tax_amount:.2f}",
-                "grossAmount": f"{subtotal + tax_amount:.2f}",  # ← Correct calculation
-                "taxRateName": "Standard Rate (18%)" if tax_amount > 0 else "Zero Rate (0%)"
-            })
+            if not is_vat_enabled:
+                tax_details.append({
+                    "netAmount": f"{subtotal:.2f}",
+                    "taxRate": "-",
+                    "taxAmount": "0.00",
+                    "grossAmount": f"{subtotal:.2f}",
+                    "taxRateName": "Non-VAT Exempt"
+                })
+            else:
+                tax_details.append({
+                    "netAmount": f"{subtotal:.2f}",
+                    "taxRate": "0.1800" if tax_amount > 0 else "0.0000",
+                    "taxAmount": f"{tax_amount:.2f}",
+                    "grossAmount": f"{subtotal + tax_amount:.2f}",
+                    "taxRateName": "Standard Rate (18%)" if tax_amount > 0 else "Zero Rate (0%)"
+                })
 
         return tax_details
 
@@ -4597,80 +4698,6 @@ class EnhancedEFRISAPIClient:
                 "categories": []
             }
 
-    """def upload_invoice(self, invoice, user=None) -> Dict[str, Any]:
-        
-        try:
-            # Build invoice data
-            transformer = EFRISDataTransformer(self.company)
-            invoice_data = transformer.build_invoice_data(invoice)
-
-            # Validate data
-            validation_errors = DataValidator.validate_invoice_data(invoice_data)
-            if validation_errors:
-                logger.error(f"Invoice validation failed: {validation_errors}")
-                return {
-                    "success": False,
-                    "message": f"Validation failed: {'; '.join(validation_errors)}",
-                    "error_code": "VALIDATION_ERROR",
-                    "data": None
-                }
-
-            # Ensure authenticated
-            auth_result = self.ensure_authenticated()
-            if not auth_result.get("success"):
-                return {
-                    "success": False,
-                    "message": f"Authentication failed: {auth_result.get('error')}",
-                    "error_code": "AUTH_FAILED",
-                    "data": None
-                }
-
-            # Log the request
-            logger.info(
-                f"Uploading invoice {invoice_data['basicInformation']['invoiceNo']} to EFRIS",
-                extra={
-                    'invoice_id': getattr(invoice, 'id', None),
-                    'gross_amount': invoice_data['summary']['grossAmount']
-                }
-            )
-
-            response = self._make_request("T109", invoice_data, encrypt=True)
-
-            # Extract invoice details from response
-            basic_info = response.get('basicInformation', {})
-            invoice_no = basic_info.get('invoiceNo')
-            invoice_id = basic_info.get('invoiceId')
-            fiscal_code = basic_info.get('antifakeCode', '')
-
-            logger.info(
-                f"Invoice uploaded successfully: {invoice_no} (ID: {invoice_id})",
-                extra={
-                    'invoice_no': invoice_no,
-                    'invoice_id': invoice_id,
-                    'fiscal_code': fiscal_code
-                }
-            )
-
-            return {
-                "success": True,
-                "message": f"Invoice {invoice_no} uploaded successfully",
-                "data": {
-                    "invoice_no": invoice_no,
-                    "invoice_id": invoice_id,
-                    "fiscal_code": fiscal_code,
-                    "full_response": response
-                },
-                "error_code": None
-            }
-
-        except Exception as e:
-            logger.error(f"Invoice upload exception: {e}", exc_info=True)
-            return {
-                "success": False,
-                "message": f"Upload error: {str(e)}",
-                "error_code": "EXCEPTION",
-                "data": None
-            }"""
 
     def upload_invoice(self, sale_or_invoice, user=None) -> Dict[str, Any]:
         """
@@ -8088,7 +8115,6 @@ class EnhancedEFRISAPIClient:
                 tax_code = "01"
 
             tax_details.append({
-                "taxCategoryCode": tax_code,
                 "netAmount": str(net),
                 "taxRate": rate_key,
                 "taxAmount": str(tax),
@@ -11011,8 +11037,9 @@ class EFRISCustomerService:
             )
             return False, f"Enrichment error: {e}"
 
+
 class EFRISInvoiceService:
-    """Service wrapper for invoice fiscalization with consistent return format"""
+    """Service wrapper for invoice/receipt fiscalization with consistent return format"""
 
     def __init__(self, company, store=None):
         """
@@ -11027,7 +11054,32 @@ class EFRISInvoiceService:
         self.store = store
 
     def fiscalize_sale(self, sale_or_invoice, user=None) -> Dict[str, Any]:
+        """
+        Fiscalize a sale (receipt or invoice) to EFRIS
+        UPDATED: Works with both Sale (receipt) and Invoice objects
+
+        Args:
+            sale_or_invoice: Either a Sale object (receipt) or Invoice object
+            user: Optional user performing the action
+
+        Returns:
+            Dict with keys: success, message, data
+        """
         try:
+            # ✅ Determine document type for logging
+            if hasattr(sale_or_invoice, 'sale') and sale_or_invoice.sale:
+                # This is an Invoice object
+                doc_type = "Invoice"
+                doc_id = f"invoice_{sale_or_invoice.id}"
+                doc_number = getattr(sale_or_invoice, 'invoice_number', 'Unknown')
+            else:
+                # This is a Sale object (receipt)
+                doc_type = sale_or_invoice.get_document_type_display()
+                doc_id = f"sale_{sale_or_invoice.id}"
+                doc_number = sale_or_invoice.document_number
+
+            logger.info(f"Fiscalizing {doc_type} {doc_number}")
+
             # ✅ Get store from sale if not provided
             store = self.store
             if not store:
@@ -11045,85 +11097,248 @@ class EFRISInvoiceService:
                     if result.get('success', False):
                         return {
                             "success": True,
-                            "message": result.get("message", "Sale fiscalized successfully"),
-                            "data": result.get("data", {})
+                            "message": result.get("message", f"{doc_type} fiscalized successfully"),
+                            "data": result.get("data", {}),
+                            "document_type": doc_type,
+                            "document_number": doc_number
                         }
                     else:
                         return {
                             "success": False,
                             "message": result.get("message", "Fiscalization failed"),
                             "error_code": result.get("error_code"),
-                            "data": result.get("data")
+                            "data": result.get("data"),
+                            "document_type": doc_type,
+                            "document_number": doc_number
                         }
                 else:
                     return {
                         "success": False,
                         "message": f"Unexpected response type: {type(result)}",
                         "data": None,
-                        "error_code": None
+                        "error_code": None,
+                        "document_type": doc_type,
+                        "document_number": doc_number
                     }
 
         except Exception as e:
-            # Determine document type for logging
-            if hasattr(sale_or_invoice, 'sale'):
-                doc_id = f"invoice {sale_or_invoice.id}"
-            else:
-                doc_id = f"sale {sale_or_invoice.id}"
-
             logger.error(f"Fiscalization failed for {doc_id}: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "message": f"Fiscalization error: {str(e)}",
                 "data": None,
-                "error_code": None
+                "error_code": None,
+                "document_type": doc_type if 'doc_type' in locals() else "Unknown",
+                "document_number": doc_number if 'doc_number' in locals() else "Unknown"
             }
 
     def fiscalize_invoice(self, invoice, user=None) -> Dict[str, Any]:
-        """Backward compatibility wrapper"""
+        """
+        Backward compatibility wrapper for invoices
+
+        Args:
+            invoice: Invoice model instance
+            user: Optional user
+
+        Returns:
+            Fiscalization result dict
+        """
         return self.fiscalize_sale(invoice, user)
 
-    def bulk_fiscalize_invoices(self, invoices: List, user=None) -> Dict[str, Any]:
+    def fiscalize_receipt(self, sale, user=None) -> Dict[str, Any]:
         """
-        Bulk fiscalize multiple invoices
-        Required by bulk_fiscalize_invoices_async task
+        Fiscalize a receipt (Sale with document_type='RECEIPT')
+
+        Args:
+            sale: Sale model instance with document_type='RECEIPT'
+            user: Optional user
+
+        Returns:
+            Fiscalization result dict
+        """
+        # Validate it's actually a receipt
+        if hasattr(sale, 'document_type') and sale.document_type != 'RECEIPT':
+            logger.warning(f"Sale {sale.id} is not a receipt (type: {sale.document_type})")
+
+        return self.fiscalize_sale(sale, user)
+
+    def bulk_fiscalize_documents(self, documents: List, user=None) -> Dict[str, Any]:
+        """
+        Bulk fiscalize multiple documents (receipts and/or invoices)
+        UPDATED: Works with mixed document types
+
+        Args:
+            documents: List of Sale and/or Invoice objects
+            user: Optional user
+
+        Returns:
+            Dict with bulk fiscalization results
         """
         results = {
             'success': True,
-            'total_invoices': len(invoices),
+            'total_documents': len(documents),
             'successful_count': 0,
             'failed_count': 0,
-            'errors': []
+            'errors': [],
+            'receipts_processed': 0,
+            'invoices_processed': 0
         }
 
-        for invoice in invoices:
+        for doc in documents:
             try:
-                result = self.fiscalize_invoice(invoice, user)
+                # Determine document type
+                if hasattr(doc, 'sale') and doc.sale:
+                    doc_type = "Invoice"
+                    doc_id = doc.id
+                    doc_number = getattr(doc, 'invoice_number', 'Unknown')
+                else:
+                    doc_type = doc.get_document_type_display()
+                    doc_id = doc.id
+                    doc_number = doc.document_number
+
+                result = self.fiscalize_sale(doc, user)
 
                 if result.get('success'):
                     results['successful_count'] += 1
+
+                    # Track document types
+                    if doc_type == "Invoice":
+                        results['invoices_processed'] += 1
+                    else:
+                        results['receipts_processed'] += 1
                 else:
                     results['failed_count'] += 1
                     results['errors'].append({
-                        'invoice_id': invoice.id,
-                        'invoice_number': getattr(invoice, 'number', 'Unknown'),
+                        'document_id': doc_id,
+                        'document_type': doc_type,
+                        'document_number': doc_number,
                         'error': result.get('message', 'Unknown error')
                     })
+
             except Exception as e:
                 results['failed_count'] += 1
                 results['errors'].append({
-                    'invoice_id': invoice.id,
-                    'invoice_number': getattr(invoice, 'number', 'Unknown'),
+                    'document_id': getattr(doc, 'id', 'Unknown'),
+                    'document_type': 'Unknown',
+                    'document_number': 'Unknown',
                     'error': str(e)
                 })
 
         # Overall success if at least 80% succeeded
-        if results['total_invoices'] > 0:
-            success_rate = results['successful_count'] / results['total_invoices']
+        if results['total_documents'] > 0:
+            success_rate = results['successful_count'] / results['total_documents']
             results['success'] = success_rate >= 0.8
+            results['success_rate'] = round(success_rate * 100, 2)
         else:
             results['success'] = False
+            results['success_rate'] = 0
 
         return results
+
+    def bulk_fiscalize_invoices(self, invoices: List, user=None) -> Dict[str, Any]:
+        """
+        Bulk fiscalize multiple invoices
+        Backward compatibility wrapper
+        """
+        return self.bulk_fiscalize_documents(invoices, user)
+
+    def validate_document_for_fiscalization(self, sale_or_invoice) -> Tuple[bool, List[str]]:
+        """
+        Validate document before fiscalization
+        UPDATED: Works with both receipts and invoices
+
+        Args:
+            sale_or_invoice: Sale or Invoice object
+
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+        """
+        errors = []
+
+        # Determine document type
+        if hasattr(sale_or_invoice, 'sale') and sale_or_invoice.sale:
+            # Invoice validation
+            sale = sale_or_invoice.sale
+            doc_type = "Invoice"
+
+            if not getattr(sale_or_invoice, 'invoice_number', None):
+                errors.append("Invoice number is required")
+        else:
+            # Sale/Receipt validation
+            sale = sale_or_invoice
+            doc_type = sale.get_document_type_display()
+
+            if not sale.document_number:
+                errors.append(f"{doc_type} number is required")
+
+        # Common validations
+        if not sale.items.exists():
+            errors.append(f"{doc_type} must have at least one item")
+
+        # Amount validations
+        if hasattr(sale, 'total_amount'):
+            if sale.total_amount <= 0:
+                errors.append(f"{doc_type} total amount must be greater than zero")
+
+        # Customer validation (if required)
+        if hasattr(sale, 'customer') and not sale.customer:
+            # Check if customer is required based on company settings
+            company = sale.store.company if hasattr(sale, 'store') else None
+            if company and getattr(company, 'require_customer_for_efris', False):
+                errors.append("Customer information is required")
+
+        # Store validation
+        if hasattr(sale, 'store') and not sale.store:
+            errors.append("Store information is required")
+
+        # Check if already fiscalized
+        is_fiscalized = getattr(sale, 'is_fiscalized', False) or \
+                        getattr(sale, 'efris_invoice_id', None) is not None
+
+        if is_fiscalized:
+            errors.append(f"{doc_type} is already fiscalized")
+
+        return len(errors) == 0, errors
+
+    def get_fiscalization_status(self, sale_or_invoice) -> Dict[str, Any]:
+        """
+        Get fiscalization status of a document
+        UPDATED: Works with both receipts and invoices
+
+        Args:
+            sale_or_invoice: Sale or Invoice object
+
+        Returns:
+            Dict with fiscalization status information
+        """
+        # Determine document type and get sale
+        if hasattr(sale_or_invoice, 'sale') and sale_or_invoice.sale:
+            sale = sale_or_invoice.sale
+            doc_type = "Invoice"
+            doc_number = getattr(sale_or_invoice, 'invoice_number', 'Unknown')
+        else:
+            sale = sale_or_invoice
+            doc_type = sale.get_document_type_display()
+            doc_number = sale.document_number
+
+        # Get fiscalization data
+        is_fiscalized = getattr(sale, 'is_fiscalized', False)
+        efris_invoice_id = getattr(sale, 'efris_invoice_id', None)
+        fiscal_code = getattr(sale, 'fiscal_document_number', None) or \
+                      getattr(sale, 'efris_invoice_no', None)
+        fiscalization_date = getattr(sale, 'fiscalization_date', None) or \
+                             getattr(sale, 'efris_upload_date', None)
+
+        return {
+            'document_type': doc_type,
+            'document_number': doc_number,
+            'is_fiscalized': is_fiscalized,
+            'efris_invoice_id': efris_invoice_id,
+            'fiscal_code': fiscal_code,
+            'fiscalization_date': fiscalization_date.isoformat() if fiscalization_date else None,
+            'can_fiscalize': not is_fiscalized,
+            'status': 'Fiscalized' if is_fiscalized else 'Not Fiscalized'
+        }
 
 
 def debug_query_goods(self, goods_code: str, verbose: bool = True) -> Dict[str, Any]:
