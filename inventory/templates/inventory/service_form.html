@@ -552,7 +552,6 @@
             </div>
             <div class="modal-body">
                 <form id="categoryQuickForm">
-                    <!-- Include CSRF token inside the modal form -->
                     {% csrf_token %}
                     <div class="mb-3">
                         <label for="categoryName" class="form-label">Category Name <span class="text-danger">*</span></label>
@@ -634,9 +633,16 @@ function showSuccessMessage(message) {
 window.saveCategory = function() {
     console.log('🚀 saveCategory() called - Starting category save process');
 
-    // Get CSRF token
+    // Get CSRF token - ENSURE IT'S CLEAN
     const csrfToken = getCookie('csrftoken');
-    console.log('🔑 CSRF Token found:', csrfToken ? 'Yes (' + csrfToken.substring(0, 10) + '...)' : 'No');
+    if (!csrfToken) {
+        console.error('❌ CSRF token not found!');
+        alert('Security token missing. Please refresh the page.');
+        return false;
+    }
+
+    console.log('🔑 CSRF Token found:', csrfToken.substring(0, 10) + '...');
+    console.log('🔑 CSRF Token length:', csrfToken.length);
 
     // Get form values
     const name = $('#categoryName').val().trim();
@@ -666,18 +672,18 @@ window.saveCategory = function() {
         return false;
     }
 
-    const formData = {
-        'name': name,
-        'code': code,
-        'description': description,
-        'category_type': categoryType,
-        'is_active': 'true',
-        'csrfmiddlewaretoken': csrfToken
-    };
+    // CRITICAL FIX: Use FormData for proper encoding
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('code', code);
+    formData.append('description', description);
+    formData.append('category_type', categoryType);
+    formData.append('is_active', 'true');
+    formData.append('csrfmiddlewaretoken', csrfToken);
 
-    console.log('📤 Final form data to send:', formData);
+    console.log('📤 FormData prepared with category_type:', categoryType);
 
-    // Show loading state - FIXED: Use Bootstrap Icons
+    // Show loading state
     const $saveBtn = $('#saveCategoryBtn');
     const originalText = $saveBtn.html();
     $saveBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Saving...');
@@ -685,15 +691,16 @@ window.saveCategory = function() {
     const ajaxUrl = '{% url "inventory:category_create_ajax" %}';
     console.log('🌐 Sending AJAX request to:', ajaxUrl);
 
-    // Make AJAX request
+    // Make AJAX request with FIXED CSRF handling
     $.ajax({
         url: ajaxUrl,
         type: 'POST',
         data: formData,
+        processData: false,  // CRITICAL: Don't process FormData
+        contentType: false,  // CRITICAL: Let browser set Content-Type with boundary
         dataType: 'json',
-        beforeSend: function(xhr) {
-            console.log('📡 AJAX request being sent with headers');
-            xhr.setRequestHeader('X-CSRFToken', csrfToken);
+        headers: {
+            'X-CSRFToken': csrfToken  // Use standard header name
         },
         success: function(response, status, xhr) {
             console.log('✅ AJAX Success - Status:', status);
@@ -713,7 +720,7 @@ window.saveCategory = function() {
                 $('#id_category').append(newOption).trigger('change');
                 console.log('✅ Added category to dropdown');
 
-                // Hide modal - FIXED: Better modal handling
+                // Hide modal properly
                 const modalElement = document.getElementById('addCategoryModal');
                 if (modalElement) {
                     const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
@@ -721,8 +728,10 @@ window.saveCategory = function() {
                     console.log('✅ Modal hidden');
 
                     // Remove backdrop manually (Bootstrap 5 bug workaround)
-                    $('.modal-backdrop').remove();
-                    $('body').removeClass('modal-open');
+                    setTimeout(function() {
+                        $('.modal-backdrop').remove();
+                        $('body').removeClass('modal-open').css('overflow', '').css('padding-right', '');
+                    }, 200);
                 }
 
                 // Reset form
@@ -752,12 +761,12 @@ window.saveCategory = function() {
             console.error('XHR Status Text:', xhr.statusText);
             console.error('Response Text:', xhr.responseText);
 
-            let errorMessage = 'Error creating category. Status: ' + xhr.status;
+            let errorMessage = 'Error creating category';
 
-            if (xhr.responseJSON && xhr.responseJSON.message) {
-                errorMessage = xhr.responseJSON.message;
-            } else if (xhr.responseJSON && xhr.responseJSON.error) {
-                errorMessage = xhr.responseJSON.error;
+            if (xhr.status === 403) {
+                errorMessage = 'CSRF verification failed. Please refresh the page and try again.';
+            } else if (xhr.responseJSON) {
+                errorMessage = xhr.responseJSON.message || xhr.responseJSON.error || errorMessage;
             } else if (xhr.responseText) {
                 try {
                     const response = JSON.parse(xhr.responseText);
@@ -810,7 +819,7 @@ $(document).ready(function() {
         $('#categoryQuickForm .is-invalid').removeClass('is-invalid');
     });
 
-    // CRITICAL FIX: Add click handler using multiple methods
+    // Add click handler
     $('#saveCategoryBtn').off('click').on('click', function(e) {
         console.log('💾 Save Category button clicked - Event triggered!');
         e.preventDefault();
