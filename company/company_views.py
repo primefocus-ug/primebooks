@@ -322,7 +322,7 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
 
 
 class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
-    """Dashboard view showing only the current user's company."""
+    """Dashboard view showing only the current logged-in user's company."""
     template_name = 'company/dashboard.html'
     permission_required = 'company.view_company'
 
@@ -352,26 +352,27 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             })
             return context
 
+        # Always show only the current user's company
         company = user_company
         context['company'] = company
         context['company_id'] = company.company_id
-        context['is_saas_admin'] = False  # Even if user is SaaS admin, only current company is shown
+        context['is_saas_admin'] = self.request.user.is_saas_admin if hasattr(self.request.user, 'is_saas_admin') else False
 
-        # Company stats
+        # Company stats - always for current company only
         total_branches = Store.objects.filter(company=company, is_active=True).count()
         total_employees = CustomUser.objects.filter(company=company, is_active=True, is_hidden=False).count()
 
         context.update({
-            'total_companies': 1,
+            'total_companies': 1,  # Always 1 - showing only current company
             'verified_companies': 1 if company.is_verified else 0,
             'efris_enabled_companies': 1 if company.efris_enabled else 0,
             'active_companies': 1 if company.status == 'ACTIVE' else 0,
             'trial_companies': 1 if company.status == 'TRIAL' else 0,
             'expired_companies': 1 if company.status == 'EXPIRED' else 0,
-            'recent_companies': [company],
+            'recent_companies': [company],  # Only current company
             'total_branches': total_branches,
             'total_employees': total_employees,
-            # Charts data
+            # Charts data - all for current company only
             'monthly_registrations': self.get_monthly_registrations_single(company),
             'currency_distribution': [{'currency': company.preferred_currency, 'count': 1}],
             'plan_distribution': [{'plan': company.plan.display_name if company.plan else 'No Plan', 'count': 1}],
@@ -390,6 +391,7 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             next_month_start = month_start + relativedelta(months=1)
             month_end = next_month_start - timedelta(seconds=1)
 
+            # Check if company was created in this month
             count = 1 if (company.created_at >= month_start and company.created_at <= month_end) else 0
 
             data.append({
@@ -398,7 +400,6 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             })
 
         return list(reversed(data))
-
 
 
 class CompanyListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
