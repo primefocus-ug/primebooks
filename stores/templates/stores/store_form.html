@@ -1703,32 +1703,52 @@
 
     // Toggle entire EFRIS section based on EFRIS enabled checkbox
     function toggleEFRISSection(isEnabled) {
-        if (!efrisSection) return;
+    if (!efrisSection) return;
 
-        // Always show EFRIS section, but change its appearance
-        if (isEnabled) {
-            efrisSection.style.display = 'block';
-            // Enable all fields except integration mode (which is now outside)
-            const efrisFields = efrisSection.querySelectorAll('input:not(#{{ form.store_efris_integration_mode.id_for_label }}), select, textarea');
-            efrisFields.forEach(field => {
+    // Get integration mode field ID
+    const integrationModeId = '{{ form.store_efris_integration_mode.id_for_label }}';
+
+    if (isEnabled) {
+        efrisSection.style.display = 'block';
+        // Enable all fields except integration mode
+        const efrisFields = efrisSection.querySelectorAll('input, select, textarea');
+        efrisFields.forEach(field => {
+            if (field.id !== integrationModeId) {
                 field.disabled = false;
-            });
-        } else {
-            // Keep section visible but disable all fields except integration mode
-            efrisSection.style.display = 'block';
-            const efrisFields = efrisSection.querySelectorAll('input:not(#{{ form.store_efris_integration_mode.id_for_label }}), select, textarea');
-            efrisFields.forEach(field => {
+            }
+        });
+    } else {
+        efrisSection.style.display = 'block';
+        // Disable all fields except integration mode and toggle checkboxes
+        const efrisFields = efrisSection.querySelectorAll('input, select, textarea');
+        efrisFields.forEach(field => {
+            if (field.id !== integrationModeId) {
                 field.disabled = true;
-            });
+            }
+        });
 
-            // Don't disable checkboxes for toggle fields
-            const efrisToggleFields = ['use_company_efris', 'efris_enabled'];
-            efrisToggleFields.forEach(fieldName => {
-                const field = document.getElementById(`id_${fieldName}`);
-                if (field) field.disabled = false;
-            });
-        }
+        // Don't disable checkboxes for toggle fields
+        const efrisToggleFields = ['use_company_efris', 'efris_enabled'];
+        efrisToggleFields.forEach(fieldName => {
+            const field = document.getElementById(`id_${fieldName}`);
+            if (field) field.disabled = false;
+        });
     }
+}
+function ensureIntegrationModeVisible() {
+    const integrationModeField = document.getElementById('{{ form.store_efris_integration_mode.id_for_label }}');
+    if (integrationModeField) {
+        // Make sure it's visible
+        const fieldContainer = integrationModeField.closest('.col-md-6');
+        if (fieldContainer) {
+            fieldContainer.style.display = 'block';
+        }
+        // Make sure it's enabled - THIS IS KEY
+        integrationModeField.disabled = false;
+        // Also remove any readonly attribute
+        integrationModeField.removeAttribute('readonly');
+    }
+}
 
     // Initialize EFRIS toggles
     if (efrisEnabledCheckbox) {
