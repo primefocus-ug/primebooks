@@ -647,9 +647,9 @@ class StoreForm(forms.ModelForm):
             'management': ['allows_sales', 'allows_inventory', 'manager_name', 'manager_phone',
                            'operating_hours', 'timezone', 'sort_order', 'notes'],
             'staff': ['staff', 'store_managers'],
-            'identifiers': ['nin', 'tin', 'device_serial_number'],
+            'identifiers': ['nin', 'tin', 'device_serial_number','store_efris_integration_mode'],
             'efris_basic': ['efris_enabled', 'efris_device_number', 'is_registered_with_efris',
-                            'efris_registration_date', 'efris_last_sync', 'last_stock_sync','store_efris_integration_mode',
+                            'efris_registration_date', 'efris_last_sync', 'last_stock_sync',
                             'auto_fiscalize_sales', 'allow_manual_fiscalization', 'report_stock_movements'],
             'efris_toggle': ['use_company_efris', 'copy_from_company'],
             'efris_store': [
