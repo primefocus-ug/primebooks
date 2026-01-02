@@ -1372,6 +1372,9 @@
     const displayLocation = document.getElementById('displayLocation');
     const addressSearchInput = document.getElementById('{{ form.geocode_address.id_for_label }}');
 
+    // Get integration mode field
+    const integrationModeField = document.getElementById('{{ form.store_efris_integration_mode.id_for_label }}');
+
     // Location option cards
     const useCurrentLocationBtn = document.getElementById('useCurrentLocation');
     const searchAddressBtn = document.getElementById('searchAddress');
@@ -1384,6 +1387,8 @@
     // EFRIS elements
     const useCompanyEfrisCheckbox = document.getElementById('id_use_company_efris');
     const copyFromCompanyCheckbox = document.getElementById('id_copy_from_company');
+    const efrisEnabledCheckbox = document.getElementById('{{ form.efris_enabled.id_for_label }}');
+    const efrisSection = document.getElementById('efrisSection');
 
     // Initialize existing coordinates if available
     function initializeExistingCoordinates() {
@@ -1420,145 +1425,25 @@
         coordinateDisplay.classList.add('success');
 
         // Reverse geocode to get location name
-        reverseGeocode(lat, lng);// Add dragend event to marker
-    marker.on('dragend', function(e) {
-        const newLat = e.target.getLatLng().lat;
-        const newLng = e.target.getLatLng().lng;
-        latInput.value = newLat.toFixed(6);
-        lngInput.value = newLng.toFixed(6);
-        locationGpsInput.value = `${newLat.toFixed(6)}, ${newLng.toFixed(6)}`;
-        displayLat.textContent = newLat.toFixed(6);
-        displayLng.textContent = newLng.toFixed(6);
-        reverseGeocode(newLat, newLng);
-    });
-}
-
-// Function to reverse geocode
-function reverseGeocode(lat, lng) {
-    // Cancel any pending request
-    if (geocodeController) {
-        geocodeController.abort();
+        reverseGeocode(lat, lng);
     }
 
-    geocodeController = new AbortController();
-    const timeoutId = setTimeout(() => geocodeController.abort(), 10000);
-
-    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
-        signal: geocodeController.signal
-    })
-        .then(response => response.json())
-        .then(data => {
-            clearTimeout(timeoutId);
-            if (data.display_name) {
-                const address = data.display_name;
-                displayLocation.textContent = address;
-                if (data.address) {
-                    if (data.address.state) {
-                        regionInput.value = data.address.state;
-                    } else if (data.address.county) {
-                        regionInput.value = data.address.county;
-                    } else if (data.address.region) {
-                        regionInput.value = data.address.region;
-                    }
-                }
-
-                // Update address search field if it exists
-                if (addressSearchInput) {
-                    addressSearchInput.value = address;
-                }
-            } else {
-                displayLocation.textContent = '{% trans "Location details unavailable" %}';
-            }
-        })
-        .catch(error => {
-            clearTimeout(timeoutId);
-            if (error.name !== 'AbortError') {
-                console.error('Reverse geocoding error:', error);
-                displayLocation.textContent = '{% trans "Location details unavailable" %}';
-            }
+    // Add dragend event to marker
+    if (marker) {
+        marker.on('dragend', function(e) {
+            const newLat = e.target.getLatLng().lat;
+            const newLng = e.target.getLatLng().lng;
+            latInput.value = newLat.toFixed(6);
+            lngInput.value = newLng.toFixed(6);
+            locationGpsInput.value = `${newLat.toFixed(6)}, ${newLng.toFixed(6)}`;
+            displayLat.textContent = newLat.toFixed(6);
+            displayLng.textContent = newLng.toFixed(6);
+            reverseGeocode(newLat, newLng);
         });
-}
+    }
 
-// Map click handler
-map.on('click', function(e) {
-    updateMarker(e.latlng.lat, e.latlng.lng);
-});
-
-// Use current location button
-if (useCurrentLocationBtn) {
-    useCurrentLocationBtn.addEventListener('click', function() {
-        if (navigator.geolocation) {
-            const originalContent = this.innerHTML;
-            this.innerHTML = '<div class="spinner-container"><div class="spinner"></div> {% trans "Getting location..." %}</div>';
-            this.classList.add('disabled');
-
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    const lat = position.coords.latitude;
-                    const lng = position.coords.longitude;
-                    updateMarker(lat, lng);
-                    map.setView([lat, lng], 15);
-
-                    // Hide other options
-                    addressSearchForm.style.display = 'none';
-
-                    // Restore button
-                    this.innerHTML = originalContent;
-                    this.classList.remove('disabled');
-                },
-                (error) => {
-                    let errorMessage = '{% trans "Could not get your location." %}';
-                    switch(error.code) {
-                        case error.PERMISSION_DENIED:
-                            errorMessage = '{% trans "Location access denied. Please enable location permissions." %}';
-                            break;
-                        case error.POSITION_UNAVAILABLE:
-                            errorMessage = '{% trans "Location information unavailable." %}';
-                            break;
-                        case error.TIMEOUT:
-                            errorMessage = '{% trans "Location request timed out." %}';
-                            break;
-                    }
-
-                    alert(errorMessage);
-                    this.innerHTML = originalContent;
-                    this.classList.remove('disabled');
-                },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 0
-                }
-            );
-        } else {
-            alert('{% trans "Geolocation is not supported by your browser." %}');
-        }
-    });
-}
-
-// Search address button
-if (searchAddressBtn) {
-    searchAddressBtn.addEventListener('click', function() {
-        addressSearchForm.style.display = addressSearchForm.style.display === 'none' ? 'block' : 'none';
-        if (addressSearchForm.style.display === 'block') {
-            addressSearchInput.focus();
-        }
-    });
-}
-
-// Geocode button
-if (geocodeBtn) {
-    geocodeBtn.addEventListener('click', function() {
-        const address = addressSearchInput ? addressSearchInput.value.trim() : '';
-        if (!address) {
-            alert('{% trans "Please enter an address to search." %}');
-            return;
-        }
-
-        const originalContent = this.innerHTML;
-        this.innerHTML = '<span class="spinner-container"><span class="spinner"></span></span> {% trans "Searching..." %}';
-        this.disabled = true;
-
+    // Function to reverse geocode
+    function reverseGeocode(lat, lng) {
         // Cancel any pending request
         if (geocodeController) {
             geocodeController.abort();
@@ -1567,343 +1452,535 @@ if (geocodeBtn) {
         geocodeController = new AbortController();
         const timeoutId = setTimeout(() => geocodeController.abort(), 10000);
 
-        fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&addressdetails=1`, {
+        fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
             signal: geocodeController.signal
         })
             .then(response => response.json())
             .then(data => {
                 clearTimeout(timeoutId);
-                if (data && data.length > 0) {
-                    const lat = parseFloat(data[0].lat);
-                    const lng = parseFloat(data[0].lon);
-                    updateMarker(lat, lng);
-                    map.setView([lat, lng], 15);
-
-                    // Update region if available
-                    if (data[0].address) {
-                        if (data[0].address.state && regionInput) {
-                            regionInput.value = data[0].address.state;
+                if (data.display_name) {
+                    const address = data.display_name;
+                    displayLocation.textContent = address;
+                    if (data.address) {
+                        if (data.address.state) {
+                            regionInput.value = data.address.state;
+                        } else if (data.address.county) {
+                            regionInput.value = data.address.county;
+                        } else if (data.address.region) {
+                            regionInput.value = data.address.region;
                         }
                     }
+
+                    // Update address search field if it exists
+                    if (addressSearchInput) {
+                        addressSearchInput.value = address;
+                    }
                 } else {
-                    alert('{% trans "Location not found. Please try a different address." %}');
+                    displayLocation.textContent = '{% trans "Location details unavailable" %}';
                 }
             })
             .catch(error => {
                 clearTimeout(timeoutId);
                 if (error.name !== 'AbortError') {
-                    console.error('Geocoding error:', error);
-                    alert('{% trans "Error searching for location. Please try again." %}');
+                    console.error('Reverse geocoding error:', error);
+                    displayLocation.textContent = '{% trans "Location details unavailable" %}';
                 }
-            })
-            .finally(() => {
-                this.innerHTML = originalContent;
-                this.disabled = false;
             });
-    });
-}
-
-// Click on map button
-if (clickOnMapBtn) {
-    clickOnMapBtn.addEventListener('click', function() {
-        alert('{% trans "Click anywhere on the map to set the location." %}');
-        map.setView([0.3476, 32.5825], 13);
-        addressSearchForm.style.display = 'none';
-    });
-}
-
-// Enter manually button
-if (enterManuallyBtn) {
-    enterManuallyBtn.addEventListener('click', function() {
-        manualCoordinateForm.scrollIntoView({ behavior: 'smooth' });
-        latInput.focus();
-        addressSearchForm.style.display = 'none';
-    });
-}
-
-// Manual coordinate input handlers
-function handleManualInput() {
-    const lat = parseFloat(latInput.value);
-    const lng = parseFloat(lngInput.value);
-    if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        updateMarker(lat, lng);
-        map.setView([lat, lng], 15);
-    } else if (latInput.value || lngInput.value) {
-        coordinateDisplay.classList.remove('success');
-        displayLat.textContent = '{% trans "Invalid" %}';
-        displayLng.textContent = '{% trans "Invalid" %}';
-        displayLocation.textContent = '{% trans "Invalid coordinates" %}';
     }
-}
 
-if (latInput) {
-    latInput.addEventListener('blur', handleManualInput);
-    latInput.addEventListener('input', function() {
-        // Validate latitude range
-        const lat = parseFloat(this.value);
-        if (this.value && (isNaN(lat) || lat < -90 || lat > 90)) {
-            this.classList.add('field-error');
-        } else {
-            this.classList.remove('field-error');
-        }
+    // Map click handler
+    map.on('click', function(e) {
+        updateMarker(e.latlng.lat, e.latlng.lng);
     });
-}
 
-if (lngInput) {
-    lngInput.addEventListener('blur', handleManualInput);
-    lngInput.addEventListener('input', function() {
-        // Validate longitude range
-        const lng = parseFloat(this.value);
-        if (this.value && (isNaN(lng) || lng < -180 || lng > 180)) {
-            this.classList.add('field-error');
-        } else {
-            this.classList.remove('field-error');
-        }
-    });
-}
+    // Use current location button
+    if (useCurrentLocationBtn) {
+        useCurrentLocationBtn.addEventListener('click', function() {
+            if (navigator.geolocation) {
+                const originalContent = this.innerHTML;
+                this.innerHTML = '<div class="spinner-container"><div class="spinner"></div> {% trans "Getting location..." %}</div>';
+                this.classList.add('disabled');
 
-// EFRIS toggle functionality
-function toggleEFRISFields(useCompanyEfris) {
-    const storeEfrisFields = document.getElementById('storeEfrisFields');
-    const efrisIsEnabled = {{ efris_is_enabled|yesno:"true,false" }};
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        updateMarker(lat, lng);
+                        map.setView([lat, lng], 15);
 
-    if (storeEfrisFields) {
-        if (useCompanyEfris) {
-            storeEfrisFields.style.display = 'none';
-            // Disable store-specific fields
-            const storeFields = storeEfrisFields.querySelectorAll('input, select, textarea');
-            storeFields.forEach(field => {
-                field.disabled = true;
-                // Remove required attribute when disabled
-                field.removeAttribute('required');
-            });
-        } else {
-            storeEfrisFields.style.display = 'block';
-            // Enable store-specific fields
-            const storeFields = storeEfrisFields.querySelectorAll('input, select, textarea');
-            storeFields.forEach(field => {
-                field.disabled = false;
-                // Only add required if EFRIS is enabled
-                if (efrisIsEnabled && (field.name.includes('private_key') || field.name.includes('public_certificate') || field.name.includes('tin'))) {
-                    field.setAttribute('required', 'required');
-                }
-            });
-        }
+                        // Hide other options
+                        addressSearchForm.style.display = 'none';
+
+                        // Restore button
+                        this.innerHTML = originalContent;
+                        this.classList.remove('disabled');
+                    },
+                    (error) => {
+                        let errorMessage = '{% trans "Could not get your location." %}';
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMessage = '{% trans "Location access denied. Please enable location permissions." %}';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMessage = '{% trans "Location information unavailable." %}';
+                                break;
+                            case error.TIMEOUT:
+                                errorMessage = '{% trans "Location request timed out." %}';
+                                break;
+                        }
+
+                        alert(errorMessage);
+                        this.innerHTML = originalContent;
+                        this.classList.remove('disabled');
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                alert('{% trans "Geolocation is not supported by your browser." %}');
+            }
+        });
     }
-}
 
-if (useCompanyEfrisCheckbox) {
-    // Set initial state on page load
-    toggleEFRISFields(useCompanyEfrisCheckbox.checked);
+    // Search address button
+    if (searchAddressBtn) {
+        searchAddressBtn.addEventListener('click', function() {
+            addressSearchForm.style.display = addressSearchForm.style.display === 'none' ? 'block' : 'none';
+            if (addressSearchForm.style.display === 'block') {
+                addressSearchInput.focus();
+            }
+        });
+    }
 
-    // Add event listener for changes
-    useCompanyEfrisCheckbox.addEventListener('change', function() {
-        toggleEFRISFields(this.checked);
-
-        // If copying from company is checked and we're now using company EFRIS, uncheck copy
-        if (this.checked && copyFromCompanyCheckbox && copyFromCompanyCheckbox.checked) {
-            copyFromCompanyCheckbox.checked = false;
-        }
-    });
-}
-
-// Copy from company functionality
-if (copyFromCompanyCheckbox) {
-    copyFromCompanyCheckbox.addEventListener('change', function() {
-        if (this.checked && useCompanyEfrisCheckbox) {
-            // If copying from company, ensure use company EFRIS is not checked
-            useCompanyEfrisCheckbox.checked = false;
-            toggleEFRISFields(false);
-
-            // Here you would typically populate the store-specific fields
-            // with data from the company configuration via AJAX
-            alert('{% trans "This would copy company EFRIS configuration to store-specific fields. Implement AJAX call to fetch company config." %}');
-        }
-    });
-}
-
-// Phone validation
-function validatePhoneNumber(phone) {
-    // Basic validation for Uganda phone numbers
-    const ugandaRegex = /^\+256(7[0-9]|20)\d{7,8}$/;
-    return ugandaRegex.test(phone);
-}
-
-const phoneFields = ['{{ form.phone.id_for_label }}', '{{ form.secondary_phone.id_for_label }}', '{{ form.manager_phone.id_for_label }}'];
-
-phoneFields.forEach(fieldId => {
-    const field = document.getElementById(fieldId);
-    if (field) {
-        const feedback = field.parentElement ? field.parentElement.querySelector('.phone-validation-feedback') : null;
-
-        field.addEventListener('input', function() {
-            const value = this.value.trim();
-
-            if (!value) {
-                this.classList.remove('phone-valid', 'phone-invalid');
-                if (feedback) {
-                    feedback.classList.add('d-none');
-                }
+    // Geocode button
+    if (geocodeBtn) {
+        geocodeBtn.addEventListener('click', function() {
+            const address = addressSearchInput ? addressSearchInput.value.trim() : '';
+            if (!address) {
+                alert('{% trans "Please enter an address to search." %}');
                 return;
             }
 
-            // Check if it starts with +
-            if (!value.startsWith('+')) {
-                this.classList.add('phone-invalid');
-                this.classList.remove('phone-valid');
-                if (feedback) {
-                    feedback.textContent = '{% trans "Phone number should start with country code (e.g., +256)" %}';
-                    feedback.classList.remove('d-none');
-                }
-            } else if (!validatePhoneNumber(value)) {
-                this.classList.add('phone-invalid');
-                this.classList.remove('phone-valid');
-                if (feedback) {
-                    feedback.textContent = '{% trans "Invalid phone number format. Example: +2567XXXXXXXX" %}';
-                    feedback.classList.remove('d-none');
-                }
-            } else {
-                this.classList.add('phone-valid');
-                this.classList.remove('phone-invalid');
-                if (feedback) {
-                    feedback.classList.add('d-none');
-                }
-            }
-        });
+            const originalContent = this.innerHTML;
+            this.innerHTML = '<span class="spinner-container"><span class="spinner"></span></span> {% trans "Searching..." %}';
+            this.disabled = true;
 
-        // Trigger validation on page load if there's a value
-        if (field.value) {
-            field.dispatchEvent(new Event('input'));
+            // Cancel any pending request
+            if (geocodeController) {
+                geocodeController.abort();
+            }
+
+            geocodeController = new AbortController();
+            const timeoutId = setTimeout(() => geocodeController.abort(), 10000);
+
+            fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&addressdetails=1`, {
+                signal: geocodeController.signal
+            })
+                .then(response => response.json())
+                .then(data => {
+                    clearTimeout(timeoutId);
+                    if (data && data.length > 0) {
+                        const lat = parseFloat(data[0].lat);
+                        const lng = parseFloat(data[0].lon);
+                        updateMarker(lat, lng);
+                        map.setView([lat, lng], 15);
+
+                        // Update region if available
+                        if (data[0].address) {
+                            if (data[0].address.state && regionInput) {
+                                regionInput.value = data[0].address.state;
+                            }
+                        }
+                    } else {
+                        alert('{% trans "Location not found. Please try a different address." %}');
+                    }
+                })
+                .catch(error => {
+                    clearTimeout(timeoutId);
+                    if (error.name !== 'AbortError') {
+                        console.error('Geocoding error:', error);
+                        alert('{% trans "Error searching for location. Please try again." %}');
+                    }
+                })
+                .finally(() => {
+                    this.innerHTML = originalContent;
+                    this.disabled = false;
+                });
+        });
+    }
+
+    // Click on map button
+    if (clickOnMapBtn) {
+        clickOnMapBtn.addEventListener('click', function() {
+            alert('{% trans "Click anywhere on the map to set the location." %}');
+            map.setView([0.3476, 32.5825], 13);
+            addressSearchForm.style.display = 'none';
+        });
+    }
+
+    // Enter manually button
+    if (enterManuallyBtn) {
+        enterManuallyBtn.addEventListener('click', function() {
+            manualCoordinateForm.scrollIntoView({ behavior: 'smooth' });
+            latInput.focus();
+            addressSearchForm.style.display = 'none';
+        });
+    }
+
+    // Manual coordinate input handlers
+    function handleManualInput() {
+        const lat = parseFloat(latInput.value);
+        const lng = parseFloat(lngInput.value);
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+            updateMarker(lat, lng);
+            map.setView([lat, lng], 15);
+        } else if (latInput.value || lngInput.value) {
+            coordinateDisplay.classList.remove('success');
+            displayLat.textContent = '{% trans "Invalid" %}';
+            displayLng.textContent = '{% trans "Invalid" %}';
+            displayLocation.textContent = '{% trans "Invalid coordinates" %}';
         }
     }
-});
 
-// Form validation
-const form = document.getElementById('storeForm');
-if (form) {
-    form.addEventListener('submit', function(e) {
-        let isValid = true;
-        let firstErrorField = null;
+    if (latInput) {
+        latInput.addEventListener('blur', handleManualInput);
+        latInput.addEventListener('input', function() {
+            // Validate latitude range
+            const lat = parseFloat(this.value);
+            if (this.value && (isNaN(lat) || lat < -90 || lat > 90)) {
+                this.classList.add('field-error');
+            } else {
+                this.classList.remove('field-error');
+            }
+        });
+    }
+
+    if (lngInput) {
+        lngInput.addEventListener('blur', handleManualInput);
+        lngInput.addEventListener('input', function() {
+            // Validate longitude range
+            const lng = parseFloat(this.value);
+            if (this.value && (isNaN(lng) || lng < -180 || lng > 180)) {
+                this.classList.add('field-error');
+            } else {
+                this.classList.remove('field-error');
+            }
+        });
+    }
+
+    // EFRIS toggle functionality
+    function toggleEFRISFields(useCompanyEfris) {
+        const storeEfrisFields = document.getElementById('storeEfrisFields');
         const efrisIsEnabled = {{ efris_is_enabled|yesno:"true,false" }};
 
-        // Clear previous errors
-        form.querySelectorAll('.field-error').forEach(el => {
-            el.classList.remove('field-error');
+        if (storeEfrisFields) {
+            if (useCompanyEfris) {
+                storeEfrisFields.style.display = 'none';
+                // Disable store-specific fields
+                const storeFields = storeEfrisFields.querySelectorAll('input, select, textarea');
+                storeFields.forEach(field => {
+                    field.disabled = true;
+                    // Remove required attribute when disabled
+                    field.removeAttribute('required');
+                });
+            } else {
+                storeEfrisFields.style.display = 'block';
+                // Enable store-specific fields
+                const storeFields = storeEfrisFields.querySelectorAll('input, select, textarea');
+                storeFields.forEach(field => {
+                    field.disabled = false;
+                    // Only add required if EFRIS is enabled
+                    if (efrisIsEnabled && (field.name.includes('private_key') || field.name.includes('public_certificate') || field.name.includes('tin'))) {
+                        field.setAttribute('required', 'required');
+                    }
+                });
+            }
+        }
+    }
+
+    // Toggle entire EFRIS section based on EFRIS enabled checkbox
+    function toggleEFRISSection(isEnabled) {
+        if (!efrisSection) return;
+
+        // Always show EFRIS section, but change its appearance
+        if (isEnabled) {
+            efrisSection.style.display = 'block';
+            // Enable all fields except integration mode (which is now outside)
+            const efrisFields = efrisSection.querySelectorAll('input:not(#{{ form.store_efris_integration_mode.id_for_label }}), select, textarea');
+            efrisFields.forEach(field => {
+                field.disabled = false;
+            });
+        } else {
+            // Keep section visible but disable all fields except integration mode
+            efrisSection.style.display = 'block';
+            const efrisFields = efrisSection.querySelectorAll('input:not(#{{ form.store_efris_integration_mode.id_for_label }}), select, textarea');
+            efrisFields.forEach(field => {
+                field.disabled = true;
+            });
+
+            // Don't disable checkboxes for toggle fields
+            const efrisToggleFields = ['use_company_efris', 'efris_enabled'];
+            efrisToggleFields.forEach(fieldName => {
+                const field = document.getElementById(`id_${fieldName}`);
+                if (field) field.disabled = false;
+            });
+        }
+    }
+
+    // Initialize EFRIS toggles
+    if (efrisEnabledCheckbox) {
+        // Set initial state
+        toggleEFRISSection(efrisEnabledCheckbox.checked);
+
+        // Add event listener
+        efrisEnabledCheckbox.addEventListener('change', function() {
+            toggleEFRISSection(this.checked);
+
+            // Also update use company EFRIS toggle state
+            if (useCompanyEfrisCheckbox) {
+                toggleEFRISFields(useCompanyEfrisCheckbox.checked);
+            }
         });
+    }
 
-        // Validate required fields (basic info always required)
-        const requiredFields = form.querySelectorAll('[required]');
-        requiredFields.forEach(field => {
-            if (!field.value.trim() && !field.disabled) {
-                field.classList.add('field-error');
-                isValid = false;
+    if (useCompanyEfrisCheckbox) {
+        // Set initial state on page load
+        toggleEFRISFields(useCompanyEfrisCheckbox.checked);
 
-                if (!firstErrorField) {
-                    firstErrorField = field;
+        // Add event listener for changes
+        useCompanyEfrisCheckbox.addEventListener('change', function() {
+            toggleEFRISFields(this.checked);
+
+            // If copying from company is checked and we're now using company EFRIS, uncheck copy
+            if (this.checked && copyFromCompanyCheckbox && copyFromCompanyCheckbox.checked) {
+                copyFromCompanyCheckbox.checked = false;
+            }
+        });
+    }
+
+    // Copy from company functionality
+    if (copyFromCompanyCheckbox) {
+        copyFromCompanyCheckbox.addEventListener('change', function() {
+            if (this.checked && useCompanyEfrisCheckbox) {
+                // If copying from company, ensure use company EFRIS is not checked
+                useCompanyEfrisCheckbox.checked = false;
+                toggleEFRISFields(false);
+
+                // Here you would typically populate the store-specific fields
+                // with data from the company configuration via AJAX
+                alert('{% trans "This would copy company EFRIS configuration to store-specific fields. Implement AJAX call to fetch company config." %}');
+            }
+        });
+    }
+
+    // Phone validation
+    function validatePhoneNumber(phone) {
+        // Basic validation for Uganda phone numbers
+        const ugandaRegex = /^\+256(7[0-9]|20)\d{7,8}$/;
+        return ugandaRegex.test(phone);
+    }
+
+    const phoneFields = ['{{ form.phone.id_for_label }}', '{{ form.secondary_phone.id_for_label }}', '{{ form.manager_phone.id_for_label }}'];
+
+    phoneFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            const feedback = field.parentElement ? field.parentElement.querySelector('.phone-validation-feedback') : null;
+
+            field.addEventListener('input', function() {
+                const value = this.value.trim();
+
+                if (!value) {
+                    this.classList.remove('phone-valid', 'phone-invalid');
+                    if (feedback) {
+                        feedback.classList.add('d-none');
+                    }
+                    return;
+                }
+
+                // Check if it starts with +
+                if (!value.startsWith('+')) {
+                    this.classList.add('phone-invalid');
+                    this.classList.remove('phone-valid');
+                    if (feedback) {
+                        feedback.textContent = '{% trans "Phone number should start with country code (e.g., +256)" %}';
+                        feedback.classList.remove('d-none');
+                    }
+                } else if (!validatePhoneNumber(value)) {
+                    this.classList.add('phone-invalid');
+                    this.classList.remove('phone-valid');
+                    if (feedback) {
+                        feedback.textContent = '{% trans "Invalid phone number format. Example: +2567XXXXXXXX" %}';
+                        feedback.classList.remove('d-none');
+                    }
+                } else {
+                    this.classList.add('phone-valid');
+                    this.classList.remove('phone-invalid');
+                    if (feedback) {
+                        feedback.classList.add('d-none');
+                    }
+                }
+            });
+
+            // Trigger validation on page load if there's a value
+            if (field.value) {
+                field.dispatchEvent(new Event('input'));
+            }
+        }
+    });
+
+    // Form validation
+    const form = document.getElementById('storeForm');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            let isValid = true;
+            let firstErrorField = null;
+            const efrisIsEnabled = {{ efris_is_enabled|yesno:"true,false" }};
+
+            // Clear previous errors
+            form.querySelectorAll('.field-error').forEach(el => {
+                el.classList.remove('field-error');
+            });
+
+            // Validate required fields (basic info always required)
+            const requiredFields = form.querySelectorAll('[required]');
+            requiredFields.forEach(field => {
+                if (!field.value.trim() && !field.disabled) {
+                    field.classList.add('field-error');
+                    isValid = false;
+
+                    if (!firstErrorField) {
+                        firstErrorField = field;
+                    }
+                }
+            });
+
+            // Validate coordinates if location is important
+            if (latInput && lngInput && (latInput.value || lngInput.value)) {
+                const lat = parseFloat(latInput.value);
+                const lng = parseFloat(lngInput.value);
+
+                if (isNaN(lat) || lat < -90 || lat > 90) {
+                    latInput.classList.add('field-error');
+                    isValid = false;
+                    if (!firstErrorField) firstErrorField = latInput;
+                }
+
+                if (isNaN(lng) || lng < -180 || lng > 180) {
+                    lngInput.classList.add('field-error');
+                    isValid = false;
+                    if (!firstErrorField) firstErrorField = lngInput;
+                }
+            }
+
+            // Only validate EFRIS settings if EFRIS is enabled
+            if (efrisIsEnabled && useCompanyEfrisCheckbox && !useCompanyEfrisCheckbox.checked) {
+                // Only validate store-specific EFRIS fields if using store config
+                const efrisRequiredFields = [
+                    document.getElementById('{{ form.tin.id_for_label }}'),
+                    document.getElementById('{{ form.store_efris_private_key.id_for_label }}'),
+                    document.getElementById('{{ form.store_efris_public_certificate.id_for_label }}')
+                ];
+
+                efrisRequiredFields.forEach(field => {
+                    if (field && !field.value.trim() && !field.disabled) {
+                        field.classList.add('field-error');
+                        isValid = false;
+                        if (!firstErrorField) firstErrorField = field;
+                    }
+                });
+            }
+
+            if (!isValid) {
+                e.preventDefault();
+
+                // Show alert
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-danger alert-enhanced alert-dismissible fade show';
+                alertDiv.innerHTML = `
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>{% trans "Form Validation Error" %}:</strong> {% trans "Please fill in all required fields correctly." %}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+
+                // Insert at the beginning of the form
+                form.insertBefore(alertDiv, form.firstChild);
+
+                // Scroll to first error
+                if (firstErrorField) {
+                    firstErrorField.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center'
+                    });
+                    firstErrorField.focus();
                 }
             }
         });
+    }
 
-        // Validate coordinates if location is important
-        if (latInput && lngInput && (latInput.value || lngInput.value)) {
-            const lat = parseFloat(latInput.value);
-            const lng = parseFloat(lngInput.value);
+    // Initialize existing coordinates
+    initializeExistingCoordinates();
 
-            if (isNaN(lat) || lat < -90 || lat > 90) {
-                latInput.classList.add('field-error');
-                isValid = false;
-                if (!firstErrorField) firstErrorField = latInput;
-            }
-
-            if (isNaN(lng) || lng < -180 || lng > 180) {
-                lngInput.classList.add('field-error');
-                isValid = false;
-                if (!firstErrorField) firstErrorField = lngInput;
-            }
-        }
-
-        // Only validate EFRIS settings if EFRIS is enabled
-        if (efrisIsEnabled && useCompanyEfrisCheckbox && !useCompanyEfrisCheckbox.checked) {
-            // Only validate store-specific EFRIS fields if using store config
-            const efrisRequiredFields = [
-                document.getElementById('{{ form.tin.id_for_label }}'),
-                document.getElementById('{{ form.store_efris_private_key.id_for_label }}'),
-                document.getElementById('{{ form.store_efris_public_certificate.id_for_label }}')
-            ];
-
-            efrisRequiredFields.forEach(field => {
-                if (field && !field.value.trim() && !field.disabled) {
-                    field.classList.add('field-error');
-                    isValid = false;
-                    if (!firstErrorField) firstErrorField = field;
+    // Add keyboard navigation for location options
+    const locationCards = [useCurrentLocationBtn, searchAddressBtn, clickOnMapBtn, enterManuallyBtn];
+    locationCards.forEach(card => {
+        if (card) {
+            card.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    this.click();
                 }
             });
         }
-
-        if (!isValid) {
-            e.preventDefault();
-
-            // Show alert
-            const alertDiv = document.createElement('div');
-            alertDiv.className = 'alert alert-danger alert-enhanced alert-dismissible fade show';
-            alertDiv.innerHTML = `
-                <i class="bi bi-exclamation-triangle me-2"></i>
-                <strong>{% trans "Form Validation Error" %}:</strong> {% trans "Please fill in all required fields correctly." %}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-
-            // Insert at the beginning of the form
-            form.insertBefore(alertDiv, form.firstChild);
-
-            // Scroll to first error
-            if (firstErrorField) {
-                firstErrorField.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'center'
-                });
-                firstErrorField.focus();
-            }
-        }
     });
-}
 
-// Initialize existing coordinates
-initializeExistingCoordinates();
-
-// Add keyboard navigation for location options
-const locationCards = [useCurrentLocationBtn, searchAddressBtn, clickOnMapBtn, enterManuallyBtn];
-locationCards.forEach(card => {
-    if (card) {
-        card.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' || e.key === ' ') {
+    // Add address search on Enter key
+    if (addressSearchInput) {
+        addressSearchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
                 e.preventDefault();
-                this.click();
+                if (geocodeBtn) geocodeBtn.click();
             }
         });
     }
-});
 
-// Add address search on Enter key
-if (addressSearchInput) {
-    addressSearchInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            if (geocodeBtn) geocodeBtn.click();
+    // Initialize tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (geocodeController) {
+            geocodeController.abort();
         }
     });
+});
+    // Add this function
+function ensureIntegrationModeVisible() {
+    const integrationModeField = document.getElementById('{{ form.store_efris_integration_mode.id_for_label }}');
+    if (integrationModeField) {
+        // Make sure it's visible
+        integrationModeField.closest('.col-md-6').style.display = 'block';
+        // Make sure it's enabled
+        integrationModeField.disabled = false;
+    }
 }
 
-// Initialize tooltips
-const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-    return new bootstrap.Tooltip(tooltipTriggerEl);
-});
+// Call it on page load
+document.addEventListener('DOMContentLoaded', function() {
+    ensureIntegrationModeVisible();
 
-// Cleanup on page unload
-window.addEventListener('beforeunload', function() {
-    if (geocodeController) {
-        geocodeController.abort();
+    // Also call it whenever EFRIS status changes
+    if (efrisEnabledCheckbox) {
+        efrisEnabledCheckbox.addEventListener('change', function() {
+            setTimeout(ensureIntegrationModeVisible, 100);
+        });
     }
-});});
+});
 </script>
 {% endblock %}

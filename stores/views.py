@@ -1216,8 +1216,10 @@ class StoreCreateView(CompanyFieldLockMixin, LoginRequiredMixin, PermissionRequi
         """Add branch limit and EFRIS status context to template"""
         context = super().get_context_data(**kwargs)
 
-        # Check EFRIS status
+        # Check EFRIS status - check company first, then tenant
         efris_is_enabled = False
+
+        # Check company level EFRIS
         if hasattr(self.request.user, 'company') and self.request.user.company:
             company = self.request.user.company
             efris_is_enabled = getattr(company, 'efris_enabled', False)
@@ -1229,10 +1231,17 @@ class StoreCreateView(CompanyFieldLockMixin, LoginRequiredMixin, PermissionRequi
                 'can_create_more': current_stores < getattr(company.plan, 'branch_limit', 0) if hasattr(company,
                                                                                                         'plan') else True
             })
-        elif hasattr(self.request, 'tenant'):
+
+        # If not enabled at company level, check tenant level
+        if not efris_is_enabled and hasattr(self.request, 'tenant'):
             efris_is_enabled = getattr(self.request.tenant, 'efris_enabled', False)
 
         context['efris_is_enabled'] = efris_is_enabled
+
+        # Pass current company for reference
+        if hasattr(self.request.user, 'company') and self.request.user.company:
+            context['company'] = self.request.user.company
+
         return context
 
 
@@ -1272,14 +1281,22 @@ class StoreUpdateView(CompanyFieldLockMixin, LoginRequiredMixin, PermissionRequi
         """Add EFRIS status context to template"""
         context = super().get_context_data(**kwargs)
 
-        # Check EFRIS status
+        # Check EFRIS status - check company first, then tenant
         efris_is_enabled = False
+
+        # Check company level EFRIS
         if self.object and self.object.company:
             efris_is_enabled = getattr(self.object.company, 'efris_enabled', False)
-        elif hasattr(self.request, 'tenant'):
+
+        # If not enabled at company level, check tenant level
+        if not efris_is_enabled and hasattr(self.request, 'tenant'):
             efris_is_enabled = getattr(self.request.tenant, 'efris_enabled', False)
 
         context['efris_is_enabled'] = efris_is_enabled
+
+        # Pass the current store instance for reference
+        context['object'] = self.object
+
         return context
 
 class StoreDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
