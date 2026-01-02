@@ -542,6 +542,7 @@
     <!-- Hidden Fields -->
     {{ form.efris_commodity_code }}
 </form>
+
 <!-- Add Category Modal -->
 <div class="modal fade" id="addCategoryModal" tabindex="-1" aria-labelledby="addCategoryModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -627,14 +628,15 @@ function showSuccessMessage(message) {
 }
 
 // ============================================
-// SAVE CATEGORY FUNCTION - GLOBAL
+// SAVE CATEGORY FUNCTION - FIXED VERSION
 // ============================================
 
 window.saveCategory = function() {
     console.log('🚀 saveCategory() called - Starting category save process');
 
-    // Get CSRF token - ENSURE IT'S CLEAN
-    const csrfToken = getCookie('csrftoken');
+    // Get CSRF token from the main form (more reliable than cookies)
+    const csrfToken = $('input[name="csrfmiddlewaretoken"]').first().val() || getCookie('csrftoken');
+
     if (!csrfToken) {
         console.error('❌ CSRF token not found!');
         alert('Security token missing. Please refresh the page.');
@@ -642,7 +644,6 @@ window.saveCategory = function() {
     }
 
     console.log('🔑 CSRF Token found:', csrfToken.substring(0, 10) + '...');
-    console.log('🔑 CSRF Token length:', csrfToken.length);
 
     // Get form values
     const name = $('#categoryName').val().trim();
@@ -672,16 +673,17 @@ window.saveCategory = function() {
         return false;
     }
 
-    // CRITICAL FIX: Use FormData for proper encoding
-    const formData = new FormData();
-    formData.append('name', name);
-    formData.append('code', code);
-    formData.append('description', description);
-    formData.append('category_type', categoryType);
-    formData.append('is_active', 'true');
-    formData.append('csrfmiddlewaretoken', csrfToken);
+    // Prepare data object
+    const postData = {
+        name: name,
+        code: code,
+        description: description,
+        category_type: categoryType,
+        is_active: true,
+        csrfmiddlewaretoken: csrfToken
+    };
 
-    console.log('📤 FormData prepared with category_type:', categoryType);
+    console.log('📤 POST data prepared:', postData);
 
     // Show loading state
     const $saveBtn = $('#saveCategoryBtn');
@@ -691,16 +693,18 @@ window.saveCategory = function() {
     const ajaxUrl = '{% url "inventory:category_create_ajax" %}';
     console.log('🌐 Sending AJAX request to:', ajaxUrl);
 
-    // Make AJAX request with FIXED CSRF handling
+    // Make AJAX request with proper CSRF handling
     $.ajax({
         url: ajaxUrl,
         type: 'POST',
-        data: formData,
-        processData: false,  // CRITICAL: Don't process FormData
-        contentType: false,  // CRITICAL: Let browser set Content-Type with boundary
+        data: postData,
         dataType: 'json',
         headers: {
-            'X-CSRFToken': csrfToken  // Use standard header name
+            'X-CSRFToken': csrfToken
+        },
+        beforeSend: function(xhr) {
+            // Double check CSRF token is set
+            xhr.setRequestHeader('X-CSRFToken', csrfToken);
         },
         success: function(response, status, xhr) {
             console.log('✅ AJAX Success - Status:', status);
@@ -750,7 +754,20 @@ window.saveCategory = function() {
             } else {
                 console.error('❌ Server returned success: false');
                 console.error('Server response:', response);
-                alert('Error: ' + (response.message || response.error || 'Failed to create category'));
+
+                let errorMsg = 'Failed to create category';
+                if (response.errors) {
+                    // Handle field-specific errors
+                    const errorMessages = [];
+                    for (const [field, messages] of Object.entries(response.errors)) {
+                        errorMessages.push(`${field}: ${messages.join(', ')}`);
+                    }
+                    errorMsg = errorMessages.join('\n');
+                } else if (response.message || response.error) {
+                    errorMsg = response.message || response.error;
+                }
+
+                alert('Error: ' + errorMsg);
             }
         },
         error: function(xhr, status, error) {
@@ -765,6 +782,24 @@ window.saveCategory = function() {
 
             if (xhr.status === 403) {
                 errorMessage = 'CSRF verification failed. Please refresh the page and try again.';
+                console.error('CSRF TOKEN ISSUE DETECTED');
+                console.error('Sent token:', csrfToken ? csrfToken.substring(0, 10) + '...' : 'NO TOKEN');
+            } else if (xhr.status === 400) {
+                // Bad request - likely validation errors
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    if (response.errors) {
+                        const errorMessages = [];
+                        for (const [field, messages] of Object.entries(response.errors)) {
+                            errorMessages.push(`${field}: ${messages.join(', ')}`);
+                        }
+                        errorMessage = errorMessages.join('\n');
+                    } else {
+                        errorMessage = response.message || response.error || errorMessage;
+                    }
+                } catch (e) {
+                    errorMessage = 'Invalid form data. Please check your inputs.';
+                }
             } else if (xhr.responseJSON) {
                 errorMessage = xhr.responseJSON.message || xhr.responseJSON.error || errorMessage;
             } else if (xhr.responseText) {
