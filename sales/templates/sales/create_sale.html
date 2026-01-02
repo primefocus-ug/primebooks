@@ -1715,7 +1715,10 @@ body {
 
 {% block extra_js %}
 <script>
-    // Global variable to store current customer credit info
+// ============================================
+// GLOBAL STATE & CREDIT INFO
+// ============================================
+
 let currentCustomerCredit = {
     allowCredit: false,
     creditLimit: 0,
@@ -1725,7 +1728,6 @@ let currentCustomerCredit = {
     hasOverdue: false
 };
 
-// Global state with enhanced properties
 const SaleState = {
     cart: [],
     items: [],
@@ -1745,10 +1747,141 @@ const SaleState = {
     activeTab: 'searchTab'
 };
 
-// Initialize on DOM ready
+// ============================================
+// DEBOUNCE UTILITY WITH ABORT CONTROLLER
+// ============================================
+
+function createDebouncedSearch() {
+    let timeout;
+    let currentController = null;
+
+    return function(func, wait) {
+        return function executedFunction(...args) {
+            if (currentController) {
+                currentController.abort();
+            }
+            clearTimeout(timeout);
+            timeout = setTimeout(() => {
+                currentController = new AbortController();
+                func.call(this, ...args, currentController);
+            }, wait);
+        };
+    };
+}
+
+const debouncedSearchCustomers = createDebouncedSearch();
+
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-UG', {
+        style: 'currency',
+        currency: 'UGX',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(amount);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showToast(message, type = 'info') {
+    const container = document.querySelector('.toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+        <i class="bi ${type === 'success' ? 'bi-check-circle-fill text-success' :
+                          type === 'error' ? 'bi-exclamation-circle-fill text-danger' :
+                          type === 'warning' ? 'bi-exclamation-triangle-fill text-warning' :
+                          'bi-info-circle-fill text-info'}"></i>
+        <span>${message}</span>
+    `;
+
+    container.appendChild(toast);
+    setTimeout(() => toast.classList.add('show'), 10);
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            if (container.contains(toast)) {
+                container.removeChild(toast);
+            }
+        }, 300);
+    }, 5000);
+}
+
+function showError(message) {
+    console.error('Error:', message);
+    try {
+        const errorContent = document.getElementById('errorModalContent');
+        if (errorContent) {
+            errorContent.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    ${escapeHtml(message)}
+                </div>
+            `;
+            const modal = new bootstrap.Modal(document.getElementById('errorModal'));
+            modal.show();
+            return;
+        }
+    } catch (e) {
+        console.warn('Could not show error modal:', e);
+    }
+    alert('Error: ' + message);
+}
+
+function showLoading(show) {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = show ? 'flex' : 'none';
+    }
+}
+
+// ============================================
+// INITIALIZATION
+// ============================================
+
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('✅ Initializing Sale Page...');
+
     setupSaleEventListeners();
     setupKeyboardShortcuts();
+    setupCustomerSearchListeners();
+    setupCustomerDropdownCloseHandler();
     loadRecentCustomers();
     checkForDrafts();
 
@@ -1756,11 +1889,22 @@ document.addEventListener('DOMContentLoaded', function() {
     if (storeId) {
         loadItems();
     }
+
+    const paymentMethodSelect = document.getElementById('paymentMethod');
+    if (paymentMethodSelect) {
+        paymentMethodSelect.addEventListener('change', validatePaymentMethod);
+    }
+
+    toggleDueDateSection();
+
+    console.log('✅ Sale Page Initialized');
 });
 
-// Setup all event listeners
+// ============================================
+// EVENT LISTENERS SETUP
+// ============================================
+
 function setupSaleEventListeners() {
-    // Store selection
     const storeSelect = document.getElementById('storeSelect');
     if (storeSelect) {
         storeSelect.addEventListener('change', function() {
@@ -1770,7 +1914,6 @@ function setupSaleEventListeners() {
         });
     }
 
-    // Product search
     const productSearchBar = document.getElementById('productSearchBar');
     if (productSearchBar) {
         productSearchBar.addEventListener('input', debounce(function(e) {
@@ -1779,24 +1922,10 @@ function setupSaleEventListeners() {
         }, 300));
     }
 
-    // Customer search
-    const customerSearch = document.getElementById('customerSearch');
-    if (customerSearch) {
-        customerSearch.addEventListener('input', debounce(searchCustomers, 300));
-    }
-
-    // Document type changes
     document.querySelectorAll('input[name="document_type"]').forEach(radio => {
         radio.addEventListener('change', toggleDueDateSection);
     });
 
-    // Payment method changes
-    const paymentMethod = document.getElementById('paymentMethod');
-    if (paymentMethod) {
-        paymentMethod.addEventListener('change', validatePaymentMethod);
-    }
-
-    // Discount value input
     const discountValue = document.getElementById('discountValue');
     if (discountValue) {
         discountValue.addEventListener('input', function() {
@@ -1804,17 +1933,6 @@ function setupSaleEventListeners() {
         });
     }
 
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function(event) {
-        const dropdown = document.getElementById('customerDropdown');
-        const searchInput = document.getElementById('customerSearch');
-
-        if (dropdown && !dropdown.contains(event.target) && searchInput && !searchInput.contains(event.target)) {
-            dropdown.classList.remove('show');
-        }
-    });
-
-    // Tab change listeners
     const searchTabBtn = document.getElementById('searchTabBtn');
     const recentTabBtn = document.getElementById('recentTabBtn');
     const efrisTabBtn = document.getElementById('efrisTabBtn');
@@ -1822,6 +1940,7 @@ function setupSaleEventListeners() {
     if (searchTabBtn) {
         searchTabBtn.addEventListener('click', function() {
             SaleState.activeTab = 'searchTab';
+            setTimeout(setupCustomerSearchListeners, 100);
         });
     }
 
@@ -1847,17 +1966,16 @@ function setupSaleEventListeners() {
             efrisTab.show();
         });
     }
-
-    // Initialize due date section
-    toggleDueDateSection();
 }
 
-// Keyboard shortcuts
+// ============================================
+// KEYBOARD SHORTCUTS
+// ============================================
+
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', function(e) {
         if (!SaleState.keyboardShortcutsEnabled) return;
 
-        // Don't trigger shortcuts when typing in input fields
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
             if (e.key === 'Escape') {
                 e.target.blur();
@@ -1909,7 +2027,667 @@ function toggleShortcutsHelp() {
     }
 }
 
-// Store validation
+// ============================================
+// CUSTOMER SEARCH - FIXED VERSION
+// ============================================
+
+function setupCustomerSearchListeners() {
+    const customerSearch = document.getElementById('customerSearch');
+
+    if (!customerSearch) {
+        console.warn('Customer search input not found during setup');
+        return;
+    }
+
+    const newSearch = customerSearch.cloneNode(true);
+    customerSearch.parentNode.replaceChild(newSearch, customerSearch);
+
+    newSearch.addEventListener('input', debouncedSearchCustomers(searchCustomers, 300));
+
+    newSearch.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            searchCustomers();
+        }
+    });
+
+    newSearch.addEventListener('focus', function() {
+        if (this.value.trim().length >= 2) {
+            const dropdown = document.getElementById('customerDropdown');
+            if (dropdown && dropdown.querySelector('.customer-list-item')) {
+                dropdown.classList.add('show');
+            }
+        }
+    });
+
+    console.log('✅ Customer search listeners attached');
+}
+
+function setupCustomerDropdownCloseHandler() {
+    document.addEventListener('click', function(event) {
+        const dropdown = document.getElementById('customerDropdown');
+        const customerSection = document.querySelector('.customer-section');
+
+        if (!dropdown || !customerSection) return;
+
+        if (customerSection.contains(event.target)) {
+            return;
+        }
+
+        dropdown.classList.remove('show');
+    });
+}
+
+async function searchCustomers(controller = null) {
+    const customerSearch = document.getElementById('customerSearch');
+    const searchLoading = document.getElementById('customerSearchLoading');
+    const searchError = document.getElementById('customerSearchError');
+    const dropdown = document.getElementById('customerDropdown');
+
+    if (!customerSearch) {
+        console.error('Customer search input not found');
+        return;
+    }
+
+    const query = customerSearch.value.trim();
+
+    if (searchError) searchError.style.display = 'none';
+
+    if (query.length < 2) {
+        if (dropdown) dropdown.classList.remove('show');
+        if (searchLoading) searchLoading.style.display = 'none';
+        return;
+    }
+
+    if (searchLoading) searchLoading.style.display = 'flex';
+
+    try {
+        const cacheKey = `customer-search-${query}`;
+
+        if (SaleState.searchCache.has(cacheKey)) {
+            const cached = SaleState.searchCache.get(cacheKey);
+            const cacheAge = Date.now() - (cached.timestamp || 0);
+
+            if (cacheAge < 120000) {
+                console.log('✅ Using cached customer search results');
+                displayCustomerList(cached);
+                if (searchLoading) searchLoading.style.display = 'none';
+                return;
+            }
+        }
+
+        const fetchOptions = {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin'
+        };
+
+        if (controller) {
+            fetchOptions.signal = controller.signal;
+        }
+
+        console.log('🔍 Fetching customer search results for:', query);
+
+        const response = await fetch(
+            `/sales/customer-search/?q=${encodeURIComponent(query)}`,
+            fetchOptions
+        );
+
+        if (!response.ok) {
+            if (response.status === 0) {
+                console.log('Request aborted');
+                return;
+            }
+            throw new Error(`Search failed with status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('📦 Customer search response:', data);
+
+        let customers = [];
+
+        if (Array.isArray(data)) {
+            customers = data;
+        } else if (data.customers && Array.isArray(data.customers)) {
+            customers = data.customers;
+        } else if (data.results && Array.isArray(data.results)) {
+            customers = data.results;
+        } else if (data.data && Array.isArray(data.data)) {
+            customers = data.data;
+        } else if (data.success && data.customers) {
+            customers = Array.isArray(data.customers) ? data.customers : [];
+        }
+
+        console.log('✅ Extracted customers:', customers.length);
+
+        if (customers.length > 0) {
+            SaleState.searchCache.set(cacheKey, {
+                ...customers,
+                timestamp: Date.now()
+            });
+
+            displayCustomerList(customers);
+        } else {
+            const customerList = document.getElementById('customerList');
+            if (customerList) {
+                customerList.innerHTML = `
+                    <div class="text-center py-3">
+                        <i class="bi bi-person-x" style="font-size: 2rem; opacity: 0.3;"></i>
+                        <p class="mt-2 mb-1">No customers found</p>
+                        <small class="text-muted">Try a different search term</small>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-primary"
+                                    onclick="showNewCustomerModal()">
+                                <i class="bi bi-plus me-1"></i> Create New Customer
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            if (dropdown) dropdown.classList.add('show');
+        }
+
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            console.log('Customer search aborted');
+            return;
+        }
+
+        console.error('❌ Customer search error:', error);
+
+        if (searchError) {
+            searchError.textContent = `Search failed: ${error.message}. Please try again.`;
+            searchError.style.display = 'block';
+        }
+
+        const customerList = document.getElementById('customerList');
+        if (customerList) {
+            customerList.innerHTML = `
+                <div class="text-center py-3 text-danger">
+                    <i class="bi bi-exclamation-triangle" style="font-size: 2rem;"></i>
+                    <p class="mt-2 mb-1">Search failed</p>
+                    <small>${escapeHtml(error.message)}</small>
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-outline-secondary"
+                                onclick="searchCustomers()">
+                            <i class="bi bi-arrow-clockwise me-1"></i> Retry
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+    } finally {
+        if (searchLoading) searchLoading.style.display = 'none';
+    }
+}
+
+function displayCustomerList(customers) {
+    const list = document.getElementById('customerList');
+    const dropdown = document.getElementById('customerDropdown');
+
+    if (!list) {
+        console.error('Customer list element not found');
+        return;
+    }
+
+    list.innerHTML = '';
+
+    let customerArray = [];
+
+    if (Array.isArray(customers)) {
+        customerArray = customers;
+    } else if (customers.customers && Array.isArray(customers.customers)) {
+        customerArray = customers.customers;
+    } else if (customers.results && Array.isArray(customers.results)) {
+        customerArray = customers.results;
+    } else if (customers.data && Array.isArray(customers.data)) {
+        customerArray = customers.data;
+    }
+
+    console.log('📋 Displaying customer list, count:', customerArray.length);
+
+    if (customerArray.length === 0) {
+        if (dropdown) dropdown.classList.remove('show');
+        return;
+    }
+
+    const listHTML = customerArray.map(customer => {
+        const customerId = customer.id || customer.pk || customer.customer_id;
+        const customerName = customer.name || customer.full_name || customer.business_name || 'Unknown';
+        const customerPhone = customer.phone || customer.phone_number || customer.mobile || '';
+        const customerEmail = customer.email || customer.email_address || '';
+        const customerTin = customer.tin || customer.tax_id || '';
+        const customerType = customer.customer_type || '';
+
+        const isSelected = SaleState.selectedCustomer &&
+                          SaleState.selectedCustomer.id === customerId;
+
+        const customerJson = JSON.stringify(customer)
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/"/g, '&quot;');
+
+        return `
+            <div class="customer-list-item ${isSelected ? 'selected' : ''}"
+                 onclick='selectCustomerSafely(${customerId}, \`${customerJson}\`)'
+                 tabindex="0"
+                 role="option"
+                 aria-selected="${isSelected}">
+                <div class="customer-list-item-avatar">
+                    ${customerName.charAt(0).toUpperCase()}
+                </div>
+                <div class="customer-list-item-info">
+                    <div class="customer-list-item-name">${escapeHtml(customerName)}</div>
+                    <div class="customer-list-item-details">
+                        ${customerPhone ? escapeHtml(customerPhone) : ''}
+                        ${customerEmail ? ` | ${escapeHtml(customerEmail)}` : ''}
+                    </div>
+                </div>
+                ${customerTin ? `
+                    <span class="customer-list-item-badge ${customerType === 'BUSINESS' ? 'vat-registered' : ''}">
+                        TIN: ${escapeHtml(customerTin)}
+                    </span>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+
+    list.innerHTML = listHTML;
+
+    if (dropdown) {
+        dropdown.classList.add('show');
+    }
+}
+
+function selectCustomerSafely(customerId, customerJsonString) {
+    try {
+        const decodedJson = customerJsonString
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'");
+
+        const customer = JSON.parse(decodedJson);
+        selectCustomer(customer);
+    } catch (error) {
+        console.error('Error selecting customer:', error);
+        fetchAndSelectCustomer(customerId);
+    }
+}
+
+async function fetchAndSelectCustomer(customerId) {
+    try {
+        const response = await fetch(`/sales/customer/${customerId}/`, {
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch customer details');
+        }
+
+        const data = await response.json();
+        const customer = data.customer || data;
+        selectCustomer(customer);
+    } catch (error) {
+        console.error('Error fetching customer:', error);
+        showError('Failed to load customer details');
+    }
+}
+
+function selectCustomer(customer) {
+    SaleState.selectedCustomer = customer;
+
+    const customerId = document.getElementById('customerId');
+    const customerName = document.getElementById('customerName');
+    const customerDetails = document.getElementById('customerDetails');
+    const customerTin = document.getElementById('customerTin');
+    const customerDisplay = document.getElementById('customerDisplay');
+    const customerDropdown = document.getElementById('customerDropdown');
+    const customerAvatar = document.getElementById('customerAvatar');
+    const customerTinBadge = document.getElementById('customerTinBadge');
+
+    if (customerId) customerId.value = customer.id;
+    if (customerTin) customerTin.value = customer.tin || '';
+
+    if (customerName) {
+        customerName.textContent = customer.name;
+    }
+
+    if (customerDetails) {
+        customerDetails.innerHTML = `
+            <small class="text-muted">
+                ${customer.phone || ''}
+                ${customer.email ? ' • ' + customer.email : ''}
+                ${customer.tin ? ' • TIN: ' + customer.tin : ''}
+            </small>
+        `;
+    }
+
+    if (customerDisplay) {
+        customerDisplay.style.display = 'flex';
+    }
+
+    if (customerDropdown) {
+        customerDropdown.style.display = 'none';
+    }
+
+    if (customerAvatar) {
+        customerAvatar.textContent = customer.name.charAt(0).toUpperCase();
+    }
+
+    if (customerTinBadge) {
+        if (customer.tin) {
+            customerTinBadge.textContent = `TIN: ${customer.tin}`;
+            customerTinBadge.style.display = 'inline-block';
+        } else {
+            customerTinBadge.style.display = 'none';
+        }
+    }
+
+    if (customer.credit_info) {
+        currentCustomerCredit = {
+            allowCredit: customer.credit_info.allow_credit,
+            creditLimit: parseFloat(customer.credit_info.credit_limit),
+            creditBalance: parseFloat(customer.credit_info.credit_balance),
+            creditAvailable: parseFloat(customer.credit_info.credit_available),
+            creditStatus: customer.credit_info.credit_status,
+            hasOverdue: customer.credit_info.has_overdue,
+            overdue_amount: parseFloat(customer.credit_info.overdue_amount || 0)
+        };
+
+        const customerAllowCredit = document.getElementById('customerAllowCredit');
+        const customerCreditLimit = document.getElementById('customerCreditLimit');
+        const customerCreditBalance = document.getElementById('customerCreditBalance');
+        const customerCreditAvailable = document.getElementById('customerCreditAvailable');
+        const customerCreditStatus = document.getElementById('customerCreditStatus');
+
+        if (customerAllowCredit) customerAllowCredit.value = customer.credit_info.allow_credit;
+        if (customerCreditLimit) customerCreditLimit.value = customer.credit_info.credit_limit;
+        if (customerCreditBalance) customerCreditBalance.value = customer.credit_info.credit_balance;
+        if (customerCreditAvailable) customerCreditAvailable.value = customer.credit_info.credit_available;
+        if (customerCreditStatus) customerCreditStatus.value = customer.credit_info.credit_status;
+
+        displayCustomerCreditInfo(customer.credit_info);
+    } else {
+        const creditInfoDiv = document.getElementById('customerCreditInfo');
+        if (creditInfoDiv) {
+            creditInfoDiv.style.display = 'none';
+        }
+    }
+
+    addToRecentCustomers(customer);
+    showToast(`Selected customer: ${customer.name}`, 'success');
+    validatePaymentMethod();
+}
+
+function displayCustomerCreditInfo(creditInfo) {
+    const creditInfoDiv = document.getElementById('customerCreditInfo');
+    const creditWarningsDiv = document.getElementById('creditWarnings');
+
+    if (!creditInfo.allow_credit) {
+        if (creditInfoDiv) creditInfoDiv.style.display = 'none';
+        return;
+    }
+
+    if (creditInfoDiv) {
+        creditInfoDiv.style.display = 'block';
+    }
+
+    const creditLimit = document.getElementById('creditLimit');
+    const creditBalance = document.getElementById('creditBalance');
+    const creditAvailable = document.getElementById('creditAvailable');
+    const statusBadge = document.getElementById('creditStatusBadge');
+
+    if (creditLimit) creditLimit.textContent = 'UGX ' + parseFloat(creditInfo.credit_limit).toLocaleString();
+    if (creditBalance) creditBalance.textContent = 'UGX ' + parseFloat(creditInfo.credit_balance).toLocaleString();
+    if (creditAvailable) creditAvailable.textContent = 'UGX ' + parseFloat(creditInfo.credit_available).toLocaleString();
+
+    if (statusBadge) {
+        statusBadge.textContent = creditInfo.credit_status;
+        statusBadge.className = 'badge ';
+
+        switch(creditInfo.credit_status) {
+            case 'GOOD':
+                statusBadge.classList.add('bg-success');
+                break;
+            case 'WARNING':
+                statusBadge.classList.add('bg-warning');
+                break;
+            case 'SUSPENDED':
+            case 'BLOCKED':
+                statusBadge.classList.add('bg-danger');
+                break;
+            default:
+                statusBadge.classList.add('bg-secondary');
+        }
+    }
+
+    if (creditWarningsDiv) {
+        creditWarningsDiv.innerHTML = '';
+
+        if (creditInfo.has_overdue) {
+            creditWarningsDiv.innerHTML += `
+                <div class="credit-error">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Overdue Payments:</strong> Customer has overdue invoices totaling
+                    UGX ${parseFloat(creditInfo.overdue_amount).toLocaleString()}
+                </div>
+            `;
+        }
+
+        if (creditInfo.credit_status === 'WARNING') {
+            creditWarningsDiv.innerHTML += `
+                <div class="credit-warning">
+                    <i class="bi bi-exclamation-circle me-2"></i>
+                    <strong>Warning:</strong> Customer is approaching credit limit
+                </div>
+            `;
+        }
+
+        if (creditInfo.credit_status === 'SUSPENDED' || creditInfo.credit_status === 'BLOCKED') {
+            creditWarningsDiv.innerHTML += `
+                <div class="credit-error">
+                    <i class="bi bi-x-circle me-2"></i>
+                    <strong>Credit ${creditInfo.credit_status}:</strong>
+                    ${creditInfo.credit_message || 'Customer cannot make credit purchases'}
+                </div>
+            `;
+        }
+    }
+}
+
+function removeCustomer() {
+    SaleState.selectedCustomer = null;
+
+    const customerId = document.getElementById('customerId');
+    const customerTin = document.getElementById('customerTin');
+    const customerDisplay = document.getElementById('customerDisplay');
+    const creditInfoDiv = document.getElementById('customerCreditInfo');
+
+    if (customerId) customerId.value = '';
+    if (customerTin) customerTin.value = '';
+    if (customerDisplay) customerDisplay.style.display = 'none';
+    if (creditInfoDiv) creditInfoDiv.style.display = 'none';
+
+    const creditFields = ['customerAllowCredit', 'customerCreditLimit', 'customerCreditBalance',
+                         'customerCreditAvailable', 'customerCreditStatus'];
+    creditFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) field.value = '';
+    });
+
+    currentCustomerCredit = {
+        allowCredit: false,
+        creditLimit: 0,
+        creditBalance: 0,
+        creditAvailable: 0,
+        creditStatus: '',
+        hasOverdue: false
+    };
+
+    showToast('Customer removed', 'warning');
+    validatePaymentMethod();
+}
+
+function clearCustomerSearch() {
+    const customerSearch = document.getElementById('customerSearch');
+    const customerDropdown = document.getElementById('customerDropdown');
+    const searchError = document.getElementById('customerSearchError');
+
+    if (customerSearch) {
+        customerSearch.value = '';
+        customerSearch.focus();
+    }
+
+    if (customerDropdown) {
+        customerDropdown.classList.remove('show');
+    }
+
+    if (searchError) {
+        searchError.style.display = 'none';
+    }
+}
+
+async function loadRecentCustomers() {
+    const loading = document.getElementById('recentCustomersLoading');
+    const list = document.getElementById('recentCustomersList');
+
+    if (!list) return;
+
+    list.innerHTML = '';
+    if (loading) loading.style.display = 'block';
+
+    try {
+        const response = await fetch('/sales/recent-customers/');
+        const data = await response.json();
+
+        if (loading) loading.style.display = 'none';
+
+        if (data.customers && data.customers.length > 0) {
+            SaleState.recentCustomers = data.customers;
+            displayRecentCustomers(data.customers);
+        } else {
+            displayRecentCustomers([]);
+        }
+    } catch (error) {
+        console.error('Error loading recent customers:', error);
+        if (loading) loading.style.display = 'none';
+        list.innerHTML = `
+            <div class="text-center py-3">
+                <i class="bi bi-exclamation-triangle text-danger" style="font-size: 2rem;"></i>
+                <p class="mt-2 text-danger">Failed to load recent customers</p>
+            </div>
+        `;
+    }
+}
+
+function displayRecentCustomers(customers) {
+    const list = document.getElementById('recentCustomersList');
+    if (!list) return;
+
+    if (customers.length === 0) {
+        list.innerHTML = `
+            <div class="text-center py-3">
+                <i class="bi bi-clock-history" style="font-size: 2rem; opacity: 0.3;"></i>
+                <p class="mt-2">No recent customers</p>
+            </div>
+        `;
+        return;
+    }
+
+    list.innerHTML = customers.map(customer => `
+        <div class="customer-list-item" onclick='selectCustomer(${JSON.stringify(customer).replace(/'/g, "&#39;")})'>
+            <div class="customer-list-item-avatar">
+                ${customer.name.charAt(0).toUpperCase()}
+            </div>
+            <div class="customer-list-item-info">
+                <div class="customer-list-item-name">${escapeHtml(customer.name)}</div>
+                <div class="customer-list-item-details">
+                    ${customer.phone || ''}
+                    ${customer.last_purchase ? ` | Last: ${new Date(customer.last_purchase).toLocaleDateString()}` : ''}
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function addToRecentCustomers(customer) {
+    SaleState.recentCustomers = SaleState.recentCustomers.filter(c => c.id !== customer.id);
+    SaleState.recentCustomers.unshift(customer);
+
+    if (SaleState.recentCustomers.length > 10) {
+        SaleState.recentCustomers = SaleState.recentCustomers.slice(0, 10);
+    }
+
+    if (SaleState.activeTab === 'recentTab') {
+        displayRecentCustomers(SaleState.recentCustomers);
+    }
+}
+
+// ============================================
+// NEW CUSTOMER MODAL
+// ============================================
+
+function showNewCustomerModal() {
+    const modal = new bootstrap.Modal(document.getElementById('newCustomerModal'));
+    modal.show();
+}
+
+async function saveNewCustomer() {
+    const form = document.getElementById('newCustomerForm');
+    const saveBtn = document.getElementById('saveCustomerBtn');
+    const saveText = document.getElementById('saveCustomerText');
+    const saveLoading = document.getElementById('saveCustomerLoading');
+
+    if (!form || !saveBtn || !saveText || !saveLoading) return;
+
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    saveText.style.display = 'none';
+    saveLoading.style.display = 'inline-block';
+    saveBtn.disabled = true;
+
+    const formData = new FormData(form);
+
+    try {
+        const response = await fetch('{% url "sales:create_customer_ajax" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            selectCustomer(data.customer);
+            bootstrap.Modal.getInstance(document.getElementById('newCustomerModal')).hide();
+            form.reset();
+            showToast('Customer created successfully', 'success');
+        } else {
+            throw new Error(data.error || 'Failed to create customer');
+        }
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        saveText.style.display = 'inline';
+        saveLoading.style.display = 'none';
+        saveBtn.disabled = false;
+    }
+}
+
+// ============================================
+// ITEMS/PRODUCTS LOADING
+// ============================================
+
 function validateStoreSelection() {
     const storeSelect = document.getElementById('storeSelect');
     const storeId = storeSelect?.value;
@@ -1919,7 +2697,6 @@ function validateStoreSelection() {
     }
 }
 
-// Load items with pagination
 async function loadItems() {
     const storeSelect = document.getElementById('storeSelect');
     const productSearchBar = document.getElementById('productSearchBar');
@@ -1979,9 +2756,1052 @@ async function loadItems() {
         showError('Failed to load items. Please try again.');
     }
 }
-// ====== MISSING FUNCTIONS START HERE ======
 
-// Drafts Management Functions
+function displayItems(items) {
+    const grid = document.getElementById('productsGrid');
+    if (!grid) return;
+
+    hideProductsLoading();
+
+    if (items.length === 0) {
+        showProductsEmpty();
+        return;
+    }
+
+    grid.innerHTML = items.map(item => {
+        const isProduct = item.item_type === 'PRODUCT';
+        const outOfStock = isProduct && item.stock && item.stock.available <= 0;
+        const lowStock = isProduct && item.stock && item.stock.available <= (item.stock.minimum_stock || 10);
+
+        return `
+            <div class="product-card ${outOfStock ? 'out-of-stock' : ''}">
+                ${item.discount_percentage > 0 ? `
+                    <div class="product-discount-badge">
+                        -${item.discount_percentage}%
+                    </div>
+                ` : ''}
+
+                <div class="product-image-placeholder">
+                    <i class="bi ${isProduct ? 'bi-box' : 'bi-gear'}"></i>
+                </div>
+
+                <div class="product-info">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h6 class="product-name">${escapeHtml(item.name)}</h6>
+                        <span class="item-badge ${isProduct ? 'product-badge' : 'service-badge'}">
+                            ${item.item_type}
+                        </span>
+                    </div>
+
+                    <p class="product-sku text-muted">
+                        ${item.code || 'No code'} | ${isProduct ? 'Product' : 'Service'}
+                    </p>
+
+                    <div class="product-price">
+                        <span class="price-current">${formatCurrency(item.final_price)}</span>
+                        ${item.original_price > item.final_price ? `
+                            <span class="price-original">${formatCurrency(item.original_price)}</span>
+                        ` : ''}
+                    </div>
+
+                    ${isProduct && item.stock ? `
+                        <div class="product-stock">
+                            <span class="stock-indicator ${outOfStock ? 'out-of-stock' : lowStock ? 'low-stock' : 'in-stock'}"></span>
+                            <span>Stock: ${item.stock.available} ${item.stock.unit}</span>
+                        </div>
+                        ${lowStock ? `
+                            <div class="stock-warning">
+                                <i class="bi bi-exclamation-triangle"></i> Low stock
+                            </div>
+                        ` : ''}
+                    ` : ''}
+
+                    ${!isProduct ? `
+                        <div class="product-stock">
+                            <span class="stock-indicator in-stock"></span>
+                            <span>Service available</span>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <div class="product-actions">
+                    <button type="button" class="btn-add-to-cart"
+                            onclick='addToCart(${JSON.stringify(item).replace(/'/g, "&#39;")})'
+                            ${outOfStock ? 'disabled' : ''}
+                            title="${outOfStock ? 'Out of stock' : 'Add to cart'}">
+                        <i class="bi bi-cart-plus"></i>
+                        ${outOfStock ? 'Out of Stock' : 'Add to Cart'}
+                    </button>
+                    <button type="button" class="btn-quick-view"
+                            onclick='showItemDetails(${JSON.stringify(item).replace(/'/g, "&#39;")})'
+                            title="View details">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    const pagination = document.getElementById('productsPagination');
+    if (pagination) {
+        pagination.style.display = SaleState.totalItems > SaleState.itemsPerPage ? 'flex' : 'none';
+    }
+}
+
+function updatePaginationInfo() {
+    const paginationInfo = document.getElementById('paginationInfo');
+    if (!paginationInfo) return;
+
+    const start = ((SaleState.currentPage - 1) * SaleState.itemsPerPage) + 1;
+    const end = Math.min(SaleState.currentPage * SaleState.itemsPerPage, SaleState.totalItems);
+    paginationInfo.textContent = `Showing ${start}-${end} of ${SaleState.totalItems} items`;
+}
+
+function loadNextPage() {
+    const totalPages = Math.ceil(SaleState.totalItems / SaleState.itemsPerPage);
+    if (SaleState.currentPage < totalPages) {
+        SaleState.currentPage++;
+        loadItems();
+    }
+}
+
+function loadPreviousPage() {
+    if (SaleState.currentPage > 1) {
+        SaleState.currentPage--;
+        loadItems();
+    }
+}
+
+function switchItemType(type) {
+    SaleState.currentItemType = type;
+    SaleState.currentPage = 1;
+
+    document.querySelectorAll('[data-type]').forEach(btn => {
+        const isActive = btn.dataset.type === type;
+        btn.classList.toggle('active', isActive);
+        btn.classList.toggle('btn-primary', isActive);
+        btn.classList.toggle('btn-outline-primary', !isActive);
+    });
+
+    loadItems();
+}
+
+function clearProductSearch() {
+    const productSearchBar = document.getElementById('productSearchBar');
+    if (productSearchBar) {
+        productSearchBar.value = '';
+        SaleState.currentPage = 1;
+        loadItems();
+    }
+}
+
+function resetProductFilters() {
+    const productSearchBar = document.getElementById('productSearchBar');
+    if (!productSearchBar) return;
+
+    productSearchBar.value = '';
+    SaleState.currentItemType = 'all';
+    SaleState.currentPage = 1;
+
+    document.querySelectorAll('[data-type]').forEach(btn => {
+        const isAll = btn.dataset.type === 'all';
+        btn.classList.toggle('active', isAll);
+        btn.classList.toggle('btn-primary', isAll);
+        btn.classList.toggle('btn-outline-primary', !isAll);
+    });
+
+    loadItems();
+}
+
+function showProductsLoading() {
+    const productsGrid = document.getElementById('productsGrid');
+    const productsEmpty = document.getElementById('productsEmpty');
+    const productsPagination = document.getElementById('productsPagination');
+    const productsLoading = document.getElementById('productsLoading');
+
+    if (productsGrid) productsGrid.style.display = 'none';
+    if (productsEmpty) productsEmpty.style.display = 'none';
+    if (productsPagination) productsPagination.style.display = 'none';
+    if (productsLoading) productsLoading.style.display = 'block';
+}
+
+function hideProductsLoading() {
+    const productsGrid = document.getElementById('productsGrid');
+    const productsLoading = document.getElementById('productsLoading');
+
+    if (productsLoading) productsLoading.style.display = 'none';
+    if (productsGrid) {
+        productsGrid.style.display = 'grid';
+        productsGrid.classList.remove('row', 'g-3');
+    }
+}
+
+function showProductsEmpty() {
+    const productsLoading = document.getElementById('productsLoading');
+    const productsGrid = document.getElementById('productsGrid');
+    const productsPagination = document.getElementById('productsPagination');
+    const productsEmpty = document.getElementById('productsEmpty');
+
+    if (productsLoading) productsLoading.style.display = 'none';
+    if (productsGrid) productsGrid.style.display = 'none';
+    if (productsPagination) productsPagination.style.display = 'none';
+    if (productsEmpty) productsEmpty.style.display = 'block';
+}
+
+function showItemDetails(item) {
+    const modalContent = `
+        <div class="modal fade" id="itemDetailsModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">${escapeHtml(item.name)}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="product-image-placeholder mb-3">
+                                    <i class="bi ${item.item_type === 'PRODUCT' ? 'bi-box' : 'bi-gear'}"></i>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <p><strong>Code:</strong> ${item.code || 'N/A'}</p>
+                                <p><strong>Type:</strong> ${item.item_type}</p>
+                                <p><strong>Price:</strong> ${formatCurrency(item.final_price)}</p>
+                                ${item.original_price > item.final_price ? `
+                                    <p><strong>Original Price:</strong> <del>${formatCurrency(item.original_price)}</del></p>
+                                    <p><strong>Discount:</strong> ${item.discount_percentage}%</p>
+                                ` : ''}
+                                ${item.tax_rate ? `<p><strong>Tax Rate:</strong> ${item.tax_rate}%</p>` : ''}
+                                ${item.stock ? `
+                                    <p><strong>Stock:</strong> ${item.stock.available} ${item.stock.unit}</p>
+                                    <p><strong>Minimum Stock:</strong> ${item.stock.minimum_stock || 10}</p>
+                                ` : ''}
+                                ${item.description ? `
+                                    <hr>
+                                    <p><strong>Description:</strong></p>
+                                    <p>${escapeHtml(item.description)}</p>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            Close
+                        </button>
+                        <button type="button" class="btn btn-primary" onclick="addToCart(${JSON.stringify(item).replace(/'/g, "&#39;")})" data-bs-dismiss="modal">
+                            <i class="bi bi-cart-plus me-2"></i>Add to Cart
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const modalContainer = document.createElement('div');
+    modalContainer.innerHTML = modalContent;
+    document.body.appendChild(modalContainer);
+
+    const modal = new bootstrap.Modal(modalContainer.querySelector('#itemDetailsModal'));
+    modal.show();
+
+    modalContainer.querySelector('#itemDetailsModal').addEventListener('hidden.bs.modal', function() {
+        document.body.removeChild(modalContainer);
+    });
+}
+
+// ============================================
+// CART MANAGEMENT
+// ============================================
+
+function addToCart(item) {
+    const existingIndex = SaleState.cart.findIndex(cartItem =>
+        (item.item_type === 'PRODUCT' && cartItem.product_id === item.id) ||
+        (item.item_type === 'SERVICE' && cartItem.service_id === item.id)
+    );
+
+    if (existingIndex >= 0) {
+        updateCartItemQuantity(existingIndex, SaleState.cart[existingIndex].quantity + 1);
+        showToast(`Updated quantity for ${item.name}`, 'success');
+    } else {
+        const cartItem = {
+            item_type: item.item_type,
+            product_id: item.item_type === 'PRODUCT' ? item.id : null,
+            service_id: item.item_type === 'SERVICE' ? item.id : null,
+            name: item.name,
+            code: item.code,
+            quantity: 1,
+            unit_price: item.final_price,
+            original_price: item.final_price,
+            tax_rate: parseFloat(item.tax_rate) || 18,
+            tax_code: item.tax_code || 'A',
+            discount_percentage: item.discount_percentage || 0,
+            discount_amount: 0,
+            unit: item.unit_of_measure || 'pcs',
+            stock_available: item.stock?.available || null,
+            stock_unit: item.stock?.unit || null,
+            price_override_reason: ''
+        };
+
+        SaleState.cart.push(cartItem);
+        showToast(`Added ${item.name} to cart`, 'success');
+    }
+
+    updateCartDisplay();
+}
+
+function updateCartItemQuantity(index, newQuantity) {
+    const item = SaleState.cart[index];
+
+    if (newQuantity < 1) {
+        removeFromCart(index);
+        return;
+    }
+
+    if (item.item_type === 'PRODUCT' && item.stock_available !== null) {
+        if (newQuantity > item.stock_available) {
+            showError(`Only ${item.stock_available} ${item.stock_unit} available in stock`);
+            return;
+        }
+    }
+
+    item.quantity = newQuantity;
+    updateCartDisplay();
+}
+
+function updateItemPrice(index, newPrice) {
+    const item = SaleState.cart[index];
+
+    if (!item) {
+        showError('Item not found');
+        return;
+    }
+
+    if (isNaN(newPrice) || newPrice < 0) {
+        showError('Please enter a valid price');
+        updateCartDisplay();
+        return;
+    }
+
+    const priceDifference = Math.abs(newPrice - item.original_price);
+    const percentChange = (priceDifference / item.original_price) * 100;
+
+    if (percentChange > 20) {
+        const direction = newPrice > item.original_price ? 'increased' : 'decreased';
+        if (!confirm(
+            `Price ${direction} by ${percentChange.toFixed(1)}%\n\n` +
+            `Original: ${formatCurrency(item.original_price)}\n` +
+            `New: ${formatCurrency(newPrice)}\n\n` +
+            `Continue with this price?`
+        )) {
+            updateCartDisplay();
+            return;
+        }
+    }
+
+    item.unit_price = newPrice;
+    console.log(`Price changed for ${item.name}: ${item.original_price} → ${newPrice}`);
+
+    if (newPrice !== item.original_price) {
+        const change = newPrice > item.original_price ? 'increased' : 'decreased';
+        showToast(`Price ${change} for ${item.name}`, 'info');
+    }
+
+    updateCartDisplay();
+}
+
+function resetItemPrice(index) {
+    const item = SaleState.cart[index];
+
+    if (!item) {
+        showError('Item not found');
+        return;
+    }
+
+    item.unit_price = item.original_price;
+    showToast(`Price reset to original for ${item.name}`, 'info');
+    updateCartDisplay();
+}
+
+function removeFromCart(index) {
+    const item = SaleState.cart[index];
+    SaleState.cart.splice(index, 1);
+    showToast(`Removed ${item.name} from cart`, 'warning');
+    updateCartDisplay();
+}
+
+function clearCart() {
+    if (SaleState.cart.length === 0) return;
+
+    if (confirm('Are you sure you want to clear the cart?')) {
+        SaleState.cart = [];
+        SaleState.discount = { type: 'percentage', value: 0 };
+        updateCartDisplay();
+        showToast('Cart cleared', 'warning');
+    }
+}
+
+function updateCartDisplay() {
+    const cartItems = document.getElementById('cartItems');
+    const cartCount = document.getElementById('cartCount');
+    const cartSummary = document.getElementById('cartSummary');
+    const discountSection = document.getElementById('discountSection');
+    const clearCartBtn = document.getElementById('clearCartBtn');
+    const completeSaleBtn = document.getElementById('completeSaleBtn');
+
+    if (!cartItems || !cartCount) return;
+
+    cartCount.textContent = SaleState.cart.length;
+
+    if (SaleState.cart.length === 0) {
+        cartItems.innerHTML = `
+            <div class="cart-empty">
+                <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
+                <p class="mt-2">Cart is empty</p>
+                <p class="small text-muted">Add products or services from the left</p>
+            </div>
+        `;
+        if (cartSummary) cartSummary.style.display = 'none';
+        if (discountSection) discountSection.style.display = 'none';
+        if (clearCartBtn) clearCartBtn.disabled = true;
+        if (completeSaleBtn) completeSaleBtn.disabled = true;
+        updateQuickStats();
+        return;
+    }
+
+    if (clearCartBtn) clearCartBtn.disabled = false;
+
+    cartItems.innerHTML = SaleState.cart.map((item, index) => {
+        const itemTotal = calculateItemTotal(item);
+        const isProduct = item.item_type === 'PRODUCT';
+        const priceChanged = item.unit_price !== item.original_price;
+
+        return `
+            <div class="cart-item">
+                <div class="cart-item-image">
+                    <i class="bi ${isProduct ? 'bi-box' : 'bi-gear'}"></i>
+                </div>
+
+                <div class="cart-item-details">
+                    <div class="cart-item-name">
+                        <span>${escapeHtml(item.name)}</span>
+                        <span class="cart-item-price">${formatCurrency(itemTotal.total)}</span>
+                    </div>
+
+                    <div class="cart-item-meta">
+                        ${item.code ? `<span class="me-2">${item.code}</span>` : ''}
+                        <span>${item.unit}</span>
+                        ${isProduct && item.stock_available ? `
+                            <span class="ms-2">Stock: ${item.stock_available}</span>
+                        ` : ''}
+                    </div>
+
+                    <div class="mt-2">
+                        <label class="form-label" style="font-size: 0.75rem;">Price per unit:</label>
+                        <div class="input-group input-group-sm">
+                            <input type="number"
+                                   class="form-control"
+                                   value="${item.unit_price}"
+                                   min="0"
+                                   step="0.01"
+                                   onchange="updateItemPrice(${index}, parseFloat(this.value))"
+                                   style="max-width: 120px;">
+                            ${priceChanged ? `
+                                <button class="btn btn-outline-secondary"
+                                        type="button"
+                                        onclick="resetItemPrice(${index})"
+                                        title="Reset to original price">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                        ${priceChanged ? `
+                            <small class="text-muted">
+                                Original: ${formatCurrency(item.original_price)}
+                                ${item.unit_price > item.original_price ?
+                                    `<span class="text-success">(+${formatCurrency(item.unit_price - item.original_price)})</span>` :
+                                    `<span class="text-warning">(-${formatCurrency(item.original_price - item.unit_price)})</span>`
+                                }
+                            </small>
+                        ` : ''}
+                    </div>
+
+                    <div class="cart-item-price-breakdown mt-2">
+                        ${formatCurrency(item.unit_price)} × ${item.quantity} = ${formatCurrency(itemTotal.subtotal)}
+                        ${item.tax_rate > 0 ? ` | Tax (${item.tax_rate}%): ${formatCurrency(itemTotal.tax)} included` : ''}
+                        ${item.discount_amount > 0 ? ` | Discount: -${formatCurrency(item.discount_amount)}` : ''}
+                        <br>
+                        <small class="text-muted">Net Amount: ${formatCurrency(itemTotal.taxableAmount)}</small>
+                    </div>
+
+                    <div class="cart-item-controls">
+                        <div class="qty-control">
+                            <button class="qty-btn" type="button" onclick="updateCartItemQuantity(${index}, ${item.quantity - 1})">-</button>
+                            <input type="number" class="qty-input"
+                                   value="${item.quantity}"
+                                   min="1"
+                                   max="${item.stock_available || 9999}"
+                                   onchange="updateCartItemQuantity(${index}, parseInt(this.value) || 1)">
+                            <button class="qty-btn" type="button" onclick="updateCartItemQuantity(${index}, ${item.quantity + 1})">+</button>
+                        </div>
+
+                        ${isProduct && item.stock_available && item.quantity > item.stock_available ? `
+                            <div class="stock-warning">
+                                <i class="bi bi-exclamation-triangle"></i> Exceeds stock
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+
+                <div class="cart-item-actions">
+                    <button type="button" class="btn-remove-item"
+                            onclick="removeFromCart(${index})"
+                            title="Remove item">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    if (cartSummary) cartSummary.style.display = 'block';
+    if (discountSection) discountSection.style.display = 'block';
+    if (completeSaleBtn) completeSaleBtn.disabled = false;
+
+    updateSummary();
+    updateQuickStats();
+}
+
+function calculateItemTotal(item) {
+    const subtotal = item.unit_price * item.quantity;
+    const discountAmount = item.discount_amount || 0;
+    const priceAfterDiscount = subtotal - discountAmount;
+
+    let tax = 0;
+    let taxableAmount = priceAfterDiscount;
+
+    if (item.tax_rate > 0) {
+        const taxMultiplier = item.tax_rate / 100;
+        tax = (priceAfterDiscount / (1 + taxMultiplier)) * taxMultiplier;
+        taxableAmount = priceAfterDiscount - tax;
+    }
+
+    const total = priceAfterDiscount;
+
+    return {
+        subtotal: subtotal,
+        discount: discountAmount,
+        taxableAmount: taxableAmount,
+        tax: tax,
+        total: total
+    };
+}
+
+function updateSummary() {
+    let subtotal = 0;
+    let totalTax = 0;
+    let totalDiscount = 0;
+    let netAmount = 0;
+
+    SaleState.cart.forEach(item => {
+        const itemTotal = calculateItemTotal(item);
+        subtotal += itemTotal.subtotal;
+        totalTax += itemTotal.tax;
+        totalDiscount += itemTotal.discount;
+        netAmount += itemTotal.taxableAmount;
+    });
+
+    let globalDiscount = 0;
+    if (SaleState.discount.value > 0) {
+        if (SaleState.discount.type === 'percentage') {
+            globalDiscount = subtotal * (SaleState.discount.value / 100);
+        } else {
+            globalDiscount = Math.min(SaleState.discount.value, subtotal);
+        }
+
+        const discountedSubtotal = subtotal - globalDiscount;
+        totalTax = 0;
+
+        SaleState.cart.forEach(item => {
+            if (item.tax_rate > 0) {
+                const itemProportion = (item.unit_price * item.quantity) / subtotal;
+                const itemDiscountedPrice = discountedSubtotal * itemProportion;
+                const taxMultiplier = item.tax_rate / 100;
+                const itemTax = (itemDiscountedPrice / (1 + taxMultiplier)) * taxMultiplier;
+                totalTax += itemTax;
+            }
+        });
+
+        subtotal = discountedSubtotal;
+    }
+
+    totalDiscount += globalDiscount;
+
+    const total = subtotal;
+    netAmount = total - totalTax;
+
+    const summarySubtotal = document.getElementById('summarySubtotal');
+    const summaryTax = document.getElementById('summaryTax');
+    const summaryDiscount = document.getElementById('summaryDiscount');
+    const summaryTotal = document.getElementById('summaryTotal');
+
+    if (summarySubtotal) summarySubtotal.textContent = formatCurrency(subtotal);
+    if (summaryTax) summaryTax.textContent = formatCurrency(totalTax);
+    if (summaryDiscount) summaryDiscount.textContent = formatCurrency(totalDiscount);
+    if (summaryTotal) summaryTotal.textContent = formatCurrency(total);
+
+    const itemsData = document.getElementById('itemsData');
+    const subtotalAmount = document.getElementById('subtotalAmount');
+    const taxAmount = document.getElementById('taxAmount');
+    const discountAmount = document.getElementById('discountAmount');
+    const totalAmount = document.getElementById('totalAmount');
+    const discountTypeField = document.getElementById('discountTypeField');
+
+    if (itemsData) itemsData.value = JSON.stringify(SaleState.cart);
+    if (subtotalAmount) subtotalAmount.value = subtotal.toFixed(2);
+    if (taxAmount) taxAmount.value = totalTax.toFixed(2);
+    if (discountAmount) discountAmount.value = totalDiscount.toFixed(2);
+    if (totalAmount) totalAmount.value = total.toFixed(2);
+    if (discountTypeField) discountTypeField.value = SaleState.discount.type;
+
+    validatePaymentMethod();
+}
+
+function applyDiscount() {
+    const discountType = document.getElementById('discountType')?.value;
+    const discountValue = parseFloat(document.getElementById('discountValue')?.value) || 0;
+
+    if (discountValue <= 0) {
+        showError('Please enter a valid discount value');
+        return;
+    }
+
+    SaleState.discount = {
+        type: discountType,
+        value: discountValue
+    };
+
+    updateSummary();
+    showToast(`Applied ${discountValue}${discountType === 'percentage' ? '%' : ' UGX'} discount`, 'success');
+}
+
+function updateQuickStats() {
+    const statsItems = document.getElementById('statsItems');
+    const statsAvgPrice = document.getElementById('statsAvgPrice');
+
+    if (!statsItems || !statsAvgPrice) return;
+
+    if (SaleState.cart.length === 0) {
+        statsItems.textContent = '0';
+        statsAvgPrice.textContent = '0 UGX';
+        return;
+    }
+
+    const totalItems = SaleState.cart.reduce((sum, item) => sum + item.quantity, 0);
+    const avgPrice = SaleState.cart.length > 0 ?
+        SaleState.cart.reduce((sum, item) => sum + item.unit_price, 0) / SaleState.cart.length : 0;
+
+    statsItems.textContent = totalItems;
+    statsAvgPrice.textContent = formatCurrency(avgPrice);
+}
+
+// ============================================
+// PAYMENT METHOD VALIDATION
+// ============================================
+
+function validatePaymentMethod() {
+    const paymentMethodSelect = document.getElementById('paymentMethod');
+    const creditStatusDiv = document.getElementById('creditPaymentStatus');
+    const creditLimitWarning = document.getElementById('creditLimitWarning');
+    const creditLimitWarningText = document.getElementById('creditLimitWarningText');
+    const completeSaleBtn = document.getElementById('completeSaleBtn');
+
+    if (!paymentMethodSelect) return true;
+
+    const paymentMethod = paymentMethodSelect.value;
+
+    if (creditLimitWarning) creditLimitWarning.style.display = 'none';
+    if (creditStatusDiv) creditStatusDiv.style.display = 'none';
+
+    if (paymentMethod === 'CREDIT') {
+        const customerId = document.getElementById('customerId')?.value;
+
+        if (!customerId) {
+            if (creditLimitWarning) {
+                creditLimitWarning.style.display = 'block';
+                if (creditLimitWarningText) {
+                    creditLimitWarningText.textContent = 'Please select a customer for credit sales';
+                }
+            }
+            if (completeSaleBtn) completeSaleBtn.disabled = true;
+            return false;
+        }
+
+        if (!currentCustomerCredit.allowCredit) {
+            if (creditLimitWarning) {
+                creditLimitWarning.style.display = 'block';
+                if (creditLimitWarningText) {
+                    creditLimitWarningText.textContent = 'This customer is not authorized for credit purchases';
+                }
+            }
+            if (completeSaleBtn) completeSaleBtn.disabled = true;
+            return false;
+        }
+
+        if (currentCustomerCredit.creditStatus === 'SUSPENDED' ||
+            currentCustomerCredit.creditStatus === 'BLOCKED') {
+            if (creditLimitWarning) {
+                creditLimitWarning.style.display = 'block';
+                if (creditLimitWarningText) {
+                    creditLimitWarningText.textContent = `Credit ${currentCustomerCredit.creditStatus}: Customer cannot make credit purchases`;
+                }
+            }
+            if (completeSaleBtn) completeSaleBtn.disabled = true;
+            return false;
+        }
+
+        if (currentCustomerCredit.hasOverdue) {
+            if (creditLimitWarning) {
+                creditLimitWarning.style.display = 'block';
+                if (creditLimitWarningText) {
+                    creditLimitWarningText.textContent = 'Customer has overdue invoices. Credit purchases not allowed.';
+                }
+            }
+            if (completeSaleBtn) completeSaleBtn.disabled = true;
+            return false;
+        }
+
+        const cartTotal = getCartTotal();
+        if (cartTotal > currentCustomerCredit.creditAvailable) {
+            if (creditLimitWarning) {
+                creditLimitWarning.style.display = 'block';
+                if (creditLimitWarningText) {
+                    creditLimitWarningText.innerHTML = `
+                        <strong>Credit Limit Exceeded!</strong><br>
+                        Sale Total: UGX ${cartTotal.toLocaleString()}<br>
+                        Available Credit: UGX ${currentCustomerCredit.creditAvailable.toLocaleString()}
+                    `;
+                }
+            }
+            if (completeSaleBtn) completeSaleBtn.disabled = true;
+            return false;
+        }
+
+        if (creditStatusDiv) {
+            creditStatusDiv.style.display = 'block';
+        }
+        if (completeSaleBtn) {
+            completeSaleBtn.disabled = false;
+        }
+        return true;
+    }
+
+    if (completeSaleBtn) {
+        const cartCount = parseInt(document.getElementById('cartCount')?.textContent || '0');
+        completeSaleBtn.disabled = cartCount === 0;
+    }
+    return true;
+}
+
+function getCartTotal() {
+    const totalElement = document.getElementById('summaryTotal');
+    if (!totalElement) return 0;
+
+    const totalText = totalElement.textContent;
+    const total = parseFloat(totalText.replace(/[^0-9.-]+/g, ''));
+    return isNaN(total) ? 0 : total;
+}
+
+// ============================================
+// DOCUMENT TYPE & DUE DATE
+// ============================================
+
+function toggleDueDateSection() {
+    const dueDateSection = document.getElementById('dueDateSection');
+    const efrisRequirements = document.getElementById('efrisRequirements');
+    const docTypeRadio = document.querySelector('input[name="document_type"]:checked');
+
+    if (!docTypeRadio) return;
+
+    const docType = docTypeRadio.value;
+    const dueDateField = document.getElementById('dueDate');
+
+    if (docType === 'INVOICE') {
+        if (dueDateSection) dueDateSection.style.display = 'block';
+
+        if (dueDateField) {
+            const today = new Date();
+            const dueDate = new Date(today);
+            dueDate.setDate(dueDate.getDate() + 30);
+            dueDateField.value = dueDate.toISOString().split('T')[0];
+            dueDateField.required = true;
+        }
+
+        if (efrisRequirements) {
+            efrisRequirements.style.display = 'block';
+        }
+
+        const efrisText = efrisRequirements?.querySelector('ul');
+        if (efrisText) {
+            efrisText.innerHTML = `
+                <li>Customer name and contact information required</li>
+                <li>Customer TIN recommended for tax compliance</li>
+                <li>Valid invoice numbering required</li>
+                <li>Tax calculations must follow URA guidelines</li>
+            `;
+        }
+
+        if (!SaleState.selectedCustomer) {
+            showCustomerRequiredWarning();
+        }
+
+    } else if (docType === 'RECEIPT') {
+        if (dueDateSection) dueDateSection.style.display = 'none';
+        if (dueDateField) {
+            dueDateField.value = '';
+            dueDateField.required = false;
+        }
+
+        if (efrisRequirements) {
+            efrisRequirements.style.display = 'block';
+            const efrisText = efrisRequirements.querySelector('ul');
+            if (efrisText) {
+                efrisText.innerHTML = `
+                    <li>Customer is optional (Walk-in accepted)</li>
+                    <li>TIN is optional for receipts</li>
+                    <li>Receipts can be issued immediately</li>
+                    <li>Simplified tax calculations</li>
+                `;
+            }
+        }
+
+        const warning = document.querySelector('.customer-required-warning');
+        if (warning) {
+            warning.remove();
+        }
+    }
+
+    const tinWarning = document.querySelector('.tin-recommended-warning');
+    if (tinWarning) {
+        tinWarning.remove();
+    }
+
+    validateDocumentRequirements();
+}
+
+function validateDocumentRequirements() {
+    const docTypeRadio = document.querySelector('input[name="document_type"]:checked');
+    if (!docTypeRadio) return;
+
+    const docType = docTypeRadio.value;
+    const customerRequired = docType !== 'RECEIPT';
+
+    if (customerRequired && !SaleState.selectedCustomer) {
+        showCustomerRequiredWarning();
+    }
+
+    if (docType === 'INVOICE' && !SaleState.selectedCustomer) {
+        if (!document.querySelector('.customer-required-warning')) {
+            const warning = document.createElement('div');
+            warning.className = 'alert alert-warning customer-required-warning mt-2';
+            warning.innerHTML = `
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Customer required for invoices:</strong>
+                Invoices cannot be issued to "Walk-in Customer". Please select or create a customer.
+            `;
+
+            const customerSection = document.querySelector('.customer-section');
+            if (customerSection && !customerSection.nextElementSibling?.classList.contains('customer-required-warning')) {
+                customerSection.parentNode.insertBefore(warning, customerSection.nextSibling);
+            }
+        }
+
+        const completeSaleBtn = document.getElementById('completeSaleBtn');
+        if (completeSaleBtn) {
+            completeSaleBtn.disabled = true;
+            completeSaleBtn.title = 'Select a customer to proceed with invoice';
+        }
+    } else {
+        const warning = document.querySelector('.customer-required-warning');
+        if (warning) {
+            warning.remove();
+        }
+
+        const completeSaleBtn = document.getElementById('completeSaleBtn');
+        if (completeSaleBtn) {
+            completeSaleBtn.disabled = SaleState.cart.length === 0;
+            completeSaleBtn.title = '';
+        }
+    }
+}
+
+function showCustomerRequiredWarning() {
+    if (!document.querySelector('.customer-required-general')) {
+        const warning = document.createElement('div');
+        warning.className = 'alert alert-info customer-required-general mt-2';
+        warning.innerHTML = `
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>Customer selection recommended:</strong>
+            For better record keeping, please select or create a customer.
+        `;
+
+        const customerSection = document.querySelector('.customer-section');
+        if (customerSection) {
+            customerSection.parentNode.insertBefore(warning, customerSection.nextSibling);
+        }
+    }
+}
+
+// ============================================
+// COMPLETE SALE
+// ============================================
+
+async function completeSale() {
+    showLoading(true);
+
+    try {
+        if (SaleState.cart.length === 0) {
+            throw new Error('Please add items to cart');
+        }
+
+        const storeSelect = document.getElementById('storeSelect');
+        if (!storeSelect || !storeSelect.value) {
+            throw new Error('Please select a store');
+        }
+
+        const docTypeRadio = document.querySelector('input[name="document_type"]:checked');
+        if (!docTypeRadio) {
+            throw new Error('Please select document type');
+        }
+
+        const docType = docTypeRadio.value;
+        const dueDateField = document.getElementById('dueDate');
+
+        if (docType === 'INVOICE') {
+            if (!SaleState.selectedCustomer) {
+                throw new Error('Customer is required for invoices. Please select or create a customer.');
+            }
+
+            if (!dueDateField || !dueDateField.value) {
+                throw new Error('Due date is required for invoices');
+            }
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const dueDate = new Date(dueDateField.value);
+
+            if (dueDate < today) {
+                if (!confirm('Due date is in the past. Continue anyway?')) {
+                    showLoading(false);
+                    return;
+                }
+            }
+
+            const paymentMethod = document.getElementById('paymentMethod')?.value;
+            if (paymentMethod === 'CREDIT') {
+                if (!SaleState.selectedCustomer.tin) {
+                    if (!confirm('Credit invoice for customer without TIN. Continue anyway?')) {
+                        showLoading(false);
+                        return;
+                    }
+                }
+            }
+
+        } else if (docType === 'RECEIPT') {
+            if (!SaleState.selectedCustomer) {
+                const customerId = document.getElementById('customerId');
+                const customerTin = document.getElementById('customerTin');
+                if (customerId) customerId.value = '';
+                if (customerTin) customerTin.value = '';
+            }
+        }
+
+        const paymentMethod = document.getElementById('paymentMethod')?.value;
+
+        const stockErrors = [];
+        for (const item of SaleState.cart) {
+            if (item.item_type === 'PRODUCT' && item.stock_available !== null) {
+                if (item.quantity > item.stock_available) {
+                    stockErrors.push(`${item.name}: Only ${item.stock_available} available`);
+                }
+            }
+        }
+
+        if (stockErrors.length > 0) {
+            showError(`Stock issues:\n${stockErrors.join('\n')}`);
+            showLoading(false);
+            return;
+        }
+
+        const totalAmount = document.getElementById('totalAmount');
+        const total = totalAmount ? parseFloat(totalAmount.value) : 0;
+        if (total < 1000) {
+            if (!confirm(`Total amount (${formatCurrency(total)}) is less than minimum 1,000 UGX. Continue anyway?`)) {
+                showLoading(false);
+                return;
+            }
+        }
+
+        if (paymentMethod === 'CREDIT') {
+            if (!validatePaymentMethod()) {
+                showError('Cannot complete credit sale. Please check credit limit and customer status.');
+                showLoading(false);
+                return;
+            }
+
+            const cartTotal = getCartTotal();
+            const remainingCredit = currentCustomerCredit.creditAvailable - cartTotal;
+
+            if (!confirm(`Confirm Credit Sale\n\n` +
+                         `Amount: UGX ${cartTotal.toLocaleString()}\n` +
+                         `Current Balance: UGX ${currentCustomerCredit.creditBalance.toLocaleString()}\n` +
+                         `New Balance: UGX ${(currentCustomerCredit.creditBalance + cartTotal).toLocaleString()}\n` +
+                         `Remaining Credit: UGX ${remainingCredit.toLocaleString()}\n\n` +
+                         `Proceed with credit sale?`)) {
+                showLoading(false);
+                return;
+            }
+        }
+
+        const form = document.getElementById('createSaleForm');
+        if (form) {
+            form.submit();
+        } else {
+            throw new Error('Sale form not found');
+        }
+
+    } catch (error) {
+        showLoading(false);
+        showError(error.message);
+    }
+}
+
+// ============================================
+// DRAFTS MANAGEMENT
+// ============================================
+
+function checkForDrafts() {
+    try {
+        const drafts = JSON.parse(localStorage.getItem('sale_drafts') || '[]');
+        if (drafts.length > 0) {
+            SaleState.drafts = drafts;
+            updateDraftsBadge();
+        }
+    } catch (error) {
+        console.error('Error loading drafts:', error);
+        localStorage.removeItem('sale_drafts');
+        SaleState.drafts = [];
+    }
+}
+
+function updateDraftsBadge() {
+    const badge = document.getElementById('draftsBadge');
+    if (badge) {
+        badge.textContent = SaleState.drafts.length;
+        badge.style.display = SaleState.drafts.length > 0 ? 'inline-block' : 'none';
+    }
+}
+
 function saveAsDraft(name = null) {
     if (SaleState.cart.length === 0) {
         showError('Cannot save empty cart as draft');
@@ -2054,6 +3874,7 @@ function showDraftsModal() {
     modal.show();
 }
 
+// Additional draft functions would continue here...
 function displayDraftsList() {
     const draftsList = document.getElementById('draftsList');
     const emptyState = document.getElementById('draftsEmptyState');
@@ -3245,6 +5066,7 @@ function printReceiptPreview() {
     printWindow.document.close();
     printWindow.focus();
 }
+
 function generateModernReceiptHTML() {
     const storeSelect = document.getElementById('storeSelect');
     const selectedOption = storeSelect?.options[storeSelect.selectedIndex];
@@ -3403,7 +5225,7 @@ function generateModernReceiptHTML() {
                     <div style="text-align: center; color: #6b7280; font-size: 12px; padding: 40px 20px;">
                         <div style="font-size: 48px; margin-bottom: 10px;">📄</div>
                         <div>QR Code will appear here</div>
-                        <div style="font-size: 10px; margin-top: 5px;">after fiscalization</div>
+                        <div style="font-size: 10px; margin-top: 5px;">after verification</div>
                     </div>
                 </div>
 
@@ -3458,7 +5280,6 @@ function generateModernReceiptHTML() {
     `;
 }
 
-
 // EFRIS functions
 async function queryEFRISTaxpayer() {
     const tinInput = document.getElementById('taxpayerTIN');
@@ -3494,7 +5315,7 @@ async function queryEFRISTaxpayer() {
     if (results) results.style.display = 'none';
 
     try {
-        // ✅ FIX 1: Get CSRF token from form (like Document 3)
+        // Get CSRF token
         const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
 
         if (!csrfToken) {
@@ -3504,8 +5325,7 @@ async function queryEFRISTaxpayer() {
         const formData = new FormData();
         formData.append('tin', tin);
 
-        // ✅ FIX 2: Use Django URL template tag
-        const response = await fetch('{% url "efris:taxpayer_query" %}', {
+        const response = await fetch('/efris/taxpayer-query/', {
             method: 'POST',
             body: formData,
             headers: {
@@ -3530,7 +5350,6 @@ async function queryEFRISTaxpayer() {
     } catch (error) {
         console.error('EFRIS query error:', error);
 
-        // Show error in both places
         if (errorDiv && errorMessage) {
             errorMessage.textContent = error.message;
             errorDiv.style.display = 'block';
@@ -3540,20 +5359,6 @@ async function queryEFRISTaxpayer() {
         queryBtn.disabled = false;
         if (queryLoading) queryLoading.style.display = 'none';
     }
-}
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
 }
 
 function displayEFRISResults(taxpayer) {
@@ -3649,1812 +5454,37 @@ async function createCustomerFromEFRIS(taxpayer) {
     }
 }
 
-// Item details function
-function showItemDetails(item) {
-    const modalContent = `
-        <div class="modal fade" id="itemDetailsModal" tabindex="-1">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">${escapeHtml(item.name)}</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="product-image-placeholder mb-3">
-                                    <i class="bi ${item.item_type === 'PRODUCT' ? 'bi-box' : 'bi-gear'}"></i>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <p><strong>Code:</strong> ${item.code || 'N/A'}</p>
-                                <p><strong>Type:</strong> ${item.item_type}</p>
-                                <p><strong>Price:</strong> ${formatCurrency(item.final_price)}</p>
-                                ${item.original_price > item.final_price ? `
-                                    <p><strong>Original Price:</strong> <del>${formatCurrency(item.original_price)}</del></p>
-                                    <p><strong>Discount:</strong> ${item.discount_percentage}%</p>
-                                ` : ''}
-                                ${item.tax_rate ? `<p><strong>Tax Rate:</strong> ${item.tax_rate}%</p>` : ''}
-                                ${item.stock ? `
-                                    <p><strong>Stock:</strong> ${item.stock.available} ${item.stock.unit}</p>
-                                    <p><strong>Minimum Stock:</strong> ${item.stock.minimum_stock || 10}</p>
-                                ` : ''}
-                                ${item.description ? `
-                                    <hr>
-                                    <p><strong>Description:</strong></p>
-                                    <p>${escapeHtml(item.description)}</p>
-                                ` : ''}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                            Close
-                        </button>
-                        <button type="button" class="btn btn-primary" onclick="addToCart(${JSON.stringify(item).replace(/'/g, "&#39;")})" data-bs-dismiss="modal">
-                            <i class="bi bi-cart-plus me-2"></i>Add to Cart
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+// ============================================
+// CACHE CLEANUP
+// ============================================
 
-    const modalContainer = document.createElement('div');
-    modalContainer.innerHTML = modalContent;
-    document.body.appendChild(modalContainer);
-
-    const modal = new bootstrap.Modal(modalContainer.querySelector('#itemDetailsModal'));
-    modal.show();
-
-    modalContainer.querySelector('#itemDetailsModal').addEventListener('hidden.bs.modal', function() {
-        document.body.removeChild(modalContainer);
-    });
-}
-
-// New customer modal functions
-function showNewCustomerModal() {
-    const modal = new bootstrap.Modal(document.getElementById('newCustomerModal'));
-    modal.show();
-}
-
-async function saveNewCustomer() {
-    const form = document.getElementById('newCustomerForm');
-    const saveBtn = document.getElementById('saveCustomerBtn');
-    const saveText = document.getElementById('saveCustomerText');
-    const saveLoading = document.getElementById('saveCustomerLoading');
-
-    if (!form || !saveBtn || !saveText || !saveLoading) return;
-
-    if (!form.checkValidity()) {
-        form.reportValidity();
-        return;
-    }
-
-    saveText.style.display = 'none';
-    saveLoading.style.display = 'inline-block';
-    saveBtn.disabled = true;
-
-    const formData = new FormData(form);
-
-    try {
-        const response = await fetch('{% url "sales:create_customer_ajax" %}', {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
-            }
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            selectCustomer(data.customer);
-            bootstrap.Modal.getInstance(document.getElementById('newCustomerModal')).hide();
-            form.reset();
-            showToast('Customer created successfully', 'success');
-        } else {
-            throw new Error(data.error || 'Failed to create customer');
-        }
-    } catch (error) {
-        showError(error.message);
-    } finally {
-        saveText.style.display = 'inline';
-        saveLoading.style.display = 'none';
-        saveBtn.disabled = false;
-    }
-}
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-}
-// ====== MISSING FUNCTIONS END HERE ======
-// Display items
-function displayItems(items) {
-    const grid = document.getElementById('productsGrid');
-    if (!grid) return;
-
-    hideProductsLoading();
-
-    if (items.length === 0) {
-        showProductsEmpty();
-        return;
-    }
-
-    grid.innerHTML = items.map(item => {
-    const isProduct = item.item_type === 'PRODUCT';
-    const outOfStock = isProduct && item.stock && item.stock.available <= 0;
-    const lowStock = isProduct && item.stock && item.stock.available <= (item.stock.minimum_stock || 10);
-
-    return `
-        <div class="product-card ${outOfStock ? 'out-of-stock' : ''}">
-                    ${item.discount_percentage > 0 ? `
-                        <div class="product-discount-badge">
-                            -${item.discount_percentage}%
-                        </div>
-                    ` : ''}
-
-                    <div class="product-image-placeholder">
-                        <i class="bi ${isProduct ? 'bi-box' : 'bi-gear'}"></i>
-                    </div>
-
-                    <div class="product-info">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <h6 class="product-name">${escapeHtml(item.name)}</h6>
-                            <span class="item-badge ${isProduct ? 'product-badge' : 'service-badge'}">
-                                ${item.item_type}
-                            </span>
-                        </div>
-
-                        <p class="product-sku text-muted">
-                            ${item.code || 'No code'} | ${isProduct ? 'Product' : 'Service'}
-                        </p>
-
-                        <div class="product-price">
-                            <span class="price-current">${formatCurrency(item.final_price)}</span>
-                            ${item.original_price > item.final_price ? `
-                                <span class="price-original">${formatCurrency(item.original_price)}</span>
-                            ` : ''}
-                        </div>
-
-                        ${isProduct && item.stock ? `
-                            <div class="product-stock">
-                                <span class="stock-indicator ${outOfStock ? 'out-of-stock' : lowStock ? 'low-stock' : 'in-stock'}"></span>
-                                <span>Stock: ${item.stock.available} ${item.stock.unit}</span>
-                            </div>
-                            ${lowStock ? `
-                                <div class="stock-warning">
-                                    <i class="bi bi-exclamation-triangle"></i> Low stock
-                                </div>
-                            ` : ''}
-                        ` : ''}
-
-                        ${!isProduct ? `
-                            <div class="product-stock">
-                                <span class="stock-indicator in-stock"></span>
-                                <span>Service available</span>
-                            </div>
-                        ` : ''}
-                    </div>
-
-                    <div class="product-actions">
-                        <button type="button" class="btn-add-to-cart"
-                                onclick='addToCart(${JSON.stringify(item).replace(/'/g, "&#39;")})'
-                                ${outOfStock ? 'disabled' : ''}
-                                title="${outOfStock ? 'Out of stock' : 'Add to cart'}">
-                            <i class="bi bi-cart-plus"></i>
-                            ${outOfStock ? 'Out of Stock' : 'Add to Cart'}
-                        </button>
-                        <button type="button" class="btn-quick-view"
-                                onclick='showItemDetails(${JSON.stringify(item).replace(/'/g, "&#39;")})'
-                                title="View details">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    const pagination = document.getElementById('productsPagination');
-    if (pagination) {
-        pagination.style.display = SaleState.totalItems > SaleState.itemsPerPage ? 'flex' : 'none';
-    }
-}
-
-// Update pagination info
-function updatePaginationInfo() {
-    const paginationInfo = document.getElementById('paginationInfo');
-    if (!paginationInfo) return;
-
-    const start = ((SaleState.currentPage - 1) * SaleState.itemsPerPage) + 1;
-    const end = Math.min(SaleState.currentPage * SaleState.itemsPerPage, SaleState.totalItems);
-    paginationInfo.textContent = `Showing ${start}-${end} of ${SaleState.totalItems} items`;
-}
-
-// Pagination functions
-function loadNextPage() {
-    const totalPages = Math.ceil(SaleState.totalItems / SaleState.itemsPerPage);
-    if (SaleState.currentPage < totalPages) {
-        SaleState.currentPage++;
-        loadItems();
-    }
-}
-
-function loadPreviousPage() {
-    if (SaleState.currentPage > 1) {
-        SaleState.currentPage--;
-        loadItems();
-    }
-}
-
-// Switch item type
-function switchItemType(type) {
-    SaleState.currentItemType = type;
-    SaleState.currentPage = 1;
-
-    document.querySelectorAll('[data-type]').forEach(btn => {
-        const isActive = btn.dataset.type === type;
-        btn.classList.toggle('active', isActive);
-        btn.classList.toggle('btn-primary', isActive);
-        btn.classList.toggle('btn-outline-primary', !isActive);
-    });
-
-    loadItems();
-}
-
-// Cart management
-function addToCart(item) {
-    const existingIndex = SaleState.cart.findIndex(cartItem =>
-        (item.item_type === 'PRODUCT' && cartItem.product_id === item.id) ||
-        (item.item_type === 'SERVICE' && cartItem.service_id === item.id)
-    );
-
-    if (existingIndex >= 0) {
-        updateCartItemQuantity(existingIndex, SaleState.cart[existingIndex].quantity + 1);
-        showToast(`Updated quantity for ${item.name}`, 'success');
-    } else {
-        const cartItem = {
-            item_type: item.item_type,
-            product_id: item.item_type === 'PRODUCT' ? item.id : null,
-            service_id: item.item_type === 'SERVICE' ? item.id : null,
-            name: item.name,
-            code: item.code,
-            quantity: 1,
-            unit_price: item.final_price,
-            original_price: item.final_price,  // ✅ Store original price
-            tax_rate: parseFloat(item.tax_rate) || 18,
-            tax_code: item.tax_code || 'A',
-            discount_percentage: item.discount_percentage || 0,
-            discount_amount: 0,
-            unit: item.unit_of_measure || 'pcs',
-            stock_available: item.stock?.available || null,
-            stock_unit: item.stock?.unit || null,
-            price_override_reason: ''  // ✅ For tracking why price was changed
-        };
-
-        SaleState.cart.push(cartItem);
-        showToast(`Added ${item.name} to cart`, 'success');
-    }
-
-    updateCartDisplay();
-}
-
-function updateCartItemQuantity(index, newQuantity) {
-    const item = SaleState.cart[index];
-
-    if (newQuantity < 1) {
-        removeFromCart(index);
-        return;
-    }
-
-    if (item.item_type === 'PRODUCT' && item.stock_available !== null) {
-        if (newQuantity > item.stock_available) {
-            showError(`Only ${item.stock_available} ${item.stock_unit} available in stock`);
-            return;
-        }
-    }
-
-    item.quantity = newQuantity;
-    updateCartDisplay();
-}
-/**
- * Update item price in cart
- */
-function updateItemPrice(index, newPrice) {
-    const item = SaleState.cart[index];
-
-    if (!item) {
-        showError('Item not found');
-        return;
-    }
-
-    // Validate price
-    if (isNaN(newPrice) || newPrice < 0) {
-        showError('Please enter a valid price');
-        // Reset to current price
-        updateCartDisplay();
-        return;
-    }
-
-    // Confirm if price is significantly different
-    const priceDifference = Math.abs(newPrice - item.original_price);
-    const percentChange = (priceDifference / item.original_price) * 100;
-
-    if (percentChange > 20) {
-        const direction = newPrice > item.original_price ? 'increased' : 'decreased';
-        if (!confirm(
-            `Price ${direction} by ${percentChange.toFixed(1)}%\n\n` +
-            `Original: ${formatCurrency(item.original_price)}\n` +
-            `New: ${formatCurrency(newPrice)}\n\n` +
-            `Continue with this price?`
-        )) {
-            updateCartDisplay();
-            return;
-        }
-    }
-
-    // Update price
-    item.unit_price = newPrice;
-
-    // Log price change for audit
-    console.log(`Price changed for ${item.name}: ${item.original_price} → ${newPrice}`);
-
-    // Show notification
-    if (newPrice !== item.original_price) {
-        const change = newPrice > item.original_price ? 'increased' : 'decreased';
-        showToast(`Price ${change} for ${item.name}`, 'info');
-    }
-
-    updateCartDisplay();
-}
-
-/**
- * Reset item price to original
- */
-function resetItemPrice(index) {
-    const item = SaleState.cart[index];
-
-    if (!item) {
-        showError('Item not found');
-        return;
-    }
-
-    item.unit_price = item.original_price;
-    showToast(`Price reset to original for ${item.name}`, 'info');
-    updateCartDisplay();
-}
-function removeFromCart(index) {
-    const item = SaleState.cart[index];
-    SaleState.cart.splice(index, 1);
-    showToast(`Removed ${item.name} from cart`, 'warning');
-    updateCartDisplay();
-}
-
-function clearCart() {
-    if (SaleState.cart.length === 0) return;
-
-    if (confirm('Are you sure you want to clear the cart?')) {
-        SaleState.cart = [];
-        SaleState.discount = { type: 'percentage', value: 0 };
-        updateCartDisplay();
-        showToast('Cart cleared', 'warning');
-    }
-}
-
-// Update cart display
-function updateCartDisplay() {
-    const cartItems = document.getElementById('cartItems');
-    const cartCount = document.getElementById('cartCount');
-    const cartSummary = document.getElementById('cartSummary');
-    const discountSection = document.getElementById('discountSection');
-    const clearCartBtn = document.getElementById('clearCartBtn');
-    const completeSaleBtn = document.getElementById('completeSaleBtn');
-
-    if (!cartItems || !cartCount) return;
-
-    cartCount.textContent = SaleState.cart.length;
-
-    if (SaleState.cart.length === 0) {
-        cartItems.innerHTML = `
-            <div class="cart-empty">
-                <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
-                <p class="mt-2">Cart is empty</p>
-                <p class="small text-muted">Add products or services from the left</p>
-            </div>
-        `;
-        if (cartSummary) cartSummary.style.display = 'none';
-        if (discountSection) discountSection.style.display = 'none';
-        if (clearCartBtn) clearCartBtn.disabled = true;
-        if (completeSaleBtn) completeSaleBtn.disabled = true;
-        updateQuickStats();
-        return;
-    }
-
-    if (clearCartBtn) clearCartBtn.disabled = false;
-
-    cartItems.innerHTML = SaleState.cart.map((item, index) => {
-        const itemTotal = calculateItemTotal(item);
-        const isProduct = item.item_type === 'PRODUCT';
-        const priceChanged = item.unit_price !== item.original_price;
-
-        return `
-            <div class="cart-item">
-                <div class="cart-item-image">
-                    <i class="bi ${isProduct ? 'bi-box' : 'bi-gear'}"></i>
-                </div>
-
-                <div class="cart-item-details">
-                    <div class="cart-item-name">
-                        <span>${escapeHtml(item.name)}</span>
-                        <span class="cart-item-price">${formatCurrency(itemTotal.total)}</span>
-                    </div>
-
-                    <div class="cart-item-meta">
-                        ${item.code ? `<span class="me-2">${item.code}</span>` : ''}
-                        <span>${item.unit}</span>
-                        ${isProduct && item.stock_available ? `
-                            <span class="ms-2">Stock: ${item.stock_available}</span>
-                        ` : ''}
-                    </div>
-
-                    <!-- ✅ NEW: Editable Price Field -->
-                    <div class="mt-2">
-                        <label class="form-label" style="font-size: 0.75rem;">Price per unit:</label>
-                        <div class="input-group input-group-sm">
-                            <input type="number"
-                                   class="form-control"
-                                   value="${item.unit_price}"
-                                   min="0"
-                                   step="0.01"
-                                   onchange="updateItemPrice(${index}, parseFloat(this.value))"
-                                   style="max-width: 120px;">
-                            ${priceChanged ? `
-                                <button class="btn btn-outline-secondary"
-                                        type="button"
-                                        onclick="resetItemPrice(${index})"
-                                        title="Reset to original price">
-                                    <i class="bi bi-arrow-counterclockwise"></i>
-                                </button>
-                            ` : ''}
-                        </div>
-                        ${priceChanged ? `
-                            <small class="text-muted">
-                                Original: ${formatCurrency(item.original_price)}
-                                ${item.unit_price > item.original_price ?
-                                    `<span class="text-success">(+${formatCurrency(item.unit_price - item.original_price)})</span>` :
-                                    `<span class="text-warning">(-${formatCurrency(item.original_price - item.unit_price)})</span>`
-                                }
-                            </small>
-                        ` : ''}
-                    </div>
-
-                    <div class="cart-item-price-breakdown mt-2">
-                        ${formatCurrency(item.unit_price)} × ${item.quantity} = ${formatCurrency(itemTotal.subtotal)}
-                        ${item.tax_rate > 0 ? ` | Tax (${item.tax_rate}%): ${formatCurrency(itemTotal.tax)} included` : ''}
-                        ${item.discount_amount > 0 ? ` | Discount: -${formatCurrency(item.discount_amount)}` : ''}
-                        <br>
-                        <small class="text-muted">Net Amount: ${formatCurrency(itemTotal.taxableAmount)}</small>
-                    </div>
-
-                    <div class="cart-item-controls">
-                        <div class="qty-control">
-                            <button class="qty-btn" type="button" onclick="updateCartItemQuantity(${index}, ${item.quantity - 1})">-</button>
-                            <input type="number" class="qty-input"
-                                   value="${item.quantity}"
-                                   min="1"
-                                   max="${item.stock_available || 9999}"
-                                   onchange="updateCartItemQuantity(${index}, parseInt(this.value) || 1)">
-                            <button class="qty-btn" type="button" onclick="updateCartItemQuantity(${index}, ${item.quantity + 1})">+</button>
-                        </div>
-
-                        ${isProduct && item.stock_available && item.quantity > item.stock_available ? `
-                            <div class="stock-warning">
-                                <i class="bi bi-exclamation-triangle"></i> Exceeds stock
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-
-                <div class="cart-item-actions">
-                    <button type="button" class="btn-remove-item"
-                            onclick="removeFromCart(${index})"
-                            title="Remove item">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    if (cartSummary) cartSummary.style.display = 'block';
-    if (discountSection) discountSection.style.display = 'block';
-    if (completeSaleBtn) completeSaleBtn.disabled = false;
-
-    updateSummary();
-    updateQuickStats();
-}
-
-function calculateItemTotal(item) {
-    const subtotal = item.unit_price * item.quantity;
-    const discountAmount = item.discount_amount || 0;
-    const priceAfterDiscount = subtotal - discountAmount;
-
-    // ✅ FIXED: Extract tax from tax-inclusive price
-    let tax = 0;
-    let taxableAmount = priceAfterDiscount;
-
-    if (item.tax_rate > 0) {
-        // For 18% VAT: tax = price / 1.18 * 0.18
-        // This extracts the tax component from the inclusive price
-        const taxMultiplier = item.tax_rate / 100;
-        tax = (priceAfterDiscount / (1 + taxMultiplier)) * taxMultiplier;
-
-        // The taxable amount (net amount) is price minus tax
-        taxableAmount = priceAfterDiscount - tax;
-    }
-
-    // Total remains the same as priceAfterDiscount (tax-inclusive)
-    const total = priceAfterDiscount;
-
-    return {
-        subtotal: subtotal,           // Unit price × quantity
-        discount: discountAmount,     // Any discount applied
-        taxableAmount: taxableAmount, // Net amount (price without tax)
-        tax: tax,                     // Tax extracted from price
-        total: total                  // Final total (same as priceAfterDiscount)
-    };
-}
-
-function updateSummary() {
-    let subtotal = 0;
-    let totalTax = 0;
-    let totalDiscount = 0;
-    let netAmount = 0;  // Amount before tax
-
-    SaleState.cart.forEach(item => {
-        const itemTotal = calculateItemTotal(item);
-        subtotal += itemTotal.subtotal;        // Total price before discount
-        totalTax += itemTotal.tax;             // Tax extracted from price
-        totalDiscount += itemTotal.discount;   // Discounts applied
-        netAmount += itemTotal.taxableAmount;  // Net amount (without tax)
-    });
-
-    // Apply global discount if any
-    let globalDiscount = 0;
-    if (SaleState.discount.value > 0) {
-        if (SaleState.discount.type === 'percentage') {
-            globalDiscount = subtotal * (SaleState.discount.value / 100);
-        } else {
-            globalDiscount = Math.min(SaleState.discount.value, subtotal);
-        }
-
-        // Recalculate tax after global discount
-        const discountedSubtotal = subtotal - globalDiscount;
-        totalTax = 0;
-
-        SaleState.cart.forEach(item => {
-            if (item.tax_rate > 0) {
-                const itemProportion = (item.unit_price * item.quantity) / subtotal;
-                const itemDiscountedPrice = discountedSubtotal * itemProportion;
-                const taxMultiplier = item.tax_rate / 100;
-                const itemTax = (itemDiscountedPrice / (1 + taxMultiplier)) * taxMultiplier;
-                totalTax += itemTax;
-            }
-        });
-
-        subtotal = discountedSubtotal;
-    }
-
-    totalDiscount += globalDiscount;
-
-    // ✅ CRITICAL: Total = Subtotal (which is already tax-inclusive)
-    // We don't ADD tax, we just show what portion of the price is tax
-    const total = subtotal;
-    netAmount = total - totalTax;  // Net amount is total minus tax
-
-    // Update display
-    const summarySubtotal = document.getElementById('summarySubtotal');
-    const summaryTax = document.getElementById('summaryTax');
-    const summaryDiscount = document.getElementById('summaryDiscount');
-    const summaryTotal = document.getElementById('summaryTotal');
-
-    if (summarySubtotal) summarySubtotal.textContent = formatCurrency(subtotal);
-    if (summaryTax) summaryTax.textContent = formatCurrency(totalTax);
-    if (summaryDiscount) summaryDiscount.textContent = formatCurrency(totalDiscount);
-    if (summaryTotal) summaryTotal.textContent = formatCurrency(total);
-
-    // Update hidden form fields
-    const itemsData = document.getElementById('itemsData');
-    const subtotalAmount = document.getElementById('subtotalAmount');
-    const taxAmount = document.getElementById('taxAmount');
-    const discountAmount = document.getElementById('discountAmount');
-    const totalAmount = document.getElementById('totalAmount');
-    const discountTypeField = document.getElementById('discountTypeField');
-
-    if (itemsData) itemsData.value = JSON.stringify(SaleState.cart);
-    if (subtotalAmount) subtotalAmount.value = subtotal.toFixed(2);
-    if (taxAmount) taxAmount.value = totalTax.toFixed(2);
-    if (discountAmount) discountAmount.value = totalDiscount.toFixed(2);
-    if (totalAmount) totalAmount.value = total.toFixed(2);
-    if (discountTypeField) discountTypeField.value = SaleState.discount.type;
-
-    validatePaymentMethod();
-}
-
-function applyDiscount() {
-    const discountType = document.getElementById('discountType')?.value;
-    const discountValue = parseFloat(document.getElementById('discountValue')?.value) || 0;
-
-    if (discountValue <= 0) {
-        showError('Please enter a valid discount value');
-        return;
-    }
-
-    SaleState.discount = {
-        type: discountType,
-        value: discountValue
-    };
-
-    updateSummary();
-    showToast(`Applied ${discountValue}${discountType === 'percentage' ? '%' : ' UGX'} discount`, 'success');
-}
-
-function updateQuickStats() {
-    const statsItems = document.getElementById('statsItems');
-    const statsAvgPrice = document.getElementById('statsAvgPrice');
-
-    if (!statsItems || !statsAvgPrice) return;
-
-    if (SaleState.cart.length === 0) {
-        statsItems.textContent = '0';
-        statsAvgPrice.textContent = '0 UGX';
-        return;
-    }
-
-    const totalItems = SaleState.cart.reduce((sum, item) => sum + item.quantity, 0);
-    const avgPrice = SaleState.cart.length > 0 ?
-        SaleState.cart.reduce((sum, item) => sum + item.unit_price, 0) / SaleState.cart.length : 0;
-
-    statsItems.textContent = totalItems;
-    statsAvgPrice.textContent = formatCurrency(avgPrice);
-}
-
-// Customer management
-// Customer management
-async function searchCustomers() {
-    const customerSearch = document.getElementById('customerSearch');
-    const searchLoading = document.getElementById('customerSearchLoading');
-    const searchError = document.getElementById('customerSearchError');
-
-    if (!customerSearch) return;
-
-    const query = customerSearch.value.trim();
-
-    if (searchError) searchError.style.display = 'none';
-
-    if (query.length < 2) {
-        const dropdown = document.getElementById('customerDropdown');
-        if (dropdown) dropdown.classList.remove('show');
-        return;
-    }
-
-    if (searchLoading) searchLoading.style.display = 'flex';
-
-    try {
-        const cacheKey = `customer-search-${query}`;
-
-        if (SaleState.searchCache.has(cacheKey)) {
-            const cached = SaleState.searchCache.get(cacheKey);
-            displayCustomerList(cached);
-            if (searchLoading) searchLoading.style.display = 'none';
-            return;
-        }
-
-        const response = await fetch(`/sales/customer-search/?q=${encodeURIComponent(query)}`, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`Search failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (data.customers && data.customers.length > 0) {
-            SaleState.searchCache.set(cacheKey, data.customers);
-            displayCustomerList(data.customers);
-        } else if (Array.isArray(data)) {
-            SaleState.searchCache.set(cacheKey, data);
-            displayCustomerList(data);
-        } else {
-            const customerList = document.getElementById('customerList');
-            const dropdown = document.getElementById('customerDropdown');
-            if (customerList) {
-                customerList.innerHTML = `
-                    <div class="text-center py-3">
-                        <i class="bi bi-person-x" style="font-size: 2rem; opacity: 0.3;"></i>
-                        <p class="mt-2">No customers found</p>
-                        <button class="btn btn-sm btn-outline-primary mt-1"
-                                onclick="showNewCustomerModal()">
-                            <i class="bi bi-plus"></i> Create new customer
-                        </button>
-                    </div>
-                `;
-            }
-            if (dropdown) dropdown.classList.add('show');
-        }
-    } catch (error) {
-        console.error('Error searching customers:', error);
-        if (searchError) {
-            searchError.textContent = `Search failed: ${error.message}`;
-            searchError.style.display = 'block';
-        }
-    } finally {
-        if (searchLoading) searchLoading.style.display = 'none';
-    }
-}
-
-function displayCustomerList(customers) {
-    const list = document.getElementById('customerList');
-    const dropdown = document.getElementById('customerDropdown');
-
-    if (!list) return;
-
-    list.innerHTML = '';
-
-    let customerArray = customers;
-
-    if (customers.customers && Array.isArray(customers.customers)) {
-        customerArray = customers.customers;
-    } else if (customers.results && Array.isArray(customers.results)) {
-        customerArray = customers.results;
-    } else if (customers.data && Array.isArray(customers.data)) {
-        customerArray = customers.data;
-    }
-
-    if (!Array.isArray(customerArray) || customerArray.length === 0) {
-        if (dropdown) dropdown.classList.remove('show');
-        return;
-    }
-
-    list.innerHTML = customerArray.map(customer => {
-        const customerId = customer.id || customer.pk || customer.customer_id;
-        const customerName = customer.name || customer.full_name || customer.business_name || 'Unknown';
-        const customerPhone = customer.phone || customer.phone_number || customer.mobile || '';
-        const customerEmail = customer.email || customer.email_address || '';
-        const customerTin = customer.tin || customer.tax_id || '';
-
-        const isSelected = SaleState.selectedCustomer?.id === customerId;
-
-        return `
-            <div class="customer-list-item ${isSelected ? 'selected' : ''}"
-                 onclick='selectCustomer(${JSON.stringify(customer).replace(/'/g, "&#39;")})'
-                 tabindex="0"
-                 role="option"
-                 aria-selected="${isSelected}">
-                <div class="customer-list-item-avatar">
-                    ${customerName.charAt(0).toUpperCase()}
-                </div>
-                <div class="customer-list-item-info">
-                    <div class="customer-list-item-name">${escapeHtml(customerName)}</div>
-                    <div class="customer-list-item-details">
-                        ${customerPhone}
-                        ${customerEmail ? ` | ${customerEmail}` : ''}
-                    </div>
-                </div>
-                ${customerTin ? `
-                    <span class="customer-list-item-badge">
-                        TIN: ${customerTin}
-                    </span>
-                ` : ''}
-            </div>
-        `;
-    }).join('');
-
-    if (dropdown) dropdown.classList.add('show');
-}
-
-function selectCustomer(customer) {
-    SaleState.selectedCustomer = customer;
-
-    // Update form fields
-    const customerId = document.getElementById('customerId');
-    const customerName = document.getElementById('customerName');
-    const customerDetails = document.getElementById('customerDetails');
-    const customerTin = document.getElementById('customerTin');
-    const customerDisplay = document.getElementById('customerDisplay');
-    const customerDropdown = document.getElementById('customerDropdown');
-    const customerAvatar = document.getElementById('customerAvatar');
-    const customerTinBadge = document.getElementById('customerTinBadge');
-
-    if (customerId) customerId.value = customer.id;
-    if (customerTin) customerTin.value = customer.tin || '';
-
-    // Display customer info
-    if (customerName) {
-        customerName.textContent = customer.name;
-    }
-
-    if (customerDetails) {
-        customerDetails.innerHTML = `
-            <small class="text-muted">
-                ${customer.phone || ''}
-                ${customer.email ? ' • ' + customer.email : ''}
-                ${customer.tin ? ' • TIN: ' + customer.tin : ''}
-            </small>
-        `;
-    }
-
-    // Show customer display
-    if (customerDisplay) {
-        customerDisplay.style.display = 'flex';
-    }
-
-    if (customerDropdown) {
-        customerDropdown.style.display = 'none';
-    }
-
-    // Update avatar
-    if (customerAvatar) {
-        customerAvatar.textContent = customer.name.charAt(0).toUpperCase();
-    }
-
-    // Update TIN badge
-    if (customerTinBadge) {
-        if (customer.tin) {
-            customerTinBadge.textContent = `TIN: ${customer.tin}`;
-            customerTinBadge.style.display = 'inline-block';
-        } else {
-            customerTinBadge.style.display = 'none';
-        }
-    }
-
-    // Handle credit information if available
-    if (customer.credit_info) {
-        currentCustomerCredit = {
-            allowCredit: customer.credit_info.allow_credit,
-            creditLimit: parseFloat(customer.credit_info.credit_limit),
-            creditBalance: parseFloat(customer.credit_info.credit_balance),
-            creditAvailable: parseFloat(customer.credit_info.credit_available),
-            creditStatus: customer.credit_info.credit_status,
-            hasOverdue: customer.credit_info.has_overdue,
-            overdue_amount: parseFloat(customer.credit_info.overdue_amount || 0)
-        };
-
-        // Store in hidden fields
-        const customerAllowCredit = document.getElementById('customerAllowCredit');
-        const customerCreditLimit = document.getElementById('customerCreditLimit');
-        const customerCreditBalance = document.getElementById('customerCreditBalance');
-        const customerCreditAvailable = document.getElementById('customerCreditAvailable');
-        const customerCreditStatus = document.getElementById('customerCreditStatus');
-
-        if (customerAllowCredit) customerAllowCredit.value = customer.credit_info.allow_credit;
-        if (customerCreditLimit) customerCreditLimit.value = customer.credit_info.credit_limit;
-        if (customerCreditBalance) customerCreditBalance.value = customer.credit_info.credit_balance;
-        if (customerCreditAvailable) customerCreditAvailable.value = customer.credit_info.credit_available;
-        if (customerCreditStatus) customerCreditStatus.value = customer.credit_info.credit_status;
-
-        // Display credit information
-        displayCustomerCreditInfo(customer.credit_info);
-    } else {
-        // Hide credit info if not available
-        const creditInfoDiv = document.getElementById('customerCreditInfo');
-        if (creditInfoDiv) {
-            creditInfoDiv.style.display = 'none';
-        }
-    }
-
-    // Add to recent customers
-    addToRecentCustomers(customer);
-
-    // Show success message
-    showToast(`Selected customer: ${customer.name}`, 'success');
-
-    // Validate payment method
-    validatePaymentMethod();
-}
-
-/**
- * Display customer credit information
- */
-function displayCustomerCreditInfo(creditInfo) {
-    const creditInfoDiv = document.getElementById('customerCreditInfo');
-    const creditWarningsDiv = document.getElementById('creditWarnings');
-
-    if (!creditInfo.allow_credit) {
-        if (creditInfoDiv) creditInfoDiv.style.display = 'none';
-        return;
-    }
-
-    // Show credit info section
-    if (creditInfoDiv) {
-        creditInfoDiv.style.display = 'block';
-    }
-
-    // Update credit display
-    const creditLimit = document.getElementById('creditLimit');
-    const creditBalance = document.getElementById('creditBalance');
-    const creditAvailable = document.getElementById('creditAvailable');
-    const statusBadge = document.getElementById('creditStatusBadge');
-    const viewLink = document.getElementById('viewCreditDetailsLink');
-    const customerId = document.getElementById('customerId')?.value;
-
-    if (creditLimit) creditLimit.textContent = 'UGX ' + parseFloat(creditInfo.credit_limit).toLocaleString();
-    if (creditBalance) creditBalance.textContent = 'UGX ' + parseFloat(creditInfo.credit_balance).toLocaleString();
-    if (creditAvailable) creditAvailable.textContent = 'UGX ' + parseFloat(creditInfo.credit_available).toLocaleString();
-
-    // Update status badge
-    if (statusBadge) {
-        statusBadge.textContent = creditInfo.credit_status;
-        statusBadge.className = 'badge ';
-
-        switch(creditInfo.credit_status) {
-            case 'GOOD':
-                statusBadge.classList.add('bg-success');
-                break;
-            case 'WARNING':
-                statusBadge.classList.add('bg-warning');
-                break;
-            case 'SUSPENDED':
-            case 'BLOCKED':
-                statusBadge.classList.add('bg-danger');
-                break;
-            default:
-                statusBadge.classList.add('bg-secondary');
-        }
-    }
-
-    // Show credit details link
-    if (viewLink && customerId) {
-        viewLink.href = `/invoices/customer-credit/${customerId}/`;
-        viewLink.style.display = 'block';
-    }
-
-    // Display warnings
-    if (creditWarningsDiv) {
-        creditWarningsDiv.innerHTML = '';
-
-        if (creditInfo.has_overdue) {
-            creditWarningsDiv.innerHTML += `
-                <div class="credit-error">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    <strong>Overdue Payments:</strong> Customer has overdue invoices totaling
-                    UGX ${parseFloat(creditInfo.overdue_amount).toLocaleString()}
-                </div>
-            `;
-        }
-
-        if (creditInfo.credit_status === 'WARNING') {
-            creditWarningsDiv.innerHTML += `
-                <div class="credit-warning">
-                    <i class="bi bi-exclamation-circle me-2"></i>
-                    <strong>Warning:</strong> Customer is approaching credit limit
-                </div>
-            `;
-        }
-
-        if (creditInfo.credit_status === 'SUSPENDED' || creditInfo.credit_status === 'BLOCKED') {
-            creditWarningsDiv.innerHTML += `
-                <div class="credit-error">
-                    <i class="bi bi-x-circle me-2"></i>
-                    <strong>Credit ${creditInfo.credit_status}:</strong>
-                    ${creditInfo.credit_message || 'Customer cannot make credit purchases'}
-                </div>
-            `;
-        }
-    }
-}
-
-/**
- * Validate payment method based on customer credit status
- */
-function validatePaymentMethod() {
-    const paymentMethodSelect = document.getElementById('paymentMethod');
-    const creditStatusDiv = document.getElementById('creditPaymentStatus');
-    const creditLimitWarning = document.getElementById('creditLimitWarning');
-    const creditLimitWarningText = document.getElementById('creditLimitWarningText');
-    const completeSaleBtn = document.getElementById('completeSaleBtn');
-
-    if (!paymentMethodSelect) return true;
-
-    const paymentMethod = paymentMethodSelect.value;
-
-    // Reset warnings
-    if (creditLimitWarning) creditLimitWarning.style.display = 'none';
-    if (creditStatusDiv) creditStatusDiv.style.display = 'none';
-
-    if (paymentMethod === 'CREDIT') {
-        const customerId = document.getElementById('customerId')?.value;
-
-        // Check if customer is selected
-        if (!customerId) {
-            if (creditLimitWarning) {
-                creditLimitWarning.style.display = 'block';
-                if (creditLimitWarningText) {
-                    creditLimitWarningText.textContent = 'Please select a customer for credit sales';
-                }
-            }
-            if (completeSaleBtn) completeSaleBtn.disabled = true;
-            return false;
-        }
-
-        // Check if customer allows credit
-        if (!currentCustomerCredit.allowCredit) {
-            if (creditLimitWarning) {
-                creditLimitWarning.style.display = 'block';
-                if (creditLimitWarningText) {
-                    creditLimitWarningText.textContent = 'This customer is not authorized for credit purchases';
-                }
-            }
-            if (completeSaleBtn) completeSaleBtn.disabled = true;
-            return false;
-        }
-
-        // Check credit status
-        if (currentCustomerCredit.creditStatus === 'SUSPENDED' ||
-            currentCustomerCredit.creditStatus === 'BLOCKED') {
-            if (creditLimitWarning) {
-                creditLimitWarning.style.display = 'block';
-                if (creditLimitWarningText) {
-                    creditLimitWarningText.textContent = `Credit ${currentCustomerCredit.creditStatus}: Customer cannot make credit purchases`;
-                }
-            }
-            if (completeSaleBtn) completeSaleBtn.disabled = true;
-            return false;
-        }
-
-        // Check for overdue invoices
-        if (currentCustomerCredit.hasOverdue) {
-            if (creditLimitWarning) {
-                creditLimitWarning.style.display = 'block';
-                if (creditLimitWarningText) {
-                    creditLimitWarningText.textContent = 'Customer has overdue invoices. Credit purchases not allowed.';
-                }
-            }
-            if (completeSaleBtn) completeSaleBtn.disabled = true;
-            return false;
-        }
-
-        // Check credit limit
-        const cartTotal = getCartTotal();
-        if (cartTotal > currentCustomerCredit.creditAvailable) {
-            if (creditLimitWarning) {
-                creditLimitWarning.style.display = 'block';
-                if (creditLimitWarningText) {
-                    creditLimitWarningText.innerHTML = `
-                        <strong>Credit Limit Exceeded!</strong><br>
-                        Sale Total: UGX ${cartTotal.toLocaleString()}<br>
-                        Available Credit: UGX ${currentCustomerCredit.creditAvailable.toLocaleString()}
-                    `;
-                }
-            }
-            if (completeSaleBtn) completeSaleBtn.disabled = true;
-            return false;
-        }
-
-        // Show credit payment status
-        if (creditStatusDiv) {
-            creditStatusDiv.style.display = 'block';
-        }
-        if (completeSaleBtn) {
-            completeSaleBtn.disabled = false;
-        }
-        return true;
-    }
-
-    // For non-credit payments, enable button if cart has items
-    if (completeSaleBtn) {
-        const cartCount = parseInt(document.getElementById('cartCount')?.textContent || '0');
-        completeSaleBtn.disabled = cartCount === 0;
-    }
-    return true;
-}
-
-/**
- * Get cart total
- */
-function getCartTotal() {
-    const totalElement = document.getElementById('summaryTotal');
-    if (!totalElement) return 0;
-
-    const totalText = totalElement.textContent;
-    const total = parseFloat(totalText.replace(/[^0-9.-]+/g, ''));
-    return isNaN(total) ? 0 : total;
-}
-
-// Remove customer
-function removeCustomer() {
-    SaleState.selectedCustomer = null;
-
-    const customerId = document.getElementById('customerId');
-    const customerTin = document.getElementById('customerTin');
-    const customerDisplay = document.getElementById('customerDisplay');
-    const creditInfoDiv = document.getElementById('customerCreditInfo');
-
-    if (customerId) customerId.value = '';
-    if (customerTin) customerTin.value = '';
-    if (customerDisplay) customerDisplay.style.display = 'none';
-    if (creditInfoDiv) creditInfoDiv.style.display = 'none';
-
-    // Clear credit fields
-    const creditFields = ['customerAllowCredit', 'customerCreditLimit', 'customerCreditBalance',
-                         'customerCreditAvailable', 'customerCreditStatus'];
-    creditFields.forEach(fieldId => {
-        const field = document.getElementById(fieldId);
-        if (field) field.value = '';
-    });
-
-    // Reset currentCustomerCredit
-    currentCustomerCredit = {
-        allowCredit: false,
-        creditLimit: 0,
-        creditBalance: 0,
-        creditAvailable: 0,
-        creditStatus: '',
-        hasOverdue: false
-    };
-
-    showToast('Customer removed', 'warning');
-    validatePaymentMethod();
-}
-
-// Load recent customers
-async function loadRecentCustomers() {
-    const loading = document.getElementById('recentCustomersLoading');
-    const list = document.getElementById('recentCustomersList');
-
-    if (!list) return;
-
-    // Show loading state
-    list.innerHTML = '';
-    if (loading) loading.style.display = 'block';
-
-    try {
-        const response = await fetch('/sales/recent-customers/');
-        const data = await response.json();
-
-        if (loading) loading.style.display = 'none';
-
-        if (data.customers && data.customers.length > 0) {
-            SaleState.recentCustomers = data.customers;
-            displayRecentCustomers(data.customers);
-        } else {
-            displayRecentCustomers([]);
-        }
-    } catch (error) {
-        console.error('Error loading recent customers:', error);
-        if (loading) loading.style.display = 'none';
-        list.innerHTML = `
-            <div class="text-center py-3">
-                <i class="bi bi-exclamation-triangle text-danger" style="font-size: 2rem;"></i>
-                <p class="mt-2 text-danger">Failed to load recent customers</p>
-            </div>
-        `;
-    }
-}
-
-// Display recent customers
-function displayRecentCustomers(customers) {
-    const list = document.getElementById('recentCustomersList');
-    if (!list) return;
-
-    if (customers.length === 0) {
-        list.innerHTML = `
-            <div class="text-center py-3">
-                <i class="bi bi-clock-history" style="font-size: 2rem; opacity: 0.3;"></i>
-                <p class="mt-2">No recent customers</p>
-            </div>
-        `;
-        return;
-    }
-
-    list.innerHTML = customers.map(customer => `
-        <div class="customer-list-item" onclick='selectCustomer(${JSON.stringify(customer).replace(/'/g, "&#39;")})'>
-            <div class="customer-list-item-avatar">
-                ${customer.name.charAt(0).toUpperCase()}
-            </div>
-            <div class="customer-list-item-info">
-                <div class="customer-list-item-name">${escapeHtml(customer.name)}</div>
-                <div class="customer-list-item-details">
-                    ${customer.phone || ''}
-                    ${customer.last_purchase ? ` | Last: ${new Date(customer.last_purchase).toLocaleDateString()}` : ''}
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
-
-// Add to recent customers
-function addToRecentCustomers(customer) {
-    // Remove if already exists
-    SaleState.recentCustomers = SaleState.recentCustomers.filter(c => c.id !== customer.id);
-
-    // Add to beginning
-    SaleState.recentCustomers.unshift(customer);
-
-    // Keep only last 10
-    if (SaleState.recentCustomers.length > 10) {
-        SaleState.recentCustomers = SaleState.recentCustomers.slice(0, 10);
-    }
-
-    // Update display if on recent tab
-    if (SaleState.activeTab === 'recentTab') {
-        displayRecentCustomers(SaleState.recentCustomers);
-    }
-}
-
-// Clear customer search
-function clearCustomerSearch() {
-    const customerSearch = document.getElementById('customerSearch');
-    const customerDropdown = document.getElementById('customerDropdown');
-
-    if (customerSearch) customerSearch.value = '';
-    if (customerDropdown) customerDropdown.classList.remove('show');
-}
-
-// Clear product search
-function clearProductSearch() {
-    const productSearchBar = document.getElementById('productSearchBar');
-    if (productSearchBar) {
-        productSearchBar.value = '';
-        SaleState.currentPage = 1;
-        loadItems();
-    }
-}
-
-// Reset product filters
-function resetProductFilters() {
-    const productSearchBar = document.getElementById('productSearchBar');
-    if (!productSearchBar) return;
-
-    productSearchBar.value = '';
-    SaleState.currentItemType = 'all';
-    SaleState.currentPage = 1;
-
-    // Reset buttons
-    document.querySelectorAll('[data-type]').forEach(btn => {
-        const isAll = btn.dataset.type === 'all';
-        btn.classList.toggle('active', isAll);
-        btn.classList.toggle('btn-primary', isAll);
-        btn.classList.toggle('btn-outline-primary', !isAll);
-    });
-
-    loadItems();
-}
-
-// Toggle due date section
-function toggleDueDateSection() {
-    const dueDateSection = document.getElementById('dueDateSection');
-    const efrisRequirements = document.getElementById('efrisRequirements');
-    const docTypeRadio = document.querySelector('input[name="document_type"]:checked');
-
-    if (!docTypeRadio) return;
-
-    const docType = docTypeRadio.value;
-    const dueDateField = document.getElementById('dueDate');
-    const paymentMethod = document.getElementById('paymentMethod');
-
-    if (docType === 'INVOICE') {
-        if (dueDateSection) dueDateSection.style.display = 'block';
-
-        // Set default due date (30 days from today)
-        if (dueDateField) {
-            const today = new Date();
-            const dueDate = new Date(today);
-            dueDate.setDate(dueDate.getDate() + 30);
-            dueDateField.value = dueDate.toISOString().split('T')[0];
-            dueDateField.required = true;
-        }
-
-        // Show EFRIS requirements if enabled
-        if (efrisRequirements) {
-            efrisRequirements.style.display = 'block';
-        }
-
-        // Update EFRIS requirements text based on document type
-        const efrisText = efrisRequirements?.querySelector('ul');
-        if (efrisText) {
-            efrisText.innerHTML = `
-                <li>Customer name and contact information required</li>
-                <li>Customer TIN recommended for tax compliance</li>
-                <li>Valid invoice numbering required</li>
-                <li>Tax calculations must follow URA guidelines</li>
-            `;
-        }
-
-        // For invoices, require customer selection
-        if (!SaleState.selectedCustomer) {
-            showCustomerRequiredWarning();
-        }
-
-    } else if (docType === 'RECEIPT') {
-        if (dueDateSection) dueDateSection.style.display = 'none';
-        if (dueDateField) {
-            dueDateField.value = '';
-            dueDateField.required = false;
-        }
-
-        // Hide EFRIS requirements or show receipt-specific ones
-        if (efrisRequirements) {
-            efrisRequirements.style.display = 'block';
-            const efrisText = efrisRequirements.querySelector('ul');
-            if (efrisText) {
-                efrisText.innerHTML = `
-                    <li>Customer is optional (Walk-in accepted)</li>
-                    <li>TIN is optional for receipts</li>
-                    <li>Receipts can be issued immediately</li>
-                    <li>Simplified tax calculations</li>
-                `;
-            }
-        }
-
-        // Remove customer required warnings for receipts
-        const warning = document.querySelector('.customer-required-warning');
-        if (warning) {
-            warning.remove();
-        }
-    }
-
-    // Remove any TIN warnings
-    const tinWarning = document.querySelector('.tin-recommended-warning');
-    if (tinWarning) {
-        tinWarning.remove();
-    }
-
-    validateDocumentRequirements();
-}
-
-// Validate document requirements
-function validateDocumentRequirements() {
-    const docTypeRadio = document.querySelector('input[name="document_type"]:checked');
-    if (!docTypeRadio) return;
-
-    const docType = docTypeRadio.value;
-    const paymentMethod = document.getElementById('paymentMethod')?.value;
-    const customerRequired = docType !== 'RECEIPT';
-
-    // Show/hide customer required indicator
-    if (customerRequired && !SaleState.selectedCustomer) {
-        showCustomerRequiredWarning();
-    }
-
-    // For invoices, always require a customer (not walk-in)
-    if (docType === 'INVOICE' && !SaleState.selectedCustomer) {
-        if (!document.querySelector('.customer-required-warning')) {
-            const warning = document.createElement('div');
-            warning.className = 'alert alert-warning customer-required-warning mt-2';
-            warning.innerHTML = `
-                <i class="bi bi-exclamation-triangle me-2"></i>
-                <strong>Customer required for invoices:</strong>
-                Invoices cannot be issued to "Walk-in Customer". Please select or create a customer.
-            `;
-
-            // Insert after customer section
-            const customerSection = document.querySelector('.customer-section');
-            if (customerSection && !customerSection.nextElementSibling?.classList.contains('customer-required-warning')) {
-                customerSection.parentNode.insertBefore(warning, customerSection.nextSibling);
-            }
-        }
-
-        // Disable complete sale button for invoices without customer
-        const completeSaleBtn = document.getElementById('completeSaleBtn');
-        if (completeSaleBtn) {
-            completeSaleBtn.disabled = true;
-            completeSaleBtn.title = 'Select a customer to proceed with invoice';
-        }
-    } else {
-        // Remove warning if present
-        const warning = document.querySelector('.customer-required-warning');
-        if (warning) {
-            warning.remove();
-        }
-
-        // Re-enable button if cart has items
-        const completeSaleBtn = document.getElementById('completeSaleBtn');
-        if (completeSaleBtn) {
-            completeSaleBtn.disabled = SaleState.cart.length === 0;
-            completeSaleBtn.title = '';
-        }
-    }
-
-    // For EFRIS-enabled invoices, TIN is recommended but not required for individuals
-    // Note: This requires server-side template variable. You'll need to handle this differently.
-    // For now, I'll comment it out and you can adapt it based on your needs.
-    /*
-    if (docType === 'INVOICE' && SaleState.selectedCustomer) {
-        const customer = SaleState.selectedCustomer;
-        const isBusiness = customer.customer_type === 'BUSINESS';
-
-        if (isBusiness && !customer.tin) {
-            // Show TIN warning for businesses
-            if (!document.querySelector('.tin-recommended-warning')) {
-                const warning = document.createElement('div');
-                warning.className = 'alert alert-info tin-recommended-warning mt-2';
-                warning.innerHTML = `
-                    <i class="bi bi-info-circle me-2"></i>
-                    <strong>Business TIN recommended:</strong>
-                    For EFRIS compliance, business customers should have a TIN.
-                    Invoices without TIN may have limited tax compliance.
-                `;
-
-                // Insert after customer section
-                const customerSection = document.querySelector('.customer-section');
-                if (customerSection && !customerSection.nextElementSibling?.classList.contains('tin-recommended-warning')) {
-                    customerSection.parentNode.insertBefore(warning, customerSection.nextSibling);
-                }
-            }
-        }
-    } else {
-        // Remove TIN warning
-        const warning = document.querySelector('.tin-recommended-warning');
-        if (warning) {
-            warning.remove();
-        }
-    }
-    */
-}
-
-// Show customer required warning
-function showCustomerRequiredWarning() {
-    if (!document.querySelector('.customer-required-general')) {
-        const warning = document.createElement('div');
-        warning.className = 'alert alert-info customer-required-general mt-2';
-        warning.innerHTML = `
-            <i class="bi bi-info-circle me-2"></i>
-            <strong>Customer selection recommended:</strong>
-            For better record keeping, please select or create a customer.
-        `;
-
-        // Insert after customer section
-        const customerSection = document.querySelector('.customer-section');
-        if (customerSection) {
-            customerSection.parentNode.insertBefore(warning, customerSection.nextSibling);
-        }
-    }
-}
-
-// Complete sale with validation
-async function completeSale() {
-    // Show loading
-    showLoading(true);
-
-    try {
-        // Validate cart
-        if (SaleState.cart.length === 0) {
-            throw new Error('Please add items to cart');
-        }
-
-        // Validate store
-        const storeSelect = document.getElementById('storeSelect');
-        if (!storeSelect || !storeSelect.value) {
-            throw new Error('Please select a store');
-        }
-
-        // Validate document type requirements
-        const docTypeRadio = document.querySelector('input[name="document_type"]:checked');
-        if (!docTypeRadio) {
-            throw new Error('Please select document type');
-        }
-
-        const docType = docTypeRadio.value;
-        const dueDateField = document.getElementById('dueDate');
-
-        if (docType === 'INVOICE') {
-            // Customer is REQUIRED for invoices
-            if (!SaleState.selectedCustomer) {
-                throw new Error('Customer is required for invoices. Please select or create a customer.');
-            }
-
-            // Validate due date
-            if (!dueDateField || !dueDateField.value) {
-                throw new Error('Due date is required for invoices');
-            }
-
-            // Validate due date is not in the past
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const dueDate = new Date(dueDateField.value);
-
-            if (dueDate < today) {
-                if (!confirm('Due date is in the past. Continue anyway?')) {
-                    showLoading(false);
-                    return;
-                }
-            }
-
-            // For credit invoices, additional validation
-            const paymentMethod = document.getElementById('paymentMethod')?.value;
-            if (paymentMethod === 'CREDIT') {
-                if (!SaleState.selectedCustomer.tin) {
-                    if (!confirm('Credit invoice for customer without TIN. Continue anyway?')) {
-                        showLoading(false);
-                        return;
-                    }
-                }
-            }
-
-            // Check EFRIS requirements (TIN for businesses)
-            // Note: You'll need to adapt this based on your server-side logic
-            /*
-            if (SaleState.selectedCustomer) {
-                const isBusiness = SaleState.selectedCustomer.customer_type === 'BUSINESS';
-                if (isBusiness && !SaleState.selectedCustomer.tin) {
-                    if (!confirm('Business customer without TIN may not be EFRIS compliant. Continue anyway?')) {
-                        showLoading(false);
-                        return;
-                    }
-                }
-            }
-            */
-
-        } else if (docType === 'RECEIPT') {
-            // For receipts, customer is optional
-            if (!SaleState.selectedCustomer) {
-                // Set default walk-in customer
-                const customerId = document.getElementById('customerId');
-                const customerTin = document.getElementById('customerTin');
-                if (customerId) customerId.value = '';
-                if (customerTin) customerTin.value = '';
-            }
-        }
-
-        // Validate payment method
-        const paymentMethod = document.getElementById('paymentMethod')?.value;
-
-        // Validate stock availability
-        const stockErrors = [];
-        for (const item of SaleState.cart) {
-            if (item.item_type === 'PRODUCT' && item.stock_available !== null) {
-                if (item.quantity > item.stock_available) {
-                    stockErrors.push(`${item.name}: Only ${item.stock_available} available`);
-                }
-            }
-        }
-
-        if (stockErrors.length > 0) {
-            showError(`Stock issues:\n${stockErrors.join('\n')}`);
-            showLoading(false);
-            return;
-        }
-
-        // Validate minimum sale amount
-        const totalAmount = document.getElementById('totalAmount');
-        const total = totalAmount ? parseFloat(totalAmount.value) : 0;
-        if (total < 1000) { // Minimum 1000 UGX
-            if (!confirm(`Total amount (${formatCurrency(total)}) is less than minimum 1,000 UGX. Continue anyway?`)) {
-                showLoading(false);
-                return;
-            }
-        }
-
-        // For credit sales, final validation
-        if (paymentMethod === 'CREDIT') {
-            if (!validatePaymentMethod()) {
-                showError('Cannot complete credit sale. Please check credit limit and customer status.');
-                showLoading(false);
-                return;
-            }
-
-            // Confirm credit sale
-            const cartTotal = getCartTotal();
-            const remainingCredit = currentCustomerCredit.creditAvailable - cartTotal;
-
-            if (!confirm(`Confirm Credit Sale\n\n` +
-                         `Amount: UGX ${cartTotal.toLocaleString()}\n` +
-                         `Current Balance: UGX ${currentCustomerCredit.creditBalance.toLocaleString()}\n` +
-                         `New Balance: UGX ${(currentCustomerCredit.creditBalance + cartTotal).toLocaleString()}\n` +
-                         `Remaining Credit: UGX ${remainingCredit.toLocaleString()}\n\n` +
-                         `Proceed with credit sale?`)) {
-                showLoading(false);
-                return;
-            }
-        }
-
-        // Submit the form
-        const form = document.getElementById('createSaleForm');
-        if (form) {
-            form.submit();
-        } else {
-            throw new Error('Sale form not found');
-        }
-
-    } catch (error) {
-        showLoading(false);
-        showError(error.message);
-    }
-}
-
-// Show loading overlay
-function showLoading(show) {
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    if (loadingOverlay) {
-        loadingOverlay.style.display = show ? 'flex' : 'none';
-    }
-}
-
-// Utility functions
-function showToast(message, type = 'info') {
-    const container = document.querySelector('.toast-container');
-    if (!container) return;
-
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-        <i class="bi ${type === 'success' ? 'bi-check-circle-fill text-success' :
-                          type === 'error' ? 'bi-exclamation-circle-fill text-danger' :
-                          type === 'warning' ? 'bi-exclamation-triangle-fill text-warning' :
-                          'bi-info-circle-fill text-info'}"></i>
-        <span>${message}</span>
-    `;
-
-    container.appendChild(toast);
-
-    // Show toast
-    setTimeout(() => toast.classList.add('show'), 10);
-
-    // Remove toast after 5 seconds
-    setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => {
-            if (container.contains(toast)) {
-                container.removeChild(toast);
-            }
-        }, 300);
-    }, 5000);
-}
-
-function showError(message) {
-    console.error('Error:', message);
-
-    // Try to use the modal first
-    try {
-        const errorContent = document.getElementById('errorModalContent');
-        if (errorContent) {
-            errorContent.innerHTML = `
-                <div class="alert alert-danger">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    ${escapeHtml(message)}
-                </div>
-            `;
-
-            const modal = new bootstrap.Modal(document.getElementById('errorModal'));
-            modal.show();
-            return;
-        }
-    } catch (e) {
-        console.warn('Could not show error modal:', e);
-    }
-
-    // Fallback to alert
-    alert('Error: ' + message);
-}
-
-function formatCurrency(amount) {
-    return new Intl.NumberFormat('en-UG', {
-        style: 'currency',
-        currency: 'UGX',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(amount);
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-function showProductsLoading() {
-    const productsGrid = document.getElementById('productsGrid');
-    const productsEmpty = document.getElementById('productsEmpty');
-    const productsPagination = document.getElementById('productsPagination');
-    const productsLoading = document.getElementById('productsLoading');
-
-    if (productsGrid) productsGrid.style.display = 'none';
-    if (productsEmpty) productsEmpty.style.display = 'none';
-    if (productsPagination) productsPagination.style.display = 'none';
-    if (productsLoading) productsLoading.style.display = 'block';
-}
-
-function hideProductsLoading() {
-    const productsGrid = document.getElementById('productsGrid');
-    const productsLoading = document.getElementById('productsLoading');
-
-    if (productsLoading) productsLoading.style.display = 'none';
-    if (productsGrid) {
-        productsGrid.style.display = 'grid';
-        productsGrid.classList.remove('row', 'g-3');
-    }
-}
-
-function showProductsEmpty() {
-    const productsLoading = document.getElementById('productsLoading');
-    const productsGrid = document.getElementById('productsGrid');
-    const productsPagination = document.getElementById('productsPagination');
-    const productsEmpty = document.getElementById('productsEmpty');
-
-    if (productsLoading) productsLoading.style.display = 'none';
-    if (productsGrid) productsGrid.style.display = 'none';
-    if (productsPagination) productsPagination.style.display = 'none';
-    if (productsEmpty) productsEmpty.style.display = 'block';
-}
-
-// Check for drafts on page load
-function checkForDrafts() {
-    try {
-        const drafts = JSON.parse(localStorage.getItem('sale_drafts') || '[]');
-        if (drafts.length > 0) {
-            SaleState.drafts = drafts;
-
-            // Show notification badge
-            updateDraftsBadge();
-        }
-    } catch (error) {
-        console.error('Error loading drafts:', error);
-        localStorage.removeItem('sale_drafts');
-        SaleState.drafts = [];
-    }
-}
-
-// Update drafts badge count
-function updateDraftsBadge() {
-    const badge = document.getElementById('draftsBadge');
-    if (badge) {
-        badge.textContent = SaleState.drafts.length;
-        badge.style.display = SaleState.drafts.length > 0 ? 'inline-block' : 'none';
-    }
-}
-
-// Clean up cache periodically
 setInterval(() => {
     const now = Date.now();
-    const maxAge = 5 * 60 * 1000; // 5 minutes
+    const maxAge = 5 * 60 * 1000;
 
     for (const [key, value] of SaleState.searchCache.entries()) {
         if (now - value.timestamp > maxAge) {
             SaleState.searchCache.delete(key);
         }
     }
-}, 60000); // Run every minute
+}, 60000);
 
-document.addEventListener('DOMContentLoaded', function() {
-    const paymentMethodSelect = document.getElementById('paymentMethod');
-    if (paymentMethodSelect) {
-        paymentMethodSelect.addEventListener('change', validatePaymentMethod);
+console.log('✅ Sale Page JavaScript Loaded Successfully');
+// ============================================
+// CACHE CLEANUP
+// ============================================
+
+setInterval(() => {
+    const now = Date.now();
+    const maxAge = 5 * 60 * 1000;
+
+    for (const [key, value] of SaleState.searchCache.entries()) {
+        if (now - value.timestamp > maxAge) {
+            SaleState.searchCache.delete(key);
+        }
     }
+}, 60000);
 
-    // Initialize other components
-    checkForDrafts();
-    loadItems();
-    loadRecentCustomers();
-    toggleDueDateSection();
-});
+console.log('✅ Sale Page JavaScript Loaded Successfully');
 </script>
 {% endblock %}
