@@ -20,6 +20,7 @@ urlpatterns = [
     path('analytics/day-details/', views.analytics_day_details, name='analytics_day_details'),
     path('fiscalize/<int:sale_id>/', views.fiscalize_sale, name='fiscalize_sale'),
     path('efris-status/', views.sales_efris_status, name='efris_status'),
+    path('<int:sale_id>/add-payment/', views.add_payment, name='add_payment'),
     
     # Sale Detail and Management
     path('<int:pk>/', views.SaleDetailView.as_view(), name='sale_detail'),

@@ -1,515 +1,756 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Receipt - {{ sale.document_number }}</title>
-    <style>
-        /* Reset and Base Styles */
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Receipt - {{ sale.document_number }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ==========================================
+       RECEIPT DESIGN SYSTEM - COLOR VARIABLES
+       ========================================== */
+    :root {
+        --receipt-primary: #7c3aed;      /* Purple */
+        --receipt-primary-dark: #6d28d9;
+        --receipt-secondary: #ec4899;    /* Pink */
+        --receipt-accent: #f97316;       /* Orange */
+        --receipt-dark: #1f2937;
+        --receipt-gray: #6b7280;
+        --receipt-light-gray: #f3f4f6;
+        --receipt-border: #e5e7eb;
+        --receipt-success: #10b981;
+        --receipt-white: #ffffff;
+    }
+
+    /* ==========================================
+       PRINT-SPECIFIC STYLES
+       ========================================== */
+    @media print {
+        /* Hide all base template elements */
+        .header,
+        .sidebar,
+        .sidebar-overlay,
+        .print-controls,
+        .no-print {
+            display: none !important;
+        }
+
+        /* Reset main wrapper */
+        .main-wrapper {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        .main-content {
+            padding: 0 !important;
+            max-width: 100% !important;
+        }
+
+        /* Receipt container for print */
+        .receipt-print-container {
+            width: 210mm !important;
+            min-height: 297mm !important;
+            margin: 0 !important;
+            padding: 15mm !important;
+            background: white !important;
+            box-shadow: none !important;
+        }
+
+        /* Ensure colors print */
         * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
+        /* Page break control */
+        .receipt-print-container {
+            page-break-after: avoid;
+        }
+
+        @page {
+            size: A4;
             margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        }
+    }
+
+    /* ==========================================
+       SCREEN DISPLAY STYLES
+       ========================================== */
+    @media screen {
+        body {
+            background: var(--receipt-light-gray) !important;
         }
 
-        /* DYNAMIC LAYOUT SYSTEM */
-        /* Default: A4 Paper Layout */
-        body.a4-layout {
-            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-            font-size: 12px;
-            line-height: 1.4;
-            color: #000;
-            background: #fff;
-            padding: 15mm; /* Standard A4 margin */
-            width: 210mm; /* A4 width */
-            min-height: 297mm; /* A4 height */
-            margin: 0 auto;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1); /* For screen preview only */
-        }
-
-        /* Original Slim Receipt Layout */
-        body.receipt-layout {
-            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-            font-size: 12px;
-            line-height: 1.4;
-            color: #000;
-            background: #fff;
-            padding: 5mm;
-            max-width: 80mm; /* Original receipt width */
-            margin: 0 auto;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-        }
-
-        /* Common styles for both layouts */
-        .layout-toggle {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            z-index: 1000;
-            background: #007bff;
-            color: white;
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 12px;
-            cursor: pointer;
-            border: none;
-        }
-
-        /* Print-specific styles */
-        @media print {
-            @page {
-                size: A4;
-                margin: 15mm; /* Matches body padding for A4 */
-            }
-
-            body.receipt-layout @page {
-                size: auto;
-                margin: 0mm; /* Original receipt margins */
-            }
-
-            .no-print, .layout-toggle {
-                display: none !important;
-            }
-
-            body.a4-layout, body.receipt-layout {
-                box-shadow: none;
-                margin: 0;
-            }
-        }
-
-        /* Container */
-        .receipt-container {
-            background: white;
-        }
-
-        /* Header */
-        .receipt-header {
-            text-align: center;
-            padding: 20px 0;
-            border-bottom: 2px solid #000;
-            margin-bottom: 20px;
-        }
-
-        body.receipt-layout .receipt-header {
-            padding: 10px 0;
-            margin-bottom: 10px;
-        }
-
-        .store-name {
-            font-size: 24px;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 6px;
-        }
-
-        body.receipt-layout .store-name {
-            font-size: 18px;
-        }
-
-        .store-address {
-            font-size: 12px;
-            color: #555;
-            margin-bottom: 6px;
-        }
-
-        body.receipt-layout .store-address {
-            font-size: 10px;
-        }
-
-        .store-contact {
-            font-size: 12px;
-            color: #555;
-            margin-bottom: 10px;
-        }
-
-        body.receipt-layout .store-contact {
-            font-size: 10px;
-        }
-
-        .tin-number {
-            font-size: 11px;
-            font-weight: 600;
-            background: #f5f5f5;
-            padding: 4px 12px;
-            border-radius: 3px;
-            display: inline-block;
-        }
-
-        body.receipt-layout .tin-number {
-            font-size: 10px;
-            padding: 2px 8px;
-        }
-
-        /* Receipt Info */
-        .receipt-info {
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 1px dashed #ddd;
-        }
-
-        body.receipt-layout .receipt-info {
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-        }
-
-        .receipt-title {
-            text-align: center;
-            font-size: 20px;
-            font-weight: 700;
-            margin-bottom: 15px;
-            text-transform: uppercase;
-        }
-
-        body.receipt-layout .receipt-title {
-            font-size: 16px;
-            margin-bottom: 10px;
-        }
-
-        /* Items Table - Responsive for A4 */
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 25px;
-        }
-
-        body.receipt-layout .items-table {
-            margin-bottom: 15px;
-        }
-
-        .items-table th {
-            text-align: left;
-            font-size: 11px;
-            font-weight: 700;
-            padding: 10px 8px;
-            border-bottom: 2px solid #000;
-            text-transform: uppercase;
-            background: #f8f9fa;
-        }
-
-        body.receipt-layout .items-table th {
-            font-size: 10px;
-            padding: 6px 4px;
-        }
-
-        .items-table td {
-            padding: 12px 8px;
-            font-size: 12px;
-            border-bottom: 1px solid #eee;
-        }
-
-        body.receipt-layout .items-table td {
-            padding: 6px 4px;
-            font-size: 11px;
-        }
-
-        /* Summary Section */
-        .summary-section {
-            margin-top: 25px;
-            padding-top: 15px;
-            border-top: 2px solid #000;
-        }
-
-        body.receipt-layout .summary-section {
-            margin-top: 15px;
-            padding-top: 10px;
-        }
-
-        /* Footer with PrimeBooks.Sale */
-        .primebooks-footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
-            text-align: center;
-            font-size: 11px;
-            color: #666;
-        }
-
-        body.receipt-layout .primebooks-footer {
-            margin-top: 20px;
-            padding-top: 15px;
-            font-size: 10px;
-        }
-
-        .primebooks-logo {
-            font-size: 16px;
-            font-weight: 700;
-            color: #2c3e50;
-            margin-bottom: 8px;
-        }
-
-        body.receipt-layout .primebooks-logo {
-            font-size: 14px;
-        }
-
-        /* QR Code Styling */
-        .qr-code-container {
-            text-align: center;
-            margin: 20px 0;
-            padding: 15px;
-            border: 1px solid #eee;
+        .receipt-print-container {
+            max-width: 210mm;
+            min-height: 297mm;
+            margin: 2rem auto;
+            padding: 15mm;
+            background: var(--receipt-white);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
+                        0 2px 4px -1px rgba(0, 0, 0, 0.06);
             border-radius: 8px;
-            background: #f9f9f9;
+        }
+    }
+
+    /* ==========================================
+       RECEIPT HEADER
+       ========================================== */
+    .receipt-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        padding-bottom: 20px;
+        border-bottom: 3px solid var(--receipt-primary);
+        margin-bottom: 15px;
+    }
+
+    .receipt-logo-section {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        flex: 1;
+    }
+
+    .receipt-logo {
+        width: 80px;
+        height: 80px;
+        object-fit: contain;
+    }
+
+    .receipt-store-info {
+        flex: 1;
+    }
+
+    .receipt-store-name {
+        font-size: 22px;
+        font-weight: 800;
+        color: var(--receipt-primary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 5px;
+    }
+
+    .receipt-store-tagline {
+        font-size: 11px;
+        color: var(--receipt-gray);
+        font-style: italic;
+        margin-bottom: 8px;
+    }
+
+    .receipt-store-details {
+        font-size: 11px;
+        color: var(--receipt-dark);
+        line-height: 1.6;
+    }
+
+    .receipt-store-details div {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .receipt-store-details i {
+        color: var(--receipt-primary);
+        width: 14px;
+    }
+
+    /* Customer Info in Header - Subtle Design */
+    .receipt-customer-header-section {
+        background: var(--receipt-light-gray);
+        border: 2px solid var(--receipt-border);
+        border-radius: 8px;
+        padding: 15px;
+        min-width: 250px;
+    }
+
+    .receipt-customer-header-title {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--receipt-primary);
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid var(--receipt-primary);
+        padding-bottom: 5px;
+    }
+
+    .receipt-customer-header-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        margin-bottom: 6px;
+    }
+
+    .receipt-customer-header-row:last-child {
+        margin-bottom: 0;
+    }
+
+    .receipt-customer-header-label {
+        font-weight: 600;
+        color: var(--receipt-gray);
+        text-transform: uppercase;
+        font-size: 9px;
+        letter-spacing: 0.3px;
+    }
+
+    .receipt-customer-header-value {
+        font-weight: 600;
+        color: var(--receipt-dark);
+        font-size: 11px;
+    }
+
+    /* ==========================================
+       RECEIPT INFO SECTION (NO, DATE)
+       ========================================== */
+    .receipt-info-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 15px;
+        margin-bottom: 15px;
+        padding: 15px;
+        background: var(--receipt-light-gray);
+        border-radius: 8px;
+    }
+
+    .receipt-info-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+    }
+
+    .receipt-info-label {
+        font-weight: 600;
+        color: var(--receipt-gray);
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.5px;
+    }
+
+    .receipt-info-value {
+        font-weight: 700;
+        color: var(--receipt-dark);
+        font-size: 12px;
+    }
+
+    /* ==========================================
+       ITEMS TABLE - DYNAMIC SIZING
+       ========================================== */
+    .receipt-items-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 15px;
+    }
+
+    .receipt-items-table thead {
+        background: linear-gradient(135deg, var(--receipt-primary), var(--receipt-primary-dark));
+        color: white;
+    }
+
+    .receipt-items-table th {
+        padding: 12px 10px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .receipt-items-table th:last-child,
+    .receipt-items-table td:last-child {
+        text-align: right;
+    }
+
+    .receipt-items-table tbody tr {
+        border-bottom: 1px solid var(--receipt-border);
+    }
+
+    .receipt-items-table tbody tr:hover {
+        background: var(--receipt-light-gray);
+    }
+
+    .receipt-items-table td {
+        padding: 12px 10px;
+        font-size: 12px;
+        color: var(--receipt-dark);
+    }
+
+    /* Dynamic font sizing based on item count */
+    .receipt-items-table.many-items td {
+        padding: 8px 10px;
+        font-size: 10px;
+    }
+
+    .receipt-items-table.many-items th {
+        padding: 10px 10px;
+        font-size: 10px;
+    }
+
+    .receipt-items-table.many-items .receipt-item-name {
+        font-size: 10px;
+    }
+
+    .receipt-items-table.many-items .receipt-item-code {
+        font-size: 8px;
+    }
+
+    .receipt-items-table.many-items .receipt-item-badge {
+        font-size: 7px;
+        padding: 1px 6px;
+    }
+
+    .receipt-item-name {
+        font-weight: 600;
+        color: var(--receipt-dark);
+        margin-bottom: 3px;
+    }
+
+    .receipt-item-code {
+        font-size: 10px;
+        color: var(--receipt-gray);
+        font-family: 'Courier New', monospace;
+    }
+
+    .receipt-item-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        margin-top: 4px;
+    }
+
+    .receipt-item-badge.product {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
+    .receipt-item-badge.service {
+        background: #fce7f3;
+        color: #be185d;
+    }
+
+    /* ==========================================
+       TOTALS AND QR CODE SECTION - 50/50 SPLIT
+       ========================================== */
+    .receipt-bottom-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 15px;
+    }
+
+    /* QR Code Section */
+    .receipt-qr-section {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 15px;
+    }
+
+    .receipt-efris-container {
+        text-align: center;
+    }
+
+    .receipt-efris-qr {
+        width: 150px;
+        height: 150px;
+        margin: 0 auto;
+        border: 2px solid var(--receipt-border);
+        border-radius: 8px;
+        padding: 5px;
+        background: white;
+    }
+
+    .receipt-efris-details {
+        font-size: 10px;
+        color: var(--receipt-dark);
+        margin-top: 10px;
+        line-height: 1.6;
+    }
+
+    /* Totals Section */
+    .receipt-totals-section {
+        border-top: 2px solid var(--receipt-primary);
+        padding-top: 15px;
+    }
+
+    .receipt-total-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        font-size: 13px;
+    }
+
+    .receipt-total-label {
+        font-weight: 600;
+        color: var(--receipt-gray);
+    }
+
+    .receipt-total-value {
+        font-weight: 700;
+        color: var(--receipt-dark);
+    }
+
+    .receipt-total-row.discount .receipt-total-value {
+        color: #ef4444;
+    }
+
+    .receipt-total-row.final {
+        border-top: 2px solid var(--receipt-dark);
+        margin-top: 5px;
+        padding-top: 15px;
+        font-size: 18px;
+    }
+
+    .receipt-total-row.final .receipt-total-label,
+    .receipt-total-row.final .receipt-total-value {
+        color: var(--receipt-primary);
+        font-weight: 800;
+    }
+
+    /* ==========================================
+       FOOTER - REDUCED SPACING
+       ========================================== */
+    .receipt-footer {
+        margin-top: 10px;
+        padding-top: 15px;
+        border-top: 2px solid var(--receipt-border);
+        text-align: center;
+    }
+
+    .receipt-footer-main {
+        font-size: 12px;
+        color: var(--receipt-gray);
+        margin-bottom: 5px;
+        line-height: 1.2;
+    }
+
+    .receipt-footer-powered {
+        font-size: 11px;
+        color: var(--receipt-gray);
+        margin-top: 5px;
+    }
+
+    .receipt-footer-powered strong {
+        color: var(--receipt-primary);
+        font-weight: 700;
+    }
+
+    .receipt-footer-powered a {
+        color: var(--receipt-primary);
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .receipt-footer-powered a:hover {
+        text-decoration: underline;
+    }
+
+    /* ==========================================
+       PRINT CONTROLS
+       ========================================== */
+    .print-controls {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        display: flex;
+        gap: 15px;
+        z-index: 1000;
+    }
+
+    .print-btn {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .print-btn.primary {
+        background: linear-gradient(135deg, var(--receipt-primary), var(--receipt-primary-dark));
+        color: white;
+    }
+
+    .print-btn.primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(124, 58, 237, 0.3);
+    }
+
+    .print-btn.secondary {
+        background: var(--receipt-white);
+        color: var(--receipt-dark);
+        border: 2px solid var(--receipt-border);
+    }
+
+    .print-btn.secondary:hover {
+        background: var(--receipt-light-gray);
+        transform: translateY(-2px);
+    }
+
+    /* ==========================================
+       RESPONSIVE DESIGN
+       ========================================== */
+    @media screen and (max-width: 768px) {
+        .receipt-print-container {
+            margin: .5rem;
+            padding: 20px;
         }
 
-        body.receipt-layout .qr-code-container {
-            margin: 10px 0;
-            padding: 10px;
+        .receipt-header {
+            flex-direction: column;
+            text-align: center;
         }
 
-        .qr-code-image {
-            width: 120px;
-            height: 120px;
-            margin: 0 auto 10px;
+        .receipt-logo-section {
+            flex-direction: column;
         }
 
-        body.receipt-layout .qr-code-image {
-            width: 80px;
-            height: 80px;
+        .receipt-customer-header-section {
+            min-width: 100%;
         }
 
-        .qr-verification-text {
-            font-size: 10px;
-            color: #666;
-            margin-top: 5px;
+        .receipt-bottom-section {
+            grid-template-columns: 1fr;
         }
 
-        /* Print Controls */
         .print-controls {
-            position: fixed;
             bottom: 20px;
             right: 20px;
-            z-index: 1000;
-            display: flex;
-            gap: 10px;
+            flex-direction: column;
         }
+    }
+</style>
+{% endblock %}
 
-        .print-button {
-            padding: 10px 20px;
-            background: #28a745;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 600;
-        }
+{% block content %}
+<div class="receipt-print-container">
 
-        .print-button.secondary {
-            background: #6c757d;
-        }
-    </style>
-</head>
-<!-- Default to A4 layout -->
-<body class="a4-layout" id="receiptBody">
-    <!-- Layout Toggle -->
-    <button class="layout-toggle no-print" onclick="toggleLayout()">
-        Switch to Receipt Layout
-    </button>
-
-    <div class="receipt-container">
-        <!-- Header -->
-        <div class="receipt-header">
-            <div class="store-name">{{ sale.store.name }}</div>
-            {% if sale.store.address %}
-            <div class="store-address">{{ sale.store.address }}</div>
+    <!-- HEADER -->
+    <div class="receipt-header">
+        <div class="receipt-logo-section">
+            {% if sale.store.logo %}
+                <img src="{{ sale.store.logo.url }}" alt="{{ sale.store.name }} Logo" class="receipt-logo">
+            {% else %}
+                <div class="receipt-logo" style="background: linear-gradient(135deg, var(--receipt-primary), var(--receipt-secondary)); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 24px;">
+                    {{ sale.store.name|first }}
+                </div>
             {% endif %}
-            {% if sale.store.phone %}
-            <div class="store-contact">Tel: {{ sale.store.phone }}</div>
-            {% endif %}
-            {% if sale.store.tin %}
-            <div class="tin-number">TIN: {{ sale.store.tin }}</div>
-            {% endif %}
-        </div>
 
-        <!-- Receipt Title -->
-        <div class="receipt-title">
-            {{ sale.get_document_type_display }}
-            {% if is_duplicate %}
-            {% endif %}
-        </div>
-
-        <!-- Receipt Information -->
-        <div class="receipt-info">
-            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 15px; font-size: 12px;">
-                <div style="font-weight: 600; text-align: right;">Receipt No:</div>
-                <div style="font-weight: 700;">{{ sale.document_number }}</div>
-
-                <div style="font-weight: 600; text-align: right;">Date:</div>
-                <div>{{ sale.created_at|date:"d/m/Y" }}</div>
-
-                <div style="font-weight: 600; text-align: right;">Time:</div>
-                <div>{{ sale.created_at|date:"h:i A" }}</div>
-
-                <div style="font-weight: 600; text-align: right;">Transaction ID:</div>
-                <div>{{ sale.transaction_id }}</div>
-
-                <div style="font-weight: 600; text-align: right;">Cashier:</div>
-                <div>{{ sale.created_by.get_full_name|default:sale.created_by.username }}</div>
-
-                <div style="font-weight: 600; text-align: right;">Payment:</div>
-                <div>{{ sale.get_payment_method_display }}</div>
+            <div class="receipt-store-info">
+                <div class="receipt-store-name">{{ sale.store.name }}</div>
+                <div class="receipt-store-tagline">
+                    {{ sale.store.physical_address }}
+                </div>
+                <div class="receipt-store-details">
+                    {% if sale.store.address %}
+                    <div><i class="bi bi-geo-alt-fill"></i> {{ sale.store.address }}</div>
+                    {% endif %}
+                    {% if sale.store.phone %}
+                    <div><i class="bi bi-telephone-fill"></i> {{ sale.store.phone }}</div>
+                    {% endif %}
+                    {% if sale.store.email %}
+                    <div><i class="bi bi-envelope-fill"></i> {{ sale.store.email }}</div>
+                    {% endif %}
+                    {% if sale.store.tin %}
+                    <div>TIN: {{ sale.store.tin }}</div>
+                    {% endif %}
+                </div>
             </div>
         </div>
 
-        <!-- EFRIS Fiscal Information -->
-        {% if sale.is_fiscalized %}
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 25px; border: 1px solid #dee2e6;">
-            <div style="font-size: 14px; font-weight: 700; color: #28a745; text-align: center; margin-bottom: 10px; text-transform: uppercase;">
-                EFRIS Fiscal Receipt
-            </div>
-            <div style="font-size: 12px; text-align: center;">
-                {% if sale.efris_invoice_number %}
-                <div><strong>Fiscal No:</strong> {{ sale.efris_invoice_number }}</div>
+        <!-- Customer Info in Header (Replacing CASH SALE) -->
+        <div class="receipt-customer-header-section">
+            <div class="receipt-customer-header-title">Customer Information</div>
+
+            {% if sale.customer %}
+                <div class="receipt-customer-header-row">
+                    <span class="receipt-customer-header-label">Name:</span>
+                    <span class="receipt-customer-header-value">{{ sale.customer.name|default:"Walk-in" }}</span>
+                </div>
+
+                {% if sale.customer.phone %}
+                <div class="receipt-customer-header-row">
+                    <span class="receipt-customer-header-label">Phone:</span>
+                    <span class="receipt-customer-header-value">{{ sale.customer.phone }}</span>
+                </div>
                 {% endif %}
-                {% if sale.verification_code %}
-                <div><strong>Verification Code:</strong> {{ sale.verification_code }}</div>
+
+                {% if sale.customer.email %}
+                <div class="receipt-customer-header-row">
+                    <span class="receipt-customer-header-label">Email:</span>
+                    <span class="receipt-customer-header-value">{{ sale.customer.email }}</span>
+                </div>
                 {% endif %}
-                <div><strong>Fiscalized:</strong> {{ sale.updated_at|date:"d/m/Y H:i" }}</div>
-            </div>
+
+                {% if sale.customer.tin %}
+                <div class="receipt-customer-header-row">
+                    <span class="receipt-customer-header-label">TIN:</span>
+                    <span class="receipt-customer-header-value">{{ sale.customer.tin }}</span>
+                </div>
+                {% endif %}
+            {% else %}
+                <div class="receipt-customer-header-row">
+                    <span class="receipt-customer-header-value">Walk-in Customer</span>
+                </div>
+            {% endif %}
         </div>
-        {% endif %}
+    </div>
 
-        <!-- Items Table -->
-        <table class="items-table">
-            <thead>
-                <tr>
-                    <th>Item</th>
-                    <th style="text-align: right;">Qty</th>
-                    <th style="text-align: right;">Unit Price</th>
-                    <th style="text-align: right;">Total</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in sale.items.all %}
-                <tr>
-                    <td>
-                        <div style="font-weight: 600;">
-                            {% if item.item_type == 'SERVICE' and item.service %}
-                                {{ item.service.name }}
-                            {% elif item.product %}
-                                {{ item.product.name }}
-                            {% else %}
-                                {{ item.item_name }}
-                            {% endif %}
-                        </div>
-                        <div style="font-size: 10px; color: #666;">
-                            {% if item.item_type == 'SERVICE' and item.service.code %}
-                                {{ item.service.code }}
-                            {% elif item.product and item.product.sku %}
-                                {{ item.product.sku }}
-                            {% endif %}
-                        </div>
-                        <span style="font-size: 10px; padding: 2px 6px; border-radius: 2px; background: #f0f0f0; display: inline-block; margin-top: 3px;">
-                            {{ item.get_item_type_display }}
-                        </span>
-                    </td>
-                    <td style="text-align: right;">{{ item.quantity|floatformat:2 }}</td>
-                    <td style="text-align: right;">{{ item.unit_price|floatformat:2 }} {{ sale.currency }}</td>
-                    <td style="text-align: right; font-weight: 700;">{{ item.line_total|floatformat:2 }} {{ sale.currency }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- INFO SECTION (Receipt No & Date) -->
+    <div class="receipt-info-grid">
+        <div class="receipt-info-row">
+            <span class="receipt-info-label">Receipt No:</span>
+            <span class="receipt-info-value">{{ sale.document_number }}</span>
+        </div>
 
-        <!-- Summary Section -->
-        <div class="summary-section">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
-                <span style="font-weight: 600;">Subtotal:</span>
-                <span style="font-weight: 700;">{{ sale.subtotal|floatformat:2 }} {{ sale.currency }}</span>
+        <div class="receipt-info-row">
+            <span class="receipt-info-label">Date & Time:</span>
+            <span class="receipt-info-value">{{ sale.created_at|date:"d/m/Y H:i" }}</span>
+        </div>
+    </div>
+
+    <!-- ITEMS TABLE -->
+    <table class="receipt-items-table {% if sale.items.all|length > 10 %}many-items{% endif %}">
+        <thead>
+            <tr>
+                <th style="width: 10%;">Qty</th>
+                <th style="width: 50%;">Description</th>
+                <th style="width: 15%;">@ Price</th>
+                <th style="width: 25%;">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in sale.items.all %}
+            <tr>
+                <td style="text-align: center; font-weight: 600;">{{ item.quantity|floatformat:0 }}</td>
+                <td>
+                    <div class="receipt-item-name">
+                        {% if item.item_type == 'SERVICE' and item.service %}
+                            {{ item.service.name }}
+                        {% elif item.product %}
+                            {{ item.product.name }}
+                        {% else %}
+                            {{ item.item_name }}
+                        {% endif %}
+                    </div>
+                    {% if item.item_type == 'SERVICE' and item.service.code %}
+                        <div class="receipt-item-code">Code: {{ item.service.code }}</div>
+                    {% elif item.product and item.product.sku %}
+                        <div class="receipt-item-code">SKU: {{ item.product.sku }}</div>
+                    {% endif %}
+                    <span class="receipt-item-badge {{ item.item_type|lower }}">
+                        {{ item.get_item_type_display }}
+                    </span>
+                </td>
+                <td style="text-align: right; font-weight: 600;">
+                    {{ item.unit_price|floatformat:2 }}
+                </td>
+                <td style="text-align: right; font-weight: 700; font-size: 13px;">
+                    {{ item.line_total|floatformat:2 }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- BOTTOM SECTION: QR CODE (LEFT) & TOTALS (RIGHT) - 50/50 -->
+    <div class="receipt-bottom-section">
+        <!-- QR Code Section (Left) -->
+        <div class="receipt-qr-section">
+            {% if sale.is_fiscalized and qr_image_src %}
+            <div class="receipt-efris-container">
+                <img src="{{ qr_image_src }}" alt="EFRIS QR Code" class="receipt-efris-qr">
+                <div class="receipt-efris-details">
+                    {% if sale.efris_invoice_number %}
+                    <div><strong>Fiscal No:</strong> {{ sale.efris_invoice_number }}</div>
+                    {% endif %}
+                    {% if sale.verification_code %}
+                    <div><strong>Verification:</strong> {{ sale.verification_code }}</div>
+                    {% endif %}
+                    <div><strong>Verified:</strong> {{ sale.updated_at|date:"d/m/Y H:i" }}</div>
+                </div>
             </div>
+            {% endif %}
+            <!-- Empty space if not fiscalized - no message shown -->
+        </div>
 
+        <!-- Totals Section (Right) -->
+        <div class="receipt-totals-section">
+            <div class="receipt-total-row">
+                <span class="receipt-total-label">Subtotal:</span>
+                <span class="receipt-total-value">{{ sale.subtotal|floatformat:2 }} {{ sale.currency }}</span>
+            </div>
             {% if sale.tax_amount > 0 %}
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
-                <span style="font-weight: 600;">Tax (VAT 18%):</span>
-                <span style="font-weight: 700;">{{ sale.tax_amount|floatformat:2 }} {{ sale.currency }}</span>
+            <div class="receipt-total-row">
+                <span class="receipt-total-label">Tax (VAT 18%):</span>
+                <span class="receipt-total-value">{{ sale.tax_amount|floatformat:2 }} {{ sale.currency }}</span>
             </div>
             {% endif %}
 
             {% if sale.discount_amount > 0 %}
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
-                <span style="font-weight: 600;">Discount:</span>
-                <span style="font-weight: 700; color: #ef4444;">-{{ sale.discount_amount|floatformat:2 }} {{ sale.currency }}</span>
+            <div class="receipt-total-row discount">
+                <span class="receipt-total-label">Discount:</span>
+                <span class="receipt-total-value">-{{ sale.discount_amount|floatformat:2 }} {{ sale.currency }}</span>
             </div>
             {% endif %}
 
-            <div style="display: flex; justify-content: space-between; padding-top: 12px; margin-top: 12px; border-top: 1px solid #000; font-size: 16px; font-weight: 800;">
-                <span>TOTAL:</span>
-                <span>{{ sale.total_amount|floatformat:2 }} {{ sale.currency }}</span>
-            </div>
-        </div>
-
-        <!-- QR Code Section -->
-        <div class="qr-code-container">
-            <div style="font-size: 12px; font-weight: 700; margin-bottom: 10px; color: #333;">
-                Scan to Verify Receipt
-            </div>
-            {% if qr_image_src %}
-            <img src="{{ qr_image_src }}" alt="Receipt QR Code" class="qr-code-image">
-            {% else %}
-            <div style="width: 120px; height: 120px; background: #f5f5f5; margin: 0 auto; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #999;">
-                QR Code<br>Placeholder
-            </div>
-            {% endif %}
-            <div class="qr-verification-text">
-                Document: {{ sale.document_number }}<br>
-                Validated: {% now "d/m/Y" %}
-            </div>
-        </div>
-
-        <!-- PrimeBooks.Sale Footer -->
-        <div class="primebooks-footer">
-            <div class="primebooks-logo">PrimeBooks.Sale</div>
-            <div style="margin-bottom: 8px;">
-                Professional Receipt Management System | Version 1.0
-            </div>
-            <div style="color: #888; font-size: 10px;">
-                Generated: {% now "d/m/Y H:i" %} |
-                This is an official digital receipt from {{ sale.store.name }}
+            <div class="receipt-total-row final">
+                <span class="receipt-total-label">TOTAL:</span>
+                <span class="receipt-total-value">{{ sale.total_amount|floatformat:2 }} {{ sale.currency }}</span>
             </div>
         </div>
     </div>
 
-    <!-- Print Controls -->
-    <div class="print-controls no-print">
-        <button class="print-button" onclick="window.print()">
-            <i class="bi bi-printer me-2"></i> Print Receipt
-        </button>
-        <button class="print-button secondary" onclick="window.close()">
-            <i class="bi bi-x-circle me-2"></i> Close
-        </button>
+    <!-- FOOTER - REDUCED SPACING -->
+    <div class="receipt-footer">
+        <div class="receipt-footer-main">
+            <div style="color: #dc2626; font-weight: 700; font-style: italic; margin-bottom: 6px;">
+                *Goods and money once received cannot be returned!*
+            </div>
+            <div style="font-weight: 600; color: var(--receipt-dark); font-size: 13px;">
+                THANK YOU FOR THE BUSINESS!
+            </div>
+        </div>
+
+        <div style="font-size: 10px; color: var(--receipt-gray); margin: 10px 0 5px 0;">
+            Generated: {% now "d/m/Y H:i" %} | Official receipt from {{ sale.store.name }}
+        </div>
+
+        <div class="receipt-footer-powered">
+            <p style="margin: 0;">
+                Powered by <strong>Primebooks</strong>
+                (<a href="https://www.primebooks.sale" target="_blank">www.primebooks.sale</a>)
+            </p>
+        </div>
     </div>
 
-    <script>
-        // Layout Toggle Function
-        function toggleLayout() {
-            const body = document.getElementById('receiptBody');
-            const toggleBtn = document.querySelector('.layout-toggle');
+</div>
 
-            if (body.classList.contains('a4-layout')) {
-                body.classList.remove('a4-layout');
-                body.classList.add('receipt-layout');
-                toggleBtn.textContent = 'Switch to A4 Layout';
-            } else {
-                body.classList.remove('receipt-layout');
-                body.classList.add('a4-layout');
-                toggleBtn.textContent = 'Switch to Receipt Layout';
-            }
-        }
+<!-- PRINT CONTROLS (Hidden on Print) -->
+<div class="print-controls no-print">
+    <button class="print-btn primary" onclick="window.print()">
+        <i class="bi bi-printer-fill"></i> Print Receipt
+    </button>
+    <button class="print-btn secondary" onclick="window.close()">
+        <i class="bi bi-x-circle-fill"></i> Close
+    </button>
+</div>
 
-        // Auto-print when page loads (optional)
-        window.onload = function() {
-            // Uncomment to auto-print
-            // setTimeout(function() { window.print(); }, 1000);
-        };
+{% endblock %}
 
-        // Handle print dialog close
-        window.onafterprint = function() {
-            // Optionally close window after printing
-            // window.close();
-        };
-    </script>
-</body>
-</html>
+{% block extra_js %}
+<script>
+// Handle after print
+window.onafterprint = function() {
+    console.log('Print dialog closed');
+};
+</script>
+{% endblock %}

@@ -651,48 +651,82 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         sale = self.object
 
-        # Check store's EFRIS configuration for display context
+        # Check store's EFRIS configuration
         store_config = sale.store.effective_efris_config
         efris_enabled = store_config.get('enabled', False)
 
-        # Use the Sale model's EFRIS mixin methods for fiscalization checks
         can_fiscalize = False
         fiscalization_error = None
 
         if efris_enabled:
-            # WORKS FOR ALL DOCUMENT TYPES (receipts and invoices)
             can_fiscalize, fiscalization_error = sale.can_fiscalize(self.request.user)
 
-        # Get fiscalization data - works for all document types
         fiscal_data = self._get_fiscalization_data(sale)
 
-        # Calculate total paid - ensure we only sum confirmed payments
-        total_paid = sale.payments.filter(is_confirmed=True).aggregate(
+        # ========== FIXED PAYMENT CALCULATION ==========
+        # Get total paid from CONFIRMED and NON-VOIDED payments only
+        total_paid = sale.payments.filter(
+            is_confirmed=True,
+            is_voided=False
+        ).aggregate(
             Sum('amount')
         )['amount__sum'] or Decimal('0')
 
-        # Debug: Print payment info
-        print(f"DEBUG: Total paid: {total_paid}")
-        print(f"DEBUG: Sale total: {sale.total_amount}")
-        print(f"DEBUG: Number of payments: {sale.payments.count()}")
-        for payment in sale.payments.all():
-            print(f"DEBUG: Payment - Amount: {payment.amount}, Confirmed: {payment.is_confirmed}")
-
-        # Calculate balance due properly with Decimal conversion
+        # Calculate balance with proper Decimal handling
         try:
-            # Convert to Decimal to avoid comparison issues
-            sale_total = Decimal(str(sale.total_amount))
+            sale_total = Decimal(str(sale.total_amount or 0))
             total_paid_decimal = Decimal(str(total_paid))
-            balance_due = max(Decimal('0'), sale_total - total_paid_decimal)
 
-            # Check if paid in full (allow for small rounding differences)
-            is_paid_in_full = balance_due <= Decimal('0.01')  # Allow 1 cent difference
+            balance_due = max(Decimal('0'), sale_total - total_paid_decimal)
+            is_paid_in_full = balance_due <= Decimal('0.01')
+
+            # ✅ RECEIPTS are always paid (immediate payment)
+            if sale.document_type == 'RECEIPT':
+                is_paid_in_full = True
+                balance_due = Decimal('0')
+
+            # ✅ Non-credit INVOICES: Check if payment received
+            elif sale.document_type == 'INVOICE' and sale.payment_method != 'CREDIT':
+                if total_paid_decimal >= sale_total:
+                    is_paid_in_full = True
+                    balance_due = Decimal('0')
+
         except (ValueError, TypeError) as e:
-            print(f"DEBUG: Error calculating balance: {e}")
+            logger.error(f"Error calculating balance for sale {sale.id}: {e}")
             balance_due = Decimal('0')
             is_paid_in_full = True
 
-        # Check refund and void permissions
+        # ========== AUTO-UPDATE PAYMENT STATUS ==========
+        if sale.document_type in ['RECEIPT', 'INVOICE']:
+            new_payment_status = None
+
+            if is_paid_in_full:
+                new_payment_status = 'PAID'
+            elif total_paid_decimal > Decimal('0'):
+                new_payment_status = 'PARTIALLY_PAID'
+            elif sale.due_date and sale.due_date < timezone.now().date():
+                new_payment_status = 'OVERDUE'
+            else:
+                new_payment_status = 'PENDING'
+
+            # Update if changed
+            if new_payment_status != sale.payment_status:
+                sale.payment_status = new_payment_status
+                if is_paid_in_full:
+                    sale.status = 'COMPLETED'
+                sale.save(update_fields=['payment_status', 'status'])
+                logger.info(f"✅ Updated sale {sale.id}: {sale.payment_status}")
+
+        # Payment breakdown by method
+        payments_by_method = sale.payments.filter(
+            is_confirmed=True,
+            is_voided=False
+        ).values('payment_method').annotate(
+            total=Sum('amount'),
+            count=Count('id')
+        ).order_by('-total')
+
+        # Permissions
         can_refund = (
                 sale.transaction_type == 'SALE' and
                 not sale.is_refunded and
@@ -705,20 +739,15 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
                 self.request.user.has_perm('sales.can_void_sale')
         )
 
-        # Get receipt if exists
         receipt = getattr(sale, 'receipt_detail', None)
-
-        # Get invoice detail if exists (for INVOICE document type)
         invoice_detail = None
         if sale.document_type == 'INVOICE' and hasattr(sale, 'invoice_detail'):
             invoice_detail = sale.invoice_detail
 
-        # Add customer credit information for invoices
+        # Customer credit info
         customer_credit_info = None
         if sale.customer and sale.document_type == 'INVOICE':
-            # Update credit balance to get current info
             sale.customer.update_credit_balance()
-
             customer_credit_info = {
                 'allow_credit': sale.customer.allow_credit,
                 'credit_limit': sale.customer.credit_limit,
@@ -735,7 +764,6 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
                 ).count()
             }
 
-        # Add payment schedule info for credit invoices
         payment_schedules = []
         if (sale.document_type == 'INVOICE' and
                 sale.payment_method == 'CREDIT' and
@@ -758,6 +786,7 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             'invoice_detail': invoice_detail,
             'customer_credit_info': customer_credit_info,
             'payment_schedules': payment_schedules,
+            'payments_by_method': payments_by_method,
             'is_credit_invoice': (
                     sale.document_type == 'INVOICE' and
                     sale.payment_method == 'CREDIT'
@@ -768,9 +797,6 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             ),
             **fiscal_data
         })
-
-        print(f"DEBUG: Context balance_due: {balance_due}")
-        print(f"DEBUG: Context is_paid_in_full: {is_paid_in_full}")
 
         return context
 
@@ -981,6 +1007,101 @@ def create_invoice_for_sale(sale, user):
         logger.error(f"Failed to create invoice for sale {sale.id}: {e}")
         raise
 
+
+@login_required
+@permission_required('sales.add_payment', raise_exception=True)
+@require_POST
+def add_payment(request, sale_id):
+    """Record a payment for a sale"""
+    sale = get_object_or_404(
+        Sale.objects.select_related('store', 'customer'),
+        pk=sale_id
+    )
+
+    # Check user access
+    try:
+        validate_store_access(request.user, sale.store, action='change', raise_exception=True)
+    except PermissionDenied as e:
+        messages.error(request, str(e))
+        return redirect('sales:sale_detail', pk=sale_id)
+
+    try:
+        with transaction.atomic():
+            # Get form data
+            amount = Decimal(str(request.POST.get('amount', 0)))
+            payment_method = request.POST.get('payment_method', 'CASH')
+            payment_date = request.POST.get('payment_date')
+            transaction_reference = request.POST.get('transaction_reference', '').strip()
+            notes = request.POST.get('notes', '').strip()
+
+            # Validate amount
+            if amount <= 0:
+                messages.error(request, 'Payment amount must be greater than 0')
+                return redirect('sales:sale_detail', pk=sale_id)
+
+            # Calculate outstanding balance
+            total_paid = sale.payments.filter(
+                is_confirmed=True,
+                is_voided=False
+            ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
+
+            balance_due = sale.total_amount - total_paid
+
+            if amount > balance_due:
+                messages.error(
+                    request,
+                    f'Payment amount ({amount:,.2f}) exceeds outstanding balance ({balance_due:,.2f})'
+                )
+                return redirect('sales:sale_detail', pk=sale_id)
+
+            # Parse payment date
+            if payment_date:
+                try:
+                    payment_date = datetime.strptime(payment_date, '%Y-%m-%d').date()
+                except ValueError:
+                    payment_date = timezone.now().date()
+            else:
+                payment_date = timezone.now().date()
+
+            # Create payment record
+            payment = Payment.objects.create(
+                sale=sale,
+                store=sale.store,
+                amount=amount,
+                payment_method=payment_method,
+                transaction_reference=transaction_reference,
+                notes=notes,
+                is_confirmed=True,
+                confirmed_at=timezone.now(),
+                created_by=request.user
+            )
+
+            # Update sale payment status
+            sale.update_payment_status()
+
+            # Log the payment
+            logger.info(
+                f"Payment recorded: Sale={sale.id}, Amount={amount}, "
+                f"Method={payment_method}, User={request.user.id}"
+            )
+
+            # Success message
+            messages.success(
+                request,
+                f'Payment of {amount:,.2f} UGX recorded successfully. '
+                f'New balance: {sale.amount_outstanding:,.2f} UGX'
+            )
+
+            # If fully paid, show completion message
+            if sale.amount_outstanding <= Decimal('0.01'):
+                messages.success(request, '🎉 Sale is now fully paid!')
+
+            return redirect('sales:sale_detail', pk=sale_id)
+
+    except Exception as e:
+        logger.error(f"Error recording payment for sale {sale_id}: {e}", exc_info=True)
+        messages.error(request, f'Error recording payment: {str(e)}')
+        return redirect('sales:sale_detail', pk=sale_id)
 
 @login_required
 @require_GET

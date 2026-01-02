@@ -871,6 +871,32 @@ body {
     word-break: break-all;
 }
 
+/* Payment Modal Styles */
+.quick-amount-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin: 0.75rem 0;
+}
+
+.quick-amount-btn {
+    flex: 1;
+    min-width: 70px;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-accent);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.quick-amount-btn:hover {
+    background: var(--primary-gradient);
+    color: white;
+    border-color: #667eea;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .sale-header {
@@ -1092,58 +1118,61 @@ body {
             {% endif %}
         </div>
     </div>
+
+    <!-- Quick Actions Card -->
     <div class="modern-card no-print">
-                <div class="card-header-modern">
-                    <h4 class="card-title-modern">
-                        <span class="card-title-icon" style="background: var(--warning-gradient);">
-                            <i class="bi bi-lightning"></i>
-                        </span>
-                        Quick Actions
-                    </h4>
-                </div>
-                <div class="quick-actions">
-                    <a href="{% url 'sales:print_receipt' sale.pk %}" class="quick-action" target="_blank">
-                        <i class="bi bi-printer"></i>
-                        <span>Print</span>
-                    </a>
-                    <a href="{% url 'sales:send_receipt' sale.pk %}" class="quick-action">
-                        <i class="bi bi-envelope"></i>
-                        <span>Email</span>
-                    </a>
-                    <a href="{% url 'sales:duplicate_sale' sale.pk %}" class="quick-action">
-                        <i class="bi bi-files"></i>
-                        <span>Duplicate</span>
-                    </a>
-                    {% if not sale.is_fiscalized %}
-                    <a href="{% url 'sales:fiscalize_sale' sale.pk %}" class="quick-action">
-                        <i class="bi bi-shield-check"></i>
-                        <span>Fiscalize</span>
-                    </a>
-                    {% endif %}
-                    {% if sale.is_fiscalized %}
-                    <button onclick="printFiscalReceipt()" class="quick-action">
-                        <i class="bi bi-printer-fill"></i>
-                        <span>Fiscal Receipt</span>
-                    </button>
-                    <button onclick="copyFiscalInfo()" class="quick-action">
-                        <i class="bi bi-clipboard-data"></i>
-                        <span>Copy Fiscal</span>
-                    </button>
-                    {% endif %}
-                    {% if sale.transaction_type == 'SALE' and not sale.is_refunded and not sale.is_voided %}
-                    <a href="{% url 'sales:process_refund' sale.pk %}" class="quick-action" style="color: #ef4444;">
-                        <i class="bi bi-arrow-counterclockwise"></i>
-                        <span>Refund</span>
-                    </a>
-                    {% endif %}
-                    {% if sale.transaction_type == 'SALE' and not sale.is_voided %}
-                    <a href="{% url 'sales:void_sale' sale.pk %}" class="quick-action" style="color: #ef4444;">
-                        <i class="bi bi-x-circle"></i>
-                        <span>Void</span>
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
+        <div class="card-header-modern">
+            <h4 class="card-title-modern">
+                <span class="card-title-icon" style="background: var(--warning-gradient);">
+                    <i class="bi bi-lightning"></i>
+                </span>
+                Quick Actions
+            </h4>
+        </div>
+        <div class="quick-actions">
+            <a href="{% url 'sales:print_receipt' sale.pk %}" class="quick-action" target="_blank">
+                <i class="bi bi-printer"></i>
+                <span>Print</span>
+            </a>
+            <a href="{% url 'sales:send_receipt' sale.pk %}" class="quick-action">
+                <i class="bi bi-envelope"></i>
+                <span>Email</span>
+            </a>
+            <a href="{% url 'sales:duplicate_sale' sale.pk %}" class="quick-action">
+                <i class="bi bi-files"></i>
+                <span>Duplicate</span>
+            </a>
+            {% if not sale.is_fiscalized %}
+            <a href="{% url 'sales:fiscalize_sale' sale.pk %}" class="quick-action">
+                <i class="bi bi-shield-check"></i>
+                <span>Fiscalize</span>
+            </a>
+            {% endif %}
+            {% if sale.is_fiscalized %}
+            <button onclick="printFiscalReceipt()" class="quick-action">
+                <i class="bi bi-printer-fill"></i>
+                <span>Fiscal Receipt</span>
+            </button>
+            <button onclick="copyFiscalInfo()" class="quick-action">
+                <i class="bi bi-clipboard-data"></i>
+                <span>Copy Fiscal</span>
+            </button>
+            {% endif %}
+            {% if sale.transaction_type == 'SALE' and not sale.is_refunded and not sale.is_voided %}
+            <a href="{% url 'sales:process_refund' sale.pk %}" class="quick-action" style="color: #ef4444;">
+                <i class="bi bi-arrow-counterclockwise"></i>
+                <span>Refund</span>
+            </a>
+            {% endif %}
+            {% if sale.transaction_type == 'SALE' and not sale.is_voided %}
+            <a href="{% url 'sales:void_sale' sale.pk %}" class="quick-action" style="color: #ef4444;">
+                <i class="bi bi-x-circle"></i>
+                <span>Void</span>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
     <!-- Fiscalization Information Card -->
     {% if sale.is_fiscalized %}
     <div class="modern-card">
@@ -1228,368 +1257,650 @@ body {
     {% endif %}
 
     <div class="vertical-stack">
-        <!-- Main Content -->
-        <div>
-            <!-- Combined Items & Summary Table -->
-            <div class="combined-table-container">
-    <div class="combined-header">
-        <h3 class="combined-title">
-            <span class="card-title-icon">
-                <i class="bi bi-cart"></i>
-            </span>
-            Sale Items & Summary
-        </h3>
-        <div class="d-flex gap-2 no-print">
-            <button class="btn btn-sm btn-outline-primary" onclick="exportItems('csv')">
-                <i class="bi bi-filetype-csv me-1"></i>CSV
-            </button>
-            <button class="btn btn-sm btn-outline-primary" onclick="exportItems('excel')">
-                <i class="bi bi-file-excel me-1"></i>Excel
-            </button>
-        </div>
-    </div>
+        <!-- Combined Items & Summary Table -->
+        <div class="combined-table-container">
+            <div class="combined-header">
+                <h3 class="combined-title">
+                    <span class="card-title-icon">
+                        <i class="bi bi-cart"></i>
+                    </span>
+                    Sale Items & Summary
+                </h3>
+                <div class="d-flex gap-2 no-print">
+                    <button class="btn btn-sm btn-outline-primary" onclick="exportItems('csv')">
+                        <i class="bi bi-filetype-csv me-1"></i>CSV
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="exportItems('excel')">
+                        <i class="bi bi-file-excel me-1"></i>Excel
+                    </button>
+                </div>
+            </div>
 
-    <table class="combined-table">
-        <thead>
-            <tr>
-                <th width="80">Image</th>
-                <th>Item</th>
-                <th width="100">Type</th>
-                <th width="120">Quantity</th>
-                <th width="140">Unit Price</th>
-                <th width="100">Tax</th>
-                <th width="120">Discount</th>
-                <th width="140">Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in sale.items.all %}
-            <tr>
-                <td data-label="Image">
-                    <div class="product-image {% if item.item_type == 'SERVICE' %}service{% else %}product{% endif %}">
-                        {% if item.item_type == 'PRODUCT' %}
-                            {% if item.product.image %}
-                                <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}">
-                            {% else %}
-                                <i class="bi bi-box-seam"></i>
+            <table class="combined-table">
+                <thead>
+                    <tr>
+                        <th width="80">Image</th>
+                        <th>Item</th>
+                        <th width="100">Type</th>
+                        <th width="120">Quantity</th>
+                        <th width="140">Unit Price</th>
+                        <th width="100">Tax</th>
+                        <th width="120">Discount</th>
+                        <th width="140">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in sale.items.all %}
+                    <tr>
+                        <td data-label="Image">
+                            <div class="product-image {% if item.item_type == 'SERVICE' %}service{% else %}product{% endif %}">
+                                {% if item.item_type == 'PRODUCT' %}
+                                    {% if item.product.image %}
+                                        <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}">
+                                    {% else %}
+                                        <i class="bi bi-box-seam"></i>
+                                    {% endif %}
+                                {% else %}
+                                    <i class="bi bi-gear"></i>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td data-label="Item">
+                            <div class="product-name">{{ item.item_name }}</div>
+                            {% if item.item_type == 'PRODUCT' and item.product.sku %}
+                                <div class="product-sku">SKU: {{ item.product.sku }}</div>
+                            {% elif item.item_type == 'SERVICE' and item.service.code %}
+                                <div class="product-sku">Code: {{ item.service.code }}</div>
                             {% endif %}
-                        {% else %}
-                            <i class="bi bi-gear"></i>
-                        {% endif %}
-                    </div>
-                </td>
-                <td data-label="Item">
-                    <div class="product-name">{{ item.item_name }}</div>
-                    {% if item.item_type == 'PRODUCT' and item.product.sku %}
-                        <div class="product-sku">SKU: {{ item.product.sku }}</div>
-                    {% elif item.item_type == 'SERVICE' and item.service.code %}
-                        <div class="product-sku">Code: {{ item.service.code }}</div>
+                        </td>
+                        <td data-label="Type">
+                            {% if item.item_type == 'PRODUCT' %}
+                                <span class="item-type-badge product">
+                                    <i class="bi bi-box-seam item-icon"></i>
+                                    Product
+                                </span>
+                            {% else %}
+                                <span class="item-type-badge service">
+                                    <i class="bi bi-gear item-icon"></i>
+                                    Service
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td data-label="Quantity">
+                            <span class="qty-badge">{{ item.quantity|money }}</span>
+                        </td>
+                        <td data-label="Unit Price" style="font-weight: 600; color: var(--text-primary);">
+                            {{ item.unit_price|money }} UGX
+                        </td>
+                        <td data-label="Tax">
+                            {% if item.tax_rate == 'A' %}
+                                <span class="tax-badge badge bg-success">18%</span>
+                            {% elif item.tax_rate == 'B' %}
+                                <span class="tax-badge badge bg-info">0%</span>
+                            {% elif item.tax_rate == 'C' %}
+                                <span class="tax-badge badge bg-secondary">Exempt</span>
+                            {% else %}
+                                <span class="tax-badge badge bg-secondary">{{ item.tax_rate }}</span>
+                            {% endif %}
+                        </td>
+                        <td data-label="Discount">
+                            {% if item.discount_amount > 0 %}
+                                <span style="color: #ef4444; font-weight: 600;">-{{ item.discount_amount|money }} UGX</span>
+                            {% else %}
+                                <span style="color: var(--text-muted);">-</span>
+                            {% endif %}
+                        </td>
+                        <td data-label="Total" style="font-weight: 700; color: var(--text-primary); font-size: 1.063rem;">
+                            {{ item.line_total|money }} UGX
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8">
+                            <div class="empty-state">
+                                <div class="empty-icon">
+                                    <i class="bi bi-inbox"></i>
+                                </div>
+                                <h5>No items found</h5>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+
+                    <!-- Summary Section Separator -->
+                    <tr class="summary-section">
+                        <td colspan="8" style="padding: 0; border: none;"></td>
+                    </tr>
+
+                    <!-- Summary Rows -->
+                    <tr class="summary-row">
+                        <td colspan="6" class="summary-label">Subtotal:</td>
+                        <td colspan="2" class="summary-value">{{ sale.subtotal|money }} UGX</td>
+                    </tr>
+
+                    <tr class="summary-row">
+                        <td colspan="6" class="summary-label">Tax:</td>
+                        <td colspan="2" class="summary-value">{{ sale.tax_amount|money }} UGX</td>
+                    </tr>
+
+                    {% if sale.discount_amount > 0 %}
+                    <tr class="summary-row">
+                        <td colspan="6" class="summary-label">Discount:</td>
+                        <td colspan="2" class="summary-value" style="color: #ef4444;">-{{ sale.discount_amount|money }} UGX</td>
+                    </tr>
                     {% endif %}
-                </td>
-                <td data-label="Type">
-                    {% if item.item_type == 'PRODUCT' %}
-                        <span class="item-type-badge product">
-                            <i class="bi bi-box-seam item-icon"></i>
-                            Product
-                        </span>
+
+                    <!-- Payment Status Rows -->
+                    {% if sale.document_type != 'PROFORMA' and sale.document_type != 'ESTIMATE' %}
+                    <tr class="summary-row payment-status-row">
+                        <td colspan="6" class="summary-label">
+                            <i class="bi bi-check-circle me-2"></i>Amount Paid:
+                        </td>
+                        <td colspan="2" class="summary-value">{{ total_paid|money }} UGX</td>
+                    </tr>
+
+                    {% if balance_due > 0 %}
+                    <tr class="summary-row balance-due-row">
+                        <td colspan="6" class="summary-label">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Balance Due:
+                        </td>
+                        <td colspan="2" class="summary-value">{{ balance_due|money }} UGX</td>
+                    </tr>
                     {% else %}
-                        <span class="item-type-badge service">
-                            <i class="bi bi-gear item-icon"></i>
-                            Service
-                        </span>
+                    <tr class="summary-row" style="background: rgba(16, 185, 129, 0.1) !important;">
+                        <td colspan="6" class="summary-label" style="color: #10b981;">
+                            <i class="bi bi-check-circle-fill me-2"></i>Status:
+                        </td>
+                        <td colspan="2" class="summary-value" style="color: #10b981;">PAID IN FULL</td>
+                    </tr>
                     {% endif %}
-                </td>
-                <td data-label="Quantity">
-                    <span class="qty-badge">{{ item.quantity|money }}</span>
-                </td>
-                <td data-label="Unit Price" style="font-weight: 600; color: var(--text-primary);">
-                    {{ item.unit_price|money }} UGX
-                </td>
-                <td data-label="Tax">
-                    {% if item.tax_rate == 'A' %}
-                        <span class="tax-badge badge bg-success">18%</span>
-                    {% elif item.tax_rate == 'B' %}
-                        <span class="tax-badge badge bg-info">0%</span>
-                    {% elif item.tax_rate == 'C' %}
-                        <span class="tax-badge badge bg-secondary">Exempt</span>
-                    {% else %}
-                        <span class="tax-badge badge bg-secondary">{{ item.tax_rate }}</span>
                     {% endif %}
-                </td>
-                <td data-label="Discount">
-                    {% if item.discount_amount > 0 %}
-                        <span style="color: #ef4444; font-weight: 600;">-{{ item.discount_amount|money }} UGX</span>
-                    {% else %}
-                        <span style="color: var(--text-muted);">-</span>
-                    {% endif %}
-                </td>
-                <td data-label="Total" style="font-weight: 700; color: var(--text-primary); font-size: 1.063rem;">
-                    {{ item.line_total|money }} UGX
-                </td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="8">
-                    <div class="empty-state">
-                        <div class="empty-icon">
-                            <i class="bi bi-inbox"></i>
-                        </div>
-                        <h5>No items found</h5>
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
 
-            <!-- Summary Section Separator -->
-            <tr class="summary-section">
-                <td colspan="8" style="padding: 0; border: none;"></td>
-            </tr>
+                    <!-- Total Row -->
+                    <tr class="total-row">
+                        <td colspan="6" class="summary-label" style="color: white !important;">TOTAL:</td>
+                        <td colspan="2" class="summary-value" style="color: white !important; font-size: 1.375rem;">
+                            {{ sale.total_amount|money }} UGX
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
 
-            <!-- Summary Rows -->
-            <tr class="summary-row">
-                <td colspan="6" class="summary-label">Subtotal:</td>
-                <td colspan="2" class="summary-value">{{ sale.subtotal|money }} UGX</td>
-            </tr>
-
-            <tr class="summary-row">
-                <td colspan="6" class="summary-label">Tax:</td>
-                <td colspan="2" class="summary-value">{{ sale.tax_amount|money }} UGX</td>
-            </tr>
-
-            {% if sale.discount_amount > 0 %}
-            <tr class="summary-row">
-                <td colspan="6" class="summary-label">Discount:</td>
-                <td colspan="2" class="summary-value" style="color: #ef4444;">-{{ sale.discount_amount|money }} UGX</td>
-            </tr>
-            {% endif %}
-
-            <!-- Total Row -->
-            <tr class="total-row">
-                <td colspan="6" class="summary-label" style="color: white !important;">TOTAL:</td>
-                <td colspan="2" class="summary-value" style="color: white !important; font-size: 1.375rem;">
-                    {{ sale.total_amount|money }} UGX
-                </td>
-            </tr>
-
-            <!-- Payment Status -->
-            <tr class="summary-row payment-status-row">
-                <td colspan="6" class="summary-label">Paid:</td>
-                <td colspan="2" class="summary-value">{{ total_paid|money }} UGX</td>
-            </tr>
-
-        </tbody>
-    </table>
-</div>
-            <div>
-            <!-- Customer Card -->
-            <div class="modern-card">
-                <div class="card-header-modern">
-                    <h4 class="card-title-modern">
-                        <span class="card-title-icon">
-                            <i class="bi bi-person"></i>
-                        </span>
-                        Customer
-                    </h4>
-                </div>
-                {% if sale.customer %}
-                <div class="customer-info">
-                    <div class="customer-avatar">
-                        {{ sale.customer.name.0|upper }}
-                    </div>
-                    <div>
-                        <h5>{{ sale.customer.name }}</h5>
-                        <p><i class="bi bi-telephone me-1"></i>{{ sale.customer.phone }}</p>
-                        {% if sale.customer.email %}
-                        <p><i class="bi bi-envelope me-1"></i>{{ sale.customer.email }}</p>
-                        {% endif %}
-                        {% if sale.customer.tin %}
-                        <p><i class="bi bi-badge-tm me-1"></i>TIN: {{ sale.customer.tin }}</p>
-                        {% endif %}
-                    </div>
-                </div>
+        <!-- Payment Status Card -->
+        <div class="modern-card">
+            <div class="card-header-modern">
+                <h4 class="card-title-modern">
+                    <span class="card-title-icon" style="background: {% if is_paid_in_full %}var(--success-gradient){% elif balance_due > 0 %}var(--warning-gradient){% else %}var(--info-gradient){% endif %};">
+                        <i class="bi bi-cash-coin"></i>
+                    </span>
+                    Payment Status
+                </h4>
+                {% if is_paid_in_full %}
+                    <span class="badge bg-success">
+                        <i class="bi bi-check-circle me-1"></i>Paid in Full
+                    </span>
+                {% elif balance_due > 0 %}
+                    <span class="badge bg-warning">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Outstanding
+                    </span>
                 {% else %}
-                <div class="empty-state">
-                    <div class="empty-icon">
-                        <i class="bi bi-person-x"></i>
+                    <span class="badge bg-info">
+                        <i class="bi bi-info-circle me-1"></i>{{ sale.get_payment_status_display }}
+                    </span>
+                {% endif %}
+            </div>
+            <div class="card-body-modern">
+                <div class="row g-4">
+                    <!-- Payment Summary -->
+                    <div class="col-md-6">
+                        <div class="payment-summary-card" style="background: var(--bg-accent); padding: 1.5rem; border-radius: 12px;">
+                            <h6 style="color: var(--text-secondary); margin-bottom: 1rem; font-weight: 700; text-transform: uppercase; font-size: 0.813rem;">
+                                <i class="bi bi-calculator me-2"></i>Payment Summary
+                            </h6>
+
+                            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border-color);">
+                                <span style="color: var(--text-secondary);">Total Amount:</span>
+                                <strong style="color: var(--text-primary); font-size: 1.125rem;">{{ sale.total_amount|money }} UGX</strong>
+                            </div>
+
+                            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border-color);">
+                                <span style="color: var(--text-secondary);">Amount Paid:</span>
+                                <strong style="color: #10b981; font-size: 1.125rem;">{{ total_paid|money }} UGX</strong>
+                            </div>
+
+                            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0;">
+                                <span style="color: var(--text-secondary);">Balance Due:</span>
+                                <strong style="{% if balance_due > 0 %}color: #ef4444;{% else %}color: #10b981;{% endif %} font-size: 1.125rem;">
+                                    {{ balance_due|money }} UGX
+                                </strong>
+                            </div>
+
+                            {% if is_paid_in_full %}
+                            <div class="alert alert-success" style="margin-top: 1rem; margin-bottom: 0;">
+                                <i class="bi bi-check-circle-fill me-2"></i>
+                                <strong>Payment Complete</strong>
+                            </div>
+                            {% elif balance_due > 0 %}
+                            <div class="alert alert-warning" style="margin-top: 1rem; margin-bottom: 0;">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                <strong>Outstanding: {{ balance_due|money }} UGX</strong>
+                            </div>
+                            {% endif %}
+                        </div>
                     </div>
-                    <h5>Walk-in Customer</h5>
-                    <p>No customer information</p>
+
+                    <!-- Payment Method Breakdown -->
+                    <div class="col-md-6">
+                        <div class="payment-methods-card" style="background: var(--bg-accent); padding: 1.5rem; border-radius: 12px;">
+                            <h6 style="color: var(--text-secondary); margin-bottom: 1rem; font-weight: 700; text-transform: uppercase; font-size: 0.813rem;">
+                                <i class="bi bi-credit-card me-2"></i>Payment Methods
+                            </h6>
+
+                            {% if payments_by_method %}
+                                {% for payment in payments_by_method %}
+                                <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border-color);">
+                                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary-gradient); color: white; display: flex; align-items: center; justify-content: center;">
+                                            {% if payment.payment_method == 'CASH' %}
+                                                <i class="bi bi-cash-coin"></i>
+                                            {% elif payment.payment_method == 'CARD' %}
+                                                <i class="bi bi-credit-card"></i>
+                                            {% elif payment.payment_method == 'MOBILE_MONEY' %}
+                                                <i class="bi bi-phone"></i>
+                                            {% elif payment.payment_method == 'BANK_TRANSFER' %}
+                                                <i class="bi bi-bank"></i>
+                                            {% else %}
+                                                <i class="bi bi-cash-stack"></i>
+                                            {% endif %}
+                                        </div>
+                                        <div>
+                                            <div style="font-weight: 600; color: var(--text-primary);">
+                                                {% for method in sale.PAYMENT_METHODS %}
+                                                    {% if method.0 == payment.payment_method %}
+                                                        {{ method.1 }}
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
+                                            <small style="color: var(--text-muted);">{{ payment.count }} transaction{{ payment.count|pluralize }}</small>
+                                        </div>
+                                    </div>
+                                    <strong style="color: #10b981; font-size: 1.063rem;">{{ payment.total|money }} UGX</strong>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="empty-state" style="padding: 2rem;">
+                                    <div class="empty-icon">
+                                        <i class="bi bi-wallet2"></i>
+                                    </div>
+                                    <p>No payments recorded</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Payment Actions -->
+                {% if not is_paid_in_full and balance_due > 0 %}
+                <div class="mt-4 text-center">
+                    <button class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#paymentModal">
+                        <i class="bi bi-plus-circle me-2"></i>Record Payment
+                    </button>
                 </div>
                 {% endif %}
             </div>
-
         </div>
-            <!-- Tabs Section -->
-            <div class="modern-card">
-                <div class="card-body-modern">
-                    <div class="tabs-modern">
-                        <button class="tab-modern active" onclick="showTab('payments')">
-                            <i class="bi bi-credit-card"></i>Payments
-                        </button>
-                        <button class="tab-modern" onclick="showTab('history')">
-                            <i class="bi bi-clock-history"></i>History
-                        </button>
-                        <button class="tab-modern" onclick="showTab('related')">
-                            <i class="bi bi-link-45deg"></i>Related
-                        </button>
-                        {% if sale.notes %}
-                        <button class="tab-modern" onclick="showTab('notes')">
-                            <i class="bi bi-sticky"></i>Notes
-                        </button>
-                        {% endif %}
-                    </div>
 
-                    <!-- Payments Tab -->
-                    <div id="payments-tab" class="tab-content-modern active">
-                        <div class="timeline">
-                            {% for payment in sale.payments.all %}
-                            <div class="timeline-item">
-                                <div class="timeline-icon {% if payment.is_confirmed %}bg-success{% else %}bg-warning{% endif %}">
-                                    <i class="bi {% if payment.payment_method == 'CASH' %}bi-cash-coin{% elif payment.payment_method == 'CARD' %}bi-credit-card{% elif payment.payment_method == 'MOBILE_MONEY' %}bi-phone{% else %}bi-bank{% endif %}"></i>
-                                </div>
-                                <div class="timeline-content">
-                                    <h6 class="timeline-title">{{ payment.get_payment_method_display }}</h6>
-                                    <div class="timeline-meta">
-                                        {{ payment.created_at|date:"M d, Y g:i A" }}
-                                        {% if payment.transaction_reference %}
-                                            | Ref: {{ payment.transaction_reference }}
-                                        {% endif %}
-                                        {% if not payment.is_confirmed %}
-                                            | <span class="badge bg-warning">Pending</span>
-                                        {% endif %}
-                                    </div>
-                                    {% if payment.notes %}
-                                        <div class="timeline-meta mt-2">{{ payment.notes }}</div>
-                                    {% endif %}
-                                    <div class="timeline-amount">{{ payment.amount|money }} UGX</div>
-                                </div>
-                            </div>
-                            {% empty %}
-                            <div class="empty-state">
-                                <div class="empty-icon">
-                                    <i class="bi bi-credit-card"></i>
-                                </div>
-                                <h5>No payments recorded</h5>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-
-                    <!-- History Tab -->
-                    <div id="history-tab" class="tab-content-modern">
-                        <div class="timeline">
-                            <div class="timeline-item">
-                                <div class="timeline-icon" style="background: var(--info-gradient);">
-                                    <i class="bi bi-plus-circle"></i>
-                                </div>
-                                <div class="timeline-content">
-                                    <h6 class="timeline-title">Sale Created</h6>
-                                    <div class="timeline-meta">
-                                        {{ sale.created_at|date:"M d, Y g:i A" }} by {{ sale.created_by.get_full_name|default:sale.created_by.username }}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {% if sale.is_fiscalized %}
-                            <div class="timeline-item">
-                                <div class="timeline-icon" style="background: var(--success-gradient);">
-                                    <i class="bi bi-shield-check"></i>
-                                </div>
-                                <div class="timeline-content">
-                                    <h6 class="timeline-title">Sale Fiscalized</h6>
-                                    <div class="timeline-meta">{{ fiscalization_time|date:"M d, Y g:i A" }}</div>
-                                    {% if efris_invoice_no %}
-                                    <div class="timeline-meta">Fiscal #: {{ efris_invoice_no }}</div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            {% endif %}
-
-                            {% if sale.is_refunded %}
-                            <div class="timeline-item">
-                                <div class="timeline-icon" style="background: var(--danger-gradient);">
-                                    <i class="bi bi-arrow-counterclockwise"></i>
-                                </div>
-                                <div class="timeline-content">
-                                    <h6 class="timeline-title">Sale Refunded</h6>
-                                    <div class="timeline-meta">Partial or full refund processed</div>
-                                </div>
-                            </div>
-                            {% endif %}
-
-                            {% if sale.is_voided %}
-                            <div class="timeline-item">
-                                <div class="timeline-icon" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%);">
-                                    <i class="bi bi-x-circle"></i>
-                                </div>
-                                <div class="timeline-content">
-                                    <h6 class="timeline-title">Sale Voided</h6>
-                                    <div class="timeline-meta">Reason: {{ sale.void_reason|default:"Not specified" }}</div>
-                                </div>
-                            </div>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <!-- Related Tab -->
-                    <div id="related-tab" class="tab-content-modern">
-                        {% if sale.related_sale %}
-                        <div class="alert-modern warning">
-                            <i class="bi bi-info-circle" style="font-size: 1.5rem;"></i>
-                            <div>
-                                <h6 style="margin: 0 0 0.5rem 0;">Original Sale</h6>
-                                <p style="margin: 0 0 0.75rem 0;">This {{ sale.get_transaction_type_display|lower }} is related to:</p>
-                                <a href="{% url 'sales:sale_detail' sale.related_sale.pk %}" class="btn btn-sm btn-primary">
-                                    <i class="bi bi-box-arrow-up-right me-1"></i>View {{ sale.related_sale.invoice_number }}
-                                </a>
-                            </div>
-                        </div>
-                        {% endif %}
-
-                        {% with refunds=sale.sale_set.all %}
-                        {% if refunds %}
-                        <h6 style="margin-bottom: 1rem; color: var(--text-primary);">Refunds & Returns</h6>
-                        {% for refund in refunds %}
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--bg-accent); border-radius: 12px; margin-bottom: 1rem;">
-                            <div>
-                                <strong style="color: var(--text-primary);">{{ refund.invoice_number }}</strong>
-                                <br><small style="color: var(--text-muted);">{{ refund.created_at|date:"M d, Y" }}</small>
-                            </div>
-                            <div style="text-align: right;">
-                                <div style="color: #ef4444; font-weight: 700; font-size: 1.125rem;">-{{ refund.total_amount|money }} UGX</div>
-                                <a href="{% url 'sales:sale_detail' refund.pk %}" class="btn btn-sm btn-outline-primary mt-2">View</a>
-                            </div>
-                        </div>
-                        {% endfor %}
-                        {% endif %}
-                        {% endwith %}
-
-                        {% if not sale.related_sale and not sale.sale_set.all %}
-                        <div class="empty-state">
-                            <div class="empty-icon">
-                                <i class="bi bi-link-45deg"></i>
-                            </div>
-                            <h5>No related transactions</h5>
-                        </div>
-                        {% endif %}
-                    </div>
-
-                    <!-- Notes Tab -->
-                    {% if sale.notes %}
-                    <div id="notes-tab" class="tab-content-modern">
-                        <div class="alert-modern warning">
-                            <i class="bi bi-sticky" style="font-size: 1.5rem;"></i>
-                            <div>
-                                <h6 style="margin: 0 0 0.5rem 0;">Sale Notes</h6>
-                                <p style="margin: 0;">{{ sale.notes }}</p>
-                            </div>
-                        </div>
-                    </div>
+        <!-- Customer Card -->
+        <div class="modern-card">
+            <div class="card-header-modern">
+                <h4 class="card-title-modern">
+                    <span class="card-title-icon">
+                        <i class="bi bi-person"></i>
+                    </span>
+                    Customer
+                </h4>
+            </div>
+            {% if sale.customer %}
+            <div class="customer-info">
+                <div class="customer-avatar">
+                    {{ sale.customer.name.0|upper }}
+                </div>
+                <div>
+                    <h5>{{ sale.customer.name }}</h5>
+                    <p><i class="bi bi-telephone me-1"></i>{{ sale.customer.phone }}</p>
+                    {% if sale.customer.email %}
+                    <p><i class="bi bi-envelope me-1"></i>{{ sale.customer.email }}</p>
+                    {% endif %}
+                    {% if sale.customer.tin %}
+                    <p><i class="bi bi-badge-tm me-1"></i>TIN: {{ sale.customer.tin }}</p>
                     {% endif %}
                 </div>
             </div>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">
+                    <i class="bi bi-person-x"></i>
+                </div>
+                <h5>Walk-in Customer</h5>
+                <p>No customer information</p>
+            </div>
+            {% endif %}
         </div>
 
+        <!-- Tabs Section -->
+        <div class="modern-card">
+            <div class="card-body-modern">
+                <div class="tabs-modern">
+                    <button class="tab-modern active" onclick="showTab('payments')">
+                        <i class="bi bi-credit-card"></i>Payments
+                    </button>
+                    <button class="tab-modern" onclick="showTab('history')">
+                        <i class="bi bi-clock-history"></i>History
+                    </button>
+                    <button class="tab-modern" onclick="showTab('related')">
+                        <i class="bi bi-link-45deg"></i>Related
+                    </button>
+                    {% if sale.notes %}
+                    <button class="tab-modern" onclick="showTab('notes')">
+                        <i class="bi bi-sticky"></i>Notes
+                    </button>
+                    {% endif %}
+                </div>
+
+                <!-- Payments Tab -->
+                <div id="payments-tab" class="tab-content-modern active">
+                    <div class="timeline">
+                        {% for payment in sale.payments.all %}
+                        <div class="timeline-item">
+                            <div class="timeline-icon {% if payment.is_confirmed %}bg-success{% else %}bg-warning{% endif %}">
+                                <i class="bi {% if payment.payment_method == 'CASH' %}bi-cash-coin{% elif payment.payment_method == 'CARD' %}bi-credit-card{% elif payment.payment_method == 'MOBILE_MONEY' %}bi-phone{% else %}bi-bank{% endif %}"></i>
+                            </div>
+                            <div class="timeline-content">
+                                <h6 class="timeline-title">{{ payment.get_payment_method_display }}</h6>
+                                <div class="timeline-meta">
+                                    {{ payment.created_at|date:"M d, Y g:i A" }}
+                                    {% if payment.transaction_reference %}
+                                        | Ref: {{ payment.transaction_reference }}
+                                    {% endif %}
+                                    {% if not payment.is_confirmed %}
+                                        | <span class="badge bg-warning">Pending</span>
+                                    {% endif %}
+                                </div>
+                                {% if payment.notes %}
+                                    <div class="timeline-meta mt-2">{{ payment.notes }}</div>
+                                {% endif %}
+                                <div class="timeline-amount">{{ payment.amount|money }} UGX</div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="empty-state">
+                            <div class="empty-icon">
+                                <i class="bi bi-credit-card"></i>
+                            </div>
+                            <h5>No payments recorded</h5>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- History Tab -->
+                <div id="history-tab" class="tab-content-modern">
+                    <div class="timeline">
+                        <div class="timeline-item">
+                            <div class="timeline-icon" style="background: var(--info-gradient);">
+                                <i class="bi bi-plus-circle"></i>
+                            </div>
+                            <div class="timeline-content">
+                                <h6 class="timeline-title">Sale Created</h6>
+                                <div class="timeline-meta">
+                                    {{ sale.created_at|date:"M d, Y g:i A" }} by {{ sale.created_by.get_full_name|default:sale.created_by.username }}
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if sale.is_fiscalized %}
+                        <div class="timeline-item">
+                            <div class="timeline-icon" style="background: var(--success-gradient);">
+                                <i class="bi bi-shield-check"></i>
+                            </div>
+                            <div class="timeline-content">
+                                <h6 class="timeline-title">Sale Fiscalized</h6>
+                                <div class="timeline-meta">{{ fiscalization_time|date:"M d, Y g:i A" }}</div>
+                                {% if efris_invoice_no %}
+                                <div class="timeline-meta">Fiscal #: {{ efris_invoice_no }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if sale.is_refunded %}
+                        <div class="timeline-item">
+                            <div class="timeline-icon" style="background: var(--danger-gradient);">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </div>
+                            <div class="timeline-content">
+                                <h6 class="timeline-title">Sale Refunded</h6>
+                                <div class="timeline-meta">Partial or full refund processed</div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if sale.is_voided %}
+                        <div class="timeline-item">
+                            <div class="timeline-icon" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%);">
+                                <i class="bi bi-x-circle"></i>
+                            </div>
+                            <div class="timeline-content">
+                                <h6 class="timeline-title">Sale Voided</h6>
+                                <div class="timeline-meta">Reason: {{ sale.void_reason|default:"Not specified" }}</div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Related Tab -->
+                <div id="related-tab" class="tab-content-modern">
+                    {% if sale.related_sale %}
+                    <div class="alert-modern warning">
+                        <i class="bi bi-info-circle" style="font-size: 1.5rem;"></i>
+                        <div>
+                            <h6 style="margin: 0 0 0.5rem 0;">Original Sale</h6>
+                            <p style="margin: 0 0 0.75rem 0;">This {{ sale.get_transaction_type_display|lower }} is related to:</p>
+                            <a href="{% url 'sales:sale_detail' sale.related_sale.pk %}" class="btn btn-sm btn-primary">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>View {{ sale.related_sale.invoice_number }}
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% with refunds=sale.sale_set.all %}
+                    {% if refunds %}
+                    <h6 style="margin-bottom: 1rem; color: var(--text-primary);">Refunds & Returns</h6>
+                    {% for refund in refunds %}
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--bg-accent); border-radius: 12px; margin-bottom: 1rem;">
+                        <div>
+                            <strong style="color: var(--text-primary);">{{ refund.invoice_number }}</strong>
+                            <br><small style="color: var(--text-muted);">{{ refund.created_at|date:"M d, Y" }}</small>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="color: #ef4444; font-weight: 700; font-size: 1.125rem;">-{{ refund.total_amount|money }} UGX</div>
+                            <a href="{% url 'sales:sale_detail' refund.pk %}" class="btn btn-sm btn-outline-primary mt-2">View</a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                    {% endwith %}
+
+                    {% if not sale.related_sale and not sale.sale_set.all %}
+                    <div class="empty-state">
+                        <div class="empty-icon">
+                            <i class="bi bi-link-45deg"></i>
+                        </div>
+                        <h5>No related transactions</h5>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Notes Tab -->
+                {% if sale.notes %}
+                <div id="notes-tab" class="tab-content-modern">
+                    <div class="alert-modern warning">
+                        <i class="bi bi-sticky" style="font-size: 1.5rem;"></i>
+                        <div>
+                            <h6 style="margin: 0 0 0.5rem 0;">Sale Notes</h6>
+                            <p style="margin: 0;">{{ sale.notes }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Modal -->
+<div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="paymentModalLabel">
+                    <i class="bi bi-cash-coin me-2"></i>Record Payment for {{ sale.invoice_number }}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="paymentForm" method="post" action="{% url 'sales:add_payment' sale.pk %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <!-- Payment Details -->
+                            <div class="mb-3">
+                                <label for="payment_amount" class="form-label">Payment Amount (UGX)</label>
+                                <input type="number"
+                                       class="form-control form-control-lg"
+                                       id="payment_amount"
+                                       name="amount"
+                                       step="0.01"
+                                       min="0"
+                                       max="{{ balance_due }}"
+                                       required
+                                       placeholder="0.00">
+                                <div class="form-text">Maximum amount: {{ balance_due|money }} UGX</div>
+                            </div>
+
+                            <!-- Quick Amount Buttons -->
+                            <div class="mb-3">
+                                <label class="form-label">Quick Amounts</label>
+                                <div class="quick-amount-buttons">
+                                    <button type="button" class="quick-amount-btn" data-amount="{{ balance_due }}">
+                                        Full Amount
+                                    </button>
+                                    {% with half=balance_due|divide:2 %}
+                                    <button type="button" class="quick-amount-btn" data-amount="{{ half }}">
+                                        50% ({{ half|money }})
+                                    </button>
+                                    {% endwith %}
+                                    {% with quarter=balance_due|divide:4 %}
+                                    <button type="button" class="quick-amount-btn" data-amount="{{ quarter }}">
+                                        25% ({{ quarter|money }})
+                                    </button>
+                                    {% endwith %}
+                                </div>
+                            </div>
+
+                            <!-- Payment Method -->
+                            <div class="mb-3">
+                                <label for="payment_method" class="form-label">Payment Method</label>
+                                <select class="form-select" id="payment_method" name="payment_method" required>
+                                    <option value="">Select payment method</option>
+                                    <option value="CASH">Cash</option>
+                                    <option value="CARD">Credit/Debit Card</option>
+                                    <option value="MOBILE_MONEY">Mobile Money</option>
+                                    <option value="BANK_TRANSFER">Bank Transfer</option>
+                                    <option value="OTHER">Other</option>
+                                </select>
+                            </div>
+
+                            <!-- Transaction Reference -->
+                            <div class="mb-3">
+                                <label for="transaction_reference" class="form-label">Transaction Reference</label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="transaction_reference"
+                                       name="transaction_reference"
+                                       placeholder="Optional reference number">
+                            </div>
+
+                            <!-- Notes -->
+                            <div class="mb-3">
+                                <label for="payment_notes" class="form-label">Notes</label>
+                                <textarea class="form-control"
+                                          id="payment_notes"
+                                          name="notes"
+                                          rows="3"
+                                          placeholder="Any additional notes about this payment"></textarea>
+                            </div>
+
+                            <!-- Confirmation Checkbox -->
+                            <div class="form-check mb-3">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       id="confirm_payment"
+                                       name="confirm_payment"
+                                       required>
+                                <label class="form-check-label" for="confirm_payment">
+                                    I confirm that I have received this payment
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <!-- Payment Summary -->
+                            <div class="card border-0 bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-title mb-3">Payment Summary</h6>
+
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span class="text-muted">Balance Due:</span>
+                                        <strong class="text-danger">{{ balance_due|money }} UGX</strong>
+                                    </div>
+
+                                    <hr class="my-3">
+
+                                    <div class="mb-3">
+                                        <label class="form-label">Payment Status</label>
+                                        <div class="alert alert-info mb-0">
+                                            <div class="d-flex align-items-center">
+                                                <i class="bi bi-info-circle-fill me-2"></i>
+                                                <div>
+                                                    <small>This payment will reduce the outstanding balance</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Payment Method Icons -->
+                                    <div class="text-center mt-4">
+                                        <div class="mb-2">
+                                            <i class="bi bi-cash-coin fs-1 text-success" id="payment-method-icon"></i>
+                                        </div>
+                                        <small class="text-muted">Select payment method above</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success" id="submitPaymentBtn">
+                        <i class="bi bi-check-circle me-1"></i>Record Payment
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -1703,36 +2014,147 @@ function printFiscalReceipt() {
     printWindow.print();
 }
 
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', () => {
+// Payment Modal Functions
+document.addEventListener('DOMContentLoaded', function() {
     console.log('Sale detail page loaded');
     console.log('Total items:', {{ sale.items.count }});
 
-    // Count products vs services
-    const items = document.querySelectorAll('.item-type-badge');
-    let productCount = 0;
-    let serviceCount = 0;
+    // Payment amount validation
+    const paymentAmountInput = document.getElementById('payment_amount');
+    const maxAmount = parseFloat('{{ balance_due }}');
 
-    items.forEach(badge => {
-        if (badge.classList.contains('product')) {
-            productCount++;
-        } else if (badge.classList.contains('service')) {
-            serviceCount++;
+    if (paymentAmountInput) {
+        paymentAmountInput.addEventListener('input', function() {
+            const amount = parseFloat(this.value) || 0;
+            if (amount > maxAmount) {
+                this.setCustomValidity(`Amount cannot exceed ${maxAmount.toLocaleString()} UGX`);
+            } else if (amount <= 0) {
+                this.setCustomValidity('Amount must be greater than 0');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+
+        // Initial validation
+        if (paymentAmountInput.value) {
+            paymentAmountInput.dispatchEvent(new Event('input'));
         }
+    }
+
+    // Quick amount buttons
+    const quickAmountBtns = document.querySelectorAll('.quick-amount-btn');
+    quickAmountBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const amount = parseFloat(this.dataset.amount);
+            if (paymentAmountInput) {
+                paymentAmountInput.value = amount.toFixed(2);
+                paymentAmountInput.dispatchEvent(new Event('input'));
+                paymentAmountInput.focus();
+            }
+        });
     });
 
-    console.log('Products:', productCount, 'Services:', serviceCount);
+    // Payment form submission
+    const paymentForm = document.getElementById('paymentForm');
+    if (paymentForm) {
+        paymentForm.addEventListener('submit', function(e) {
+            const confirmCheckbox = document.getElementById('confirm_payment');
+            if (confirmCheckbox && !confirmCheckbox.checked) {
+                e.preventDefault();
+                alert('Please confirm that you have received this payment');
+                return false;
+            }
+
+            // Validate amount
+            if (paymentAmountInput) {
+                const amount = parseFloat(paymentAmountInput.value) || 0;
+                if (amount > maxAmount) {
+                    e.preventDefault();
+                    alert(`Amount cannot exceed ${maxAmount.toLocaleString()} UGX`);
+                    return false;
+                }
+                if (amount <= 0) {
+                    e.preventDefault();
+                    alert('Amount must be greater than 0');
+                    return false;
+                }
+            }
+
+            // Show loading state
+            const submitBtn = document.getElementById('submitPaymentBtn');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Processing...';
+            }
+        });
+    }
+
+    // Payment method icon update
+    const paymentMethodSelect = document.getElementById('payment_method');
+    const paymentMethodIcon = document.getElementById('payment-method-icon');
+
+    if (paymentMethodSelect && paymentMethodIcon) {
+        const methodIcons = {
+            'CASH': 'bi-cash-coin',
+            'CARD': 'bi-credit-card',
+            'MOBILE_MONEY': 'bi-phone',
+            'BANK_TRANSFER': 'bi-bank',
+            'OTHER': 'bi-cash-stack'
+        };
+
+        paymentMethodSelect.addEventListener('change', function() {
+            const iconClass = methodIcons[this.value] || 'bi-cash-coin';
+            paymentMethodIcon.className = `bi ${iconClass} fs-1 text-success`;
+        });
+    }
+
+    // Reset form when modal is hidden
+    const paymentModal = document.getElementById('paymentModal');
+    if (paymentModal) {
+        paymentModal.addEventListener('hidden.bs.modal', function() {
+            if (paymentForm) {
+                paymentForm.reset();
+            }
+            if (paymentAmountInput) {
+                paymentAmountInput.setCustomValidity('');
+            }
+            if (paymentMethodIcon) {
+                paymentMethodIcon.className = 'bi bi-cash-coin fs-1 text-success';
+            }
+            // Reset submit button
+            const submitBtn = document.getElementById('submitPaymentBtn');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Record Payment';
+            }
+        });
+    }
 });
 
 // Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
-    if (e.ctrlKey || e.metaKey) {
-        switch (e.key) {
-            case 'p':
-                e.preventDefault();
-                window.print();
-                break;
-        }
+    // Ctrl+P for print
+    if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+        e.preventDefault();
+        window.print();
+    }
+
+    // Alt+P for payment modal (if balance due exists)
+    if (e.altKey && e.key === 'p' && parseFloat('{{ balance_due }}') > 0) {
+        e.preventDefault();
+        const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
+        paymentModal.show();
+    }
+
+    // Escape to close modals
+    if (e.key === 'Escape') {
+        const modals = document.querySelectorAll('.modal.show');
+        modals.forEach(modal => {
+            const modalInstance = bootstrap.Modal.getInstance(modal);
+            if (modalInstance) {
+                modalInstance.hide();
+            }
+        });
     }
 });
 </script>
