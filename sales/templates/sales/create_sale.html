@@ -1715,6 +1715,28 @@ body {
 
 {% block extra_js %}
 <script>
+// Store information from Django context
+const DEFAULT_STORE = {
+    name: "{{ default_store.name|escapejs }}",
+    phone: "{{ default_store.phone|default:''|escapejs }}",
+    phone: "{{ default_store.secondary_phone|default:''|escapejs }}",
+    email: "{{ default_store.email|default:''|escapejs }}",
+    tin: "{{ default_store.tin|default:''|escapejs }}",
+    address: "{{ default_store.physical_address|default:''|escapejs }}",
+    location: "{{ default_store.location|escapejs }}"
+};
+
+// Company information as fallback
+const COMPANY_INFO = {
+    name: "{{ company.name|escapejs }}",
+    tin: "{{ company.tin|default:'Not set'|escapejs }}",
+    phone: "{{ company.phone|default:''|escapejs }}",
+    email: "{{ company.email|default:''|escapejs }}",
+    address: "{{ company.physical_address|default:''|escapejs }}",
+};
+</script>
+
+<script>
 // ============================================
 // GLOBAL STATE & CREDIT INFO
 // ============================================
@@ -5072,6 +5094,9 @@ function generateModernReceiptHTML() {
     const selectedOption = storeSelect?.options[storeSelect.selectedIndex];
     const storeName = selectedOption ? selectedOption.text : 'Main Store';
 
+    // Get store data from selected option or default
+    const currentStore = getCurrentStoreData(selectedOption);
+
     const docTypeRadio = document.querySelector('input[name="document_type"]:checked');
     const docType = docTypeRadio ? docTypeRadio.value : 'RECEIPT';
 
@@ -5102,6 +5127,16 @@ function generateModernReceiptHTML() {
     const total = subtotal - totalDiscount + totalTax;
     const currentDate = new Date();
 
+    // Generate store logo/initial - use store name first, fallback to company
+    const storeDisplayName = currentStore.name || COMPANY_INFO.name;
+    const storeInitial = storeDisplayName.charAt(0).toUpperCase();
+
+    const storeLogoHTML = currentStore.logo_url || COMPANY_INFO.logo
+        ? `<img src="${escapeHtml(currentStore.logo_url || COMPANY_INFO.logo)}" alt="${escapeHtml(storeDisplayName)}" class="receipt-logo" />`
+        : `<div class="receipt-logo" style="background: linear-gradient(135deg, #7c3aed, #ec4899); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 24px;">
+               ${storeInitial}
+           </div>`;
+
     // Generate items table rows
     const itemsTableRows = SaleState.cart.map((item, index) => {
         const itemTotal = calculateItemTotal(item);
@@ -5129,17 +5164,20 @@ function generateModernReceiptHTML() {
             <!-- HEADER -->
             <div class="receipt-header">
                 <div class="receipt-logo-section">
-                    <div class="receipt-logo" style="background: linear-gradient(135deg, #7c3aed, #ec4899); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 24px;">
-                        P
-                    </div>
+                    ${storeLogoHTML}
 
                     <div class="receipt-store-info">
-                        <div class="receipt-store-name">Pada Logistics International Ltd</div>
-                        <div class="receipt-store-tagline">${storeName}</div>
+                        <div class="receipt-store-name">${escapeHtml(storeDisplayName)}</div>
+                        ${currentStore.store_type ? `
+                            <div class="receipt-store-tagline">${currentStore.store_type} - ${storeName}</div>
+                        ` : `
+                            <div class="receipt-store-tagline">${storeName}</div>
+                        `}
                         <div class="receipt-store-details">
-                            <div><i class="bi bi-telephone-fill"></i> +256785230670</div>
-                            <div><i class="bi bi-envelope-fill"></i> padalogisticsinternantionalltd@gmail.com</div>
-                            <div>TIN: 1017953355</div>
+                            ${currentStore.phone ? `<div><i class="bi bi-telephone-fill"></i> ${escapeHtml(currentStore.phone)}</div>` : ''}
+                            ${currentStore.email ? `<div><i class="bi bi-envelope-fill"></i> ${escapeHtml(currentStore.email)}</div>` : ''}
+                            ${currentStore.tin ? `<div>TIN: ${escapeHtml(currentStore.tin)}</div>` : ''}
+                            ${currentStore.address ? `<div><i class="bi bi-geo-alt-fill"></i> ${escapeHtml(currentStore.address)}</div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -5266,7 +5304,7 @@ function generateModernReceiptHTML() {
                 </div>
 
                 <div style="font-size: 10px; color: #6b7280; margin: 10px 0 5px 0;">
-                    Generated: ${currentDate.toLocaleDateString('en-GB')} ${currentDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} | Draft preview from Pada Logistics International Ltd
+                    Generated: ${currentDate.toLocaleDateString('en-GB')} ${currentDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} | Draft preview from ${escapeHtml(storeDisplayName)}
                 </div>
 
                 <div class="receipt-footer-powered">
@@ -5278,6 +5316,29 @@ function generateModernReceiptHTML() {
             </div>
         </div>
     `;
+}
+
+// Helper function to get current store data from selected option
+function getCurrentStoreData(selectedOption) {
+    if (!selectedOption) {
+        // Return default store if no option selected
+        return DEFAULT_STORE;
+    }
+
+    // Try to get data from option attributes
+    const storeData = {
+        name: selectedOption.text.split('(')[0].trim(),
+        phone: selectedOption.dataset.phone || DEFAULT_STORE.phone || COMPANY_INFO.phone,
+        email: selectedOption.dataset.email || DEFAULT_STORE.email || COMPANY_INFO.email,
+        tin: selectedOption.dataset.tin || DEFAULT_STORE.tin || COMPANY_INFO.tin,
+        address: selectedOption.dataset.address || DEFAULT_STORE.address || COMPANY_INFO.address,
+        logo_url: selectedOption.dataset.logo || DEFAULT_STORE.logo_url || COMPANY_INFO.logo,
+        store_type: selectedOption.dataset.type || DEFAULT_STORE.store_type,
+        code: selectedOption.dataset.code || DEFAULT_STORE.code,
+        location: selectedOption.dataset.location || DEFAULT_STORE.location
+    };
+
+    return storeData;
 }
 
 // EFRIS functions

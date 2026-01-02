@@ -1350,17 +1350,40 @@ def render_sale_form(request):
             }
             return render(request, 'sales/create_sale.html', context)
 
+        # Get default store
+        default_store = None
+        if hasattr(user, 'default_store') and user.default_store:
+            if stores.filter(id=user.default_store.id).exists():
+                default_store = user.default_store
+
+        # If no default store from user, use first available store
+        if not default_store and stores.exists():
+            default_store = stores.first()
+
+        # Prepare store details for the default store
+        store_details = {}
+        if default_store:
+            store_details = {
+                'name': default_store.name,
+                'phone': default_store.phone or '',
+                'email': default_store.email or '',
+                'tin': default_store.tin or '',
+                'address': default_store.physical_address or '',
+                'logo_url': default_store.logo.url if default_store.logo else '',
+                'store_type': default_store.get_store_type_display(),
+                'code': default_store.code,
+                'location': default_store.location,
+                'efris_device_number': default_store.efris_device_number or '',
+            }
+
         context = {
             'stores': stores,
             'page_title': 'Create New Sale',
             'form': SaleForm(user=user),
             'company': company,
+            'default_store': default_store,
+            'store_details': store_details,  # Pass store details to template
         }
-
-        # Set default store
-        if hasattr(user, 'default_store') and user.default_store:
-            if stores.filter(id=user.default_store.id).exists():
-                context['default_store'] = user.default_store
 
         return render(request, 'sales/create_sale.html', context)
 
