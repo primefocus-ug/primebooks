@@ -329,6 +329,18 @@ NAVIGATION_ITEMS = [
                 permission="inventory.view_product"
             ),
             NavigationItem(
+                name="Stock Transfers",
+                url_name="inventory:transfer_list",
+                icon="bi bi-arrow-left-right",
+                permission="inventory.view_stocktransfer"
+            ),
+            NavigationItem(
+                name="Transfer Stock",
+                url_name="inventory:transfer_create",
+                icon="bi bi-arrow-right-square",
+                permission="inventory.add_stocktransfer"
+            ),
+            NavigationItem(
                 name="Add Product",
                 url_name="inventory:product_create",
                 icon="bi bi-plus-circle",
