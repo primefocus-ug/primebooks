@@ -3,7 +3,7 @@
 class NavigationItem:
     def __init__(self, name, url_name=None, url=None, icon=None, permission=None,
                  children=None, visible_func=None, css_class="", url_params=None,
-                 url_kwargs_func=None):
+                 url_kwargs_func=None, requires_efris=False):
         self.name = name
         self.url_name = url_name
         self.url = url
@@ -12,16 +12,46 @@ class NavigationItem:
         self.children = children or []
         self.visible_func = visible_func
         self.css_class = css_class
-        self.url_params = url_params or []  # List of parameter names
-        self.url_kwargs_func = url_kwargs_func  # Function to generate kwargs
+        self.url_params = url_params or []
+        self.url_kwargs_func = url_kwargs_func
+        self.requires_efris = requires_efris
 
-    def is_visible(self, user):
+    def is_efris_enabled(self, request):
+        """Check if EFRIS is enabled for current tenant/company"""
+        if not request:
+            return False
+
+        # Check tenant
+        if hasattr(request, 'tenant'):
+            return getattr(request.tenant, 'efris_enabled', False)
+
+        # Check user's company
+        if hasattr(request, 'user') and request.user.is_authenticated:
+            if hasattr(request.user, 'company'):
+                return getattr(request.user.company, 'efris_enabled', False)
+
+            # Check via store
+            if hasattr(request.user, 'stores') and request.user.stores.exists():
+                store = request.user.stores.first()
+                if store and hasattr(store, 'company'):
+                    return getattr(store.company, 'efris_enabled', False)
+
+        return False
+
+    def is_visible(self, user, request=None):
+        """Check if navigation item should be visible"""
+        # Check EFRIS requirement first
+        if self.requires_efris and not self.is_efris_enabled(request):
+            return False
+
+        # Custom visibility function
         if self.visible_func:
             return self.visible_func(user)
 
         if not user.is_authenticated:
             return False
 
+        # Permission check
         if self.permission:
             if isinstance(self.permission, str):
                 return user.has_perm(self.permission)
@@ -520,61 +550,71 @@ NAVIGATION_ITEMS = [
     ),
     NavigationItem(
         name="EFRIS",
+        requires_efris=True,
         icon="bi bi-receipt",  # Fiscal / invoicing system
         children=[
             NavigationItem(
                 name="Connect EFRIS",
                 url_name="efris:configuration",
                 icon="bi bi-plug",  # Connection / integration
-                permission="efris.view_efrisconfiguration"
+                permission="efris.view_efrisconfiguration",
+                requires_efris=True
             ),
             NavigationItem(
                 name="System Dictionary",
                 url_name="efris:system_dictionary",
                 icon="bi bi-journal-text",  # Reference / dictionary data
-                permission="efris.view_efrissystemdictionary"
+                permission="efris.view_efrissystemdictionary",
+                requires_efris=True
             ),
             NavigationItem(
                 name="Dashboard",
                 url_name="efris:dashboard",
                 icon="bi bi-speedometer2",  # Overview / metrics
-                permission="company.view_company"
+                permission="company.view_company",
+                requires_efris=True
             ),
             NavigationItem(
                 name="Commodity Categories",
                 url_name="efris:commodity_categories",
                 icon="bi bi-tags",  # Categories / classification
-                permission="company.view_efriscommoditycategory"
+                permission="company.view_efriscommoditycategory",
+                requires_efris=True
             ),
             NavigationItem(
                 name="Commodity Updates",
                 url_name="efris:commodity_category_updates",
                 icon="bi bi-arrow-repeat",  # Sync / updates
-                permission="company.view_efriscommoditycategory"
+                permission="company.view_efriscommoditycategory",
+                requires_efris=True
             ),
             NavigationItem(
                 name="EFRIS Products",
                 url_name="efris:product_list",
                 icon="bi bi-box-seam",  # Products / inventory items
-                permission="inventory.add_products"
+                permission="inventory.add_products",
+                requires_efris=True
             ),
             NavigationItem(
                 name="EFRIS Invoices",
                 url_name="efris:invoice_list",
                 icon="bi bi-receipt-cutoff",  # Invoices / receipts
-                permission="invoices.view_invoices"
+                permission="invoices.view_invoices",
+                requires_efris=True
             ),
             NavigationItem(
                 name="Stock Management",
                 url_name="efris:stock_management_dashboard",
                 icon="bi bi-clipboard-data",  # Stock levels / management
-                permission="inventory.view_stock"
+                permission="inventory.view_stock",
+                requires_efris=True
             ),
             NavigationItem(
                 name="ZReports",
                 url_name="efris:zreport_list",
                 icon="bi bi-bookmark",
-                permission="reports.view_savedreport"
+                permission="reports.view_savedreport",
+                requires_efris=True
             ),
         ]
     ),
@@ -739,13 +779,14 @@ NAVIGATION_ITEMS = [
 def get_navigation_for_user(user, request=None, **context_kwargs):
     """
     Returns navigation items that are visible to the given user
-    Enhanced to support URL parameters from context
+    Enhanced to support URL parameters and EFRIS checks
     """
 
     def filter_items(items):
         visible_items = []
         for item in items:
-            if item.is_visible(user):
+            # Pass request to is_visible for EFRIS check
+            if item.is_visible(user, request):
                 # Filter children recursively
                 filtered_children = filter_items(item.children)
 
@@ -760,7 +801,8 @@ def get_navigation_for_user(user, request=None, **context_kwargs):
                     visible_func=item.visible_func,
                     css_class=item.css_class,
                     url_params=item.url_params,
-                    url_kwargs_func=item.url_kwargs_func
+                    url_kwargs_func=item.url_kwargs_func,
+                    requires_efris=item.requires_efris
                 )
 
                 # Only include if has children or has its own URL

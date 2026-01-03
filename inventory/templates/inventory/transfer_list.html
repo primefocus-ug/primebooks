@@ -1,14 +1,14 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}{{ page_title }}{% endblock %}
+{% block title %}Stock Transfers{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <!-- Header -->
     <div class="row mb-4">
         <div class="col-md-8">
-            <h2><i class="fas fa-exchange-alt"></i> {{ page_title }}</h2>
+            <h2><i class="fas fa-exchange-alt"></i> Stock Transfers</h2>
+            <p class="text-muted">Manage inter-store stock transfers</p>
         </div>
         <div class="col-md-4 text-end">
             <a href="{% url 'inventory:transfer_create' %}" class="btn btn-primary">
@@ -16,193 +16,331 @@
             </a>
         </div>
     </div>
-    
+
     <!-- Summary Cards -->
     <div class="row mb-4">
         <div class="col-md-3">
-            <div class="card text-center">
+            <div class="card bg-warning text-white">
                 <div class="card-body">
-                    <h3>{{ summary.total }}</h3>
-                    <p class="text-muted mb-0">Total Transfers</p>
+                    <h6>Pending</h6>
+                    <h3>{{ summary.pending_count }}</h3>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card text-center border-warning">
+            <div class="card bg-info text-white">
                 <div class="card-body">
-                    <h3 class="text-warning">{{ summary.pending }}</h3>
-                    <p class="text-muted mb-0">Pending Approval</p>
+                    <h6>In Transit</h6>
+                    <h3>{{ summary.in_transit_count }}</h3>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card text-center border-info">
+            <div class="card bg-success text-white">
                 <div class="card-body">
-                    <h3 class="text-info">{{ summary.in_transit }}</h3>
-                    <p class="text-muted mb-0">In Transit</p>
+                    <h6>Completed</h6>
+                    <h3>{{ summary.completed_count }}</h3>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card text-center border-success">
+            <div class="card bg-secondary text-white">
                 <div class="card-body">
-                    <h3 class="text-success">{{ summary.completed }}</h3>
-                    <p class="text-muted mb-0">Completed</p>
+                    <h6>Cancelled</h6>
+                    <h3>{{ summary.cancelled_count }}</h3>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <!-- Filters -->
     <div class="card mb-4">
         <div class="card-body">
-            <form method="get" class="row g-3">
-                <div class="col-md-3">
-                    <label class="form-label">Status</label>
-                    <select name="status" class="form-select">
-                        <option value="">All Statuses</option>
-                        <option value="PENDING" {% if status_filter == 'PENDING' %}selected{% endif %}>Pending</option>
-                        <option value="APPROVED" {% if status_filter == 'APPROVED' %}selected{% endif %}>Approved</option>
-                        <option value="IN_TRANSIT" {% if status_filter == 'IN_TRANSIT' %}selected{% endif %}>In Transit</option>
-                        <option value="COMPLETED" {% if status_filter == 'COMPLETED' %}selected{% endif %}>Completed</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Transfer Type</label>
-                    <select name="type" class="form-select">
-                        <option value="">All Types</option>
-                        <option value="WAREHOUSE_TO_BRANCH" {% if transfer_type == 'WAREHOUSE_TO_BRANCH' %}selected{% endif %}>
-                            Warehouse → Branch
-                        </option>
-                        <option value="BRANCH_TO_BRANCH" {% if transfer_type == 'BRANCH_TO_BRANCH' %}selected{% endif %}>
-                            Branch → Branch
-                        </option>
-                        <option value="BRANCH_TO_WAREHOUSE" {% if transfer_type == 'BRANCH_TO_WAREHOUSE' %}selected{% endif %}>
-                            Branch → Warehouse
-                        </option>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Search</label>
-                    <input type="text" name="search" class="form-control" 
-                           placeholder="Transfer number or reason" value="{{ search }}">
-                </div>
-                <div class="col-md-2 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="fas fa-search"></i> Filter
-                    </button>
+            <form method="get" id="filterForm">
+                <div class="row">
+                    <div class="col-md-2">
+                        <select name="status" class="form-control">
+                            <option value="">All Statuses</option>
+                            {% for value, label in status_choices %}
+                            <option value="{{ value }}" {% if current_filters.status == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="from_store" class="form-control">
+                            <option value="">All Source Stores</option>
+                            {% for store in stores %}
+                            <option value="{{ store.id }}" {% if current_filters.from_store|stringformat:"s" == store.id|stringformat:"s" %}selected{% endif %}>
+                                {{ store.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="to_store" class="form-control">
+                            <option value="">All Destination Stores</option>
+                            {% for store in stores %}
+                            <option value="{{ store.id }}" {% if current_filters.to_store|stringformat:"s" == store.id|stringformat:"s" %}selected{% endif %}>
+                                {{ store.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="date" name="date_from" class="form-control"
+                               value="{{ current_filters.date_from }}" placeholder="From Date">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="date" name="date_to" class="form-control"
+                               value="{{ current_filters.date_to }}" placeholder="To Date">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-filter"></i> Filter
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
     </div>
-    
+
     <!-- Transfers Table -->
     <div class="card">
         <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>Transfer #</th>
-                            <th>Type</th>
-                            <th>From</th>
-                            <th>To</th>
-                            <th>Items</th>
-                            <th>Status</th>
-                            <th>Priority</th>
-                            <th>Requested</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for transfer in transfers %}
-                        <tr>
-                            <td>
-                                <a href="{% url 'inventory:transfer_detail' transfer.pk %}">
-                                    {{ transfer.transfer_number }}
-                                </a>
-                            </td>
-                            <td>
-                                <span class="badge bg-secondary">
-                                    {{ transfer.get_transfer_type_display }}
-                                </span>
-                            </td>
-                            <td>{{ transfer.source_name }}</td>
-                            <td>{{ transfer.destination_name }}</td>
-                            <td>{{ transfer.total_items }}</td>
-                            <td>
-                                {% if transfer.status == 'PENDING' %}
-                                    <span class="badge bg-warning">Pending</span>
-                                {% elif transfer.status == 'APPROVED' %}
-                                    <span class="badge bg-info">Approved</span>
-                                {% elif transfer.status == 'IN_TRANSIT' %}
-                                    <span class="badge bg-primary">In Transit</span>
-                                {% elif transfer.status == 'COMPLETED' %}
-                                    <span class="badge bg-success">Completed</span>
-                                {% elif transfer.status == 'REJECTED' %}
-                                    <span class="badge bg-danger">Rejected</span>
-                                {% elif transfer.status == 'CANCELLED' %}
-                                    <span class="badge bg-dark">Cancelled</span>
+            <divclass="table-responsive">
+<table class="table table-hover">
+<thead>
+<tr>
+<th>Transfer #</th>
+<th>Product</th>
+<th>From Store</th>
+<th>To Store</th>
+<th>Quantity</th>
+<th>Status</th>
+<th>Requested By</th>
+<th>Date</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody>
+{% for transfer in transfers %}
+<tr>
+<td>
+<a href="{% url 'inventory:transfer_detail' transfer.pk %}">
+<strong>{{ transfer.transfer_number }}</strong>
+</a>
+</td>
+<td>
+{{ transfer.product.name }}<br>
+<small class="text-muted">{{ transfer.product.sku }}</small>
+</td>
+<td>{{ transfer.from_store.name }}</td>
+<td>{{ transfer.to_store.name }}</td>
+<td>{{ transfer.quantity }} {{ transfer.product.unit_of_measure }}</td>
+<td>
+{% if transfer.status == 'pending' %}
+<span class="badge bg-warning">Pending</span>
+{% elif transfer.status == 'in_transit' %}
+<span class="badge bg-info">In Transit</span>
+{% elif transfer.status == 'completed' %}
+<span class="badge bg-success">Completed</span>
+{% elif transfer.status == 'cancelled' %}
+<span class="badge bg-secondary">Cancelled</span>
+{% endif %}
+</td>
+<td>{{ transfer.requested_by.get_full_name|default:transfer.requested_by.username }}</td>
+<td>{{ transfer.created_at|date:"Y-m-d H:i" }}</td>
+<td>
+<div class="btn-group btn-group-sm">
+<a href="{% url 'inventory:transfer_detail' transfer.pk %}"
+                                    class="btn btn-info" title="View Details">
+<i class="fas fa-eye"></i>
+</a>
+{% if transfer.can_be_approved and perms.inventory.change_stocktransfer %}
+                                <button class="btn btn-success approve-transfer"
+                                        data-transfer-id="{{ transfer.pk }}"
+                                        data-transfer-number="{{ transfer.transfer_number }}"
+                                        title="Approve">
+                                    <i class="fas fa-check"></i>
+                                </button>
                                 {% endif %}
-                            </td>
-                            <td>
-                                {% if transfer.priority == 'URGENT' %}
-                                    <span class="badge bg-danger">{{ transfer.priority }}</span>
-                                {% elif transfer.priority == 'HIGH' %}
-                                    <span class="badge bg-warning">{{ transfer.priority }}</span>
-                                {% else %}
-                                    <span class="badge bg-secondary">{{ transfer.priority }}</span>
+
+                                {% if transfer.can_be_completed and perms.inventory.change_stocktransfer %}
+                                <button class="btn btn-primary complete-transfer"
+                                        data-transfer-id="{{ transfer.pk }}"
+                                        data-transfer-number="{{ transfer.transfer_number }}"
+                                        title="Complete">
+                                    <i class="fas fa-check-double"></i>
+                                </button>
                                 {% endif %}
-                            </td>
-                            <td>
-                                <small>{{ transfer.created_at|date:"M d, Y" }}</small><br>
-                                <small class="text-muted">by {{ transfer.requested_by.get_full_name }}</small>
-                            </td>
-                            <td>
-                                <a href="{% url 'inventory:transfer_detail' transfer.pk %}" 
-                                   class="btn btn-sm btn-outline-primary">
-                                    <i class="fas fa-eye"></i>
-                                </a>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="9" class="text-center text-muted">
-                                No transfers found
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            
-            <!-- Pagination -->
-            {% if transfers.has_other_pages %}
-            <nav>
-                <ul class="pagination justify-content-center">
-                    {% if transfers.has_previous %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ transfers.previous_page_number }}">Previous</a>
-                    </li>
-                    {% endif %}
-                    
-                    {% for num in transfers.paginator.page_range %}
-                        {% if transfers.number == num %}
-                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
-                        {% else %}
-                        <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
-                        {% endif %}
+
+                                {% if transfer.can_be_cancelled and perms.inventory.change_stocktransfer %}
+                                <button class="btn btn-danger cancel-transfer"
+                                        data-transfer-id="{{ transfer.pk }}"
+                                        data-transfer-number="{{ transfer.transfer_number }}"
+                                        title="Cancel">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center">No transfers found</td>
+                    </tr>
                     {% endfor %}
-                    
-                    {% if transfers.has_next %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ transfers.next_page_number }}">Next</a>
-                    </li>
-                    {% endif %}
-                </ul>
-            </nav>
-            {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page=1">First</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                </li>
+                {% endif %}
+
+                <li class="page-item active">
+                    <span class="page-link">
+                        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                    </span>
+                </li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Last</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div></div>
+<!-- Cancel Transfer Modal -->
+<div class="modal fade" id="cancelTransferModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Cancel Transfer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to cancel transfer <strong id="cancelTransferNumber"></strong>?</p>
+                <div class="mb-3">
+                    <label for="cancelReason" class="form-label">Reason for cancellation:</label>
+                    <textarea class="form-control" id="cancelReason" rows="3" required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-danger" id="confirmCancelTransfer">Cancel Transfer</button>
+            </div>
         </div>
     </div>
 </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    let currentTransferId = null;
+
+    // Approve transfer
+    $('.approve-transfer').click(function() {
+        const transferId = $(this).data('transfer-id');
+        const transferNumber = $(this).data('transfer-number');
+
+        if (confirm(`Approve transfer ${transferNumber}? This will deduct stock from the source store.`)) {
+            $.ajax({
+                url: `/inventory/transfers/${transferId}/approve/`,
+                type: 'POST',
+                headers: {'X-CSRFToken': '{{ csrf_token }}'},
+                success: function(response) {
+                    if (response.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + response.error);
+                    }
+                },
+                error: function(xhr) {
+                    alert('Error approving transfer: ' + xhr.responseJSON.error);
+                }
+            });
+        }
+    });
+
+    // Complete transfer
+    $('.complete-transfer').click(function() {
+        const transferId = $(this).data('transfer-id');
+        const transferNumber = $(this).data('transfer-number');
+
+        if (confirm(`Complete transfer ${transferNumber}? This will add stock to the destination store.`)) {
+            $.ajax({
+                url: `/inventory/transfers/${transferId}/complete/`,
+                type: 'POST',
+                headers: {'X-CSRFToken': '{{ csrf_token }}'},
+                success: function(response) {
+                    if (response.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + response.error);
+                    }
+                },
+                error: function(xhr) {
+                    alert('Error completing transfer: ' + xhr.responseJSON.error);
+                }
+            });
+        }
+    });
+
+    // Cancel transfer - show modal
+    $('.cancel-transfer').click(function() {
+        currentTransferId = $(this).data('transfer-id');
+        const transferNumber = $(this).data('transfer-number');
+
+        $('#cancelTransferNumber').text(transferNumber);
+        $('#cancelReason').val('');
+        $('#cancelTransferModal').modal('show');
+    });
+
+    // Confirm cancel
+    $('#confirmCancelTransfer').click(function() {
+        const reason = $('#cancelReason').val().trim();
+
+        if (!reason) {
+            alert('Please provide a reason for cancellation');
+            return;
+        }
+
+        $.ajax({
+            url: `/inventory/transfers/${currentTransferId}/cancel/`,
+            type: 'POST',
+            headers: {'X-CSRFToken': '{{ csrf_token }}'},
+            data: {reason: reason},
+            success: function(response) {
+                if (response.success) {
+                    $('#cancelTransferModal').modal('hide');
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.error);
+                }
+            },
+            error: function(xhr) {
+                alert('Error cancelling transfer: ' + xhr.responseJSON.error);
+            }
+        });
+    });
+});
+</script>
 {% endblock %}

@@ -17,7 +17,7 @@ from django.urls import reverse_lazy, reverse
 from urllib.parse import urlencode
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
-from .forms import StockForm
+from .forms import StockForm, StockTransferForm
 from django.db import models
 from django.views.decorators.http import require_http_methods
 from rest_framework.generics import RetrieveAPIView
@@ -64,7 +64,8 @@ from .forms import (
      ProductFilterForm, StockAdjustmentForm, BulkActionForm
 )
 
-from .models import Category, Supplier, Product, Stock, StockMovement, ImportSession, ImportLog, ImportResult
+from .models import Category, Supplier, Product, Stock, StockMovement, ImportSession, ImportLog, ImportResult, \
+    StockTransfer
 
 logger = logging.getLogger(__name__)
 CharField = models.CharField
@@ -6942,3 +6943,411 @@ def product_import(request):
             logger.error(f"Product import error: {str(e)}", exc_info=True)
             messages.error(request, f'❌ Import failed: {str(e)}')
             return redirect('inventory:product_import')
+
+
+class StockTransferListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+    """List all stock transfers"""
+    model = StockTransfer
+    template_name = 'inventory/transfer_list.html'
+    context_object_name = 'transfers'
+    permission_required = 'inventory.view_stocktransfer'
+    paginate_by = 25
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related(
+            'product', 'from_store', 'to_store',
+            'requested_by', 'approved_by', 'completed_by'
+        )
+
+        # Apply filters
+        status = self.request.GET.get('status')
+        from_store = self.request.GET.get('from_store')
+        to_store = self.request.GET.get('to_store')
+        product = self.request.GET.get('product')
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+
+        if status:
+            queryset = queryset.filter(status=status)
+
+        if from_store:
+            queryset = queryset.filter(from_store_id=from_store)
+
+        if to_store:
+            queryset = queryset.filter(to_store_id=to_store)
+
+        if product:
+            queryset = queryset.filter(product_id=product)
+
+        if date_from:
+            try:
+                date_from_parsed = datetime.strptime(date_from, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__gte=date_from_parsed)
+            except ValueError:
+                pass
+
+        if date_to:
+            try:
+                date_to_parsed = datetime.strptime(date_to, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__date__lte=date_to_parsed)
+            except ValueError:
+                pass
+
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # Add filter options
+        context['stores'] = Store.objects.filter(is_active=True).order_by('name')
+        context['products'] = Product.objects.filter(is_active=True).order_by('name')
+        context['status_choices'] = StockTransfer.STATUS_CHOICES
+
+        # Add summary statistics
+        context['summary'] = self.get_queryset().aggregate(
+            total_transfers=Count('id'),
+            pending_count=Count('id', filter=Q(status='pending')),
+            in_transit_count=Count('id', filter=Q(status='in_transit')),
+            completed_count=Count('id', filter=Q(status='completed')),
+            cancelled_count=Count('id', filter=Q(status='cancelled')),
+        )
+
+        context['current_filters'] = {
+            'status': self.request.GET.get('status', ''),
+            'from_store': self.request.GET.get('from_store', ''),
+            'to_store': self.request.GET.get('to_store', ''),
+            'product': self.request.GET.get('product', ''),
+            'date_from': self.request.GET.get('date_from', ''),
+            'date_to': self.request.GET.get('date_to', ''),
+        }
+
+        return context
+
+
+class StockTransferCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+    """Create a new stock transfer"""
+    model = StockTransfer
+    form_class = StockTransferForm
+    template_name = 'inventory/transfer_form.html'
+    permission_required = 'inventory.add_stocktransfer'
+    success_url = reverse_lazy('inventory:transfer_list')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+
+    def get_initial(self):
+        """Pre-fill form from query parameters"""
+        initial = super().get_initial()
+
+        # Pre-fill from query params (e.g., from low stock alert)
+        product_id = self.request.GET.get('product')
+        from_store_id = self.request.GET.get('from_store')
+        to_store_id = self.request.GET.get('to_store')
+        quantity = self.request.GET.get('quantity')
+
+        if product_id:
+            initial['product'] = product_id
+        if from_store_id:
+            initial['from_store'] = from_store_id
+        if to_store_id:
+            initial['to_store'] = to_store_id
+        if quantity:
+            initial['quantity'] = quantity
+
+        return initial
+
+    def form_valid(self, form):
+        try:
+            form.instance.requested_by = self.request.user
+            form.instance.status = 'pending'
+
+            response = super().form_valid(form)
+
+            messages.success(
+                self.request,
+                f'✅ Transfer request created successfully! '
+                f'Transfer Number: {self.object.transfer_number}'
+            )
+
+            logger.info(
+                f"Stock transfer created: {self.object.transfer_number} by {self.request.user.username}"
+            )
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error creating transfer: {str(e)}", exc_info=True)
+            messages.error(self.request, f'❌ Error creating transfer: {str(e)}')
+            return self.form_invalid(form)
+
+
+class StockTransferDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+    """View transfer details"""
+    model = StockTransfer
+    template_name = 'inventory/transfer_detail.html'
+    context_object_name = 'transfer'
+    permission_required = 'inventory.view_stocktransfer'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # Get related stock movements
+        context['related_movements'] = StockMovement.objects.filter(
+            reference=self.object.transfer_number
+        ).select_related('store', 'created_by').order_by('created_at')
+
+        # Get current stock levels
+        try:
+            source_stock = Stock.objects.get(
+                product=self.object.product,
+                store=self.object.from_store
+            )
+            context['source_stock'] = source_stock
+            # Calculate projected stock after transfer
+            if self.object.status not in ['completed', 'in_transit']:
+                context['source_stock_after'] = source_stock.quantity - self.object.quantity
+            else:
+                context['source_stock_after'] = source_stock.quantity
+        except Stock.DoesNotExist:
+            context['source_stock'] = None
+            context['source_stock_after'] = None
+
+        try:
+            dest_stock = Stock.objects.get(
+                product=self.object.product,
+                store=self.object.to_store
+            )
+            context['dest_stock'] = dest_stock
+            # Calculate projected stock after transfer
+            if self.object.status == 'completed':
+                context['dest_stock_after'] = dest_stock.quantity
+            else:
+                context['dest_stock_after'] = dest_stock.quantity + self.object.quantity
+        except Stock.DoesNotExist:
+            context['dest_stock'] = None
+            context['dest_stock_after'] = None
+
+        return context
+
+
+@login_required
+@permission_required('inventory.change_stocktransfer', raise_exception=True)
+@require_http_methods(["POST"])
+def approve_transfer(request, pk):
+    """Approve a pending transfer"""
+    try:
+        transfer = get_object_or_404(StockTransfer, pk=pk)
+
+        if not transfer.can_be_approved:
+            # Check if AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'error': 'This transfer cannot be approved.'
+                }, status=400)
+            messages.error(request, 'This transfer cannot be approved.')
+            return redirect('inventory:transfer_detail', pk=pk)
+
+        with transaction.atomic():
+            transfer.approve(request.user)
+
+        # Check if it's an AJAX request
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'success': True,
+                'message': f'Transfer {transfer.transfer_number} approved successfully! Stock deducted from {transfer.from_store.name}.',
+                'transfer_number': transfer.transfer_number,
+                'status': transfer.status
+            })
+
+        # For regular form submissions
+        messages.success(
+            request,
+            f'✅ Transfer {transfer.transfer_number} approved successfully! '
+            f'Stock deducted from {transfer.from_store.name}.'
+        )
+        return redirect('inventory:transfer_detail', pk=pk)
+
+    except ValidationError as e:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+        messages.error(request, str(e))
+        return redirect('inventory:transfer_detail', pk=pk)
+    except Exception as e:
+        logger.error(f"Error approving transfer: {str(e)}", exc_info=True)
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'success': False,
+                'error': f'Error approving transfer: {str(e)}'
+            }, status=500)
+        messages.error(request, f'Error approving transfer: {str(e)}')
+        return redirect('inventory:transfer_detail', pk=pk)
+
+
+@login_required
+@permission_required('inventory.change_stocktransfer', raise_exception=True)
+@require_http_methods(["POST"])
+def complete_transfer(request, pk):
+    """Complete an in-transit transfer"""
+    try:
+        transfer = get_object_or_404(StockTransfer, pk=pk)
+
+        if not transfer.can_be_completed:
+            # Check if AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'error': 'This transfer cannot be completed.'
+                }, status=400)
+            messages.error(request, 'This transfer cannot be completed.')
+            return redirect('inventory:transfer_detail', pk=pk)
+
+        with transaction.atomic():
+            transfer.complete(request.user)
+
+        # Check if it's an AJAX request
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'success': True,
+                'message': f'Transfer {transfer.transfer_number} completed successfully! Stock added to {transfer.to_store.name}.',
+                'transfer_number': transfer.transfer_number,
+                'status': transfer.status
+            })
+
+        # For regular form submissions
+        messages.success(
+            request,
+            f'✅ Transfer {transfer.transfer_number} completed successfully! '
+            f'Stock added to {transfer.to_store.name}.'
+        )
+        return redirect('inventory:transfer_detail', pk=pk)
+
+    except ValidationError as e:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+        messages.error(request, str(e))
+        return redirect('inventory:transfer_detail', pk=pk)
+    except Exception as e:
+        logger.error(f"Error completing transfer: {str(e)}", exc_info=True)
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'success': False,
+                'error': f'Error completing transfer: {str(e)}'
+            }, status=500)
+        messages.error(request, f'Error completing transfer: {str(e)}')
+        return redirect('inventory:transfer_detail', pk=pk)
+
+
+@login_required
+@permission_required('inventory.change_stocktransfer', raise_exception=True)
+@require_http_methods(["POST"])
+def cancel_transfer(request, pk):
+    """Cancel a transfer"""
+    try:
+        transfer = get_object_or_404(StockTransfer, pk=pk)
+
+        if not transfer.can_be_cancelled:
+            # Check if AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'error': 'This transfer cannot be cancelled.'
+                }, status=400)
+            messages.error(request, 'This transfer cannot be cancelled.')
+            return redirect('inventory:transfer_detail', pk=pk)
+
+        reason = request.POST.get('reason', 'No reason provided')
+
+        with transaction.atomic():
+            transfer.cancel(request.user, reason)
+
+        # Check if it's an AJAX request
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'success': True,
+                'message': f'Transfer {transfer.transfer_number} cancelled successfully!',
+                'transfer_number': transfer.transfer_number,
+                'status': transfer.status
+            })
+
+        # For regular form submissions
+        messages.success(
+            request,
+            f'✅ Transfer {transfer.transfer_number} cancelled successfully!'
+        )
+        return redirect('inventory:transfer_detail', pk=pk)
+
+    except ValidationError as e:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+        messages.error(request, str(e))
+        return redirect('inventory:transfer_detail', pk=pk)
+    except Exception as e:
+        logger.error(f"Error cancelling transfer: {str(e)}", exc_info=True)
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'success': False,
+                'error': f'Error cancelling transfer: {str(e)}'
+            }, status=500)
+        messages.error(request, f'Error cancelling transfer: {str(e)}')
+        return redirect('inventory:transfer_detail', pk=pk)
+
+
+@login_required
+@permission_required('inventory.view_stock', raise_exception=True)
+@require_http_methods(["GET"])
+def check_product_availability(request):
+    """AJAX endpoint to check product availability across stores"""
+    product_id = request.GET.get('product_id')
+    exclude_store_id = request.GET.get('exclude_store')
+
+    if not product_id:
+        return JsonResponse({'error': 'Product ID required'}, status=400)
+
+    try:
+        product = Product.objects.get(id=product_id)
+
+        # Get stock levels across all stores
+        stock_levels = Stock.objects.filter(
+            product=product,
+            quantity__gt=0
+        ).select_related('store')
+
+        if exclude_store_id:
+            stock_levels = stock_levels.exclude(store_id=exclude_store_id)
+
+        availability = []
+        for stock in stock_levels:
+            availability.append({
+                'store_id': stock.store.id,
+                'store_name': stock.store.name,
+                'quantity': float(stock.quantity),
+                'unit': product.unit_of_measure,
+                'status': stock.status
+            })
+
+        return JsonResponse({
+            'success': True,
+            'product_name': product.name,
+            'product_sku': product.sku,
+            'availability': availability,
+            'total_available_stores': len(availability)
+        })
+
+    except Product.DoesNotExist:
+        return JsonResponse({'error': 'Product not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error checking availability: {str(e)}", exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)

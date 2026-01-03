@@ -1,7 +1,6 @@
 from django.urls import path
 from . import views
 from . import importt
-from . import warehouse
 from . import efris_api
 from .serviced import (
     ServiceListView, ServiceCreateView, ServiceUpdateView,
@@ -175,33 +174,14 @@ urlpatterns = [
     path('products/import/sample-excel/',
          importt.download_sample_products_only_excel,
          name='download_sample_products_excel'),
-    path('stockstores/', warehouse.stockstore_list, name='stockstore_list'),
-    path('stockstores/create/', warehouse.stockstore_create, name='stockstore_create'),
-    path('stockstores/<int:pk>/', warehouse.stockstore_detail, name='stockstore_detail'),
-    path('stockstores/<int:stockstore_id>/add-inventory/',
-         warehouse.stockstore_inventory_add, name='stockstore_inventory_add'),
+    path('transfers/', views.StockTransferListView.as_view(), name='transfer_list'),
+    path('transfers/create/', views.StockTransferCreateView.as_view(), name='transfer_create'),
+    path('transfers/<int:pk>/', views.StockTransferDetailView.as_view(), name='transfer_detail'),
+    path('transfers/<int:pk>/approve/', views.approve_transfer, name='transfer_approve'),
+    path('transfers/<int:pk>/complete/', views.complete_transfer, name='transfer_complete'),
+    path('transfers/<int:pk>/cancel/', views.cancel_transfer, name='transfer_cancel'),
 
-    # Transfer URLs
-    path('transfers/', warehouse.transfer_list, name='transfer_list'),
-    path('transfers/create/', warehouse.transfer_create, name='transfer_create'),
-    path('transfers/<int:pk>/', warehouse.transfer_detail, name='transfer_detail'),
-    path('transfers/<int:pk>/approve/', warehouse.transfer_approve, name='transfer_approve'),
-    path('transfers/<int:pk>/reject/', warehouse.transfer_reject, name='transfer_reject'),
-    path('transfers/<int:pk>/dispatch/', warehouse.transfer_dispatch, name='transfer_dispatch'),
-    path('transfers/<int:pk>/receive/', warehouse.transfer_receive, name='transfer_receive'),
-    path('transfers/<int:pk>/cancel/', warehouse.transfer_cancel, name='transfer_cancel'),
-    path('transfers/from-sale/<int:sale_id>/',
-         warehouse.transfer_create_from_sale, name='transfer_from_sale'),
-
-    # AJAX/API URLs
-    path('api/check-availability/', warehouse.check_product_availability, name='check_availability'),
-    path('api/warehouse/<int:stockstore_id>/inventory/',
-         warehouse.get_warehouse_inventory, name='get_warehouse_inventory'),
-
-    # Reports
-    path('reports/inventory/', warehouse.inventory_report, name='inventory_report'),
-    path('reports/transfers/', warehouse.transfer_report, name='transfer_report'),
-    path('reports/movements/', warehouse.stock_movement_report, name='stock_movement_report'),
-    path('reports/low-stock/', warehouse.low_stock_alert_report, name='low_stock_alert_report'),
+    # AJAX endpoints
+    path('api/product-availability/', views.check_product_availability, name='product_availability'),
 ]
 

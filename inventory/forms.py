@@ -12,8 +12,7 @@ import logging
 from django.forms import inlineformset_factory
 from stores.models import StockStore
 from .models import (
-     StockTransferRequest, StockTransferItem,
-    StockStoreInventory
+    StockTransfer
 )
 from stores.models import Store
 
@@ -354,6 +353,88 @@ class ServiceForm(VATAwareFormMixin,forms.ModelForm):
 
         return service
 
+
+class StockTransferForm(forms.ModelForm):
+    """Form for creating stock transfers"""
+
+    class Meta:
+        model = StockTransfer
+        fields = [
+            'from_store', 'to_store', 'product',
+            'quantity', 'notes', 'reference'
+        ]
+        widgets = {
+            'from_store': forms.Select(attrs={
+                'class': 'form-control select2',
+                'required': True
+            }),
+            'to_store': forms.Select(attrs={
+                'class': 'form-control select2',
+                'required': True
+            }),
+            'product': forms.Select(attrs={
+                'class': 'form-control select2',
+                'required': True
+            }),
+            'quantity': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0.001',
+                'step': '0.001',
+                'required': True
+            }),
+            'notes': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Add any notes about this transfer...'
+            }),
+            'reference': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Optional reference number'
+            })
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        # Only show active stores and products
+        self.fields['from_store'].queryset = Store.objects.filter(is_active=True)
+        self.fields['to_store'].queryset = Store.objects.filter(is_active=True)
+        self.fields['product'].queryset = Product.objects.filter(is_active=True)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        from_store = cleaned_data.get('from_store')
+        to_store = cleaned_data.get('to_store')
+        product = cleaned_data.get('product')
+        quantity = cleaned_data.get('quantity')
+
+        # Validate different stores
+        if from_store and to_store and from_store == to_store:
+            raise forms.ValidationError(
+                "Source and destination stores must be different."
+            )
+
+        # Validate stock availability
+        if from_store and product and quantity:
+            try:
+                source_stock = Stock.objects.get(
+                    product=product,
+                    store=from_store
+                )
+
+                if source_stock.quantity < quantity:
+                    raise forms.ValidationError(
+                        f"Insufficient stock at {from_store.name}. "
+                        f"Available: {source_stock.quantity} {product.unit_of_measure}, "
+                        f"Requested: {quantity} {product.unit_of_measure}"
+                    )
+            except Stock.DoesNotExist:
+                raise forms.ValidationError(
+                    f"{product.name} is not available at {from_store.name}"
+                )
+
+        return cleaned_data
 
 class ServiceQuickCreateForm(VATAwareFormMixin, forms.ModelForm):
     """
@@ -2406,122 +2487,3 @@ class StockStoreForm(forms.ModelForm):
             'managers': forms.CheckboxSelectMultiple(),
         }
 
-
-class StockTransferRequestForm(forms.ModelForm):
-    class Meta:
-        model = StockTransferRequest
-        fields = [
-            'transfer_type', 'source_stockstore', 'destination_stockstore',
-            'source_store', 'destination_store', 'priority', 'reason',
-            'expected_delivery_date', 'vehicle_number', 'driver_name',
-            'driver_phone', 'notes'
-        ]
-        widgets = {
-            'reason': forms.Textarea(attrs={'rows': 3}),
-            'notes': forms.Textarea(attrs={'rows': 3}),
-            'expected_delivery_date': forms.DateInput(attrs={'type': 'date'}),
-        }
-
-    def __init__(self, *args, **kwargs):
-        self.user = kwargs.pop('user', None)
-        self.company = kwargs.pop('company', None)
-        super().__init__(*args, **kwargs)
-
-        # Filter querysets by company
-        if self.company:
-            self.fields['source_stockstore'].queryset = StockStore.objects.filter(
-                company=self.company, is_active=True
-            )
-            self.fields['destination_stockstore'].queryset = StockStore.objects.filter(
-                company=self.company, is_active=True
-            )
-            self.fields['source_store'].queryset = Store.objects.filter(
-                company=self.company, is_active=True
-            )
-            self.fields['destination_store'].queryset = Store.objects.filter(
-                company=self.company, is_active=True
-            )
-
-        # Dynamic field visibility based on transfer type
-        self.fields['source_stockstore'].required = False
-        self.fields['destination_stockstore'].required = False
-        self.fields['source_store'].required = False
-        self.fields['destination_store'].required = False
-
-    def clean(self):
-        cleaned_data = super().clean()
-        transfer_type = cleaned_data.get('transfer_type')
-
-        if transfer_type == 'WAREHOUSE_TO_BRANCH':
-            if not cleaned_data.get('source_stockstore'):
-                self.add_error('source_stockstore', 'Source warehouse is required')
-            if not cleaned_data.get('destination_store'):
-                self.add_error('destination_store', 'Destination branch is required')
-
-        elif transfer_type == 'BRANCH_TO_BRANCH':
-            if not cleaned_data.get('source_store'):
-                self.add_error('source_store', 'Source branch is required')
-            if not cleaned_data.get('destination_store'):
-                self.add_error('destination_store', 'Destination branch is required')
-
-        elif transfer_type == 'BRANCH_TO_WAREHOUSE':
-            if not cleaned_data.get('source_store'):
-                self.add_error('source_store', 'Source branch is required')
-            if not cleaned_data.get('destination_stockstore'):
-                self.add_error('destination_stockstore', 'Destination warehouse is required')
-
-        return cleaned_data
-
-
-class StockTransferItemForm(forms.ModelForm):
-    class Meta:
-        model = StockTransferItem
-        fields = ['product', 'quantity_requested', 'notes']
-        widgets = {
-            'notes': forms.Textarea(attrs={'rows': 2}),
-        }
-
-
-StockTransferItemFormSet = inlineformset_factory(
-    StockTransferRequest,
-    StockTransferItem,
-    form=StockTransferItemForm,
-    extra=1,
-    can_delete=True
-)
-
-
-class ReceiveTransferForm(forms.Form):
-    receipt_notes = forms.CharField(
-        widget=forms.Textarea(attrs={'rows': 3}),
-        required=False,
-        label='Receipt Notes'
-    )
-
-    def __init__(self, *args, **kwargs):
-        self.transfer = kwargs.pop('transfer')
-        super().__init__(*args, **kwargs)
-
-        # Add a field for each item
-        for item in self.transfer.items.all():
-            field_name = f'quantity_{item.id}'
-            self.fields[field_name] = forms.DecimalField(
-                label=f'{item.product.name} (Sent: {item.quantity_sent})',
-                initial=item.quantity_sent,
-                max_digits=12,
-                decimal_places=3,
-                min_value=0
-            )
-
-    def clean(self):
-        cleaned_data = super().clean()
-        actual_quantities = {}
-
-        for item in self.transfer.items.all():
-            field_name = f'quantity_{item.id}'
-            quantity = cleaned_data.get(field_name)
-            if quantity is not None:
-                actual_quantities[item.id] = quantity
-
-        cleaned_data['actual_quantities'] = actual_quantities
-        return cleaned_data

@@ -1,130 +1,205 @@
 {% extends 'base.html' %}
 {% load static %}
-{% load i18n %}
-{% load crispy_forms_tags %}
 
-{% block title %}{% trans "Create Stock Transfer" %}{% endblock %}
+{% block title %}Create Stock Transfer{% endblock %}
 
-{% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
-<li class="breadcrumb-item"><a href="{% url 'inventory:transfer_list' %}">{% trans "Stock Transfers" %}</a></li>
-<li class="breadcrumb-item active">{% trans "Create Transfer" %}</li>
+{% block extra_css %}
+<style>
+    .stock-info {
+        background-color: #f8f9fa;
+        border-left: 4px solid #007bff;
+        padding: 15px;
+        margin: 15px 0;
+    }
+    .availability-card {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+        transition: all 0.3s;
+    }
+    .availability-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .quick-select-btn {
+        cursor: pointer;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row justify-content-center">
-        <div class="col-lg-10">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-exchange-alt"></i> Create Stock Transfer</h2>
+            <p class="text-muted">Transfer stock between stores</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{% url 'inventory:transfer_list' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Transfers
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Transfer Form -->
+        <div class="col-md-8">
             <div class="card">
-                <div class="card-header">
-                    <h4 class="mb-0">
-                        <i class="bi bi-truck me-2"></i>{% trans "Create Stock Transfer" %}
-                    </h4>
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-file-alt"></i> Transfer Details</h5>
                 </div>
                 <div class="card-body">
-                    <form method="post" id="transferForm" data-products-url="{% url 'inventory:check_availability' %}">
+                    <form method="post" id="transferForm">
                         {% csrf_token %}
-                        
-                        <!-- Transfer Information -->
-                        <div class="row mb-4">
-                            <div class="col-md-6">
-                                {{ form.transfer_type|as_crispy_field }}
-                            </div>
-                            <div class="col-md-6">
-                                {{ form.priority|as_crispy_field }}
+
+                        <!-- Product Selection -->
+                        <div class="mb-3">
+                            <label for="{{ form.product.id_for_label }}" class="form-label">
+                                Product <span class="text-danger">*</span>
+                            </label>
+                            {{ form.product }}
+                            {% if form.product.errors %}
+                                <div class="text-danger">{{ form.product.errors }}</div>
+                            {% endif %}
+                            <small class="form-text text-muted">Select the product to transfer</small>
+                        </div>
+
+                        <!-- From Store -->
+                        <div class="mb-3">
+                            <label for="{{ form.from_store.id_for_label }}" class="form-label">
+                                From Store <span class="text-danger">*</span>
+                            </label>
+                            {{ form.from_store }}
+                            {% if form.from_store.errors %}
+                                <div class="text-danger">{{ form.from_store.errors }}</div>
+                            {% endif %}
+                            <div id="sourceStockInfo" class="stock-info mt-2" style="display: none;">
+                                <strong>Available Stock:</strong>
+                                <span id="sourceStockQty">-</span>
+                                <span id="sourceStockUnit">units</span>
                             </div>
                         </div>
 
-                        <!-- Dynamic Location Fields -->
-                        <div id="locationFields">
-                            <!-- Will be populated by JavaScript -->
-                        </div>
-
-                        <!-- Reason -->
-                        <div class="row mb-4">
-                            <div class="col-12">
-                                {{ form.reason|as_crispy_field }}
+                        <!-- To Store -->
+                        <div class="mb-3">
+                            <label for="{{ form.to_store.id_for_label }}" class="form-label">
+                                To Store <span class="text-danger">*</span>
+                            </label>
+                            {{ form.to_store }}
+                            {% if form.to_store.errors %}
+                                <div class="text-danger">{{ form.to_store.errors }}</div>
+                            {% endif %}
+                            <div id="destStockInfo" class="stock-info mt-2" style="display: none;">
+                                <strong>Current Stock:</strong>
+                                <span id="destStockQty">-</span>
+                                <span id="destStockUnit">units</span>
                             </div>
                         </div>
 
-                        <!-- Transfer Items -->
-                        <div class="card mb-4">
-                            <div class="card-header">
-                                <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>{% trans "Transfer Items" %}</h5>
-                                <small class="text-muted">{% trans "Add items to be transferred" %}</small>
+                        <!-- Quantity -->
+                        <div class="mb-3">
+                            <label for="{{ form.quantity.id_for_label }}" class="form-label">
+                                Quantity <span class="text-danger">*</span>
+                            </label>
+                            <div class="input-group">
+                                {{ form.quantity }}
+                                <span class="input-group-text" id="quantityUnit">units</span>
                             </div>
-                            <div class="card-body">
-                                <div id="formset-container">
-                                    {{ formset.management_form }}
-                                    <div id="empty-form" style="display: none;">
-                                        {{ formset.empty_form|crispy }}
-                                    </div>
-                                    
-                                    <div id="items-container">
-                                        {% for form in formset %}
-                                        <div class="item-form border p-3 mb-3 rounded">
-                                            {{ form|crispy }}
-                                            {% if not forloop.first %}
-                                            <button type="button" class="btn btn-sm btn-danger remove-item">
-                                                <i class="bi bi-trash"></i> {% trans "Remove" %}
-                                            </button>
-                                            {% endif %}
-                                        </div>
-                                        {% endfor %}
-                                    </div>
-                                </div>
-                                
-                                <button type="button" id="add-item" class="btn btn-outline-primary mt-2">
-                                    <i class="bi bi-plus-circle me-1"></i>{% trans "Add Item" %}
-                                </button>
-                            </div>
+                            {% if form.quantity.errors %}
+                                <div class="text-danger">{{ form.quantity.errors }}</div>
+                            {% endif %}
+                            <small class="form-text text-muted">Enter the quantity to transfer</small>
                         </div>
 
-                        <!-- Additional Information -->
-                        <div class="row mb-4">
-                            <div class="col-md-6">
-                                {{ form.expected_delivery_date|as_crispy_field }}
-                            </div>
-                            <div class="col-md-6">
-                                {{ form.notes|as_crispy_field }}
-                            </div>
+                        <!-- Reference -->
+                        <div class="mb-3">
+                            <label for="{{ form.reference.id_for_label }}" class="form-label">
+                                Reference Number
+                            </label>
+                            {{ form.reference }}
+                            {% if form.reference.errors %}
+                                <div class="text-danger">{{ form.reference.errors }}</div>
+                            {% endif %}
+                            <small class="form-text text-muted">Optional reference or order number</small>
                         </div>
 
-                        <!-- Transport Information -->
-                        <div class="card mb-4">
-                            <div class="card-header">
-                                <h5 class="mb-0"><i class="bi bi-truck me-2"></i>{% trans "Transport Information (Optional)" %}</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-4">
-                                        {{ form.vehicle_number|as_crispy_field }}
-                                    </div>
-                                    <div class="col-md-4">
-                                        {{ form.driver_name|as_crispy_field }}
-                                    </div>
-                                    <div class="col-md-4">
-                                        {{ form.driver_phone|as_crispy_field }}
-                                    </div>
-                                </div>
-                            </div>
+                        <!-- Notes -->
+                        <div class="mb-3">
+                            <label for="{{ form.notes.id_for_label }}" class="form-label">
+                                Notes
+                            </label>
+                            {{ form.notes }}
+                            {% if form.notes.errors %}
+                                <div class="text-danger">{{ form.notes.errors }}</div>
+                            {% endif %}
+                            <small class="form-text text-muted">Add any additional notes about this transfer</small>
                         </div>
 
-                        <!-- Action Buttons -->
-                        <div class="d-flex justify-content-between gap-2">
+                        <!-- Form-level errors -->
+                        {% if form.non_field_errors %}
+                            <div class="alert alert-danger">
+                                {{ form.non_field_errors }}
+                            </div>
+                        {% endif %}
+
+                        <!-- Submit Buttons -->
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-paper-plane"></i> Create Transfer Request
+                            </button>
                             <a href="{% url 'inventory:transfer_list' %}" class="btn btn-secondary">
-                                <i class="bi bi-x-circle me-1"></i>{% trans "Cancel" %}
+                                <i class="fas fa-times"></i> Cancel
                             </a>
-                            <div>
-                                <button type="submit" name="save_draft" class="btn btn-outline-primary">
-                                    <i class="bi bi-save me-1"></i>{% trans "Save as Draft" %}
-                                </button>
-                                <button type="submit" name="submit_for_approval" class="btn btn-primary">
-                                    <i class="bi bi-send-check me-1"></i>{% trans "Submit for Approval" %}
-                                </button>
-                            </div>
                         </div>
                     </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Product Availability Sidebar -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-warehouse"></i> Product Availability</h5>
+                </div>
+                <div class="card-body">
+                    <div id="availabilityLoading" style="display: none;">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Checking availability...</p>
+                        </div>
+                    </div>
+
+                    <div id="availabilityResults" style="display: none;">
+                        <p class="text-muted mb-3">
+                            <strong id="availableStoresCount">0</strong> stores have this product in stock
+                        </p>
+                        <div id="availabilityList"></div>
+                    </div>
+
+                    <div id="availabilityEmpty">
+                        <p class="text-muted text-center">
+                            <i class="fas fa-info-circle"></i><br>
+                            Select a product to check availability
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Tips -->
+            <div class="card mt-3">
+                <div class="card-header bg-warning text-dark">
+                    <h6 class="mb-0"><i class="fas fa-lightbulb"></i> Quick Tips</h6>
+                </div>
+                <div class="card-body">
+                    <ul class="small mb-0">
+                        <li>Transfers require approval before stock is moved</li>
+                        <li>Stock will be deducted from source store upon approval</li>
+                        <li>Stock will be added to destination store when completed</li>
+                        <li>You can cancel pending or in-transit transfers</li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -134,168 +209,206 @@
 
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const transferType = document.getElementById('id_transfer_type');
-    const locationFields = document.getElementById('locationFields');
-    const formsetContainer = document.getElementById('formset-container');
-    const itemsContainer = document.getElementById('items-container');
-    const addItemBtn = document.getElementById('add-item');
-    const totalForms = document.getElementById('id_form-TOTAL_FORMS');
-    const emptyForm = document.getElementById('empty-form').innerHTML;
-    
-    let formCount = parseInt(totalForms.value);
+$(document).ready(function() {
+    // Initialize Select2
+    $('.select2').select2({
+        width: '100%',
+        placeholder: 'Select...',
+        allowClear: true
+    });
 
-    // Update location fields based on transfer type
-    function updateLocationFields() {
-        const type = transferType.value;
-        let html = '';
-        
-        switch(type) {
-            case 'WAREHOUSE_TO_BRANCH':
-                html = `
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            {{ form.source_stockstore|as_crispy_field }}
-                        </div>
-                        <div class="col-md-6">
-                            {{ form.destination_store|as_crispy_field }}
-                        </div>
-                    </div>
-                `;
-                break;
-            case 'BRANCH_TO_BRANCH':
-                html = `
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            {{ form.source_store|as_crispy_field }}
-                        </div>
-                        <div class="col-md-6">
-                            {{ form.destination_store|as_crispy_field }}
-                        </div>
-                    </div>
-                `;
-                break;
-            case 'BRANCH_TO_WAREHOUSE':
-                html = `
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            {{ form.source_store|as_crispy_field }}
-                        </div>
-                        <div class="col-md-6">
-                            {{ form.destination_stockstore|as_crispy_field }}
-                        </div>
-                    </div>
-                `;
-                break;
-        }
-        
-        locationFields.innerHTML = html;
-        
-        // Initialize Select2 if needed
-        if (typeof $ !== 'undefined' && $.fn.select2) {
-            $('select').select2({
-                theme: 'bootstrap-5',
-                width: '100%'
-            });
-        }
-    }
+    let currentProduct = null;
+    let currentFromStore = null;
+    let currentToStore = null;
 
-    // Add item form
-    addItemBtn.addEventListener('click', function() {
-        const newForm = emptyForm.replace(/__prefix__/g, formCount);
-        const div = document.createElement('div');
-        div.className = 'item-form border p-3 mb-3 rounded';
-        div.innerHTML = newForm;
-        
-        // Add remove button
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button';
-        removeBtn.className = 'btn btn-sm btn-danger remove-item';
-        removeBtn.innerHTML = '<i class="bi bi-trash"></i> {% trans "Remove" %}';
-        removeBtn.addEventListener('click', function() {
-            div.remove();
-            updateFormCount(-1);
+    // Function to check product availability
+    function checkProductAvailability() {
+        const productId = $('#id_product').val();
+        const excludeStore = $('#id_to_store').val();
+
+        if (!productId) {
+            $('#availabilityResults').hide();
+            $('#availabilityEmpty').show();
+            return;
+        }
+
+        $('#availabilityLoading').show();
+        $('#availabilityResults').hide();
+        $('#availabilityEmpty').hide();
+
+        $.ajax({
+            url: '{% url "inventory:product_availability" %}',
+            data: {
+                product_id: productId,
+                exclude_store: excludeStore
+            },
+            success: function(response) {
+                $('#availabilityLoading').hide();
+
+                if (response.success && response.availability.length > 0) {
+                    displayAvailability(response);
+                } else {
+                    $('#availabilityEmpty').html(
+                        '<p class="text-muted text-center">' +
+                        '<i class="fas fa-exclamation-circle"></i><br>' +
+                        'No stock available at other stores' +
+                        '</p>'
+                    );
+                    $('#availabilityEmpty').show();
+                }
+            },
+            error: function() {
+                $('#availabilityLoading').hide();
+                $('#availabilityEmpty').html(
+                    '<p class="text-danger text-center">' +
+                    '<i class="fas fa-times-circle"></i><br>' +
+                    'Error checking availability' +
+                    '</p>'
+                );
+                $('#availabilityEmpty').show();
+            }
         });
-        
-        div.appendChild(removeBtn);
-        itemsContainer.appendChild(div);
-        
-        formCount++;
-        totalForms.value = formCount;
-        
-        // Initialize product select
-        const productSelect = div.querySelector('select[id$="product"]');
-        if (productSelect && typeof $ !== 'undefined' && $.fn.select2) {
-            $(productSelect).select2({
-                theme: 'bootstrap-5',
-                width: '100%'
+    }
+
+    // Display availability results
+    function displayAvailability(response) {
+        $('#availableStoresCount').text(response.availability.length);
+
+        let html = '';
+        response.availability.forEach(function(store) {
+            let statusClass = 'success';
+            if (store.status === 'Low Stock') {
+                statusClass = 'warning';
+            } else if (store.status === 'Out of Stock') {
+                statusClass = 'danger';
+            }
+
+            html += `
+                <div class="availability-card quick-select-btn"
+                     data-store-id="${store.store_id}"
+                     data-quantity="${store.quantity}">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${store.store_name}</strong><br>
+                            <span class="badge bg-${statusClass}">${store.status}</span>
+                        </div>
+                        <div class="text-end">
+                            <h5 class="mb-0">${store.quantity}</h5>
+                            <small class="text-muted">${store.unit}</small>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary w-100 select-source-store">
+                            <i class="fas fa-arrow-right"></i> Use as Source
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+
+        $('#availabilityList').html(html);
+        $('#availabilityResults').show();
+    }
+
+    // Quick select source store from availability
+    $(document).on('click', '.select-source-store', function(e) {
+        e.stopPropagation();
+        const card = $(this).closest('.availability-card');
+        const storeId = card.data('store-id');
+        const quantity = card.data('quantity');
+
+        $('#id_from_store').val(storeId).trigger('change');
+        $('#id_quantity').val(quantity);
+
+        // Highlight selected card
+        $('.availability-card').removeClass('border-primary');
+        card.addClass('border-primary');
+    });
+
+    // Function to load stock info
+    function loadStockInfo(storeId, productId, targetPrefix) {
+        if (!storeId || !productId) {
+            $(`#${targetPrefix}StockInfo`).hide();
+            return;
+        }
+
+        $.ajax({
+            url: '{% url "inventory:current_stock_api" %}',
+            data: {
+                store: storeId,
+                product: productId
+            },
+            success: function(response) {
+                $(`#${targetPrefix}StockQty`).text(response.current_stock.toFixed(3));
+                $(`#${targetPrefix}StockInfo`).show();
+            },
+            error: function() {
+                $(`#${targetPrefix}StockInfo`).hide();
+            }
+        });
+    }
+
+    // Product change handler
+    $('#id_product').change(function() {
+        currentProduct = $(this).val();
+
+        // Update unit display
+        if (currentProduct) {
+            $.ajax({
+                url: `/inventory/api/product/${currentProduct}/`,
+                success: function(response) {
+                    $('#quantityUnit').text(response.unit_of_measure);
+                    $('#sourceStockUnit').text(response.unit_of_measure);
+                    $('#destStockUnit').text(response.unit_of_measure);
+                }
             });
         }
+
+        // Refresh stock info
+        if (currentFromStore) {
+            loadStockInfo(currentFromStore, currentProduct, 'source');
+        }
+        if (currentToStore) {
+            loadStockInfo(currentToStore, currentProduct, 'dest');
+        }
+
+        // Check availability
+        checkProductAvailability();
     });
 
-    // Remove item
-    itemsContainer.addEventListener('click', function(e) {
-        if (e.target.closest('.remove-item')) {
-            e.target.closest('.item-form').remove();
-            updateFormCount(-1);
+    // From store change handler
+    $('#id_from_store').change(function() {
+        currentFromStore = $(this).val();
+        if (currentProduct) {
+            loadStockInfo(currentFromStore, currentProduct, 'source');
         }
     });
 
-    // Update form count
-    function updateFormCount(delta) {
-        formCount += delta;
-        totalForms.value = formCount;
-    }
-
-    // Check product availability
-    function checkAvailability(productId, quantity) {
-        const form = document.getElementById('transferForm');
-        const url = form.dataset.productsUrl;
-        
-        if (!productId || !quantity) return;
-        
-        fetch(`${url}?product_id=${productId}&quantity=${quantity}`)
-            .then(response => response.json())
-            .then(data => {
-                console.log('Availability:', data);
-                // Update UI with availability info
-            })
-            .catch(error => console.error('Error:', error));
-    }
-
-    // Event listeners
-    if (transferType) {
-        updateLocationFields();
-        transferType.addEventListener('change', updateLocationFields);
-    }
+    // To store change handler
+    $('#id_to_store').change(function() {
+        currentToStore = $(this).val();
+        if (currentProduct) {
+            loadStockInfo(currentToStore, currentProduct, 'dest');
+            checkProductAvailability(); // Refresh to exclude selected store
+        }
+    });
 
     // Form validation
-    const form = document.getElementById('transferForm');
-    form.addEventListener('submit', function(e) {
-        const productSelects = itemsContainer.querySelectorAll('select[id$="product"]');
-        let hasItems = false;
-        
-        productSelects.forEach(select => {
-            if (select.value) hasItems = true;
-        });
-        
-        if (!hasItems) {
+    $('#transferForm').submit(function(e) {
+        const fromStore = $('#id_from_store').val();
+        const toStore = $('#id_to_store').val();
+
+        if (fromStore === toStore && fromStore) {
             e.preventDefault();
-            alert('{% trans "Please add at least one item to the transfer." %}');
+            alert('Source and destination stores must be different!');
             return false;
         }
-        
-        // Disable buttons to prevent double submission
-        const buttons = form.querySelectorAll('button[type="submit"]');
-        buttons.forEach(button => {
-            button.disabled = true;
-            button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
-        });
     });
+
+    // Trigger initial checks if pre-filled
+    if ($('#id_product').val()) {
+        $('#id_product').trigger('change');
+    }
 });
 </script>
-
-{% if form.media %}
-{{ form.media }}
-{% endif %}
 {% endblock %}
