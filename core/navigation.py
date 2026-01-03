@@ -473,18 +473,6 @@ NAVIGATION_ITEMS = [
                 icon="bi bi-file-earmark-bar-graph",
                 permission="expenses.view_expense",
             ),
-            NavigationItem(
-                name="Expense Category",
-                url_name="expenses:category_create",
-                icon="bi bi-coin",
-                permission="expenses.add_expensecategory"
-            ),
-            NavigationItem(
-                name="Category List",
-                url_name="expenses:category_list",
-                icon="bi bi-coin",
-                permission="expenses.view_expensecategory"
-            ),
 
         ],),
     NavigationItem(

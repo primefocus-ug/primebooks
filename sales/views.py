@@ -52,10 +52,11 @@ def get_user_company(user):
     """Get user's company"""
     return getattr(user, 'company', None)
 
+
 @login_required
 @require_POST
 def create_customer_ajax(request):
-    """Create customer within tenant context"""
+    """Create customer within tenant context and associate with store"""
     try:
         company = get_current_tenant(request)
         if not company:
@@ -65,6 +66,35 @@ def create_customer_ajax(request):
             })
 
         with tenant_context(company):
+            # ✅ ADD: Get and validate store_id
+            store_id = request.POST.get('store_id')
+
+            if not store_id:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Store selection required. Please select a branch first.'
+                })
+
+            # ✅ ADD: Validate store exists and user has access
+            try:
+                store = Store.objects.get(
+                    id=store_id,
+                    company=company,
+                    is_active=True
+                )
+                validate_store_access(request.user, store, action='create', raise_exception=True)
+            except Store.DoesNotExist:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Invalid store selected'
+                })
+            except PermissionDenied:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Access denied to create customers in this store'
+                })
+
+            # Get form data
             name = request.POST.get('name', '').strip()
             phone = request.POST.get('phone', '').strip()
             email = request.POST.get('email', '').strip()
@@ -75,7 +105,7 @@ def create_customer_ajax(request):
             brn = request.POST.get('brn', '').strip()
             from_efris = request.POST.get('from_efris', 'false') == 'true'
 
-            logger.info(f"Creating customer: {name}, {phone} for tenant {company.schema_name}")
+            logger.info(f"Creating customer: {name}, {phone} for tenant {company.schema_name}, store {store.name}")
 
             # Validation
             if not name or not phone:
@@ -84,25 +114,18 @@ def create_customer_ajax(request):
                     'error': 'Name and phone are required'
                 })
 
-            if Customer.objects.filter(phone=phone).exists():
+            # ✅ UPDATE: Check for duplicate phone in same store (not globally)
+            if Customer.objects.filter(phone=phone, store=store).exists():
                 return JsonResponse({
                     'success': False,
-                    'error': 'Customer with this phone number already exists'
+                    'error': f'Customer with this phone number already exists in {store.name}'
                 })
 
-            # Get store (first active store for this company)
-            store = Store.objects.filter(company=company, is_active=True).first()
-            if not store:
-                return JsonResponse({
-                    'success': False,
-                    'error': 'No active store available for this company'
-                })
-
-            # Create customer
+            # Create customer with selected store
             customer = Customer.objects.create(
                 name=name,
                 phone=phone,
-                store=store,
+                store=store,  # ✅ Use selected store, not first available
                 email=email or None,
                 physical_address=address or None,
                 customer_type=customer_type,
@@ -113,7 +136,10 @@ def create_customer_ajax(request):
                 created_by=request.user
             )
 
-            logger.info(f"✅ Customer created: {customer.name} (ID: {customer.id})")
+            logger.info(f"✅ Customer created: {customer.name} (ID: {customer.id}) in store {store.name}")
+
+            # Get credit info for response
+            customer.update_credit_balance()
 
             return JsonResponse({
                 'success': True,
@@ -127,12 +153,30 @@ def create_customer_ajax(request):
                     'tin': customer.tin or '',
                     'nin': customer.nin or '',
                     'brn': customer.brn or '',
+                    'store_id': customer.store_id,  # ✅ ADD
+                    'store_name': customer.store.name,  # ✅ ADD
+
+                    # ✅ ADD: Include credit info in response
+                    'credit_info': {
+                        'allow_credit': customer.allow_credit,
+                        'credit_limit': float(customer.credit_limit),
+                        'credit_balance': float(customer.credit_balance),
+                        'credit_available': float(customer.credit_available),
+                        'credit_status': customer.credit_status,
+                        'has_overdue': customer.has_overdue_invoices,
+                        'overdue_amount': float(customer.overdue_amount),
+                        'can_purchase_credit': customer.can_purchase_on_credit[0],
+                        'credit_message': customer.can_purchase_on_credit[1],
+                    }
                 }
             })
 
     except Exception as e:
         logger.error(f"❌ Error creating customer: {e}", exc_info=True)
-        return JsonResponse({'success': False, 'error': str(e)})
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to create customer: {str(e)}'
+        })
 
 
 @login_required
@@ -1115,7 +1159,7 @@ def recent_customers_api(request):
         limit = int(request.GET.get('limit', 10))
         search = request.GET.get('search', '').strip()
 
-        # If no store_id is provided, try to get it from session or user's default store
+        # ✅ UPDATE: More strict store_id validation
         if not store_id:
             # Try to get store_id from session (if coming from POS)
             store_id = request.session.get('current_store_id')
@@ -1134,14 +1178,24 @@ def recent_customers_api(request):
 
         # Validate store access
         try:
-            store = Store.objects.get(id=store_id)
+            store = Store.objects.get(id=store_id, is_active=True)
             validate_store_access(request.user, store, action='view', raise_exception=True)
-        except (Store.DoesNotExist, PermissionDenied):
-            return JsonResponse({'error': 'Access denied to store'}, status=403)
+        except Store.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid store',
+                'customers': []
+            }, status=404)
+        except PermissionDenied:
+            return JsonResponse({
+                'success': False,
+                'error': 'Access denied to store',
+                'customers': []
+            }, status=403)
 
-        # Base query for customers in this store
+        # Base query for customers in this store ONLY
         customers_query = Customer.objects.filter(
-            store_id=store_id,
+            store_id=store_id,  # ✅ Explicitly filter by store
             is_active=True
         )
 
@@ -1156,24 +1210,24 @@ def recent_customers_api(request):
         # Get recent purchases data
         from django.db.models import Subquery, OuterRef
 
-        # Subquery to get last purchase date for each customer
+        # Subquery to get last purchase date for each customer IN THIS STORE
         last_purchase_subquery = Sale.objects.filter(
             customer_id=OuterRef('id'),
-            store_id=store_id
+            store_id=store_id  # ✅ Ensure we only count purchases from this store
         ).order_by('-created_at').values('created_at')[:1]
 
-        # Subquery to get purchase count for each customer
+        # Subquery to get purchase count for each customer IN THIS STORE
         purchase_count_subquery = Sale.objects.filter(
             customer_id=OuterRef('id'),
-            store_id=store_id
+            store_id=store_id  # ✅ Ensure we only count purchases from this store
         ).values('customer_id').annotate(
             count=Count('id')
         ).values('count')
 
-        # Subquery to get total spent for each customer
+        # Subquery to get total spent for each customer IN THIS STORE
         total_spent_subquery = Sale.objects.filter(
             customer_id=OuterRef('id'),
-            store_id=store_id
+            store_id=store_id  # ✅ Ensure we only count purchases from this store
         ).values('customer_id').annotate(
             total=Sum('total_amount')
         ).values('total')
@@ -1183,7 +1237,7 @@ def recent_customers_api(request):
             last_purchase_date=Subquery(last_purchase_subquery),
             purchase_count=Subquery(purchase_count_subquery),
             total_spent=Subquery(total_spent_subquery)
-        ).order_by(
+        ).select_related('store').order_by(  # ✅ ADD: select_related
             '-last_purchase_date',  # Customers with recent purchases first
             '-created_at'  # Then newly created customers
         )[:limit]
@@ -1227,8 +1281,10 @@ def recent_customers_api(request):
                 'total_spent': float(customer.total_spent or 0),
                 'efris': efris_data,
                 'created_at': customer.created_at.isoformat() if customer.created_at else None,
+                'store_id': customer.store_id,  # ✅ ADD
+                'store_name': customer.store.name if customer.store else None,  # ✅ ADD
 
-                # ADD CREDIT INFORMATION
+                # Credit information
                 'credit_info': {
                     'allow_credit': customer.allow_credit,
                     'credit_limit': float(customer.credit_limit) if customer.credit_limit else 0.0,
@@ -1238,10 +1294,8 @@ def recent_customers_api(request):
                     'credit_status_display': customer.get_credit_status_display(),
                     'has_overdue': customer.has_overdue_invoices,
                     'overdue_amount': float(customer.overdue_amount) if customer.overdue_amount else 0.0,
-                    'can_purchase_credit': customer.can_purchase_on_credit[0] if hasattr(customer,
-                                                                                         'can_purchase_on_credit') else False,
-                    'credit_message': customer.can_purchase_on_credit[1] if hasattr(customer,
-                                                                                    'can_purchase_on_credit') else '',
+                    'can_purchase_credit': customer.can_purchase_on_credit[0] if hasattr(customer, 'can_purchase_on_credit') else False,
+                    'credit_message': customer.can_purchase_on_credit[1] if hasattr(customer, 'can_purchase_on_credit') else '',
                     'credit_days': customer.credit_days if hasattr(customer, 'credit_days') else 30,
                 }
             }
@@ -2129,18 +2183,48 @@ def search_customers(request):
     user = request.user
     try:
         query = request.GET.get('q', '').strip()
+        store_id = request.GET.get('store_id')  # ✅ ADD: Get store_id
 
         if len(query) < 2:
             return JsonResponse({'customers': []})
 
-        # Filter customers based on user access
+        # ✅ ADD: Validate store_id is provided
+        if not store_id:
+            return JsonResponse({
+                'success': False,
+                'error': 'Store selection required',
+                'customers': []
+            }, status=400)
+
+        # ✅ ADD: Validate store access and existence
+        try:
+            store = Store.objects.get(id=store_id, is_active=True)
+            validate_store_access(request.user, store, action='view', raise_exception=True)
+        except Store.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid store',
+                'customers': []
+            }, status=403)
+        except PermissionDenied:
+            return JsonResponse({
+                'success': False,
+                'error': 'Access denied to store',
+                'customers': []
+            }, status=403)
+
+        # Filter customers based on user access AND store
         if request.user.is_superuser:
-            customers = Customer.objects.filter(is_active=True)
+            customers = Customer.objects.filter(
+                is_active=True,
+                store_id=store_id  # ✅ ADD: Filter by store
+            )
         else:
             user_company = getattr(user, 'company', None)
             customers = Customer.objects.filter(
                 Q(company=user_company) | Q(created_by=request.user),
-                is_active=True
+                is_active=True,
+                store_id=store_id  # ✅ ADD: Filter by store
             )
 
         customers = customers.filter(
@@ -2150,7 +2234,7 @@ def search_customers(request):
             Q(tin__icontains=query) |
             Q(nin__icontains=query) |
             Q(brn__icontains=query)
-        )[:15]
+        ).select_related('store')[:15]  # ✅ ADD: select_related for optimization
 
         customer_data = []
         for customer in customers:
@@ -2183,8 +2267,10 @@ def search_customers(request):
                 'brn': getattr(customer, 'brn', '') or '',
                 'customer_type': getattr(customer, 'customer_type', '') or 'INDIVIDUAL',
                 'efris': efris_data,
+                'store_id': customer.store_id,  # ✅ ADD: Include store info
+                'store_name': customer.store.name if customer.store else None,  # ✅ ADD
 
-                # ADD CREDIT INFORMATION
+                # Credit information
                 'credit_info': {
                     'allow_credit': customer.allow_credit,
                     'credit_limit': float(customer.credit_limit),
@@ -2198,11 +2284,24 @@ def search_customers(request):
                 }
             })
 
-        return JsonResponse({'customers': customer_data})
+        return JsonResponse({
+            'success': True,
+            'customers': customer_data,
+            'count': len(customer_data),
+            'store': {  # ✅ ADD: Return store info
+                'id': store.id,
+                'name': store.name,
+            }
+        })
 
     except Exception as e:
-        logger.error(f"Error in customer search: {e}")
-        return JsonResponse({'error': 'Search failed'}, status=500)
+        logger.error(f"Error in customer search: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': 'Search failed',
+            'details': str(e) if settings.DEBUG else 'Internal server error',
+            'customers': []
+        }, status=500)
 
 
 @login_required

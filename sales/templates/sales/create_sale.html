@@ -1927,41 +1927,114 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============================================
 
 function setupSaleEventListeners() {
+    // ============================================
+    // STORE SELECTION HANDLER
+    // ============================================
     const storeSelect = document.getElementById('storeSelect');
     if (storeSelect) {
         storeSelect.addEventListener('change', function() {
+            const storeId = this.value;
+
+            console.log('🏪 Store changed to:', storeId);
+
+            // Reset pagination
             SaleState.currentPage = 1;
+
+            // Load items for new store
             loadItems();
+
+            // Validate store selection
             validateStoreSelection();
+
+            // ✅ CLEAR CUSTOMER SELECTION when store changes
+            if (SaleState.selectedCustomer) {
+                console.log('🧹 Clearing customer selection due to store change');
+                removeCustomer();
+                showToast('Customer cleared. Please select customer for this branch.', 'info');
+            }
+
+            // ✅ RELOAD RECENT CUSTOMERS for new store
+            if (SaleState.activeTab === 'recentTab') {
+                console.log('🔄 Reloading recent customers for new store');
+                loadRecentCustomers();
+            }
+
+            // ✅ CLEAR CUSTOMER SEARCH INPUT
+            const customerSearch = document.getElementById('customerSearch');
+            if (customerSearch) {
+                customerSearch.value = '';
+            }
+
+            // ✅ HIDE CUSTOMER DROPDOWN
+            const customerDropdown = document.getElementById('customerDropdown');
+            if (customerDropdown) {
+                customerDropdown.classList.remove('show');
+            }
+
+            // ✅ CLEAR SEARCH CACHE for old store
+            // Clear all customer-related cache entries
+            for (const key of SaleState.searchCache.keys()) {
+                if (key.includes('customer-search')) {
+                    SaleState.searchCache.delete(key);
+                }
+            }
+
+            console.log('✅ Store change handling complete');
         });
     }
 
+    // ============================================
+    // PRODUCT SEARCH HANDLER
+    // ============================================
     const productSearchBar = document.getElementById('productSearchBar');
     if (productSearchBar) {
         productSearchBar.addEventListener('input', debounce(function(e) {
+            console.log('🔍 Product search:', e.target.value);
             SaleState.currentPage = 1;
             loadItems();
         }, 300));
     }
 
+    // ============================================
+    // DOCUMENT TYPE CHANGE HANDLER
+    // ============================================
     document.querySelectorAll('input[name="document_type"]').forEach(radio => {
-        radio.addEventListener('change', toggleDueDateSection);
+        radio.addEventListener('change', function() {
+            console.log('📄 Document type changed to:', this.value);
+            toggleDueDateSection();
+            validateDocumentRequirements();
+        });
     });
 
+    // ============================================
+    // DISCOUNT VALUE INPUT HANDLER
+    // ============================================
     const discountValue = document.getElementById('discountValue');
     if (discountValue) {
         discountValue.addEventListener('input', function() {
-            this.value = parseFloat(this.value) || 0;
+            const value = parseFloat(this.value) || 0;
+            this.value = value;
+
+            // Optional: Auto-apply discount as user types
+            // if (value > 0) {
+            //     applyDiscount();
+            // }
         });
     }
 
+    // ============================================
+    // CUSTOMER TAB HANDLERS
+    // ============================================
     const searchTabBtn = document.getElementById('searchTabBtn');
     const recentTabBtn = document.getElementById('recentTabBtn');
     const efrisTabBtn = document.getElementById('efrisTabBtn');
 
     if (searchTabBtn) {
-        searchTabBtn.addEventListener('click', function() {
+        searchTabBtn.addEventListener('click', function(e) {
+            console.log('🔍 Switched to Search tab');
             SaleState.activeTab = 'searchTab';
+
+            // Ensure search listeners are attached
             setTimeout(setupCustomerSearchListeners, 100);
         });
     }
@@ -1969,8 +2042,13 @@ function setupSaleEventListeners() {
     if (recentTabBtn) {
         recentTabBtn.addEventListener('click', function(e) {
             e.preventDefault();
+            console.log('🕐 Switched to Recent tab');
             SaleState.activeTab = 'recentTab';
+
+            // Load recent customers for current store
             loadRecentCustomers();
+
+            // Show the tab
             const recentTab = new bootstrap.Tab(this);
             recentTab.show();
         });
@@ -1979,15 +2057,118 @@ function setupSaleEventListeners() {
     if (efrisTabBtn) {
         efrisTabBtn.addEventListener('click', function(e) {
             e.preventDefault();
+            console.log('🏛️ Switched to EFRIS tab');
             SaleState.activeTab = 'efrisTab';
+
+            // Clear previous EFRIS results
             const efrisResults = document.getElementById('efrisQueryResults');
             const taxpayerTIN = document.getElementById('taxpayerTIN');
+            const efrisError = document.getElementById('efrisError');
+
             if (efrisResults) efrisResults.style.display = 'none';
             if (taxpayerTIN) taxpayerTIN.value = '';
+            if (efrisError) efrisError.style.display = 'none';
+
+            // Show the tab
             const efrisTab = new bootstrap.Tab(this);
             efrisTab.show();
         });
     }
+
+    // ============================================
+    // PAYMENT METHOD CHANGE HANDLER
+    // ============================================
+    const paymentMethodSelect = document.getElementById('paymentMethod');
+    if (paymentMethodSelect) {
+        paymentMethodSelect.addEventListener('change', function() {
+            console.log('💳 Payment method changed to:', this.value);
+            validatePaymentMethod();
+        });
+    }
+
+    // ============================================
+    // NEW CUSTOMER MODAL HANDLERS
+    // ============================================
+    const newCustomerModal = document.getElementById('newCustomerModal');
+    if (newCustomerModal) {
+        newCustomerModal.addEventListener('show.bs.modal', function() {
+            console.log('👤 Opening new customer modal');
+
+            // ✅ CHECK: Validate store is selected before opening modal
+            const storeSelect = document.getElementById('storeSelect');
+            if (!storeSelect || !storeSelect.value) {
+                showError('Please select a branch first before creating a customer');
+                const modal = bootstrap.Modal.getInstance(newCustomerModal);
+                if (modal) modal.hide();
+                return;
+            }
+
+            // Reset form when modal opens
+            const form = document.getElementById('newCustomerForm');
+            if (form) form.reset();
+        });
+
+        newCustomerModal.addEventListener('hidden.bs.modal', function() {
+            console.log('✖️ Closed new customer modal');
+
+            // Reset form and error states
+            const form = document.getElementById('newCustomerForm');
+            if (form) form.reset();
+        });
+    }
+
+    // ============================================
+    // FORM ENTER KEY HANDLER (Prevent accidental submission)
+    // ============================================
+    const createSaleForm = document.getElementById('createSaleForm');
+    if (createSaleForm) {
+        createSaleForm.addEventListener('keypress', function(e) {
+            // Prevent form submission on Enter key except for specific buttons
+            if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') {
+                e.preventDefault();
+            }
+        });
+    }
+
+    // ============================================
+    // AUTO-SAVE DRAFT (Optional - every 5 minutes)
+    // ============================================
+    // Uncomment if you want auto-save functionality
+    /*
+    setInterval(() => {
+        if (SaleState.cart.length > 0) {
+            console.log('💾 Auto-saving draft...');
+            saveAsDraft('Auto-save ' + new Date().toLocaleString());
+        }
+    }, 5 * 60 * 1000); // Every 5 minutes
+    */
+
+    // ============================================
+    // WINDOW BEFOREUNLOAD WARNING
+    // ============================================
+    window.addEventListener('beforeunload', function(e) {
+        // Warn user if they have items in cart
+        if (SaleState.cart.length > 0) {
+            const message = 'You have items in your cart. Are you sure you want to leave?';
+            e.returnValue = message;
+            return message;
+        }
+    });
+
+    // ============================================
+    // ONLINE/OFFLINE DETECTION
+    // ============================================
+    window.addEventListener('online', function() {
+        console.log('✅ Connection restored');
+        showToast('Connection restored', 'success');
+    });
+
+    window.addEventListener('offline', function() {
+        console.log('❌ Connection lost');
+        showToast('No internet connection. Some features may not work.', 'warning');
+    });
+
+    console.log('✅ All sale event listeners attached successfully');
 }
 
 // ============================================
@@ -2121,10 +2302,22 @@ async function searchCustomers(controller = null) {
         return;
     }
 
+    // ✅ CHECK: Validate store selection
+    const storeSelect = document.getElementById('storeSelect');
+    if (!storeSelect || !storeSelect.value) {
+        if (searchError) {
+            searchError.textContent = 'Please select a branch first to search customers';
+            searchError.style.display = 'block';
+        }
+        return;
+    }
+
+    const storeId = storeSelect.value;
+
     if (searchLoading) searchLoading.style.display = 'flex';
 
     try {
-        const cacheKey = `customer-search-${query}`;
+        const cacheKey = `customer-search-${query}-store-${storeId}`;
 
         if (SaleState.searchCache.has(cacheKey)) {
             const cached = SaleState.searchCache.get(cacheKey);
@@ -2151,10 +2344,11 @@ async function searchCustomers(controller = null) {
             fetchOptions.signal = controller.signal;
         }
 
-        console.log('🔍 Fetching customer search results for:', query);
+        console.log('🔍 Fetching customer search results for:', query, 'in store:', storeId);
 
+        // ✅ ADD: Include store_id parameter
         const response = await fetch(
-            `/sales/customer-search/?q=${encodeURIComponent(query)}`,
+            `/sales/customer-search/?q=${encodeURIComponent(query)}&store_id=${storeId}`,
             fetchOptions
         );
 
@@ -2198,8 +2392,8 @@ async function searchCustomers(controller = null) {
                 customerList.innerHTML = `
                     <div class="text-center py-3">
                         <i class="bi bi-person-x" style="font-size: 2rem; opacity: 0.3;"></i>
-                        <p class="mt-2 mb-1">No customers found</p>
-                        <small class="text-muted">Try a different search term</small>
+                        <p class="mt-2 mb-1">No customers found in this branch</p>
+                        <small class="text-muted">Try a different search term or create a new customer</small>
                         <div class="mt-2">
                             <button class="btn btn-sm btn-primary"
                                     onclick="showNewCustomerModal()">
@@ -2580,11 +2774,27 @@ async function loadRecentCustomers() {
 
     if (!list) return;
 
+    // ✅ CHECK: Validate store selection
+    const storeSelect = document.getElementById('storeSelect');
+    if (!storeSelect || !storeSelect.value) {
+        list.innerHTML = `
+            <div class="text-center py-3">
+                <i class="bi bi-shop" style="font-size: 2rem; opacity: 0.3;"></i>
+                <p class="mt-2">Please select a branch first</p>
+            </div>
+        `;
+        if (loading) loading.style.display = 'none';
+        return;
+    }
+
+    const storeId = storeSelect.value;
+
     list.innerHTML = '';
     if (loading) loading.style.display = 'block';
 
     try {
-        const response = await fetch('/sales/recent-customers/');
+        // ✅ ADD: Include store_id parameter
+        const response = await fetch(`/sales/recent-customers/?store_id=${storeId}`);
         const data = await response.json();
 
         if (loading) loading.style.display = 'none';
@@ -2672,11 +2882,21 @@ async function saveNewCustomer() {
         return;
     }
 
+    // ✅ CHECK: Validate store selection
+    const storeSelect = document.getElementById('storeSelect');
+    if (!storeSelect || !storeSelect.value) {
+        showError('Please select a branch first before creating a customer');
+        return;
+    }
+
     saveText.style.display = 'none';
     saveLoading.style.display = 'inline-block';
     saveBtn.disabled = true;
 
     const formData = new FormData(form);
+
+    // ✅ ADD: Include the selected store/branch ID
+    formData.append('store_id', storeSelect.value);
 
     try {
         const response = await fetch('{% url "sales:create_customer_ajax" %}', {
