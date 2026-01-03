@@ -2183,12 +2183,12 @@ def search_customers(request):
     user = request.user
     try:
         query = request.GET.get('q', '').strip()
-        store_id = request.GET.get('store_id')  # ✅ ADD: Get store_id
+        store_id = request.GET.get('store_id')
 
         if len(query) < 2:
             return JsonResponse({'customers': []})
 
-        # ✅ ADD: Validate store_id is provided
+        # Validate store_id is provided
         if not store_id:
             return JsonResponse({
                 'success': False,
@@ -2196,7 +2196,7 @@ def search_customers(request):
                 'customers': []
             }, status=400)
 
-        # ✅ ADD: Validate store access and existence
+        # Validate store access and existence
         try:
             store = Store.objects.get(id=store_id, is_active=True)
             validate_store_access(request.user, store, action='view', raise_exception=True)
@@ -2217,14 +2217,15 @@ def search_customers(request):
         if request.user.is_superuser:
             customers = Customer.objects.filter(
                 is_active=True,
-                store_id=store_id  # ✅ ADD: Filter by store
+                store_id=store_id
             )
         else:
+            # Fixed: Access company through store relationship (store__company)
             user_company = getattr(user, 'company', None)
             customers = Customer.objects.filter(
-                Q(company=user_company) | Q(created_by=request.user),
+                Q(store__company=user_company) | Q(created_by=request.user),
                 is_active=True,
-                store_id=store_id  # ✅ ADD: Filter by store
+                store_id=store_id
             )
 
         customers = customers.filter(
@@ -2234,7 +2235,7 @@ def search_customers(request):
             Q(tin__icontains=query) |
             Q(nin__icontains=query) |
             Q(brn__icontains=query)
-        ).select_related('store')[:15]  # ✅ ADD: select_related for optimization
+        ).select_related('store')[:15]
 
         customer_data = []
         for customer in customers:
@@ -2267,8 +2268,8 @@ def search_customers(request):
                 'brn': getattr(customer, 'brn', '') or '',
                 'customer_type': getattr(customer, 'customer_type', '') or 'INDIVIDUAL',
                 'efris': efris_data,
-                'store_id': customer.store_id,  # ✅ ADD: Include store info
-                'store_name': customer.store.name if customer.store else None,  # ✅ ADD
+                'store_id': customer.store_id,
+                'store_name': customer.store.name if customer.store else None,
 
                 # Credit information
                 'credit_info': {
@@ -2288,7 +2289,7 @@ def search_customers(request):
             'success': True,
             'customers': customer_data,
             'count': len(customer_data),
-            'store': {  # ✅ ADD: Return store info
+            'store': {
                 'id': store.id,
                 'name': store.name,
             }
