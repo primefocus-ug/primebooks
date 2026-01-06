@@ -123,6 +123,12 @@ NAVIGATION_ITEMS = [
         permission="sales.add_sale"
     ),
     NavigationItem(
+        name="Quick Sale",
+        url_name="sales:quick_sale",
+        icon="bi bi-plus-circle",
+        permission="sales.add_sale"
+    ),
+    NavigationItem(
         name="Create Expense",
         url_name="expenses:expense_create",
         icon="bi bi-plus-circle",
@@ -475,6 +481,12 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Create Sale",
                 url_name="sales:create_sale",
+                icon="bi bi-plus-circle",
+                permission="sales.add_sale"
+            ),
+            NavigationItem(
+                name="Quick Sale",
+                url_name="sales:quick_sale",
                 icon="bi bi-plus-circle",
                 permission="sales.add_sale"
             ),

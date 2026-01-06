@@ -1155,6 +1155,44 @@ class Sale(models.Model, EFRISSaleMixin):
 
         return invoice_sale
 
+    def fiscalize_and_sync_stock(self):
+        """
+        Mark sale as fiscalized and sync related stock movements to EFRIS.
+        Called after successful EFRIS fiscalization.
+        """
+        try:
+            from inventory.models import StockMovement
+
+            # Mark as fiscalized if not already
+            if not self.is_fiscalized:
+                self.is_fiscalized = True
+                self.fiscalization_time = timezone.now()
+                self.save(update_fields=['is_fiscalized', 'fiscalization_time'])
+
+            # Find all related stock movements
+            movements = StockMovement.objects.filter(
+                reference__icontains=self.document_number,
+                store=self.store,
+                synced_to_efris=False
+            )
+
+            # Queue each movement for EFRIS sync
+            synced_count = 0
+            for movement in movements:
+                if movement.sync_to_efris_now():
+                    synced_count += 1
+
+            logger.info(
+                f"✅ Fiscalized sale {self.document_number} and queued "
+                f"{synced_count} stock movements for EFRIS sync"
+            )
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in fiscalize_and_sync_stock for sale {self.id}: {e}")
+            return False
+
     def _auto_fiscalize_sale(self):
         """Auto-fiscalize sale after creation"""
         try:

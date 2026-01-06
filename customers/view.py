@@ -376,7 +376,7 @@ def download_sample_customers_excel(request):
 
 @login_required
 def export_customers_csv(request):
-    """Export customers to CSV"""
+    """Export customers to CSV - Import-ready format"""
     # Get filter parameters
     customer_type = request.GET.get('customer_type')
     efris_status = request.GET.get('efris_status')
@@ -401,21 +401,21 @@ def export_customers_csv(request):
 
     writer = csv.writer(response)
 
-    # Headers
-    writer.writerow([
-        'Customer ID', 'Name', 'Customer Type', 'Phone', 'Email',
-        'TIN', 'NIN', 'BRN', 'Physical Address', 'Postal Address',
-        'District', 'Country', 'VAT Registered', 'Credit Limit',
-        'Store', 'Active', 'EFRIS Status', 'EFRIS Customer ID',
-        'EFRIS Registered At', 'Created At'
-    ])
+    # Headers - Matching import template exactly
+    headers = [
+        'Name*', 'Customer Type*', 'Phone*', 'Email', 'TIN', 'NIN', 'BRN',
+        'Physical Address', 'Postal Address', 'District', 'Country',
+        'Is VAT Registered', 'Credit Limit', 'Store Name*',
+        'Passport Number', 'Driving License', 'Voter ID', 'Alien ID',
+        'EFRIS Customer Type', 'Auto Sync EFRIS'
+    ]
+    writer.writerow(headers)
 
-    # Data
+    # Data - Export in import-ready format
     for customer in queryset:
         writer.writerow([
-            customer.customer_id,
             customer.name,
-            customer.get_customer_type_display(),
+            customer.customer_type,  # Use raw value (INDIVIDUAL, BUSINESS, etc.), not display
             customer.phone,
             customer.email or '',
             customer.tin or '',
@@ -424,15 +424,16 @@ def export_customers_csv(request):
             customer.physical_address or '',
             customer.postal_address or '',
             customer.district or '',
-            customer.country,
+            customer.country or 'Uganda',
             'Yes' if customer.is_vat_registered else 'No',
-            float(customer.credit_limit),
+            float(customer.credit_limit) if customer.credit_limit else 0,
             customer.store.name,
-            'Yes' if customer.is_active else 'No',
-            customer.get_efris_status_display(),
-            customer.efris_customer_id or '',
-            customer.efris_registered_at.strftime('%Y-%m-%d %H:%M') if customer.efris_registered_at else '',
-            customer.created_at.strftime('%Y-%m-%d %H:%M'),
+            customer.passport_number or '',
+            customer.driving_license or '',
+            customer.voter_id or '',
+            customer.alien_id or '',
+            customer.efris_customer_type or '',
+            'Yes' if customer.is_efris_registered else 'No',
         ])
 
     return response
@@ -440,7 +441,7 @@ def export_customers_csv(request):
 
 @login_required
 def export_customers_excel(request):
-    """Export customers to Excel with formatting"""
+    """Export customers to Excel - Import-ready format with formatting"""
     # Get filter parameters
     customer_type = request.GET.get('customer_type')
     efris_status = request.GET.get('efris_status')
@@ -461,7 +462,7 @@ def export_customers_excel(request):
 
     output = BytesIO()
     workbook = xlsxwriter.Workbook(output)
-    worksheet = workbook.add_worksheet('Customers')
+    worksheet = workbook.add_worksheet('Customer Data')
 
     # Define formats
     header_format = workbook.add_format({
@@ -469,12 +470,25 @@ def export_customers_excel(request):
         'bg_color': '#4F46E5',
         'font_color': 'white',
         'border': 1,
-        'align': 'center'
+        'align': 'center',
+        'valign': 'vcenter',
+        'text_wrap': True
+    })
+
+    required_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#DC2626',
+        'font_color': 'white',
+        'border': 1,
+        'align': 'center',
+        'valign': 'vcenter',
+        'text_wrap': True
     })
 
     cell_format = workbook.add_format({
         'border': 1,
-        'align': 'left'
+        'align': 'left',
+        'valign': 'vcenter'
     })
 
     number_format = workbook.add_format({
@@ -483,50 +497,78 @@ def export_customers_excel(request):
         'num_format': '#,##0.00'
     })
 
-    # Headers
+    # Headers - Matching import template exactly
     headers = [
-        'Customer ID', 'Name', 'Type', 'Phone', 'Email', 'TIN', 'NIN', 'BRN',
-        'Physical Address', 'District', 'VAT Reg', 'Credit Limit', 'Store',
-        'Active', 'EFRIS Status', 'EFRIS ID', 'Created At'
+        ('Name*', True),
+        ('Customer Type*', True),
+        ('Phone*', True),
+        ('Email', False),
+        ('TIN', False),
+        ('NIN', False),
+        ('BRN', False),
+        ('Physical Address', False),
+        ('Postal Address', False),
+        ('District', False),
+        ('Country', False),
+        ('Is VAT Registered', False),
+        ('Credit Limit', False),
+        ('Store Name*', True),
+        ('Passport Number', False),
+        ('Driving License', False),
+        ('Voter ID', False),
+        ('Alien ID', False),
+        ('EFRIS Customer Type', False),
+        ('Auto Sync EFRIS', False),
     ]
 
-    for col, header in enumerate(headers):
-        worksheet.write(0, col, header, header_format)
+    # Write headers with appropriate formatting
+    for col, (header, is_required) in enumerate(headers):
+        if is_required:
+            worksheet.write(0, col, header, required_format)
+        else:
+            worksheet.write(0, col, header, header_format)
 
-    # Data
+    # Write data
     row = 1
     for customer in queryset:
         data = [
-            customer.customer_id,
             customer.name,
-            customer.get_customer_type_display(),
+            customer.customer_type,  # Raw value (INDIVIDUAL, BUSINESS, etc.)
             customer.phone,
             customer.email or '',
             customer.tin or '',
             customer.nin or '',
             customer.brn or '',
             customer.physical_address or '',
+            customer.postal_address or '',
             customer.district or '',
+            customer.country or 'Uganda',
             'Yes' if customer.is_vat_registered else 'No',
-            float(customer.credit_limit),
+            float(customer.credit_limit) if customer.credit_limit else 0,
             customer.store.name,
-            'Yes' if customer.is_active else 'No',
-            customer.get_efris_status_display(),
-            customer.efris_customer_id or '',
-            customer.created_at.strftime('%Y-%m-%d %H:%M'),
+            customer.passport_number or '',
+            customer.driving_license or '',
+            customer.voter_id or '',
+            customer.alien_id or '',
+            customer.efris_customer_type or '',
+            'Yes' if customer.is_efris_registered else 'No',
         ]
 
         for col, value in enumerate(data):
-            if col == 11:  # Credit Limit
+            if col == 12:  # Credit Limit
                 worksheet.write(row, col, value, number_format)
             else:
                 worksheet.write(row, col, value, cell_format)
 
         row += 1
 
-    # Auto-adjust column widths
-    for col, header in enumerate(headers):
-        worksheet.set_column(col, col, len(header) + 5)
+    # Set column widths
+    column_widths = [20, 15, 15, 25, 15, 20, 15, 30, 20, 15, 15, 15, 15, 20, 18, 18, 15, 15, 18, 15]
+    for col, width in enumerate(column_widths):
+        worksheet.set_column(col, col, width)
+
+    # Freeze first row
+    worksheet.freeze_panes(1, 0)
 
     workbook.close()
     output.seek(0)
@@ -543,7 +585,7 @@ def export_customers_excel(request):
 
 @login_required
 def export_customers_pdf(request):
-    """Export customers to PDF"""
+    """Export customers to PDF - Read-only report format"""
     # Get filter parameters
     customer_type = request.GET.get('customer_type')
     efris_status = request.GET.get('efris_status')
@@ -626,6 +668,7 @@ def export_customers_pdf(request):
 
     doc.build(story)
     return response
+
 
 
 # ============================================================================

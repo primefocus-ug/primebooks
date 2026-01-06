@@ -11,8 +11,11 @@ from django.http import JsonResponse, HttpResponse
 from django.urls import reverse_lazy, reverse
 from django.utils.translation import gettext as _
 from django.utils import timezone
-from django.db import  models
+from django.db import models, transaction
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from django.db.models import Sum, Count, Q
 from decimal import Decimal
+import logging
 from django.views.generic import (
     ListView, DetailView, CreateView, UpdateView, DeleteView, TemplateView
 )
@@ -40,6 +43,7 @@ from .exporters import CustomerExporter
 from .efris_service import EFRISCustomerService
 import pandas as pd
 
+logger=logging.getLogger(__name__)
 
 @login_required
 @permission_required('customers.view_customer',raise_exception=True)
@@ -431,7 +435,7 @@ class CustomerListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
 
 class CustomerDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
-    """Detailed customer view with related information and eFRIS status"""
+    """Detailed customer view with related information, eFRIS status, and sales history"""
     model = Customer
     permission_required = 'customers.view_customer'
     template_name = 'customers/customer_detail.html'
@@ -449,6 +453,7 @@ class CustomerDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView
         context = super().get_context_data(**kwargs)
         customer = self.get_object()
 
+        # Existing context data
         context['note_form'] = CustomerNoteForm()
         context['notes'] = customer.notes.select_related('author').order_by('-created_at')[:10]
         context['efris_form'] = EFRISSyncForm()
@@ -472,7 +477,240 @@ class CustomerDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView
             'sync_error': customer.efris_sync_error,
         }
 
+        # ============================================================================
+        # NEW: CUSTOMER SALES HISTORY
+        # ============================================================================
+
+        # Get sales filter from request
+        sales_filter = self.request.GET.get('sales_filter', 'all')
+
+        # Base queryset
+        sales_queryset = Sale.objects.filter(
+            customer=customer
+        ).select_related(
+            'store', 'created_by'
+        ).prefetch_related(
+            'items', 'payments'
+        ).order_by('-created_at')
+
+        # Apply filters
+        if sales_filter == 'receipts':
+            sales_queryset = sales_queryset.filter(document_type='RECEIPT')
+        elif sales_filter == 'invoices':
+            sales_queryset = sales_queryset.filter(document_type='INVOICE')
+        elif sales_filter == 'pending':
+            sales_queryset = sales_queryset.filter(
+                payment_status__in=['PENDING', 'PARTIALLY_PAID']
+            )
+        elif sales_filter == 'paid':
+            sales_queryset = sales_queryset.filter(payment_status='PAID')
+        elif sales_filter == 'overdue':
+            sales_queryset = sales_queryset.filter(payment_status='OVERDUE')
+
+        # Pagination for sales
+        sales_page = self.request.GET.get('sales_page', 1)
+        sales_paginator = Paginator(sales_queryset, 20)  # 20 sales per page
+
+        try:
+            sales_page_obj = sales_paginator.page(sales_page)
+        except PageNotAnInteger:
+            sales_page_obj = sales_paginator.page(1)
+        except EmptyPage:
+            sales_page_obj = sales_paginator.page(sales_paginator.num_pages)
+
+        context['customer_sales'] = sales_page_obj
+        context['sales_page'] = sales_page_obj
+        context['sales_paginator'] = sales_paginator
+        context['is_sales_paginated'] = sales_paginator.num_pages > 1
+        context['customer_sales_count'] = sales_queryset.count()
+
+        # Sales statistics
+        sales_stats = sales_queryset.aggregate(
+            total_sales=Count('id'),
+            total_amount=Sum('total_amount'),
+            pending_invoices=Count(
+                'id',
+                filter=Q(
+                    document_type='INVOICE',
+                    payment_status__in=['PENDING', 'PARTIALLY_PAID']
+                )
+            )
+        )
+
+        # Get last purchase date
+        last_sale = sales_queryset.first()
+
+        context['customer_sales_stats'] = {
+            'total_sales': sales_stats['total_sales'] or 0,
+            'total_amount': sales_stats['total_amount'] or 0,
+            'pending_invoices': sales_stats['pending_invoices'] or 0,
+            'last_purchase': last_sale.created_at if last_sale else None
+        }
+
+        # Sales by document type
+        context['sales_by_type'] = {
+            'receipts': sales_queryset.filter(document_type='RECEIPT').count(),
+            'invoices': sales_queryset.filter(document_type='INVOICE').count(),
+        }
+
+        # Sales by payment status
+        context['sales_by_status'] = {
+            'paid': sales_queryset.filter(payment_status='PAID').count(),
+            'pending': sales_queryset.filter(payment_status='PENDING').count(),
+            'partially_paid': sales_queryset.filter(payment_status='PARTIALLY_PAID').count(),
+            'overdue': sales_queryset.filter(payment_status='OVERDUE').count(),
+        }
+
         return context
+
+
+@login_required
+@permission_required('customers.change_customer', raise_exception=True)
+@require_http_methods(["POST"])
+def adjust_customer_credit(request, customer_id):
+    """
+    Adjust customer credit limit or balance
+    """
+    try:
+        customer = Customer.objects.get(id=customer_id)
+
+        # Parse request data
+        data = json.loads(request.body)
+        adjustment_type = data.get('adjustment_type')
+        amount = Decimal(str(data.get('amount', 0)))
+        reason = data.get('reason', '').strip()
+
+        if not reason:
+            return JsonResponse({
+                'success': False,
+                'error': 'Reason for adjustment is required'
+            }, status=400)
+
+        if amount <= 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Amount must be greater than zero'
+            }, status=400)
+
+        # Store old values
+        old_limit = customer.credit_limit
+        old_balance = customer.credit_balance
+
+        # Apply adjustment based on type
+        with transaction.atomic():
+            if adjustment_type == 'SET_LIMIT':
+                customer.credit_limit = amount
+                transaction_type = 'ADJUSTMENT'
+                description = f"Credit limit set to {amount} UGX. Reason: {reason}"
+
+            elif adjustment_type == 'INCREASE_LIMIT':
+                customer.credit_limit += amount
+                transaction_type = 'ADJUSTMENT'
+                description = f"Credit limit increased by {amount} UGX. Reason: {reason}"
+
+            elif adjustment_type == 'DECREASE_LIMIT':
+                new_limit = max(Decimal('0'), customer.credit_limit - amount)
+                customer.credit_limit = new_limit
+                transaction_type = 'ADJUSTMENT'
+                description = f"Credit limit decreased by {amount} UGX. Reason: {reason}"
+
+            elif adjustment_type == 'ADD_BALANCE':
+                customer.credit_balance += amount
+                transaction_type = 'ADJUSTMENT'
+                description = f"Balance increased by {amount} UGX. Reason: {reason}"
+
+            elif adjustment_type == 'REDUCE_BALANCE':
+                new_balance = max(Decimal('0'), customer.credit_balance - amount)
+                customer.credit_balance = new_balance
+                transaction_type = 'PAYMENT'
+                description = f"Balance reduced by {amount} UGX. Reason: {reason}"
+
+            else:
+                return JsonResponse({'success': False, 'error': 'Invalid adjustment type'}, status=400)
+
+            # ✅ ENABLE CREDIT
+            if customer.credit_limit > 0:
+                customer.allow_credit = True
+            else:
+                customer.allow_credit = False
+
+            # Update credit available
+            customer.credit_available = max(
+                Decimal('0'),
+                customer.credit_limit - customer.credit_balance
+            )
+
+            # Update credit available
+            customer.credit_available = max(
+                Decimal('0'),
+                customer.credit_limit - customer.credit_balance
+            )
+
+            # Update credit status
+            if customer.has_overdue_invoices:
+                customer.credit_status = 'WARNING'
+            elif customer.credit_balance > customer.credit_limit:
+                customer.credit_status = 'WARNING'
+            elif customer.credit_balance > (customer.credit_limit * Decimal('0.8')):
+                customer.credit_status = 'WARNING'
+            else:
+                customer.credit_status = 'GOOD'
+
+            customer.save()
+
+            # Create credit statement record
+            CustomerCreditStatement.objects.create(
+                customer=customer,
+                transaction_type=transaction_type,
+                amount=amount,
+                balance_before=old_balance,
+                balance_after=customer.credit_balance,
+                description=description,
+                reference_number=f"ADJ-{customer.id}-{timezone.now().strftime('%Y%m%d%H%M%S')}",
+                created_by=request.user
+            )
+
+            # Create customer note
+            CustomerNote.objects.create(
+                customer=customer,
+                author=request.user,
+                note=description,
+                category='PAYMENT',
+                is_important=True
+            )
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Credit adjustment applied successfully',
+            'customer_credit': {
+                'allow_credit': customer.allow_credit,
+                'credit_limit': float(customer.credit_limit),
+                'credit_balance': float(customer.credit_balance),
+                'credit_available': float(customer.credit_available),
+                'credit_status': customer.credit_status,
+                'has_overdue': customer.has_overdue_invoices
+            }
+        })
+
+    except Customer.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Customer not found'
+        }, status=404)
+
+    except ValueError as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Invalid amount: {str(e)}'
+        }, status=400)
+
+    except Exception as e:
+        logger.error(f"Credit adjustment error: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to adjust credit: {str(e)}'
+        }, status=500)
+
 
 
 @login_required
@@ -509,57 +747,104 @@ def store_customer_credit_info(request, store_id):
 @require_http_methods(["POST"])
 def bulk_update_credit_limits(request):
     """Bulk update credit limits for multiple customers"""
+
     if not request.user.has_perm('customers.change_customer'):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     try:
-        data = json.loads(request.body)
-        updates = data.get('updates', [])
+        payload = json.loads(request.body)
+        updates = payload.get('updates', [])
 
-        results = {'success': [], 'failed': []}
+        if not isinstance(updates, list) or not updates:
+            return JsonResponse({'error': 'No updates provided'}, status=400)
 
-        for update in updates:
-            try:
-                customer = Customer.objects.get(id=update['customer_id'])
-                old_limit = customer.credit_limit
-                new_limit = Decimal(str(update['new_limit']))
-                reason = update.get('reason', 'Bulk update')
+        results = {
+            'success': [],
+            'failed': []
+        }
 
-                customer.credit_limit = new_limit
-                customer.save()
+        with transaction.atomic():
+            for update in updates:
+                try:
+                    customer_id = update.get('customer_id')
+                    new_limit = Decimal(str(update.get('new_limit', 0)))
+                    reason = update.get('reason', 'Bulk credit limit update')
 
-                # Log the change
-                CustomerCreditStatement.objects.create(
-                    customer=customer,
-                    transaction_type='ADJUSTMENT',
-                    amount=new_limit - old_limit,
-                    balance_before=old_limit,
-                    balance_after=new_limit,
-                    description=f"Bulk credit limit update: {old_limit} → {new_limit}. Reason: {reason}",
-                    created_by=request.user,
-                    reference_number=f"BULK_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                )
+                    if not customer_id:
+                        raise ValueError('Customer ID is required')
 
-                results['success'].append({
-                    'customer_id': customer.id,
-                    'name': customer.name,
-                    'old_limit': old_limit,
-                    'new_limit': new_limit
-                })
+                    if new_limit < 0:
+                        raise ValueError('Credit limit cannot be negative')
 
-            except Exception as e:
-                results['failed'].append({
-                    'customer_id': update.get('customer_id'),
-                    'error': str(e)
-                })
+                    customer = Customer.objects.select_for_update().get(id=customer_id)
 
-        return JsonResponse(results)
+                    old_limit = customer.credit_limit
+
+                    # ==========================
+                    # APPLY CREDIT UPDATE
+                    # ==========================
+                    customer.credit_limit = new_limit
+
+                    # Enable / disable credit
+                    customer.allow_credit = new_limit > 0
+
+                    # Recalculate balances
+                    customer.credit_available = max(
+                        Decimal('0'),
+                        customer.credit_limit - customer.credit_balance
+                    )
+
+                    # Update credit status
+                    if customer.has_overdue_invoices:
+                        customer.credit_status = 'WARNING'
+                    elif customer.credit_balance > customer.credit_limit:
+                        customer.credit_status = 'WARNING'
+                    elif customer.credit_balance > customer.credit_limit * Decimal('0.8'):
+                        customer.credit_status = 'WARNING'
+                    else:
+                        customer.credit_status = 'GOOD'
+
+                    customer.save()
+
+                    # ==========================
+                    # LOG CREDIT STATEMENT
+                    # ==========================
+                    CustomerCreditStatement.objects.create(
+                        customer=customer,
+                        transaction_type='ADJUSTMENT',
+                        amount=new_limit - old_limit,
+                        balance_before=customer.credit_balance,
+                        balance_after=customer.credit_balance,
+                        description=(
+                            f"Bulk credit limit update: "
+                            f"{old_limit} → {new_limit}. Reason: {reason}"
+                        ),
+                        created_by=request.user,
+                        reference_number=f"BULK-{customer.id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    )
+
+                    results['success'].append({
+                        'customer_id': customer.id,
+                        'name': customer.name,
+                        'old_limit': float(old_limit),
+                        'new_limit': float(new_limit),
+                        'allow_credit': customer.allow_credit,
+                        'credit_status': customer.credit_status
+                    })
+
+                except Exception as e:
+                    results['failed'].append({
+                        'customer_id': update.get('customer_id'),
+                        'error': str(e)
+                    })
+
+        return JsonResponse(results, status=200)
 
     except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        return JsonResponse({'error': 'Invalid JSON payload'}, status=400)
+
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
 
 class CustomerCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     """Create new customer with validation"""
@@ -673,26 +958,80 @@ def validate_customer_data(customer_type, name, phone, tin=None):
 @permission_required('customers.add_customer', raise_exception=True)
 @require_http_methods(["POST"])
 def bulk_customer_action(request):
-    """Handle bulk actions on customers including eFRIS sync"""
+    """Handle bulk actions on customers including eFRIS sync - FIXED VERSION"""
+
+    # Log the raw POST data for debugging
+    logger.debug(f"Bulk action POST data: {request.POST}")
+
     form = BulkCustomerActionForm(request.POST)
 
     if form.is_valid():
         action = form.cleaned_data['action']
-        selected_ids = request.POST.getlist('selected_customers')
 
+        # ROBUST ID PARSING - Handle multiple formats
+        selected_ids = []
+
+        # Method 1: Try getlist (standard Django form array)
+        ids_from_getlist = request.POST.getlist('selected_customers')
+        logger.debug(f"IDs from getlist: {ids_from_getlist}")
+
+        if ids_from_getlist:
+            # Check if it's a single string with comma-separated values
+            if len(ids_from_getlist) == 1 and ',' in str(ids_from_getlist[0]):
+                # Split comma-separated string
+                selected_ids = str(ids_from_getlist[0]).split(',')
+            else:
+                # Already a list
+                selected_ids = ids_from_getlist
+
+        # Method 2: Try getting as single value (fallback)
+        if not selected_ids:
+            ids_from_get = request.POST.get('selected_customers', '')
+            logger.debug(f"IDs from get: {ids_from_get}")
+            if ids_from_get:
+                if ',' in ids_from_get:
+                    selected_ids = ids_from_get.split(',')
+                else:
+                    selected_ids = [ids_from_get]
+
+        # Clean and convert to integers
+        try:
+            # Remove whitespace and empty strings
+            selected_ids = [id_str.strip() for id_str in selected_ids if id_str and str(id_str).strip()]
+
+            # Convert to integers
+            selected_ids = [int(id_str) for id_str in selected_ids]
+
+            logger.info(f"Parsed customer IDs: {selected_ids}")
+
+        except (ValueError, AttributeError) as e:
+            logger.error(f"Error parsing customer IDs: {e}", exc_info=True)
+            messages.error(request, _('Invalid customer IDs selected.'))
+            return redirect('customers:customer_list')
+
+        # Validate we have IDs
         if not selected_ids:
             messages.error(request, _('No customers selected.'))
             return redirect('customers:customer_list')
 
+        # Get customers
         customers = Customer.objects.filter(id__in=selected_ids)
 
+        # Verify we found the customers
+        if not customers.exists():
+            messages.error(request, _('No valid customers found for the selected IDs.'))
+            return redirect('customers:customer_list')
+
+        logger.info(f"Found {customers.count()} customers for action: {action}")
+
+        # Execute the action
         if action == 'activate':
-            customers.update(is_active=True)
-            messages.success(request, _('Selected customers activated.'))
+            count = customers.update(is_active=True)
+            messages.success(request, _('%(count)d customers activated.') % {'count': count})
 
         elif action == 'deactivate':
-            customers.update(is_active=False)
-            messages.success(request, _('Selected customers deactivated.'))
+            count = customers.update(is_active=False)
+            messages.success(request, _('%(count)d customers deactivated.') % {'count': count})
 
         elif action == 'sync_to_efris':
             # Filter customers who can be synced using updated validation
@@ -706,19 +1045,27 @@ def bulk_customer_action(request):
                 return redirect('customers:customer_list')
 
             try:
+                from efris.services import EFRISCustomerService
                 service = EFRISCustomerService()
                 success_count = 0
                 error_count = 0
+                errors = []
 
                 for customer in eligible_customers:
                     try:
                         result = service.register_customer(customer)
-                        if result['success']:
+                        if result.get('success'):
                             success_count += 1
+                            logger.info(f"Successfully synced customer {customer.id} to eFRIS")
                         else:
                             error_count += 1
+                            error_msg = result.get('error', 'Unknown error')
+                            errors.append(f"{customer.name}: {error_msg}")
+                            logger.warning(f"Failed to sync customer {customer.id}: {error_msg}")
                     except Exception as e:
                         error_count += 1
+                        errors.append(f"{customer.name}: {str(e)}")
+                        logger.error(f"Exception syncing customer {customer.id}: {e}", exc_info=True)
 
                 if success_count > 0:
                     messages.success(
@@ -731,8 +1078,12 @@ def bulk_customer_action(request):
                         request,
                         _('%(count)d customers failed to sync to eFRIS.') % {'count': error_count}
                     )
+                    # Show first few errors
+                    for error in errors[:3]:
+                        messages.warning(request, error)
 
             except Exception as e:
+                logger.error(f"Bulk eFRIS sync failed: {e}", exc_info=True)
                 messages.error(
                     request,
                     _('Bulk eFRIS sync failed: %(error)s') % {'error': str(e)}
@@ -742,84 +1093,264 @@ def bulk_customer_action(request):
             group = form.cleaned_data.get('group')
             if group:
                 group.customers.add(*customers)
-                messages.success(request, _('Customers added to group.'))
+                messages.success(
+                    request,
+                    _('%(count)d customers added to group "%(group)s".') % {
+                        'count': customers.count(),
+                        'group': group.name
+                    }
+                )
 
                 # Auto sync if group has auto_sync_to_efris enabled
                 if group.auto_sync_to_efris:
                     non_registered = customers.filter(efris_status='NOT_REGISTERED')
                     if non_registered.exists():
                         try:
+                            from efris.services import EFRISCustomerService
                             service = EFRISCustomerService()
                             for customer in non_registered:
                                 if customer.can_sync_to_efris:
-                                    service.register_customer(customer)
-                        except:
-                            pass  # Continue silently
+                                    try:
+                                        service.register_customer(customer)
+                                    except Exception as e:
+                                        logger.warning(f"Auto-sync failed for customer {customer.id}: {e}")
+                        except Exception as e:
+                            logger.warning(f"Group auto-sync failed: {e}")
+            else:
+                messages.error(request, _('No group selected.'))
 
         elif action == 'remove_from_group':
             group = form.cleaned_data.get('group')
             if group:
                 group.customers.remove(*customers)
-                messages.success(request, _('Customers removed from group.'))
+                messages.success(
+                    request,
+                    _('%(count)d customers removed from group "%(group)s".') % {
+                        'count': customers.count(),
+                        'group': group.name
+                    }
+                )
+            else:
+                messages.error(request, _('No group selected.'))
 
         elif action == 'export':
+            # Return the export response
             return export_customers(request, customers)
 
         elif action == 'delete':
             count = customers.count()
+            customer_names = list(customers.values_list('name', flat=True)[:5])
             customers.delete()
-            messages.success(request, _('%(count)d customers deleted.') % {'count': count})
+            messages.success(
+                request,
+                _('%(count)d customers deleted successfully.') % {'count': count}
+            )
+            logger.info(f"Deleted {count} customers: {customer_names}...")
 
         elif action == 'update_credit_limit':
-            # New action to bulk update credit limits
+            # Bulk update credit limits
             try:
                 credit_limit = form.cleaned_data.get('credit_limit')
                 if credit_limit is not None:
-                    customers.update(credit_limit=credit_limit)
+                    from datetime import datetime
+                    updated_count = 0
 
-                    # Create credit statements for each customer
                     for customer in customers:
+                        old_limit = customer.credit_limit
+                        customer.credit_limit = credit_limit
+                        customer.save()
+
+                        # Create credit statement
                         CustomerCreditStatement.objects.create(
                             customer=customer,
                             transaction_type='ADJUSTMENT',
-                            amount=credit_limit - customer.credit_limit,
-                            balance_before=customer.credit_limit,
+                            amount=credit_limit - old_limit,
+                            balance_before=old_limit,
                             balance_after=credit_limit,
                             description=f"Bulk credit limit update to {credit_limit}",
                             created_by=request.user,
                             reference_number=f"BULK_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                         )
+                        updated_count += 1
 
                     messages.success(
                         request,
-                        _('Credit limits updated for %(count)d customers.') % {'count': customers.count()}
+                        _('Credit limits updated for %(count)d customers.') % {'count': updated_count}
                     )
+                else:
+                    messages.error(request, _('No credit limit value provided.'))
+
             except Exception as e:
+                logger.error(f"Error updating credit limits: {e}", exc_info=True)
                 messages.error(
                     request,
                     _('Error updating credit limits: %(error)s') % {'error': str(e)}
                 )
 
         elif action == 'enable_credit':
-            customers.update(allow_credit=True)
+            count = customers.update(allow_credit=True)
             messages.success(
                 request,
-                _('Credit enabled for %(count)d customers.') % {'count': customers.count()}
+                _('Credit enabled for %(count)d customers.') % {'count': count}
             )
 
         elif action == 'disable_credit':
-            customers.update(allow_credit=False)
+            count = customers.update(allow_credit=False)
             messages.success(
                 request,
-                _('Credit disabled for %(count)d customers.') % {'count': customers.count()}
+                _('Credit disabled for %(count)d customers.') % {'count': count}
             )
+
+        else:
+            messages.error(request, _('Unknown action: %(action)s') % {'action': action})
 
     else:
         # Form validation failed
+        logger.warning(f"Form validation failed: {form.errors}")
         messages.error(request, _('Invalid form data. Please check your selections.'))
 
     return redirect('customers:customer_list')
 
+
+def export_customers(request, customers):
+    """Export selected customers to CSV/Excel based on request preference"""
+    export_format = request.POST.get('export_format', 'csv')
+
+    if export_format == 'excel':
+        return export_selected_customers_excel(customers)
+    else:
+        return export_selected_customers_csv(customers)
+
+
+def export_selected_customers_csv(customers):
+    """Export selected customers to CSV"""
+    import csv
+    from django.http import HttpResponse
+    from django.utils import timezone
+
+    response = HttpResponse(content_type='text/csv')
+    filename = f'customers_export_{timezone.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response)
+
+    # Headers - Import-ready format
+    headers = [
+        'Name*', 'Customer Type*', 'Phone*', 'Email', 'TIN', 'NIN', 'BRN',
+        'Physical Address', 'Postal Address', 'District', 'Country',
+        'Is VAT Registered', 'Credit Limit', 'Store Name*',
+        'Passport Number', 'Driving License', 'Voter ID', 'Alien ID',
+        'EFRIS Customer Type', 'Auto Sync EFRIS'
+    ]
+    writer.writerow(headers)
+
+    # Data
+    for customer in customers:
+        writer.writerow([
+            customer.name,
+            customer.customer_type,
+            customer.phone,
+            customer.email or '',
+            customer.tin or '',
+            customer.nin or '',
+            customer.brn or '',
+            customer.physical_address or '',
+            customer.postal_address or '',
+            customer.district or '',
+            customer.country or 'Uganda',
+            'Yes' if customer.is_vat_registered else 'No',
+            float(customer.credit_limit) if customer.credit_limit else 0,
+            customer.store.name,
+            customer.passport_number or '',
+            customer.driving_license or '',
+            customer.voter_id or '',
+            customer.alien_id or '',
+            customer.efris_customer_type or '',
+            'Yes' if customer.is_efris_registered else 'No',
+        ])
+
+    return response
+
+
+def export_selected_customers_excel(customers):
+    """Export selected customers to Excel"""
+    from io import BytesIO
+    import xlsxwriter
+    from django.http import HttpResponse
+    from django.utils import timezone
+
+    output = BytesIO()
+    workbook = xlsxwriter.Workbook(output)
+    worksheet = workbook.add_worksheet('Customers')
+
+    # Formats
+    header_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#4F46E5',
+        'font_color': 'white',
+        'border': 1,
+        'align': 'center'
+    })
+
+    cell_format = workbook.add_format({
+        'border': 1,
+        'align': 'left'
+    })
+
+    # Headers
+    headers = [
+        'Name*', 'Customer Type*', 'Phone*', 'Email', 'TIN', 'NIN', 'BRN',
+        'Physical Address', 'Postal Address', 'District', 'Country',
+        'Is VAT Registered', 'Credit Limit', 'Store Name*',
+        'Passport Number', 'Driving License', 'Voter ID', 'Alien ID',
+        'EFRIS Customer Type', 'Auto Sync EFRIS'
+    ]
+
+    for col, header in enumerate(headers):
+        worksheet.write(0, col, header, header_format)
+
+    # Data
+    row = 1
+    for customer in customers:
+        data = [
+            customer.name,
+            customer.customer_type,
+            customer.phone,
+            customer.email or '',
+            customer.tin or '',
+            customer.nin or '',
+            customer.brn or '',
+            customer.physical_address or '',
+            customer.postal_address or '',
+            customer.district or '',
+            customer.country or 'Uganda',
+            'Yes' if customer.is_vat_registered else 'No',
+            float(customer.credit_limit) if customer.credit_limit else 0,
+            customer.store.name,
+            customer.passport_number or '',
+            customer.driving_license or '',
+            customer.voter_id or '',
+            customer.alien_id or '',
+            customer.efris_customer_type or '',
+            'Yes' if customer.is_efris_registered else 'No',
+        ]
+
+        for col, value in enumerate(data):
+            worksheet.write(row, col, value, cell_format)
+
+        row += 1
+
+    workbook.close()
+    output.seek(0)
+
+    response = HttpResponse(
+        output.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    filename = f'customers_export_{timezone.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    return response
 
 def export_customers(request, customers=None):
     """Export customers to CSV with eFRIS information"""

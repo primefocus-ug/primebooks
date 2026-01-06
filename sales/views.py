@@ -1367,7 +1367,7 @@ def fiscalize_invoice_immediately(invoice, user):
 @permission_required("sales.add_sale", raise_exception=True)
 @require_http_methods(["GET", "POST"])
 def create_sale(request):
-    """Create new sale with tenant support"""
+    """Create new sale with tenant support and customer notes"""
     if request.method == 'GET':
         return render_sale_form(request)
     else:
@@ -1436,7 +1436,7 @@ def render_sale_form(request):
             'form': SaleForm(user=user),
             'company': company,
             'default_store': default_store,
-            'store_details': store_details,  # Pass store details to template
+            'store_details': store_details,
         }
 
         return render(request, 'sales/create_sale.html', context)
@@ -1444,7 +1444,7 @@ def render_sale_form(request):
 
 @transaction.atomic
 def process_sale_creation(request):
-    """Process sale creation with credit checking"""
+    """Process sale creation with credit checking and customer notes"""
     sale = None
     company = get_current_tenant(request)
 
@@ -1514,6 +1514,30 @@ def process_sale_creation(request):
 
             sale.save()
 
+            # ============================================================================
+            # NEW: HANDLE CUSTOMER NOTES
+            # ============================================================================
+            sale_note = request.POST.get('saleNote', '').strip()
+            note_is_important = request.POST.get('noteIsImportantField') == '1'
+            note_category = request.POST.get('noteCategoryField', 'GENERAL')
+
+            # Create note if provided and customer exists
+            if sale_note and sale.customer:
+                try:
+                    from customers.models import CustomerNote
+
+                    CustomerNote.objects.create(
+                        customer=sale.customer,
+                        author=request.user,
+                        note=f"Sale #{sale.document_number}: {sale_note}",
+                        category=note_category,
+                        is_important=note_is_important
+                    )
+                    logger.info(f"Customer note created for sale {sale.document_number}")
+                except Exception as note_error:
+                    logger.error(f"Failed to create customer note: {note_error}", exc_info=True)
+                    # Don't fail the sale creation if note fails
+
             # Handle payment for non-credit sales
             if sale.payment_method != 'CREDIT' and request.POST.get('payment_amount'):
                 handle_payment(sale, request.POST)
@@ -1554,6 +1578,10 @@ def process_sale_creation(request):
                     f'{sale.get_document_type_display()} #{sale.document_number} created successfully! '
                     f'Total: {sale.currency} {sale.total_amount:,.2f}'
                 )
+
+            # Add note confirmation to success message if note was created
+            if sale_note and sale.customer:
+                success_message += ' Customer note added.'
 
             messages.success(request, success_message)
             return redirect('sales:sale_detail', pk=sale.pk)
@@ -1940,6 +1968,7 @@ def validate_items_data(items_json):
     return validated_items
 
 
+
 def create_sale_record(request, sale_data, company):
     """Create sale record with correct initial status"""
 
@@ -1977,7 +2006,7 @@ def create_sale_items(sale, items_data):
     """Create sale items for products and services"""
     for item_data in items_data:
         try:
-            # Create the SaleItem instance without _skip_sale_update parameter
+            # Create the SaleItem instance
             sale_item = SaleItem(
                 sale=sale,
                 item_type=item_data['item_type'],
@@ -1999,6 +2028,30 @@ def create_sale_items(sale, items_data):
         except Exception as e:
             logger.error(f"Error creating sale item: {e}", exc_info=True)
             raise ValidationError(f"Failed to create sale item: {str(e)}")
+
+
+
+def create_stock_movements(sale):
+    """Create stock movements for products only"""
+    try:
+        for item in sale.items.select_related('product', 'service'):
+            if item.item_type != 'PRODUCT' or not item.product:
+                continue
+
+            StockMovement.objects.create(
+                product=item.product,
+                store=sale.store,
+                movement_type='SALE',
+                quantity=item.quantity,
+                reference=sale.document_number or f"SALE-{sale.id}",
+                unit_price=item.unit_price,
+                total_value=item.total_price,
+                created_by=sale.created_by,
+                notes=f"Sale: {sale.document_number}"
+            )
+
+    except Exception as e:
+        logger.error(f"Error creating stock movements: {e}", exc_info=True)
 
 
 def handle_payment(sale, post_data):
@@ -2023,30 +2076,8 @@ def handle_payment(sale, post_data):
             logger.info(f"Created payment {amount} for sale {sale.id}")
 
     except Exception as e:
-        logger.error(f"Error creating payment: {e}")
+        logger.error(f"Error creating payment: {e}", exc_info=True)
 
-
-def create_stock_movements(sale):
-    """Create stock movements for products only"""
-    try:
-        for item in sale.items.select_related('product', 'service'):
-            if item.item_type != 'PRODUCT' or not item.product:
-                continue
-
-            StockMovement.objects.create(
-                product=item.product,
-                store=sale.store,
-                movement_type='SALE',
-                quantity=item.quantity,
-                reference=sale.document_number or f"SALE-{sale.id}",
-                unit_price=item.unit_price,
-                total_value=item.total_price,
-                created_by=sale.created_by,
-                notes=f"Sale: {sale.document_number}"
-            )
-
-    except Exception as e:
-        logger.error(f"Error creating stock movements: {e}")
 
 
 def render_sale_form_with_errors(request):
@@ -2360,10 +2391,10 @@ def fiscalize_sale(request, sale_id):
 
         # ALL SALES (receipts and invoices) can be fiscalized directly
         try:
-            from .tasks import fiscalize_sale_async
+            from .tasks import fiscalize_invoice_async
 
             # Queue the fiscalization task
-            task_result = fiscalize_sale_async.delay(sale.pk, request.user.pk)
+            task_result = fiscalize_invoice_async.delay(sale.pk, request.user.pk)
 
             messages.success(
                 request,
@@ -2432,8 +2463,8 @@ def bulk_actions(request):
                             continue
 
                         # Queue fiscalization for ANY sale type (receipt or invoice)
-                        from .tasks import fiscalize_sale_async
-                        fiscalize_sale_async.delay(sale.pk, request.user.pk)
+                        from .tasks import fiscalize_invoice_async
+                        fiscalize_invoice_async.delay(sale.pk, request.user.pk)
                         total_queued += 1
 
                     except Exception as e:
@@ -2484,7 +2515,7 @@ def validate_stock_availability(store, items_data):
     errors = []
 
     for item_data in items_data:
-        if item_data['item_type'] != 'PRODUCT':
+        if item_data.get('item_type') != 'PRODUCT':
             continue
 
         product = item_data.get('product')
@@ -2510,7 +2541,7 @@ def validate_stock_availability(store, items_data):
                 )
 
         except Exception as e:
-            logger.error(f"Stock validation error: {e}")
+            logger.error(f"Stock validation error: {e}", exc_info=True)
             errors.append(f'Stock check failed for {product.name}')
 
     return errors

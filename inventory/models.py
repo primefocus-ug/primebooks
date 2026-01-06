@@ -2202,6 +2202,7 @@ class Stock(models.Model):
         return queryset.select_related('product', 'store')
 
 
+
 class StockMovement(models.Model):
     MOVEMENT_TYPES = [
         ('PURCHASE', 'Purchase'),
@@ -2211,6 +2212,7 @@ class StockMovement(models.Model):
         ('TRANSFER_IN', 'Transfer In'),
         ('TRANSFER_OUT', 'Transfer Out'),
     ]
+
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='movements', verbose_name=_("Product"))
     store = models.ForeignKey('stores.Store', on_delete=models.CASCADE, related_name='stock_movements',
                               verbose_name=_("Store"))
@@ -2225,10 +2227,23 @@ class StockMovement(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
 
+    # ==================== NEW: EFRIS Sync Fields ====================
+    defer_efris_sync = models.BooleanField(default=False, verbose_name=_("Defer EFRIS Sync"))
+    synced_to_efris = models.BooleanField(default=False, verbose_name=_("Synced to EFRIS"))
+    efris_sync_attempted = models.BooleanField(default=False, verbose_name=_("EFRIS Sync Attempted"))
+    efris_sync_error = models.TextField(blank=True, verbose_name=_("EFRIS Sync Error"))
+    efris_synced_at = models.DateTimeField(null=True, blank=True, verbose_name=_("EFRIS Synced At"))
+
     class Meta:
         verbose_name = _("Stock Movement")
         verbose_name_plural = _("Stock Movements")
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['store', 'product', '-created_at']),
+            models.Index(fields=['movement_type', '-created_at']),
+            models.Index(fields=['reference']),
+            models.Index(fields=['synced_to_efris', 'efris_sync_attempted']),
+        ]
 
     def __str__(self):
         return f"{self.movement_type} of {self.product.name} at {self.store.name}"
@@ -2244,29 +2259,28 @@ class StockMovement(models.Model):
 
         logger.info(f"💾 StockMovement.save() called - Type: {self.movement_type}, Qty: {self.quantity}")
 
+        is_new = self.pk is None
+
         # ========== CRITICAL: Only skip stock update for SALE movements ==========
         # Stock is already deducted by SaleItem.deduct_stock()
-        # TRANSFER_OUT and TRANSFER_IN should NOT be skipped - they need to update stock
         if self.movement_type == 'SALE':
             logger.info(f"⏭️ Skipping stock update for {self.movement_type} - already handled by SaleItem")
             super().save(*args, **kwargs)
 
-            # Trigger EFRIS sync for sale movements
-            try:
-                from inventory.tasks import sync_stock_movement_to_efris
-                transaction.on_commit(
-                    lambda: sync_stock_movement_to_efris.delay(self.id, connection.schema_name)
-                )
-                logger.info(f"🔁 Triggered EFRIS sync for movement {self.id} in schema '{connection.schema_name}'")
-            except Exception as e:
-                logger.error(f"Failed to trigger EFRIS sync: {e}")
+            # ✅ DEFER EFRIS sync for SALE movements until sale is fiscalized
+            if is_new and not self.defer_efris_sync:
+                # Check if the related sale is already fiscalized
+                if self._should_sync_to_efris():
+                    self._queue_efris_sync()
+                else:
+                    logger.info(f"⏸️ Deferring EFRIS sync for movement {self.id} - sale not yet fiscalized")
             return
         # ========================================================================
 
         # Save the movement first
         super().save(*args, **kwargs)
 
-        # Update stock for all other movement types (including TRANSFER_OUT and TRANSFER_IN)
+        # Update stock for all other movement types
         stock_record, created = Stock.objects.get_or_create(
             product=self.product,
             store=self.store,
@@ -2287,7 +2301,6 @@ class StockMovement(models.Model):
             stock_record.quantity -= self.quantity
             logger.info(f"➖ SUBTRACTING {self.quantity} from stock")
         elif self.movement_type == 'ADJUSTMENT':
-            # Adjustment can be positive or negative based on the quantity sign
             stock_record.quantity += self.quantity
             logger.info(f"⚖️ ADJUSTING stock by {self.quantity}")
         else:
@@ -2296,15 +2309,90 @@ class StockMovement(models.Model):
         stock_record.save()
         logger.info(f"📊 Stock AFTER movement save update: {stock_record.quantity} (was {old_qty})")
 
-        # Trigger EFRIS sync
+        # Queue EFRIS sync for non-SALE movements
+        if is_new and not self.defer_efris_sync:
+            self._queue_efris_sync()
+
+    def _should_sync_to_efris(self):
+        """
+        Check if this SALE movement should be synced to EFRIS.
+        Only sync if the related sale is already fiscalized.
+        """
+        if self.movement_type != 'SALE' or not self.reference:
+            return True  # Non-SALE movements can sync immediately
+
+        try:
+            from sales.models import Sale
+
+            # Extract sale number from reference
+            # Reference format: "Sale #RCP-20240101-0001" or just "RCP-20240101-0001"
+            sale_number = self.reference.replace('Sale #', '').strip()
+
+            # Find the related sale
+            sale = Sale.objects.filter(
+                document_number=sale_number,
+                store=self.store
+            ).first()
+
+            if not sale:
+                logger.warning(f"Sale {sale_number} not found for movement {self.id}")
+                return False
+
+            # Check if sale is fiscalized
+            if sale.is_fiscalized:
+                logger.info(f"✅ Sale {sale_number} is fiscalized - can sync movement")
+                return True
+            else:
+                logger.info(f"⏸️ Sale {sale_number} not yet fiscalized - deferring movement sync")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error checking sale fiscalization status: {e}")
+            return False
+
+    def _queue_efris_sync(self):
+        """Queue EFRIS sync task"""
         try:
             from inventory.tasks import sync_stock_movement_to_efris
+            from django.db import connection, transaction
+
+            # Use on_commit to ensure transaction is complete
             transaction.on_commit(
-                lambda: sync_stock_movement_to_efris.delay(self.id, connection.schema_name)
+                lambda: sync_stock_movement_to_efris.apply_async(
+                    args=[self.id, connection.schema_name],
+                    countdown=5  # Wait 5 seconds before syncing
+                )
             )
-            logger.info(f"🔁 Triggered EFRIS sync for movement {self.id} in schema '{connection.schema_name}'")
+            logger.info(f"📤 Queued EFRIS sync for stock movement {self.id}")
         except Exception as e:
-            logger.error(f"Failed to trigger EFRIS sync: {e}")
+            logger.error(f"Error queuing EFRIS sync: {e}")
+
+    def sync_to_efris_now(self):
+        """
+        Manually trigger EFRIS sync.
+        Called after sale is fiscalized.
+        """
+        try:
+            from inventory.tasks import sync_stock_movement_to_efris
+            from django.db import connection
+
+            # Check if already synced
+            if self.synced_to_efris:
+                logger.info(f"Stock movement {self.id} already synced to EFRIS")
+                return True
+
+            # Queue the sync task
+            sync_stock_movement_to_efris.apply_async(
+                args=[self.id, connection.schema_name],
+                countdown=2  # Small delay
+            )
+
+            logger.info(f"📤 Manually queued EFRIS sync for stock movement {self.id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error manually syncing movement to EFRIS: {e}")
+            return False
 
 class ImportLog(models.Model):
     """Detailed log entries for import operations"""

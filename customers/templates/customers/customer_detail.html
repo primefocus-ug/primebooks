@@ -6,7 +6,6 @@
 {% block title %}{{ customer.name }} | {{ company.trading_name|default:company.name }} | Customer Details | {{ block.super }}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/select2.min.css' %}">
 <link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
     .customer-avatar-lg {
@@ -237,6 +236,12 @@
 {% block content %}
 <!-- Main Content Tabs -->
 <ul class="nav nav-tabs mb-4" id="customerTab" role="tablist">
+    <li class="nav-item" role="presentation">
+    <button class="nav-link" id="sales-tab" data-bs-toggle="tab" data-bs-target="#sales" type="button" role="tab">
+        <i class="bi bi-cart3 me-1"></i>Sales History
+        <span class="badge bg-primary ms-1">{{ customer_sales_count }}</span>
+    </button>
+    </li>
     <li class="nav-item" role="presentation">
         <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview" type="button" role="tab">
             <i class="bi bi-house-door me-1"></i>Overview
@@ -543,7 +548,204 @@
             </div>
         </div>
     </div>
+    <!--sales history -->
+    <div class="tab-pane fade" id="sales" role="tabpanel">
+        <div class="row mb-4">
+            {# Sales Summary Cards #}
+            <div class="col-md-3 col-6 mb-3">
+                <div class="quick-stat">
+                    <div class="stat-value">{{ customer_sales_stats.total_sales }}</div>
+                    <div class="stat-label">Total Sales</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-3">
+                <div class="quick-stat">
+                    <div class="stat-value">{{ customer_sales_stats.total_amount|money }}</div>
+                    <div class="stat-label">Total Amount</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-3">
+                <div class="quick-stat">
+                    <div class="stat-value">{{ customer_sales_stats.pending_invoices }}</div>
+                    <div class="stat-label">Pending Invoices</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 mb-3">
+                <div class="quick-stat">
+                    <div class="stat-value">{{ customer_sales_stats.last_purchase|date:"M d, Y"|default:"Never" }}</div>
+                    <div class="stat-label">Last Purchase</div>
+                </div>
+            </div>
+        </div>
 
+        {# Quick Actions #}
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Sales Transactions</h5>
+            <div class="btn-group">
+                <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
+                    <i class="bi bi-filter me-1"></i>Filter
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="?sales_filter=all">All Sales</a></li>
+                    <li><a class="dropdown-item" href="?sales_filter=receipts">Receipts Only</a></li>
+                    <li><a class="dropdown-item" href="?sales_filter=invoices">Invoices Only</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="?sales_filter=pending">Pending Payment</a></li>
+                    <li><a class="dropdown-item" href="?sales_filter=paid">Paid</a></li>
+                    <li><a class="dropdown-item" href="?sales_filter=overdue">Overdue</a></li>
+                </ul>
+            </div>
+        </div>
+
+        {# Sales Table #}
+        <div class="card info-card">
+            <div class="card-body p-0">
+                {% if customer_sales %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Sale #</th>
+                                    <th>Type</th>
+                                    <th>Items</th>
+                                    <th class="text-end">Amount</th>
+                                    <th>Payment</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sale in customer_sales %}
+                                <tr>
+                                    <td>
+                                        <div class="fw-medium">{{ sale.created_at|date:"M d, Y" }}</div>
+                                        <small class="text-muted">{{ sale.created_at|time:"H:i" }}</small>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'sales:sale_detail' sale.pk %}" class="text-decoration-none">
+                                            <strong>{{ sale.sale_number|default:sale.id }}</strong>
+                                        </a>
+                                        {% if sale.efris_verified %}
+                                            <i class="bi bi-patch-check-fill text-success" title="eFRIS Verified"></i>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge {% if sale.document_type == 'INVOICE' %}bg-info{% else %}bg-secondary{% endif %}">
+                                            {{ sale.get_document_type_display }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark">{{ sale.items.count }} items</span>
+                                    </td>
+                                    <td class="text-end">
+                                        <strong>{{ sale.total_amount|money }}</strong>
+                                        {% if sale.discount_amount > 0 %}
+                                            <br><small class="text-muted">-{{ sale.discount_amount|money }} discount</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark">
+                                            {{ sale.get_payment_method_display }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if sale.payment_status == 'PAID' %}
+                                            <span class="badge bg-success">Paid</span>
+                                        {% elif sale.payment_status == 'PENDING' %}
+                                            <span class="badge bg-warning">Pending</span>
+                                        {% elif sale.payment_status == 'PARTIALLY_PAID' %}
+                                            <span class="badge bg-info">Partial</span>
+                                        {% elif sale.payment_status == 'OVERDUE' %}
+                                            <span class="badge bg-danger">Overdue</span>
+                                        {% elif sale.payment_status == 'VOIDED' %}
+                                            <span class="badge bg-secondary">Voided</span>
+                                        {% endif %}
+
+                                        {% if sale.is_voided %}
+                                            <br><span class="badge bg-danger">Voided</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <a href="{% url 'sales:sale_detail' sale.pk %}"
+                                               class="btn btn-outline-primary"
+                                               title="View Details">
+                                                <i class="bi bi-eye"></i>
+                                            </a>
+
+                                            {% if not sale.is_voided %}
+                                            <a href="{% url 'sales:print_receipt' sale.pk %}"
+                                               class="btn btn-outline-secondary"
+                                               title="Print"
+                                               target="_blank">
+                                                <i class="bi bi-printer"></i>
+                                            </a>
+
+                                            {% if sale.document_type == 'INVOICE' and sale.payment_status in 'PENDING,PARTIALLY_PAID' %}
+                                            <button type="button"
+                                                    class="btn btn-outline-success"
+                                                    title="Add Payment"
+                                                    onclick="showAddPaymentModal({{ sale.id }}, {{ sale.total_amount }}, {{ sale.amount_paid }})">
+                                                <i class="bi bi-cash"></i>
+                                            </button>
+                                            {% endif %}
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {# Pagination #}
+                    {% if is_sales_paginated %}
+                    <div class="card-footer bg-transparent">
+                        <nav aria-label="Sales pagination">
+                            <ul class="pagination justify-content-center mb-0">
+                                {% if sales_page.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?sales_page=1">First</a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?sales_page={{ sales_page.previous_page_number }}">Previous</a>
+                                    </li>
+                                {% endif %}
+
+                                <li class="page-item active">
+                                    <span class="page-link">{{ sales_page.number }} of {{ sales_paginator.num_pages }}</span>
+                                </li>
+
+                                {% if sales_page.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?sales_page={{ sales_page.next_page_number }}">Next</a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?sales_page={{ sales_paginator.num_pages }}">Last</a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    </div>
+                    {% endif %}
+                {% else %}
+                    {# Empty State #}
+                    <div class="text-center py-5">
+                        <i class="bi bi-cart-x text-muted" style="font-size: 4rem;"></i>
+                        <h4 class="mt-3">No Sales Found</h4>
+                        <p class="text-muted">This customer hasn't made any purchases yet.</p>
+                        {% if perms.sales.add_sale %}
+                        <a href="{% url 'sales:create_sale' %}?customer_id={{ customer.id }}"
+                           class="btn btn-primary">
+                            <i class="bi bi-cart-plus me-1"></i>Create First Sale
+                        </a>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
     <!-- Contact & Address Tab -->
     <div class="tab-pane fade" id="contact" role="tabpanel">
         <div class="row">
@@ -1134,9 +1336,67 @@
 <!-- Modals -->
 {% include 'customers/modals/add_note_modal.html' %}
 {% include 'customers/modals/credit_adjustment_modal.html' %}
+<div class="modal fade" id="addPaymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-cash me-2"></i>Add Payment
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addPaymentForm">
+                    <input type="hidden" id="paymentSaleId">
 
+                    <div class="alert alert-info mb-3">
+                        <div>Total Amount: <strong id="paymentTotalAmount">0</strong></div>
+                        <div>Already Paid: <strong id="paymentAlreadyPaid">0</strong></div>
+                        <div>Balance Due: <strong id="paymentBalanceDue">0</strong></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Payment Amount *</label>
+                        <input type="number" class="form-control" id="paymentAmount"
+                               min="0" step="100" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Payment Method *</label>
+                        <select class="form-select" id="paymentMethodSelect" required>
+                            <option value="CASH">Cash</option>
+                            <option value="MOBILE_MONEY">Mobile Money</option>
+                            <option value="BANK_TRANSFER">Bank Transfer</option>
+                            <option value="CARD">Card</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Reference Number</label>
+                        <input type="text" class="form-control" id="paymentReference"
+                               placeholder="Transaction reference...">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="paymentNotes" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    Cancel
+                </button>
+                <button type="button" class="btn btn-primary" onclick="submitPayment()">
+                    <i class="bi bi-check-circle me-1"></i>Add Payment
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
 <!-- JavaScript -->
-<script src="{% static 'js/select2.min.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize Select2
@@ -1380,6 +1640,68 @@ function showNotification(message, type) {
     } else {
         alert(`${type.toUpperCase()}: ${message}`);
     }
+}
+</script>
+<script>
+function showAddPaymentModal(saleId, totalAmount, amountPaid) {
+    document.getElementById('paymentSaleId').value = saleId;
+    document.getElementById('paymentTotalAmount').textContent = formatCurrency(totalAmount);
+    document.getElementById('paymentAlreadyPaid').textContent = formatCurrency(amountPaid);
+    document.getElementById('paymentBalanceDue').textContent = formatCurrency(totalAmount - amountPaid);
+    document.getElementById('paymentAmount').value = totalAmount - amountPaid;
+
+    const modal = new bootstrap.Modal(document.getElementById('addPaymentModal'));
+    modal.show();
+}
+
+async function submitPayment() {
+    const saleId = document.getElementById('paymentSaleId').value;
+    const amount = document.getElementById('paymentAmount').value;
+    const method = document.getElementById('paymentMethodSelect').value;
+    const reference = document.getElementById('paymentReference').value;
+    const notes = document.getElementById('paymentNotes').value;
+
+    if (!amount || amount <= 0) {
+        showNotification('Please enter a valid payment amount', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/sales/${saleId}/add-payment/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                amount: amount,
+                payment_method: method,
+                reference_number: reference,
+                notes: notes
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification('Payment added successfully', 'success');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addPaymentModal'));
+            modal.hide();
+            location.reload();
+        } else {
+            showNotification(data.error || 'Failed to add payment', 'error');
+        }
+    } catch (error) {
+        showNotification('Error adding payment: ' + error.message, 'error');
+    }
+}
+
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-UG', {
+        style: 'currency',
+        currency: 'UGX',
+        minimumFractionDigits: 0
+    }).format(amount);
 }
 </script>
 {% endblock %}

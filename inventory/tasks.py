@@ -433,8 +433,13 @@ def validate_services_efris_compliance(schema_name):
         }
 
 
-@shared_task(bind=True)
+
+@shared_task(bind=True, max_retries=5)  # Increased retries for SALE movements
 def sync_stock_movement_to_efris(self, movement_id: int, schema_name: str):
+    """
+    Sync stock movement to EFRIS T131.
+    For SALE movements, ensures the sale is fiscalized first.
+    """
     try:
         with schema_context(schema_name):
             from inventory.models import StockMovement
@@ -445,7 +450,7 @@ def sync_stock_movement_to_efris(self, movement_id: int, schema_name: str):
                 logger.error(f"[{schema_name}] ❌ Company not found for schema")
                 return None
 
-            # Check if EFRIS is configured for this company
+            # Check if EFRIS is configured
             if not _is_efris_configured(company):
                 logger.info(f"[{schema_name}] ⏭️ EFRIS not configured, skipping sync for movement {movement_id}")
                 return {
@@ -457,33 +462,151 @@ def sync_stock_movement_to_efris(self, movement_id: int, schema_name: str):
 
             movement = StockMovement.objects.select_related('product', 'store').get(pk=movement_id)
 
-            # Initialize EFRIS client with company parameter
+            # Check if already synced
+            if movement.synced_to_efris:
+                logger.info(f"[{schema_name}] ✅ Movement {movement_id} already synced")
+                return {
+                    'movement_id': movement_id,
+                    'schema': schema_name,
+                    'already_synced': True
+                }
+
+            # ✅ CRITICAL: For SALE movements, verify the sale is fiscalized
+            if movement.movement_type == 'SALE' and movement.reference:
+                from sales.models import Sale
+
+                # Extract sale number from reference
+                sale_number = movement.reference.replace('Sale #', '').strip()
+
+                sale = Sale.objects.filter(
+                    document_number=sale_number,
+                    store=movement.store
+                ).first()
+
+                if not sale:
+                    logger.warning(f"[{schema_name}] ⚠️ Sale {sale_number} not found for movement {movement_id}")
+                    return {
+                        'movement_id': movement_id,
+                        'schema': schema_name,
+                        'error': 'Sale not found',
+                        'skipped': True
+                    }
+
+                if not sale.is_fiscalized:
+                    logger.info(
+                        f"[{schema_name}] ⏸️ Sale {sale_number} not yet fiscalized - "
+                        f"deferring movement {movement_id} sync (attempt {self.request.retries + 1})"
+                    )
+                    # Retry later with exponential backoff
+                    countdown = 30 * (2 ** self.request.retries)
+                    raise self.retry(
+                        countdown=countdown,
+                        max_retries=10,  # More retries for waiting for fiscalization
+                        exc=Exception(f"Sale {sale_number} not yet fiscalized")
+                    )
+
+                # Use the EFRIS invoice number from the sale
+                fiscal_invoice_number = sale.efris_invoice_number
+                if not fiscal_invoice_number:
+                    logger.error(f"[{schema_name}] ❌ Sale {sale_number} fiscalized but no EFRIS invoice number")
+                    raise Exception("Missing EFRIS invoice number")
+            else:
+                # For non-SALE movements, use the reference as invoice number
+                fiscal_invoice_number = movement.reference
+
+            # Initialize EFRIS client
             client = EnhancedEFRISAPIClient(company=company)
 
             # Authenticate and sync
             client.ensure_authenticated()
-            result = client.t131_maintain_stock_from_movement(movement)
 
-            logger.info(f"[{schema_name}] ✅ EFRIS sync completed for movement {movement_id}: {result}")
-            return {"movement_id": movement_id, "schema": schema_name, "result": result}
+            # Pass the fiscal invoice number to the T131 sync
+            result = client.t131_maintain_stock_from_movement(
+                movement,
+                invoice_number=fiscal_invoice_number
+            )
+
+            if result.get('success'):
+                # Mark as synced
+                movement.synced_to_efris = True
+                movement.efris_synced_at = timezone.now()
+                movement.efris_sync_attempted = True
+                movement.efris_sync_error = ''
+                movement.save(update_fields=[
+                    'synced_to_efris', 'efris_synced_at',
+                    'efris_sync_attempted', 'efris_sync_error'
+                ])
+
+                logger.info(f"[{schema_name}] ✅ EFRIS sync completed for movement {movement_id}")
+                return {
+                    'movement_id': movement_id,
+                    'schema': schema_name,
+                    'success': True,
+                    'result': result
+                }
+            else:
+                raise Exception(result.get('message', 'Sync failed'))
 
     except StockMovement.DoesNotExist:
         logger.error(f"[{schema_name}] ❌ StockMovement {movement_id} does not exist")
         return None
-    except Exception as e:
-        logger.error(f"[{schema_name}] 🔥 Error syncing StockMovement {movement_id}: {str(e)}", exc_info=True)
 
-        # Only retry if it's not a configuration error
-        if "no efris_config" not in str(e).lower() and "not configured" not in str(e).lower():
-            raise self.retry(exc=e, countdown=30, max_retries=3)
-        else:
-            logger.info(f"[{schema_name}] ⏭️ Configuration error, not retrying: {str(e)}")
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"[{schema_name}] 🔥 Error syncing StockMovement {movement_id}: {error_msg}", exc_info=True)
+
+        # Mark as attempted with error
+        try:
+            with schema_context(schema_name):
+                movement = StockMovement.objects.get(pk=movement_id)
+                movement.efris_sync_attempted = True
+                movement.efris_sync_error = error_msg[:500]  # Truncate if too long
+                movement.save(update_fields=['efris_sync_attempted', 'efris_sync_error'])
+        except:
+            pass
+
+        # Don't retry for configuration errors
+        if any(x in error_msg.lower() for x in ['no efris_config', 'not configured', 'not found']):
+            logger.info(f"[{schema_name}] ⏭️ Configuration error, not retrying: {error_msg}")
             return {
                 'movement_id': movement_id,
                 'schema': schema_name,
-                'error': str(e),
+                'error': error_msg,
                 'skipped': True
             }
+
+        # Retry for "Invoice number does not exist" errors (sale might not be fiscalized yet)
+        if 'invoice number does not exist' in error_msg.lower() or '2810' in error_msg:
+            if self.request.retries < 10:  # More retries for this specific case
+                countdown = 30 * (2 ** self.request.retries)
+                logger.info(
+                    f"[{schema_name}] 🔄 Retrying movement {movement_id} in {countdown}s (attempt {self.request.retries + 1})")
+                raise self.retry(exc=e, countdown=countdown, max_retries=10)
+
+        # Retry for other errors
+        if self.request.retries < self.max_retries:
+            countdown = 30 * (2 ** self.request.retries)
+            logger.info(f"[{schema_name}] 🔄 Retrying movement {movement_id} in {countdown}s")
+            raise self.retry(exc=e, countdown=countdown, max_retries=self.max_retries)
+
+        return {
+            'movement_id': movement_id,
+            'schema': schema_name,
+            'error': error_msg,
+            'failed': True
+        }
+
+
+def _is_efris_configured(company):
+    """Check if EFRIS is configured for the company"""
+    try:
+        return (
+                hasattr(company, 'efris_config') and
+                company.efris_config is not None and
+                company.efris_config.enabled
+        )
+    except Exception:
+        return False
 
 class CallbackTask(Task):
     """Base task class with callback support"""

@@ -2072,22 +2072,21 @@ class EFRISDataTransformer:
     def get_numeric_tax_rate(self, tax_rate_value):
         """
         Convert EFRIS tax rate codes to numeric values
-        UPDATED: Return None for non-VAT companies (they use exempt category)
+        Return None for non-VAT companies (they use exempt category)
         """
         # Get company VAT status
         is_vat_enabled = getattr(self.company, 'is_vat_enabled', False)
 
         # Non-VAT companies use EXEMPT category (no tax calculation)
-        # Return None to signal exempt status
         if not is_vat_enabled:
-            return None  # Will be handled as exempt in builders
+            return None
 
         # VAT companies can use standard rates
         if isinstance(tax_rate_value, str):
             tax_rate_mapping = {
                 'A': 18.0,  # Standard VAT
-                'B': 0.0,  # Zero rate
-                'C': 0.0,  # Exempt
+                'B': 0.0,   # Zero rate
+                'C': 0.0,   # Exempt
                 'D': 18.0,  # Deemed
                 'E': 18.0,  # Standard
             }
@@ -2100,10 +2099,10 @@ class EFRISDataTransformer:
     def build_invoice_data(self, sale_or_invoice) -> Dict[str, Any]:
         """
         Build complete T109 data structure for ANY sale document (Receipt or Invoice)
-        UPDATED: Works with both Sale (receipts) and Invoice objects + VAT compliance validation
+        Works with both Sale (receipts) and Invoice objects + VAT compliance validation
         """
         try:
-            # ✅ Determine if we're working with Sale or Invoice
+            # Determine if we're working with Sale or Invoice
             if hasattr(sale_or_invoice, 'sale') and sale_or_invoice.sale:
                 # This is an Invoice object
                 sale = sale_or_invoice.sale
@@ -2113,14 +2112,13 @@ class EFRISDataTransformer:
                 sale = sale_or_invoice
                 invoice = None
 
-            # ✅ VALIDATE TAX COMPLIANCE FIRST
+            # VALIDATE TAX COMPLIANCE FIRST
             is_valid, errors = self.validate_tax_compliance(sale_or_invoice)
             if not is_valid:
                 logger.error(
                     f"Tax compliance validation failed for {sale.document_type} {sale.document_number}",
                     extra={'errors': errors}
                 )
-                # Log warning but don't raise - we'll force 0% in the builders
                 for error in errors:
                     logger.warning(f"Tax compliance issue: {error}")
 
@@ -2168,9 +2166,6 @@ class EFRISDataTransformer:
         """
         Validate tax compliance before EFRIS upload
         CRITICAL: Non-VAT companies MUST use 0% tax only
-
-        Returns:
-            Tuple of (is_valid, list_of_errors)
         """
         errors = []
 
@@ -2194,7 +2189,6 @@ class EFRISDataTransformer:
         if not is_vat_enabled:
             for item in items:
                 tax_rate_raw = item.tax_rate
-                # Check if original tax rate is not 0%
                 if tax_rate_raw not in ['B', 'C', '0', '0.0', '0%', 0, 0.0]:
                     item_name = ''
                     if hasattr(item, 'product') and item.product:
@@ -2211,11 +2205,7 @@ class EFRISDataTransformer:
         return len(errors) == 0, errors
 
     def _build_basic_info_from_sale(self, sale, invoice=None) -> Dict[str, Any]:
-        """
-        Build basic information from Sale object
-        UPDATED: Works with both receipts and invoices with VAT-aware invoiceKind
-        """
-        # Get document number
+        """Build basic information from Sale object"""
         document_number = sale.document_number or ''
 
         if not document_number:
@@ -2235,12 +2225,9 @@ class EFRISDataTransformer:
             if issue_date.tzinfo is None:
                 issue_date = django_timezone.make_aware(issue_date)
 
-            # Check age
             age_hours = (django_timezone.now() - issue_date).total_seconds() / 3600
             if age_hours > 24:
-                logger.warning(
-                    f"Sale {document_number} is {age_hours:.1f} hours old, using current time"
-                )
+                logger.warning(f"Sale {document_number} is {age_hours:.1f} hours old, using current time")
                 issue_date = datetime.now(dt_timezone.utc).astimezone(tz_eat)
             else:
                 issue_date = issue_date.astimezone(tz_eat)
@@ -2249,57 +2236,47 @@ class EFRISDataTransformer:
 
         issued_date_str = issue_date.strftime('%Y-%m-%d %H:%M:%S')
 
-        # Get operator
         operator = (
             getattr(invoice, 'operator_name', None) if invoice else None or
-                                                                    (
-                                                                        sale.created_by.get_full_name() if sale.created_by else None) or
-                                                                    'System'
+            (sale.created_by.get_full_name() if sale.created_by else None) or
+            'System'
         )
 
-        # ========== CRITICAL FIX: VAT-aware invoiceKind and invoiceType ==========
-        # Get company VAT status
+        # VAT-aware invoiceKind and invoiceType
         company = sale.store.company if sale.store else None
         is_vat_enabled = getattr(company, 'is_vat_enabled', False) if company else False
 
         if is_vat_enabled:
-            # VAT registered company - MUST use Tax Invoice (invoiceKind='1')
             efris_invoice_kind = {
-                'RECEIPT': '1',  # Tax Invoice (immediate payment) - CHANGED from '2'
-                'INVOICE': '1',  # Tax Invoice (credit sale)
-                'PROFORMA': '4',  # Proforma
-                'ESTIMATE': '4',  # Estimate (same as proforma)
+                'RECEIPT': '1',
+                'INVOICE': '1',
+                'PROFORMA': '4',
+                'ESTIMATE': '4',
             }.get(sale.document_type, '1')
-
-            efris_invoice_type = '1'  # Tax Invoice
+            efris_invoice_type = '1'
         else:
-            # Non-VAT registered company - Use Simplified Invoice/Receipt
             efris_invoice_kind = {
-                'RECEIPT': '2',  # Simplified Receipt
-                'INVOICE': '2',  # Simplified Invoice - CHANGED from '1'
-                'PROFORMA': '4',  # Proforma
-                'ESTIMATE': '4',  # Estimate
+                'RECEIPT': '2',
+                'INVOICE': '2',
+                'PROFORMA': '4',
+                'ESTIMATE': '4',
             }.get(sale.document_type, '2')
+            efris_invoice_type = '1'
 
-            efris_invoice_type = '1'  # Simplified Invoice
-
-        # Log for debugging
         logger.info(
             f"EFRIS Basic Info for {document_number}: "
-            f"invoiceKind={efris_invoice_kind}, "
-            f"invoiceType={efris_invoice_type}, "
-            f"VAT={is_vat_enabled}, "
-            f"DocType={sale.document_type}"
+            f"invoiceKind={efris_invoice_kind}, invoiceType={efris_invoice_type}, "
+            f"VAT={is_vat_enabled}, DocType={sale.document_type}"
         )
 
         return {
             "deviceNo": self.device_no,
-            "invoiceNo": '',  # EFRIS assigns this
+            "invoiceNo": '',
             "issuedDate": issued_date_str,
             "operator": operator,
             "currency": sale.currency or 'UGX',
-            "invoiceType": efris_invoice_type,  # ✅ Now dynamic based on VAT
-            "invoiceKind": efris_invoice_kind,  # ✅ Now VAT-aware
+            "invoiceType": efris_invoice_type,
+            "invoiceKind": efris_invoice_kind,
             "dataSource": "103",
             "invoiceIndustryCode": "101"
         }
@@ -2310,7 +2287,7 @@ class EFRISDataTransformer:
 
         if not customer:
             return {
-                "buyerType": "1",  # B2C
+                "buyerType": "1",
                 "buyerLegalName": "Walk-in Customer",
                 "buyerTin": "",
                 "buyerNinBrn": "",
@@ -2319,16 +2296,14 @@ class EFRISDataTransformer:
                 "buyerMobilePhone": ""
             }
 
-        # Determine buyer type
-        buyer_type = "1"  # Default B2C
+        buyer_type = "1"
         customer_tin = getattr(customer, 'tin', None)
         if customer_tin:
-            buyer_type = "0"  # B2B if has TIN
+            buyer_type = "0"
 
         return {
             "buyerTin": customer_tin or "",
-            "buyerNinBrn": (getattr(customer, 'nin', '') or
-                            getattr(customer, 'brn', '') or ""),
+            "buyerNinBrn": (getattr(customer, 'nin', '') or getattr(customer, 'brn', '') or ""),
             "buyerLegalName": getattr(customer, 'name', '') or "Unknown Customer",
             "buyerType": buyer_type,
             "buyerEmail": getattr(customer, 'email', '') or "",
@@ -2337,30 +2312,23 @@ class EFRISDataTransformer:
         }
 
     def _build_goods_details_from_sale(self, sale) -> List[Dict[str, Any]]:
-        """
-        Build goods details from Sale items
-        UPDATED: Support both Product and Service items + Non-VAT exempt handling
-        """
+        """Build goods details from Sale items"""
         goods_details = []
-        items = sale.items.all()  # SaleItem queryset
+        items = sale.items.all()
 
         if not items:
             raise Exception("Sale must have at least one item")
 
-        # Check VAT status ONCE at the start
         is_vat_enabled = getattr(sale.store.company, 'is_vat_enabled', False) if sale.store else False
 
         for idx, item in enumerate(items, 0):
             try:
-                # ✅ Check for both product AND service
                 product = getattr(item, 'product', None)
                 service = getattr(item, 'service', None) if not product else None
 
                 if product:
-                    # Product processing
                     item_code = getattr(product, 'efris_goods_code', None) or \
-                                getattr(product, 'sku', None) or \
-                                f"PROD{product.id}"
+                                getattr(product, 'sku', None) or f"PROD{product.id}"
                     item_name = product.name[:200]
                     unit_of_measure = product.unit_of_measure
 
@@ -2375,7 +2343,6 @@ class EFRISDataTransformer:
                     excise_entity = product if has_excise else None
 
                 elif service:
-                    # ✅ Service processing
                     item_code = service.code
                     item_name = service.name[:200]
                     unit_of_measure = service.unit_of_measure
@@ -2393,39 +2360,31 @@ class EFRISDataTransformer:
                 else:
                     raise Exception(f"Item {idx} has neither product nor service")
 
-                # Get amounts
                 quantity = float(item.quantity)
                 unit_price = float(item.unit_price)
                 line_total = quantity * unit_price
 
-                # Tax calculation - CRITICAL: Non-VAT companies use EXEMPT
+                # Tax calculation
                 tax_rate_raw = item.tax_rate
 
                 if is_vat_enabled:
-                    # VAT companies: use normal tax rates
                     tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
                     net_amount = line_total / (1 + tax_rate / 100)
                     tax_amount = line_total - net_amount
                     tax_rate_str = f"{tax_rate / 100:.4f}"
                 else:
-                    # Non-VAT companies: EXEMPT (no tax calculation)
-                    # Total = Net (no tax component)
+                    # Non-VAT: use "-" for taxRate in goods details (this is correct)
                     tax_rate = None
                     net_amount = line_total
                     tax_amount = 0.0
-                    tax_rate_str = "-"  # EFRIS uses "-" for exempt
+                    tax_rate_str = "-"
 
                     if tax_rate_raw not in ['B', 'C', '0', '0.0', '0%', '-']:
                         logger.warning(
                             f"Non-VAT company: using EXEMPT tax for item {item_name}",
-                            extra={
-                                'original_tax_rate': tax_rate_raw,
-                                'item_index': idx,
-                                'sale_id': sale.id
-                            }
+                            extra={'original_tax_rate': tax_rate_raw, 'item_index': idx, 'sale_id': sale.id}
                         )
 
-                # Build goods detail
                 goods_detail = {
                     "item": item_name,
                     "invoiceNo": str(sale.document_number),
@@ -2434,7 +2393,7 @@ class EFRISDataTransformer:
                     "unitOfMeasure": unit_of_measure,
                     "unitPrice": f"{unit_price:.2f}",
                     "total": f"{line_total:.2f}",
-                    "taxRate": tax_rate_str,  # "-" for non-VAT, "0.1800" for VAT
+                    "taxRate": tax_rate_str,
                     "tax": f"{tax_amount:.2f}",
                     "orderNumber": idx,
                     "discountFlag": "2",
@@ -2444,7 +2403,6 @@ class EFRISDataTransformer:
                     "goodsCategoryName": goods_category_name,
                 }
 
-                # Discount handling
                 discount_amount = float(getattr(item, 'discount_amount', 0) or 0)
                 if discount_amount > 0:
                     goods_detail["discountTotal"] = f"{discount_amount:.2f}"
@@ -2452,7 +2410,6 @@ class EFRISDataTransformer:
                 else:
                     goods_detail["discountTotal"] = ""
 
-                # Excise tax fields
                 if has_excise and excise_entity:
                     goods_detail["exciseFlag"] = "1"
                     goods_detail["categoryId"] = str(getattr(excise_entity, 'excise_category_id', ''))[:18]
@@ -2481,11 +2438,9 @@ class EFRISDataTransformer:
     def _build_tax_details_from_sale(self, sale) -> List[Dict[str, Any]]:
         """
         Build tax details from Sale items
-        UPDATED: Use EXEMPT category for non-VAT companies
+        CRITICAL FIX: For non-VAT companies, OMIT taxCategoryCode field entirely (don't use "-")
         """
         items = sale.items.all()
-
-        # Check VAT status
         is_vat_enabled = getattr(sale.store.company, 'is_vat_enabled', False) if sale.store else False
 
         # Group items by tax rate
@@ -2495,29 +2450,23 @@ class EFRISDataTransformer:
             tax_rate_raw = item.tax_rate
 
             if is_vat_enabled:
-                # VAT companies: use normal tax rates
                 tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
                 rate_key = f"{tax_rate:.2f}"
             else:
-                # Non-VAT companies: all items are EXEMPT
                 tax_rate = None
                 rate_key = "EXEMPT"
 
-            # Calculate amounts
             quantity = float(item.quantity)
             unit_price = float(item.unit_price)
             line_total = quantity * unit_price
 
             if is_vat_enabled and tax_rate is not None:
-                # Split into net and tax
                 net_amount = line_total / (1 + tax_rate / 100)
                 tax_amount = line_total - net_amount
             else:
-                # EXEMPT: total = net, no tax
                 net_amount = line_total
                 tax_amount = 0.0
 
-            # Group by tax rate
             if rate_key not in tax_categories:
                 tax_categories[rate_key] = {
                     'rate': tax_rate,
@@ -2537,16 +2486,17 @@ class EFRISDataTransformer:
             gross = net + tax
 
             if rate_key == "EXEMPT":
-                # Non-VAT: EXEMPT category
+                # ✅ CRITICAL FIX: For non-VAT, OMIT taxCategoryCode and use "-" for taxRate
                 tax_details.append({
                     "netAmount": f"{net:.2f}",
-                    "taxRate": "-",  # EFRIS uses "-" for exempt
+                    "taxRate": "-",  # ✅ "-" is correct for taxRate in non-VAT
                     "taxAmount": f"{tax:.2f}",
                     "grossAmount": f"{gross:.2f}",
                     "taxRateName": "Non-VAT Exempt"
+                    # ✅ NO taxCategoryCode field for non-VAT
                 })
             else:
-                # VAT companies: normal tax categories
+                # VAT companies: include taxCategoryCode
                 if rate == 18.0:
                     tax_category_code = "01"
                     tax_rate_name = "Standard Rate (18%)"
@@ -2558,6 +2508,7 @@ class EFRISDataTransformer:
                     tax_rate_name = f"Rate ({rate}%)"
 
                 tax_details.append({
+                    "taxCategoryCode": tax_category_code,  # ✅ Include for VAT companies
                     "netAmount": f"{net:.2f}",
                     "taxRate": f"{rate / 100:.4f}",
                     "taxAmount": f"{tax:.2f}",
@@ -2571,20 +2522,17 @@ class EFRISDataTransformer:
         """Build payment modes from Sale"""
         payment_modes = []
 
-        # Try to get actual payment methods
         if hasattr(sale, 'payments') and hasattr(sale.payments, 'exists'):
             if sale.payments.exists():
                 for idx, payment in enumerate(sale.payments.all()):
                     payment_method = getattr(payment, 'payment_method', 'CASH')
                     amount = getattr(payment, 'amount', 0)
-
                     payment_modes.append({
                         "paymentMode": self._map_payment_mode(payment_method),
                         "paymentAmount": f"{float(amount):.2f}",
                         "orderNumber": chr(97 + idx)
                     })
 
-        # Try payment_method field on sale itself
         elif hasattr(sale, 'payment_method'):
             payment_method = sale.payment_method
             payment_modes.append({
@@ -2593,10 +2541,9 @@ class EFRISDataTransformer:
                 "orderNumber": "a"
             })
 
-        # Default to cash
         if not payment_modes:
             payment_modes.append({
-                "paymentMode": "102",  # Cash
+                "paymentMode": "102",
                 "paymentAmount": f"{total_amount:.2f}",
                 "orderNumber": "a"
             })
@@ -2605,20 +2552,16 @@ class EFRISDataTransformer:
 
     def _build_buyer_details(self, invoice) -> Dict[str, Any]:
         """Build buyer details from invoice/sale"""
-        # Try to get customer from invoice or sale
         customer = None
 
-        # Try invoice.customer first
         if hasattr(invoice, 'customer') and invoice.customer:
             customer = invoice.customer
-        # Try invoice.sale.customer
         elif hasattr(invoice, 'sale') and invoice.sale:
             customer = getattr(invoice.sale, 'customer', None)
 
-        # If no customer, return walk-in customer
         if not customer:
             return {
-                "buyerType": "1",  # B2C
+                "buyerType": "1",
                 "buyerLegalName": "Walk-in Customer",
                 "buyerTin": "",
                 "buyerNinBrn": "",
@@ -2627,16 +2570,14 @@ class EFRISDataTransformer:
                 "buyerMobilePhone": ""
             }
 
-        # Determine buyer type
-        buyer_type = "1"  # Default B2C
+        buyer_type = "1"
         customer_tin = getattr(customer, 'tin', None)
         if customer_tin:
-            buyer_type = "0"  # B2B if has TIN
+            buyer_type = "0"
 
         return {
             "buyerTin": customer_tin or "",
-            "buyerNinBrn": (getattr(customer, 'nin', '') or
-                            getattr(customer, 'brn', '') or ""),
+            "buyerNinBrn": (getattr(customer, 'nin', '') or getattr(customer, 'brn', '') or ""),
             "buyerLegalName": getattr(customer, 'name', '') or "Unknown Customer",
             "buyerType": buyer_type,
             "buyerEmail": getattr(customer, 'email', '') or "",
@@ -2646,10 +2587,9 @@ class EFRISDataTransformer:
 
     def _build_seller_details(self) -> Dict[str, Any]:
         """Build seller details from company information"""
-        # Simple reference number - timestamp based
-        timestamp = int(time.time() * 1000)  # milliseconds since epoch
+        timestamp = int(time.time() * 1000)
         random_suffix = get_random_string(4, allowed_chars='0123456789')
-        reference_no = f"REF{timestamp}{random_suffix}" #f"+256789000826"  # Or use: f"REF{timestamp}{random_suffix}"
+        reference_no = f"REF{timestamp}{random_suffix}"
 
         return {
             "tin": self.company.tin,
@@ -2669,65 +2609,47 @@ class EFRISDataTransformer:
         }
 
     def _build_basic_info(self, invoice) -> Dict[str, Any]:
-        """Build basic invoice information - FIXED date and invoice number handling"""
-
-        # CRITICAL: Get invoice number - MUST NOT BE EMPTY
-        # The invoice should already have invoice_number from save()
+        """Build basic invoice information"""
         invoice_no = getattr(invoice, 'invoice_number', None) or ''
 
         if not invoice_no:
-            # Fallback: try to generate if not present
             try:
                 invoice_no = invoice.generate_invoice_number()
-                # Save it so it's not regenerated
                 invoice.invoice_number = invoice_no
                 invoice.save(update_fields=['invoice_number'])
             except Exception as e:
                 logger.error(f"Failed to generate invoice number: {e}")
-                # Last resort: create a temporary number
                 invoice_no = f"TMP-{timezone.now().strftime('%Y%m%d%H%M%S')}-{getattr(invoice, 'id', 0)}"
 
-        # CRITICAL FIX: Use EAT timezone (UTC+3)
         from datetime import timezone as dt_timezone
         tz_eat = dt_timezone(timedelta(hours=3))
 
         issue_date = getattr(invoice, 'issue_date', None) or getattr(invoice, 'created_at', None)
 
         if issue_date:
-            # Convert to datetime if date object
             if isinstance(issue_date, date) and not isinstance(issue_date, datetime):
                 issue_date = datetime.combine(issue_date, datetime.now().time())
 
-            # Make timezone-aware if naive
             if issue_date.tzinfo is None:
                 issue_date = django_timezone.make_aware(issue_date)
 
-            # Check age - use current time if older than 24 hours
             age_hours = (django_timezone.now() - issue_date).total_seconds() / 3600
             if age_hours > 24:
-                logger.warning(
-                    f"Invoice {invoice_no} is {age_hours:.1f} hours old, using current time"
-                )
+                logger.warning(f"Invoice {invoice_no} is {age_hours:.1f} hours old, using current time")
                 issue_date = datetime.now(dt_timezone.utc).astimezone(tz_eat)
             else:
-                # Convert to EAT
                 issue_date = issue_date.astimezone(tz_eat)
         else:
-            # No date - use current time in EAT
             issue_date = datetime.now(dt_timezone.utc).astimezone(tz_eat)
 
-        # Format for EFRIS
         issued_date_str = issue_date.strftime('%Y-%m-%d %H:%M:%S')
 
-        # Get operator name
         operator = (
                 getattr(invoice, 'operator_name', None) or
                 (invoice.created_by.get_full_name() if getattr(invoice, 'created_by', None) else None) or
                 'System'
         )
 
-        # ========== CRITICAL FIX: VAT-aware invoiceKind and invoiceType ==========
-        # Get company VAT status
         company = invoice.company if hasattr(invoice, 'company') else None
         if not company and hasattr(invoice, 'store') and invoice.store:
             company = invoice.store.company
@@ -2735,50 +2657,42 @@ class EFRISDataTransformer:
         is_vat_enabled = getattr(company, 'is_vat_enabled', False) if company else False
 
         if is_vat_enabled:
-            # VAT registered company - MUST use Tax Invoice (invoiceKind='1')
             efris_invoice_kind = {
-                'RECEIPT': '1',  # Tax Invoice (immediate payment)
-                'INVOICE': '1',  # Tax Invoice (credit sale)
-                'PROFORMA': '4',  # Proforma
-                'ESTIMATE': '4',  # Estimate (same as proforma)
+                'RECEIPT': '1',
+                'INVOICE': '1',
+                'PROFORMA': '4',
+                'ESTIMATE': '4',
             }.get(getattr(invoice, 'document_type', 'INVOICE'), '1')
-
-            efris_invoice_type = '1'  # Tax Invoice
+            efris_invoice_type = '1'
         else:
-            # Non-VAT registered company - Use Simplified Invoice/Receipt
             efris_invoice_kind = {
-                'RECEIPT': '2',  # Simplified Receipt
-                'INVOICE': '2',  # Simplified Invoice
-                'PROFORMA': '4',  # Proforma
-                'ESTIMATE': '4',  # Estimate
+                'RECEIPT': '2',
+                'INVOICE': '2',
+                'PROFORMA': '4',
+                'ESTIMATE': '4',
             }.get(getattr(invoice, 'document_type', 'INVOICE'), '2')
+            efris_invoice_type = '1'
 
-            efris_invoice_type = '1'  # Simplified Invoice
-
-        # Log for debugging
         logger.info(
-            f"EFRIS Basic Info for {invoice_no}: "
-            f"invoiceKind={efris_invoice_kind}, "
-            f"invoiceType={efris_invoice_type}, "
-            f"VAT={is_vat_enabled}, "
+            f"EFRIS Basic Info for {invoice_no}: invoiceKind={efris_invoice_kind}, "
+            f"invoiceType={efris_invoice_type}, VAT={is_vat_enabled}, "
             f"DocType={getattr(invoice, 'document_type', 'INVOICE')}"
         )
 
         return {
             "deviceNo": self.device_no,
-            "invoiceNo": '',  # Now guaranteed to have a value
+            "invoiceNo": '',
             "issuedDate": issued_date_str,
             "operator": operator,
             "currency": getattr(invoice, 'currency_code', None) or 'UGX',
-            "invoiceType": efris_invoice_type,  # ✅ Now dynamic based on VAT
-            "invoiceKind": efris_invoice_kind,  # ✅ Now VAT-aware
+            "invoiceType": efris_invoice_type,
+            "invoiceKind": efris_invoice_kind,
             "dataSource": "103",
             "invoiceIndustryCode": "101"
         }
 
     def _build_summary(self, invoice) -> Dict[str, Any]:
         """Build invoice summary with payment modes"""
-
         subtotal = float(getattr(invoice, 'subtotal', 0))
         tax_amount = float(getattr(invoice, 'tax_amount', 0))
         total_amount = float(getattr(invoice, 'total_amount', 0))
@@ -2786,7 +2700,6 @@ class EFRISDataTransformer:
         items = self._get_invoice_items(invoice)
         item_count = len(items) if items else 1
 
-        # Build payment modes with proper rounding
         payment_modes = self._build_payment_modes(invoice, total_amount)
 
         return {
@@ -2796,41 +2709,36 @@ class EFRISDataTransformer:
             "itemCount": str(item_count),
             "modeCode": "1",
             "remarks": getattr(invoice, 'notes', '') or "Invoice via EFRIS",
-            "payWay": payment_modes  # CRITICAL: Add payment modes
+            "payWay": payment_modes
         }
 
     def _build_payment_modes(self, invoice, total_amount: float) -> List[Dict]:
-        """Build payment modes with proper rounding - EXACTLY as in working script"""
-
+        """Build payment modes with proper rounding"""
         payment_modes = []
 
-        # Try to get actual payment methods from invoice
         if hasattr(invoice, 'payments') and hasattr(invoice.payments, 'exists'):
             if invoice.payments.exists():
                 for idx, payment in enumerate(invoice.payments.all()):
                     payment_method = getattr(payment, 'payment_method', 'CASH')
                     amount = getattr(payment, 'amount', 0)
-
                     payment_modes.append({
                         "paymentMode": self._map_payment_mode(payment_method),
-                        "paymentAmount": f"{float(amount):.2f}",  # FIXED: Round to 2 decimals
-                        "orderNumber": chr(97 + idx)  # a, b, c, etc.
+                        "paymentAmount": f"{float(amount):.2f}",
+                        "orderNumber": chr(97 + idx)
                     })
 
-        # Try payment_mode field on invoice itself
         elif hasattr(invoice, 'payment_mode'):
             payment_method = getattr(invoice, 'payment_mode', 'CASH')
             payment_modes.append({
                 "paymentMode": self._map_payment_mode(payment_method),
-                "paymentAmount": f"{total_amount:.2f}",  # FIXED: Round to 2 decimals
+                "paymentAmount": f"{total_amount:.2f}",
                 "orderNumber": "a"
             })
 
-        # Default to cash for full amount
         if not payment_modes:
             payment_modes.append({
-                "paymentMode": "102",  # Cash
-                "paymentAmount": f"{total_amount:.2f}",  # FIXED: Round to 2 decimals
+                "paymentMode": "102",
+                "paymentAmount": f"{total_amount:.2f}",
                 "orderNumber": "a"
             })
 
@@ -2853,10 +2761,7 @@ class EFRISDataTransformer:
         return mapping.get(str(payment_method).upper(), '102')
 
     def _build_goods_details(self, invoice) -> List[Dict[str, Any]]:
-        """
-        Build goods details matching EFRIS T109 specification exactly
-        UPDATED: Support both Product and Service models + Non-VAT exempt handling
-        """
+        """Build goods details matching EFRIS T109 specification"""
         goods_details = []
         items = self._get_invoice_items(invoice)
         invoice_no = getattr(invoice, 'number', None) or getattr(invoice, 'invoice_number', None)
@@ -2868,7 +2773,6 @@ class EFRISDataTransformer:
         if not items:
             raise Exception("Invoice must have at least one item")
 
-        # Check VAT status ONCE at the start
         is_vat_enabled = getattr(self.company, 'is_vat_enabled', False)
 
         for idx, item in enumerate(items, 0):
@@ -2886,7 +2790,7 @@ class EFRISDataTransformer:
 
                     if product.category:
                         goods_category_id = product.category.efris_commodity_category_code or ''
-                        goods_category_name = product.category.efris_commodity_category_code or ''
+                        goods_category_name = product.category.name or ''
                     else:
                         goods_category_id = ''
                         goods_category_name = ''
@@ -2901,7 +2805,7 @@ class EFRISDataTransformer:
 
                     if service.category:
                         goods_category_id = service.category.efris_commodity_category_code or ''
-                        goods_category_name = service.category.efris_commodity_category_code or ''
+                        goods_category_name = service.category.name or ''
                     else:
                         goods_category_id = '100000000000000000'
                         goods_category_name = 'General Services'
@@ -2914,14 +2818,12 @@ class EFRISDataTransformer:
                         excise_entity = None
 
                 else:
-                    raise Exception(f"Item {idx} has no product or service - cannot fiscalize")
+                    raise Exception(f"Item {idx} has no product or service")
 
-                # Get amounts
                 quantity = float(getattr(item, 'quantity', 1))
                 unit_price = float(getattr(item, 'unit_price', 0) or getattr(item, 'price', 0))
                 line_total = quantity * unit_price
 
-                # Tax calculation - CRITICAL: Non-VAT uses EXEMPT
                 tax_rate_raw = getattr(item, 'tax_rate', 'A')
 
                 if is_vat_enabled:
@@ -2930,7 +2832,6 @@ class EFRISDataTransformer:
                     tax_amount = line_total - net_amount
                     tax_rate_str = f"{tax_rate / 100:.4f}"
                 else:
-                    # Non-VAT: EXEMPT
                     tax_rate = None
                     net_amount = line_total
                     tax_amount = 0.0
@@ -2947,7 +2848,6 @@ class EFRISDataTransformer:
                             }
                         )
 
-                # Build goods detail
                 goods_detail = {
                     "item": item_name,
                     "invoiceNo": str(invoice_no),
@@ -2966,7 +2866,6 @@ class EFRISDataTransformer:
                     "goodsCategoryName": goods_category_name,
                 }
 
-                # Discount handling
                 discount_amount = float(getattr(item, 'discount_amount', 0) or 0)
                 if discount_amount > 0:
                     goods_detail["discountTotal"] = f"{discount_amount:.2f}"
@@ -2974,7 +2873,6 @@ class EFRISDataTransformer:
                 else:
                     goods_detail["discountTotal"] = ""
 
-                # Excise tax fields
                 if has_excise and excise_entity:
                     goods_detail["exciseFlag"] = "1"
                     goods_detail["categoryId"] = str(getattr(excise_entity, 'excise_category_id', ''))[:18]
@@ -3003,14 +2901,11 @@ class EFRISDataTransformer:
     def _build_tax_details(self, invoice) -> List[Dict[str, Any]]:
         """
         Build tax details summary by tax category
-        UPDATED: Use EXEMPT category for non-VAT companies
+        CRITICAL FIX: For non-VAT companies, OMIT taxCategoryCode field
         """
         items = self._get_invoice_items(invoice)
-
-        # Check VAT status
         is_vat_enabled = getattr(self.company, 'is_vat_enabled', False)
 
-        # Group items by tax rate
         tax_categories = {}
 
         for item in items:
@@ -3023,7 +2918,6 @@ class EFRISDataTransformer:
                 tax_rate = None
                 rate_key = "EXEMPT"
 
-            # Calculate amounts
             quantity = float(getattr(item, 'quantity', 1))
             unit_price = float(getattr(item, 'unit_price', 0) or getattr(item, 'price', 0))
             line_total = quantity * unit_price
@@ -3045,7 +2939,6 @@ class EFRISDataTransformer:
             tax_categories[rate_key]['net_amount'] += net_amount
             tax_categories[rate_key]['tax_amount'] += tax_amount
 
-        # Build tax details array
         tax_details = []
         for rate_key, amounts in tax_categories.items():
             rate = amounts['rate']
@@ -3054,12 +2947,14 @@ class EFRISDataTransformer:
             gross = net + tax
 
             if rate_key == "EXEMPT":
+                # ✅ CRITICAL: OMIT taxCategoryCode for non-VAT
                 tax_details.append({
                     "netAmount": f"{net:.2f}",
                     "taxRate": "-",
                     "taxAmount": f"{tax:.2f}",
                     "grossAmount": f"{gross:.2f}",
                     "taxRateName": "Non-VAT Exempt"
+                    # NO taxCategoryCode
                 })
             else:
                 if rate == 18.0:
@@ -3073,6 +2968,7 @@ class EFRISDataTransformer:
                     tax_rate_name = f"Rate ({rate}%)"
 
                 tax_details.append({
+                    "taxCategoryCode": tax_category_code,  # ✅ Include for VAT
                     "netAmount": f"{net:.2f}",
                     "taxRate": f"{rate / 100:.4f}",
                     "taxAmount": f"{tax:.2f}",
@@ -3092,9 +2988,11 @@ class EFRISDataTransformer:
                     "taxAmount": "0.00",
                     "grossAmount": f"{subtotal:.2f}",
                     "taxRateName": "Non-VAT Exempt"
+                    # NO taxCategoryCode
                 })
             else:
                 tax_details.append({
+                    "taxCategoryCode": "01" if tax_amount > 0 else "02",
                     "netAmount": f"{subtotal:.2f}",
                     "taxRate": "0.1800" if tax_amount > 0 else "0.0000",
                     "taxAmount": f"{tax_amount:.2f}",
@@ -3105,13 +3003,9 @@ class EFRISDataTransformer:
         return tax_details
 
     def _build_summary_from_tax_details(self, invoice, tax_details: List[Dict]) -> Dict[str, Any]:
-        """
-        Build summary section from tax_details to ensure exact matching
-        EFRIS validates: summary.taxAmount = sum(taxDetails[].taxAmount)
-        """
+        """Build summary section from tax_details to ensure exact matching"""
         from decimal import Decimal
 
-        # Sum from tax_details (source of truth)
         total_net = Decimal('0')
         total_tax = Decimal('0')
         total_gross = Decimal('0')
@@ -3121,18 +3015,15 @@ class EFRISDataTransformer:
             total_tax += Decimal(tax_detail['taxAmount'])
             total_gross += Decimal(tax_detail['grossAmount'])
 
-        # Get item count
         items = self._get_invoice_items(invoice)
         item_count = len(items) if items else 1
 
-        # Build payment modes
         payment_modes = self._build_payment_modes(invoice, float(total_gross))
 
-        # CRITICAL: Use exact values from tax_details
         return {
             "netAmount": f"{total_net:.2f}",
-            "taxAmount": f"{total_tax:.2f}",  # ← Must match sum of taxDetails
-            "grossAmount": f"{total_gross:.2f}",  # ← Must match sum of taxDetails
+            "taxAmount": f"{total_tax:.2f}",
+            "grossAmount": f"{total_gross:.2f}",
             "itemCount": str(item_count),
             "modeCode": "1",
             "remarks": getattr(invoice, 'notes', '') or "Invoice via EFRIS",
@@ -3141,7 +3032,6 @@ class EFRISDataTransformer:
 
     def _get_invoice_items(self, invoice) -> List:
         """Get invoice items with multiple attribute attempts"""
-        # Try different item attributes
         for attr in ['items', 'line_items', 'invoice_items', 'sale_items']:
             if hasattr(invoice, attr):
                 items = getattr(invoice, attr)
@@ -3150,7 +3040,6 @@ class EFRISDataTransformer:
                 elif hasattr(items, '__iter__'):
                     return list(items)
 
-        # Try from related sale
         if hasattr(invoice, 'sale') and invoice.sale:
             return self._get_invoice_items(invoice.sale)
 

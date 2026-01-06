@@ -1099,7 +1099,13 @@ body {
                         <option value="{{ store.id }}"
                                 {% if default_store and store.id == default_store.id %}selected{% endif %}
                                 data-code="{{ store.code }}"
-                                data-location="{{ store.location }}">
+                                data-location="{{ store.location }}"
+                                data-phone="{{ store.phone|default:'' }}"
+                                data-email="{{ store.email|default:'' }}"
+                                data-tin="{{ store.tin|default:'' }}"
+                                data-address="{{ store.physical_address|default:'' }}"
+                                data-logo="{% if store.logo %}{{ store.logo.url }}{% endif %}"
+                                data-type="{{ store.get_store_type_display }}">
                             {{ store.name }} ({{ store.code }}) - {{ store.location }}
                         </option>
                         {% endfor %}
@@ -1119,26 +1125,30 @@ body {
                     <h6 class="card-title mb-3">
                         <i class="bi bi-file-text me-2"></i>{% trans "Document Type" %}
                     </h6>
-                    <div class="btn-group w-100" role="group">
-                        <input type="radio" class="btn-check" name="document_type"
-                               id="docReceipt" value="RECEIPT" checked>
-                        <label class="btn btn-outline-primary" for="docReceipt">
-                            <i class="bi bi-receipt me-1"></i>{% trans "Receipt" %}
-                        </label>
+                    <div class="row g-2">
+                        <div class="col-8">
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="document_type"
+                                       id="docReceipt" value="RECEIPT" checked>
+                                <label class="btn btn-outline-primary" for="docReceipt">
+                                    <i class="bi bi-receipt me-1"></i>{% trans "Receipt" %}
+                                </label>
 
-                        <input type="radio" class="btn-check" name="document_type"
-                               id="docInvoice" value="INVOICE">
-                        <label class="btn btn-outline-primary" for="docInvoice">
-                            <i class="bi bi-file-earmark-text me-1"></i>{% trans "Invoice" %}
-                        </label>
-
-
-                        <button type="button" class="btn btn-info flex-fill"
-                                onclick="showDraftsModal()" id="manageDraftsBtn">
-                            <i class="bi bi-files me-2"></i>
-                            Drafts
-                            <span class="badge bg-light text-dark ms-1" id="draftsBadge" style="display: none;">0</span>
-                        </button>
+                                <input type="radio" class="btn-check" name="document_type"
+                                       id="docInvoice" value="INVOICE">
+                                <label class="btn btn-outline-primary" for="docInvoice">
+                                    <i class="bi bi-file-earmark-text me-1"></i>{% trans "Invoice" %}
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <button type="button" class="btn btn-info w-100"
+                                    onclick="showDraftsModal()" id="manageDraftsBtn">
+                                <i class="bi bi-files me-1"></i>
+                                Drafts
+                                <span class="badge bg-light text-dark ms-1" id="draftsBadge" style="display: none;">0</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Due Date Section -->
@@ -1157,9 +1167,9 @@ body {
 
                     <!-- EFRIS Requirements (if enabled) -->
                     {% if company.efris_enabled %}
-                    <div class="efris-requirements dre" id="efrisRequirements" style="display: none;">
+                    <div class="efris-requirements mt-3" id="efrisRequirements" style="display: none;">
                         <h6><i class="bi bi-shield-check me-2"></i>{% trans "EFRIS Requirements" %}</h6>
-                        <ul class="mb-0 dre" id="efrisRequirementsList">
+                        <ul class="mb-0" id="efrisRequirementsList">
                             <!-- Content will be populated by JavaScript -->
                         </ul>
                     </div>
@@ -1193,7 +1203,7 @@ body {
                         <input type="text" class="form-control" id="productSearchBar"
                                placeholder="{% trans 'Search products or services... (Press F1)' %}"
                                aria-label="Product search">
-                        <button  class="btn btn-outline-secondary" type="button" onclick="clearProductSearch()">
+                        <button class="btn btn-outline-secondary" type="button" onclick="clearProductSearch()">
                             <i class="bi bi-x"></i>
                         </button>
                     </div>
@@ -1235,328 +1245,358 @@ body {
 
         <!-- Cart & Actions Sidebar -->
         <div class="col-lg-3">
-    <!-- Customer Selection -->
-    <div class="card mb-3">
-        <div class="card-body customer-section">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="mb-0">
-                    <i class="bi bi-person me-2 totall"></i>{% trans "Customer" %}
-                </h6>
-                <button type="button" class="btn btn-sm btn-primary"
-                        data-bs-toggle="modal" data-bs-target="#newCustomerModal">
-                    <i class="bi bi-plus"></i> {% trans "New" %}
-                </button>
-            </div>
-
-            <!-- Customer Search Tabs -->
-            <ul class="nav nav-tabs mb-3" role="tablist">
-    <li class="nav-item">
-        <button type="button" class="nav-link active" data-bs-toggle="tab"
-                data-bs-target="#searchTab" id="searchTabBtn">
-            {% trans "Search" %}
-        </button>
-    </li>
-    {% if company.efris_enabled %}
-    <li class="nav-item">
-        <button type="button" class="nav-link" data-bs-toggle="tab"
-                data-bs-target="#efrisTab" id="efrisTabBtn">
-            {% trans "EFRIS" %}
-        </button>
-    </li>
-    {% endif %}
-    <li class="nav-item">
-        <button type="button" class="nav-link" data-bs-toggle="tab"
-                data-bs-target="#recentTab" id="recentTabBtn">
-            {% trans "Recent" %}
-        </button>
-    </li>
-</ul>
-
-            <div class="tab-content">
-                <!-- Search Tab -->
-                <div class="tab-pane fade show active" id="searchTab">
-                    <div class="input-group mb-2">
-                        <input type="text" class="form-control" id="customerSearch"
-                               placeholder="{% trans 'Search customers... (Press F2)' %}"
-                               autocomplete="off"
-                               aria-label="Customer search">
-                        <button class="btn btn-outline-secondary" type="button" onclick="clearCustomerSearch()">
-                            <i class="bi bi-x"></i>
+            <!-- Customer Selection -->
+            <div class="card mb-3">
+                <div class="card-body customer-section">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">
+                            <i class="bi bi-person me-2"></i>{% trans "Customer" %}
+                        </h6>
+                        <button type="button" class="btn btn-sm btn-primary"
+                                data-bs-toggle="modal" data-bs-target="#newCustomerModal">
+                            <i class="bi bi-plus"></i> {% trans "New" %}
                         </button>
                     </div>
 
-                    <!-- Search Loading Indicator -->
-                    <div id="customerSearchLoading" class="text-center py-2" style="display: none;">
-                        <div class="spinner-border spinner-border-sm text-primary" role="status">
-                            <span class="visually-hidden">{% trans "Searching..." %}</span>
-                        </div>
-                        <small class="text-muted ms-2">{% trans "Searching..." %}</small>
-                    </div>
+                    <!-- Customer Search Tabs -->
+                    <ul class="nav nav-tabs mb-3" role="tablist">
+                        <li class="nav-item">
+                            <button type="button" class="nav-link active" data-bs-toggle="tab"
+                                    data-bs-target="#searchTab" id="searchTabBtn">
+                                {% trans "Search" %}
+                            </button>
+                        </li>
+                        {% if company.efris_enabled %}
+                        <li class="nav-item">
+                            <button type="button" class="nav-link" data-bs-toggle="tab"
+                                    data-bs-target="#efrisTab" id="efrisTabBtn">
+                                {% trans "EFRIS" %}
+                            </button>
+                        </li>
+                        {% endif %}
+                        <li class="nav-item">
+                            <button type="button" class="nav-link" data-bs-toggle="tab"
+                                    data-bs-target="#recentTab" id="recentTabBtn">
+                                {% trans "Recent" %}
+                            </button>
+                        </li>
+                    </ul>
 
-                    <!-- Search Error -->
-                    <div id="customerSearchError" class="alert alert-danger py-2" style="display: none;"></div>
-
-                    <!-- Customer Dropdown -->
-                    <div class="customer-dropdown" id="customerDropdown">
-                        <div class="customer-list-header">
-                            <small class="text-muted totall">{% trans "Select a customer" %}</small>
-                        </div>
-                        <div id="customerList" class="customer-list"></div>
-                    </div>
-                </div>
-
-                <!-- EFRIS Query Tab -->
-                {% if company.efris_enabled %}
-                <div class="tab-pane fade" id="efrisTab">
-                    <div class="mb-3">
-                        <label class="form-label">{% trans "Taxpayer TIN" %}</label>
-                        <input type="text" class="form-control" id="taxpayerTIN"
-                               placeholder="{% trans 'Enter 10-digit TIN' %}"
-                               pattern="\d{10}" maxlength="10">
-                        <small class="text-muted">
-                            {% trans "Enter 10-digit Uganda TIN. Required for businesses, optional for individuals." %}
-                        </small>
-                    </div>
-                    <button type="button" class="btn btn-primary w-100 mb-3"
-                            onclick="queryEFRISTaxpayer()" id="efrisQueryBtn">
-                        <i class="bi bi-shield-search me-2"></i>
-                        {% trans "Query EFRIS" %}
-                    </button>
-
-                    <!-- Information about TIN requirements -->
-                    <div class="alert alert-info">
-                        <h6><i class="bi bi-info-circle me-2"></i>{% trans "TIN Requirements" %}</h6>
-                        <ul class="mb-0" style="font-size: 0.875rem;">
-                            <li><strong>Businesses:</strong> TIN is required for VAT invoices</li>
-                            <li><strong>Individuals:</strong> TIN is optional for non-VAT invoices</li>
-                            <li><strong>Walk-in customers:</strong> Not applicable - use receipts instead</li>
-                            <li><strong>Receipts:</strong> TIN is never required</li>
-                        </ul>
-                    </div>
-
-                    <div id="efrisError" class="efris-error" style="display: none;">
-                        <div class="efris-error-title">
-                            <i class="bi bi-exclamation-triangle me-2"></i>Error
-                        </div>
-                        <div id="efrisErrorMessage"></div>
-                    </div>
-
-                    <div id="efrisQueryResults" style="display: none;"></div>
-                    <div id="efrisQueryLoading" class="text-center py-3" style="display: none;">
-                        <div class="spinner-border spinner-border-sm text-primary"></div>
-                        <small class="text-muted ms-2">{% trans "Querying EFRIS..." %}</small>
-                    </div>
-                </div>
-                {% endif %}
-
-                <!-- Recent Customers Tab -->
-                <div class="tab-pane fade" id="recentTab">
-                    <div id="recentCustomersLoading" class="text-center py-3">
-                        <div class="spinner-border spinner-border-sm text-primary"></div>
-                    </div>
-                    <div id="recentCustomersList" class="customer-list"></div>
-                </div>
-            </div>
-
-            <!-- Selected Customer Display -->
-            <div id="customerDisplay" class="customer-display" style="display: none;">
-                <div class="customer-avatar" id="customerAvatar"></div>
-                <div class="flex-grow-1">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <strong id="customerName"></strong>
-                                            <span id="customerTinBadge" class="badge bg-info ms-2" style="display: none;"></span>
-                            <div id="customerDetails"></div>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-light"
-                                onclick="removeCustomer()" title="{% trans 'Remove customer' %}">
-                            <i class="bi bi-x"></i>
-                        </button>
-                    </div>
-
-                    <!-- NEW: Credit Information Display -->
-                    <div id="customerCreditInfo" class="mt-2" style="display: none;">
-                        <div class="credit-info-compact">
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <small class="text-muted d-block">Credit Limit</small>
-                                    <strong class="credit-limit" id="creditLimit">0</strong>
-                                </div>
-                                <div class="col-6">
-                                    <small class="text-muted d-block">Available</small>
-                                    <strong class="credit-available" id="creditAvailable">0</strong>
-                                </div>
+                    <div class="tab-content">
+                        <!-- Search Tab -->
+                        <div class="tab-pane fade show active" id="searchTab">
+                            <div class="input-group mb-2">
+                                <input type="text" class="form-control" id="customerSearch"
+                                       placeholder="{% trans 'Search customers... (Press F2)' %}"
+                                       autocomplete="off"
+                                       aria-label="Customer search">
+                                <button class="btn btn-outline-secondary" type="button" onclick="clearCustomerSearch()">
+                                    <i class="bi bi-x"></i>
+                                </button>
                             </div>
-                            <div class="row g-2 mt-1">
-                                <div class="col-6">
-                                    <small class="text-muted d-block">Outstanding</small>
-                                    <strong class="credit-balance text-warning" id="creditBalance">0</strong>
+
+                            <!-- Search Loading Indicator -->
+                            <div id="customerSearchLoading" class="text-center py-2" style="display: none;">
+                                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                    <span class="visually-hidden">{% trans "Searching..." %}</span>
                                 </div>
-                                <div class="col-6">
-                                    <small class="text-muted d-block">Status</small>
-                                    <span class="badge" id="creditStatusBadge">-</span>
+                                <small class="text-muted ms-2">{% trans "Searching..." %}</small>
+                            </div>
+
+                            <!-- Search Error -->
+                            <div id="customerSearchError" class="alert alert-danger py-2" style="display: none;"></div>
+
+                            <!-- Customer Dropdown -->
+                            <div class="customer-dropdown" id="customerDropdown">
+                                <div class="customer-list-header">
+                                    <small class="text-muted">{% trans "Select a customer" %}</small>
                                 </div>
+                                <div id="customerList" class="customer-list"></div>
                             </div>
                         </div>
 
-                        <!-- Credit Warning Messages -->
-                        <div id="creditWarnings" class="mt-2"></div>
+                        <!-- EFRIS Query Tab -->
+                        {% if company.efris_enabled %}
+                        <div class="tab-pane fade" id="efrisTab">
+                            <div class="mb-3">
+                                <label class="form-label">{% trans "Taxpayer TIN" %}</label>
+                                <input type="text" class="form-control" id="taxpayerTIN"
+                                       placeholder="{% trans 'Enter 10-digit TIN' %}"
+                                       pattern="\d{10}" maxlength="10">
+                                <small class="text-muted">
+                                    {% trans "Enter 10-digit Uganda TIN. Required for businesses, optional for individuals." %}
+                                </small>
+                            </div>
+                            <button type="button" class="btn btn-primary w-100 mb-3"
+                                    onclick="queryEFRISTaxpayer()" id="efrisQueryBtn">
+                                <i class="bi bi-shield-search me-2"></i>
+                                {% trans "Query EFRIS" %}
+                            </button>
 
+                            <!-- Information about TIN requirements -->
+                            <div class="alert alert-info">
+                                <h6><i class="bi bi-info-circle me-2"></i>{% trans "TIN Requirements" %}</h6>
+                                <ul class="mb-0" style="font-size: 0.875rem;">
+                                    <li><strong>Businesses:</strong> TIN is required for VAT invoices</li>
+                                    <li><strong>Individuals:</strong> TIN is optional for non-VAT invoices</li>
+                                    <li><strong>Walk-in customers:</strong> Not applicable - use receipts instead</li>
+                                    <li><strong>Receipts:</strong> TIN is never required</li>
+                                </ul>
+                            </div>
+
+                            <div id="efrisError" class="efris-error" style="display: none;">
+                                <div class="efris-error-title">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>Error
+                                </div>
+                                <div id="efrisErrorMessage"></div>
+                            </div>
+
+                            <div id="efrisQueryResults" style="display: none;"></div>
+                            <div id="efrisQueryLoading" class="text-center py-3" style="display: none;">
+                                <div class="spinner-border spinner-border-sm text-primary"></div>
+                                <small class="text-muted ms-2">{% trans "Querying EFRIS..." %}</small>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Recent Customers Tab -->
+                        <div class="tab-pane fade" id="recentTab">
+                            <div id="recentCustomersLoading" class="text-center py-3">
+                                <div class="spinner-border spinner-border-sm text-primary"></div>
+                            </div>
+                            <div id="recentCustomersList" class="customer-list"></div>
+                        </div>
                     </div>
+
+                    <!-- Selected Customer Display -->
+                    <div id="customerDisplay" class="customer-display" style="display: none;">
+                        <div class="customer-avatar" id="customerAvatar"></div>
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong id="customerName"></strong>
+                                    <span id="customerTinBadge" class="badge bg-info ms-2" style="display: none;"></span>
+                                    <div id="customerDetails"></div>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-light"
+                                        onclick="removeCustomer()" title="{% trans 'Remove customer' %}">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            </div>
+
+                            <!-- Credit Information Display -->
+                            <div id="customerCreditInfo" class="mt-2" style="display: none;">
+                                <div class="credit-info-compact">
+                                    <div class="row g-2">
+                                        <div class="col-6">
+                                            <small class="text-muted d-block">Credit Limit</small>
+                                            <strong class="credit-limit" id="creditLimit">0</strong>
+                                        </div>
+                                        <div class="col-6">
+                                            <small class="text-muted d-block">Available</small>
+                                            <strong class="credit-available" id="creditAvailable">0</strong>
+                                        </div>
+                                    </div>
+                                    <div class="row g-2 mt-1">
+                                        <div class="col-6">
+                                            <small class="text-muted d-block">Outstanding</small>
+                                            <strong class="credit-balance text-warning" id="creditBalance">0</strong>
+                                        </div>
+                                        <div class="col-6">
+                                            <small class="text-muted d-block">Status</small>
+                                            <span class="badge" id="creditStatusBadge">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Credit Warning Messages -->
+                                <div id="creditWarnings" class="mt-2"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="creditAdjustmentSection" style="display: none;">
+                                    <button type="button" class="btn btn-outline-warning btn-sm w-100 mt-2"
+                                            data-bs-toggle="modal" data-bs-target="#creditAdjustmentModal">
+                                        <i class="bi bi-sliders me-1"></i>Adjust Credit Limit
+                                    </button>
+                                </div>
+                    <!-- Customer Notes Section -->
+                    <div id="customerNotesSection" class="mt-3" style="display: none;">
+                        <div class="card">
+                            <div class="card-header bg-transparent">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-chat-left-text me-2"></i>Sale Notes
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-2">
+                                    <label class="form-label">Add Note for this Sale</label>
+                                    <textarea class="form-control" id="saleNoteText" rows="3"
+                                              placeholder="Add any notes about this sale (optional)..."></textarea>
+                                    <small class="text-muted">This note will be saved with the sale and added to customer's history</small>
+                                </div>
+
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="noteIsImportant">
+                                    <label class="form-check-label" for="noteIsImportant">
+                                        Mark as Important
+                                    </label>
+                                </div>
+
+                                <div class="mt-2">
+                                    <label class="form-label">Note Category</label>
+                                    <select class="form-select form-select-sm" id="noteCategory">
+                                        <option value="GENERAL">General</option>
+                                        <option value="PAYMENT">Payment Related</option>
+                                        <option value="TAX">Tax Information</option>
+                                        <option value="SUPPORT">Support Issue</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hidden fields for customer - INSIDE FORM -->
+                    <input type="hidden" name="customer" id="customerId">
+                    <input type="hidden" name="customer_tin" id="customerTin">
                 </div>
             </div>
 
-            <input type="hidden" name="customer" id="customerId">
-            <input type="hidden" name="customer_tin" id="customerTin">
-            <!-- Add these inside the customer section -->
-            <input type="hidden" id="customerAllowCredit" value="false">
-            <input type="hidden" id="customerCreditLimit" value="0">
-            <input type="hidden" id="customerCreditBalance" value="0">
-            <input type="hidden" id="customerCreditAvailable" value="0">
-            <input type="hidden" id="customerCreditStatus" value="">
-
-            <!-- NEW: Hidden fields for credit validation -->
-            <input type="hidden" id="customerAllowCredit" value="false">
-            <input type="hidden" id="customerCreditLimit" value="0">
-            <input type="hidden" id="customerCreditBalance" value="0">
-            <input type="hidden" id="customerCreditAvailable" value="0">
-            <input type="hidden" id="customerCreditStatus" value="">
-        </div>
-    </div>
-
-    <!-- Cart Section -->
-    <div class="card cart-section">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="mb-0">
-                    <i class="bi bi-cart3 me-2"></i>{% trans "Cart" %}
-                    <span class="badge bg-primary ms-2" id="cartCount">0</span>
-                </h6>
-                <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearCart()" id="clearCartBtn">
-                    <i class="bi bi-trash"></i> {% trans "Clear" %}
-                </button>
-            </div>
-
-            <div id="cartItems">
-                <div class="cart-empty">
-                    <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
-                    <p class="mt-2">{% trans "Cart is empty" %}</p>
-                    <p class="small text-muted">{% trans "Add products or services from the left" %}</p>
-                </div>
-            </div>
-
-            <!-- Discount Section -->
-            <div class="discount-section" id="discountSection" style="display: none;">
-                <h6 class="mb-2"><i class="bi bi-percent me-2"></i>{% trans "Apply Discount" %}</h6>
-                <div class="discount-input-group">
-                    <select class="form-select discount-type-select" id="discountType">
-                        <option value="percentage">{% trans "Percentage %" %}</option>
-                        <option value="amount">{% trans "Amount" %}</option>
-                    </select>
-                    <input type="number" class="form-control" id="discountValue"
-                           placeholder="0" min="0" step="0.01">
-                    <button class="btn btn-primary" type="button" onclick="applyDiscount()">
-                        {% trans "Apply" %}
-                    </button>
-                </div>
-            </div>
-
-            <!-- Cart Summary -->
-            <div id="cartSummary" style="display: none;">
-                <div class="cart-summary">
-                    <div class="summary-row">
-                        <span>{% trans "Subtotal:" %}</span>
-                        <span id="summarySubtotal">0 UGX</span>
-                    </div>
-                    {% if efris_and_vat_enabled %}
-                    <div class="summary-row">
-                        <span>{% trans "Tax:" %}</span>
-                        <span id="summaryTax">0 UGX</span>
-                    </div>
-                    {% endif %}
-                    <div class="summary-row">
-                        <span>{% trans "Discount:" %}</span>
-                        <span id="summaryDiscount">0 UGX</span>
-                    </div>
-                    <div class="summary-row summary-total">
-                        <strong>{% trans "Total:" %}</strong>
-                        <strong id="summaryTotal">0 UGX</strong>
-                    </div>
-                </div>
-
-                <!-- Payment Method -->
-                <div class="mt-3">
-                    <label class="form-label">{% trans "Payment Method" %}</label>
-                    <select name="payment_method" class="form-select" id="paymentMethod" required
-                            onchange="validatePaymentMethod()">
-                        <option value="CASH">{% trans "Cash" %}</option>
-                        <option value="CARD">{% trans "Card" %}</option>
-                        <option value="MOBILE_MONEY">{% trans "Mobile Money" %}</option>
-                        <option value="BANK_TRANSFER">{% trans "Bank Transfer" %}</option>
-                        <option value="CREDIT">{% trans "Credit" %}</option>
-                    </select>
-
-                    <!-- Payment Status for Credit -->
-                    <div class="payment-status" id="creditPaymentStatus" style="display: none;">
-                        <i class="bi bi-clock-history text-warning"></i>
-                        <small>{% trans "Payment will be marked as pending" %}</small>
-                    </div>
-
-                    <!-- NEW: Credit Limit Warning -->
-                    <div id="creditLimitWarning" class="alert alert-danger mt-2 py-2" style="display: none;">
-                        <i class="bi bi-exclamation-triangle me-2"></i>
-                        <small id="creditLimitWarningText"></small>
-                    </div>
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="d-grid gap-2 mt-3">
-                    <button type="button" class="btn btn-success btn-lg"
-                            id="completeSaleBtn" onclick="completeSale()" disabled>
-                        <i class="bi bi-check-circle me-2"></i>
-                        {% trans "Complete Sale (F3)" %}
-                    </button>
-
-                    <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-warning flex-fill"
-                                onclick="saveAsDraft()" id="saveDraftBtn">
-                            <i class="bi bi-save me-2"></i>{% trans "Save Draft (F8)" %}
+            <!-- Cart Section -->
+            <div class="card cart-section">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">
+                            <i class="bi bi-cart3 me-2"></i>{% trans "Cart" %}
+                            <span class="badge bg-primary ms-2" id="cartCount">0</span>
+                        </h6>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearCart()" id="clearCartBtn">
+                            <i class="bi bi-trash"></i> {% trans "Clear" %}
                         </button>
-                        <button type="button" class="btn btn-outline-danger flex-fill"
-                                onclick="printReceiptPreview()">
-                            <i class="bi bi-printer me-2"></i>{% trans "Print" %}
-                        </button>
                     </div>
-                    {% if perms.sales.view_sale %}
-                    <a href="{% url 'sales:sales_list' %}" class="btn btn-outline-secondary">
-                        <i class="bi bi-x-circle me-2"></i>{% trans "Cancel (Esc)" %}
-                    </a>
-                    {% endif %}
+
+                    <div id="cartItems">
+                        <div class="cart-empty">
+                            <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
+                            <p class="mt-2">{% trans "Cart is empty" %}</p>
+                            <p class="small text-muted">{% trans "Add products or services from the left" %}</p>
+                        </div>
+                    </div>
+
+                    <!-- Discount Section -->
+                    <div class="discount-section" id="discountSection" style="display: none;">
+                        <h6 class="mb-2"><i class="bi bi-percent me-2"></i>{% trans "Apply Discount" %}</h6>
+                        <div class="discount-input-group">
+                            <select class="form-select discount-type-select" id="discountType">
+                                <option value="percentage">{% trans "Percentage %" %}</option>
+                                <option value="amount">{% trans "Amount" %}</option>
+                            </select>
+                            <input type="number" class="form-control" id="discountValue"
+                                   placeholder="0" min="0" step="0.01">
+                            <button class="btn btn-primary" type="button" onclick="applyDiscount()">
+                                {% trans "Apply" %}
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Cart Summary -->
+                    <div id="cartSummary" style="display: none;">
+                        <div class="cart-summary">
+                            <div class="summary-row">
+                                <span>{% trans "Subtotal:" %}</span>
+                                <span id="summarySubtotal">0 UGX</span>
+                            </div>
+                            {% if efris_and_vat_enabled %}
+                            <div class="summary-row">
+                                <span>{% trans "Tax:" %}</span>
+                                <span id="summaryTax">0 UGX</span>
+                            </div>
+                            {% endif %}
+                            <div class="summary-row">
+                                <span>{% trans "Discount:" %}</span>
+                                <span id="summaryDiscount">0 UGX</span>
+                            </div>
+                            <div class="summary-row summary-total">
+                                <strong>{% trans "Total:" %}</strong>
+                                <strong id="summaryTotal">0 UGX</strong>
+                            </div>
+                        </div>
+
+                        <!-- Payment Method -->
+                        <div class="mt-3">
+                            <label class="form-label">{% trans "Payment Method" %}</label>
+                            <select name="payment_method" class="form-select" id="paymentMethod" required
+                                    onchange="validatePaymentMethod()">
+                                <option value="CASH">{% trans "Cash" %}</option>
+                                <option value="CARD">{% trans "Card" %}</option>
+                                <option value="MOBILE_MONEY">{% trans "Mobile Money" %}</option>
+                                <option value="BANK_TRANSFER">{% trans "Bank Transfer" %}</option>
+                                <option value="CREDIT">{% trans "Credit" %}</option>
+                            </select>
+
+                            <!-- Payment Status for Credit -->
+                            <div class="payment-status" id="creditPaymentStatus" style="display: none;">
+                                <i class="bi bi-clock-history text-warning"></i>
+                                <small>{% trans "Payment will be marked as pending" %}</small>
+                            </div>
+
+                            <!-- Credit Limit Warning -->
+                            <div id="creditLimitWarning" class="alert alert-danger mt-2 py-2" style="display: none;">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                <small id="creditLimitWarningText"></small>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="d-grid gap-2 mt-3">
+                            <button type="button" class="btn btn-success btn-lg"
+                                    id="completeSaleBtn" onclick="completeSale()" disabled>
+                                <i class="bi bi-check-circle me-2"></i>
+                                {% trans "Complete Sale (F3)" %}
+                            </button>
+
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-warning flex-fill"
+                                        onclick="saveAsDraft()" id="saveDraftBtn">
+                                    <i class="bi bi-save me-2"></i>{% trans "Save Draft (F8)" %}
+                                </button>
+                                <button type="button" class="btn btn-outline-danger flex-fill"
+                                        onclick="printReceiptPreview()">
+                                    <i class="bi bi-printer me-2"></i>{% trans "Print" %}
+                                </button>
+                            </div>
+                            {% if perms.sales.view_sale %}
+                            <a href="{% url 'sales:sales_list' %}" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle me-2"></i>{% trans "Cancel (Esc)" %}
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="card mt-3">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-graph-up me-2"></i>{% trans "Quick Stats" %}</h6>
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <small class="text-muted">{% trans "Items" %}</small>
+                            <h5 id="statsItems">0</h5>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted">{% trans "Avg. Price" %}</small>
+                            <h5 id="statsAvgPrice">0 UGX</h5>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Quick Stats -->
-    <div class="card mt-3">
-        <div class="card-body">
-            <h6 class="card-title"><i class="bi bi-graph-up me-2"></i>{% trans "Quick Stats" %}</h6>
-            <div class="row text-center">
-                <div class="col-6">
-                    <small class="text-muted totall">{% trans "Items" %}</small>
-                    <h5 id="statsItems totall">0</h5>
-                </div>
-                <div class="col-6">
-                    <small class="text-muted">{% trans "Avg. Price" %}</small>
-                    <h5 id="statsAvgPrice totall">0 UGX</h5>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-    </div>
-
-    <!-- Hidden Fields -->
+    <!-- ============================================
+         CRITICAL: HIDDEN FIELDS - MUST BE INSIDE FORM
+         ============================================ -->
     <input type="hidden" name="items_data" id="itemsData">
     <input type="hidden" name="currency" value="UGX">
     <input type="hidden" name="discount_amount" id="discountAmount" value="0">
@@ -1564,7 +1604,19 @@ body {
     <input type="hidden" name="tax_amount" id="taxAmount" value="0">
     <input type="hidden" name="subtotal_amount" id="subtotalAmount" value="0">
     <input type="hidden" name="total_amount" id="totalAmount" value="0">
+    <input type="hidden" name="sale_note" id="saleNote">
+    <input type="hidden" name="note_is_important" id="noteIsImportantField">
+    <input type="hidden" name="note_category" id="noteCategoryField">
+
+    <!-- Hidden fields for JavaScript state tracking (NOT submitted) -->
+    <input type="hidden" id="customerAllowCredit" value="false">
+    <input type="hidden" id="customerCreditLimit" value="0">
+    <input type="hidden" id="customerCreditBalance" value="0">
+    <input type="hidden" id="customerCreditAvailable" value="0">
+    <input type="hidden" id="customerCreditStatus" value="">
+
 </form>
+
 
 <!-- New Customer Modal -->
 <div class="modal fade" id="newCustomerModal" tabindex="-1">
@@ -1611,6 +1663,73 @@ body {
                     </span>
                 </button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Credit Adjustment Modal -->
+<div class="modal fade" id="creditAdjustmentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-sliders me-2"></i>Adjust Credit Limit
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="creditAdjustmentCustomerInfo" class="alert alert-info mb-3">
+                    <strong id="creditAdjustCustomerName">Customer Name</strong>
+                    <div class="mt-2">
+                        <small>Current Limit: <strong id="creditAdjustCurrentLimit">0</strong></small><br>
+                        <small>Current Balance: <strong id="creditAdjustCurrentBalance">0</strong></small><br>
+                        <small>Available: <strong id="creditAdjustAvailable">0</strong></small>
+                    </div>
+                </div>
+
+                <form id="creditAdjustmentForm">
+                    <div class="mb-3">
+                        <label class="form-label">Adjustment Type</label>
+                    <select class="form-select" id="creditAdjustmentType" required>
+                        <option value="SET_LIMIT">Set New Credit Limit</option>
+                        <option value="INCREASE_LIMIT">Increase Limit</option>
+                        <option value="DECREASE_LIMIT">Decrease Limit</option>
+                        <option value="ADD_BALANCE">Add to Balance</option>
+                        <option value="REDUCE_BALANCE">Reduce Balance</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Amount (UGX)</label>
+                    <input type="number" class="form-control" id="creditAdjustmentAmount"
+                           min="0" step="1000" required>
+                    <small class="text-muted" id="creditAdjustmentHint"></small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Reason for Adjustment *</label>
+                    <textarea class="form-control" id="creditAdjustmentReason" rows="3"
+                              required placeholder="Explain why this adjustment is being made..."></textarea>
+                </div>
+
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Note:</strong> This adjustment will be recorded in the customer's credit history.
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                Cancel
+            </button>
+            <button type="button" class="btn btn-primary" onclick="submitCreditAdjustment()">
+                <span id="creditAdjustBtnText">
+                    <i class="bi bi-check-circle me-1"></i>Apply Adjustment
+                </span>
+                <span id="creditAdjustBtnLoading" style="display: none;">
+                    <span class="spinner-border spinner-border-sm me-1"></span>Processing...
+                </span>
+            </button>
         </div>
     </div>
 </div>
@@ -1709,6 +1828,72 @@ body {
             <div class="modal-footer">
                 <button type="button" class="btn btn-danger" data-bs-dismiss="modal">
                     {% trans "Close" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="creditAdjustmentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-sliders me-2"></i>Adjust Credit Limit
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="creditAdjustmentCustomerInfo" class="alert alert-info mb-3">
+                    <strong id="creditAdjustCustomerName">Customer Name</strong>
+                    <div class="mt-2">
+                        <small>Current Limit: <strong id="creditAdjustCurrentLimit">0</strong></small><br>
+                        <small>Current Balance: <strong id="creditAdjustCurrentBalance">0</strong></small><br>
+                        <small>Available: <strong id="creditAdjustAvailable">0</strong></small>
+                    </div>
+                </div>
+
+                <form id="creditAdjustmentForm">
+                    <div class="mb-3">
+                        <label class="form-label">Adjustment Type</label>
+                        <select class="form-select" id="creditAdjustmentType" required>
+                            <option value="SET_LIMIT">Set New Credit Limit</option>
+                            <option value="INCREASE_LIMIT">Increase Limit</option>
+                            <option value="DECREASE_LIMIT">Decrease Limit</option>
+                            <option value="ADD_BALANCE">Add to Balance</option>
+                            <option value="REDUCE_BALANCE">Reduce Balance</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Amount (UGX)</label>
+                        <input type="number" class="form-control" id="creditAdjustmentAmount"
+                               min="0" step="1000" required>
+                        <small class="text-muted" id="creditAdjustmentHint"></small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Reason for Adjustment *</label>
+                        <textarea class="form-control" id="creditAdjustmentReason" rows="3"
+                                  required placeholder="Explain why this adjustment is being made..."></textarea>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Note:</strong> This adjustment will be recorded in the customer's credit history.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    Cancel
+                </button>
+                <button type="button" class="btn btn-primary" onclick="submitCreditAdjustment()">
+                    <span id="creditAdjustBtnText">
+                        <i class="bi bi-check-circle me-1"></i>Apply Adjustment
+                    </span>
+                    <span id="creditAdjustBtnLoading" style="display: none;">
+                        <span class="spinner-border spinner-border-sm me-1"></span>Processing...
+                    </span>
                 </button>
             </div>
         </div>
@@ -1923,6 +2108,50 @@ document.addEventListener('DOMContentLoaded', function() {
     toggleDueDateSection();
 
     console.log('✅ Sale Page Initialized');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const customerIdFromUrl = urlParams.get('customer_id');
+
+    if (customerIdFromUrl) {
+        console.log('🔗 Customer ID from URL:', customerIdFromUrl);
+        showToast('Loading customer...', 'info');
+        fetchAndSelectCustomerById(customerIdFromUrl);
+    }
+
+    // NEW: Credit adjustment type change handler
+    const adjustmentType = document.getElementById('creditAdjustmentType');
+    const hintText = document.getElementById('creditAdjustmentHint');
+
+    if (adjustmentType && hintText) {
+        adjustmentType.addEventListener('change', function() {
+            const type = this.value;
+            const currentLimit = currentCustomerCredit.creditLimit;
+            const currentBalance = currentCustomerCredit.creditBalance;
+
+            switch(type) {
+                case 'SET_LIMIT':
+                    hintText.textContent = `Current limit: ${formatCurrency(currentLimit)}. Enter new limit.`;
+                    break;
+                case 'INCREASE_LIMIT':
+                    hintText.textContent = `Current limit: ${formatCurrency(currentLimit)}. Enter amount to add.`;
+                    break;
+                case 'DECREASE_LIMIT':
+                    hintText.textContent = `Current limit: ${formatCurrency(currentLimit)}. Enter amount to subtract.`;
+                    break;
+                case 'ADD_BALANCE':
+                    hintText.textContent = `Current balance: ${formatCurrency(currentBalance)}. Enter amount to add.`;
+                    break;
+                case 'REDUCE_BALANCE':
+                    hintText.textContent = `Current balance: ${formatCurrency(currentBalance)}. Enter amount to subtract.`;
+                    break;
+                default:
+                    hintText.textContent = '';
+            }
+        });
+
+        // Trigger initial hint
+        adjustmentType.dispatchEvent(new Event('change'));
+    }
 });
 
 // ============================================
@@ -2086,6 +2315,7 @@ function setupSaleEventListeners() {
         paymentMethodSelect.addEventListener('change', function() {
             console.log('💳 Payment method changed to:', this.value);
             validatePaymentMethod();
+            updateCreditAdjustmentVisibility();
         });
     }
 
@@ -2173,6 +2403,7 @@ function setupSaleEventListeners() {
 
     console.log('✅ All sale event listeners attached successfully');
 }
+
 
 // ============================================
 // KEYBOARD SHORTCUTS
@@ -2282,6 +2513,52 @@ function setupCustomerDropdownCloseHandler() {
 
         dropdown.classList.remove('show');
     });
+}
+async function fetchAndSelectCustomerById(customerId) {
+    try {
+        const response = await fetch(`/customers/api/customers/${customerId}/`, {
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch customer: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const customer = data.customer || data;
+
+        console.log('✅ Customer loaded from URL:', customer);
+
+        // Select the customer
+        selectCustomer(customer);
+
+        // Switch to the search tab if we're on a different tab
+        const searchTabBtn = document.getElementById('searchTabBtn');
+        if (searchTabBtn) {
+            new bootstrap.Tab(searchTabBtn).show();
+        }
+
+        // Show success message
+        showToast(`Customer ${customer.name} selected`, 'success');
+
+        // Optionally scroll to cart section
+        const cartSection = document.querySelector('.cart-section');
+        if (cartSection && window.innerWidth > 768) {
+            cartSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+    } catch (error) {
+        console.error('❌ Error loading customer from URL:', error);
+        showError(`Failed to load customer: ${error.message}`);
+
+        // Clear the URL parameter
+        const url = new URL(window.location);
+        url.searchParams.delete('customer_id');
+        window.history.replaceState({}, '', url);
+    }
 }
 
 async function searchCustomers(controller = null) {
@@ -2638,6 +2915,15 @@ function selectCustomer(customer) {
         }
     }
 
+    // NEW: Show customer notes section when customer is selected
+    const notesSection = document.getElementById('customerNotesSection');
+    if (notesSection) {
+        notesSection.style.display = 'block';
+    }
+
+    // NEW: Check if we should show credit adjustment section
+    updateCreditAdjustmentVisibility();
+
     addToRecentCustomers(customer);
     showToast(`Selected customer: ${customer.name}`, 'success');
     validatePaymentMethod();
@@ -2747,6 +3033,27 @@ function removeCustomer() {
         creditStatus: '',
         hasOverdue: false
     };
+
+    // NEW: Hide customer notes section
+    const notesSection = document.getElementById('customerNotesSection');
+    if (notesSection) {
+        notesSection.style.display = 'none';
+    }
+
+    // Clear notes
+    const noteText = document.getElementById('saleNoteText');
+    const noteImportant = document.getElementById('noteIsImportant');
+    const noteCategory = document.getElementById('noteCategory');
+
+    if (noteText) noteText.value = '';
+    if (noteImportant) noteImportant.checked = false;
+    if (noteCategory) noteCategory.value = 'GENERAL';
+
+    // Hide credit adjustment section
+    const creditAdjustSection = document.getElementById('creditAdjustmentSection');
+    if (creditAdjustSection) {
+        creditAdjustSection.style.display = 'none';
+    }
 
     showToast('Customer removed', 'warning');
     validatePaymentMethod();
@@ -3679,6 +3986,7 @@ function validatePaymentMethod() {
                 }
             }
             if (completeSaleBtn) completeSaleBtn.disabled = true;
+            updateCreditAdjustmentVisibility();
             return false;
         }
 
@@ -3690,6 +3998,7 @@ function validatePaymentMethod() {
                 }
             }
             if (completeSaleBtn) completeSaleBtn.disabled = true;
+            updateCreditAdjustmentVisibility();
             return false;
         }
 
@@ -3746,6 +4055,147 @@ function validatePaymentMethod() {
         completeSaleBtn.disabled = cartCount === 0;
     }
     return true;
+}
+// ============================================
+// CREDIT ADJUSTMENT VISIBILITY
+// ============================================
+
+// FIXED CODE:
+function updateCreditAdjustmentVisibility() {
+    const paymentMethod = document.getElementById('paymentMethod')?.value;
+    const creditAdjustSection = document.getElementById('creditAdjustmentSection');
+    const customerId = document.getElementById('customerId')?.value;
+    const customerName = SaleState.selectedCustomer?.name;
+
+    if (creditAdjustSection) {
+        // Show credit adjustment if customer is selected (regardless of payment method)
+        // But specifically show it when credit issues occur
+        const shouldShow = customerId && customerName;
+
+        if (shouldShow) {
+            creditAdjustSection.style.display = 'block';
+            updateCreditAdjustmentModal(SaleState.selectedCustomer);
+        } else {
+            creditAdjustSection.style.display = 'none';
+        }
+    }
+}
+
+function updateCreditAdjustmentModal(customer) {
+    const customerName = document.getElementById('creditAdjustCustomerName');
+    const currentLimit = document.getElementById('creditAdjustCurrentLimit');
+    const currentBalance = document.getElementById('creditAdjustCurrentBalance');
+    const availableCredit = document.getElementById('creditAdjustAvailable');
+
+    if (customerName) customerName.textContent = customer.name;
+    if (currentLimit) currentLimit.textContent = formatCurrency(currentCustomerCredit.creditLimit);
+    if (currentBalance) currentBalance.textContent = formatCurrency(currentCustomerCredit.creditBalance);
+    if (availableCredit) availableCredit.textContent = formatCurrency(currentCustomerCredit.creditAvailable);
+}
+
+// ============================================
+// CREDIT ADJUSTMENT SUBMISSION
+// ============================================
+
+async function submitCreditAdjustment() {
+    const customerId = document.getElementById('customerId')?.value;
+
+    if (!customerId) {
+        showError('No customer selected');
+        return;
+    }
+
+    const adjustmentType = document.getElementById('creditAdjustmentType')?.value;
+    const amount = parseFloat(document.getElementById('creditAdjustmentAmount')?.value) || 0;
+    const reason = document.getElementById('creditAdjustmentReason')?.value?.trim();
+
+    // Validation
+    if (!adjustmentType) {
+        showError('Please select adjustment type');
+        return;
+    }
+
+    if (amount <= 0) {
+        showError('Please enter a valid amount');
+        return;
+    }
+
+    if (!reason) {
+        showError('Please provide a reason for this adjustment');
+        return;
+    }
+
+    // Show loading state
+    const btnText = document.getElementById('creditAdjustBtnText');
+    const btnLoading = document.getElementById('creditAdjustBtnLoading');
+    const submitBtn = document.querySelector('#creditAdjustmentModal button[onclick="submitCreditAdjustment()"]');
+
+    if (btnText) btnText.style.display = 'none';
+    if (btnLoading) btnLoading.style.display = 'inline-block';
+    if (submitBtn) submitBtn.disabled = true;
+
+    try {
+        const response = await fetch(`/en/customers/api/customers/${customerId}/adjust-credit/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken'),
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({
+                adjustment_type: adjustmentType,
+                amount: amount,
+                reason: reason
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Update current customer credit info
+            if (data.customer_credit) {
+                currentCustomerCredit = {
+                    allowCredit: data.customer_credit.allow_credit,
+                    creditLimit: parseFloat(data.customer_credit.credit_limit),
+                    creditBalance: parseFloat(data.customer_credit.credit_balance),
+                    creditAvailable: parseFloat(data.customer_credit.credit_available),
+                    creditStatus: data.customer_credit.credit_status,
+                    hasOverdue: data.customer_credit.has_overdue,
+                    overdue_amount: parseFloat(data.customer_credit.overdue_amount || 0)
+                };
+
+                // Update display
+                displayCustomerCreditInfo(data.customer_credit);
+                updateCreditAdjustmentModal(SaleState.selectedCustomer);
+            }
+
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('creditAdjustmentModal'));
+            if (modal) modal.hide();
+
+            // Reset form
+            document.getElementById('creditAdjustmentForm')?.reset();
+
+            // Show success
+            showToast('Credit adjustment applied successfully', 'success');
+
+            // Re-validate payment method
+            validatePaymentMethod();
+
+        } else {
+            throw new Error(data.error || 'Failed to adjust credit');
+        }
+
+    } catch (error) {
+        console.error('Credit adjustment error:', error);
+        showError(`Failed to adjust credit: ${error.message}`);
+
+    } finally {
+        // Hide loading state
+        if (btnText) btnText.style.display = 'inline-block';
+        if (btnLoading) btnLoading.style.display = 'none';
+        if (submitBtn) submitBtn.disabled = false;
+    }
 }
 
 function getCartTotal() {
@@ -4007,6 +4457,20 @@ async function completeSale() {
                 return;
             }
         }
+
+        // NEW: Capture notes before submission
+        const noteText = document.getElementById('saleNoteText')?.value?.trim();
+        const noteImportant = document.getElementById('noteIsImportant')?.checked;
+        const noteCategory = document.getElementById('noteCategory')?.value;
+
+        // Set hidden form fields
+        const saleNoteField = document.getElementById('saleNote');
+        const noteImportantField = document.getElementById('noteIsImportantField');
+        const noteCategoryField = document.getElementById('noteCategoryField');
+
+        if (saleNoteField) saleNoteField.value = noteText || '';
+        if (noteImportantField) noteImportantField.value = noteImportant ? '1' : '0';
+        if (noteCategoryField) noteCategoryField.value = noteCategory || 'GENERAL';
 
         const form = document.getElementById('createSaleForm');
         if (form) {
@@ -4276,10 +4740,15 @@ function loadDraft(draft) {
         toggleDueDateSection();
     }
 
-    const paymentMethod = document.getElementById('paymentMethod');
-    if (paymentMethod && draft.paymentMethod) {
-        paymentMethod.value = draft.paymentMethod;
-        validatePaymentMethod();
+    const paymentMethodSelect = document.getElementById('paymentMethod');
+    if (paymentMethodSelect) {
+        paymentMethodSelect.addEventListener('change', function() {
+            console.log('💳 Payment method changed to:', this.value);
+            validatePaymentMethod();
+
+            // NEW: Update credit adjustment visibility
+            updateCreditAdjustmentVisibility();
+        });
     }
 
     const dueDate = document.getElementById('dueDate');
@@ -5586,6 +6055,8 @@ function getCurrentStoreData(selectedOption) {
 
 // EFRIS functions
 async function queryEFRISTaxpayer() {
+    console.log('🔍 Starting EFRIS query...');
+
     const tinInput = document.getElementById('taxpayerTIN');
     const queryBtn = document.getElementById('efrisQueryBtn');
     const queryLoading = document.getElementById('efrisQueryLoading');
@@ -5600,8 +6071,9 @@ async function queryEFRISTaxpayer() {
 
     const tin = tinInput.value.trim();
 
-    // Clear previous errors
+    // Clear previous errors and results
     if (errorDiv) errorDiv.style.display = 'none';
+    if (results) results.innerHTML = '';
 
     if (!tin) {
         showError('Please enter TIN');
@@ -5619,46 +6091,84 @@ async function queryEFRISTaxpayer() {
     if (results) results.style.display = 'none';
 
     try {
-        // Get CSRF token
-        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+        // Get CSRF token - FIXED METHOD
+        const csrfToken = getCookie('csrftoken');
 
         if (!csrfToken) {
+            console.error('CSRF token not found in cookies');
+            // Try to get it from the meta tag
+            const metaToken = document.querySelector('meta[name="csrf-token"]');
+            if (metaToken) {
+                console.log('Found CSRF token in meta tag');
+            }
             throw new Error('CSRF token missing. Please refresh the page.');
         }
 
+        console.log('📡 Sending EFRIS request for TIN:', tin);
+
+        // Use FormData to send the request
         const formData = new FormData();
         formData.append('tin', tin);
+        formData.append('csrfmiddlewaretoken', csrfToken);
 
-        const response = await fetch('/efris/taxpayer-query/', {
+        const response = await fetch('/en/efris/taxpayer-query/', {
             method: 'POST',
             body: formData,
             headers: {
-                'X-CSRFToken': csrfToken,
                 'X-Requested-With': 'XMLHttpRequest'
+                // Don't set Content-Type when using FormData
+                // The browser will set it automatically with boundary
             },
             credentials: 'same-origin'
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${response.statusText}\n${errorText}`);
+        console.log('📥 Response status:', response.status, response.statusText);
+
+        // Check if response is JSON
+        const contentType = response.headers.get('content-type');
+        console.log('Content-Type:', contentType);
+
+        if (!contentType || !contentType.includes('application/json')) {
+            // Try to read as text for debugging
+            const textResponse = await response.text();
+            console.log('Non-JSON response:', textResponse.substring(0, 500));
+
+            // Check for common HTML responses (login redirects, etc.)
+            if (textResponse.includes('<html') || textResponse.includes('<!DOCTYPE')) {
+                if (textResponse.includes('login') || textResponse.includes('Login')) {
+                    throw new Error('You need to log in again. Please refresh the page.');
+                }
+                throw new Error('Server returned HTML instead of JSON. Check the URL endpoint.');
+            }
+            throw new Error(`Expected JSON but got: ${contentType || 'unknown'}`);
         }
 
         const data = await response.json();
+        console.log('📦 EFRIS response data:', data);
 
         if (data.success && data.taxpayer) {
             displayEFRISResults(data.taxpayer);
+            showToast('Taxpayer found in EFRIS system', 'success');
         } else {
-            throw new Error(data.error || 'Taxpayer not found in EFRIS system');
+            throw new Error(data.error || data.message || 'Taxpayer not found in EFRIS system');
         }
     } catch (error) {
-        console.error('EFRIS query error:', error);
+        console.error('❌ EFRIS query error:', error);
 
         if (errorDiv && errorMessage) {
             errorMessage.textContent = error.message;
             errorDiv.style.display = 'block';
         }
-        showError(`EFRIS query failed: ${error.message}`);
+
+        // Show user-friendly error
+        let userMessage = error.message;
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+            userMessage = 'Network error. Please check your internet connection and try again.';
+        } else if (error.message.includes('CSRF')) {
+            userMessage = 'Session expired. Please refresh the page and try again.';
+        }
+
+        showError(`EFRIS query failed: ${userMessage}`);
     } finally {
         queryBtn.disabled = false;
         if (queryLoading) queryLoading.style.display = 'none';

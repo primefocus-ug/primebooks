@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import view
+from . import pos
 from .view import drafts_list
 
 app_name = 'sales'
@@ -14,12 +15,22 @@ urlpatterns = [
     path('create-with-progress/', views.create_sale_with_progress, name='create_sale_with_progress'),
     path('task-status/<str:task_id>/', views.get_task_status, name='get_task_status'),
     path('create-customer-ajax/', views.create_customer_ajax,name='create_customer_ajax'),
-    path('quick-sale/', views.quick_sale, name='quick_sale'),
     path('pos/', views.pos_interface, name='pos_interface'),
     path('analytics/', views.sales_analytics, name='analytics'),
     path('analytics/day-details/', views.analytics_day_details, name='analytics_day_details'),
     path('fiscalize/<int:sale_id>/', views.fiscalize_sale, name='fiscalize_sale'),
     path('efris-status/', views.sales_efris_status, name='efris_status'),
+    path('quick/', pos.quick_sale_view, name='quick_sale'),
+
+    # API endpoints for Quick POS
+    path('api/search-items/', pos.search_items_api, name='search_items_api'),
+    path('api/customer-search/', pos.customer_search_api, name='customer_search_api'),
+    path('api/create-sale/', pos.create_sale_api, name='create_sale_api'),
+    path('api/recent-customers/', pos.recent_customers_api, name='recent_customers_api'),
+    path('api/email-draft/', pos.email_draft, name='email_draft'),
+
+    # Receipt view
+    path('<int:sale_id>/receipt/', pos.sale_receipt_view, name='sale_receipt'),
     path('<int:sale_id>/add-payment/', views.add_payment, name='add_payment'),
     
     # Sale Detail and Management

@@ -23,6 +23,9 @@ urlpatterns = [
     path('credit-report/', customers_views.CustomerCreditReportView.as_view(), name='credit_report'),
     path('export-credit-report/', customers_views.export_credit_report, name='export_credit_report'),
     path('bulk-update-credit-limits/', customers_views.bulk_update_credit_limits, name='bulk_update_credit_limits'),
+    path('api/customers/<int:customer_id>/adjust-credit/',
+         customers_views.adjust_customer_credit,
+         name='adjust_customer_credit'),
 
     # Update existing customers_views
     path('<int:pk>/update-credit-status/', customers_views.CustomerViewSet.as_view({'post': 'update_credit_status'}),

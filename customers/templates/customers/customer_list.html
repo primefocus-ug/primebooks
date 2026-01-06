@@ -7,9 +7,6 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
-<style>
-    .modal-header{
-</style>
 {% endblock %}
 
 {% block page_header %}
@@ -27,6 +24,20 @@
         <a href="{% url 'customers:customer_import' %}" class="btn btn-outline-primary ms-2">
             <i class="bi bi-upload me-1"></i>Import
         </a>
+       <div class="btn-group">
+            <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="bi bi-gear me-1"></i>Export
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="{% url 'customers:export_excel' %}" >
+                    <i class="bi bi-check-circle me-2"></i>Export Excel</a></li>
+                <li><a class="dropdown-item" href="{% url 'customers:export_csv' %}">
+                    <i class="bi bi-x-circle me-2"></i>Export CSV</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="{% url 'customers:export_pdf' %}" >
+                    <i class="bi bi-download me-2"></i>Export PDF</a></li>
+            </ul>
+        </div>
         {% endif %}
     </div>
 </div>
@@ -108,6 +119,11 @@
                             <i class="bi bi-download me-2"></i>Export Selected</a></li>
                         <li><a class="dropdown-item text-danger" href="#" onclick="bulkAction('delete')">
                             <i class="bi bi-trash me-2"></i>Delete Selected</a></li>
+                        <li>
+                            <a class="dropdown-item" href="#" onclick="openBulkCreditModal()">
+                                <i class="bi bi-cash-stack me-2"></i>Update Credit Limit
+                            </a>
+                        </li>
                     </ul>
                 </div>
             </div>
@@ -177,25 +193,36 @@
                         </td>
                         <td>{{ customer.created_at|date:"M d, Y" }}</td>
                         <td>
-                            <div class="btn-group btn-group-sm">
-                                {% if perms.customers.view_customer %}
-                                <a href="{% url 'customers:detail' customer.pk %}" class="btn btn-outline-primary" title="View">
-                                    <i class="bi bi-eye"></i>
-                                </a>
-                                {% endif %}
-                                {% if perms.customers.change_customer %}
-                                <a href="{% url 'customers:update' customer.pk %}" class="btn btn-outline-warning" title="Edit">
-                                    <i class="bi bi-pencil"></i>
-                                </a>
-                                {% endif %}
-                                {% if perms.customers.delete_customer %}
-                                <button type="button" class="btn btn-outline-danger" title="Delete"
-                                        onclick="confirmDelete('{{ customer.name }}', '{% url 'customers:delete' customer.pk %}')">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                                {% endif %}
-                            </div>
-                        </td>
+                        <div class="btn-group btn-group-sm">
+                            {% if perms.customers.view_customer %}
+                            <a href="{% url 'customers:detail' customer.pk %}" class="btn btn-outline-primary" title="View">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            {% endif %}
+
+                            {# NEW: Create Sale Button #}
+                            {% if perms.sales.add_sale %}
+                            <a href="{% url 'sales:create_sale' %}?customer_id={{ customer.id }}"
+                               class="btn btn-outline-success"
+                               title="Create Sale">
+                                <i class="bi bi-cart-plus"></i>
+                            </a>
+                            {% endif %}
+
+                            {% if perms.customers.change_customer %}
+                            <a href="{% url 'customers:update' customer.pk %}" class="btn btn-outline-warning" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            {% endif %}
+
+                            {% if perms.customers.delete_customer %}
+                            <button type="button" class="btn btn-outline-danger" title="Delete"
+                                    onclick="confirmDelete('{{ customer.name }}', '{% url 'customers:delete' customer.pk %}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            {% endif %}
+                        </div>
+                    </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -253,6 +280,42 @@
     <input type="hidden" name="action" id="bulkAction">
     <input type="hidden" name="selected_customers" id="selectedCustomers">
 </form>
+<div class="modal fade" id="bulkCreditModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bulk Credit Limit Update</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">New Credit Limit (UGX)</label>
+                    <input type="number" class="form-control" id="bulkCreditLimit" min="0">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Reason</label>
+                    <textarea class="form-control" id="bulkCreditReason"
+                              placeholder="Reason for bulk update"></textarea>
+                </div>
+
+                <small class="text-muted">
+                    This will apply to all selected customers.
+                </small>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    Cancel
+                </button>
+                <button type="button" class="btn btn-primary" onclick="submitBulkCreditUpdate()">
+                    Apply Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
@@ -273,14 +336,8 @@
         </div>
     </div>
 </div>
-
-<style>
-.avatar-sm {
-    width: 40px;
-    height: 40px;
-    font-size: 0.875rem;
-}
-</style>
+{% endblock %}
+{% block extra_js %}
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -310,6 +367,81 @@ function selectAllCustomers() {
         checkbox.checked = true;
     });
 }
+function openBulkCreditModal() {
+    const selected = document.querySelectorAll('.customer-checkbox:checked');
+    if (selected.length === 0) {
+        alert('Please select at least one customer.');
+        return;
+    }
+
+    new bootstrap.Modal(document.getElementById('bulkCreditModal')).show();
+}
+async function submitBulkCreditUpdate() {
+    const limit = document.getElementById('bulkCreditLimit').value;
+    const reason = document.getElementById('bulkCreditReason').value || 'Bulk credit update';
+
+    if (limit === '' || limit < 0) {
+        alert('Please enter a valid credit limit.');
+        return;
+    }
+
+    const selectedCustomers = Array.from(
+        document.querySelectorAll('.customer-checkbox:checked')
+    ).map(cb => ({
+        customer_id: cb.value,
+        new_limit: limit,
+        reason: reason
+    }));
+
+    try {
+        const response = await fetch(
+            "{% url 'customers:bulk_update_credit_limits' %}",
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken'),
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ updates: selectedCustomers })
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Bulk update failed');
+        }
+
+        if (data.failed && data.failed.length > 0) {
+            alert(`Some updates failed (${data.failed.length}).`);
+        } else {
+            alert('Credit limits updated successfully.');
+        }
+
+        location.reload();
+
+    } catch (error) {
+        console.error('Bulk credit update error:', error);
+        alert('Failed to update credit limits.');
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let cookie of cookies) {
+            cookie = cookie.trim();
+            if (cookie.startsWith(name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
 
 function clearSelection() {
     document.getElementById('selectAll').checked = false;

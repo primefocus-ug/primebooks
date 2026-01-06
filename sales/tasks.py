@@ -556,6 +556,8 @@ def update_stock_for_receipt(sale):
             except Exception as e:
                 logger.error(f"Failed to update stock for {item.product.name}: {e}")
 
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def fiscalize_invoice_async(self, sale_id, user_id=None):
     """
@@ -598,19 +600,22 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                 except User.DoesNotExist:
                     logger.warning(f"User {user_id} not found in schema {tenant_schema}")
 
-            # ========== UPDATED: Check if sale can be fiscalized (works for all document types) ==========
-            # Both RECEIPTS and INVOICES can be fiscalized
+            # Check if sale can be fiscalized
             if sale.document_type not in ['RECEIPT', 'INVOICE']:
                 logger.warning(f"Sale {sale.document_number} ({sale.get_document_type_display()}) cannot be fiscalized")
                 return {
                     'success': False,
-                    'message': f'{sale.get_document_type_display()} cannot be fiscalized. Only receipts and invoices can be fiscalized.',
+                    'message': f'{sale.get_document_type_display()} cannot be fiscalized',
                     'schema': tenant_schema
                 }
 
             # Check if already fiscalized
             if sale.is_fiscalized:
                 logger.info(f"Sale {sale.document_number} is already fiscalized")
+
+                # ✅ Even if already fiscalized, ensure stock movements are synced
+                sale.fiscalize_and_sync_stock()
+
                 return {
                     'success': True,
                     'message': 'Sale already fiscalized',
@@ -618,53 +623,12 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                     'schema': tenant_schema
                 }
 
-            # Check if store can fiscalize
-            if not sale.store.can_fiscalize:
-                logger.warning(f"Store {sale.store.name} cannot fiscalize transactions")
-                return {
-                    'success': False,
-                    'message': 'This store cannot fiscalize transactions',
-                    'schema': tenant_schema
-                }
-
-            # Use Sale model's can_fiscalize method
-            if hasattr(sale, 'can_fiscalize'):
-                can_fiscalize, reason = sale.can_fiscalize(user)
-                if not can_fiscalize:
-                    logger.error(f"Cannot fiscalize sale {sale.document_number}: {reason}")
-                    return {
-                        'success': False,
-                        'message': reason,
-                        'schema': tenant_schema
-                    }
-
-            # Resolve company
-            company = TenantResolver.resolve_company_from_sale(sale)
-            if not company:
-                logger.error(f"No company found for sale {sale_id}")
-                return {
-                    'success': False,
-                    'message': 'No company found for sale',
-                    'schema': tenant_schema
-                }
-
-            # Check if company has EFRIS enabled
-            store_config = sale.store.effective_efris_config
-            if not store_config.get('enabled', False):
-                logger.warning(f"EFRIS not enabled for company {company.name}")
-                return {
-                    'success': False,
-                    'message': 'EFRIS is not enabled for this company',
-                    'schema': tenant_schema
-                }
-
-            # ========== UPDATED: Fiscalize sale directly (no invoice creation needed) ==========
+            # Fiscalize sale
             try:
                 from efris.services import EFRISInvoiceService
 
-                efris_service = EFRISInvoiceService(company)
+                efris_service = EFRISInvoiceService(company=sale.store.company)
                 result = efris_service.fiscalize_sale(sale, user)
-                logger.debug(f"fiscalize_sale result: {result}")
 
                 success = result.get('success', False)
                 message = result.get('message', 'Unknown error')
@@ -689,12 +653,10 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                         sale.fiscalization_time = timezone.now()
                         sale.fiscalization_status = 'fiscalized'
 
-                        update_fields = [
+                        sale.save(update_fields=[
                             'efris_invoice_number', 'verification_code',
                             'is_fiscalized', 'fiscalization_time', 'fiscalization_status'
-                        ]
-
-                        sale.save(update_fields=update_fields)
+                        ])
 
                         # Update invoice detail if it exists
                         if sale.document_type == 'INVOICE' and hasattr(sale, 'invoice_detail') and sale.invoice_detail:
@@ -710,6 +672,9 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                                 'is_fiscalized', 'fiscalization_time', 'fiscalization_status'
                             ])
 
+                        # ✅ IMPORTANT: Sync stock movements after fiscalization
+                        sale.fiscalize_and_sync_stock()
+
                         logger.info(f"Recovered fiscalized sale {sale.document_number} (Fiscal #: {fiscal_doc_number})")
 
                         return {
@@ -721,10 +686,9 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                         }
 
                 if success:
-                    # Update sale with EFRIS data
+                    # Extract EFRIS data
                     efris_data = result.get('data', {})
 
-                    # Extract fiscal document number from various possible locations
                     fiscal_doc_number = (
                             efris_data.get('invoice_no') or
                             efris_data.get('invoiceNo') or
@@ -732,7 +696,6 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                             efris_data.get('fiscal_document_number', '')
                     )
 
-                    # Extract verification code
                     verification_code = (
                             efris_data.get('fiscal_code') or
                             efris_data.get('verification_code') or
@@ -741,7 +704,6 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                             uuid.uuid4().hex[:8].upper()
                     )
 
-                    # Extract QR code
                     qr_code = (
                             efris_data.get('qrCode') or
                             efris_data.get('qr_code') or
@@ -762,7 +724,7 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                         'is_fiscalized', 'fiscalization_time', 'fiscalization_status'
                     ])
 
-                    # ========== UPDATED: Also update invoice detail if exists (for INVOICE document type) ==========
+                    # Update invoice detail if exists
                     if sale.document_type == 'INVOICE' and hasattr(sale, 'invoice_detail') and sale.invoice_detail:
                         try:
                             invoice = sale.invoice_detail
@@ -783,14 +745,13 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                         except Exception as invoice_update_error:
                             logger.error(f"Failed to update invoice detail: {invoice_update_error}")
 
+                    # ✅ CRITICAL: Sync stock movements after successful fiscalization
+                    sale.fiscalize_and_sync_stock()
+
                     logger.info(
                         f"✅ Successfully fiscalized {sale.get_document_type_display()} "
                         f"{sale.document_number} (Fiscal #: {fiscal_doc_number})"
                     )
-
-                    # Send notification if configured
-                    if getattr(settings, 'EFRIS_SEND_NOTIFICATIONS', False):
-                        send_fiscalization_notification.delay(sale_id, success=True)
 
                     return {
                         'success': True,
@@ -805,7 +766,6 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                     sale.fiscalization_status = 'failed'
                     sale.save(update_fields=['fiscalization_status'])
 
-                    # Also update invoice detail if exists
                     if sale.document_type == 'INVOICE' and hasattr(sale, 'invoice_detail') and sale.invoice_detail:
                         try:
                             invoice = sale.invoice_detail
@@ -823,9 +783,6 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                         )
                         raise self.retry(countdown=countdown, exc=Exception(message))
 
-                    if getattr(settings, 'EFRIS_SEND_NOTIFICATIONS', False):
-                        send_fiscalization_notification.delay(sale_id, success=False, error=message)
-
                     logger.error(f"Fiscalization failed for sale {sale.document_number}: {message}")
                     return {
                         'success': False,
@@ -841,7 +798,6 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                 sale.fiscalization_status = 'failed'
                 sale.save(update_fields=['fiscalization_status'])
 
-                # Also update invoice detail if exists
                 if sale.document_type == 'INVOICE' and hasattr(sale, 'invoice_detail') and sale.invoice_detail:
                     try:
                         invoice = sale.invoice_detail
@@ -854,10 +810,6 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                 # Retry on EFRIS errors (except duplicate errors)
                 if self.request.retries < self.max_retries and '2253' not in str(efris_error):
                     countdown = 60 * (2 ** self.request.retries)
-                    logger.info(
-                        f"Retrying fiscalization of sale {sale.document_number} "
-                        f"in {countdown} seconds (attempt {self.request.retries + 1})"
-                    )
                     raise self.retry(countdown=countdown, exc=efris_error)
 
                 return {
@@ -870,7 +822,6 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
     except Exception as e:
         logger.error(f"Sale fiscalization task failed for sale {sale_id}: {str(e)}", exc_info=True)
 
-        # Try to update sale status
         if 'tenant_schema' in locals() and tenant_schema:
             try:
                 with schema_context(tenant_schema):
@@ -878,7 +829,6 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                     sale.fiscalization_status = 'failed'
                     sale.save(update_fields=['fiscalization_status'])
 
-                    # Also update invoice detail if exists
                     if sale.document_type == 'INVOICE' and hasattr(sale, 'invoice_detail') and sale.invoice_detail:
                         try:
                             invoice = sale.invoice_detail
@@ -904,7 +854,6 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                 logger.debug(f"Restored schema context to {initial_schema}")
             except Exception as restore_error:
                 logger.warning(f"Could not restore initial schema {initial_schema}: {restore_error}")
-
 
 
 

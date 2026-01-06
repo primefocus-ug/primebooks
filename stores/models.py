@@ -1935,11 +1935,6 @@ class DeviceFingerprint(models.Model):
 
 
 class StockStore(models.Model):
-    """
-    Central warehouse/stock store that supplies branches.
-    This is a special type of store that holds company-wide inventory.
-    """
-
     # Link to company
     company = models.ForeignKey(
         'company.Company',
