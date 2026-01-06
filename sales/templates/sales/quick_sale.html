@@ -1347,7 +1347,7 @@ body {
     <!-- Header -->
     <div class="pos-header">
         <div class="pos-header-left">
-            <div class="pos-logo">⚡ QuickPOS</div>
+            <div class="pos-logo">⚡ PRIMEBOOKS</div>
             <button class="pos-shortcuts-btn" onclick="showShortcuts()">
                 <i class="bi bi-keyboard"></i> Shortcuts (?)
             </button>
@@ -1924,33 +1924,98 @@ const OfflineManager = {
 
         for (const item of [...QuickPOS.offline.syncQueue]) {
             try {
+                // Prepare form data
+                const formData = new FormData();
+
+                // Add all sale data fields
+                formData.append('store', item.saleData.store || currentStoreId);
+                formData.append('document_type', item.saleData.document_type || 'RECEIPT');
+                formData.append('payment_method', item.saleData.payment_method);
+                formData.append('quick_sale', 'true');
+                formData.append('offline_sale', 'true');
+                formData.append('offline_timestamp', item.timestamp);
+
+                // Add customer if present
+                if (item.saleData.customer) {
+                    formData.append('customer', item.saleData.customer);
+                }
+
+                // Add items data as JSON string
+                formData.append('items_data', item.saleData.items_data);
+
+                // Add amounts
+                formData.append('subtotal_amount', item.saleData.subtotal_amount);
+                formData.append('tax_amount', item.saleData.tax_amount);
+                formData.append('discount_amount', item.saleData.discount_amount);
+                formData.append('total_amount', item.saleData.total_amount);
+
+                // Add currency
+                formData.append('currency', item.saleData.currency || 'UGX');
+
+                console.log('📤 Syncing sale:', item.id, 'to store:', formData.get('store'));
+
+                // Send request with FormData
                 const response = await fetch('{% url "sales:create_sale" %}', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCookie('csrftoken')
+                        'X-CSRFToken': getCookie('csrftoken'),
+                        'X-Requested-With': 'XMLHttpRequest'
                     },
-                    body: JSON.stringify({
-                        ...item.saleData,
-                        offline_sale: true,
-                        offline_timestamp: item.timestamp
-                    })
+                    body: formData,
+                    credentials: 'same-origin'
                 });
 
-                if (response.ok) {
+                // Get response text first to handle non-JSON responses
+                const responseText = await response.text();
+
+                // Try to parse as JSON
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('❌ Server returned non-JSON response:', responseText.substring(0, 500));
+                    throw new Error('Server error - Invalid response format');
+                }
+
+                if (response.ok && data.success) {
+                    // Remove from queue
                     const index = QuickPOS.offline.syncQueue.findIndex(i => i.id === item.id);
                     if (index >= 0) {
                         QuickPOS.offline.syncQueue.splice(index, 1);
                     }
-                    console.log(`✅ Synced sale ${item.id}`);
+                    console.log(`✅ Synced sale ${item.id} - Sale #${data.sale_number}`);
                 } else {
-                    throw new Error(`HTTP ${response.status}`);
+                    const errorMsg = data.error || `HTTP ${response.status}`;
+                    console.error('❌ Sync failed:', errorMsg);
+                    throw new Error(errorMsg);
                 }
             } catch (error) {
                 console.error(`❌ Failed to sync sale ${item.id}:`, error);
-                item.attempts += 1;
+                item.attempts = (item.attempts || 0) + 1;
                 item.lastError = error.message;
                 failedSales.push(item);
+
+                // If too many attempts, ask user what to do
+                if (item.attempts >= 3) {
+                    const shouldRetry = confirm(
+                        `Sale ${item.id} has failed ${item.attempts} times.\n` +
+                        `Error: ${item.lastError}\n\n` +
+                        `Keep trying to sync this sale?`
+                    );
+
+                    if (!shouldRetry) {
+                        // Remove from queue but save to local storage for manual review
+                        const index = QuickPOS.offline.syncQueue.findIndex(i => i.id === item.id);
+                        if (index >= 0) {
+                            QuickPOS.offline.syncQueue.splice(index, 1);
+
+                            // Save to failed sales list
+                            const failedList = JSON.parse(localStorage.getItem('quickpos_failed_sales') || '[]');
+                            failedList.push(item);
+                            localStorage.setItem('quickpos_failed_sales', JSON.stringify(failedList));
+                        }
+                    }
+                }
             }
         }
 
@@ -1959,8 +2024,15 @@ const OfflineManager = {
 
         if (failedSales.length === 0) {
             showToast('All sales synced successfully!', 'success');
+            playSound('add');
         } else {
-            showToast(`${failedSales.length} sales failed to sync`, 'error');
+            showToast(`${failedSales.length} sales failed to sync - Check logs`, 'error');
+            playSound('error');
+
+            // Show detailed error for first failed sale
+            if (failedSales.length > 0) {
+                console.error('First failed sale details:', failedSales[0]);
+            }
         }
     },
 
@@ -3395,6 +3467,9 @@ function addStoreSelector() {
 // ============================================
 // COMPLETE SALE
 // ============================================
+// ============================================
+// COMPLETE SALE - FIXED VERSION
+// ============================================
 async function completeSale() {
     if (QuickPOS.cart.length === 0) {
         showToast('Cart is empty', 'warning');
@@ -3408,7 +3483,7 @@ async function completeSale() {
     if (paymentMethodInput) paymentMethodInput.value = paymentMethod;
 
     const saleData = {
-        store: currentStoreId,
+        store: currentStoreId,  // Make sure this is set correctly
         document_type: 'RECEIPT',
         payment_method: paymentMethod,
         customer: QuickPOS.selectedCustomer ? QuickPOS.selectedCustomer.id : null,
@@ -3417,6 +3492,7 @@ async function completeSale() {
         tax_amount: document.getElementById('taxAmount')?.value || '0',
         discount_amount: document.getElementById('discountAmount')?.value || '0',
         total_amount: document.getElementById('totalAmount')?.value || '0',
+        currency: 'UGX',
         quick_sale: true
     };
 
@@ -3424,11 +3500,24 @@ async function completeSale() {
         showLoading(true);
 
         try {
+            // Update hidden form fields
+            document.getElementById('itemsData').value = saleData.items_data;
+            document.getElementById('subtotalAmount').value = saleData.subtotal_amount;
+            document.getElementById('taxAmount').value = saleData.tax_amount;
+            document.getElementById('discountAmount').value = saleData.discount_amount;
+            document.getElementById('totalAmount').value = saleData.total_amount;
+            document.getElementById('paymentMethod').value = paymentMethod;
+
+            if (QuickPOS.selectedCustomer) {
+                document.getElementById('customerId').value = QuickPOS.selectedCustomer.id;
+            }
+
             const form = document.getElementById('quickSaleForm');
             if (form) form.submit();
         } catch (error) {
             showLoading(false);
             showToast('Failed to complete sale', 'error');
+            console.error('Sale submission error:', error);
         }
     } else {
         OfflineManager.addToSyncQueue(saleData);
@@ -3452,7 +3541,6 @@ async function completeSale() {
         showToast('Sale saved offline - Will sync when online', 'success');
     }
 }
-
 function selectPaymentMethod() {
     return new Promise((resolve) => {
         const methods = ['CASH', 'CARD', 'MOBILE_MONEY', 'BANK_TRANSFER'];
@@ -3651,7 +3739,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }, 500);
 
     console.log('✅ QuickPOS Ready');
-    showToast('QuickPOS Ready - Press ? for shortcuts', 'success');
+    showToast('PRIMEBOOKS Ready - Press ? for shortcuts', 'success');
 });
 
 window.addEventListener('beforeunload', function(e) {

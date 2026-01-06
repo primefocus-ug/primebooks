@@ -120,21 +120,22 @@ NAVIGATION_ITEMS = [
         name="Create Sale",
         url_name="sales:create_sale",
         icon="bi bi-plus-circle",
-        permission="sales.add_sale"
+        permission="sales.add_sale",
+        css_class="nav-highlight-pulse"
     ),
     NavigationItem(
         name="Quick Sale",
         url_name="sales:quick_sale",
         icon="bi bi-plus-circle",
-        permission="sales.add_sale"
+        permission="sales.add_sale",
+        css_class="nav-highlight-success"
     ),
     NavigationItem(
         name="Create Expense",
         url_name="expenses:expense_create",
         icon="bi bi-plus-circle",
         permission="expenses.add_expense",
-        
-
+        css_class="nav-highlight-danger"
     ),
     NavigationItem(
         name="Profile & Settings",
@@ -482,13 +483,15 @@ NAVIGATION_ITEMS = [
                 name="Create Sale",
                 url_name="sales:create_sale",
                 icon="bi bi-plus-circle",
-                permission="sales.add_sale"
+                permission="sales.add_sale",
+                css_class="nav-highlight-pulse"
             ),
             NavigationItem(
                 name="Quick Sale",
                 url_name="sales:quick_sale",
                 icon="bi bi-plus-circle",
-                permission="sales.add_sale"
+                permission="sales.add_sale",
+                css_class="nav-highlight-success"
             ),
             NavigationItem(
                 name="Sales Analytics",
