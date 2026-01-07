@@ -50,35 +50,128 @@ def _is_efris_configured(company) -> bool:
         logger.warning(f"Error checking EFRIS configuration for company {company.name}: {str(e)}")
         return False
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def sync_service_to_efris_task(self, schema_name, service_id, user_id=None):
+
+import logging
+from celery import shared_task
+from django.db import connection
+from django_tenants.utils import schema_context, get_tenant_model
+
+logger = logging.getLogger(__name__)
+
+
+def get_company_efris_status(company):
+    """
+    Check company-level EFRIS configuration status.
+    Only checks if EFRIS is enabled - rest is handled elsewhere.
+
+    Args:
+        company: Company instance
+
+    Returns:
+        dict: {
+            'enabled': bool,
+            'can_sync': bool,
+            'errors': list
+        }
+    """
+    status = {
+        'enabled': False,
+        'can_sync': False,
+        'errors': []
+    }
+
     try:
-        from company.models import Company
-        from inventory.models import Service
-        from efris.services import EFRISServiceManager
+        # Check if EFRIS is enabled at company level
+        if not company.efris_enabled:
+            status['errors'].append('EFRIS is not enabled for this company')
+            return status
 
-        logger.info(f"Starting EFRIS sync for service {service_id} in schema {schema_name}")
+        status['enabled'] = True
+        status['can_sync'] = True
 
+        return status
+
+    except Exception as e:
+        logger.error(f"Error checking company EFRIS status: {e}")
+        status['errors'].append(f"Error checking EFRIS status: {str(e)}")
+        return status
+
+
+@shared_task(bind=True, max_retries=3)
+def sync_service_to_efris_task(self, schema_name, service_id, user_id=None):
+    """
+    Celery task to sync a single service to EFRIS.
+    Uses company-level EFRIS configuration.
+
+    Args:
+        schema_name: Tenant schema name
+        service_id: Service ID to sync
+        user_id: User ID who triggered the sync (optional)
+
+    Returns:
+        dict: Result of the sync operation
+    """
+    try:
         # Get company
+        Company = get_tenant_model()
         company = Company.objects.get(schema_name=schema_name)
 
-        # Check if EFRIS is configured
-        if not _is_efris_configured(company):
+        # Check company-level EFRIS status
+        efris_status = get_company_efris_status(company)
+
+        if not efris_status['can_sync']:
+            error_msg = f"EFRIS not enabled for company {company.name}"
+            logger.error(error_msg)
             return {
                 'success': False,
+                'error': error_msg,
+                'errors': efris_status['errors'],
                 'service_id': service_id,
-                'skipped': True,
-                'error': 'EFRIS not configured for this company'
+                'company_name': company.name,
             }
 
+        # Switch to tenant schema
         with schema_context(schema_name):
+            from inventory.models import Service
+            from efris.services import EFRISServiceManager
+            from django.contrib.auth import get_user_model
+
+            User = get_user_model()
+
             # Get service
             try:
                 service = Service.objects.get(id=service_id)
             except Service.DoesNotExist:
+                error_msg = f"Service with ID {service_id} not found"
+                logger.error(error_msg)
                 return {
                     'success': False,
-                    'error': f'Service {service_id} not found'
+                    'error': error_msg,
+                    'service_id': service_id,
+                }
+
+            # Check if service is ready for EFRIS
+            if not service.efris_configuration_complete:
+                errors = service.get_efris_errors()
+                error_msg = f"Service '{service.name}' not ready for EFRIS sync"
+                logger.warning(f"{error_msg}: {errors}")
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'errors': errors,
+                    'service_id': service_id,
+                    'service_name': service.name,
+                }
+
+            # Check if EFRIS auto-sync is enabled
+            if not service.efris_auto_sync_enabled:
+                error_msg = f"EFRIS auto-sync disabled for service '{service.name}'"
+                logger.warning(error_msg)
+                return {
+                    'success': False,
+                    'error': error_msg,
+                    'service_id': service_id,
+                    'service_name': service.name,
                 }
 
             # Get user if provided
@@ -87,247 +180,305 @@ def sync_service_to_efris_task(self, schema_name, service_id, user_id=None):
                 try:
                     user = User.objects.get(id=user_id)
                 except User.DoesNotExist:
-                    pass
+                    logger.warning(f"User with ID {user_id} not found")
 
-            # Create manager
+            # Initialize EFRIS Service Manager with company
             manager = EFRISServiceManager(company)
 
-            # Determine operation type
-            if service.efris_is_uploaded and service.efris_service_id:
-                # Update existing service
-                result = manager.update_service(service, user=user)
-                operation = 'UPDATE'
-            else:
-                # Register new service
-                result = manager.register_service(service, user=user)
-                operation = 'REGISTER'
+            # Register service with EFRIS
+            logger.info(
+                f"Starting EFRIS sync for service '{service.name}' (ID: {service_id}) "
+                f"in company '{company.name}'"
+            )
+
+            result = manager.register_service(service, user=user)
 
             if result.get('success'):
                 logger.info(
-                    f"Successfully {operation.lower()}ed service {service.name} "
-                    f"(ID: {service.id}) with EFRIS"
+                    f"Successfully synced service '{service.name}' to EFRIS. "
+                    f"EFRIS Service ID: {result.get('efris_service_id')}"
                 )
-
                 return {
                     'success': True,
-                    'service_id': service.id,
+                    'message': result.get('message', 'Service synced successfully'),
+                    'efris_service_id': result.get('efris_service_id'),
+                    'service_id': service_id,
                     'service_name': service.name,
                     'service_code': service.code,
-                    'operation': operation,
-                    'efris_service_id': result.get('efris_service_id'),
-                    'message': result.get('message')
+                    'company_name': company.name,
                 }
             else:
-                error_msg = result.get('error', 'Unknown error')
+                error_msg = result.get('error', 'Unknown error during sync')
                 logger.error(
-                    f"Failed to {operation.lower()} service {service.name} "
-                    f"with EFRIS: {error_msg}"
+                    f"Failed to sync service '{service.name}' to EFRIS: {error_msg}"
                 )
 
-                # Don't retry configuration errors
-                if "no efris_config" in error_msg.lower() or "not configured" in error_msg.lower():
-                    return {
-                        'success': False,
-                        'service_id': service.id,
-                        'service_name': service.name,
-                        'operation': operation,
-                        'error': error_msg,
-                        'skipped': True
-                    }
-
                 # Retry on certain errors
-                if 'timeout' in error_msg.lower() or 'connection' in error_msg.lower():
-                    raise self.retry(exc=Exception(error_msg))
+                if 'network' in error_msg.lower() or 'timeout' in error_msg.lower():
+                    raise self.retry(countdown=60 * (self.request.retries + 1))
 
                 return {
                     'success': False,
-                    'service_id': service.id,
+                    'error': error_msg,
+                    'details': result.get('details', {}),
+                    'service_id': service_id,
                     'service_name': service.name,
-                    'operation': operation,
-                    'error': error_msg
+                    'company_name': company.name,
                 }
 
     except Exception as e:
-        logger.error(f"Service EFRIS sync task failed: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error in sync_service_to_efris_task for service {service_id}: {str(e)}",
+            exc_info=True
+        )
 
-        # Don't retry configuration errors
-        if "no efris_config" in str(e).lower() or "not configured" in str(e).lower():
-            return {
-                'success': False,
-                'service_id': service_id,
-                'error': str(e),
-                'skipped': True
-            }
-
-        # Retry on network errors
-        if 'timeout' in str(e).lower() or 'connection' in str(e).lower():
-            raise self.retry(exc=e)
+        # Retry on unexpected errors
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=e, countdown=60 * (self.request.retries + 1))
 
         return {
             'success': False,
+            'error': f'Task failed after {self.max_retries} retries: {str(e)}',
             'service_id': service_id,
-            'error': str(e)
         }
 
 
 @shared_task(bind=True)
 def bulk_sync_services_to_efris_task(self, schema_name, service_ids, user_id=None):
+    """
+    Celery task to bulk sync multiple services to EFRIS.
+    Uses company-level EFRIS configuration.
+
+    Args:
+        schema_name: Tenant schema name
+        service_ids: List of service IDs to sync
+        user_id: User ID who triggered the sync (optional)
+
+    Returns:
+        dict: Summary of sync results
+    """
     try:
-        from company.models import Company
-        from inventory.models import Service
-        from efris.services import EFRISServiceManager
-
-        logger.info(
-            f"Starting bulk EFRIS sync for {len(service_ids)} services "
-            f"in schema {schema_name}"
-        )
-
+        # Get company
+        Company = get_tenant_model()
         company = Company.objects.get(schema_name=schema_name)
+
+        # Check company-level EFRIS status
+        efris_status = get_company_efris_status(company)
+
+        if not efris_status['can_sync']:
+            error_msg = f"EFRIS not enabled for company {company.name}"
+            logger.error(error_msg)
+            return {
+                'success': False,
+                'error': error_msg,
+                'errors': efris_status['errors'],
+                'company_name': company.name,
+                'total': len(service_ids),
+                'successful': 0,
+                'failed': len(service_ids),
+            }
 
         results = {
             'total': len(service_ids),
             'successful': 0,
             'failed': 0,
-            'errors': [],
-            'synced_services': []
+            'skipped': 0,
+            'results': [],
+            'company_name': company.name,
         }
 
+        # Switch to tenant schema
         with schema_context(schema_name):
+            from inventory.models import Service
+            from efris.services import EFRISServiceManager
+            from django.contrib.auth import get_user_model
+
+            User = get_user_model()
+
             # Get user if provided
             user = None
             if user_id:
                 try:
                     user = User.objects.get(id=user_id)
                 except User.DoesNotExist:
-                    pass
+                    logger.warning(f"User with ID {user_id} not found")
 
-            # Create manager
+            # Initialize EFRIS Service Manager
             manager = EFRISServiceManager(company)
 
-            # Process each service
-            for service_id in service_ids:
-                try:
-                    service = Service.objects.get(id=service_id)
+            # Get all services
+            services = Service.objects.filter(id__in=service_ids)
 
-                    # Validate
-                    is_valid, errors = manager.validate_service_for_efris(service)
-                    if not is_valid:
-                        results['failed'] += 1
-                        results['errors'].append({
-                            'service_id': service.id,
-                            'service_name': service.name,
-                            'error': f"Validation failed: {'; '.join(errors)}"
+            logger.info(
+                f"Starting bulk EFRIS sync for {services.count()} services "
+                f"in company '{company.name}'"
+            )
+
+            # Process each service
+            for service in services:
+                service_result = {
+                    'service_id': service.id,
+                    'service_name': service.name,
+                    'service_code': service.code,
+                }
+
+                try:
+                    # Check if service is ready
+                    if not service.efris_configuration_complete:
+                        results['skipped'] += 1
+                        service_result.update({
+                            'status': 'skipped',
+                            'reason': 'Configuration incomplete',
+                            'errors': service.get_efris_errors()
                         })
+                        results['results'].append(service_result)
                         continue
 
-                    # Sync
-                    result = manager.sync_service_changes(service, user=user)
-
-                    if result.get('success'):
-                        results['successful'] += 1
-                        results['synced_services'].append({
-                            'service_id': service.id,
-                            'service_name': service.name,
-                            'service_code': service.code,
-                            'efris_service_id': result.get('efris_service_id')
+                    # Check if auto-sync is enabled
+                    if not service.efris_auto_sync_enabled:
+                        results['skipped'] += 1
+                        service_result.update({
+                            'status': 'skipped',
+                            'reason': 'EFRIS auto-sync disabled'
                         })
+                        results['results'].append(service_result)
+                        continue
+
+                    # Sync service
+                    sync_result = manager.register_service(service, user=user)
+
+                    if sync_result.get('success'):
+                        results['successful'] += 1
+                        service_result.update({
+                            'status': 'success',
+                            'efris_service_id': sync_result.get('efris_service_id'),
+                            'message': sync_result.get('message', 'Synced successfully')
+                        })
+                        logger.info(
+                            f"Successfully synced service '{service.name}' "
+                            f"(EFRIS ID: {sync_result.get('efris_service_id')})"
+                        )
                     else:
                         results['failed'] += 1
-                        results['errors'].append({
-                            'service_id': service.id,
-                            'service_name': service.name,
-                            'error': result.get('error', 'Unknown error')
+                        service_result.update({
+                            'status': 'failed',
+                            'error': sync_result.get('error', 'Unknown error'),
+                            'details': sync_result.get('details', {})
                         })
+                        logger.error(
+                            f"Failed to sync service '{service.name}': "
+                            f"{sync_result.get('error')}"
+                        )
 
-                except Service.DoesNotExist:
-                    results['failed'] += 1
-                    results['errors'].append({
-                        'service_id': service_id,
-                        'error': 'Service not found'
-                    })
+                    results['results'].append(service_result)
+
                 except Exception as e:
                     results['failed'] += 1
-                    results['errors'].append({
-                        'service_id': service_id,
+                    service_result.update({
+                        'status': 'failed',
                         'error': str(e)
                     })
-                    logger.error(f"Error syncing service {service_id}: {e}", exc_info=True)
+                    results['results'].append(service_result)
+                    logger.error(
+                        f"Error syncing service '{service.name}': {str(e)}",
+                        exc_info=True
+                    )
 
-        success_rate = (results['successful'] / results['total'] * 100) if results['total'] > 0 else 0
-        logger.info(
-            f"Bulk service sync completed: {results['successful']}/{results['total']} "
-            f"services synced ({success_rate:.1f}% success rate)"
-        )
+            # Log summary
+            logger.info(
+                f"Bulk EFRIS sync completed for company '{company.name}': "
+                f"{results['successful']} successful, {results['failed']} failed, "
+                f"{results['skipped']} skipped out of {results['total']} total"
+            )
 
-        return results
+            results['success'] = results['failed'] == 0
+            return results
 
     except Exception as e:
-        logger.error(f"Bulk service sync task failed: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error in bulk_sync_services_to_efris_task: {str(e)}",
+            exc_info=True
+        )
         return {
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'total': len(service_ids) if service_ids else 0,
+            'successful': 0,
+            'failed': len(service_ids) if service_ids else 0,
+            'skipped': 0,
         }
 
 
 @shared_task
-def auto_sync_pending_services(schema_name):
+def auto_sync_pending_services_task(schema_name):
     """
-    Automatically sync all pending services for a tenant
-    Can be run periodically via celery beat
+    Background task to automatically sync all pending services to EFRIS.
+    Can be scheduled to run periodically.
 
     Args:
         schema_name: Tenant schema name
+
+    Returns:
+        dict: Summary of sync results
     """
     try:
-        from company.models import Company
-        from inventory.models import Service
-
-        logger.info(f"Auto-syncing pending services for schema {schema_name}")
-
+        # Get company
+        Company = get_tenant_model()
         company = Company.objects.get(schema_name=schema_name)
 
+        # Check company-level EFRIS status
+        efris_status = get_company_efris_status(company)
+
+        if not efris_status['can_sync']:
+            logger.info(
+                f"Auto-sync skipped for company '{company.name}': EFRIS not enabled"
+            )
+            return {
+                'success': False,
+                'error': 'EFRIS not enabled',
+                'company_name': company.name,
+            }
+
+        # Switch to tenant schema
         with schema_context(schema_name):
-            # Get services that need syncing
+            from inventory.models import Service
+
+            # Get services pending upload
             pending_services = Service.objects.filter(
                 is_active=True,
                 efris_auto_sync_enabled=True,
-                efris_is_uploaded=False
-            ).select_related('category')
+                efris_is_uploaded=False,
+                efris_configuration_complete=True
+            )
 
-            count = pending_services.count()
-
-            if count == 0:
-                logger.info(f"No pending services to sync for {schema_name}")
+            if not pending_services.exists():
+                logger.info(
+                    f"No pending services to sync for company '{company.name}'"
+                )
                 return {
                     'success': True,
                     'message': 'No pending services',
-                    'count': 0
+                    'company_name': company.name,
+                    'total': 0,
                 }
 
-            logger.info(f"Found {count} pending services to sync")
+            logger.info(
+                f"Auto-syncing {pending_services.count()} pending services "
+                f"for company '{company.name}'"
+            )
 
-            # Queue individual sync tasks
+            # Use bulk sync task
             service_ids = list(pending_services.values_list('id', flat=True))
+            result = bulk_sync_services_to_efris_task(schema_name, service_ids)
 
-            for service_id in service_ids:
-                sync_service_to_efris_task.delay(
-                    schema_name=schema_name,
-                    service_id=service_id
-                )
-
-            return {
-                'success': True,
-                'message': f'Queued {count} services for sync',
-                'count': count
-            }
+            return result
 
     except Exception as e:
-        logger.error(f"Auto-sync pending services failed: {str(e)}", exc_info=True)
+        logger.error(f"Error in auto_sync_pending_services_task: {str(e)}", exc_info=True)
         return {
             'success': False,
-            'error': str(e)
+            'error': str(e),
         }
-
 
 @shared_task
 def refresh_service_from_efris_task(schema_name, service_id):

@@ -2598,7 +2598,8 @@ def category_detail_api(request, pk):
     try:
         category = Category.objects.get(pk=pk)
 
-        data = {
+        # Build data object
+        category_data = {
             'id': category.id,
             'name': category.name,
             'code': category.code,
@@ -2613,7 +2614,7 @@ def category_detail_api(request, pk):
 
         return JsonResponse({
             'success': True,
-            **data
+            'data': category_data  # ✅ Nest data under 'data' key
         })
 
     except Category.DoesNotExist:
@@ -2627,7 +2628,6 @@ def category_detail_api(request, pk):
             'success': False,
             'error': str(e)
         }, status=500)
-
 
 @login_required
 @require_GET
