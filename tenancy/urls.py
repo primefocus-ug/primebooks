@@ -12,6 +12,7 @@ urlpatterns = [
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/company/',include('company.api_urls')),
+    path('pos/',include('pos_app.urls')),
     path('i18n/', include('django.conf.urls.i18n')),
     path('api/messaging/', include('messaging.api_urls')),
 ]

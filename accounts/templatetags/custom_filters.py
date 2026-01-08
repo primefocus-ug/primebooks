@@ -201,3 +201,11 @@ def get_field(form, field_name):
         return form[field_name]
     except KeyError:
         return ""
+
+
+@register.filter
+def abs(value):
+    try:
+        return abs(value)
+    except Exception:
+        return value

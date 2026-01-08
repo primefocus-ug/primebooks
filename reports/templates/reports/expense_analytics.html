@@ -56,27 +56,41 @@
     .trend-down { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
 
     .budget-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+        background: white;
+        border: 1px solid #e5e7eb;
         border-radius: 10px;
         padding: 20px;
         margin-bottom: 15px;
+        transition: all 0.3s;
+    }
+    [data-theme="dark"] .budget-card {
+        background: #1f2937;
+        border-color: #374151;
+    }
+    .budget-card:hover {
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
     }
 
     .utilization-bar {
         height: 10px;
-        background: rgba(255, 255, 255, 0.3);
+        background: #e5e7eb;
         border-radius: 5px;
         overflow: hidden;
         margin-top: 10px;
     }
+    [data-theme="dark"] .utilization-bar {
+        background: #374151;
+    }
     .utilization-fill {
         height: 100%;
         border-radius: 5px;
-        background: white;
+        transition: width 0.3s ease;
     }
+    .utilization-fill.safe { background: #10b981; }
+    .utilization-fill.warning { background: #f59e0b; }
+    .utilization-fill.danger { background: #ef4444; }
 
-    .vendor-chip {
+    .tag-chip {
         display: inline-block;
         padding: 8px 16px;
         background: #f3f4f6;
@@ -84,7 +98,7 @@
         margin: 4px;
         font-size: 0.9rem;
     }
-    [data-theme="dark"] .vendor-chip {
+    [data-theme="dark"] .tag-chip {
         background: #374151;
     }
 
@@ -92,6 +106,24 @@
         position: relative;
         height: 300px;
         margin: 20px 0;
+    }
+
+    .expense-item {
+        padding: 12px;
+        border-bottom: 1px solid #e5e7eb;
+        transition: background 0.2s;
+    }
+    [data-theme="dark"] .expense-item {
+        border-bottom-color: #374151;
+    }
+    .expense-item:hover {
+        background: #f9fafb;
+    }
+    [data-theme="dark"] .expense-item:hover {
+        background: #374151;
+    }
+    .expense-item:last-child {
+        border-bottom: none;
     }
 </style>
 {% endblock %}
@@ -147,16 +179,9 @@
                                value="{{ form.cleaned_data.end_date|date:'Y-m-d' }}">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label">Store</label>
-                        <select name="store" class="form-select">
-                            <option value="">All Stores</option>
-                            {% for store in stores %}
-                            <option value="{{ store.id }}"
-                                    {% if form.cleaned_data.store.id == store.id %}selected{% endif %}>
-                                {{ store.name }}
-                            </option>
-                            {% endfor %}
-                        </select>
+                        <label class="form-label">Tags (comma-separated)</label>
+                        <input type="text" name="tags" class="form-control"
+                               value="{{ selected_tags }}" placeholder="e.g., food, transport">
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">&nbsp;</label>
@@ -164,11 +189,9 @@
                             <button type="submit" class="btn btn-primary flex-grow-1">
                                 <i class="fas fa-chart-bar"></i> Analyze
                             </button>
-                            {% if perms.expenses.view_expense %}
                             <a href="{% url 'reports:expense_analytics' %}" class="btn btn-outline-secondary">
                                 <i class="fas fa-redo"></i>
                             </a>
-                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -185,11 +208,11 @@
                     <i class="fas fa-money-bill-wave"></i>
                 </div>
                 <h3 class="text-primary mb-2">
-                    UGX {{ analytics_data.summary_insights.total_spent|floatformat:0|intcomma }}
+                    UGX {{ analytics_data.total_expenses|floatformat:0|intcomma }}
                 </h3>
                 <p class="text-muted mb-1">Total Spent</p>
-                <span class="trend-indicator trend-down">
-                    <i class="fas fa-arrow-down me-1"></i> 5.2%
+                <span class="badge bg-light text-dark">
+                    {{ analytics_data.total_count }} expenses
                 </span>
             </div>
         </div>
@@ -199,41 +222,41 @@
                     <i class="fas fa-chart-pie"></i>
                 </div>
                 <h3 class="text-success mb-2">
-                    UGX {{ analytics_data.summary_insights.avg_monthly_spending|floatformat:0|intcomma }}
+                    UGX {{ analytics_data.avg_expense|floatformat:0|intcomma }}
                 </h3>
-                <p class="text-muted mb-1">Avg Monthly Spend</p>
-                <small class="text-success">Per month</small>
+                <p class="text-muted mb-1">Average Expense</p>
+                <small class="text-success">Per transaction</small>
             </div>
         </div>
         <div class="col-md-3">
             <div class="insight-card">
                 <div class="insight-icon bg-warning text-white">
-                    <i class="fas fa-tags"></i>
+                    <i class="fas fa-arrow-up"></i>
                 </div>
                 <h3 class="text-warning mb-2">
-                    {{ analytics_data.summary_insights.most_expensive_category|default:"N/A" }}
+                    UGX {{ analytics_data.max_expense|floatformat:0|intcomma }}
                 </h3>
-                <p class="text-muted mb-1">Top Spending Category</p>
-                <small class="text-warning">Highest expense</small>
+                <p class="text-muted mb-1">Highest Expense</p>
+                <small class="text-warning">Maximum amount</small>
             </div>
         </div>
         <div class="col-md-3">
             <div class="insight-card">
                 <div class="insight-icon bg-info text-white">
-                    <i class="fas fa-sync-alt"></i>
+                    <i class="fas fa-arrow-down"></i>
                 </div>
                 <h3 class="text-info mb-2">
-                    {{ analytics_data.summary_insights.recurring_expenses_percentage|floatformat:1 }}%
+                    UGX {{ analytics_data.min_expense|floatformat:0|intcomma }}
                 </h3>
-                <p class="text-muted mb-1">Recurring Expenses</p>
-                <small class="text-info">Of total spend</small>
+                <p class="text-muted mb-1">Lowest Expense</p>
+                <small class="text-info">Minimum amount</small>
             </div>
         </div>
     </div>
 
     <!-- Main Charts -->
     <div class="row g-4 mb-4">
-        <div class="col-lg-6">
+        <div class="col-lg-8">
             <div class="card shadow-sm">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-chart-line text-primary"></i> Monthly Spending Trend</h5>
@@ -245,122 +268,153 @@
                 </div>
             </div>
         </div>
-        <div class="col-lg-6">
+        <div class="col-lg-4">
             <div class="card shadow-sm">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-chart-pie text-success"></i> Top Categories</h5>
+                    <h5 class="mb-0"><i class="fas fa-calendar-week text-info"></i> Day of Week Analysis</h5>
                 </div>
                 <div class="card-body">
                     <div class="chart-container">
-                        <canvas id="categoryChart"></canvas>
+                        <canvas id="dayOfWeekChart"></canvas>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Budget Analysis -->
+    <!-- Tag Analysis -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-tags text-success"></i> Top Spending Tags</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="tagChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-list text-warning"></i> Tag Breakdown</h5>
+                </div>
+                <div class="card-body">
+                    {% if analytics_data.top_tags %}
+                        <div class="list-group">
+                            {% for tag in analytics_data.top_tags|slice:":10" %}
+                            <div class="list-group-item border-0 px-0">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="tag-chip">
+                                        <i class="fas fa-tag me-1"></i> {{ tag.tag_name }}
+                                    </span>
+                                    <div class="text-end">
+                                        <span class="fw-bold">UGX {{ tag.total|floatformat:0|intcomma }}</span>
+                                    </div>
+                                </div>
+                                <div class="progress" style="height: 6px;">
+                                    {% widthratio tag.total analytics_data.total_expenses 100 as percentage %}
+                                    <div class="progress-bar bg-success" style="width: {{ percentage }}%"></div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted text-center py-4">No tagged expenses in this period</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Budget vs Actual (if budgets exist) -->
+    {% if user.budgets.exists %}
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-info text-white">
-            <h5 class="mb-0"><i class="fas fa-balance-scale"></i> Budget vs Actual Analysis</h5>
+            <h5 class="mb-0"><i class="fas fa-balance-scale"></i> Budget Analysis</h5>
         </div>
         <div class="card-body">
             <div class="row">
-                {% for item in analytics_data.budget_analysis %}
+                {% for budget in user.budgets.filter|slice:":6" %}
                 <div class="col-md-4 mb-3">
                     <div class="budget-card">
-                        <h6 class="mb-2">{{ item.category }}</h6>
-                        <div class="d-flex justify-content-between mb-2">
-                            <small>Budget: {% if item.monthly_budget %}UGX {{ item.monthly_budget|floatformat:0|intcomma }}{% else %}Not set{% endif %}</small>
-                            <small>Spent: UGX {{ item.total_spent|floatformat:0|intcomma }}</small>
-                        </div>
-                        {% if item.budget_utilization %}
-                        <div class="utilization-bar">
-                            <div class="utilization-fill" style="width: {% if item.budget_utilization > 100 %}100{% else %}{{ item.budget_utilization }}{% endif %}%"></div>
-                        </div>
-                        <div class="d-flex justify-content-between mt-2">
-                            <small>{{ item.budget_utilization|floatformat:1 }}% utilized</small>
-                            {% if item.budget_utilization > 100 %}
-                            <small class="text-warning"><i class="fas fa-exclamation-triangle"></i> Over budget!</small>
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h6 class="mb-0">{{ budget.name }}</h6>
+                            {% if not budget.is_active %}
+                                <span class="badge bg-secondary">Inactive</span>
                             {% endif %}
                         </div>
-                        {% endif %}
+                        <p class="text-muted small mb-2">{{ budget.get_period_display }}</p>
+                        <div class="d-flex justify-content-between mb-2">
+                            <small>Budget: UGX {{ budget.amount|floatformat:0|intcomma }}</small>
+                            <small>Spent: UGX {{ budget.get_current_spending|floatformat:0|intcomma }}</small>
+                        </div>
+                        {% with percentage=budget.get_percentage_used %}
+                        <div class="utilization-bar">
+                            <div class="utilization-fill {% if percentage >= 100 %}danger{% elif percentage >= budget.alert_threshold %}warning{% else %}safe{% endif %}"
+                                 style="width: {% if percentage > 100 %}100{% else %}{{ percentage }}{% endif %}%"></div>
+                        </div>
+                        <div class="d-flex justify-content-between mt-2">
+                            <small>{{ percentage|floatformat:1 }}% utilized</small>
+                            {% if percentage >= 100 %}
+                            <small class="text-danger"><i class="fas fa-exclamation-triangle"></i> Over budget!</small>
+                            {% elif percentage >= budget.alert_threshold %}
+                            <small class="text-warning"><i class="fas fa-exclamation-circle"></i> Alert threshold</small>
+                            {% endif %}
+                        </div>
+                        {% endwith %}
                     </div>
                 </div>
                 {% endfor %}
             </div>
+            {% if user.budgets.count > 6 %}
+            <div class="text-center mt-3">
+                <a href="#" class="btn btn-sm btn-outline-primary">View All Budgets</a>
+            </div>
+            {% endif %}
         </div>
     </div>
+    {% endif %}
 
-    <!-- Vendor Analysis -->
-    <div class="row g-4">
-        <div class="col-lg-6">
-            <div class="card shadow-sm">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-building text-warning"></i> Top Vendors</h5>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container">
-                        <canvas id="vendorChart"></canvas>
-                    </div>
-                </div>
-            </div>
+    <!-- Recent Expenses -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-clock text-primary"></i> Recent Expenses</h5>
         </div>
-
-        <div class="col-lg-6">
-            <div class="card shadow-sm">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-credit-card text-success"></i> Payment Method Analysis</h5>
-                </div>
-                <div class="card-body">
-                    <div class="list-group">
-                        {% for payment in analytics_data.payment_methods %}
-                        <div class="list-group-item border-0">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span>{{ payment.payment_method|default:"Unknown" }}</span>
-                                <div class="text-end">
-                                    <span class="fw-bold">UGX {{ payment.total|floatformat:0|intcomma }}</span><br>
-                                    <small class="text-muted">{{ payment.count }} payments</small>
-                                </div>
-                            </div>
-                            <div class="progress mt-2" style="height: 6px;">
-                                {% widthratio payment.total analytics_data.summary_insights.total_spent 100 as percentage %}
-                                <div class="progress-bar bg-success" style="width: {{ percentage }}%"></div>
+        <div class="card-body p-0">
+            {% if analytics_data.recent_expenses %}
+                {% for expense in analytics_data.recent_expenses %}
+                <div class="expense-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1">{{ expense.description }}</h6>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <small class="text-muted">
+                                    <i class="fas fa-calendar me-1"></i>{{ expense.date|date:"M d, Y" }}
+                                </small>
+                                {% if expense.tags.exists %}
+                                    {% for tag in expense.tags.all %}
+                                    <span class="badge bg-light text-dark">{{ tag.name }}</span>
+                                    {% endfor %}
+                                {% endif %}
                             </div>
                         </div>
-                        {% endfor %}
+                        <div class="text-end">
+                            <h6 class="mb-0 text-primary">UGX {{ expense.amount|floatformat:0|intcomma }}</h6>
+                            {% if expense.receipt %}
+                            <small class="text-muted">
+                                <i class="fas fa-paperclip"></i> Receipt
+                            </small>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Optimization Recommendations -->
-    <div class="card shadow-sm mt-4">
-        <div class="card-header bg-success text-white">
-            <h5 class="mb-0"><i class="fas fa-lightbulb"></i> Optimization Recommendations</h5>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-4">
-                    <div class="alert alert-warning">
-                        <h6><i class="fas fa-exclamation-triangle me-2"></i>Budget Overspend</h6>
-                        <p class="mb-0 small">3 categories exceeded their monthly budget</p>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="alert alert-info">
-                        <h6><i class="fas fa-chart-bar me-2"></i>Seasonal Patterns</h6>
-                        <p class="mb-0 small">Highest expenses occur in Q4 months</p>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="alert alert-success">
-                        <h6><i class="fas fa-check-circle me-2"></i>Cost Reduction</h6>
-                        <p class="mb-0 small">15% reduction in office supplies expenses</p>
-                    </div>
-                </div>
-            </div>
+                {% endfor %}
+            {% else %}
+                <p class="text-muted text-center py-4">No recent expenses</p>
+            {% endif %}
         </div>
     </div>
 
@@ -370,7 +424,7 @@
         <div class="card-body text-center py-5">
             <i class="fas fa-chart-bar fa-4x text-muted mb-3"></i>
             <h4 class="text-muted">No Analytics Data</h4>
-            <p class="text-muted">Select date range to generate expense analytics</p>
+            <p class="text-muted">Select date range and filters to generate expense analytics</p>
         </div>
     </div>
     {% endif %}
@@ -381,10 +435,16 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        {% if analytics_data %}
         initializeAnalyticsCharts();
+        {% endif %}
     });
 
     function initializeAnalyticsCharts() {
+        const isDarkMode = document.documentElement.getAttribute('data-theme') === 'dark';
+        const textColor = isDarkMode ? '#e5e7eb' : '#374151';
+        const gridColor = isDarkMode ? '#374151' : '#e5e7eb';
+
         // Monthly Trend Chart
         const monthlyCtx = document.getElementById('monthlyTrendChart');
         if (monthlyCtx) {
@@ -402,37 +462,67 @@
                         borderWidth: 3,
                         tension: 0.4,
                         fill: true
+                    }, {
+                        label: 'Transaction Count',
+                        data: monthlyData.counts,
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.4,
+                        yAxisID: 'y1',
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: textColor }
+                        }
+                    },
                     scales: {
                         y: {
                             beginAtZero: true,
+                            position: 'left',
                             ticks: {
+                                color: textColor,
                                 callback: function(value) {
                                     return 'UGX ' + value.toLocaleString();
                                 }
-                            }
+                            },
+                            grid: { color: gridColor }
+                        },
+                        y1: {
+                            beginAtZero: true,
+                            position: 'right',
+                            ticks: { color: textColor },
+                            grid: { display: false }
+                        },
+                        x: {
+                            ticks: { color: textColor },
+                            grid: { color: gridColor }
                         }
                     }
                 }
             });
         }
 
-        // Category Chart
-        const categoryCtx = document.getElementById('categoryChart');
-        if (categoryCtx) {
-            const categoryData = {{ category_chart|safe }};
+        // Tag Chart
+        const tagCtx = document.getElementById('tagChart');
+        if (tagCtx) {
+            const tagData = {{ tag_chart|safe }};
+            const colors = [
+                '#667eea', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6',
+                '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
+            ];
 
-            new Chart(categoryCtx, {
+            new Chart(tagCtx, {
                 type: 'doughnut',
                 data: {
-                    labels: categoryData.labels,
+                    labels: tagData.labels,
                     datasets: [{
-                        data: categoryData.amounts,
-                        backgroundColor: categoryData.colors
+                        data: tagData.amounts,
+                        backgroundColor: colors
                     }]
                 },
                 options: {
@@ -441,38 +531,57 @@
                     plugins: {
                         legend: {
                             position: 'bottom',
+                            labels: { color: textColor }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': UGX ' + context.parsed.toLocaleString();
+                                }
+                            }
                         }
                     }
                 }
             });
         }
 
-        // Vendor Chart
-        const vendorCtx = document.getElementById('vendorChart');
-        if (vendorCtx) {
-            const vendorData = {{ vendor_chart|safe }};
+        // Day of Week Chart
+        const dayCtx = document.getElementById('dayOfWeekChart');
+        if (dayCtx) {
+            const dayData = {{ day_of_week_chart|safe }};
 
-            new Chart(vendorCtx, {
+            new Chart(dayCtx, {
                 type: 'bar',
                 data: {
-                    labels: vendorData.labels,
+                    labels: dayData.labels,
                     datasets: [{
                         label: 'Amount Spent',
-                        data: vendorData.amounts,
-                        backgroundColor: '#f59e0b'
+                        data: dayData.amounts,
+                        backgroundColor: '#10b981'
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
                     scales: {
                         y: {
                             beginAtZero: true,
                             ticks: {
+                                color: textColor,
                                 callback: function(value) {
                                     return 'UGX ' + value.toLocaleString();
                                 }
-                            }
+                            },
+                            grid: { color: gridColor }
+                        },
+                        x: {
+                            ticks: { color: textColor },
+                            grid: { color: gridColor }
                         }
                     }
                 }
@@ -484,7 +593,6 @@
         const form = document.getElementById('filterForm');
         const params = new URLSearchParams(new FormData(form));
         params.append('export', format);
-
         window.location.href = window.location.pathname + '?' + params.toString();
     }
 </script>

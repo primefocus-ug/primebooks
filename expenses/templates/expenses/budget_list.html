@@ -1,0 +1,424 @@
+{% extends "base.html" %}
+{% load static %}
+{% load custom_filters %}
+
+{% block title %}Budget Management{% endblock %}
+
+{% block extra_css %}
+<style>
+    .budget-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+    
+    .budget-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+    
+    .btn-create {
+        background: #27ae60;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: 600;
+        transition: background 0.2s;
+    }
+    
+    .btn-create:hover {
+        background: #229954;
+    }
+    
+    .budget-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .budget-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .budget-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .budget-card.warning {
+        border-left: 4px solid #f39c12;
+    }
+    
+    .budget-card.danger {
+        border-left: 4px solid #e74c3c;
+    }
+    
+    .budget-card.success {
+        border-left: 4px solid #27ae60;
+    }
+    
+    .budget-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+    }
+    
+    .budget-name {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #2c3e50;
+        margin: 0;
+    }
+    
+    .budget-period {
+        background: #ecf0f1;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        color: #7f8c8d;
+        font-weight: 600;
+    }
+    
+    .budget-amount {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid #ecf0f1;
+    }
+    
+    .amount-section {
+        text-align: center;
+    }
+    
+    .amount-label {
+        font-size: 0.85rem;
+        color: #7f8c8d;
+        margin-bottom: 0.25rem;
+    }
+    
+    .amount-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #2c3e50;
+    }
+    
+    .spent {
+        color: #e74c3c;
+    }
+    
+    .remaining {
+        color: #27ae60;
+    }
+    
+    .progress-section {
+        margin-bottom: 1rem;
+    }
+    
+    .progress-bar-container {
+        width: 100%;
+        height: 24px;
+        background: #ecf0f1;
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+        margin-bottom: 0.5rem;
+    }
+    
+    .progress-bar {
+        height: 100%;
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+    
+    .progress-bar.low {
+        background: linear-gradient(90deg, #27ae60, #2ecc71);
+    }
+    
+    .progress-bar.medium {
+        background: linear-gradient(90deg, #f39c12, #f1c40f);
+    }
+    
+    .progress-bar.high {
+        background: linear-gradient(90deg, #e74c3c, #c0392b);
+    }
+    
+    .progress-text {
+        text-align: center;
+        color: #7f8c8d;
+        font-size: 0.9rem;
+    }
+    
+    .budget-tags {
+        margin-bottom: 1rem;
+    }
+    
+    .budget-tag {
+        display: inline-block;
+        background: #e3f2fd;
+        color: #1976d2;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .budget-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #ecf0f1;
+    }
+    
+    .btn-action {
+        flex: 1;
+        padding: 0.5rem;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    
+    .btn-edit {
+        background: #3498db;
+        color: white;
+    }
+    
+    .btn-edit:hover {
+        background: #2980b9;
+    }
+    
+    .btn-delete {
+        background: #e74c3c;
+        color: white;
+    }
+    
+    .btn-delete:hover {
+        background: #c0392b;
+    }
+    
+    .btn-toggle {
+        background: #95a5a6;
+        color: white;
+    }
+    
+    .btn-toggle:hover {
+        background: #7f8c8d;
+    }
+    
+    .btn-toggle.active {
+        background: #27ae60;
+    }
+    
+    .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    
+    .status-active {
+        background: #d4edda;
+        color: #155724;
+    }
+    
+    .status-inactive {
+        background: #f8d7da;
+        color: #721c24;
+    }
+    
+    .alert-info {
+        background: #d1ecf1;
+        border: 1px solid #bee5eb;
+        color: #0c5460;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-bottom: 2rem;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .empty-state-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+    }
+    
+    .empty-state h2 {
+        margin-bottom: 1rem;
+        color: #2c3e50;
+    }
+    
+    .empty-state p {
+        color: #7f8c8d;
+        margin-bottom: 2rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="budget-container">
+    <div class="budget-header">
+        <h1>💰 Budget Management</h1>
+        <div>
+            <a href="{% url 'expenses:expense_list' %}" style="margin-right: 1rem; color: #3498db; text-decoration: none; font-weight: 600;">
+                ← Back to Expenses
+            </a>
+            <a href="{% url 'expenses:budget_create' %}" class="btn-create">
+                ➕ Create Budget
+            </a>
+        </div>
+    </div>
+    
+    {% if budget_data %}
+    <div class="alert-info">
+        <strong>💡 Tip:</strong> Budgets help you track spending over different time periods. 
+        You'll receive alerts when you reach your threshold percentage.
+    </div>
+    
+    <div class="budget-grid">
+        {% for item in budget_data %}
+        <div class="budget-card {% if item.percentage >= 100 %}danger{% elif item.is_over %}warning{% else %}success{% endif %}">
+            <div class="budget-card-header">
+                <div>
+                    <h2 class="budget-name">{{ item.budget.name }}</h2>
+                    <span class="budget-period">{{ item.budget.get_period_display }}</span>
+                </div>
+                <span class="status-badge {% if item.budget.is_active %}status-active{% else %}status-inactive{% endif %}">
+                    {% if item.budget.is_active %}Active{% else %}Inactive{% endif %}
+                </span>
+            </div>
+            
+            <div class="budget-amount">
+                <div class="amount-section">
+                    <div class="amount-label">Budget</div>
+                    <div class="amount-value">${{ item.budget.amount|floatformat:2 }}</div>
+                </div>
+                <div class="amount-section">
+                    <div class="amount-label">Spent</div>
+                    <div class="amount-value spent">${{ item.spending|floatformat:2 }}</div>
+                </div>
+                <div class="amount-section">
+                    <div class="amount-label">Remaining</div>
+                    <div class="amount-value remaining">
+                        {% if item.remaining < 0 %}
+                            -${{ item.remaining|abs|floatformat:2 }}
+                        {% else %}
+                            ${{ item.remaining|floatformat:2 }}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="progress-section">
+                <div class="progress-bar-container">
+                    <div class="progress-bar {% if item.percentage < 70 %}low{% elif item.percentage < 90 %}medium{% else %}high{% endif %}" 
+                         style="width: {% if item.percentage > 100 %}100{% else %}{{ item.percentage }}{% endif %}%">
+                        {{ item.percentage }}%
+                    </div>
+                </div>
+                <div class="progress-text">
+                    {% if item.percentage >= 100 %}
+                        ⚠️ Over budget by ${{ item.spending|floatformat:2|add:"-"|add:item.budget.amount|floatformat:2 }}
+                    {% elif item.is_over %}
+                        ⚠️ {{ item.budget.alert_threshold }}% threshold reached
+                    {% else %}
+                        ✅ {{ item.remaining|floatformat:2 }} remaining
+                    {% endif %}
+                </div>
+            </div>
+            
+            {% if item.budget.tags.all %}
+            <div class="budget-tags">
+                <strong>Tags:</strong>
+                {% for tag in item.budget.tags.all %}
+                <span class="budget-tag">{{ tag.name }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+            
+            <div class="budget-actions">
+                <a href="{% url 'expenses:budget_edit' item.budget.pk %}" class="btn-action btn-edit">
+                    Edit
+                </a>
+                <button onclick="deleteBudget({{ item.budget.pk }}, '{{ item.budget.name }}')" 
+                        class="btn-action btn-delete">
+                    Delete
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">💰</div>
+        <h2>No Budgets Yet</h2>
+        <p>Create your first budget to start tracking yourspending limits and receive alerts when you're approaching your budget.</p>
+<a href="{% url 'expenses:budget_create' %}" class="btn-create">
+Create Your First Budget
+</a>
+</div>
+{% endif %}
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function deleteBudget(id, name) {
+    if (confirm(`Are you sure you want to delete the budget "${name}"?`)) {
+        fetch(`/expenses/budgets/${id}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Error deleting budget');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error deleting budget');
+        });
+    }
+}
+
+// Animate progress bars on load
+document.addEventListener('DOMContentLoaded', function() {
+    const progressBars = document.querySelectorAll('.progress-bar');
+    progressBars.forEach(bar => {
+        const width = bar.style.width;
+        bar.style.width = '0%';
+        setTimeout(() => {
+            bar.style.width = width;
+        }, 100);
+    });
+});
+</script>
+{% endblock %}

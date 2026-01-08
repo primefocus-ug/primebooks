@@ -556,10 +556,11 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
         # Add summary statistics
         queryset = self.get_queryset()
+        credit_sales = queryset.filter(document_type='INVOICE', payment_method='CREDIT')
         context['stats'] = {
             'total_sales': queryset.count(),
             'total_amount': queryset.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'avg_amount': queryset.aggregate(Avg('total_amount'))['total_amount__avg'] or 0,
+            'avg_amount': credit_sales.aggregate(Avg('total_amount'))['total_amount__avg'] or 0,
             'fiscalized_count': queryset.filter(is_fiscalized=True).count(),
             'receipt_count': queryset.filter(document_type='RECEIPT').count(),
             'invoice_count': queryset.filter(document_type='INVOICE').count(),

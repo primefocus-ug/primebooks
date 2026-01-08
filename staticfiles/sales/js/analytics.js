@@ -1,237 +1,192 @@
-// Chart configurations
-const chartConfig = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-        legend: {
-            position: 'bottom',
-        }
-    }
-};
+async function queryEFRISTaxpayer() {
+    const tinInput = document.getElementById('taxpayerTIN');
+    const queryBtn = document.getElementById('efrisQueryBtn');
+    const queryLoading = document.getElementById('efrisQueryLoading');
+    const results = document.getElementById('efrisQueryResults');
+    const errorDiv = document.getElementById('efrisError');
+    const errorMessage = document.getElementById('efrisErrorMessage');
 
-// Daily Sales Chart
-const dailySalesCtx = document.getElementById('dailySalesChart').getContext('2d');
-const dailySalesChart = new Chart(dailySalesCtx, {
-    type: 'line',
-    data: {
-        labels: {{ daily_sales|safe|yesno:"[],[]"|default:"[]" }}.map(item => {
-            const date = new Date(item.day);
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        }),
-        datasets: [{
-            label: 'Sales Count',
-            data: {{ daily_sales|safe|yesno:"[],[]"|default:"[]" }}.map(item => item.count),
-            borderColor: '#007bff',
-            backgroundColor: 'rgba(0, 123, 255, 0.1)',
-            tension: 0.4,
-            fill: true
-        }, {
-            label: 'Revenue (UGX)',
-            data: {{ daily_sales|safe|yesno:"[],[]"|default:"[]" }}.map(item => item.total),
-            borderColor: '#28a745',
-            backgroundColor: 'rgba(40, 167, 69, 0.1)',
-            tension: 0.4,
-            yAxisID: 'y1'
-        }]
-    },
-    options: {
-        ...chartConfig,
-        scales: {
-            y: {
-                type: 'linear',
-                display: true,
-                position: 'left',
-                title: {
-                    display: true,
-                    text: 'Sales Count'
-                }
+    if (!tinInput || !queryBtn) {
+        console.error('EFRIS elements not found');
+        return;
+    }
+
+    const tin = tinInput.value.trim();
+
+    // Clear previous errors
+    if (errorDiv) errorDiv.style.display = 'none';
+
+    if (!tin) {
+        showError('Please enter TIN');
+        return;
+    }
+
+    const tinRegex = /^\d{10}$/;
+    if (!tinRegex.test(tin)) {
+        showError('Please enter a valid 10-digit TIN');
+        return;
+    }
+
+    queryBtn.disabled = true;
+    if (queryLoading) queryLoading.style.display = 'block';
+    if (results) results.style.display = 'none';
+
+    try {
+        // ✅ FIX 1: Get CSRF token from form (like Document 3)
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+        
+        if (!csrfToken) {
+            throw new Error('CSRF token missing. Please refresh the page.');
+        }
+
+        const formData = new FormData();
+        formData.append('tin', tin);
+
+        // ✅ FIX 2: Use Django URL template tag
+        const response = await fetch('{% url "efris:taxpayer_query" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest'
             },
-            y1: {
-                type: 'linear',
-                display: true,
-                position: 'right',
-                title: {
-                    display: true,
-                    text: 'Revenue (UGX)'
-                },
-                grid: {
-                    drawOnChartArea: false,
-                }
-            }
+            credentials: 'same-origin'
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${response.statusText}\n${errorText}`);
         }
-    }
-});
 
-// Payment Methods Chart
-const paymentMethodsCtx = document.getElementById('paymentMethodsChart').getContext('2d');
-const paymentMethodsChart = new Chart(paymentMethodsCtx, {
-    type: 'doughnut',
-    data: {
-        labels: {{ payment_methods|safe|yesno:"[],[]"|default:"[]" }}.map(item => item.payment_method),
-        datasets: [{
-            data: {{ payment_methods|safe|yesno:"[],[]"|default:"[]" }}.map(item => item.total),
-            backgroundColor: [
-                '#007bff',
-                '#28a745',
-                '#ffc107',
-                '#dc3545',
-                '#6c757d',
-                '#17a2b8'
-            ],
-            borderWidth: 0
-        }]
-    },
-    options: {
-        ...chartConfig,
-        cutout: '60%',
-        plugins: {
-            legend: {
-                position: 'bottom'
-            }
+        const data = await response.json();
+
+        if (data.success && data.taxpayer) {
+            displayEFRISResults(data.taxpayer);
+        } else {
+            throw new Error(data.error || 'Taxpayer not found in EFRIS system');
         }
-    }
-});
-
-// Hourly Sales Chart
-const hourlySalesCtx = document.getElementById('hourlySalesChart').getContext('2d');
-const hourlySalesChart = new Chart(hourlySalesCtx, {
-    type: 'bar',
-    data: {
-        labels: Array.from({length: 24}, (_, i) => `${i}:00`),
-        datasets: [{
-            label: 'Sales by Hour',
-            data: Array.from({length: 24}, () => Math.floor(Math.random() * 50)),
-            backgroundColor: 'rgba(54, 162, 235, 0.8)',
-            borderColor: 'rgba(54, 162, 235, 1)',
-            borderWidth: 1
-        }]
-    },
-    options: {
-        ...chartConfig,
-        scales: {
-            y: {
-                beginAtZero: true,
-                title: {
-                    display: true,
-                    text: 'Number of Sales'
-                }
-            },
-            x: {
-                title: {
-                    display: true,
-                    text: 'Hour of Day'
-                }
-            }
+    } catch (error) {
+        console.error('EFRIS query error:', error);
+        
+        // Show error in both places
+        if (errorDiv && errorMessage) {
+            errorMessage.textContent = error.message;
+            errorDiv.style.display = 'block';
         }
+        showError(`EFRIS query failed: ${error.message}`);
+    } finally {
+        queryBtn.disabled = false;
+        if (queryLoading) queryLoading.style.display = 'none';
     }
-});
-
-// Utility functions
-function setDateRange(range) {
-    const today = new Date();
-    let startDate, endDate = today;
-
-    switch(range) {
-        case 'today':
-            startDate = today;
-            break;
-        case 'week':
-            startDate = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-            break;
-        case 'month':
-            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-            break;
-        case 'quarter':
-            const quarter = Math.floor(today.getMonth() / 3);
-            startDate = new Date(today.getFullYear(), quarter * 3, 1);
-            break;
-        case 'year':
-            startDate = new Date(today.getFullYear(), 0, 1);
-            break;
-    }
-
-    document.querySelector('input[name="date_from"]').value = startDate.toISOString().split('T')[0];
-    document.querySelector('input[name="date_to"]').value = endDate.toISOString().split('T')[0];
 }
 
-function exportData(format) {
-    const params = new URLSearchParams(window.location.search);
-    params.append('export', format);
-    window.location.href = `{% url 'sales:analytics' %}?${params.toString()}`;
-}
+function displayEFRISResults(taxpayer) {
+    const results = document.getElementById('efrisQueryResults');
+    if (!results) return;
 
-function toggleTableView() {
-    const table = document.getElementById('dailySalesTable');
-    table.classList.toggle('table-sm');
-}
-
-function viewDayDetails(date) {
-    document.getElementById('selectedDate').textContent = new Date(date).toLocaleDateString();
-
-    // Simulate loading day details
-    const content = `
-        <div class="text-center">
-            <div class="spinner-border" role="status">
-                <span class="visually-hidden">Loading...</span>
+    results.innerHTML = `
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6 class="card-title">${escapeHtml(taxpayer.legal_name || taxpayer.name)}</h6>
+                <p class="mb-1"><strong>TIN:</strong> ${escapeHtml(taxpayer.tin)}</p>
+                <p class="mb-1"><strong>Type:</strong> ${escapeHtml(taxpayer.taxpayer_type || 'N/A')}</p>
+                ${taxpayer.address ? `<p class="mb-1"><strong>Address:</strong> ${escapeHtml(taxpayer.address)}</p>` : ''}
+                ${taxpayer.phone ? `<p class="mb-1"><strong>Phone:</strong> ${escapeHtml(taxpayer.phone)}</p>` : ''}
+                ${taxpayer.email ? `<p class="mb-3"><strong>Email:</strong> ${escapeHtml(taxpayer.email)}</p>` : ''}
+                
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-success btn-sm flex-fill"
+                            onclick='createCustomerFromEFRIS(${JSON.stringify(taxpayer).replace(/'/g, "&#39;")})'>
+                        <i class="bi bi-person-plus me-1"></i> Create Customer
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm flex-fill"
+                            onclick='selectEFRISTaxpayer(${JSON.stringify(taxpayer).replace(/'/g, "&#39;")})'>
+                        <i class="bi bi-check-circle me-1"></i> Use This
+                    </button>
+                </div>
             </div>
-            <p class="mt-2">Loading sales details...</p>
         </div>
     `;
 
-    document.getElementById('dayDetailsContent').innerHTML = content;
-    new bootstrap.Modal(document.getElementById('dayDetailsModal')).show();
-
-    // Simulate API call
-    setTimeout(() => {
-        document.getElementById('dayDetailsContent').innerHTML = `
-            <div class="row">
-                <div class="col-md-4">
-                    <div class="card text-center">
-                        <div class="card-body">
-                            <h5>Total Sales</h5>
-                            <h3 class="text-primary">42</h3>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card text-center">
-                        <div class="card-body">
-                            <h5>Revenue</h5>
-                            <h3 class="text-success">UGX 850,000</h3>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card text-center">
-                        <div class="card-body">
-                            <h5>Avg Sale</h5>
-                            <h3 class="text-info">UGX 20,238</h3>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="mt-4">
-                <h6>Hourly Breakdown</h6>
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr><th>Hour</th><th>Sales</th><th>Revenue</th></tr>
-                        </thead>
-                        <tbody>
-                            <tr><td>09:00-10:00</td><td>5</td><td>UGX 125,000</td></tr>
-                            <tr><td>10:00-11:00</td><td>8</td><td>UGX 180,000</td></tr>
-                            <tr><td>11:00-12:00</td><td>12</td><td>UGX 245,000</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-    }, 1000);
+    results.style.display = 'block';
 }
 
-// Auto-refresh data every 5 minutes
-setInterval(() => {
-    if (document.visibilityState === 'visible') {
-        location.reload();
+function selectEFRISTaxpayer(taxpayer) {
+    const customer = {
+        id: null,
+        name: taxpayer.legal_name || taxpayer.name,
+        phone: taxpayer.phone || taxpayer.tin.slice(-9),
+        email: taxpayer.email || '',
+        tin: taxpayer.tin,
+        from_efris: true
+    };
+
+    selectCustomer(customer);
+    
+    // Hide EFRIS results
+    const efrisResults = document.getElementById('efrisQueryResults');
+    const taxpayerTIN = document.getElementById('taxpayerTIN');
+    if (efrisResults) efrisResults.style.display = 'none';
+    if (taxpayerTIN) taxpayerTIN.value = '';
+
+    // Switch back to search tab
+    const searchTab = document.querySelector('[data-bs-target="#searchTab"]');
+    if (searchTab) {
+        new bootstrap.Tab(searchTab).show();
     }
-}, 5 * 60 * 1000);
+    
+    showSuccess(`Selected taxpayer: ${customer.name}`);
+}
+
+async function createCustomerFromEFRIS(taxpayer) {
+    const formData = new FormData();
+    formData.append('name', taxpayer.legal_name || taxpayer.name);
+    formData.append('tin', taxpayer.tin);
+    formData.append('phone', taxpayer.phone || taxpayer.tin.slice(-9));
+    formData.append('email', taxpayer.email || '');
+    formData.append('address', taxpayer.address || '');
+    formData.append('from_efris', 'true');
+
+    try {
+        // ✅ FIX: Use the correct URL (same as create customer)
+        const response = await fetch('{% url "sales:create_customer_ajax" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            selectCustomer(data.customer);
+            
+            // Hide EFRIS results
+            const efrisResults = document.getElementById('efrisQueryResults');
+            const taxpayerTIN = document.getElementById('taxpayerTIN');
+            if (efrisResults) efrisResults.style.display = 'none';
+            if (taxpayerTIN) taxpayerTIN.value = '';
+
+            // Switch to search tab
+            const searchTab = document.querySelector('[data-bs-target="#searchTab"]');
+            if (searchTab) {
+                new bootstrap.Tab(searchTab).show();
+            }
+
+            showSuccess('Customer created from EFRIS successfully');
+        } else {
+            throw new Error(data.error || 'Failed to create customer');
+        }
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+// Helper function for escaping HTML (if not already present)
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}

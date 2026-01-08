@@ -18,8 +18,6 @@ class SavedReport(models.Model):
         ('PRODUCT_PERFORMANCE', 'Product Performance'),
         ('INVENTORY_STATUS', 'Inventory Status'),
         ('TAX_REPORT', 'Tax Report'),
-        ('Z_REPORT', 'Z Report'),
-        ('PRICE_LOOKUP', 'Price Lookup Report'),
         ('EFRIS_COMPLIANCE', 'EFRIS Compliance Report'),
         ('CASHIER_PERFORMANCE', 'Cashier Performance'),
         ('PROFIT_LOSS', 'Profit & Loss Statement'),

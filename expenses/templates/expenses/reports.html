@@ -1,740 +1,577 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load static %}
-{% load i18n %}
-{% load humanize %}
-{% load expense_tags %}
-{% load custom_filters %}
 
-{% block title %}{% trans "Expense Reports" %}{% endblock %}
+{% block title %}Expense Reports{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-<link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
-    .report-card {
-        border-left: 4px solid;
-        transition: all 0.3s ease;
+    .reports-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem;
     }
 
-    .report-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    .report-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+
+    .report-header h1 {
+        margin: 0;
+    }
+
+    .back-link {
+        text-decoration: none;
+        color: #3498db;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .filter-bar {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .filter-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .export-row {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #eee;
+    }
+
+    .btn-export {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 4px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        transition: all 0.2s;
+    }
+
+    .btn-pdf {
+        background: #e74c3c;
+        color: white;
+    }
+
+    .btn-pdf:hover {
+        background: #c0392b;
+    }
+
+    .btn-excel {
+        background: #27ae60;
+        color: white;
+    }
+
+    .btn-excel:hover {
+        background: #229954;
+    }
+
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .summary-box {
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .summary-box h2 {
+        margin: 0 0 1rem 0;
+        font-size: 1.2rem;
+        color: #2c3e50;
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 0.5rem;
+    }
+
+    .metric {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid #ecf0f1;
+    }
+
+    .metric:last-child {
+        border-bottom: none;
+    }
+
+    .metric-label {
+        color: #7f8c8d;
+        font-weight: 500;
+    }
+
+    .metric-value {
+        font-weight: 700;
+        color: #2c3e50;
+        font-size: 1.1rem;
+    }
+
+    .chart-section {
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .chart-section h2 {
+        margin: 0 0 1.5rem 0;
+        font-size: 1.3rem;
+        color: #2c3e50;
     }
 
     .chart-container {
         position: relative;
-        height: 300px;
-        margin-bottom: 20px;
+        height: 400px;
+        margin-bottom: 2rem;
     }
 
-    .stat-number {
-        font-size: 2rem;
-        font-weight: bold;
-        line-height: 1;
+    .tag-breakdown {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem;
+        margin-top: 2rem;
     }
 
-    .stat-change {
-        font-size: 0.875rem;
+    .tag-item {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 6px;
+        border-left: 4px solid #3498db;
     }
 
-    .trend-up {
-        color: #28a745;
+    .tag-name {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 0.5rem;
     }
 
-    .trend-down {
-        color: #dc3545;
+    .tag-amount {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #27ae60;
     }
 
-    .insight-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+    .tag-percentage {
+        color: #7f8c8d;
+        font-size: 0.9rem;
+        margin-top: 0.25rem;
+    }
+
+    .loading {
+        text-align: center;
+        padding: 3rem;
+        color: #7f8c8d;
+    }
+
+    .no-data {
+        text-align: center;
+        padding: 3rem;
+        color: #95a5a6;
+        font-size: 1.1rem;
+    }
+
+    .chart-tabs {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        border-bottom: 2px solid #ecf0f1;
+    }
+
+    .chart-tab {
+        padding: 0.75rem 1.5rem;
+        background: none;
         border: none;
+        cursor: pointer;
+        font-weight: 600;
+        color: #7f8c8d;
+        border-bottom: 3px solid transparent;
+        transition: all 0.2s;
     }
 
-    .budget-meter {
-        height: 8px;
-        border-radius: 4px;
-        overflow: hidden;
-        background: #e9ecef;
+    .chart-tab.active {
+        color: #3498db;
+        border-bottom-color: #3498db;
     }
 
-    .budget-progress {
-        height: 100%;
-        transition: width 0.3s ease;
-    }
-
-    .table-hover tbody tr:hover {
-        background-color: rgba(0, 123, 255, 0.05);
-    }
-
-    .export-buttons .btn {
-        min-width: 120px;
-    }
-
-    @media (max-width: 767.98px) {
-        .stat-number {
-            font-size: 1.5rem;
-        }
-
-        .chart-container {
-            height: 250px;
-        }
-
-        .export-buttons .btn {
-            width: 100%;
-            margin-bottom: 0.5rem;
-        }
+    .chart-tab:hover {
+        color: #2980b9;
     }
 </style>
 {% endblock %}
 
-{% block breadcrumb_items %}
-    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
-    <li class="breadcrumb-item"><a href="{% url 'expenses:dashboard' %}">{% trans "Expenses" %}</a></li>
-    <li class="breadcrumb-item active">{% trans "Reports" %}</li>
-{% endblock %}
-
 {% block content %}
-<div class="container-fluid">
-    <!-- Page Header -->
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
-        <div>
-            <h1 class="h3 mb-2">
-                <i class="bi bi-bar-chart me-2"></i>
-                {% trans "Expense Reports & Analytics" %}
-            </h1>
-            <p class="text-muted mb-0">
-                {% trans "Comprehensive insights and analysis of your expenses" %}
-            </p>
-        </div>
-        <div class="mt-3 mt-md-0">
-            <div class="dropdown">
-                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                    <i class="bi bi-download me-2"></i>
-                    {% trans "Export Report" %}
-                </button>
-                <ul class="dropdown-menu">
-                    <li><a class="dropdown-item" href="{% url 'expenses:export_excel' %}?{{ request.GET.urlencode }}">
-                        <i class="bi bi-file-earmark-excel me-2"></i>{% trans "Export to Excel" %}
-                    </a></li>
-                    <li><a class="dropdown-item" href="{% url 'expenses:export_pdf' %}?{{ request.GET.urlencode }}">
-                        <i class="bi bi-file-earmark-pdf me-2"></i>{% trans "Export to PDF" %}
-                    </a></li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="{% url 'expenses:category_budget_report' %}">
-                        <i class="bi bi-wallet2 me-2"></i>{% trans "Budget Report" %}
-                    </a></li>
-                </ul>
-            </div>
-        </div>
+<div class="reports-container">
+    <div class="report-header">
+        <h1>📊 Expense Reports & Analytics</h1>
+        <a href="{% url 'expenses:expense_list' %}" class="back-link">
+            ← Back to Expenses
+        </a>
     </div>
 
-    <!-- Date Range Filter -->
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header dre border-0 py-3">
-            <h5 class="mb-0">
-                <i class="bi bi-calendar-range me-2"></i>
-                {% trans "Report Period" %}
-            </h5>
-        </div>
-        <div class="card-body">
-            <form method="get" action="{% url 'expenses:reports' %}" class="row g-3 align-items-end">
-                <div class="col-12 col-md-3">
-                    <label class="form-label">{% trans "From Date" %}</label>
-                    <input type="date" name="date_from" class="form-control" value="{{ date_from|date:'Y-m-d' }}">
+    <div class="filter-bar">
+        <h3 style="margin-top: 0;">Filter Report Data</h3>
+        <form method="get" id="reportFilterForm">
+            <div class="filter-row">
+                <div>
+                    <label>Period</label>
+                    {{ filter_form.period }}
                 </div>
-                <div class="col-12 col-md-3">
-                    <label class="form-label">{% trans "To Date" %}</label>
-                    <input type="date" name="date_to" class="form-control" value="{{ date_to|date:'Y-m-d' }}">
+                <div id="customStart" style="display: none;">
+                    <label>Start Date</label>
+                    {{ filter_form.start_date }}
                 </div>
-                <div class="col-12 col-md-6 d-flex gap-2">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-filter me-2"></i>
-                        {% trans "Apply Filter" %}
-                    </button>
-                    <a href="{% url 'expenses:reports' %}" class="btn btn-outline-secondary">
-                        <i class="bi bi-arrow-clockwise me-2"></i>
-                        {% trans "Reset" %}
-                    </a>
-                    <button type="button" class="btn btn-outline-info" id="quickMonth">
-                        {% trans "This Month" %}
+                <div id="customEnd" style="display: none;">
+                    <label>End Date</label>
+                    {{ filter_form.end_date }}
+                </div>
+                <div>
+                    <label>Tags</label>
+                    {{ filter_form.tags }}
+                </div>
+                <div style="display: flex; align-items: flex-end;">
+                    <button type="submit" class="btn-export" style="background: #3498db; width: 100%;">
+                        Generate Report
                     </button>
                 </div>
-            </form>
+            </div>
+
+            <div class="export-row">
+                <a href="{% url 'expenses:export_pdf' %}?{{ request.GET.urlencode }}" class="btn-export btn-pdf">
+                    📄 Download PDF Report
+                </a>
+                <a href="{% url 'expenses:export_excel' %}?{{ request.GET.urlencode }}" class="btn-export btn-excel">
+                    📊 Download Excel Report
+                </a>
+            </div>
+        </form>
+    </div>
+
+    {% if summary.count > 0 %}
+    <div class="summary-grid">
+        <div class="summary-box">
+            <h2>📈 Overview</h2>
+            <div class="metric">
+                <span class="metric-label">Total Expenses</span>
+                <span class="metric-value">${{ summary.total|floatformat:2 }}</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Number of Expenses</span>
+                <span class="metric-value">{{ summary.count }}</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Average Expense</span>
+                <span class="metric-value">${{ summary.average|floatformat:2 }}</span>
+            </div>
+        </div>
+
+        <div class="summary-box">
+            <h2>🏷️ Top Categories</h2>
+            {% for tag, amount in summary.by_tag.items|slice:":5" %}
+            <div class="metric">
+                <span class="metric-label">{{ tag }}</span>
+                <span class="metric-value">${{ amount|floatformat:2 }}</span>
+            </div>
+            {% endfor %}
         </div>
     </div>
 
-    <!-- Key Metrics -->
-    <div class="row g-3 mb-4">
-        <!-- Total Expenses -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm report-card" style="border-left-color: #3b82f6;">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <h6 class="text-muted mb-2">{% trans "Total Expenses" %}</h6>
-                            <h3 class="stat-number text-primary">{{ stats.total_expenses|intcomma }}</h3>
-                            <small class="text-muted">{% trans "across all categories" %}</small>
-                        </div>
-                        <div class="text-primary">
-                            <i class="bi bi-receipt fs-1 opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <div class="chart-section">
+        <h2>Expenses by Category</h2>
+        <div class="chart-container">
+            <canvas id="tagPieChart"></canvas>
         </div>
 
-        <!-- Total Amount -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm report-card" style="border-left-color: #10b981;">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <h6 class="text-muted mb-2">{% trans "Total Amount" %}</h6>
-                            <h3 class="stat-number text-success">{{ stats.total_amount|floatformat:0|intcomma }} UGX</h3>
-                            <small class="text-muted">{% trans "sum of all expenses" %}</small>
-                        </div>
-                        <div class="text-success">
-                            <i class="bi bi-currency-dollar fs-1 opacity-50"></i>
-                        </div>
-                    </div>
+        {% if summary.by_tag %}
+        <div class="tag-breakdown">
+            {% for tag, amount in summary.by_tag.items %}
+            <div class="tag-item">
+                <div class="tag-name">{{ tag }}</div>
+                <div class="tag-amount">${{ amount|floatformat:2 }}</div>
+                <div class="tag-percentage">
+                    {% widthratio amount summary.total 100 %}% of total
                 </div>
             </div>
+            {% endfor %}
         </div>
+        {% endif %}
+    </div>
 
-        <!-- Average Expense -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm report-card" style="border-left-color: #f59e0b;">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <h6 class="text-muted mb-2">{% trans "Average Expense" %}</h6>
-                            <h3 class="stat-number text-warning">{{ stats.average_expense|floatformat:0|intcomma }} UGX</h3>
-                            <small class="text-muted">{% trans "per transaction" %}</small>
-                        </div>
-                        <div class="text-warning">
-                            <i class="bi bi-graph-up fs-1 opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <div class="chart-section">
+        <h2>Spending Trends</h2>
+        <div class="chart-tabs">
+            <button class="chart-tab active" data-view="daily">Daily</button>
+            <button class="chart-tab" data-view="weekly">Weekly</button>
+            <button class="chart-tab" data-view="monthly">Monthly</button>
         </div>
-
-        <!-- Approval Rate -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm report-card" style="border-left-color: #8b5cf6;">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <h6 class="text-muted mb-2">{% trans "Approval Rate" %}</h6>
-                            <h3 class="stat-number text-info">{{ stats.approval_rate|floatformat:1 }}%</h3>
-                            <small class="text-muted">{% trans "of submitted expenses" %}</small>
-                        </div>
-                        <div class="text-info">
-                            <i class="bi bi-check-circle fs-1 opacity-50"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="chart-container">
+            <canvas id="trendChart"></canvas>
         </div>
     </div>
 
-    <!-- Charts and Visualizations -->
-    <div class="row g-4">
-        <!-- Category Breakdown -->
-        <div class="col-12 col-lg-6">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-pie-chart me-2"></i>
-                        {% trans "Expenses by Category" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container">
-                        <canvas id="categoryChart"></canvas>
-                    </div>
-                    <div class="mt-3">
-                        {% for item in category_breakdown %}
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <div class="d-flex align-items-center">
-                                <span class="badge me-2" style="background-color: {{ item.category__color_code }}; width: 12px; height: 12px; border-radius: 50%;"></span>
-                                <span>{{ item.category__name }}</span>
-                            </div>
-                            <div class="text-end">
-                                <strong>{{ item.total_amount|floatformat:0|intcomma }} UGX</strong>
-                                <small class="text-muted d-block">({{ item.count }} {% trans "expenses" %})</small>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Monthly Trend -->
-        <div class="col-12 col-lg-6">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-graph-up me-2"></i>
-                        {% trans "Monthly Expense Trend" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container">
-                        <canvas id="monthlyTrendChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Status Distribution -->
-        <div class="col-12 col-lg-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-pie-chart-fill me-2"></i>
-                        {% trans "Status Distribution" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container">
-                        <canvas id="statusChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Store Breakdown -->
-        <div class="col-12 col-lg-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-shop me-2"></i>
-                        {% trans "Expenses by Store" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    {% if store_breakdown %}
-                        {% for item in store_breakdown %}
-                        <div class="d-flex justify-content-between align-items-center mb-3 p-2 border rounded">
-                            <div>
-                                <strong>{{ item.store__name|default:"No Store" }}</strong>
-                                <small class="text-muted d-block">{{ item.count }} {% trans "expenses" %}</small>
-                            </div>
-                            <div class="text-end">
-                                <strong>{{ item.total_amount|floatformat:0|intcomma }} UGX</strong>
-                                <div class="budget-meter mt-1">
-                                    <div class="budget-progress bg-primary"
-                                         style="width: {{ item.total_amount|percentage:stats.total_amount }}%"></div>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="text-center text-muted py-4">
-                            <i class="bi bi-shop fs-1 opacity-50"></i>
-                            <p class="mt-2 mb-0">{% trans "No store data available" %}</p>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Top Vendors -->
-        <div class="col-12 col-lg-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-trophy me-2"></i>
-                        {% trans "Top Vendors" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    {% if top_vendors %}
-                        {% for vendor in top_vendors %}
-                        <div class="d-flex justify-content-between align-items-center mb-3 p-2 border rounded">
-                            <div>
-                                <strong>{{ vendor.vendor_name|truncatechars:20 }}</strong>
-                                <small class="text-muted d-block">{{ vendor.count }} {% trans "transactions" %}</small>
-                            </div>
-                            <div class="text-end">
-                                <strong>{{ vendor.total|floatformat:0|intcomma }} UGX</strong>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="text-center text-muted py-4">
-                            <i class="bi bi-building fs-1 opacity-50"></i>
-                            <p class="mt-2 mb-0">{% trans "No vendor data available" %}</p>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
+    <div class="chart-section">
+        <h2>Expense Distribution</h2>
+        <div class="chart-container">
+            <canvas id="distributionChart"></canvas>
         </div>
     </div>
 
-    <!-- Budget Analysis -->
-    {% if budget_analysis %}
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-wallet2 me-2"></i>
-                        {% trans "Budget Analysis" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        {% for item in budget_analysis %}
-                        <div class="col-12 col-md-6 col-lg-4">
-                            <div class="card border-0 shadow-sm h-100 {% if item.utilization > 100 %}budget-danger{% elif item.utilization > 80 %}budget-warning{% endif %}">
-                                <div class="card-body">
-                                    <h6 class="card-title">{{ item.category.name }}</h6>
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <span class="text-muted">{% trans "Spent" %}</span>
-                                        <strong>{{ item.spent|floatformat:0|intcomma }} UGX</strong>
-                                    </div>
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <span class="text-muted">{% trans "Budget" %}</span>
-                                        <strong>{{ item.budget|floatformat:0|intcomma }} UGX</strong>
-                                    </div>
-                                    <div class="budget-meter mb-2">
-                                        <div class="budget-progress {% if item.utilization > 100 %}bg-danger{% elif item.utilization > 80 %}bg-warning{% else %}bg-success{% endif %}"
-                                             style="width: {% if item.utilization > 100 %}100{% else %}{{ item.utilization }}{% endif %}%"></div>
-                                    </div>
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <small class="text-muted">{% trans "Utilization" %}</small>
-                                        <strong class="{% if item.utilization > 100 %}text-danger{% elif item.utilization > 80 %}text-warning{% else %}text-success{% endif %}">
-                                            {{ item.utilization|floatformat:1 }}%
-                                        </strong>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </div>
+    {% else %}
+    <div class="no-data">
+        <p>📊 No expenses found for the selected period.</p>
+        <p>Try adjusting your filters or <a href="{% url 'expenses:expense_create' %}">add some expenses</a>.</p>
     </div>
     {% endif %}
-
-    <!-- Insights Section -->
-    {% if insights %}
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card insight-card">
-                <div class="card-body">
-                    <h5 class="card-title text-white">
-                        <i class="bi bi-lightbulb me-2"></i>
-                        {% trans "Key Insights" %}
-                    </h5>
-                    <div class="row">
-                        {% for insight in insights %}
-                        <div class="col-12 col-md-6 col-lg-4 mb-3">
-                            <div class="dre bg-opacity-10 p-3 rounded">
-                                <h6 class="text-white mb-2">{{ insight.title }}</h6>
-                                <p class="text-white mb-0 small">{{ insight.description }}</p>
-                                {% if insight.value %}
-                                <div class="text-white mt-2">
-                                    <strong>{{ insight.value }}</strong>
-                                </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Detailed Data Tables -->
-    <div class="row mt-4">
-        <!-- Category Details -->
-        <div class="col-12 col-lg-6">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-list-ul me-2"></i>
-                        {% trans "Category Details" %}
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>{% trans "Category" %}</th>
-                                    <th class="text-end">{% trans "Count" %}</th>
-                                    <th class="text-end">{% trans "Total Amount" %}</th>
-                                    <th class="text-end">{% trans "Average" %}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for item in category_breakdown %}
-                                <tr>
-                                    <td>
-                                        <span class="badge me-2" style="background-color: {{ item.category__color_code }}; width: 8px; height: 8px; border-radius: 50%;"></span>
-                                        {{ item.category__name }}
-                                    </td>
-                                    <td class="text-end">{{ item.count }}</td>
-                                    <td class="text-end">{{ item.total_amount|floatformat:0|intcomma }} UGX</td>
-                                    <td class="text-end">{{ item.avg_amount|floatformat:0|intcomma }} UGX</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Status Details -->
-        <div class="col-12 col-lg-6">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-activity me-2"></i>
-                        {% trans "Status Overview" %}
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="dre">
-                                <tr>
-                                    <th>{% trans "Status" %}</th>
-                                    <th class="text-end">{% trans "Count" %}</th>
-                                    <th class="text-end">{% trans "Total Amount" %}</th>
-                                    <th class="text-end">{% trans "Percentage" %}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for item in status_distribution %}
-                                <tr>
-                                    <td>
-                                        {% if item.status == 'PAID' %}
-                                            <span class="badge bg-success">{% trans "Paid" %}</span>
-                                        {% elif item.status == 'APPROVED' %}
-                                            <span class="badge bg-info">{% trans "Approved" %}</span>
-                                        {% elif item.status == 'SUBMITTED' %}
-                                            <span class="badge bg-warning">{% trans "Pending" %}</span>
-                                        {% elif item.status == 'REJECTED' %}
-                                            <span class="badge bg-danger">{% trans "Rejected" %}</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">{{ item.status }}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-end">{{ item.count }}</td>
-                                    <td class="text-end">{{ item.total|floatformat:0|intcomma }} UGX</td>
-                                    <td class="text-end">{{ item.count|percentage:stats.total_expenses|floatformat:1 }}%</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize date pickers
-    flatpickr('input[type="date"]', {
-        dateFormat: 'Y-m-d',
-        allowInput: true
-    });
+    // Show/hide custom date inputs
+    const periodSelect = document.getElementById('id_period');
+    if (periodSelect) {
+        periodSelect.addEventListener('change', function() {
+            const customStart = document.getElementById('customStart');
+            const customEnd = document.getElementById('customEnd');
 
-    // Quick month filter
-    document.getElementById('quickMonth').addEventListener('click', function() {
-        const today = new Date();
-        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-        document.querySelector('input[name="date_from"]').value = firstDay.toISOString().split('T')[0];
-        document.querySelector('input[name="date_to"]').value = lastDay.toISOString().split('T')[0];
-    });
-
-    // Initialize charts
-    initializeCharts();
-});
-
-function initializeCharts() {
-    // Category Chart
-    const categoryCtx = document.getElementById('categoryChart').getContext('2d');
-    new Chart(categoryCtx, {
-        type: 'doughnut',
-        data: {
-            labels: [
-                {% for item in category_breakdown %}
-                    '{{ item.category__name }}'{% if not forloop.last %},{% endif %}
-                {% endfor %}
-            ],
-            datasets: [{
-                data: [
-                    {% for item in category_breakdown %}
-                        {{ item.total_amount }}{% if not forloop.last %},{% endif %}
-                    {% endfor %}
-                ],
-                backgroundColor: [
-                    {% for item in category_breakdown %}
-                        '{{ item.category__color_code }}'{% if not forloop.last %},{% endif %}
-                    {% endfor %}
-                ],
-                borderWidth: 2,
-                borderColor: '#fff'
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        boxWidth: 12,
-                        padding: 20
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const label = context.label || '';
-                            const value = context.parsed;
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = Math.round((value / total) * 100);
-                            return `${label}: ${value.toLocaleString('en-US', {style: 'currency', currency: 'UGX'})} (${percentage}%)`;
-                        }
-                    }
-                }
+            if (this.value === 'custom') {
+                customStart.style.display = 'block';
+                customEnd.style.display = 'block';
+            } else {
+                customStart.style.display = 'none';
+                customEnd.style.display = 'none';
             }
-        }
-    });
+        });
 
-    // Monthly Trend Chart
-    const trendCtx = document.getElementById('monthlyTrendChart').getContext('2d');
-    new Chart(trendCtx, {
-        type: 'line',
-        data: {
-            labels: [
-                {% for item in monthly_trend %}
-                    '{{ item.month|date:"M Y" }}'{% if not forloop.last %},{% endif %}
-                {% endfor %}
-            ],
-            datasets: [{
-                label: '{% trans "Total Expenses" %}',
-                data: [
-                    {% for item in monthly_trend %}
-                        {{ item.total }}{% if not forloop.last %},{% endif %}
-                    {% endfor %}
-                ],
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return `${context.dataset.label}: ${context.parsed.y.toLocaleString('en-US', {style: 'currency', currency: 'UGX'})}`;
-                        }
-                    }
-                }
+        // Check initial state
+        if (periodSelect.value === 'custom') {
+            document.getElementById('customStart').style.display = 'block';
+            document.getElementById('customEnd').style.display = 'block';
+        }
+    }
+
+    // Parse data from backend
+    const dailyData = {{ daily_data|safe }};
+    const monthlyData = {{ monthly_data|safe }};
+    const tagData = {{ summary.by_tag|safe }};
+
+    // Color palette
+    const colors = [
+        '#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6',
+        '#1abc9c', '#34495e', '#e67e22', '#95a5a6', '#d35400'
+    ];
+
+    // Pie Chart for Tags
+    if (Object.keys(tagData).length > 0) {
+        const tagLabels = Object.keys(tagData);
+        const tagValues = Object.values(tagData);
+
+        const pieCtx = document.getElementById('tagPieChart').getContext('2d');
+        new Chart(pieCtx, {
+            type: 'doughnut',
+            data: {
+                labels: tagLabels,
+                datasets: [{
+                    data: tagValues,
+                    backgroundColor: colors,
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: function(value) {
-                            return value.toLocaleString('en-US', {style: 'currency', currency: 'UGX'});
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    // Status Chart
-    const statusCtx = document.getElementById('statusChart').getContext('2d');
-    new Chart(statusCtx, {
-        type: 'pie',
-        data: {
-            labels: [
-                {% for item in status_distribution %}
-                    '{{ item.status }}'{% if not forloop.last %},{% endif %}
-                {% endfor %}
-            ],
-            datasets: [{
-                data: [
-                    {% for item in status_distribution %}
-                        {{ item.count }}{% if not forloop.last %},{% endif %}
-                    {% endfor %}
-                ],
-                backgroundColor: [
-                    '#28a745', // Paid - green
-                    '#17a2b8', // Approved - blue
-                    '#ffc107', // Submitted - yellow
-                    '#dc3545', // Rejected - red
-                    '#6c757d'  // Draft - gray
-                ],
-                borderWidth: 2,
-                borderColor: '#fff'
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        boxWidth: 12,
-                        padding: 20,
-                        generateLabels: function(chart) {
-                            const data = chart.data;
-                            if (data.labels.length && data.datasets.length) {
-                                return data.labels.map((label, i) => {
-                                    const value = data.datasets[0].data[i];
-                                    const total = data.datasets[0].data.reduce((a, b) => a + b, 0);
-                                    const percentage = Math.round((value / total) * 100);
-
-                                    return {
-                                        text: `${label} (${percentage}%)`,
-                                        fillStyle: data.datasets[0].backgroundColor[i],
-                                        strokeStyle: data.datasets[0].borderColor,
-                                        lineWidth: data.datasets[0].borderWidth,
-                                        hidden: false,
-                                        index: i
-                                    };
-                                });
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            padding: 20,
+                            font: {
+                                size: 12
                             }
-                            return [];
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return `${label}: $${value.toFixed(2)} (${percentage}%)`;
+                            }
                         }
                     }
                 }
             }
+        });
+    }
+
+    // Trend Chart (switchable between daily/weekly/monthly)
+    let trendChart;
+    const trendCtx = document.getElementById('trendChart').getContext('2d');
+
+    function createTrendChart(data) {
+        if (trendChart) {
+            trendChart.destroy();
         }
+
+        const labels = data.map(item => {
+            const date = new Date(item.period);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+
+        const values = data.map(item => parseFloat(item.total));
+
+        trendChart = new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Expenses',
+                    data: values,
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    pointBackgroundColor: '#3498db',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `$${context.parsed.y.toFixed(2)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value.toFixed(0);
+                            }
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            maxRotation: 45,
+                            minRotation: 45
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Initialize with daily data
+    if (dailyData.length > 0) {
+        createTrendChart(dailyData);
+    }
+
+    // Chart tab switching
+    document.querySelectorAll('.chart-tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+
+            const view = this.dataset.view;
+
+            if (view === 'daily') {
+                createTrendChart(dailyData);
+            } else if (view === 'monthly') {
+                createTrendChart(monthlyData);
+            } else if (view === 'weekly') {
+                // You can add weekly data processing here
+                createTrendChart(dailyData);
+            }
+        });
     });
-}
+
+    // Distribution Bar Chart
+    if (dailyData.length > 0) {
+        const distCtx = document.getElementById('distributionChart').getContext('2d');
+
+        // Group expenses by amount ranges
+        const ranges = ['$0-25', '$25-50', '$50-100', '$100-250', '$250+'];
+        const rangeCounts = [0, 0, 0, 0, 0];
+
+        dailyData.forEach(item => {
+            const amount = parseFloat(item.total);
+            if (amount <= 25) rangeCounts[0]++;
+            else if (amount <= 50) rangeCounts[1]++;
+            else if (amount <= 100) rangeCounts[2]++;
+            else if (amount <= 250) rangeCounts[3]++;
+            else rangeCounts[4]++;
+        });
+
+        new Chart(distCtx, {
+            type: 'bar',
+            data: {
+                labels: ranges,
+                datasets: [{
+                    label: 'Number of Expenses',
+                    data: rangeCounts,
+                    backgroundColor: '#2ecc71',
+                    borderColor: '#27ae60',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+    }
+});
 </script>
 {% endblock %}

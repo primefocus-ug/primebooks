@@ -367,10 +367,21 @@ class PDFExportService:
 
     from reportlab.platypus import Paragraph
 
-    def _build_summary_section(self, summary: Dict) -> List:
-        """Build summary cards section"""
+    def _build_summary_section(self, summary) -> List:
+        """Build summary cards section (supports dict or list of dicts)"""
         elements = []
         elements.append(Paragraph("Executive Summary", self.styles['SectionHeader']))
+
+        # Normalize: if summary is a list of dicts, merge them into one dict
+        if isinstance(summary, list):
+            merged_summary = {}
+            for item in summary:
+                if isinstance(item, dict):
+                    merged_summary.update(item)
+            summary = merged_summary
+        elif not isinstance(summary, dict):
+            # fallback: wrap non-dict as a single dict
+            summary = {'Summary': str(summary)}
 
         summary_data = []
         row = []
@@ -405,7 +416,7 @@ class PDFExportService:
                 summary_data.append(row)
                 row = []
 
-        # 🟢 Fix: fill remaining cells with Paragraph() instead of ''
+        # Fill remaining cells
         if row:
             empty_cell = [
                 Paragraph("", self.styles['Normal']),

@@ -280,6 +280,7 @@ SHARED_APPS = [
     'django_filters',
     "crispy_forms",
     "crispy_bootstrap5",
+    'corsheaders',
 ]
 
 TENANT_APPS = [
@@ -301,14 +302,18 @@ TENANT_APPS = [
     'notifications',
     'efris',
     'errors',
+    'taggit',
+    'pos_app',
 ]
 
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
+TAGGIT_CASE_INSENSITIVE = True
 
 # Middleware
 MIDDLEWARE = [
     'django_tenants.middleware.main.TenantMainMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
 ]
 
 # Add WhiteNoise for production only
@@ -376,7 +381,6 @@ TEMPLATES = [
                 'accounts.context_processors.maintenance_info',
                 'errors.context_processors.error_context_processor',
                 'messaging.context_processors.messaging_context',
-                'expenses.context_processors.expense_context',
                 'public_seo.context_processors.seo_metadata',
             ],
         },
@@ -645,6 +649,8 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 

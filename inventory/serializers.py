@@ -20,6 +20,129 @@ class CategoryBasicSerializer(serializers.ModelSerializer):
         model = Category
         fields = ['id', 'name', 'code']
 
+from rest_framework import serializers
+from .models import Service
+
+
+class ServiceSerializer(serializers.ModelSerializer):
+    # --- Read-only computed / derived fields ---
+    efris_commodity_category_id = serializers.ReadOnlyField()
+    efris_commodity_category_name = serializers.ReadOnlyField()
+    efris_tax_category_id = serializers.ReadOnlyField()
+    efris_tax_rate = serializers.ReadOnlyField()
+    efris_excise_duty_rate = serializers.ReadOnlyField()
+    efris_unit_of_measure_code = serializers.ReadOnlyField()
+    final_price = serializers.ReadOnlyField()
+    efris_status_display = serializers.ReadOnlyField()
+    efris_configuration_complete = serializers.ReadOnlyField()
+    effective_tax_rate = serializers.ReadOnlyField()
+
+    # Optional: expose category as ID only (clean for APIs)
+    category_id = serializers.PrimaryKeyRelatedField(
+        source='category',
+        queryset=Service._meta.get_field('category').remote_field.model.objects.filter(
+            category_type='service'
+        ),
+        required=False,
+        allow_null=True
+    )
+
+    class Meta:
+        model = Service
+
+        fields = [
+            # Core
+            'id',
+            'name',
+            'code',
+            'description',
+            'category_id',
+            'unit_price',
+            'unit_of_measure',
+            'is_active',
+            'image',
+
+            # Tax
+            'tax_rate',
+            'excise_duty_rate',
+            'effective_tax_rate',
+
+            # EFRIS flags
+            'efris_is_uploaded',
+            'efris_upload_date',
+            'efris_service_id',
+            'efris_auto_sync_enabled',
+
+            # EFRIS computed fields
+            'efris_commodity_category_id',
+            'efris_commodity_category_name',
+            'efris_tax_category_id',
+            'efris_tax_rate',
+            'efris_excise_duty_rate',
+            'efris_unit_of_measure_code',
+            'efris_status_display',
+            'efris_configuration_complete',
+
+            # Pricing
+            'final_price',
+
+            # Metadata
+            'created_at',
+            'updated_at',
+            'created_by',
+        ]
+
+        read_only_fields = [
+            'id',
+            'efris_is_uploaded',
+            'efris_upload_date',
+            'efris_service_id',
+            'created_at',
+            'updated_at',
+            'created_by',
+        ]
+
+    # -------------------------------
+    # Validation
+    # -------------------------------
+    def validate_excise_duty_rate(self, value):
+        tax_rate = self.initial_data.get('tax_rate')
+        if tax_rate != 'E' and value and value > 0:
+            raise serializers.ValidationError(
+                "Excise duty rate is only allowed when tax rate is 'E'."
+            )
+        return value
+
+    def validate(self, attrs):
+        """
+        Cross-field validation
+        """
+        tax_rate = attrs.get('tax_rate', getattr(self.instance, 'tax_rate', None))
+        excise = attrs.get(
+            'excise_duty_rate',
+            getattr(self.instance, 'excise_duty_rate', 0)
+        )
+
+        if tax_rate == 'E' and excise <= 0:
+            raise serializers.ValidationError({
+                'excise_duty_rate': "Excise duty rate must be greater than 0 when tax rate is 'E'."
+            })
+
+        return attrs
+
+    # -------------------------------
+    # Create / Update hooks
+    # -------------------------------
+    def create(self, validated_data):
+        request = self.context.get('request')
+
+        if request and request.user.is_authenticated:
+            validated_data['created_by'] = request.user
+
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        return super().update(instance, validated_data)
 
 class SupplierBasicSerializer(serializers.ModelSerializer):
     class Meta:

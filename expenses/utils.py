@@ -1,648 +1,347 @@
-from django.db.models import Sum, Count, Avg, Q, Min, Max
+from datetime import datetime, timedelta
 from django.utils import timezone
-from django.conf import settings
-from decimal import Decimal, InvalidOperation
-from datetime import timedelta
-import calendar
+from django.db.models import Sum, Count, Avg
+from django.db.models.functions import TruncDate, TruncWeek, TruncMonth
+import io
+from decimal import Decimal
+
+# For PDF generation
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.charts.barcharts import VerticalBarChart
+
+# For Excel generation
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
+from openpyxl.chart import PieChart, BarChart, Reference
+from openpyxl.styles import Font, Alignment, PatternFill
 
-from .models import Expense  # Removed ExpenseCategory import
+# For charts
+import matplotlib
+
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 
-def get_expense_statistics(user=None, date_from=None, date_to=None):
-    """Get comprehensive expense statistics"""
-    expenses = Expense.objects.all()
-
-    if user:
-        expenses = expenses.filter(created_by=user)
-
-    if date_from:
-        expenses = expenses.filter(expense_date__gte=date_from)
-
-    if date_to:
-        expenses = expenses.filter(expense_date__lte=date_to)
-
-    stats = {
-        'total_expenses': expenses.count(),
-        'total_amount': expenses.aggregate(Sum('amount'))['amount__sum'] or Decimal('0'),
-        'average_amount': expenses.aggregate(Avg('amount'))['amount__avg'] or Decimal('0'),
-        'min_amount': expenses.aggregate(Min('amount'))['amount__min'] or Decimal('0'),
-        'max_amount': expenses.aggregate(Max('amount'))['amount__max'] or Decimal('0'),
-        'status_breakdown': {},
-        'category_breakdown': {},
-        'monthly_trend': {}
-    }
-
-    # Status breakdown
-    for status, _ in Expense.STATUS_CHOICES:
-        status_expenses = expenses.filter(status=status)
-        count = status_expenses.count()
-        amount = status_expenses.aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
-        stats['status_breakdown'][status] = {
-            'count': count,
-            'amount': amount,
-            'percentage': (count / stats['total_expenses'] * 100) if stats['total_expenses'] > 0 else 0
-        }
-
-    # Category breakdown - UPDATED
-    category_data = expenses.values('category').annotate(  # Changed from 'category__name', 'category__color_code'
-        total=Sum('amount'),
-        count=Count('id'),
-        avg=Avg('amount')
-    ).order_by('-total')
-
-    # Get category display names
-    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
-
-    for item in category_data:
-        category_code = item['category']
-        category_display = category_choices_dict.get(category_code, category_code)
-        color_code = get_category_color(category_code)  # Add this helper function
-
-        stats['category_breakdown'][category_display] = {
-            'amount': item['total'],
-            'count': item['count'],
-            'average': item['avg'],
-            'color': color_code,
-            'percentage': (item['total'] / stats['total_amount'] * 100) if stats['total_amount'] > 0 else 0,
-            'code': category_code  # Keep the original code
-        }
-
-    # Monthly trend (last 6 months)
+def get_date_range(period):
+    """Get start and end dates based on period"""
     today = timezone.now().date()
-    for i in range(6):
-        month_start = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
-        month_end = month_start.replace(day=calendar.monthrange(month_start.year, month_start.month)[1])
 
-        month_expenses = expenses.filter(
-            expense_date__gte=month_start,
-            expense_date__lte=month_end
-        )
+    if period == 'today':
+        return today, today
+    elif period == 'week':
+        start = today - timedelta(days=today.weekday())
+        return start, today
+    elif period == 'fortnight':
+        return today - timedelta(days=14), today
+    elif period == 'month':
+        start = today.replace(day=1)
+        return start, today
+    elif period == 'quarter':
+        quarter_month = ((today.month - 1) // 3) * 3 + 1
+        start = today.replace(month=quarter_month, day=1)
+        return start, today
+    elif period == '6months':
+        return today - timedelta(days=182), today
+    elif period == 'year':
+        start = today.replace(month=1, day=1)
+        return start, today
 
-        month_amount = month_expenses.aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
-        month_count = month_expenses.count()
-
-        stats['monthly_trend'][month_start.strftime('%B %Y')] = {
-            'amount': month_amount,
-            'count': month_count
-        }
-
-    return stats
-
-
-# Remove or comment out get_budget_analysis function since it depends on ExpenseCategory
-# def get_budget_analysis():
-#     """Get budget utilization analysis for all categories"""
-#     # This function no longer works since ExpenseCategory model was removed
-#     return []
+    return None, None
 
 
-def get_budget_status(utilization):
-    """Get budget status based on utilization percentage"""
-    if not utilization:
-        return 'unknown'
-
-    if utilization < 50:
-        return 'safe'
-    elif utilization < 80:
-        return 'warning'
-    elif utilization < 100:
-        return 'critical'
-    else:
-        return 'exceeded'
-
-
-def calculate_expense_metrics(expenses):
-    """Calculate various metrics for a queryset of expenses"""
-    if not expenses.exists():
-        return {
-            'count': 0,
-            'total': Decimal('0'),
-            'average': Decimal('0'),
-            'min': Decimal('0'),
-            'max': Decimal('0'),
-            'median': Decimal('0')
-        }
-
-    aggregates = expenses.aggregate(
-        total=Sum('amount'),
-        average=Avg('amount'),
-        min_amount=Min('amount'),
-        max_amount=Max('amount')
-    )
-
-    # Calculate median
+def get_expense_summary(expenses):
+    """Generate summary statistics"""
+    total = expenses.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     count = expenses.count()
-    if count > 0:
-        middle = count // 2
-        if count % 2 == 0:
-            median = (expenses.order_by('amount')[middle - 1].amount +
-                      expenses.order_by('amount')[middle].amount) / 2
-        else:
-            median = expenses.order_by('amount')[middle].amount
-    else:
-        median = Decimal('0')
+    avg = expenses.aggregate(avg=Avg('amount'))['avg'] or Decimal('0.00')
+
+    # Group by tags
+    tag_summary = {}
+    for expense in expenses:
+        for tag in expense.tags.all():
+            if tag.name not in tag_summary:
+                tag_summary[tag.name] = Decimal('0.00')
+            tag_summary[tag.name] += expense.amount
+
+    # Sort by amount
+    tag_summary = dict(sorted(tag_summary.items(), key=lambda x: x[1], reverse=True))
 
     return {
+        'total': total,
         'count': count,
-        'total': aggregates['total'] or Decimal('0'),
-        'average': aggregates['average'] or Decimal('0'),
-        'min': aggregates['min_amount'] or Decimal('0'),
-        'max': aggregates['max_amount'] or Decimal('0'),
-        'median': median
+        'average': avg,
+        'by_tag': tag_summary
     }
 
 
-def get_user_expense_summary(user, year=None, month=None):
-    """Get detailed expense summary for a user"""
-    if not year:
-        year = timezone.now().year
-    if not month:
-        month = timezone.now().month
+def generate_chart_data(expenses, group_by='date'):
+    """Generate data for charts"""
+    if group_by == 'date':
+        data = expenses.annotate(
+            period=TruncDate('date')
+        ).values('period').annotate(
+            total=Sum('amount')
+        ).order_by('period')
+    elif group_by == 'week':
+        data = expenses.annotate(
+            period=TruncWeek('date')
+        ).values('period').annotate(
+            total=Sum('amount')
+        ).order_by('period')
+    elif group_by == 'month':
+        data = expenses.annotate(
+            period=TruncMonth('date')
+        ).values('period').annotate(
+            total=Sum('amount')
+        ).order_by('period')
 
-    expenses = Expense.objects.filter(
-        created_by=user,
-        expense_date__year=year,
-        expense_date__month=month
-    )
-
-    # Get category display names
-    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
-
-    category_breakdown = expenses.values('category').annotate(
-        total=Sum('amount'),
-        count=Count('id')
-    ).order_by('-total')
-
-    # Add display names to category breakdown
-    for item in category_breakdown:
-        item['category_display'] = category_choices_dict.get(item['category'], item['category'])
-
-    summary = {
-        'period': f"{calendar.month_name[month]} {year}",
-        'total_count': expenses.count(),
-        'total_submitted': expenses.filter(status='SUBMITTED').count(),
-        'total_approved': expenses.filter(status='APPROVED').count(),
-        'total_rejected': expenses.filter(status='REJECTED').count(),
-        'total_paid': expenses.filter(status='PAID').count(),
-        'total_draft': expenses.filter(status='DRAFT').count(),
-        'amount_submitted': expenses.filter(status='SUBMITTED').aggregate(Sum('amount'))['amount__sum'] or Decimal('0'),
-        'amount_approved': expenses.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum'] or Decimal('0'),
-        'amount_paid': expenses.filter(status='PAID').aggregate(Sum('amount'))['amount__sum'] or Decimal('0'),
-        'amount_total': expenses.aggregate(Sum('amount'))['amount__sum'] or Decimal('0'),
-        'pending_reimbursement': expenses.filter(
-            is_reimbursable=True,
-            status__in=['APPROVED', 'PAID']
-        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0'),
-        'category_breakdown': category_breakdown
-    }
-
-    return summary
+    return list(data)
 
 
-def export_expenses_to_excel(expenses, filename=None):
-    """Export expenses to Excel file with formatting"""
-    workbook = openpyxl.Workbook()
-    sheet = workbook.active
-    sheet.title = "Expenses"
+def create_pie_chart_image(tag_summary):
+    """Create pie chart for tags"""
+    if not tag_summary:
+        return None
 
-    # Define headers
-    headers = [
-        'Expense Number', 'Date', 'Title', 'Category', 'Amount', 'Currency',
-        'Total Amount', 'Status', 'Created By', 'Vendor',
-        'Reference Number', 'Store', 'Payment Method', 'Submitted At',
-        'Approved At', 'Approved By', 'Paid At', 'Notes'
-    ]
+    fig, ax = plt.subplots(figsize=(8, 6))
+    labels = list(tag_summary.keys())[:10]  # Top 10
+    sizes = [float(tag_summary[label]) for label in labels]
 
-    # Style headers
-    header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
-    header_font = Font(bold=True, color='FFFFFF', size=11)
-    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-
-    thin_border = Border(
-        left=Side(style='thin'),
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
-    )
-
-    # Get category display names
-    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
-
-    # Add headers
-    for col_num, header in enumerate(headers, 1):
-        cell = sheet.cell(row=1, column=col_num)
-        cell.value = header
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = header_alignment
-        cell.border = thin_border
-
-    # Add data
-    for row_num, expense in enumerate(expenses, 2):
-        # Get category display name
-        category_display = category_choices_dict.get(expense.category, expense.category)
-
-        data_row = [
-            expense.expense_number,
-            expense.expense_date.strftime('%Y-%m-%d'),
-            expense.title,
-            category_display,  # Use display name
-            float(expense.amount),
-            expense.currency,
-            float(expense.total_amount),
-            expense.get_status_display(),
-            expense.created_by.get_full_name(),
-            expense.vendor_name,
-            expense.reference_number,
-            expense.store.name if expense.store else '',
-            expense.get_payment_method_display() if expense.payment_method else '',
-            expense.submitted_at.strftime('%Y-%m-%d %H:%M') if expense.submitted_at else '',
-            expense.approved_at.strftime('%Y-%m-%d %H:%M') if expense.approved_at else '',
-            expense.approved_by.get_full_name() if expense.approved_by else '',
-            expense.paid_at.strftime('%Y-%m-%d %H:%M') if expense.paid_at else '',
-            expense.notes
-        ]
-
-        for col_num, value in enumerate(data_row, 1):
-            cell = sheet.cell(row=row_num, column=col_num)
-            cell.value = value
-            cell.border = thin_border
-
-            # Format numbers
-            if col_num in [5, 7]:  # Amount columns
-                cell.number_format = '#,##0.00'
-
-            # Align text
-            if col_num in [1, 2, 6, 8]:  # Centered columns
-                cell.alignment = Alignment(horizontal='center')
-
-    # Adjust column widths
-    for column in sheet.columns:
-        max_length = 0
-        column_letter = get_column_letter(column[0].column)
-        for cell in column:
-            try:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
-            except:
-                pass
-        adjusted_width = min(max_length + 2, 50)
-        sheet.column_dimensions[column_letter].width = adjusted_width
-
-    # Freeze header row
-    sheet.freeze_panes = 'A2'
-
-    # Save workbook
-    if not filename:
-        filename = f'expenses_export_{timezone.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
-
-    workbook.save(filename)
-    return filename
-
-
-def validate_expense_approval(expense, user):
-    """Validate if user can approve an expense"""
-    errors = []
-    warnings = []
-
-    # Check permission
-    if not user.has_perm('expenses.approve_expense'):
-        errors.append("You don't have permission to approve expenses")
-
-    # Check status
-    if expense.status not in ['SUBMITTED']:
-        errors.append(f"Cannot approve expense with status: {expense.get_status_display()}")
-
-    # Check self-approval
-    if expense.created_by == user:
-        errors.append("You cannot approve your own expense")
-
-    # Check if already approved
-    if expense.approved_by:
-        errors.append("This expense has already been approved")
-
-    # Check for missing attachments
-    # Since ExpenseCategory is removed, you might want to create a mapping for which categories require approval
-    # For now, we'll check a basic condition
-    if not expense.attachments.exists():
-        warnings.append("This expense has no attachments")
-
-    # Check for missing vendor
-    if not expense.vendor_name:
-        warnings.append("Vendor name is missing")
-
-    return {
-        'auto_approve': False,
-        'errors': errors,
-        'warnings': warnings
-    }
-
-
-def send_expense_notification_email(expense, notification_type):
-    """Send email notification for expense events"""
-    from django.core.mail import send_mail
-    from django.template.loader import render_to_string
-
-    templates = {
-        'submitted': 'expenses/emails/expense_submitted.html',
-        'approved': 'expenses/emails/expense_approved.html',
-        'rejected': 'expenses/emails/expense_rejected.html',
-        'paid': 'expenses/emails/expense_paid.html',
-    }
-
-    if notification_type not in templates:
-        return False
-
-    context = {
-        'expense': expense,
-        'site_url': settings.SITE_URL,
-        'expense_url': f"{settings.SITE_URL}/expenses/{expense.id}/"
-    }
-
-    html_message = render_to_string(templates[notification_type], context)
-    plain_message = render_to_string(
-        templates[notification_type].replace('.html', '.txt'),
-        context
-    )
-
-    subject_map = {
-        'submitted': f'Expense Submitted: {expense.expense_number}',
-        'approved': f'Expense Approved: {expense.expense_number}',
-        'rejected': f'Expense Rejected: {expense.expense_number}',
-        'paid': f'Expense Paid: {expense.expense_number}',
-    }
-
-    recipient = expense.created_by.email
-
-    try:
-        send_mail(
-            subject=subject_map[notification_type],
-            message=plain_message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[recipient],
-            html_message=html_message,
-            fail_silently=False
-        )
-        return True
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Failed to send email to {recipient}: {str(e)}")
-        return False
-
-
-def get_expense_insights(user=None):
-    """Get intelligent insights from expense data"""
-    expenses = Expense.objects.filter(status__in=['APPROVED', 'PAID'])
-
-    if user:
-        expenses = expenses.filter(created_by=user)
-
-    insights = []
-
-    # Average processing time
-    approved_expenses = expenses.filter(
-        approved_at__isnull=False,
-        submitted_at__isnull=False
-    )
-
-    if approved_expenses.exists():
-        processing_times = [
-            (exp.approved_at - exp.submitted_at).total_seconds() / 86400  # Convert to days
-            for exp in approved_expenses
-            if exp.approved_at and exp.submitted_at
-        ]
-
-        if processing_times:
-            avg_processing_days = sum(processing_times) / len(processing_times)
-            insights.append({
-                'type': 'processing_time',
-                'icon': 'clock',
-                'message': f'Average expense approval time: {avg_processing_days:.1f} days',
-                'value': avg_processing_days,
-                'severity': 'warning' if avg_processing_days > 5 else 'info'
-            })
-
-    # Most expensive category
-    category_totals = expenses.values('category').annotate(  # Changed from 'category__name'
-        total=Sum('amount')
-    ).order_by('-total')
-
-    if category_totals:
-        # Get display name for top category
-        category_choices_dict = dict(Expense.CATEGORY_CHOICES)
-        top_category = category_totals[0]
-        category_display = category_choices_dict.get(top_category['category'], top_category['category'])
-
-        insights.append({
-            'type': 'top_category',
-            'icon': 'trending-up',
-            'message': f"Highest spending category: {category_display}",
-            'value': float(top_category['total']),
-            'category_code': top_category['category']  # Store code instead of ID
-        })
-
-    # Spending trend
-    current_month = timezone.now().replace(day=1).date()
-    last_month = (current_month - timedelta(days=1)).replace(day=1)
-    last_month_end = current_month - timedelta(days=1)
-
-    current_month_total = expenses.filter(
-        expense_date__gte=current_month
-    ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
-
-    last_month_total = expenses.filter(
-        expense_date__gte=last_month,
-        expense_date__lte=last_month_end
-    ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
-
-    if last_month_total > 0:
-        change_percent = ((current_month_total - last_month_total) / last_month_total) * 100
-        trend = 'increased' if change_percent > 0 else 'decreased'
-        severity = 'warning' if change_percent > 20 else 'info'
-
-        insights.append({
-            'type': 'spending_trend',
-            'icon': 'trending-up' if change_percent > 0 else 'trending-down',
-            'message': f'Spending has {trend} by {abs(change_percent):.1f}% this month',
-            'value': float(change_percent),
-            'severity': severity
-        })
-
-    # Pending reimbursements
-    if user:
-        pending_reimbursement = Expense.objects.filter(
-            created_by=user,
-            is_reimbursable=True,
-            status__in=['APPROVED']
-        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
-
-        if pending_reimbursement > 0:
-            insights.append({
-                'type': 'pending_reimbursement',
-                'icon': 'dollar-sign',
-                'message': f'You have {float(pending_reimbursement):,.2f} pending reimbursement',
-                'value': float(pending_reimbursement),
-                'severity': 'info'
-            })
-
-    # Frequent vendors
-    vendor_counts = expenses.exclude(vendor_name='').values('vendor_name').annotate(
-        count=Count('id'),
-        total=Sum('amount')
-    ).order_by('-count')[:3]
-
-    if vendor_counts:
-        top_vendor = vendor_counts[0]
-        insights.append({
-            'type': 'frequent_vendor',
-            'icon': 'shopping-bag',
-            'message': f"Most frequent vendor: {top_vendor['vendor_name']} ({top_vendor['count']} expenses)",
-            'value': top_vendor['count']
-        })
-
-    return insights
-
-
-def generate_expense_report_pdf(expenses, title="Expense Report"):
-    """Generate PDF report for expenses"""
-    import io
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER
+    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+    ax.axis('equal')
 
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5 * inch, bottomMargin=0.5 * inch)
-    elements = []
-
-    # Styles
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=20,
-        textColor=colors.HexColor('#1a237e'),
-        spaceAfter=30,
-        alignment=TA_CENTER
-    )
-
-    # Get category display names
-    category_choices_dict = dict(Expense.CATEGORY_CHOICES)
-
-    # Title
-    elements.append(Paragraph(title, title_style))
-    elements.append(Spacer(1, 0.3 * inch))
-
-    # Summary statistics
-    total_amount = expenses.aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
-    summary_data = [
-        ['Report Generated:', timezone.now().strftime('%Y-%m-%d %H:%M')],
-        ['Total Expenses:', str(expenses.count())],
-        ['Total Amount:', f"UGX {total_amount:,.2f}"],
-    ]
-
-    summary_table = Table(summary_data, colWidths=[2 * inch, 4 * inch])
-    summary_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.grey),
-        ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
-    ]))
-
-    elements.append(summary_table)
-    elements.append(Spacer(1, 0.3 * inch))
-
-    # Expense details table
-    if expenses.exists():
-        data = [['#', 'Date', 'Description', 'Category', 'Amount', 'Status']]
-
-        for i, expense in enumerate(expenses[:50], 1):  # Limit to 50 for PDF
-            # Get category display name
-            category_display = category_choices_dict.get(expense.category, expense.category)
-
-            data.append([
-                str(i),
-                expense.expense_date.strftime('%Y-%m-%d'),
-                expense.title[:30] + '...' if len(expense.title) > 30 else expense.title,
-                category_display[:20],
-                f"{expense.amount:,.2f}",
-                expense.get_status_display()
-            ])
-
-        detail_table = Table(data, colWidths=[0.4 * inch, 1 * inch, 2.2 * inch, 1.3 * inch, 1 * inch, 1 * inch])
-        detail_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 9),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
-        ]))
-
-        elements.append(detail_table)
-
-    # Build PDF
-    doc.build(elements)
+    plt.savefig(buffer, format='png', bbox_inches='tight')
     buffer.seek(0)
+    plt.close()
 
     return buffer
 
 
-def generate_export_filename(user, file_type='xlsx'):
-    """Generate standardized export filename"""
-    timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
-    return f'expenses_export_{user.id}_{timestamp}.{file_type}'
+def create_bar_chart_image(chart_data):
+    """Create bar chart for time-based data"""
+    if not chart_data:
+        return None
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    dates = [item['period'].strftime('%Y-%m-%d') for item in chart_data]
+    amounts = [float(item['total']) for item in chart_data]
+
+    ax.bar(dates, amounts)
+    ax.set_xlabel('Date')
+    ax.set_ylabel('Amount ($)')
+    ax.set_title('Expenses Over Time')
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='png', bbox_inches='tight')
+    buffer.seek(0)
+    plt.close()
+
+    return buffer
 
 
-def validate_expense_amount(amount, category_code=None):
-    """Validate expense amount against various rules"""
-    errors = []
-    warnings = []
+def export_to_pdf(expenses, summary, filters):
+    """Export expenses to PDF with charts"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
 
-    try:
-        amount = Decimal(str(amount))
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#2c3e50'),
+        spaceAfter=30,
+    )
+    elements.append(Paragraph('Expense Report', title_style))
+    elements.append(Spacer(1, 0.2 * inch))
 
-        if amount <= 0:
-            errors.append("Amount must be greater than zero")
+    # Summary section
+    summary_data = [
+        ['Total Expenses:', f"${summary['total']:,.2f}"],
+        ['Number of Expenses:', str(summary['count'])],
+        ['Average Expense:', f"${summary['average']:,.2f}"],
+    ]
 
-        if amount > Decimal('10000000'):  # 10 million threshold
-            warnings.append("This is an unusually large amount. Please verify.")
+    summary_table = Table(summary_data, colWidths=[3 * inch, 2 * inch])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ecf0f1')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#2c3e50')),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 0.3 * inch))
 
-        # If you want to implement budget checking, you'll need to store budget data differently
-        # since ExpenseCategory is removed
-        # You could create a settings dict or database table for category budgets
+    # Add pie chart for tags
+    if summary['by_tag']:
+        elements.append(Paragraph('Expenses by Tag', styles['Heading2']))
+        pie_image = create_pie_chart_image(summary['by_tag'])
+        if pie_image:
+            elements.append(Image(pie_image, width=5 * inch, height=3.75 * inch))
+            elements.append(Spacer(1, 0.3 * inch))
 
-    except (ValueError, InvalidOperation):
-        errors.append("Invalid amount format")
+    # Add bar chart for time series
+    chart_data = generate_chart_data(expenses, group_by='date')
+    if chart_data:
+        elements.append(Paragraph('Expenses Over Time', styles['Heading2']))
+        bar_image = create_bar_chart_image(chart_data)
+        if bar_image:
+            elements.append(Image(bar_image, width=6 * inch, height=3.6 * inch))
+            elements.append(Spacer(1, 0.3 * inch))
 
-    return {
-        'is_valid': len(errors) == 0,
-        'errors': errors,
-        'warnings': warnings
-    }
+    # Detailed expense table
+    elements.append(Paragraph('Detailed Expenses', styles['Heading2']))
+    elements.append(Spacer(1, 0.1 * inch))
+
+    expense_data = [['Date', 'Description', 'Tags', 'Amount']]
+    for expense in expenses[:100]:  # Limit to 100 for PDF
+        tags = ', '.join([tag.name for tag in expense.tags.all()])
+        expense_data.append([
+            expense.date.strftime('%Y-%m-%d'),
+            expense.description[:40],
+            tags[:30],
+            f"${expense.amount:,.2f}"
+        ])
+
+    expense_table = Table(expense_data, colWidths=[1 * inch, 2.5 * inch, 1.5 * inch, 1 * inch])
+    expense_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+    ]))
+    elements.append(expense_table)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
 
 
-def get_category_color(category_code):
-    """Helper function to get color for category"""
-    color_map = {
-        'STAFF_WELFARE': '#FF6B6B',
-        'RENT_EXPENSE': '#4ECDC4',
-        'OFFICE_SUPPLIES': '#45B7D1',
-        'UTILITIES': '#96CEB4',
-        'BANK_CHARGES': '#FFEAA7',
-        'MORE': '#DDA0DD',
-    }
-    return color_map.get(category_code, '#cccccc')
+def export_to_excel(expenses, summary, filters):
+    """Export expenses to Excel with charts"""
+    wb = openpyxl.Workbook()
+
+    # Summary sheet
+    ws_summary = wb.active
+    ws_summary.title = "Summary"
+
+    # Headers
+    ws_summary['A1'] = 'Expense Report Summary'
+    ws_summary['A1'].font = Font(size=16, bold=True)
+    ws_summary.merge_cells('A1:B1')
+
+    ws_summary['A3'] = 'Total Expenses:'
+    ws_summary['B3'] = float(summary['total'])
+    ws_summary['A4'] = 'Number of Expenses:'
+    ws_summary['B4'] = summary['count']
+    ws_summary['A5'] = 'Average Expense:'
+    ws_summary['B5'] = float(summary['average'])
+
+    # Format currency
+    ws_summary['B3'].number_format = '$#,##0.00'
+    ws_summary['B5'].number_format = '$#,##0.00'
+
+    # Tag breakdown
+    ws_summary['A7'] = 'Expenses by Tag'
+    ws_summary['A7'].font = Font(size=14, bold=True)
+
+    row = 8
+    ws_summary['A8'] = 'Tag'
+    ws_summary['B8'] = 'Amount'
+    ws_summary['A8'].font = Font(bold=True)
+    ws_summary['B8'].font = Font(bold=True)
+
+    for tag, amount in summary['by_tag'].items():
+        row += 1
+        ws_summary[f'A{row}'] = tag
+        ws_summary[f'B{row}'] = float(amount)
+        ws_summary[f'B{row}'].number_format = '$#,##0.00'
+
+    # Add pie chart for tags
+    if summary['by_tag']:
+        pie = PieChart()
+        labels = Reference(ws_summary, min_col=1, min_row=9, max_row=row)
+        data = Reference(ws_summary, min_col=2, min_row=8, max_row=row)
+        pie.add_data(data, titles_from_data=True)
+        pie.set_categories(labels)
+        pie.title = "Expenses by Tag"
+        ws_summary.add_chart(pie, "D3")
+
+    # Detailed expenses sheet
+    ws_detail = wb.create_sheet("Detailed Expenses")
+    headers = ['Date', 'Description', 'Tags', 'Amount', 'Notes']
+    ws_detail.append(headers)
+
+    # Style header row
+    for cell in ws_detail[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="3498db", end_color="3498db", fill_type="solid")
+        cell.alignment = Alignment(horizontal="center")
+
+    for expense in expenses:
+        tags = ', '.join([tag.name for tag in expense.tags.all()])
+        ws_detail.append([
+            expense.date,
+            expense.description,
+            tags,
+            float(expense.amount),
+            expense.notes
+        ])
+
+    # Format amounts
+    for row in range(2, ws_detail.max_row + 1):
+        ws_detail[f'D{row}'].number_format = '$#,##0.00'
+
+    # Adjust column widths
+    ws_detail.column_dimensions['A'].width = 12
+    ws_detail.column_dimensions['B'].width = 30
+    ws_detail.column_dimensions['C'].width = 20
+    ws_detail.column_dimensions['D'].width = 12
+    ws_detail.column_dimensions['E'].width = 30
+
+    # Time series chart
+    chart_data = generate_chart_data(expenses, group_by='month')
+    if chart_data:
+        ws_chart = wb.create_sheet("Trend Analysis")
+        ws_chart['A1'] = 'Period'
+        ws_chart['B1'] = 'Total Amount'
+
+        for idx, item in enumerate(chart_data, start=2):
+            ws_chart[f'A{idx}'] = item['period'].strftime('%Y-%m-%d')
+            ws_chart[f'B{idx}'] = float(item['total'])
+
+        # Create bar chart
+        bar_chart = BarChart()
+        bar_chart.title = "Expenses Over Time"
+        bar_chart.x_axis.title = "Period"
+        bar_chart.y_axis.title = "Amount ($)"
+
+        data = Reference(ws_chart, min_col=2, min_row=1, max_row=len(chart_data) + 1)
+        cats = Reference(ws_chart, min_col=1, min_row=2, max_row=len(chart_data) + 1)
+        bar_chart.add_data(data, titles_from_data=True)
+        bar_chart.set_categories(cats)
+        ws_chart.add_chart(bar_chart, "D2")
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer

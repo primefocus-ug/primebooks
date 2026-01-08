@@ -1,5 +1,5 @@
 from django.core.cache import cache
-from django.db.models import Sum, Count, Avg, F, Q, Value, Case, When,Max
+from django.db.models import Sum, Count, Avg, F, Q, Value, Case, When,Max,Min
 from django.utils import timezone
 import time
 import logging
@@ -9,9 +9,9 @@ from decimal import Decimal
 from sales.models import Sale, SaleItem
 from inventory.models import Stock, Product, StockMovement
 from stores.models import Store
-from django.db import models
-from expenses.models import Expense, ExpenseCategory
-from ..models import SavedReport, GeneratedReport, ReportAccessLog
+from django.db import models,connection
+from expenses.models import Expense,Budget
+from django.db.models.functions import TruncMonth, TruncDate, ExtractWeekDay, TruncWeek, TruncDay
 from django.db.models.functions import TruncDate
 logger = logging.getLogger(__name__)
 
@@ -27,25 +27,34 @@ class ReportGeneratorService:
     def get_accessible_stores(self):
         """Get stores accessible to the user"""
         from stores.models import Store
-        if self.user.is_superuser or self.user.primary_role and self.user.primary_role.priority >= 90:
+        if self.user.is_superuser or (hasattr(self.user, 'primary_role') and
+                                      self.user.primary_role and
+                                      self.user.primary_role.priority >= 90):
             return Store.objects.filter(is_active=True)
         return self.user.stores.filter(is_active=True)
 
     def get_cache_key(self, **kwargs) -> str:
-        """Generate unique cache key for report"""
-        # Convert non-serializable objects
+        """Generate unique cache key for report with tenant isolation"""
+        import hashlib
+        import json
+
+        schema_name = connection.schema_name
         serializable_kwargs = {}
+
         for key, value in kwargs.items():
             if isinstance(value, (date, datetime)):
                 serializable_kwargs[key] = value.isoformat()
             elif isinstance(value, Decimal):
                 serializable_kwargs[key] = float(value)
-            elif hasattr(value, 'id'):  # Django model instance
+            elif hasattr(value, 'id'):
                 serializable_kwargs[key] = value.id
             else:
                 serializable_kwargs[key] = value
 
-        return self.report.get_cache_key(self.user.id, **serializable_kwargs)
+        param_string = json.dumps(serializable_kwargs, sort_keys=True, default=str)
+        hash_input = f"{schema_name}:{self.report.id}:{self.user.id}:{param_string}"
+
+        return f"report:{hashlib.md5(hash_input.encode()).hexdigest()}"
 
     def get_cached_results(self, **kwargs) -> Optional[Dict]:
         """Retrieve cached report results"""
@@ -59,7 +68,6 @@ class ReportGeneratorService:
             logger.info(f"Cache hit for report {self.report.id}")
             return cached_data
 
-        logger.info(f"Cache miss for report {self.report.id}")
         return None
 
     def cache_results(self, data: Dict, **kwargs):
@@ -73,30 +81,26 @@ class ReportGeneratorService:
 
     def generate(self, **kwargs) -> Dict[str, Any]:
         """Generate report with intelligent caching"""
-        # Check cache first
         cached_results = self.get_cached_results(**kwargs)
         if cached_results:
             cached_results['from_cache'] = True
             return cached_results
 
-        # Generate fresh data
         logger.info(f"Generating fresh report: {self.report.name}")
 
-        # Route to appropriate generator
         generator_map = {
             'SALES_SUMMARY': self._generate_sales_summary,
+            'PRICE_LOOKUP': self._generate_price_lookup,
+            'EFRIS_COMPLIANCE': self._generate_efris_compliance,
             'PRODUCT_PERFORMANCE': self._generate_product_performance,
             'INVENTORY_STATUS': self._generate_inventory_status,
-            'TAX_REPORT': self._generate_tax_report,
-            'Z_REPORT': self._generate_z_report,
-            'EFRIS_COMPLIANCE': self._generate_efris_compliance,
-            'CASHIER_PERFORMANCE': self._generate_cashier_performance,
             'PROFIT_LOSS': self._generate_profit_loss,
-            'STOCK_MOVEMENT': self._generate_stock_movement,
-            'PRICE_LOOKUP': self._generate_price_lookup,
-            'CUSTOMER_ANALYTICS': self._generate_customer_analytics,
             'EXPENSE_REPORT': self._generate_expense_report,
             'EXPENSE_ANALYTICS': self._generate_expense_analytics,
+            'Z_REPORT': self._generate_z_report,
+            'CASHIER_PERFORMANCE': self._generate_cashier_performance,
+            'STOCK_MOVEMENT': self._generate_stock_movement,
+            'CUSTOMER_ANALYTICS': self._generate_customer_analytics,
             'CUSTOM': self._generate_custom,
         }
 
@@ -104,10 +108,8 @@ class ReportGeneratorService:
         if not generator:
             raise ValueError(f"Unknown report type: {self.report.report_type}")
 
-        # Generate data
         results = generator(**kwargs)
 
-        # Add metadata
         results['metadata'] = {
             'generated_at': timezone.now().isoformat(),
             'generated_by': self.user.get_full_name(),
@@ -117,10 +119,7 @@ class ReportGeneratorService:
             'report_type': self.report.get_report_type_display(),
         }
 
-        # Cache results
         self.cache_results(results, **kwargs)
-
-        # Update execution count
         self.report.increment_execution_count()
 
         return results
@@ -551,362 +550,191 @@ class ReportGeneratorService:
         }
 
     def _generate_expense_report(self, **kwargs) -> Dict:
-        """Generate expense tracking report"""
-        from django.db.models import F, Sum, Count, Avg
-        from django.db import connection
-
+        """Generate expense report - Works with your simplified Expense model"""
         start_date = kwargs.get('start_date')
         end_date = kwargs.get('end_date')
-        store_id = kwargs.get('store_id')
-        category_id = kwargs.get('category_id')
-        status_filter = kwargs.get('status')
-        payment_method_filter = kwargs.get('payment_method')
+        tag_filter = kwargs.get('tags')
+        min_amount = kwargs.get('min_amount')
+        max_amount = kwargs.get('max_amount')
 
-        stores = self.get_accessible_stores()
+        queryset = Expense.objects.filter(user=self.user)
 
-        queryset = Expense.objects.select_related(
-            'category', 'store', 'created_by', 'approved_by', 'paid_by'
-        ).prefetch_related('attachments')
-
-        # Apply filters
         if start_date:
-            queryset = queryset.filter(expense_date__gte=start_date)
+            queryset = queryset.filter(date__gte=start_date)
         if end_date:
-            queryset = queryset.filter(expense_date__lte=end_date)
-        if store_id:
-            queryset = queryset.filter(store_id=store_id)
-        if category_id:
-            queryset = queryset.filter(category_id=category_id)
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-        if payment_method_filter:
-            queryset = queryset.filter(payment_method=payment_method_filter)
+            queryset = queryset.filter(date__lte=end_date)
+        if min_amount:
+            queryset = queryset.filter(amount__gte=min_amount)
+        if max_amount:
+            queryset = queryset.filter(amount__lte=max_amount)
+        if tag_filter:
+            tags = [t.strip() for t in tag_filter.split(',')]
+            queryset = queryset.filter(tags__name__in=tags).distinct()
 
-        # Status counts - calculate total_amount in Python since it's a property
-        status_counts_data = {}
-        for expense in queryset:
-            status = expense.status
-            if status not in status_counts_data:
-                status_counts_data[status] = {'count': 0, 'total_amount': 0}
-            status_counts_data[status]['count'] += 1
-            status_counts_data[status]['total_amount'] += float(expense.total_amount)
-
-        status_counts = [{'status': status, 'count': data['count'], 'total_amount': data['total_amount']}
-                         for status, data in status_counts_data.items()]
-
-        # Category breakdown - also needs Python calculation
-        category_breakdown_data = {}
-        for expense in queryset:
-            category_name = expense.category.name if expense.category else 'Uncategorized'
-            color_code = expense.category.color_code if expense.category else '#6c757d'
-            icon = expense.category.icon if expense.category else ''
-
-            if category_name not in category_breakdown_data:
-                category_breakdown_data[category_name] = {
-                    'category__name': category_name,
-                    'category__color_code': color_code,
-                    'category__icon': icon,
-                    'expense_count': 0,
-                    'total_amount': 0,
-                    'avg_amount': 0
-                }
-
-            category_breakdown_data[category_name]['expense_count'] += 1
-            category_breakdown_data[category_name]['total_amount'] += float(expense.total_amount)
-
-        # Calculate average for each category
-        for data in category_breakdown_data.values():
-            if data['expense_count'] > 0:
-                data['avg_amount'] = data['total_amount'] / data['expense_count']
-
-        category_breakdown = list(category_breakdown_data.values())
-
-        # Store breakdown
-        store_breakdown_data = {}
-        for expense in queryset:
-            store_name = expense.store.name if expense.store else 'No Store'
-            if store_name not in store_breakdown_data:
-                store_breakdown_data[store_name] = {
-                    'store__name': store_name,
-                    'expense_count': 0,
-                    'total_amount': 0
-                }
-            store_breakdown_data[store_name]['expense_count'] += 1
-            store_breakdown_data[store_name]['total_amount'] += float(expense.total_amount)
-
-        store_breakdown = list(store_breakdown_data.values())
-
-        # Payment method breakdown
-        payment_breakdown_data = {}
-        for expense in queryset:
-            method = expense.payment_method or 'Unknown'
-            if method not in payment_breakdown_data:
-                payment_breakdown_data[method] = {
-                    'payment_method': method,
-                    'count': 0,
-                    'total_amount': 0
-                }
-            payment_breakdown_data[method]['count'] += 1
-            payment_breakdown_data[method]['total_amount'] += float(expense.total_amount)
-
-        payment_breakdown = list(payment_breakdown_data.values())
-
-        # Expense list with detailed data - calculate total_amount in Python
         expenses = []
-        for expense in queryset.order_by('-expense_date')[:500]:  # Limit to 500
+        for expense in queryset.select_related('user').prefetch_related('tags')[:500]:
             expenses.append({
                 'id': expense.id,
-                'expense_number': expense.expense_number,
-                'title': expense.title,
                 'description': expense.description,
-                'category__name': expense.category.name if expense.category else 'Uncategorized',
-                'category__color_code': expense.category.color_code if expense.category else '#6c757d',
-                'store__name': expense.store.name if expense.store else 'No Store',
-                'created_by__first_name': expense.created_by.first_name if expense.created_by else '',
-                'created_by__last_name': expense.created_by.last_name if expense.created_by else '',
                 'amount': float(expense.amount),
-                'currency': expense.currency,
-                'tax_amount': float(expense.tax_amount),
-                'total_amount': float(expense.total_amount),  # This is the property
-                'expense_date': expense.expense_date,
-                'status': expense.status,
-                'payment_method': expense.payment_method,
-                'vendor_name': expense.vendor_name,
-                'reference_number': expense.reference_number,
-                'approved_by__first_name': expense.approved_by.first_name if expense.approved_by else '',
-                'approved_by__last_name': expense.approved_by.last_name if expense.approved_by else '',
-                'paid_by__first_name': expense.paid_by.first_name if expense.paid_by else '',
-                'paid_by__last_name': expense.paid_by.last_name if expense.paid_by else '',
-                'is_reimbursable': expense.is_reimbursable,
-                'is_recurring': expense.is_recurring,
-                'due_date': expense.due_date,
-                'rejection_reason': expense.rejection_reason,
+                'date': expense.date,
+                'tags': [tag.name for tag in expense.tags.all()],
+                'receipt': expense.receipt.url if expense.receipt else None,
+                'receipt_filename': expense.receipt_filename if hasattr(expense, 'receipt_filename') else None,
                 'notes': expense.notes,
             })
 
-        # Calculate summaries
-        total_amount = sum(float(expense.total_amount) for expense in queryset)
-        total_expenses = queryset.count()
-        total_tax = sum(float(expense.tax_amount) for expense in queryset)
-
         summary = {
-            'total_expenses': total_expenses,
-            'total_amount': total_amount,
-            'total_tax': total_tax,
-            'avg_expense': total_amount / total_expenses if total_expenses > 0 else 0,
-            'pending_expenses': queryset.filter(status='SUBMITTED').count(),
-            'overdue_expenses': queryset.filter(
-                status='APPROVED',
-                due_date__lt=timezone.now().date()
-            ).count(),
+            'total_expenses': queryset.count(),
+            'total_amount': float(queryset.aggregate(total=Sum('amount'))['total'] or 0),
+            'avg_expense': float(queryset.aggregate(avg=Avg('amount'))['avg'] or 0),
+            'min_amount': float(queryset.aggregate(min=Min('amount'))['min'] or 0),
+            'max_amount': float(queryset.aggregate(max=Max('amount'))['max'] or 0),
         }
 
-        # Monthly trend - use PostgreSQL-compatible date extraction
-        # Check database backend
-        vendor = connection.vendor
+        # Tag breakdown
+        tag_data = {}
+        for expense in queryset.prefetch_related('tags'):
+            for tag in expense.tags.all():
+                if tag.name not in tag_data:
+                    tag_data[tag.name] = {'tag_name': tag.name, 'count': 0, 'total_amount': 0}
+                tag_data[tag.name]['count'] += 1
+                tag_data[tag.name]['total_amount'] += float(expense.amount)
 
-        if vendor == 'postgresql':
-            # PostgreSQL: Use TO_CHAR or EXTRACT
-            monthly_trend = list(queryset.extra(
-                select={'month': "TO_CHAR(expense_date, 'YYYY-MM')"}
-            ).values('month').annotate(
-                count=Count('id'),
-                total=Sum(F('amount') + F('tax_amount'))
-            ).order_by('month')[:12])
-        elif vendor == 'mysql':
-            # MySQL: Use DATE_FORMAT
-            monthly_trend = list(queryset.extra(
-                select={'month': "DATE_FORMAT(expense_date, '%%Y-%%m')"}
-            ).values('month').annotate(
-                count=Count('id'),
-                total=Sum(F('amount') + F('tax_amount'))
-            ).order_by('month')[:12])
-        else:
-            # Fallback: Use Django's TruncMonth
-            from django.db.models.functions import TruncMonth
-            monthly_trend = list(queryset.annotate(
-                month=TruncMonth('expense_date')
-            ).values('month').annotate(
-                count=Count('id'),
-                total=Sum(F('amount') + F('tax_amount'))
-            ).order_by('month')[:12])
-            # Format the month string
-            for item in monthly_trend:
-                if isinstance(item['month'], (datetime, date)):
-                    item['month'] = item['month'].strftime('%Y-%m')
+        tag_breakdown = sorted(tag_data.values(), key=lambda x: x['total_amount'], reverse=True)[:20]
+
+        # Monthly trend
+        monthly_trend = list(queryset.annotate(
+            month=TruncMonth('date')
+        ).values('month').annotate(
+            count=Count('id'),
+            total=Sum('amount')
+        ).order_by('month')[:12])
+
+        for item in monthly_trend:
+            item['month'] = item['month'].strftime('%Y-%m') if item['month'] else None
+            item['total'] = float(item['total'] or 0)
 
         return {
             'expenses': expenses,
             'summary': summary,
-            'status_counts': status_counts,
-            'category_breakdown': category_breakdown,
-            'store_breakdown': store_breakdown,
-            'payment_breakdown': payment_breakdown,
+            'tag_breakdown': tag_breakdown,
             'monthly_trend': monthly_trend,
             'filters': kwargs,
         }
 
     def _generate_expense_analytics(self, **kwargs) -> Dict:
-        """Generate expense analytics and insights report"""
-        from django.db.models.functions import TruncMonth, TruncWeek
-        from django.db.models import F, Sum, Count, Avg
-        from django.db import connection
-
+        """Generate expense analytics"""
         start_date = kwargs.get('start_date')
         end_date = kwargs.get('end_date')
-        store_id = kwargs.get('store_id')
+        tag_filter = kwargs.get('tags')
 
-        stores = self.get_accessible_stores()
-
-        queryset = Expense.objects.filter(status='PAID').select_related('category', 'store')
+        queryset = Expense.objects.filter(user=self.user)
 
         if start_date:
-            queryset = queryset.filter(expense_date__gte=start_date)
+            queryset = queryset.filter(date__gte=start_date)
         if end_date:
-            queryset = queryset.filter(expense_date__lte=end_date)
-        if store_id:
-            queryset = queryset.filter(store_id=store_id)
+            queryset = queryset.filter(date__lte=end_date)
+        if tag_filter:
+            tags = [t.strip() for t in tag_filter.split(',')]
+            queryset = queryset.filter(tags__name__in=tags).distinct()
 
-        # Monthly trend with comparison - calculate total as amount + tax_amount
+        # Monthly trend
         monthly_data = list(queryset.annotate(
-            month=TruncMonth('expense_date')
+            month=TruncMonth('date')
         ).values('month').annotate(
-            total=Sum(F('amount') + F('tax_amount')),  # Calculate total here
             count=Count('id'),
+            total=Sum('amount'),
             avg=Avg('amount')
         ).order_by('month')[:12])
 
-        # Format month strings
         for item in monthly_data:
-            if isinstance(item['month'], (datetime, date)):
-                item['month'] = item['month'].strftime('%Y-%m')
+            item['month'] = item['month'].strftime('%Y-%m') if item['month'] else None
+            item['total'] = float(item['total'] or 0)
+            item['avg'] = float(item['avg'] or 0)
 
-        # Weekly pattern
-        weekly_data = list(queryset.annotate(
-            week=TruncWeek('expense_date')
-        ).values('week').annotate(
-            total=Sum(F('amount') + F('tax_amount'))
-        ).order_by('week')[:8])
+        # Day of week analysis
+        day_of_week_data = list(queryset.annotate(
+            day=ExtractWeekDay('date')
+        ).values('day').annotate(
+            count=Count('id'),
+            total=Sum('amount')
+        ).order_by('day'))
 
-        # Format week strings
-        for item in weekly_data:
-            if isinstance(item['week'], (datetime, date)):
-                item['week'] = item['week'].strftime('%Y-%m-%d')
+        day_names = {1: 'Sunday', 2: 'Monday', 3: 'Tuesday', 4: 'Wednesday',
+                     5: 'Thursday', 6: 'Friday', 7: 'Saturday'}
 
-        # Top categories - calculate in Python
-        category_data = {}
-        for expense in queryset:
-            category_name = expense.category.name if expense.category else 'Uncategorized'
-            color_code = expense.category.color_code if expense.category else '#6c757d'
-            total_amount = float(expense.amount) + float(expense.tax_amount)
+        day_of_week_analysis = []
+        for item in day_of_week_data:
+            day_of_week_analysis.append({
+                'day': day_names.get(item['day'], f"Day {item['day']}"),
+                'total': float(item['total'] or 0),
+                'count': item['count'],
+                'avg': float(item['total'] or 0) / item['count'] if item['count'] > 0 else 0
+            })
 
-            if category_name not in category_data:
-                category_data[category_name] = {
-                    'category__name': category_name,
-                    'category__color_code': color_code,
-                    'total': 0,
-                    'count': 0,
-                    'avg': 0
-                }
+        # Top tags
+        tag_data = {}
+        for expense in queryset.prefetch_related('tags'):
+            for tag in expense.tags.all():
+                if tag.name not in tag_data:
+                    tag_data[tag.name] = {'tag_name': tag.name, 'total': 0, 'count': 0}
+                tag_data[tag.name]['total'] += float(expense.amount)
+                tag_data[tag.name]['count'] += 1
 
-            category_data[category_name]['total'] += total_amount
-            category_data[category_name]['count'] += 1
-
-        # Calculate averages
-        for data in category_data.values():
+        for data in tag_data.values():
             if data['count'] > 0:
                 data['avg'] = data['total'] / data['count']
 
-        top_categories = sorted(category_data.values(), key=lambda x: x['total'], reverse=True)[:10]
+        top_tags = sorted(tag_data.values(), key=lambda x: x['total'], reverse=True)[:10]
 
-        # Vendor analysis
-        vendor_data = {}
-        for expense in queryset:
-            if expense.vendor_name:
-                vendor = expense.vendor_name
-                total_amount = float(expense.amount) + float(expense.tax_amount)
-
-                if vendor not in vendor_data:
-                    vendor_data[vendor] = {
-                        'vendor_name': vendor,
-                        'total': 0,
-                        'count': 0
-                    }
-
-                vendor_data[vendor]['total'] += total_amount
-                vendor_data[vendor]['count'] += 1
-
-        top_vendors = sorted(vendor_data.values(), key=lambda x: x['total'], reverse=True)[:10]
-
-        # Payment method analysis
-        payment_data = {}
-        for expense in queryset:
-            if expense.payment_method:
-                method = expense.payment_method
-                total_amount = float(expense.amount) + float(expense.tax_amount)
-
-                if method not in payment_data:
-                    payment_data[method] = {
-                        'payment_method': method,
-                        'total': 0,
-                        'count': 0
-                    }
-
-                payment_data[method]['total'] += total_amount
-                payment_data[method]['count'] += 1
-
-        payment_methods = sorted(payment_data.values(), key=lambda x: x['total'], reverse=True)
-
-        # Recurring expenses analysis
-        recurring_total = 0
-        recurring_count = 0
-        for expense in queryset.filter(is_recurring=True):
-            recurring_total += float(expense.amount) + float(expense.tax_amount)
-            recurring_count += 1
-
-        recurring_expenses = {
-            'total': recurring_total,
-            'count': recurring_count
-        }
-
-        # Budget vs actual by category
-        budget_analysis = []
-        categories = ExpenseCategory.objects.filter(is_active=True)
-
-        for category in categories:
-            category_expenses = queryset.filter(category=category)
-            total_spent = sum(float(expense.amount) + float(expense.tax_amount)
-                              for expense in category_expenses)
-            budget_analysis.append({
-                'category': category.name,
-                'monthly_budget': float(category.monthly_budget) if category.monthly_budget else None,
-                'total_spent': total_spent,
-                'budget_utilization': (total_spent / float(category.monthly_budget) * 100)
-                if category.monthly_budget and float(category.monthly_budget) > 0 else None,
+        # Recent expenses
+        recent_expenses = []
+        for expense in queryset.order_by('-date')[:10]:
+            recent_expenses.append({
+                'id': expense.id,
+                'description': expense.description,
+                'amount': float(expense.amount),
+                'date': expense.date,
+                'tags': [tag.name for tag in expense.tags.all()],
+                'receipt': bool(expense.receipt),
             })
 
-        # Summary insights
-        total_spent = sum(float(expense.amount) + float(expense.tax_amount) for expense in queryset)
-        expense_count = queryset.count()
+        # Budget analysis
+        budget_analysis = []
+        user_budgets = Budget.objects.filter(user=self.user, is_active=True)
 
-        summary_insights = {
-            'total_spent': total_spent,
-            'avg_monthly_spending': total_spent / len(monthly_data) if monthly_data else 0,
-            'most_expensive_category': top_categories[0]['category__name'] if top_categories else None,
-            'top_vendor': top_vendors[0]['vendor_name'] if top_vendors else None,
-            'recurring_expenses_percentage': (recurring_count / expense_count * 100)
-            if expense_count > 0 else 0,
+        for budget in user_budgets:
+            current_spending = float(budget.get_current_spending())
+            percentage_used = float(budget.get_percentage_used())
+
+            budget_analysis.append({
+                'name': budget.name,
+                'amount': float(budget.amount),
+                'period': budget.get_period_display(),
+                'current_spending': current_spending,
+                'percentage_used': percentage_used,
+                'remaining': float(budget.amount) - current_spending,
+                'is_over_threshold': budget.is_over_threshold(),
+                'alert_threshold': budget.alert_threshold,
+                'tags': list(budget.tags.names()) if budget.tags.exists() else [],
+            })
+
+        summary = {
+            'total_expenses': float(queryset.aggregate(total=Sum('amount'))['total'] or 0),
+            'avg_expense': float(queryset.aggregate(avg=Avg('amount'))['avg'] or 0),
+            'total_count': queryset.count(),
+            'max_expense': float(queryset.aggregate(max=Max('amount'))['max'] or 0),
+            'min_expense': float(queryset.aggregate(min=Min('amount'))['min'] or 0),
         }
 
         return {
             'monthly_data': monthly_data,
-            'weekly_data': weekly_data,
-            'top_categories': top_categories,
-            'top_vendors': top_vendors,
-            'payment_methods': payment_methods,
-            'recurring_expenses': recurring_expenses,
+            'day_of_week_analysis': day_of_week_analysis,
+            'top_tags': top_tags,
+            'recent_expenses': recent_expenses,
             'budget_analysis': budget_analysis,
-            'summary_insights': summary_insights,
+            'summary': summary,
             'filters': kwargs,
         }
 
@@ -1036,9 +864,7 @@ class ReportGeneratorService:
         }
 
     def _generate_cashier_performance(self, **kwargs) -> Dict:
-        """Generate cashier performance report - ALREADY PROVIDED"""
-        from sales.models import Sale
-
+        """Generate cashier performance report"""
         start_date = kwargs.get('start_date')
         end_date = kwargs.get('end_date')
         store_id = kwargs.get('store_id')
@@ -1048,7 +874,7 @@ class ReportGeneratorService:
         queryset = Sale.objects.filter(
             store__in=stores,
             status__in=['COMPLETED', 'PAID']
-        ).select_related('created_by', 'store')
+        ).select_related('created_by')
 
         if start_date:
             queryset = queryset.filter(created_at__date__gte=start_date)
@@ -1057,37 +883,26 @@ class ReportGeneratorService:
         if store_id:
             queryset = queryset.filter(store_id=store_id)
 
-        # Cashier performance
         performance = list(queryset.values(
             'created_by__id',
             'created_by__first_name',
             'created_by__last_name',
-            'created_by__username',
-            'store__name'
         ).annotate(
             total_sales=Sum('total_amount'),
             transaction_count=Count('id'),
-            total_items=Count('items'),
-            total_discount=Sum('discount_amount'),
-            refund_count=Count('id', filter=Q(is_refunded=True)),
         ).order_by('-total_sales'))
 
-        # Calculate metrics in Python
         for cashier in performance:
+            cashier['total_sales'] = float(cashier['total_sales'] or 0)
             if cashier['transaction_count'] > 0:
                 cashier['avg_transaction'] = cashier['total_sales'] / cashier['transaction_count']
-                cashier['items_per_transaction'] = cashier['total_items'] / cashier['transaction_count']
-                cashier['refund_rate'] = (cashier['refund_count'] / cashier['transaction_count']) * 100
             else:
                 cashier['avg_transaction'] = 0
-                cashier['items_per_transaction'] = 0
-                cashier['refund_rate'] = 0
 
-        # Summary
         summary = {
-            'total_cashiers': queryset.values('created_by').distinct().count(),
-            'total_sales': queryset.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'total_transactions': queryset.count(),
+            'total_cashiers': len(performance),
+            'total_sales': sum(c['total_sales'] for c in performance),
+            'total_transactions': sum(c['transaction_count'] for c in performance),
         }
 
         if summary['total_cashiers'] > 0:
@@ -1283,15 +1098,14 @@ class ReportGeneratorService:
         start_date = kwargs.get('start_date')
         end_date = kwargs.get('end_date')
         store_id = kwargs.get('store_id')
-        category_id = kwargs.get('category_id')
-        limit = kwargs.get('limit', 100)
 
         stores = self.get_accessible_stores()
 
         queryset = SaleItem.objects.filter(
             sale__store__in=stores,
-            sale__status__in=['COMPLETED', 'PAID']
-        ).select_related('product', 'product__category', 'sale__store')
+            sale__status__in=['COMPLETED', 'PAID'],
+            product__isnull=False
+        ).select_related('product', 'sale__store')
 
         if start_date:
             queryset = queryset.filter(sale__created_at__date__gte=start_date)
@@ -1299,75 +1113,34 @@ class ReportGeneratorService:
             queryset = queryset.filter(sale__created_at__date__lte=end_date)
         if store_id:
             queryset = queryset.filter(sale__store_id=store_id)
-        if category_id:
-            queryset = queryset.filter(product__category_id=category_id)
 
-        # FIXED: Use F('product__cost_price') instead of F('product__cost_price')
         products = list(queryset.values(
             'product__id',
             'product__name',
             'product__sku',
-            'product__category__name',
             'product__selling_price',
-            'product__cost_price'
         ).annotate(
             total_quantity=Sum('quantity'),
             total_revenue=Sum('total_price'),
-            total_cost=Sum(F('product__cost_price') * F('quantity'),
-                           output_field=models.DecimalField(max_digits=20, decimal_places=2)),
-            avg_price=Avg('unit_price'),
             transaction_count=Count('sale', distinct=True),
-            total_tax=Sum('tax_amount')
-        ).order_by('-total_revenue')[:limit])
+            avg_price=Avg('unit_price'),
+        ).order_by('-total_revenue')[:100])
 
-        # Calculate profit and margin in Python for better accuracy
+        # Convert Decimals
         for product in products:
-            cost = product['total_cost'] or Decimal('0')
-            revenue = product['total_revenue'] or Decimal('0')
-            product['total_profit'] = float(revenue - cost)
-            product['profit_margin'] = float(
-                ((revenue - cost) / revenue * 100) if revenue > Decimal('0') else Decimal('0'))
-
-        # Summary statistics
-        summary_aggregates = queryset.aggregate(
-            total_quantity_sold=Sum('quantity'),
-            total_revenue=Sum('total_price'),
-            total_cost=Sum(F('product__cost_price') * F('quantity'),
-                           output_field=models.DecimalField(max_digits=20, decimal_places=2)),
-            unique_products=Count('product', distinct=True)
-        )
+            product['total_revenue'] = float(product['total_revenue'] or 0)
+            product['avg_price'] = float(product['avg_price'] or 0)
+            product['product__selling_price'] = float(product['product__selling_price'] or 0)
 
         summary = {
-            'total_products': summary_aggregates['unique_products'] or 0,
-            'total_quantity_sold': float(summary_aggregates['total_quantity_sold'] or Decimal('0')),
-            'total_revenue': float(summary_aggregates['total_revenue'] or Decimal('0')),
-            'total_cost': float(summary_aggregates['total_cost'] or Decimal('0')),
+            'total_products': len(products),
+            'total_quantity_sold': sum(p['total_quantity'] for p in products),
+            'total_revenue': sum(p['total_revenue'] for p in products),
         }
-
-        summary['total_profit'] = summary['total_revenue'] - summary['total_cost']
-        summary['avg_profit_margin'] = (
-            (summary['total_profit'] / summary['total_revenue'] * 100)
-            if summary['total_revenue'] > 0 else 0
-        )
-
-        # Category breakdown
-        category_performance = list(queryset.values(
-            'product__category__name'
-        ).annotate(
-            quantity=Sum('quantity'),
-            revenue=Sum('total_price'),
-            product_count=Count('product', distinct=True)
-        ).order_by('-revenue'))
-
-        # Convert Decimal to float for JSON serialization
-        for cat in category_performance:
-            cat['quantity'] = float(cat['quantity'] or Decimal('0'))
-            cat['revenue'] = float(cat['revenue'] or Decimal('0'))
 
         return {
             'products': products,
             'summary': summary,
-            'category_performance': category_performance,
             'filters': kwargs,
         }
 
