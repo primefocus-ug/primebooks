@@ -1,1155 +1,859 @@
 {% extends 'base.html' %}
-{% load widget_tweaks %}
 {% load static %}
 {% load custom_filters %}
+{% load i18n %}
 
-{% block title %}Advanced Stock Management - {{ company.trading_name|default:company.name }}{% endblock %}
-{% block page_title %}Stock Management Dashboard{% endblock %}
+{% block title %}{% trans "Stock Management" %} - {{ block.super }}{% endblock %}
 
 {% block extra_css %}
-<link href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
-<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" rel="stylesheet">
-<link href="https://cdnjs.cloudflare.com/ajax/libs/chartjs/4.4.0/chart.min.css" rel="stylesheet">
-<link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'themes.css' %}">
-
 <style>
+    /* Stock List Specific Styles */
     :root {
-        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        --success-gradient: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
-        --warning-gradient: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
-        --danger-gradient: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
-        --info-gradient: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-        --shadow-light: 0 2px 8px rgba(0,0,0,0.08);
-        --shadow-medium: 0 4px 16px rgba(0,0,0,0.12);
-        --shadow-heavy: 0 8px 24px rgba(0,0,0,0.16);
-        --border-radius: 12px;
-        --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        --status-critical: #dc2626;
+        --status-low: #f59e0b;
+        --status-medium: #3b82f6;
+        --status-good: #10b981;
+        --card-hover-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
     }
 
-    /* Dashboard Cards */
-    .dashboard-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 1.5rem;
-        margin-bottom: 2rem;
+    [data-theme="dark"] {
+        --status-critical: #ef4444;
+        --status-low: #fbbf24;
+        --status-medium: #60a5fa;
+        --status-good: #34d399;
     }
 
-    .dashboard-card {
-        background: white;
+    /* Dashboard Stats Cards */
+    .stat-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
         border-radius: var(--border-radius);
-        padding: 2rem;
-        box-shadow: var(--shadow-light);
+        padding: 1.5rem;
+        transition: all 0.3s ease;
         position: relative;
         overflow: hidden;
-        transition: var(--transition);
-        border: 1px solid rgba(0,0,0,0.05);
-    }
-    [data-theme="dark"] .dashboard-card {
-        background: #1f2937;
-        border-color: rgba(255,255,255,0.1);
-        color: #d1d5db;
     }
 
-    .dashboard-card::before {
+    .stat-card::before {
         content: '';
         position: absolute;
         top: 0;
         left: 0;
-        right: 0;
-        height: 4px;
-        background: var(--primary-gradient);
-        transition: var(--transition);
+        width: 4px;
+        height: 100%;
+        background: var(--primary-500);
+        transition: width 0.3s ease;
     }
 
-    .dashboard-card:hover {
-        transform: translateY(-4px);
-        box-shadow: var(--shadow-heavy);
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--card-hover-shadow);
     }
 
-    .dashboard-card.success::before { background: var(--success-gradient); }
-    .dashboard-card.warning::before { background: var(--warning-gradient); }
-    .dashboard-card.danger::before { background: var(--danger-gradient); }
-    .dashboard-card.info::before { background: var(--info-gradient); }
-
-    .dashboard-metric {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
+    .stat-card:hover::before {
+        width: 6px;
     }
 
-    .dashboard-icon {
-        width: 60px;
-        height: 60px;
-        border-radius: 15px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-        background: rgba(102, 126, 234, 0.1);
-        color: #667eea;
-    }
-
-    .dashboard-content h3 {
-        font-size: 2.2rem;
+    .stat-value {
+        font-size: 2rem;
         font-weight: 700;
-        margin: 0;
-        color: #1a202c;
-        line-height: 1.2;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+        line-height: 1;
     }
 
-    .dashboard-label {
+    .stat-label {
         font-size: 0.875rem;
-        color: #64748b;
-        margin: 0.25rem 0 0.75rem 0;
+        color: var(--text-secondary);
+        font-weight: 500;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        font-weight: 500;
     }
 
-    .dashboard-trend {
-        display: flex;
-        align-items: center;
-        font-size: 0.875rem;
-        gap: 0.5rem;
-    }
-
-    .trend-positive { color: #059669; }
-    .trend-negative { color: #dc2626; }
-    .trend-neutral { color: #6b7280; }
-
-    /* Advanced Filters */
-    .filters-container {
-        background: white;
-        border-radius: var(--border-radius);
-        box-shadow: var(--shadow-light);
-        margin-bottom: 2rem;
-        overflow: hidden;
-    }
-
-    .filters-header {
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-        padding: 1.25rem 2rem;
-        border-bottom: 1px solid #e2e8f0;
-        display: flex;
-        justify-content: between;
-        align-items: center;
-    }
-    [data-theme="dark"] .filters-header {
-        background: #374151;
-        border-bottom-color: #4b5563;
-    }
-
-    .filters-content {
-        padding: 2rem;
-    }
-    [data-theme="dark"] .filters-content {
-        background: #1f2937;
-    }
-
-    .filter-group {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1.5rem;
-        align-items: end;
-    }
-    [data-theme="dark"] .filter-group .form-floating .form-select,
-    [data-theme="dark"] .filter-group .form-floating .form-control {
-        background: #374151;
-        border-color: #4b5563;
-        
-    }
-
-    .form-floating .form-select,
-    .form-floating .form-control {
-        border: 2px solid #e2e8f0;
-        border-radius: 10px;
-        transition: var(--transition);
-    }
-
-    .form-floating .form-select:focus,
-    .form-floating .form-control:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-
-    /* Stock Alerts */
-    .alerts-panel {
-        background: white;
-        border-radius: var(--border-radius);
-        box-shadow: var(--shadow-light);
-        margin-bottom: 2rem;
-        overflow: hidden;
-    }
-
-    .alerts-header {
-        background: var(--warning-gradient);
-        padding: 1.5rem 2rem;
-        color: #92400e;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-    [data-theme="dark"] .alerts-header {
-        background: #78350f;
-        color: #fef3c7;
-    }
-
-    .alert-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 1rem 2rem;
-        border-bottom: 1px solid #f3f4f6;
-        transition: var(--transition);
-    }
-    [data-theme="dark"] .alert-item {
-        border-bottom-color: #4b5563;
-        background:black;
-    }
-
-    .alert-item:hover {
-        background: #f8fafc;
-    }
-    [data-bs-toggle="tooltip"] {
-        cursor: pointer;
-    }
-
-    .alert-info {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-
-    .alert-indicator {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: #ef4444;
-        animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-    }
-
-    /* Quick Actions */
-    .quick-actions {
-        background: white;
-        border-radius: var(--border-radius);
-        box-shadow: var(--shadow-light);
-        padding: 2rem;
-        margin-bottom: 2rem;
-    }
-    [data-theme="dark"] .quick-actions {
-        background: #1f2937;
-    }
-
-    .actions-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 1rem;
-        margin-top: 1.5rem;
-    }
-
-    .action-card {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 1.25rem;
-        border: 2px solid #e2e8f0;
-        border-radius: 10px;
-        background: white;
-        color: #374151;
-        text-decoration: none;
-        transition: var(--transition);
-        position: relative;
-        overflow: hidden;
-    }
-    [data-theme="dark"] .action-card {
-        border-color: #4b5563;
-        background: #1f2937;
-        color: #d1d5db;
-    }
-
-    .action-card::before {
-        content: '';
+    .stat-icon {
         position: absolute;
-        top: 0;
-        left: -100%;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-        transition: var(--transition);
-    }
-
-    .action-card:hover {
-        border-color: #667eea;
-        background: #f8fafc;
-        color: #667eea;
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-medium);
-    }
-    [data-theme="dark"] .action-card:hover {
-        background: #374151;
-        color: #93c5fd;
-    }
-
-    .action-card:hover::before {
-        left: 100%;
-    }
-
-    .action-icon {
-        width: 50px;
-        height: 50px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.25rem;
-        background: var(--primary-gradient);
-        color: white;
-        flex-shrink: 0;
-    }
-
-    /* Data Table */
-    .stock-table-container {
-        background: white;
-        border-radius: var(--border-radius);
-        box-shadow: var(--shadow-light);
-        overflow: hidden;
-    }
-
-    .table-header {
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-        padding: 1.5rem 2rem;
-        border-bottom: 1px solid #e2e8f0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    [data-theme="dark"] .table-header {
-        background: #374151;
-        border-bottom-color: #4b5563;
-    }
-
-    .table-controls {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-
-    .search-container {
-        position: relative;
-    }
-
-    .search-input {
-        padding: 0.75rem 1rem 0.75rem 2.75rem;
-        border: 2px solid #e2e8f0;
-        border-radius: 25px;
-        background: white;
-        width: 300px;
-        transition: var(--transition);
-    }
-
-    .search-input:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        outline: none;
-    }
-
-    .search-icon {
-        position: absolute;
-        left: 1rem;
+        right: 1.5rem;
         top: 50%;
         transform: translateY(-50%);
-        color: #64748b;
+        font-size: 3rem;
+        opacity: 0.1;
+        color: var(--primary-500);
     }
 
-    /* Stock Status Badges */
-    .stock-status {
+    /* Status Badges */
+    .status-badge {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
+        padding: 0.375rem 0.75rem;
+        border-radius: 6px;
         font-size: 0.875rem;
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.025em;
+        white-space: nowrap;
     }
 
-    .stock-status.critical {
-        background: linear-gradient(135deg, #fee2e2, #fecaca);
-        color: #991b1b;
-        animation: pulse-critical 2s infinite;
-    }
-    [data-theme="dark"] .stock-status.critical {
-        background: linear-gradient(135deg, #7f1d1d, #991b1b);
-        color: #fee2e2;
+    .status-badge.critical {
+        background-color: rgba(220, 38, 38, 0.1);
+        color: var(--status-critical);
+        border: 1px solid rgba(220, 38, 38, 0.3);
     }
 
-    .stock-status.low {
-        background: linear-gradient(135deg, #fef3c7, #fde68a);
-        color: #92400e;
+    .status-badge.low {
+        background-color: rgba(245, 158, 11, 0.1);
+        color: var(--status-low);
+        border: 1px solid rgba(245, 158, 11, 0.3);
     }
 
-    .stock-status.medium {
-        background: linear-gradient(135deg, #dbeafe, #bfdbfe);
-        color: #1e40af;
-    }
-    [data-theme="dark"] .stock-status.medium {
-        background: linear-gradient(135deg, #1e3a8a, #1e40af);
-        color: #dbeafe;
+    .status-badge.medium {
+        background-color: rgba(59, 130, 246, 0.1);
+        color: var(--status-medium);
+        border: 1px solid rgba(59, 130, 246, 0.3);
     }
 
-    .stock-status.good {
-        background: linear-gradient(135deg, #d1fae5, #a7f3d0);
-        color: #065f46;
-    }
-    [data-theme="dark"] .stock-status.good {
-        background: linear-gradient(135deg, #064e3b, #065f46);
-        color: #d1fae5;
+    .status-badge.good {
+        background-color: rgba(16, 185, 129, 0.1);
+        color: var(--status-good);
+        border: 1px solid rgba(16, 185, 129, 0.3);
     }
 
-    @keyframes pulse-critical {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.7; }
+    /* Filter Panel */
+    .filter-panel {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
     }
 
-    /* Stock Level Bar */
-    .stock-level-container {
+    .filter-group {
         display: flex;
-        align-items: center;
+        flex-wrap: wrap;
         gap: 1rem;
+        align-items: end;
     }
 
-    .stock-level-bar {
-        width: 80px;
-        height: 8px;
-        background: #f1f5f9;
-        border-radius: 4px;
+    .filter-item {
+        flex: 1;
+        min-width: 200px;
+    }
+
+    .filter-item label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+    }
+
+    /* Stock Table */
+    .stock-table {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
         overflow: hidden;
-        position: relative;
-    }
-    [data-theme="dark"] .stock-level-bar {
-        background: #374151;
+        box-shadow: var(--shadow-sm);
     }
 
-    .stock-level-fill {
-        height: 100%;
-        border-radius: 4px;
-        transition: width 0.6s ease-out;
-        position: relative;
-    }
-
-    .stock-level-fill::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
+    .stock-table table {
         width: 100%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
-        animation: shimmer 2s infinite;
+        margin-bottom: 0;
     }
 
-    @keyframes shimmer {
-        0% { left: -100%; }
-        100% { left: 100%; }
+    .stock-table thead {
+        background: var(--bg-tertiary);
     }
 
-    .level-critical { background: linear-gradient(135deg, #ef4444, #dc2626); }
-    .level-low { background: linear-gradient(135deg, #f59e0b, #d97706); }
-    .level-medium { background: linear-gradient(135deg, #06b6d4, #0284c7); }
-    .level-good { background: linear-gradient(135deg, #10b981, #059669); }
+    .stock-table th {
+        padding: 1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        border-bottom: 2px solid var(--border-color);
+        white-space: nowrap;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
 
-    /* Product Cards */
-    .product-card {
+    .stock-table th a {
+        color: var(--text-primary);
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .stock-table th a:hover {
+        color: var(--primary-600);
+    }
+
+    .stock-table td {
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color-light);
+        vertical-align: middle;
+    }
+
+    .stock-table tbody tr {
+        transition: background-color 0.2s ease;
+    }
+
+    .stock-table tbody tr:hover {
+        background-color: var(--bg-secondary);
+    }
+
+    /* Product Info Cell */
+    .product-info {
         display: flex;
         align-items: center;
         gap: 1rem;
-        padding: 0.75rem;
-        border-radius: 8px;
-        transition: var(--transition);
     }
 
     .product-image {
-        width: 60px;
-        height: 60px;
-        border-radius: 10px;
+        width: 50px;
+        height: 50px;
+        border-radius: 8px;
         object-fit: cover;
-        box-shadow: var(--shadow-light);
+        border: 1px solid var(--border-color);
     }
 
-    .product-placeholder {
-        width: 60px;
-        height: 60px;
-        border-radius: 10px;
-        background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+    .product-image-placeholder {
+        width: 50px;
+        height: 50px;
+        border-radius: 8px;
+        background: var(--bg-tertiary);
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #64748b;
-        font-size: 1.25rem;
-    }
-    [data-theme="dark"] .product-placeholder {
-        background: linear-gradient(135deg, #4b5563, #374151);
-        color: #9ca3af;
+        color: var(--text-muted);
+        font-size: 1.5rem;
     }
 
-    .product-info h6 {
+    .product-details h6 {
         margin: 0 0 0.25rem 0;
         font-weight: 600;
-        color: #1a202c;
+        color: var(--text-primary);
     }
 
-    .product-meta {
-        display: flex;
-        gap: 1rem;
+    .product-details small {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+    }
+
+    /* Quantity Display */
+    .quantity-display {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    /* Value Display */
+    .value-display {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .value-secondary {
         font-size: 0.875rem;
-        color: #64748b;
+        color: var(--text-muted);
+        display: block;
+        margin-top: 0.25rem;
     }
 
     /* Action Buttons */
-    .action-group {
+    .action-buttons {
         display: flex;
         gap: 0.5rem;
     }
 
-    .btn-icon {
-        width: 36px;
-        height: 36px;
-        border-radius: 8px;
-        display: flex;
+    .btn-action {
+        padding: 0.5rem;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        border: 2px solid #e2e8f0;
-        background: white;
-        color: #64748b;
-        transition: var(--transition);
+        width: 36px;
+        height: 36px;
     }
 
-    .btn-icon:hover {
-        border-color: #667eea;
-        background: #667eea;
-        color: white;
-        transform: scale(1.1);
+    .btn-action:hover {
+        background: var(--primary-50);
+        color: var(--primary-600);
+        transform: translateY(-1px);
     }
 
-    /* Modals */
-    .modal-content {
-        border: none;
-        border-radius: var(--border-radius);
-        box-shadow: var(--shadow-heavy);
-    }
-
-    .modal-header {
-        background: var(--primary-gradient);
-        color: white;
-        border-bottom: none;
-        border-radius: var(--border-radius) var(--border-radius) 0 0;
-    }
-
-    .modal-header .btn-close {
-        filter: invert(1);
-    }
-
-    /* Charts */
-    .chart-container {
-        background: white;
-        border-radius: var(--border-radius);
-        box-shadow: var(--shadow-light);
-        padding: 2rem;
-        margin-bottom: 2rem;
-    }
-    [data-theme="dark"] .chart-container {
-        background: #1f2937;
-        color: #d1d5db;
-    }
-
-    .chart-header {
+    /* Pagination */
+    .pagination-wrapper {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        padding: 1.5rem;
+        background: var(--bg-primary);
+        border-top: 1px solid var(--border-color);
+    }
+
+    .pagination {
+        margin: 0;
+    }
+
+    .page-link {
+        color: var(--text-secondary);
+        border-color: var(--border-color);
+        background: var(--bg-primary);
+    }
+
+    .page-link:hover {
+        background: var(--primary-50);
+        color: var(--primary-600);
+        border-color: var(--primary-500);
+    }
+
+    .page-item.active .page-link {
+        background: var(--primary-600);
+        border-color: var(--primary-600);
+    }
+
+    /* Alert Cards */
+    .alert-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-left: 4px solid var(--status-low);
+        border-radius: var(--border-radius);
+        padding: 1rem;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        transition: all 0.2s ease;
+    }
+
+    .alert-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateX(2px);
+    }
+
+    .alert-card.critical {
+        border-left-color: var(--status-critical);
+    }
+
+    /* Chart Container */
+    .chart-container {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        height: 300px;
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+    }
+
+    .empty-state-icon {
+        font-size: 4rem;
+        color: var(--text-muted);
+        margin-bottom: 1rem;
+    }
+
+    .empty-state h4 {
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
+    }
+
+    .empty-state p {
+        color: var(--text-muted);
         margin-bottom: 1.5rem;
     }
 
-    .chart-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: #1a202c;
-
-    }
-
-    /* Responsive Design */
-    @media (max-width: 1200px) {
-        .dashboard-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
-    }
-
-    @media (max-width: 768px) {
-        .dashboard-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .filter-group {
-            grid-template-columns: 1fr;
-        }
-
-        .actions-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .search-input {
-            width: 100%;
-        }
-
-        .table-header {
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .table-controls {
-            width: 100%;
-            justify-content: space-between;
-        }
-    }
-
-    /* Loading States */
-    .loading-skeleton {
-        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-        background-size: 200% 100%;
-        animation: loading 1.5s infinite;
-        border-radius: 4px;
-    }
-
-    @keyframes loading {
-        0% { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
-    }
-
-    /* Tooltips */
-    .tooltip-inner {
-        background: #1a202c;
-        border-radius: 6px;
-        font-size: 0.875rem;
-    }
-
-    /* Custom Scrollbar */
-    .table-responsive::-webkit-scrollbar {
-        height: 8px;
-    }
-
-    .table-responsive::-webkit-scrollbar-track {
-        background: #f1f5f9;
-        border-radius: 4px;
-    }
-
-    .table-responsive::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 4px;
-    }
-
-    .table-responsive::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
-    }
-
-    /* Movement icon styles */
-    .movement-icon {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
+    /* Loading Overlay */
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.875rem;
+        z-index: 9999;
+        backdrop-filter: blur(2px);
     }
 
-    .movement-icon.purchase, .movement-icon.return, .movement-icon.transfer_in {
-        background: rgba(16, 185, 129, 0.1);
-        color: #10b981;
+    .loading-spinner {
+        background: var(--bg-primary);
+        padding: 2rem;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-xl);
+        text-align: center;
     }
 
-    .movement-icon.sale, .movement-icon.transfer_out {
-        background: rgba(239, 68, 68, 0.1);
-        color: #ef4444;
+    .spinner-border {
+        width: 3rem;
+        height: 3rem;
+        border-width: 0.3em;
     }
 
-    .movement-icon.adjustment {
-        background: rgba(59, 130, 246, 0.1);
-        color: #3b82f6;
+    /* Responsive Adjustments */
+    @media (max-width: 991px) {
+        .stat-card {
+            margin-bottom: 1rem;
+        }
+
+        .filter-group {
+            flex-direction: column;
+        }
+
+        .filter-item {
+            width: 100%;
+        }
+
+        .stock-table {
+            overflow-x: auto;
+        }
+
+        .action-buttons {
+            flex-direction: column;
+        }
     }
 
-    .cursor-pointer {
-        cursor: pointer;
+    @media (max-width: 767px) {
+        .stat-value {
+            font-size: 1.5rem;
+        }
+
+        .stat-icon {
+            font-size: 2rem;
+        }
+
+        .product-info {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .pagination-wrapper {
+            flex-direction: column;
+            gap: 1rem;
+        }
     }
 
-    .bulk-operation-card {
-        transition: all 0.3s ease;
-    }
+    /* Print Styles */
+    @media print {
+        .filter-panel,
+        .action-buttons,
+        .btn,
+        .pagination-wrapper {
+            display: none !important;
+        }
 
-    .bulk-operation-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        .stock-table {
+            box-shadow: none !important;
+        }
     }
 </style>
 {% endblock %}
 
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Stock Management" %}</li>
+{% endblock %}
+
 {% block content %}
-<!-- Dashboard Metrics -->
-<div class="dashboard-grid animate__animated animate__fadeInUp">
-    <div class="dashboard-card success">
-        <div class="dashboard-metric">
-            <div class="dashboard-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">
-                <i class="fas fa-boxes"></i>
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1">
+                <i class="bi bi-box-seam me-2"></i>
+                {% trans "Stock Management" %}
+            </h1>
+            <p class="text-muted mb-0">{% trans "Monitor and manage your inventory levels" %}</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'inventory:stock_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i>
+                {% trans "Add Stock" %}
+            </a>
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-download me-1"></i>
+                    {% trans "Export" %}
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="{% url 'inventory:stock_export' %}?format=excel&{{ request.GET.urlencode }}">
+                        <i class="bi bi-file-earmark-excel me-2"></i>Excel
+                    </a></li>
+                    <li><a class="dropdown-item" href="{% url 'inventory:stock_export' %}?format=csv&{{ request.GET.urlencode }}">
+                        <i class="bi bi-file-earmark-text me-2"></i>CSV
+                    </a></li>
+                    <li><a class="dropdown-item" href="{% url 'inventory:stock_export' %}?format=pdf&{{ request.GET.urlencode }}">
+                        <i class="bi bi-file-earmark-pdf me-2"></i>PDF
+                    </a></li>
+                </ul>
             </div>
-            <div class="dashboard-content">
-                <h3 class="totall">{{ total_products|default:0 }}</h3>
-                <div class="dashboard-label">Total Products</div>
-                <div class="dashboard-trend trend-positive">
-                    <i class="fas fa-arrow-up"></i>
-                    <span>Active inventory items</span>
+            <a href="{% url 'inventory:stock_import' %}" class="btn btn-outline-primary">
+                <i class="bi bi-upload me-1"></i>
+                {% trans "Import" %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Dashboard Statistics -->
+    <div class="row mb-4">
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="stat-card">
+                <div class="stat-value">{{ total_products|default:0 }}</div>
+                <div class="stat-label">{% trans "Total Products" %}</div>
+                <i class="bi bi-box stat-icon"></i>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--status-critical);">{{ out_of_stock_count|default:0 }}</div>
+                <div class="stat-label">{% trans "Out of Stock" %}</div>
+                <i class="bi bi-exclamation-triangle stat-icon"></i>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--status-low);">{{ low_stock_count|default:0 }}</div>
+                <div class="stat-label">{% trans "Low Stock" %}</div>
+                <i class="bi bi-arrow-down-circle stat-icon"></i>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="stat-card">
+                <div class="stat-value">{{ total_cost_value|floatformat:0|default:"0" }}</div>
+                <div class="stat-label">{% trans "Total Value (UGX)" %}</div>
+                <i class="bi bi-currency-exchange stat-icon"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stock Alerts -->
+    {% if stock_alerts %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-bell me-2"></i>
+                {% trans "Stock Alerts" %}
+            </h5>
+        </div>
+        <div class="card-body">
+            {% for alert in stock_alerts %}
+            <div class="alert-card {% if alert.quantity == 0 %}critical{% endif %}">
+                <div>
+                    <i class="bi {% if alert.quantity == 0 %}bi-exclamation-circle{% else %}bi-exclamation-triangle{% endif %} fs-4"></i>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="dashboard-card warning">
-        <div class="dashboard-metric">
-            <div class="dashboard-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">
-                <i class="fas fa-exclamation-triangle"></i>
-            </div>
-            <div class="dashboard-content ">
-                <h3 class="totall">{{ low_stock_count|default:0 }}</h3>
-                <div class="dashboard-label">Low Stock Items</div>
-                <div class="dashboard-trend trend-neutral">
-                    <i class="fas fa-minus"></i>
-                    <span>Requires attention</span>
+                <div class="flex-grow-1">
+                    <strong>{{ alert.product.name }}</strong>
+                    <small class="d-block text-muted">{{ alert.store.name }}</small>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="dashboard-card danger">
-        <div class="dashboard-metric">
-            <div class="dashboard-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;">
-                <i class="fas fa-times-circle"></i>
-            </div>
-            <div class="dashboard-content">
-                <h3 class="totall">{{ out_of_stock_count|default:0 }}</h3>
-                <div class="dashboard-label">Out of Stock</div>
-                <div class="dashboard-trend trend-negative">
-                    <i class="fas fa-arrow-down"></i>
-                    <span>Critical level</span>
+                <div class="text-end">
+                    <strong class="d-block">{{ alert.quantity|floatformat:2 }}</strong>
+                    <small class="text-muted">{% trans "Threshold:" %} {{ alert.low_stock_threshold|floatformat:2 }}</small>
                 </div>
-            </div>
-        </div>
-    </div>
+                <a href="{% url 'inventory:movement_create' %}?stock={{ alert.pk }}" class="btn btn-sm btn-primary">{% trans 'Adjust' %}</a>
 
-    <div class="dashboard-card info">
-        <div class="dashboard-metric">
-            <div class="dashboard-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">
-                <i class="fas fa-dollar-sign"></i>
             </div>
-            <div class="dashboard-content">
-                <h3 class="totall">UGX {{ total_cost_value|floatformat:2|money }}</h3>
-                <div class="dashboard-label">Total Stock Value</div>
-                <div class="dashboard-trend trend-positive">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Profit: ${{ potential_profit|floatformat:2|default:"0.00" }}</span>
-                </div>
-            </div>
+            {% endfor %}
         </div>
-    </div>
-</div>
-
-<!-- Stock Alerts -->
-{% if stock_alerts %}
-<div class="alerts-panel animate__animated animate__fadeInUp animate__delay-1s">
-    <div class="alerts-header">
-        <div class="d-flex align-items-center gap-2">
-            <i class="fas fa-exclamation-triangle fa-lg"></i>
-            <h6 class="mb-0 fw-bold">Stock Alerts</h6>
-        </div>
-        <span class="badge bg-white text-warning fw-bold">{{ stock_alerts|length }} items</span>
-    </div>
-
-    {% for alert in stock_alerts|slice:":5" %}
-    <div class="alert-item">
-        <div class="alert-info">
-            <div class="alert-indicator"></div>
-            <div>
-                <div class="fw-semibold">{{ alert.product.name }}</div>
-                <small class="text-muted">{{ alert.store.name }} • {{ alert.product.sku|default:"No SKU" }}</small>
-            </div>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-danger">{{ alert.quantity|floatformat:1 }} left</span>
-            <button class="btn btn-sm btn-outline-primary" onclick="quickStockAdjustment({{ alert.id }})"
-                    data-bs-toggle="tooltip" title="Quick adjustment">
-                <i class="fas fa-plus"></i>
-            </button>
-        </div>
-    </div>
-    {% endfor %}
-
-    {% if stock_alerts|length > 5 %}
-    <div class="text-center p-3 border-top">
-        <a href="#" class="btn btn-outline-warning btn-sm">
-            View All {{ stock_alerts|length }} Alerts
-        </a>
     </div>
     {% endif %}
-</div>
-{% endif %}
 
-<!-- Quick Actions -->
-<div class="quick-actions animate__animated animate__fadeInUp animate__delay-2s">
-    <div class="d-flex justify-content-between align-items-center mb-0">
-        <h6 class="mb-0 fw-bold">Quick Actions</h6>
-        <div class="dropdown">
-            <button class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown">
-                <i class="fas fa-cogs"></i> More Actions
-            </button>
-            <ul class="dropdown-menu">
-                {% if perms.inventory.add_product %}
-                <li><a class="dropdown-item" href="{% url 'inventory:bulk_import' %}">
-                    <i class="fas fa-upload me-2"></i>Bulk Import
-                </a></li>
-                {% endif %}
-                <li>
-                    {% if perms.inventory.view_stock %}
-                    <a class="dropdown-item" href="{% url 'inventory:valuation_report' %}">
-                        <i class="fas fa-chart-bar me-2"></i>Valuation Report
-                    </a>
-                    {% endif %}
-                </li>
-                <li><hr class="dropdown-divider"></li>
-                <li>
-                    {% if perms.inventory.view_stock %}
-                    <a class="dropdown-item" href="{% url 'inventory:low_stock_report' %}">
-                        <i class="fas fa-exclamation-triangle me-2"></i>Low Stock Report
-                    </a>
-                    {% endif %}
-                </li>
-            </ul>
-        </div>
-    </div>
-
-    <div class="actions-grid">
-        {% if perms.inventory.change_stock %}
-        <a href="{% url 'inventory:stock_adjustment' %}" class="action-card">
-            <div class="action-icon">
-                <i class="fas fa-plus-minus"></i>
-            </div>
-            <div>
-                <div class="fw-semibold">Stock Adjustment</div>
-                <small class="text-muted">Add or remove stock</small>
-            </div>
-        </a>
-        {% endif %}
-        {% if perms.inventory.add_stockmovement %}
-        <a href="{% url 'inventory:movement_create' %}" class="action-card">
-            <div class="action-icon" style="background: var(--success-gradient);">
-                <i class="fas fa-exchange-alt"></i>
-            </div>
-            <div>
-                <div class="fw-semibold">Record Movement</div>
-                <small class="text-muted">Track stock changes</small>
-            </div>
-        </a>
-        {% endif %}
-
-        <button class="action-card" onclick="showBulkOperations()">
-            <div class="action-icon" style="background: var(--info-gradient);">
-                <i class="fas fa-tasks"></i>
-            </div>
-            <div>
-                <div class="fw-semibold">Bulk Operations</div>
-                <small class="text-muted">Multiple item actions</small>
-            </div>
-        </button>
-
-        <button class="action-card" onclick="generateReports()">
-            <div class="action-icon" style="background: var(--warning-gradient);">
-                <i class="fas fa-chart-pie"></i>
-            </div>
-            <div>
-                <div class="fw-semibold">Generate Reports</div>
-                <small class="text-muted">Analytics & insights</small>
-            </div>
-        </button>
-    </div>
-</div>
-
-<!-- Advanced Filters -->
-<div class="filters-container animate__animated animate__fadeInUp animate__delay-3s">
-    <div class="filters-header">
-        <div class="d-flex align-items-center gap-2">
-            <i class="fas fa-filter"></i>
-            <h6 class="mb-0 fw-bold">Advanced Filters</h6>
-        </div>
-        <button class="btn btn-outline-secondary btn-sm" onclick="resetFilters()">
-            <i class="fas fa-undo me-1"></i>Reset
-        </button>
-    </div>
-
-    <div class="filters-content">
-        <form method="GET" id="stockFiltersForm">
+    <!-- Filter Panel -->
+    <div class="filter-panel">
+        <form method="get" id="filterForm">
             <div class="filter-group">
-                <div class="form-floating">
-                    <input type="text" class="form-control" id="searchInput" name="search"
-                           value="{{ current_filters.search }}" placeholder="Search products...">
-                    <label for="searchInput">Search Products</label>
+                <!-- Search -->
+                <div class="filter-item">
+                    <label for="searchInput">
+                        <i class="bi bi-search me-1"></i>
+                        {% trans "Search" %}
+                    </label>
+                    <input type="text"
+                           class="form-control"
+                           id="searchInput"
+                           name="search"
+                           placeholder="{% trans 'Search products, SKU, barcode...' %}"
+                           value="{{ current_filters.search }}">
                 </div>
 
-                <div class="form-floating">
+                <!-- Status Filter -->
+                <div class="filter-item">
+                    <label for="statusFilter">
+                        <i class="bi bi-funnel me-1"></i>
+                        {% trans "Status" %}
+                    </label>
+                    <select class="form-select" id="statusFilter" name="status">
+                        <option value="">{% trans "All Status" %}</option>
+                        <option value="critical" {% if current_filters.status == 'critical' %}selected{% endif %}>
+                            {% trans "Out of Stock" %}
+                        </option>
+                        <option value="low_stock" {% if current_filters.status == 'low_stock' %}selected{% endif %}>
+                            {% trans "Low Stock" %}
+                        </option>
+                        <option value="medium_stock" {% if current_filters.status == 'medium_stock' %}selected{% endif %}>
+                            {% trans "Medium Stock" %}
+                        </option>
+                        <option value="good_stock" {% if current_filters.status == 'good_stock' %}selected{% endif %}>
+                            {% trans "Good Stock" %}
+                        </option>
+                        <option value="overstocked" {% if current_filters.status == 'overstocked' %}selected{% endif %}>
+                            {% trans "Overstocked" %}
+                        </option>
+                    </select>
+                </div>
+
+                <!-- Store Filter -->
+                <div class="filter-item">
+                    <label for="storeFilter">
+                        <i class="bi bi-shop me-1"></i>
+                        {% trans "Store" %}
+                    </label>
+                    <select class="form-select" id="storeFilter" name="store">
+                        <option value="">{% trans "All Stores" %}</option>
+                        {% for store in stores %}
+                        <option value="{{ store.id }}" {% if current_filters.store|stringformat:"s" == store.id|stringformat:"s" %}selected{% endif %}>
+                            {{ store.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Category Filter -->
+                <div class="filter-item">
+                    <label for="categoryFilter">
+                        <i class="bi bi-tag me-1"></i>
+                        {% trans "Category" %}
+                    </label>
                     <select class="form-select" id="categoryFilter" name="category">
-                        <option value="">All Categories</option>
+                        <option value="">{% trans "All Categories" %}</option>
                         {% for category in categories %}
-                        <option value="{{ category.id }}" {% if current_filters.category == category.id|stringformat:"s" %}selected{% endif %}>
+                        <option value="{{ category.id }}" {% if current_filters.category|stringformat:"s" == category.id|stringformat:"s" %}selected{% endif %}>
                             {{ category.name }}
                         </option>
                         {% endfor %}
                     </select>
-                    <label for="categoryFilter">Category</label>
                 </div>
 
-                <div class="form-floating">
-                    <input type="date" class="form-control" id="dateFromFilter" name="date_from"
-                           value="{{ current_filters.date_from }}">
-                    <label for="dateFromFilter">From Date</label>
+                <!-- Sort -->
+                <div class="filter-item">
+                    <label for="sortFilter">
+                        <i class="bi bi-sort-down me-1"></i>
+                        {% trans "Sort By" %}
+                    </label>
+                    <select class="form-select" id="sortFilter" name="sort">
+                        <option value="name" {% if current_filters.sort == 'name' %}selected{% endif %}>
+                            {% trans "Name (A-Z)" %}
+                        </option>
+                        <option value="name_desc" {% if current_filters.sort == 'name_desc' %}selected{% endif %}>
+                            {% trans "Name (Z-A)" %}
+                        </option>
+                        <option value="quantity" {% if current_filters.sort == 'quantity' %}selected{% endif %}>
+                            {% trans "Quantity (Low to High)" %}
+                        </option>
+                        <option value="quantity_desc" {% if current_filters.sort == 'quantity_desc' %}selected{% endif %}>
+                            {% trans "Quantity (High to Low)" %}
+                        </option>
+                        <option value="value" {% if current_filters.sort == 'value' %}selected{% endif %}>
+                            {% trans "Value (Low to High)" %}
+                        </option>
+                        <option value="value_desc" {% if current_filters.sort == 'value_desc' %}selected{% endif %}>
+                            {% trans "Value (High to Low)" %}
+                        </option>
+                        <option value="updated" {% if current_filters.sort == 'updated' %}selected{% endif %}>
+                            {% trans "Recently Updated" %}
+                        </option>
+                    </select>
                 </div>
 
-                <div class="form-floating">
-                    <input type="date" class="form-control" id="dateToFilter" name="date_to"
-                           value="{{ current_filters.date_to }}">
-                    <label for="dateToFilter">To Date</label>
-                </div>
-
-                <div class="d-flex gap-2">
-                    <button type="submit" class="btn btn-primary flex-fill">
-                        <i class="fas fa-search me-2"></i>Apply Filters
+                <!-- Filter Actions -->
+                <div class="filter-item d-flex gap-2" style="min-width: auto;">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-funnel-fill me-1"></i>
+                        {% trans "Apply" %}
                     </button>
-                    <button type="button" class="btn btn-outline-secondary" onclick="exportData()">
-                        <i class="fas fa-download"></i>
-                    </button>
+                    <a href="{% url 'inventory:stock_list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle me-1"></i>
+                        {% trans "Clear" %}
+                    </a>
                 </div>
             </div>
         </form>
     </div>
-</div>
 
-<!-- Stock Data Table -->
-<div class="stock-table-container animate__animated animate__fadeInUp animate__delay-4s">
-    <div class="table-header">
-        <div class="d-flex align-items-center gap-3">
-            <h6 class="mb-0 fw-bold">Stock Items</h6>
-            <span class="badge bg-primary">{{ stock_items|length }} items</span>
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="selectAll" onchange="toggleSelectAll()">
-                <label class="form-check-label" for="selectAll">
-                    Select All (<span id="selectedCount">0</span> selected)
-                </label>
-            </div>
-        </div>
-
-        <div class="table-controls">
-            <div class="search-container">
-                <i class="fas fa-search search-icon"></i>
-                <input type="text" class="search-input" placeholder="Search in table..." id="tableSearch">
-            </div>
-
-            <div class="dropdown">
-                <button class="btn btn-outline-success dropdown-toggle" data-bs-toggle="dropdown">
-                    <i class="fas fa-download me-1"></i>Export
-                </button>
-                <ul class="dropdown-menu">
-                    <li><a class="dropdown-item" href="#" onclick="exportSelected('excel')">
-                        <i class="fas fa-file-excel me-2"></i>Excel Report
-                    </a></li>
-                    <li><a class="dropdown-item" href="#" onclick="exportSelected('csv')">
-                        <i class="fas fa-file-csv me-2"></i>CSV Data
-                    </a></li>
-                    <li><a class="dropdown-item" href="#" onclick="exportSelected('pdf')">
-                        <i class="fas fa-file-pdf me-2"></i>PDF Report
-                    </a></li>
-                </ul>
-            </div>
-        </div>
-    </div>
-
-    <div class="table-responsive">
-        <table class="table table-hover mb-0" id="stockTable">
-            <thead class="table-light">
+    <!-- Stock Table -->
+    <div class="stock-table">
+        {% if stock_items %}
+        <table class="table table-hover mb-0">
+            <thead>
                 <tr>
-                    <th width="50">
-                        <input type="checkbox" class="form-check-input" id="headerSelectAll" onchange="toggleSelectAll()">
+                    <th>
+                        <a href="?sort={% if current_filters.sort == 'name' %}name_desc{% else %}name{% endif %}&{{ request.GET.urlencode }}">
+                            {% trans "Product" %}
+                            <i class="bi bi-arrow-{% if current_filters.sort == 'name' %}down{% elif current_filters.sort == 'name_desc' %}up{% else %}down-up{% endif %}"></i>
+                        </a>
                     </th>
-                    <th>Product Details</th>
-                    <th>Branch</th>
-                    <th>Stock Level</th>
-                    <th>Status</th>
-                    <th>Value</th>
-                    <th>Last Updated</th>
-                    <th width="120">Actions</th>
+                    <th>{% trans "Store" %}</th>
+                    <th>{% trans "Category" %}</th>
+                    <th>
+                        <a href="?sort={% if current_filters.sort == 'quantity' %}quantity_desc{% else %}quantity{% endif %}&{{ request.GET.urlencode }}">
+                            {% trans "Quantity" %}
+                            <i class="bi bi-arrow-{% if current_filters.sort == 'quantity' %}down{% elif current_filters.sort == 'quantity_desc' %}up{% else %}down-up{% endif %}"></i>
+                        </a>
+                    </th>
+                    <th>{% trans "Status" %}</th>
+                    <th class="text-end">{% trans "Cost Value" %}</th>
+                    <th class="text-end">{% trans "Selling Value" %}</th>
+                    <th>{% trans "Last Updated" %}</th>
+                    <th class="text-center">{% trans "Actions" %}</th>
                 </tr>
             </thead>
             <tbody>
                 {% for stock in stock_items %}
-                <tr class="stock-row" data-stock-id="{{ stock.id }}">
+                <tr>
+                    <!-- Product Info -->
                     <td>
-                        <input type="checkbox" class="form-check-input stock-checkbox"
-                               value="{{ stock.id }}" onchange="updateSelectedCount()">
-                    </td>
-
-                    <td>
-                        <div class="product-card">
+                        <div class="product-info">
                             {% if stock.product.image %}
-                            <img src="{{ stock.product.image.url }}" alt="{{ stock.product.name }}" class="product-image">
+                            <img src="{{ stock.product.image.url }}"
+                                 alt="{{ stock.product.name }}"
+                                 class="product-image">
                             {% else %}
-                            <div class="product-placeholder">
-                                <i class="fas fa-box"></i>
+                            <div class="product-image-placeholder">
+                                <i class="bi bi-box"></i>
                             </div>
                             {% endif %}
-
-                            <div class="product-info">
-                                <h6>{{ stock.product.name|truncatechars:40 }}</h6>
-                                <div class="product-meta">
-                                    <span><i class="fas fa-barcode me-1"></i>{{ stock.product.sku|default:"No SKU" }}</span>
-                                    {% if stock.product.category %}
-                                    <span><i class="fas fa-tag me-1"></i>{{ stock.product.category.name }}</span>
+                            <div class="product-details">
+                                <h6>
+                                    <a href="{% url 'inventory:product_detail' stock.product.pk %}"
+                                       class="text-decoration-none">
+                                        {{ stock.product.name }}
+                                    </a>
+                                </h6>
+                                <small>
+                                    {% if stock.product.sku %}
+                                        SKU: {{ stock.product.sku }}
                                     {% endif %}
-                                </div>
+                                    {% if stock.product.barcode %}
+                                        | {{ stock.product.barcode }}
+                                    {% endif %}
+                                </small>
                             </div>
                         </div>
                     </td>
 
+                    <!-- Store -->
                     <td>
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="fas fa-store text-muted"></i>
-                            <span class="fw-semibold">{{ stock.store.name }}</span>
-                        </div>
+                        <i class="bi bi-shop me-1 text-muted"></i>
+                        {{ stock.store.name }}
                     </td>
 
+                    <!-- Category -->
                     <td>
-                        <div class="stock-level-container">
-                            <div>
-                                <div class="fw-bold">{{ stock.quantity|floatformat:1 }}</div>
-                                <small class="text-muted">{{ stock.product.unit_of_measure|default:"units" }}</small>
-                            </div>
-                            <div class="stock-level-bar">
-                                {% if stock.quantity == 0 %}
-                                <div class="stock-level-fill level-critical" style="width: 100%;"></div>
-                                {% elif stock.quantity <= stock.low_stock_threshold %}
-                                <div class="stock-level-fill level-low" style="width: {{ stock.stock_percentage }}%;"></div>
-                                {% else %}
-                                <div class="stock-level-fill level-good" style="width: 100%;"></div>
-                                {% endif %}
-                            </div>
-                        </div>
+                        {% if stock.product.category %}
+                        <span class="badge bg-light text-dark">
+                            {{ stock.product.category.name }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
                     </td>
 
+                    <!-- Quantity -->
                     <td>
-                        <div class="stock-status {{ stock.status_class }}">
+                        <div class="quantity-display">
+                            {{ stock.quantity|floatformat:2 }}
+                        </div>
+                        {% if stock.product.unit %}
+                        <small class="text-muted">{{ stock.product.unit }}</small>
+                        {% endif %}
+                    </td>
+
+                    <!-- Status -->
+                    <td>
+                        <span class="status-badge {{ stock.status_class }}">
                             <i class="{{ stock.status_icon }}"></i>
                             {{ stock.status_text }}
-                        </div>
+                        </span>
                     </td>
 
-                    <td>
-                        <div>
-                            <div class="fw-bold text-success">${{ stock.total_cost|floatformat:2 }}</div>
-                            <small class="text-muted">Cost: ${{ stock.product.cost_price|floatformat:2 }}</small>
+                    <!-- Cost Value -->
+                    <td class="text-end">
+                        <div class="value-display">
+                            {{ stock.total_cost|floatformat:0|default:"0" }}
                         </div>
+                        <small class="value-secondary">
+                            @ {{ stock.product.cost_price|floatformat:0 }}
+                        </small>
                     </td>
 
+                    <!-- Selling Value -->
+                    <td class="text-end">
+                        <div class="value-display">
+                            {{ stock.total_selling_value|floatformat:0|default:"0" }}
+                        </div>
+                        <small class="value-secondary">
+                            @ {{ stock.product.selling_price|floatformat:0 }}
+                        </small>
+                    </td>
+
+                    <!-- Last Updated -->
                     <td>
-                        <div class="text-muted">
+                        <small class="text-muted">
                             {{ stock.last_updated|date:"M d, Y" }}<br>
-                            <small>{{ stock.last_updated|time:"H:i" }}</small>
-                        </div>
+                            {{ stock.last_updated|time:"h:i A" }}
+                        </small>
                     </td>
 
+                    <!-- Actions -->
                     <td>
-                        <div class="action-group">
-                            <button class="btn-icon" onclick="quickStockAdjustment({{ stock.id }})"
-                                    data-bs-toggle="tooltip" title="Quick Adjustment">
-                                <i class="fas fa-plus-minus"></i>
-                            </button>
-
-                            <button class="btn-icon" onclick="viewStockHistory({{ stock.id }})"
-                                    data-bs-toggle="tooltip" title="View History">
-                                <i class="fas fa-history"></i>
-                            </button>
-
-                            <div class="dropdown">
-                                <button class="btn-icon dropdown-toggle" data-bs-toggle="dropdown">
-                                    <i class="fas fa-ellipsis-v"></i>
-                                </button>
-                                <ul class="dropdown-menu">
-                                    <li><a class="dropdown-item" href="#" onclick="transferStock({{ stock.id }})">
-                                        <i class="fas fa-exchange-alt me-2"></i>Transfer Stock
-                                    </a></li>
-                                    <li><a class="dropdown-item" href="#" onclick="setReorderLevel({{ stock.id }})">
-                                        <i class="fas fa-bell me-2"></i>Set Reorder Level
-                                    </a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item" href="{% url 'inventory:product_detail' stock.product.pk %}">
-                                        <i class="fas fa-eye me-2"></i>View Product
-                                    </a></li>
-                                </ul>
-                            </div>
-                        </div>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="8" class="text-center py-5">
-                        <div class="text-muted totall">
-                            <i class="fas fa-warehouse fa-4x mb-3 opacity-25 totall"></i>
-                            <h5>No stock items found</h5>
-                            <p class="mb-4">
-                                {% if current_filters.search %}
-                                    No items match your search criteria.
-                                {% else %}
-                                    No stock data available. Start by adding some products.
-                                {% endif %}
-                            </p>
-                            {% if perms.inventory.add_stock %}
-                            <a href="{% url 'inventory:stock_adjustment' %}" class="btn btn-primary">
-                                <i class="fas fa-plus me-2"></i>Add Stock
+                        <div class="action-buttons">
+                            <a href="{% url 'inventory:quick_adjust' stock.pk %}"
+                               class="btn-action"
+                               title="{% trans 'Quick Adjust' %}">
+                                <i class="bi bi-plus-minus"></i>
                             </a>
-                            {% endif %}
+                            <button type="button"
+                                    class="btn-action"
+                                    onclick="viewStockDetails({{ stock.pk }})"
+                                    title="{% trans 'View Details' %}">
+                                <i class="bi bi-eye"></i>
+                            </button>
                         </div>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-    </div>
 
-    <!-- Pagination -->
-    {% if is_paginated %}
-    <div class="d-flex justify-content-between align-items-center p-3 border-top">
-        <div class="text-muted">
-            Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }} items
-        </div>
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <div class="pagination-wrapper">
+            <div class="text-muted">
+                {% trans "Showing" %} {{ page_obj.start_index }} - {{ page_obj.end_index }}
+                {% trans "of" %} {{ paginator.count }} {% trans "items" %}
+            </div>
 
-        <nav aria-label="Stock pagination">
-            <ul class="pagination pagination-sm mb-0">
-                {% if page_obj.has_previous %}
-                <li class="page-item">
-                    <a class="page-link" href="?page=1{% for key, value in current_filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">First</a>
-                </li>
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% for key, value in current_filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Previous</a>
-                </li>
-                {% endif %}
-
+            <nav>
+                <ul class="pagination mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1&{{ request.GET.urlencode }}">
+                            <i class="bi bi-chevron-double-left"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}&{{ request.GET.urlencode }}">
+<i class="bi bi-chevron-left"></i>
+</a>
+</li>
+{% endif %}
                 {% for num in page_obj.paginator.page_range %}
                     {% if page_obj.number == num %}
                     <li class="page-item active">
@@ -1157,1017 +861,302 @@
                     </li>
                     {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
                     <li class="page-item">
-                        <a class="page-link" href="?page={{ num }}{% for key, value in current_filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">{{ num }}</a>
+                        <a class="page-link" href="?page={{ num }}&{{ request.GET.urlencode }}">{{ num }}</a>
                     </li>
                     {% endif %}
                 {% endfor %}
 
                 {% if page_obj.has_next %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% for key, value in current_filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Next</a>
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}&{{ request.GET.urlencode }}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
                 </li>
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% for key, value in current_filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Last</a>
+                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}&{{ request.GET.urlencode }}">
+                        <i class="bi bi-chevron-double-right"></i>
+                    </a>
                 </li>
                 {% endif %}
             </ul>
         </nav>
     </div>
     {% endif %}
-</div>
 
-<!-- Stock Analytics Charts -->
-<div class="row mt-4 totall">
-    <div class="col-lg-6 totall">
-        <div class="chart-container animate__animated animate__fadeInLeft animate__delay-5s">
-            <div class="chart-header">
-                <div class="chart-title totall">Stock Distribution</div>
-                <div class="dropdown">
-                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
-                        <i class="fas fa-cog me-1"></i>Options
-                    </button>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="#" onclick="refreshChart('distribution')">Refresh</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="exportChart('distribution')">Export</a></li>
-                    </ul>
-                </div>
-            </div>
-            <canvas id="stockDistributionChart" width="400" height="300"></canvas>
+    {% else %}
+    <!-- Empty State -->
+    <div class="empty-state">
+        <div class="empty-state-icon">
+            <i class="bi bi-inbox"></i>
         </div>
-    </div>
-
-    <div class="col-lg-6 totall">
-        <div class="chart-container animate__animated animate__fadeInRight animate__delay-5s totall">
-            <div class="chart-header totall">
-                <div class="chart-title totall">Stock Value by Category</div>
-                <div class="dropdown">
-                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
-                        <i class="fas fa-cog me-1"></i>Options
-                    </button>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="#" onclick="refreshChart('category')">Refresh</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="exportChart('category')">Export</a></li>
-                    </ul>
-                </div>
-            </div>
-            <canvas id="categoryValueChart" width="400" height="300"></canvas>
-        </div>
-    </div>
-</div>
-
-<!-- Recent Movements Panel -->
-<div class="chart-container mt-4 animate__animated animate__fadeInUp animate__delay-6s totall">
-    <div class="chart-header totall">
-        <div class="chart-title totall">Recent Stock Movements</div>
-        {% if perms.inventory.view_stockmovement %}
-        <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary totall">
-            <i class="fas fa-external-link-alt me-1"></i>View All
+        <h4>{% trans "No Stock Records Found" %}</h4>
+        <p>{% trans "There are no stock records matching your filters." %}</p>
+        {% if current_filters.search or current_filters.status or current_filters.store or current_filters.category %}
+        <a href="{% url 'inventory:stock_list' %}" class="btn btn-outline-primary">
+            <i class="bi bi-x-circle me-1"></i>
+            {% trans "Clear Filters" %}
+        </a>
+        {% else %}
+        <a href="{% url 'inventory:stock_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>
+            {% trans "Add Your First Stock" %}
         </a>
         {% endif %}
     </div>
-
-    <div class="row totall">
-        {% for movement in recent_movements|slice:":8" %}
-        <div class="col-md-6 col-lg-3 mb-3 totall">
-            <div class="card border-0 shadow-sm h-100 totall">
-                <div class="card-body p-3 totall">
-                    <div class="d-flex align-items-center mb-2 totall">
-                        <div class="movement-icon {{ movement.movement_type|lower }} me-2 totall">
-                            {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}
-                                <i class="fas fa-plus"></i>
-                            {% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}
-                                <i class="fas fa-minus"></i>
-                            {% else %}
-                                <i class="fas fa-edit"></i>
-                            {% endif %}
-                        </div>
-                        <div class="flex-grow-1">
-                            <h6 class="mb-1 fw-semibold totall">{{ movement.product.name|truncatechars:25 }}</h6>
-                            <small class="text-muted totall">{{ movement.store.name }}</small>
-                        </div>
-                    </div>
-
-                    <div class="d-flex justify-content-between align-items-center totall">
-                        <div>
-                            <div class="fw-bold {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}text-success{% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}text-danger{% else %}text-info{% endif %}">
-                                {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}+{% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}-{% endif %}{{ movement.quantity|floatformat:1 }}
-                            </div>
-                            <small class="text-muted totall">{{ movement.get_movement_type_display }}</small>
-                        </div>
-                        <div class="text-end">
-                            <small class="text-muted totall">{{ movement.created_at|date:"M d" }}</small>
-                            <br>
-                            <small class="text-muted totall">{{ movement.created_at|time:"H:i" }}</small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% empty %}
-        <div class="col-12">
-            <div class="text-center py-4 text-muted">
-                <i class="fas fa-exchange-alt fa-2x mb-2 opacity-25"></i>
-                <p>No recent movements recorded</p>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
+    {% endif %}
 </div>
 
-<!-- Modals -->
-
-<!-- Quick Stock Adjustment Modal -->
-<div class="modal fade" id="quickAdjustmentModal" tabindex="-1" aria-labelledby="quickAdjustmentModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="quickAdjustmentModalLabel">
-                    <i class="fas fa-plus-minus me-2"></i>Quick Stock Adjustment
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="quickAdjustmentForm">
-                    <input type="hidden" id="adjustStockId">
-
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <div class="form-floating">
-                                <input type="text" class="form-control" id="adjustProductName" readonly>
-                                <label>Product Name</label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-floating">
-                                <input type="number" class="form-control" id="adjustCurrentStock" readonly>
-                                <label>Current Stock</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <div class="form-floating">
-                                <select class="form-select" id="adjustmentType" required>
-                                    <option value="">Select adjustment type</option>
-                                    <option value="add">Add Stock (+)</option>
-                                    <option value="remove">Remove Stock (-)</option>
-                                    <option value="set">Set Stock Level</option>
-                                </select>
-                                <label>Adjustment Type *</label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-floating">
-                                <input type="number" class="form-control" id="adjustQuantity" min="0" step="0.001" required>
-                                <label>Quantity *</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mb-4">
-                        <div class="form-floating">
-                            <select class="form-select" id="adjustReason" required>
-                                <option value="">Select reason</option>
-                                <option value="received">Stock Received</option>
-                                <option value="sold">Stock Sold</option>
-                                <option value="damaged">Damaged/Lost</option>
-                                <option value="returned">Customer Return</option>
-                                <option value="correction">Stock Correction</option>
-                                <option value="transfer">Transfer</option>
-                                <option value="other">Other</option>
-                            </select>
-                            <label>Reason *</label>
-                        </div>
-                    </div>
-
-                    <div class="mb-4">
-                        <div class="form-floating">
-                            <textarea class="form-control" id="adjustNotes" style="height: 80px" placeholder="Additional notes..."></textarea>
-                            <label>Notes (Optional)</label>
-                        </div>
-                    </div>
-
-                    <div class="alert alert-info mb-0">
-                        <div class="d-flex align-items-center gap-2">
-                            <i class="fas fa-info-circle"></i>
-                            <div>
-                                <strong>New stock level will be: <span id="newStockLevel" class="text-primary">0</span></strong>
-                                <div id="stockLevelWarning" class="small text-warning mt-1" style="display: none;">
-                                    <i class="fas fa-exclamation-triangle me-1"></i>
-                                    This will result in low stock or out of stock condition.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="submitQuickAdjustment()">
-                    <i class="fas fa-save me-2"></i>Save Adjustment
-                </button>
-            </div>
-        </div>
+<!-- Recent Movements (Optional Section) -->
+{% if recent_movements %}
+<div class="card mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+            <i class="bi bi-arrow-left-right me-2"></i>
+            {% trans "Recent Stock Movements" %}
+        </h5>
+        <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary">
+            {% trans "View All" %}
+        </a>
     </div>
-</div>
-
-<!-- Stock History Modal -->
-<div class="modal fade" id="stockHistoryModal" tabindex="-1" aria-labelledby="stockHistoryModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="stockHistoryModalLabel">
-                    <i class="fas fa-history me-2"></i>Stock Movement History
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" id="stockHistoryContent">
-                <div class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <p class="mt-2 text-muted">Loading stock history...</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Bulk Operations Modal -->
-<div class="modal fade" id="bulkOperationsModal" tabindex="-1" aria-labelledby="bulkOperationsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="bulkOperationsModalLabel">
-                    <i class="fas fa-tasks me-2"></i>Bulk Operations
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" id="bulkOperationContent">
-                <!-- Dynamic content will be loaded here -->
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="confirmBulkOperation">
-                    <i class="fas fa-check me-2"></i>Execute
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-{% endblock %}
-
-{% block extra_js %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/js/select2.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.7.0/sweetalert2.min.js"></script>
-
-<script>
-$(document).ready(function() {
-    // Initialize components
-    initializeDataTable();
-    initializeFilters();
-    initializeCharts();
-    initializeTooltips();
-
-    // Auto-refresh dashboard every 5 minutes
-    setInterval(refreshDashboard, 300000);
-});
-
-// DataTable initialization
-function initializeDataTable() {
-    if ($.fn.DataTable.isDataTable('#stockTable')) {
-        $('#stockTable').DataTable().destroy();
-    }
-
-    $('#stockTable').DataTable({
-        pageLength: 25,
-        responsive: true,
-        order: [[1, 'asc']],
-        columnDefs: [
-            { orderable: false, targets: [0, 7] },
-            { searchable: false, targets: [0, 7] }
-        ],
-        language: {
-            search: '',
-            searchPlaceholder: 'Search products...',
-            info: 'Showing _START_ to _END_ of _TOTAL_ items',
-            infoEmpty: 'No items to display',
-            zeroRecords: 'No matching records found'
-        },
-        dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"l><"d-flex align-items-center"f>>rtip',
-        drawCallback: function() {
-            // Re-initialize tooltips after table redraw
-            $('[data-bs-toggle="tooltip"]').tooltip();
-        }
-    });
-
-    // Custom search functionality
-    $('#tableSearch').on('keyup', function() {
-        $('#stockTable').DataTable().search(this.value).draw();
-    });
-}
-
-// Filter initialization
-function initializeFilters() {
-    // Initialize Select2 for dropdowns
-    $('#storeFilter, #categoryFilter').select2({
-        theme: 'bootstrap-5',
-        placeholder: function() {
-            return $(this).data('placeholder');
-        },
-        allowClear: true
-    });
-
-    // Auto-submit filters with debounce
-    let filterTimeout;
-    $('#searchInput, #statusFilter, #storeFilter, #categoryFilter, #dateFromFilter, #dateToFilter').on('change input', function() {
-        clearTimeout(filterTimeout);
-        filterTimeout = setTimeout(function() {
-            if ($(this).attr('id') !== 'searchInput') {
-                $('#stockFiltersForm').submit();
-            }
-        }.bind(this), 500);
-    });
-
-    // Immediate submit for dropdowns
-    $('#statusFilter, #storeFilter, #categoryFilter').on('change', function() {
-        $('#stockFiltersForm').submit();
-    });
-}
-
-// Chart initialization
-function initializeCharts() {
-    // Stock Distribution Chart
-    const distributionCtx = document.getElementById('stockDistributionChart');
-    if (distributionCtx) {
-        new Chart(distributionCtx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Critical', 'Low Stock', 'Medium Stock', 'Good Stock'],
-                datasets: [{
-                    data: [
-                        {{ out_of_stock_count|default:0 }},
-                        {{ low_stock_count|default:0 }},
-                        {{ medium_stock_count|default:0 }},
-                        {{ good_stock_count|default:0 }}
-                    ],
-                    backgroundColor: [
-                        'rgba(239, 68, 68, 0.8)',
-                        'rgba(245, 158, 11, 0.8)',
-                        'rgba(6, 182, 212, 0.8)',
-                        'rgba(16, 185, 129, 0.8)'
-                    ],
-                    borderColor: [
-                        '#ef4444',
-                        '#f59e0b',
-                        '#06b6d4',
-                        '#10b981'
-                    ],
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 20,
-                            usePointStyle: true,
-                            font: {
-                                size: 12
-                            }
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = context.label || '';
-                                const value = context.formattedValue;
-                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const percentage = Math.round((context.raw / total) * 100);
-                                return `${label}: ${value} items (${percentage}%)`;
-                            }
-                        }
-                    }
-                },
-                animation: {
-                    animateScale: true,
-                    animateRotate: true
-                }
-            }
-        });
-    }
-
-    // Category Value Chart
-    const categoryCtx = document.getElementById('categoryValueChart');
-    if (categoryCtx) {
-        new Chart(categoryCtx, {
-            type: 'bar',
-            data: {
-                labels: [{% for category in categories %}'{{ category.name }}'{% if not forloop.last %},{% endif %}{% endfor %}],
-                datasets: [{
-                    label: 'Stock Value ($)',
-                    data: [12000, 19000, 8000, 15000, 22000, 9000], // Replace with real data
-                    backgroundColor: 'rgba(102, 126, 234, 0.8)',
-                    borderColor: '#667eea',
-                    borderWidth: 1,
-                    borderRadius: 6,
-                    borderSkipped: false,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return `Value: ${context.formattedValue}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return 'form-select" id="statusFilter" name="status">
-                        <option value="">All Status</option>
-                        <option value="critical" {% if current_filters.status == 'critical' %}selected{% endif %}>Critical (Out of Stock)</option>
-                        <option value="low_stock" {% if current_filters.status == 'low_stock' %}selected{% endif %}>Low Stock</option>
-                        <option value="medium_stock" {% if current_filters.status == 'medium_stock' %}selected{% endif %}>Medium Stock</option>
-                        <option value="good_stock" {% if current_filters.status == 'good_stock' %}selected{% endif %}>Good Stock</option>
-                        <option value="overstocked" {% if current_filters.status == 'overstocked' %}selected{% endif %}>Overstocked</option>
-                    </select>
-                    <label for="statusFilter">Stock Status</label>
-                </div>
-
-                <div class="form-floating">
-                    <select class="form-select" id="storeFilter" name="store">
-                        <option value="">All Branches</option>
-                        {% for store in stores %}
-                        <option value="{{ store.id }}" {% if current_filters.store == store.id|stringformat:"s" %}selected{% endif %}>
-                            {{ store.name }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                    <label for="storeFilter">Branch Location</label>
-                </div>
-
-                <div class="form-floating">
-                    <select class=" + value.toLocaleString();
-                            }
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        }
-                    }
-                },
-                animation: {
-                    duration: 1500,
-                    easing: 'easeOutQuart'
-                }
-            }
-        });
-    }
-}
-
-// Initialize tooltips
-function initializeTooltips() {
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function(tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
-}
-
-// Selection functions
-function toggleSelectAll() {
-    const selectAll = $('#selectAll, #headerSelectAll').prop('checked');
-    $('.stock-checkbox').prop('checked', selectAll);
-    updateSelectedCount();
-}
-
-function updateSelectedCount() {
-    const selected = $('.stock-checkbox:checked').length;
-    const total = $('.stock-checkbox').length;
-
-    $('#selectedCount').text(selected);
-    $('#selectAll, #headerSelectAll').prop('checked', selected === total && total > 0);
-    $('#selectAll, #headerSelectAll').prop('indeterminate', selected > 0 && selected < total);
-}
-
-// Quick stock adjustment
-function quickStockAdjustment(stockId) {
-    showLoading();
-
-    fetch(`/api/stock/${stockId}/`)
-        .then(response => response.json())
-        .then(data => {
-            $('#adjustStockId').val(stockId);
-            $('#adjustProductName').val(data.product_name);
-            $('#adjustCurrentStock').val(data.current_stock);
-            $('#quickAdjustmentModal').modal('show');
-            calculateNewStockLevel();
-            hideLoading();
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('Error loading stock data', 'error');
-            hideLoading();
-        });
-}
-
-function calculateNewStockLevel() {
-    const currentStock = parseFloat($('#adjustCurrentStock').val()) || 0;
-    const adjustType = $('#adjustmentType').val();
-    const quantity = parseFloat($('#adjustQuantity').val()) || 0;
-
-    let newLevel = currentStock;
-
-    switch (adjustType) {
-        case 'add':
-            newLevel = currentStock + quantity;
-            break;
-        case 'remove':
-            newLevel = Math.max(0, currentStock - quantity);
-            break;
-        case 'set':
-            newLevel = quantity;
-            break;
-    }
-
-    $('#newStockLevel').text(newLevel.toFixed(1));
-
-    // Show warning if stock will be low
-    const warning = $('#stockLevelWarning');
-    if (newLevel === 0) {
-        warning.show().removeClass('text-warning').addClass('text-danger')
-               .html('<i class="fas fa-exclamation-triangle me-1"></i>This will result in OUT OF STOCK condition!');
-    } else if (newLevel <= 5) { // Assuming 5 as general low stock threshold
-        warning.show().removeClass('text-danger').addClass('text-warning')
-               .html('<i class="fas fa-exclamation-triangle me-1"></i>This will result in LOW STOCK condition.');
-    } else {
-        warning.hide();
-    }
-}
-
-// Event listeners for adjustment modal
-$('#adjustmentType, #adjustQuantity').on('input change', calculateNewStockLevel);
-
-function submitQuickAdjustment() {
-    const formData = {
-        stock_id: $('#adjustStockId').val(),
-        adjustment_type: $('#adjustmentType').val(),
-        quantity: $('#adjustQuantity').val(),
-        reason: $('#adjustReason').val(),
-        notes: $('#adjustNotes').val()
-    };
-
-    // Validation
-    if (!formData.adjustment_type || !formData.quantity || !formData.reason) {
-        showNotification('Please fill in all required fields', 'error');
-        return;
-    }
-
-    if (parseFloat(formData.quantity) <= 0) {
-        showNotification('Please enter a valid quantity greater than 0', 'error');
-        return;
-    }
-
-    showLoading();
-
-    fetch('/api/stock/adjustment/', {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': getCookie('csrftoken'),
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showNotification('Stock adjusted successfully!', 'success');
-            $('#quickAdjustmentModal').modal('hide');
-
-            // Refresh the page or update the specific row
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
-        } else {
-            showNotification(data.error || 'Error adjusting stock', 'error');
-        }
-        hideLoading();
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showNotification('Error adjusting stock', 'error');
-        hideLoading();
-    });
-}
-
-// Stock history
-function viewStockHistory(stockId) {
-    $('#stockHistoryModal').modal('show');
-
-    fetch(`/api/stock/${stockId}/history/`)
-        .then(response => response.json())
-        .then(data => {
-            let historyHtml = `
-                <div class="row mb-4">
-                    <div class="col-md-8">
-                        <h6 class="fw-bold">${data.product_name}</h6>
-                        <p class="text-muted mb-0">${data.store_name} • Current Stock: <strong class="text-primary">${data.current_stock}</strong></p>
-                    </div>
-                    <div class="col-md-4 text-end">
-                        <button class="btn btn-outline-primary btn-sm" onclick="exportStockHistory(${stockId})">
-                            <i class="fas fa-download me-1"></i>Export
-                        </button>
-                    </div>
-                </div>
-
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Date & Time</th>
-                                <th>Movement Type</th>
-                                <th>Quantity</th>
-                                <th>Balance After</th>
-                                <th>Reason</th>
-                                <th>User</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-
-            if (data.movements && data.movements.length > 0) {
-                data.movements.forEach(movement => {
-                    const typeClass = movement.type === 'in' ? 'success' : movement.type === 'out' ? 'danger' : 'info';
-                    const typeIcon = movement.type === 'in' ? 'plus' : movement.type === 'out' ? 'minus' : 'edit';
-                    const quantityPrefix = movement.type === 'in' ? '+' : movement.type === 'out' ? '-' : '';
-
-                    historyHtml += `
-                        <tr>
-                            <td>
-                                <div>${new Date(movement.date).toLocaleDateString()}</div>
-                                <small class="text-muted">${new Date(movement.date).toLocaleTimeString()}</small>
-                            </td>
-                            <td>
-                                <span class="badge bg-${typeClass} d-inline-flex align-items-center gap-1">
-                                    <i class="fas fa-${typeIcon}"></i>
-                                    ${movement.type_display}
-                                </span>
-                            </td>
-                            <td class="text-${typeClass} fw-bold">
-                                ${quantityPrefix}${movement.quantity}
-                            </td>
-                            <td class="fw-semibold">${movement.balance_after}</td>
-                            <td>${movement.reason || '—'}</td>
-                            <td>
-                                <div class="d-flex align-items-center gap-2">
-                                    <div class="bg-light rounded-circle d-flex align-items-center justify-content-center" style="width: 24px; height: 24px;">
-                                        <i class="fas fa-user fa-xs text-muted"></i>
-                                    </div>
-                                    <small>${movement.user}</small>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
-                });
-            } else {
-                historyHtml += `
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
                     <tr>
-                        <td colspan="6" class="text-center py-4 text-muted">
-                            <i class="fas fa-history fa-2x mb-2 opacity-25"></i>
-                            <p>No movement history found</p>
+                        <th>{% trans "Date" %}</th>
+                        <th>{% trans "Product" %}</th>
+                        <th>{% trans "Type" %}</th>
+                        <th>{% trans "Quantity" %}</th>
+                        <th>{% trans "Reference" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for movement in recent_movements %}
+                    <tr>
+                        <td>{{ movement.created_at|date:"M d, H:i" }}</td>
+                        <td>{{ movement.product.name }}</td>
+                        <td>
+                            <span class="badge bg-info">
+                                {{ movement.get_movement_type_display }}
+                            </span>
+                        </td>
+                        <td>{{ movement.quantity|floatformat:2 }}</td>
+                        <td>
+                            <small class="text-muted">{{ movement.reference|truncatewords:5 }}</small>
                         </td>
                     </tr>
-                `;
-            }
-
-            historyHtml += '</tbody></table></div>';
-
-            $('#stockHistoryContent').html(historyHtml);
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            $('#stockHistoryContent').html(`
-                <div class="alert alert-danger">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    Error loading stock history. Please try again.
-                </div>
-            `);
-        });
-}
-
-// Bulk operations
-function showBulkOperations() {
-    const selectedStocks = $('.stock-checkbox:checked').map(function() {
-        return $(this).val();
-    }).get();
-
-    if (selectedStocks.length === 0) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'No Items Selected',
-            text: 'Please select stock items first before performing bulk operations.',
-            confirmButtonColor: '#667eea'
-        });
-        return;
-    }
-
-    $('#bulkOperationContent').html(`
-        <div class="alert alert-info">
-            <i class="fas fa-info-circle me-2"></i>
-            You are about to perform bulk operations on <strong>${selectedStocks.length}</strong> selected items.
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-
-        <div class="row g-3">
-            <div class="col-md-6">
-                <div class="card h-100 border-primary cursor-pointer bulk-operation-card" data-operation="adjustment">
-                    <div class="card-body text-center">
-                        <i class="fas fa-plus-minus fa-2x text-primary mb-3"></i>
-                        <h6 class="card-title">Bulk Stock Adjustment</h6>
-                        <p class="card-text text-muted">Adjust quantities for multiple items</p>
-                    </div>
-                </div>
+    </div>
+</div>
+{% endif %}
+</div>
+<!-- Stock Details Modal -->
+<div class="modal fade" id="stockDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-info-circle me-2"></i>
+                    {% trans "Stock Details" %}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-
-            <div class="col-md-6">
-                <div class="card h-100 border-success cursor-pointer bulk-operation-card" data-operation="price">
-                    <div class="card-body text-center">
-                        <i class="fas fa-dollar-sign fa-2x text-success mb-3"></i>
-                        <h6 class="card-title">Bulk Price Update</h6>
-                        <p class="card-text text-muted">Update selling or cost prices</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-6">
-                <div class="card h-100 border-warning cursor-pointer bulk-operation-card" data-operation="reorder">
-                    <div class="card-body text-center">
-                        <i class="fas fa-bell fa-2x text-warning mb-3"></i>
-                        <h6 class="card-title">Set Reorder Levels</h6>
-                        <p class="card-text text-muted">Update reorder levels in bulk</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-6">
-                <div class="card h-100 border-info cursor-pointer bulk-operation-card" data-operation="export">
-                    <div class="card-body text-center">
-                        <i class="fas fa-download fa-2x text-info mb-3"></i>
-                        <h6 class="card-title">Export Selected</h6>
-                        <p class="card-text text-muted">Download selected items data</p>
+            <div class="modal-body" id="stockDetailsContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">{% trans "Loading..." %}</span>
                     </div>
                 </div>
             </div>
         </div>
-    `);
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+/**
+ * Stock List Management
+ */
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-submit filters on change
+    const filterForm = document.getElementById('filterForm');
+    const filterSelects = filterForm.querySelectorAll('select');
 
-    // Add click handlers for bulk operation cards
-    $('.bulk-operation-card').on('click', function() {
-        const operation = $(this).data('operation');
-        executeBulkOperation(operation, selectedStocks);
-    });
-
-    $('#confirmBulkOperation').hide();
-    $('#bulkOperationsModal').modal('show');
-}
-
-function executeBulkOperation(operation, selectedStocks) {
-    $('#bulkOperationsModal').modal('hide');
-
-    switch (operation) {
-        case 'adjustment':
-            showBulkAdjustmentForm(selectedStocks);
-            break;
-        case 'price':
-            showBulkPriceUpdateForm(selectedStocks);
-            break;
-        case 'reorder':
-            showBulkReorderForm(selectedStocks);
-            break;
-        case 'export':
-            exportSelected('excel');
-            break;
-    }
-}
-
-// Enhanced notification system
-function showNotification(message, type = 'info', duration = 5000) {
-    Swal.fire({
-        icon: type,
-        title: message,
-        toast: true,
-        position: 'top-end',
-        showConfirmButton: false,
-        timer: duration,
-        timerProgressBar: true,
-        customClass: {
-            popup: 'swal2-toast-custom'
-        }
-    });
-}
-
-// Loading states
-function showLoading(message = 'Processing...') {
-    Swal.fire({
-        title: message,
-        allowOutsideClick: false,
-        allowEscapeKey: false,
-        showConfirmButton: false,
-        didOpen: () => {
-            Swal.showLoading();
-        }
-    });
-}
-
-function hideLoading() {
-    Swal.close();
-}
-
-// Export functions
-function exportSelected(format) {
-    const selectedStocks = $('.stock-checkbox:checked').map(function() {
-        return $(this).val();
-    }).get();
-
-    if (selectedStocks.length === 0) {
-        showNotification('Please select items to export', 'warning');
-        return;
-    }
-
-    const params = new URLSearchParams({
-        format: format,
-        selected: selectedStocks.join(','),
-        ...Object.fromEntries(new FormData(document.getElementById('stockFiltersForm')))
-    });
-
-    showLoading('Preparing export...');
-
-    // Create a temporary form to submit the export request
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = '{% url "inventory:stock_export" %}';
-    form.style.display = 'none';
-
-    // Add CSRF token
-    const csrfInput = document.createElement('input');
-    csrfInput.type = 'hidden';
-    csrfInput.name = 'csrfmiddlewaretoken';
-    csrfInput.value = getCookie('csrftoken');
-    form.appendChild(csrfInput);
-
-    // Add parameters
-    for (const [key, value] of params.entries()) {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = key;
-        input.value = value;
-        form.appendChild(input);
-    }
-
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
-
-    setTimeout(() => {
-        hideLoading();
-        showNotification('Export initiated successfully', 'success');
-    }, 1000);
-}
-
-function exportData() {
-    exportSelected('excel');
-}
-
-function generateReports() {
-    showNotification('Report generation feature coming soon', 'info');
-}
-
-// Utility functions
-function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-        const cookies = document.cookie.split(';');
-        for (let i = 0; i < cookies.length; i++) {
-            const cookie = cookies[i].trim();
-            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                break;
-            }
-        }
-    }
-    return cookieValue;
-}
-
-function resetFilters() {
-    Swal.fire({
-        title: 'Reset Filters?',
-        text: 'This will clear all current filters and show all stock items.',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#667eea',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Yes, reset filters'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            window.location.href = '{% url "inventory:stock_list" %}';
-        }
-    });
-}
-
-function refreshDashboard() {
-    // Silently refresh dashboard data via AJAX
-    fetch('{% url "inventory:stock_dashboard_data" %}')
-        .then(response => response.json())
-        .then(data => {
-            // Update dashboard cards with new data
-            updateDashboardCards(data);
-        })
-        .catch(error => {
-            console.error('Error refreshing dashboard:', error);
+    filterSelects.forEach(select => {
+        select.addEventListener('change', function() {
+            filterForm.submit();
         });
-}
+    });
 
-function updateDashboardCards(data) {
-    // Update the dashboard cards with fresh data
-    if (data) {
-        $('.dashboard-card').each(function() {
-            const card = $(this);
-            // Update logic would go here based on card type
-        });
-    }
-}
+    // Search with debounce
+    const searchInput = document.getElementById('searchInput');
+    let searchTimeout;
 
-// Keyboard shortcuts
-$(document).on('keydown', function(e) {
-    // Ctrl/Cmd + K for quick search
-    if ((e.ctrlKey || e.metaKey) && e.which === 75) {
-        e.preventDefault();
-        $('#searchInput').focus();
-    }
+    searchInput.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            filterForm.submit();
+        }, 500);
+    });
 
-    // Escape to clear search
-    if (e.which === 27 && $('#searchInput').is(':focus')) {
-        $('#searchInput').val('');
-        $('#stockFiltersForm').submit();
-    }
-
-    // Ctrl/Cmd + A to select all (when in table area)
-    if ((e.ctrlKey || e.metaKey) && e.which === 65 && $(e.target).closest('.stock-table-container').length) {
-        e.preventDefault();
-        toggleSelectAll();
-    }
+    // Initialize tooltips
+    const tooltips = document.querySelectorAll('[title]');
+    tooltips.forEach(element => {
+        new bootstrap.Tooltip(element);
+    });
 });
 
-// Stub functions for missing functionality
-function transferStock(stockId) {
-    showNotification('Stock transfer feature coming soon', 'info');
+/**
+ * View stock details in modal
+ */
+function viewStockDetails(stockId) {
+    const modal = new bootstrap.Modal(document.getElementById('stockDetailsModal'));
+    const content = document.getElementById('stockDetailsContent');
+
+    // Show loading state
+    content.innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">{% trans "Loading..." %}</span>
+            </div>
+        </div>
+    `;
+
+    modal.show();
+
+    // Fetch stock details
+    fetch(`/inventory/ajax/stock-details/${stockId}/`)
+  .then(response => {
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Not authenticated or invalid response");
+    }
+    return response.json();
+  })
+  .then(data => {
+    if (data.success) {
+      content.innerHTML = generateStockDetailsHTML(data);
+    } else {
+      content.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+    }
+  })
+  .catch(error => {
+    console.error(error);
+    content.innerHTML = `<div class="alert alert-danger">Could not load stock details. Please login.</div>`;
+  });
+
 }
 
-function setReorderLevel(stockId) {
-    showNotification('Reorder level setting feature coming soon', 'info');
+/**
+ * Generate HTML for stock details
+ */
+function generateStockDetailsHTML(stock) {
+    return `
+        <div class="row">
+            <div class="col-md-6">
+                <h6 class="text-muted mb-3">{% trans "Product Information" %}</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <th width="40%">{% trans "Name" %}:</th>
+                        <td>${stock.product_name}</td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "SKU" %}:</th>
+                        <td>${stock.product_sku || '—'}</td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Category" %}:</th>
+                        <td>${stock.category || '—'}</td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Store" %}:</th>
+                        <td>${stock.store}</td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6 class="text-muted mb-3">{% trans "Stock Information" %}</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <th width="40%">{% trans "Quantity" %}:</th>
+                        <td><strong>${stock.quantity}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Threshold" %}:</th>
+                        <td>${stock.low_stock_threshold}</td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Status" %}:</th>
+                        <td><span class="status-badge ${stock.status_class}">${stock.status_text}</span></td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Last Updated" %}:</th>
+                        <td>${stock.last_updated}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col-md-12">
+                <h6 class="text-muted mb-3">{% trans "Value Information" %}</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <th width="40%">{% trans "Cost Price" %}:</th>
+                        <td>${stock.cost_price}</td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Selling Price" %}:</th>
+                        <td>${stock.selling_price}</td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Total Cost Value" %}:</th>
+                        <td><strong>${stock.total_cost}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Total Selling Value" %}:</th>
+                        <td><strong>${stock.total_selling_value}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>{% trans "Potential Profit" %}:</th>
+                        <td class="text-success"><strong>${stock.potential_profit}</strong></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        <div class="mt-3 text-end">
+             <a href="{% url 'inventory:movement_create' %}?stock=${stock.id}" class="btn btn-success">
+                <i class="bi bi-arrow-up-right-circle me-1"></i>
+                {% trans "Adjust" %}
+            </a>
+        </div>
+    `;
 }
 
-function showBulkAdjustmentForm(selectedStocks) {
-    showNotification('Bulk adjustment feature coming soon', 'info');
+/**
+ * Print functionality
+ */
+function printStockList() {
+    window.print();
 }
 
-function showBulkPriceUpdateForm(selectedStocks) {
-    showNotification('Bulk price update feature coming soon', 'info');
-}
+/**
+ * Keyboard shortcuts
+ */
+document.addEventListener('keydown', function(e) {
+    // Ctrl/Cmd + K: Focus search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        document.getElementById('searchInput').focus();
+    }
 
-function showBulkReorderForm(selectedStocks) {
-    showNotification('Bulk reorder level setting feature coming soon', 'info');
-}
-
-function exportStockHistory(stockId) {
-    showNotification('Stock history export feature coming soon', 'info');
-}
-
-function refreshChart(chartType) {
-    showNotification('Chart refresh feature coming soon', 'info');
-}
-
-function exportChart(chartType) {
-    showNotification('Chart export feature coming soon', 'info');
-}
-
+    // Ctrl/Cmd + N: Add new stock
+    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        window.location.href = '{% url "inventory:stock_create" %}';
+    }
+});
 </script>
 {% endblock %}

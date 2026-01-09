@@ -1119,10 +1119,11 @@ class ProductForm(VATAwareFormMixin, forms.ModelForm):  # ADD VATAwareFormMixin 
             self.save_m2m()
 
         return product
-    
+
+
 class StockForm(forms.ModelForm):
     """Form for creating and updating stock records"""
-    
+
     class Meta:
         model = Stock
         fields = [
@@ -1171,26 +1172,26 @@ class StockForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Set queryset for product field
         self.fields['product'].queryset = Product.objects.filter(
             is_active=True
         ).select_related('category', 'supplier').order_by('name')
-        
+
         # Set queryset for store field
         self.fields['store'].queryset = Store.objects.filter(
             is_active=True
         ).order_by('name')
-        
+
         # Make last_physical_count_quantity read-only for display
         self.fields['last_physical_count_quantity'].required = False
         self.fields['last_physical_count_quantity'].disabled = True
-        
+
         # Set help texts
         self.fields['quantity'].help_text = 'Current stock quantity'
         self.fields['low_stock_threshold'].help_text = 'Alert when stock falls below this level'
         self.fields['reorder_quantity'].help_text = 'Suggested reorder quantity'
-        
+
         # If updating, make product and store read-only but NOT disabled
         if self.instance.pk:
             # Use readonly instead of disabled to ensure values are submitted
@@ -1198,31 +1199,19 @@ class StockForm(forms.ModelForm):
             self.fields['product'].widget.attrs['onclick'] = 'return false;'
             self.fields['product'].widget.attrs['onkeydown'] = 'return false;'
             self.fields['product'].widget.attrs['style'] = 'pointer-events: none; background-color: #e9ecef;'
-            
+
             self.fields['store'].widget.attrs['readonly'] = 'readonly'
             self.fields['store'].widget.attrs['onclick'] = 'return false;'
             self.fields['store'].widget.attrs['onkeydown'] = 'return false;'
             self.fields['store'].widget.attrs['style'] = 'pointer-events: none; background-color: #e9ecef;'
-            
+
             self.fields['product'].help_text = '⚠️ Cannot change product for existing stock record'
             self.fields['store'].help_text = '⚠️ Cannot change store for existing stock record'
 
-    def clean_product(self):
-        """Ensure product field isn't changed on update"""
-        if self.instance.pk:
-            # Return the original product, not the submitted one
-            return self.instance.product
-        return self.cleaned_data.get('product')
-
-    def clean_store(self):
-        """Ensure store field isn't changed on update"""
-        if self.instance.pk:
-            # Return the original store, not the submitted one
-            return self.instance.store
-        return self.cleaned_data.get('store')
-
     def clean(self):
         cleaned_data = super().clean()
+
+        # Get the submitted values
         product = cleaned_data.get('product')
         store = cleaned_data.get('store')
         quantity = cleaned_data.get('quantity')
@@ -1240,8 +1229,16 @@ class StockForm(forms.ModelForm):
         if reorder_quantity is not None and reorder_quantity < 0:
             self.add_error('reorder_quantity', 'Reorder quantity cannot be negative')
 
-        # Check for duplicate (only on create, not on update)
-        if not self.instance.pk and product and store:
+        # IMPORTANT: For updates, skip duplicate check entirely
+        # The form is set to readonly and clean_product/clean_store methods
+        # ensure the original values are used
+        if self.instance.pk:
+            # On update, we don't need to check for duplicates
+            # because product and store cannot be changed
+            return cleaned_data
+
+        # Only check for duplicates on CREATE
+        if product and store:
             if Stock.objects.filter(product=product, store=store).exists():
                 raise forms.ValidationError(
                     f'Stock record already exists for {product.name} at {store.name}. '
@@ -1249,6 +1246,22 @@ class StockForm(forms.ModelForm):
                 )
 
         return cleaned_data
+
+    def clean_product(self):
+        """Ensure product field isn't changed on update"""
+        if self.instance.pk:
+            # Always return the original product for updates
+            # This overrides any submitted value
+            return self.instance.product
+        return self.cleaned_data.get('product')
+
+    def clean_store(self):
+        """Ensure store field isn't changed on update"""
+        if self.instance.pk:
+            # Always return the original store for updates
+            # This overrides any submitted value
+            return self.instance.store
+        return self.cleaned_data.get('store')
 
 class ProductCreateForm(ProductForm):
     """Simplified form for creating products - focuses on essential fields"""

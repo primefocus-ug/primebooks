@@ -1,160 +1,134 @@
 {% extends "base.html" %}
 {% load static %}
-{% load custom_filters %}
 
 {% block title %}{% if budget %}Edit{% else %}Create{% endif %} Budget{% endblock %}
 
 {% block extra_css %}
 <style>
     .budget-form-container {
-        max-width: 700px;
-        margin: 2rem auto;
         padding: 2rem;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        max-width: 800px;
+        margin: 0 auto;
     }
-    
+
     .form-header {
-        margin-bottom: 2rem;
-        padding-bottom: 1rem;
-        border-bottom: 2px solid #3498db;
+        text-align: center;
+        margin-bottom: 3rem;
     }
-    
+
     .form-header h1 {
-        margin: 0;
-        color: #2c3e50;
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
-    
+
     .form-header p {
-        margin: 0.5rem 0 0 0;
-        color: #7f8c8d;
+        color: var(--text-secondary, #94a3b8);
+        font-size: 1.125rem;
     }
-    
+
+    .form-card {
+        background: var(--card-bg, #1e293b);
+        border-radius: 20px;
+        padding: 2.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
     .form-group {
-        margin-bottom: 1.5rem;
+        margin-bottom: 2rem;
     }
-    
+
     .form-label {
         display: block;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.75rem;
         font-weight: 600;
-        color: #2c3e50;
+        color: var(--text-primary, #f1f5f9);
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
-    
+
     .form-label.required::after {
         content: " *";
-        color: #e74c3c;
+        color: #f87171;
     }
-    
-    .form-control {
+
+    .form-input {
         width: 100%;
-        padding: 0.75rem;
-        border: 2px solid #ddd;
-        border-radius: 4px;
+        padding: 1rem 1.25rem;
+        background: var(--input-bg, #0f172a);
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        color: var(--text-primary, #f1f5f9);
         font-size: 1rem;
-        transition: border-color 0.2s;
+        transition: all 0.3s;
+        font-family: 'Inter', sans-serif;
     }
-    
-    .form-control:focus {
+
+    .form-input:focus {
         outline: none;
-        border-color: #3498db;
-        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        border-color: #667eea;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        background: var(--input-bg, #1e293b);
     }
-    
-    .form-help {
-        display: block;
-        margin-top: 0.5rem;
-        font-size: 0.85rem;
-        color: #7f8c8d;
-    }
-    
-    .form-check {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-    
-    .form-check-input {
-        width: 20px;
-        height: 20px;
-        cursor: pointer;
-    }
-    
-    .form-check-label {
-        cursor: pointer;
-        font-weight: 500;
-    }
-    
-    .error {
-        color: #e74c3c;
-        font-size: 0.85rem;
-        margin-top: 0.5rem;
-    }
-    
-    .btn-container {
-        display: flex;
+
+    .period-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
         gap: 1rem;
-        margin-top: 2rem;
-        padding-top: 2rem;
-        border-top: 1px solid #ecf0f1;
     }
-    
-    .btn {
-        flex: 1;
-        padding: 0.75rem 2rem;
-        border: none;
-        border-radius: 4px;
-        font-size: 1rem;
-        font-weight: 600;
+
+    .period-option {
+        position: relative;
+    }
+
+    .period-option input {
+        position: absolute;
+        opacity: 0;
+    }
+
+    .period-label {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 1.5rem 1rem;
+        background: var(--input-bg, #0f172a);
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
         cursor: pointer;
-        transition: all 0.2s;
-        text-decoration: none;
+        transition: all 0.3s;
         text-align: center;
     }
-    
-    .btn-primary {
-        background: #27ae60;
+
+    .period-label:hover {
+        background: rgba(102, 126, 234, 0.1);
+        border-color: #667eea;
+    }
+
+    .period-option input:checked + .period-label {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-color: #667eea;
         color: white;
     }
-    
-    .btn-primary:hover {
-        background: #229954;
-        transform: translateY(-1px);
+
+    .period-icon {
+        font-size: 2rem;
     }
-    
-    .btn-secondary {
-        background: #95a5a6;
-        color: white;
-    }
-    
-    .btn-secondary:hover {
-        background: #7f8c8d;
-    }
-    
-    .info-box {
-        background: #e3f2fd;
-        border-left: 4px solid #2196f3;
-        padding: 1rem;
-        margin-bottom: 2rem;
-        border-radius: 4px;
-    }
-    
-    .info-box-title {
+
+    .period-name {
         font-weight: 600;
-        color: #1976d2;
-        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
     }
-    
-    .info-box-content {
-        color: #0d47a1;
-        font-size: 0.9rem;
-    }
-    
+
     .slider-container {
-        padding: 0.5rem 0;
+        padding: 1rem 0;
     }
-    
+
     .slider {
         width: 100%;
         height: 8px;
@@ -162,73 +136,148 @@
         outline: none;
         -webkit-appearance: none;
         appearance: none;
-        background: linear-gradient(to right, #27ae60 0%, #f39c12 80%, #e74c3c 100%);
+        background: linear-gradient(to right,
+            #10b981 0%,
+            #10b981 40%,
+            #f59e0b 40%,
+            #f59e0b 80%,
+            #ef4444 80%,
+            #ef4444 100%
+        );
     }
-    
+
     .slider::-webkit-slider-thumb {
         -webkit-appearance: none;
         appearance: none;
-        width: 20px;
-        height: 20px;
+        width: 24px;
+        height: 24px;
         border-radius: 50%;
-        background: #3498db;
+        background: white;
         cursor: pointer;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        border: 3px solid #667eea;
     }
-    
+
     .slider::-moz-range-thumb {
-        width: 20px;
-        height: 20px;
+        width: 24px;
+        height: 24px;
         border-radius: 50%;
-        background: #3498db;
+        background: white;
         cursor: pointer;
-        border: none;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        border: 3px solid #667eea;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
-    
+
     .slider-value {
         text-align: center;
-        font-size: 1.5rem;
+        font-size: 2rem;
         font-weight: 700;
-        color: #2c3e50;
+        color: var(--text-primary, #f1f5f9);
+        margin-top: 1rem;
+    }
+
+    .slider-labels {
+        display: flex;
+        justify-content: space-between;
         margin-top: 0.5rem;
+        color: var(--text-tertiary, #64748b);
+        font-size: 0.75rem;
     }
-    
-    .period-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 0.75rem;
-        margin-top: 0.5rem;
+
+    .form-actions {
+        display: flex;
+        gap: 1rem;
+        margin-top: 2.5rem;
     }
-    
-    .period-option {
-        display: none;
-    }
-    
-    .period-label {
-        display: block;
-        padding: 0.75rem;
-        border: 2px solid #ddd;
-        border-radius: 4px;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.2s;
-        font-weight: 600;
-    }
-    
-    .period-option:checked + .period-label {
-        background: #3498db;
+
+    .btn-submit {
+        flex: 1;
+        padding: 1.25rem 2rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        border-color: #3498db;
+        border: none;
+        border-radius: 12px;
+        font-size: 1.125rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s;
     }
-    
-    .period-label:hover {
-        border-color: #3498db;
-        background: #ecf0f1;
+
+    .btn-submit:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 15px 35px rgba(102, 126, 234, 0.4);
     }
-    
-    .period-option:checked + .period-label:hover {
-        background: #2980b9;
+
+    .btn-cancel {
+        padding: 1.25rem 2rem;
+        background: rgba(239, 68, 68, 0.1);
+        color: #f87171;
+        border: 2px solid #f87171;
+        border-radius: 12px;
+        font-size: 1.125rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .btn-cancel:hover {
+        background: rgba(239, 68, 68, 0.2);
+    }
+
+    .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 60px;
+        height: 34px;
+    }
+
+    .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(255, 255, 255, 0.1);
+        transition: 0.4s;
+        border-radius: 34px;
+    }
+
+    .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 26px;
+        width: 26px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: 0.4s;
+        border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    input:checked + .toggle-slider:before {
+        transform: translateX(26px);
+    }
+
+    .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        cursor: pointer;
     }
 </style>
 {% endblock %}
@@ -236,109 +285,132 @@
 {% block content %}
 <div class="budget-form-container">
     <div class="form-header">
-        <h1>{% if budget %}Edit{% else %}Create New{% endif %} Budget</h1>
-        <p>Set spending limits and receive alerts when you're approaching your budget</p>
+        <h1>{% if budget %}✏️ Edit Budget{% else %}➕ Create Budget{% endif %}</h1>
+        <p>{% if budget %}Update your budget settings{% else %}Set spending limits and smart alerts{% endif %}</p>
     </div>
-    
-    <div class="info-box">
-        <div class="info-box-title">💡 How Budgets Work</div>
-        <div class="info-box-content">
-            Budgets track your spending over a specific time period. You can create budgets for all expenses 
-            or filter by specific tags. When you reach your alert threshold, you'll be notified.
-        </div>
-    </div>
-    
-    <form method="post" id="budgetForm">
+
+    <form method="post" id="budgetForm" class="form-card">
         {% csrf_token %}
-        
+
+        <!-- Budget Name -->
         <div class="form-group">
-            <label for="{{ form.name.id_for_label }}" class="form-label required">Budget Name</label>
-            {{ form.name }}
-            <span class="form-help">Give your budget a memorable name (e.g., "Monthly Groceries", "Q1 Marketing")</span>
-            {% if form.name.errors %}
-                <div class="error">{{ form.name.errors }}</div>
-            {% endif %}
+            <label for="id_name" class="form-label required">Budget Name</label>
+            <input type="text"
+                   name="name"
+                   id="id_name"
+                   class="form-input"
+                   placeholder="e.g., Monthly Groceries, Q1 Marketing"
+                   value="{{ form.name.value|default:'' }}"
+                   maxlength="100"
+                   required
+                   autofocus>
         </div>
-        
+
+        <!-- Budget Amount -->
         <div class="form-group">
-            <label for="{{ form.amount.id_for_label }}" class="form-label required">Budget Amount</label>
-            {{ form.amount }}
-            <span class="form-help">The maximum amount you want to spend in this period</span>
-            {% if form.amount.errors %}
-                <div class="error">{{ form.amount.errors }}</div>
-            {% endif %}
+            <label for="id_amount" class="form-label required">Budget Amount</label>
+            <div style="position: relative;">
+                <span style="position: absolute; left: 1.25rem; top: 50%; transform: translateY(-50%); font-size: 1.25rem; font-weight: 700; color: var(--text-tertiary);">$</span>
+                <input type="number"
+                       name="amount"
+                       id="id_amount"
+                       class="form-input"
+                       style="padding-left: 2.5rem; font-size: 1.5rem; font-weight: 700;"
+                       placeholder="0.00"
+                       step="0.01"
+                       min="0.01"
+                       value="{{ form.amount.value|default:'' }}"
+                       required>
+            </div>
         </div>
-        
+
+        <!-- Period Selection -->
         <div class="form-group">
             <label class="form-label required">Budget Period</label>
             <div class="period-grid">
                 {% for value, label in form.period.field.choices %}
-                <div>
-                    <input type="radio" 
-                           name="{{ form.period.name }}" 
-                           value="{{ value }}" 
+                <div class="period-option">
+                    <input type="radio"
+                           name="period"
+                           value="{{ value }}"
                            id="period_{{ value }}"
-                           class="period-option"
-                           {% if form.period.value == value %}checked{% endif %}>
-                    <label for="period_{{ value }}" class="period-label">{{ label }}</label>
+                           {% if form.period.value == value %}checked{% endif %}
+                           required>
+                    <label for="period_{{ value }}" class="period-label">
+                        <span class="period-icon">{{ label|slice:":2" }}</span>
+                        <span class="period-name">{{ label|slice:"3:" }}</span>
+                    </label>
                 </div>
                 {% endfor %}
             </div>
-            <span class="form-help">Choose how often this budget resets</span>
-            {% if form.period.errors %}
-                <div class="error">{{ form.period.errors }}</div>
-            {% endif %}
         </div>
-        
+
+        <!-- Tags (Optional) -->
         <div class="form-group">
-            <label for="{{ form.tags.id_for_label }}" class="form-label">Filter by Tags (Optional)</label>
-            {{ form.tags }}
-            <span class="form-help">
-                Leave empty to track all expenses, or add tags to track specific categories only
-                (e.g., "food, groceries" or "travel, business")
-            </span>
-            {% if form.tags.errors %}
-                <div class="error">{{ form.tags.errors }}</div>
-            {% endif %}
+            <label for="id_tags" class="form-label">Filter by Tags (Optional)</label>
+            <input type="text"
+                   name="tags"
+                   id="id_tags"
+                   class="form-input"
+                   placeholder="e.g., food, travel, business (comma-separated)"
+                   value="{{ form.tags.value|default:'' }}">
+            <p style="margin-top: 0.5rem; color: var(--text-tertiary); font-size: 0.875rem;">
+                Leave empty to track all expenses, or add tags to filter specific categories
+            </p>
         </div>
-        
+
+        <!-- Alert Threshold -->
         <div class="form-group">
-            <label for="{{ form.alert_threshold.id_for_label }}" class="form-label required">Alert Threshold</label>
+            <label for="id_alert_threshold" class="form-label required">Alert Threshold</label>
             <div class="slider-container">
-                <input type="range" 
-                       name="{{ form.alert_threshold.name }}" 
-                       id="{{ form.alert_threshold.id_for_label }}"
+                <input type="range"
+                       name="alert_threshold"
+                       id="id_alert_threshold"
                        class="slider"
-                       min="1" 
-                       max="100" 
+                       min="1"
+                       max="100"
                        value="{{ form.alert_threshold.value|default:80 }}"
                        oninput="updateSliderValue(this.value)">
                 <div class="slider-value" id="sliderValue">{{ form.alert_threshold.value|default:80 }}%</div>
+                <div class="slider-labels">
+                    <span>1%</span>
+                    <span>50%</span>
+                    <span>100%</span>
+                </div>
             </div>
-            <span class="form-help">You'll receive an alert when you've spent this percentage of your budget</span>
-            {% if form.alert_threshold.errors %}
-                <div class="error">{{ form.alert_threshold.errors }}</div>
-            {% endif %}
+            <p style="margin-top: 1rem; color: var(--text-tertiary); font-size: 0.875rem; text-align: center;">
+                You'll receive an alert when spending reaches this percentage
+            </p>
         </div>
-        
+
+        <!-- Active Status -->
         <div class="form-group">
-            <div class="form-check">
-                {{ form.is_active }}
-                <label for="{{ form.is_active.id_for_label }}" class="form-check-label">
-                    Budget is Active
+            <label class="toggle-label">
+                <label class="toggle-switch">
+                    <input type="checkbox"
+                           name="is_active"
+                           id="id_is_active"
+                           {% if form.is_active.value or not budget %}checked{% endif %}>
+                    <span class="toggle-slider"></span>
                 </label>
-            </div>
-            <span class="form-help">Inactive budgets won't track spending or send alerts</span>
-            {% if form.is_active.errors %}
-                <div class="error">{{ form.is_active.errors }}</div>
-            {% endif %}
+                <div>
+                    <div style="font-weight: 600; margin-bottom: 0.25rem;">Budget is Active</div>
+                    <div style="color: var(--text-tertiary); font-size: 0.875rem;">
+                        Inactive budgets won't track spending or send alerts
+                    </div>
+                </div>
+            </label>
         </div>
-        
-        <div class="btn-container">
-            <button type="submit" class="btn btn-primary">
+
+        <!-- Form Actions -->
+        <div class="form-actions">
+            <button type="submit" class="btn-submit">
+                <i class="fas fa-save"></i>
                 {% if budget %}Update Budget{% else %}Create Budget{% endif %}
             </button>
-            <a href="{% url 'expenses:budget_list' %}" class="btn btn-secondary">Cancel</a>
+            <a href="{% url 'expenses:budget_list' %}" class="btn-cancel">
+                <i class="fas fa-times"></i> Cancel
+            </a>
         </div>
     </form>
 </div>
@@ -346,27 +418,71 @@
 
 {% block extra_js %}
 <script>
+// Slider Value Update
 function updateSliderValue(value) {
-    document.getElementById('sliderValue').textContent = value + '%';
+    const slider = document.getElementById('sliderValue');
+    slider.textContent = value + '%';
+
+    // Change color based on value
+    if (value >= 80) {
+        slider.style.color = '#ef4444';
+    } else if (value >= 50) {
+        slider.style.color = '#f59e0b';
+    } else {
+        slider.style.color = '#10b981';
+    }
 }
 
 // Initialize slider value on page load
 document.addEventListener('DOMContentLoaded', function() {
-    const slider = document.querySelector('.slider');
+    const slider = document.getElementById('id_alert_threshold');
     if (slider) {
         updateSliderValue(slider.value);
     }
 });
 
+// Form validation
+const form = document.getElementById('budgetForm');
+form.addEventListener('submit', function(e) {
+    const amount = document.getElementById('id_amount').value;
+    const name = document.getElementById('id_name').value;
+    const period = document.querySelector('input[name="period"]:checked');
+
+    if (!amount || parseFloat(amount) <= 0) {
+        e.preventDefault();
+        alert('Please enter a valid budget amount');
+        return;
+    }
+
+    if (!name.trim()) {
+        e.preventDefault();
+        alert('Please enter a budget name');
+        return;
+    }
+
+    if (!period) {
+        e.preventDefault();
+        alert('Please select a budget period');
+        return;
+    }
+
+    // Show loading state
+    const submitBtn = this.querySelector('.btn-submit');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+});
+
 // Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
+    // Ctrl/Cmd + S = Save
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        document.getElementById('budgetForm').submit();
+        form.submit();
     }
-    
+
+    // Escape = Cancel
     if (e.key === 'Escape') {
-        window.location.href = "{% url 'expenses:budget_list' %}";
+        window.location.href = '{% url "expenses:budget_list" %}';
     }
 });
 </script>

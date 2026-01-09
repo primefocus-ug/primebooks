@@ -1,0 +1,221 @@
+{% load i18n %}
+<!-- Customer Selection -->
+<div class="card mb-3">
+    <div class="card-body customer-section">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="mb-0">
+                <i class="bi bi-person me-2"></i>{% trans "Customer" %}
+            </h6>
+            <button type="button" class="btn btn-sm btn-primary btn-with-shortcut"
+                    data-bs-toggle="modal" data-bs-target="#newCustomerModal"
+                    data-keyboard-hint="F11 or Ctrl+N">
+                <i class="bi bi-plus"></i> New
+                <span class="shortcut-hint">F11</span>
+            </button>
+        </div>
+
+        <!-- Customer Search Tabs -->
+        <ul class="nav nav-tabs mb-3" role="tablist">
+            <li class="nav-item">
+                <button type="button" class="nav-link active" data-bs-toggle="tab"
+                        data-bs-target="#searchTab" id="searchTabBtn">
+                    {% trans "Search" %}
+                </button>
+            </li>
+            {% if company.efris_enabled %}
+            <li class="nav-item">
+                <button type="button" class="nav-link" data-bs-toggle="tab"
+                        data-bs-target="#efrisTab" id="efrisTabBtn">
+                    {% trans "EFRIS" %}
+                </button>
+            </li>
+            {% endif %}
+            <li class="nav-item">
+                <button type="button" class="nav-link" data-bs-toggle="tab"
+                        data-bs-target="#recentTab" id="recentTabBtn">
+                    {% trans "Recent" %}
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+            <!-- Search Tab -->
+            <div class="tab-pane fade show active" id="searchTab">
+                <div class="input-group mb-2">
+                    <input type="text" class="form-control" id="customerSearch"
+                           placeholder="{% trans 'Search customers... (Press F2)' %}"
+                           autocomplete="off"
+                           aria-label="Customer search">
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearCustomerSearch()">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+
+                <!-- Search Loading Indicator -->
+                <div id="customerSearchLoading" class="text-center py-2" style="display: none;">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status">
+                        <span class="visually-hidden">{% trans "Searching..." %}</span>
+                    </div>
+                    <small class="text-muted ms-2">{% trans "Searching..." %}</small>
+                </div>
+
+                <!-- Search Error -->
+                <div id="customerSearchError" class="alert alert-danger py-2" style="display: none;"></div>
+
+                <!-- Customer Dropdown -->
+                <div class="customer-dropdown" id="customerDropdown">
+                    <div class="customer-list-header">
+                        <small class="text-muted">{% trans "Select a customer" %}</small>
+                    </div>
+                    <div id="customerList" class="customer-list"></div>
+                </div>
+            </div>
+
+            <!-- EFRIS Query Tab -->
+            {% if company.efris_enabled %}
+            <div class="tab-pane fade" id="efrisTab">
+                <div class="mb-3">
+                    <label class="form-label">{% trans "Taxpayer TIN" %}</label>
+                    <input type="text" class="form-control" id="taxpayerTIN"
+                           placeholder="{% trans 'Enter 10-digit TIN' %}"
+                           pattern="\d{10}" maxlength="10">
+                    <small class="text-muted">
+                        {% trans "Enter 10-digit Uganda TIN. Required for businesses, optional for individuals." %}
+                    </small>
+                </div>
+                <button type="button" class="btn btn-primary w-100 mb-3"
+                        onclick="queryEFRISTaxpayer()" id="efrisQueryBtn">
+                    <i class="bi bi-shield-search me-2"></i>
+                    {% trans "Query EFRIS" %}
+                </button>
+
+                <!-- Information about TIN requirements -->
+                <div class="alert alert-info">
+                    <h6><i class="bi bi-info-circle me-2"></i>{% trans "TIN Requirements" %}</h6>
+                    <ul class="mb-0" style="font-size: 0.875rem;">
+                        <li><strong>Businesses:</strong> TIN is required for VAT invoices</li>
+                        <li><strong>Individuals:</strong> TIN is optional for non-VAT invoices</li>
+                        <li><strong>Walk-in customers:</strong> Not applicable - use receipts instead</li>
+                        <li><strong>Receipts:</strong> TIN is never required</li>
+                    </ul>
+                </div>
+
+                <div id="efrisError" class="efris-error" style="display: none;">
+                    <div class="efris-error-title">
+                        <i class="bi bi-exclamation-triangle me-2"></i>Error
+                    </div>
+                    <div id="efrisErrorMessage"></div>
+                </div>
+
+                <div id="efrisQueryResults" style="display: none;"></div>
+                <div id="efrisQueryLoading" class="text-center py-3" style="display: none;">
+                    <div class="spinner-border spinner-border-sm text-primary"></div>
+                    <small class="text-muted ms-2">{% trans "Querying EFRIS..." %}</small>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Recent Customers Tab -->
+            <div class="tab-pane fade" id="recentTab">
+                <div id="recentCustomersLoading" class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm text-primary"></div>
+                </div>
+                <div id="recentCustomersList" class="customer-list"></div>
+            </div>
+        </div>
+
+        <!-- Selected Customer Display -->
+        <div id="customerDisplay" class="customer-display" style="display: none;">
+            <div class="customer-avatar" id="customerAvatar"></div>
+            <div class="flex-grow-1">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong id="customerName"></strong>
+                        <span id="customerTinBadge" class="badge bg-info ms-2" style="display: none;"></span>
+                        <div id="customerDetails"></div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-light"
+                            onclick="removeCustomer()" title="{% trans 'Remove customer' %}">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+
+                <!-- Credit Information Display -->
+                <div id="customerCreditInfo" class="mt-2" style="display: none;">
+                    <div class="credit-info-compact">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <small class="text-muted d-block">Credit Limit</small>
+                                <strong class="credit-limit" id="creditLimit">0</strong>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted d-block">Available</small>
+                                <strong class="credit-available" id="creditAvailable">0</strong>
+                            </div>
+                        </div>
+                        <div class="row g-2 mt-1">
+                            <div class="col-6">
+                                <small class="text-muted d-block">Outstanding</small>
+                                <strong class="credit-balance text-warning" id="creditBalance">0</strong>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted d-block">Status</small>
+                                <span class="badge" id="creditStatusBadge">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Credit Warning Messages -->
+                    <div id="creditWarnings" class="mt-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="creditAdjustmentSection" style="display: none;">
+            <button type="button" class="btn btn-outline-warning btn-sm w-100 mt-2"
+                    data-bs-toggle="modal" data-bs-target="#creditAdjustmentModal">
+                <i class="bi bi-sliders me-1"></i>Adjust Credit Limit
+            </button>
+        </div>
+
+        <!-- Customer Notes Section -->
+        <div id="customerNotesSection" class="mt-3" style="display: none;">
+            <div class="card">
+                <div class="card-header bg-transparent">
+                    <h6 class="mb-0">
+                        <i class="bi bi-chat-left-text me-2"></i>Sale Notes
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <label class="form-label">Add Note for this Sale</label>
+                        <textarea class="form-control" id="saleNoteText" rows="3"
+                                  placeholder="Add any notes about this sale (optional)..."></textarea>
+                        <small class="text-muted">This note will be saved with the sale and added to customer's history</small>
+                    </div>
+
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="noteIsImportant">
+                        <label class="form-check-label" for="noteIsImportant">
+                            Mark as Important
+                        </label>
+                    </div>
+
+                    <div class="mt-2">
+                        <label class="form-label">Note Category</label>
+                        <select class="form-select form-select-sm" id="noteCategory">
+                            <option value="GENERAL">General</option>
+                            <option value="PAYMENT">Payment Related</option>
+                            <option value="TAX">Tax Information</option>
+                            <option value="SUPPORT">Support Issue</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hidden fields for customer - INSIDE FORM -->
+        <input type="hidden" name="customer" id="customerId">
+        <input type="hidden" name="customer_tin" id="customerTin">
+    </div>
+</div>

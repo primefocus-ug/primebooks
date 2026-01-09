@@ -550,97 +550,187 @@ class ReportGeneratorService:
         }
 
     def _generate_expense_report(self, **kwargs) -> Dict:
-        """Generate expense report - Works with your simplified Expense model"""
+        """Generate expense tracking report - Updated for simplified models"""
+        from django.db.models import Sum, Count, Avg
+        from django.db import connection
+        from datetime import datetime, date
+
         start_date = kwargs.get('start_date')
         end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+        payment_method_filter = kwargs.get('payment_method')
         tag_filter = kwargs.get('tags')
-        min_amount = kwargs.get('min_amount')
-        max_amount = kwargs.get('max_amount')
 
-        queryset = Expense.objects.filter(user=self.user)
+        stores = self.get_accessible_stores()
 
+        # Base queryset - simplified to match new model
+        queryset = Expense.objects.select_related('user').prefetch_related('tags')
+
+        # Apply filters
         if start_date:
             queryset = queryset.filter(date__gte=start_date)
         if end_date:
             queryset = queryset.filter(date__lte=end_date)
-        if min_amount:
-            queryset = queryset.filter(amount__gte=min_amount)
-        if max_amount:
-            queryset = queryset.filter(amount__lte=max_amount)
+        if payment_method_filter:
+            queryset = queryset.filter(payment_method=payment_method_filter)
         if tag_filter:
-            tags = [t.strip() for t in tag_filter.split(',')]
-            queryset = queryset.filter(tags__name__in=tags).distinct()
-
-        expenses = []
-        for expense in queryset.select_related('user').prefetch_related('tags')[:500]:
-            expenses.append({
-                'id': expense.id,
-                'description': expense.description,
-                'amount': float(expense.amount),
-                'date': expense.date,
-                'tags': [tag.name for tag in expense.tags.all()],
-                'receipt': expense.receipt.url if expense.receipt else None,
-                'receipt_filename': expense.receipt_filename if hasattr(expense, 'receipt_filename') else None,
-                'notes': expense.notes,
-            })
-
-        summary = {
-            'total_expenses': queryset.count(),
-            'total_amount': float(queryset.aggregate(total=Sum('amount'))['total'] or 0),
-            'avg_expense': float(queryset.aggregate(avg=Avg('amount'))['avg'] or 0),
-            'min_amount': float(queryset.aggregate(min=Min('amount'))['min'] or 0),
-            'max_amount': float(queryset.aggregate(max=Max('amount'))['max'] or 0),
-        }
+            tag_list = [tag.strip() for tag in tag_filter.split(',')]
+            queryset = queryset.filter(tags__name__in=tag_list).distinct()
 
         # Tag breakdown
-        tag_data = {}
-        for expense in queryset.prefetch_related('tags'):
+        tag_breakdown_data = {}
+        for expense in queryset:
             for tag in expense.tags.all():
-                if tag.name not in tag_data:
-                    tag_data[tag.name] = {'tag_name': tag.name, 'count': 0, 'total_amount': 0}
-                tag_data[tag.name]['count'] += 1
-                tag_data[tag.name]['total_amount'] += float(expense.amount)
+                tag_name = tag.name
+                if tag_name not in tag_breakdown_data:
+                    tag_breakdown_data[tag_name] = {
+                        'tag_name': tag_name,
+                        'expense_count': 0,
+                        'total_amount': 0,
+                        'avg_amount': 0
+                    }
+                tag_breakdown_data[tag_name]['expense_count'] += 1
+                tag_breakdown_data[tag_name]['total_amount'] += float(expense.amount)
 
-        tag_breakdown = sorted(tag_data.values(), key=lambda x: x['total_amount'], reverse=True)[:20]
+        # Calculate average for each tag
+        for data in tag_breakdown_data.values():
+            if data['expense_count'] > 0:
+                data['avg_amount'] = data['total_amount'] / data['expense_count']
+
+        tag_breakdown = sorted(
+            tag_breakdown_data.values(),
+            key=lambda x: x['total_amount'],
+            reverse=True
+        )
+
+        # Payment method breakdown
+        payment_breakdown_data = {}
+        for expense in queryset:
+            method = expense.payment_method or 'Not Specified'
+            if method not in payment_breakdown_data:
+                payment_breakdown_data[method] = {
+                    'payment_method': method,
+                    'count': 0,
+                    'total_amount': 0
+                }
+            payment_breakdown_data[method]['count'] += 1
+            payment_breakdown_data[method]['total_amount'] += float(expense.amount)
+
+        payment_breakdown = sorted(
+            payment_breakdown_data.values(),
+            key=lambda x: x['total_amount'],
+            reverse=True
+        )
+
+        # Expense list with detailed data
+        expenses = []
+        for expense in queryset.order_by('-date')[:500]:  # Limit to 500
+            expense_tags = [tag.name for tag in expense.tags.all()]
+
+            expenses.append({
+                'id': str(expense.id),
+                'description': expense.description,
+                'user__username': expense.user.username if expense.user else '',
+                'user__first_name': expense.user.first_name if expense.user else '',
+                'user__last_name': expense.user.last_name if expense.user else '',
+                'amount': float(expense.amount),
+                'date': expense.date,
+                'payment_method': expense.payment_method or '',
+                'payment_method_display': expense.get_payment_method_display() if expense.payment_method else '',
+                'notes': expense.notes,
+                'tags': expense_tags,
+                'has_receipt': bool(expense.receipt),
+                'is_recurring': expense.is_recurring,
+                'is_important': expense.is_important,
+                'created_at': expense.created_at,
+            })
+
+        # Calculate summaries
+        total_amount = sum(float(expense.amount) for expense in queryset)
+        total_expenses = queryset.count()
+
+        summary = {
+            'total_expenses': total_expenses,
+            'total_amount': total_amount,
+            'avg_expense': total_amount / total_expenses if total_expenses > 0 else 0,
+            'recurring_expenses': queryset.filter(is_recurring=True).count(),
+            'important_expenses': queryset.filter(is_important=True).count(),
+            'expenses_with_receipts': queryset.exclude(receipt='').count(),
+        }
 
         # Monthly trend
-        monthly_trend = list(queryset.annotate(
-            month=TruncMonth('date')
-        ).values('month').annotate(
-            count=Count('id'),
-            total=Sum('amount')
-        ).order_by('month')[:12])
+        vendor = connection.vendor
 
+        if vendor == 'postgresql':
+            monthly_trend = list(queryset.extra(
+                select={'month': "TO_CHAR(date, 'YYYY-MM')"}
+            ).values('month').annotate(
+                count=Count('id'),
+                total=Sum('amount')
+            ).order_by('month')[:12])
+
+        elif vendor == 'mysql':
+            monthly_trend = list(queryset.extra(
+                select={'month': "DATE_FORMAT(date, '%%Y-%%m')"}
+            ).values('month').annotate(
+                count=Count('id'),
+                total=Sum('amount')
+            ).order_by('month')[:12])
+        else:
+            from django.db.models.functions import TruncMonth
+            monthly_trend_raw = list(queryset.annotate(
+                month=TruncMonth('date')
+            ).values('month').annotate(
+                count=Count('id'),
+                total=Sum('amount')
+            ).order_by('month')[:12])
+
+            monthly_trend = []
+            for item in monthly_trend_raw:
+                monthly_trend.append({
+                    'month': item['month'].strftime('%Y-%m'),
+                    'count': item['count'],
+                    'total': float(item['total'] or 0)
+                })
+
+        # Convert Decimal to float for JSON serialization
         for item in monthly_trend:
-            item['month'] = item['month'].strftime('%Y-%m') if item['month'] else None
-            item['total'] = float(item['total'] or 0)
+            if 'total' in item and item['total'] is not None:
+                item['total'] = float(item['total'])
 
         return {
             'expenses': expenses,
             'summary': summary,
             'tag_breakdown': tag_breakdown,
+            'payment_breakdown': payment_breakdown,
             'monthly_trend': monthly_trend,
             'filters': kwargs,
         }
 
     def _generate_expense_analytics(self, **kwargs) -> Dict:
-        """Generate expense analytics"""
+        """Generate expense analytics and insights report - Updated for simplified models"""
+        from django.db.models.functions import TruncMonth, TruncWeek, TruncDay
+        from django.db.models import Sum, Count, Avg
+        from django.db import connection
+        from datetime import datetime, date, timedelta
+
         start_date = kwargs.get('start_date')
         end_date = kwargs.get('end_date')
         tag_filter = kwargs.get('tags')
 
-        queryset = Expense.objects.filter(user=self.user)
+        # Base queryset
+        queryset = Expense.objects.select_related('user').prefetch_related('tags')
 
         if start_date:
             queryset = queryset.filter(date__gte=start_date)
         if end_date:
             queryset = queryset.filter(date__lte=end_date)
         if tag_filter:
-            tags = [t.strip() for t in tag_filter.split(',')]
-            queryset = queryset.filter(tags__name__in=tags).distinct()
+            tag_list = [tag.strip() for tag in tag_filter.split(',')]
+            queryset = queryset.filter(tags__name__in=tag_list).distinct()
 
         # Monthly trend
-        monthly_data = list(queryset.annotate(
+        monthly_data_raw = list(queryset.annotate(
             month=TruncMonth('date')
         ).values('month').annotate(
             count=Count('id'),
@@ -648,93 +738,202 @@ class ReportGeneratorService:
             avg=Avg('amount')
         ).order_by('month')[:12])
 
-        for item in monthly_data:
-            item['month'] = item['month'].strftime('%Y-%m') if item['month'] else None
-            item['total'] = float(item['total'] or 0)
-            item['avg'] = float(item['avg'] or 0)
+        monthly_data = []
+        for item in monthly_data_raw:
+            monthly_data.append({
+                'month': item['month'].strftime('%Y-%m'),
+                'total': float(item['total'] or 0),
+                'count': item['count'],
+                'avg': float(item['avg'] or 0)
+            })
 
-        # Day of week analysis
-        day_of_week_data = list(queryset.annotate(
-            day=ExtractWeekDay('date')
+        # Weekly pattern
+        weekly_data_raw = list(queryset.annotate(
+            week=TruncWeek('date')
+        ).values('week').annotate(
+            count=Count('id'),
+            total=Sum('amount')
+        ).order_by('-week')[:8])
+
+        weekly_data = []
+        for item in weekly_data_raw:
+            weekly_data.append({
+                'week': item['week'].strftime('%Y-%m-%d'),
+                'total': float(item['total'] or 0),
+                'count': item['count']
+            })
+
+        # Daily pattern for last 30 days
+        daily_data_raw = list(queryset.annotate(
+            day=TruncDay('date')
         ).values('day').annotate(
             count=Count('id'),
             total=Sum('amount')
-        ).order_by('day'))
+        ).order_by('-day')[:30])
 
-        day_names = {1: 'Sunday', 2: 'Monday', 3: 'Tuesday', 4: 'Wednesday',
-                     5: 'Thursday', 6: 'Friday', 7: 'Saturday'}
-
-        day_of_week_analysis = []
-        for item in day_of_week_data:
-            day_of_week_analysis.append({
-                'day': day_names.get(item['day'], f"Day {item['day']}"),
+        daily_data = []
+        for item in daily_data_raw:
+            daily_data.append({
+                'day': item['day'].strftime('%Y-%m-%d'),
                 'total': float(item['total'] or 0),
-                'count': item['count'],
-                'avg': float(item['total'] or 0) / item['count'] if item['count'] > 0 else 0
+                'count': item['count']
             })
 
         # Top tags
         tag_data = {}
-        for expense in queryset.prefetch_related('tags'):
+        for expense in queryset:
             for tag in expense.tags.all():
-                if tag.name not in tag_data:
-                    tag_data[tag.name] = {'tag_name': tag.name, 'total': 0, 'count': 0}
-                tag_data[tag.name]['total'] += float(expense.amount)
-                tag_data[tag.name]['count'] += 1
+                tag_name = tag.name
+                if tag_name not in tag_data:
+                    tag_data[tag_name] = {
+                        'tag_name': tag_name,
+                        'total': 0,
+                        'count': 0,
+                        'avg': 0
+                    }
+                tag_data[tag_name]['total'] += float(expense.amount)
+                tag_data[tag_name]['count'] += 1
 
+        # Calculate averages
         for data in tag_data.values():
             if data['count'] > 0:
                 data['avg'] = data['total'] / data['count']
 
-        top_tags = sorted(tag_data.values(), key=lambda x: x['total'], reverse=True)[:10]
+        top_tags = sorted(tag_data.values(), key=lambda x: x['total'], reverse=True)[:15]
 
-        # Recent expenses
-        recent_expenses = []
-        for expense in queryset.order_by('-date')[:10]:
-            recent_expenses.append({
-                'id': expense.id,
-                'description': expense.description,
-                'amount': float(expense.amount),
-                'date': expense.date,
-                'tags': [tag.name for tag in expense.tags.all()],
-                'receipt': bool(expense.receipt),
-            })
+        # Payment method analysis
+        payment_data = {}
+        for expense in queryset:
+            if expense.payment_method:
+                method = expense.get_payment_method_display()
+                if method not in payment_data:
+                    payment_data[method] = {
+                        'payment_method': method,
+                        'total': 0,
+                        'count': 0,
+                        'avg': 0
+                    }
+                payment_data[method]['total'] += float(expense.amount)
+                payment_data[method]['count'] += 1
 
-        # Budget analysis
+        # Calculate averages
+        for data in payment_data.values():
+            if data['count'] > 0:
+                data['avg'] = data['total'] / data['count']
+
+        payment_methods = sorted(payment_data.values(), key=lambda x: x['total'], reverse=True)
+
+        # Recurring expenses analysis
+        recurring_expenses_qs = queryset.filter(is_recurring=True)
+        recurring_total = sum(float(e.amount) for e in recurring_expenses_qs)
+        recurring_count = recurring_expenses_qs.count()
+
+        recurring_expenses = {
+            'total': recurring_total,
+            'count': recurring_count,
+            'avg': recurring_total / recurring_count if recurring_count > 0 else 0
+        }
+
+        # Important expenses analysis
+        important_expenses_qs = queryset.filter(is_important=True)
+        important_total = sum(float(e.amount) for e in important_expenses_qs)
+        important_count = important_expenses_qs.count()
+
+        important_expenses = {
+            'total': important_total,
+            'count': important_count,
+            'avg': important_total / important_count if important_count > 0 else 0
+        }
+
+        # Day of week analysis
+        day_of_week_data = {}
+        for expense in queryset:
+            day_name = expense.date.strftime('%A')
+            if day_name not in day_of_week_data:
+                day_of_week_data[day_name] = {
+                    'day': day_name,
+                    'total': 0,
+                    'count': 0,
+                    'avg': 0
+                }
+            day_of_week_data[day_name]['total'] += float(expense.amount)
+            day_of_week_data[day_name]['count'] += 1
+
+        # Calculate averages
+        for data in day_of_week_data.values():
+            if data['count'] > 0:
+                data['avg'] = data['total'] / data['count']
+
+        # Sort by day order
+        day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_of_week_analysis = [
+            day_of_week_data.get(day, {'day': day, 'total': 0, 'count': 0, 'avg': 0})
+            for day in day_order
+        ]
+
+        # Budget vs actual by tag (if budgets exist)
         budget_analysis = []
-        user_budgets = Budget.objects.filter(user=self.user, is_active=True)
+        try:
+            from .models import Budget
+            budgets = Budget.objects.filter(is_active=True)
 
-        for budget in user_budgets:
-            current_spending = float(budget.get_current_spending())
-            percentage_used = float(budget.get_percentage_used())
+            for budget in budgets:
+                if budget.tags.exists():
+                    tag_names = list(budget.tags.names())
+                    tag_expenses = queryset.filter(tags__name__in=tag_names).distinct()
+                    total_spent = sum(float(e.amount) for e in tag_expenses)
 
-            budget_analysis.append({
-                'name': budget.name,
-                'amount': float(budget.amount),
-                'period': budget.get_period_display(),
-                'current_spending': current_spending,
-                'percentage_used': percentage_used,
-                'remaining': float(budget.amount) - current_spending,
-                'is_over_threshold': budget.is_over_threshold(),
-                'alert_threshold': budget.alert_threshold,
-                'tags': list(budget.tags.names()) if budget.tags.exists() else [],
-            })
+                    budget_analysis.append({
+                        'budget_name': budget.name,
+                        'tags': tag_names,
+                        'budget_amount': float(budget.amount),
+                        'total_spent': total_spent,
+                        'budget_utilization': (total_spent / float(budget.amount) * 100)
+                        if budget.amount > 0 else 0,
+                        'over_budget': total_spent > float(budget.amount)
+                    })
+        except:
+            pass  # Budget model might not exist in all setups
 
-        summary = {
-            'total_expenses': float(queryset.aggregate(total=Sum('amount'))['total'] or 0),
-            'avg_expense': float(queryset.aggregate(avg=Avg('amount'))['avg'] or 0),
-            'total_count': queryset.count(),
-            'max_expense': float(queryset.aggregate(max=Max('amount'))['max'] or 0),
-            'min_expense': float(queryset.aggregate(min=Min('amount'))['min'] or 0),
+        # Sort by budget utilization
+        budget_analysis = sorted(
+            budget_analysis,
+            key=lambda x: x['budget_utilization'],
+            reverse=True
+        )
+
+        # Summary insights
+        total_spent = sum(float(e.amount) for e in queryset)
+        expense_count = queryset.count()
+
+        summary_insights = {
+            'total_spent': total_spent,
+            'total_count': expense_count,
+            'avg_expense': total_spent / expense_count if expense_count > 0 else 0,
+            'avg_monthly_spending': total_spent / len(monthly_data) if monthly_data else 0,
+            'most_expensive_tag': top_tags[0]['tag_name'] if top_tags else None,
+            'most_expensive_tag_amount': top_tags[0]['total'] if top_tags else 0,
+            'recurring_expenses_percentage': (recurring_count / expense_count * 100)
+            if expense_count > 0 else 0,
+            'important_expenses_percentage': (important_count / expense_count * 100)
+            if expense_count > 0 else 0,
+            'most_used_payment_method': payment_methods[0]['payment_method'] if payment_methods else None,
+            'highest_spending_day': max(day_of_week_analysis, key=lambda x: x['total'])['day']
+            if day_of_week_analysis else None,
+            'expenses_with_receipts': queryset.exclude(receipt='').count(),
         }
 
         return {
             'monthly_data': monthly_data,
-            'day_of_week_analysis': day_of_week_analysis,
+            'weekly_data': weekly_data,
+            'daily_data': daily_data,
             'top_tags': top_tags,
-            'recent_expenses': recent_expenses,
+            'payment_methods': payment_methods,
+            'recurring_expenses': recurring_expenses,
+            'important_expenses': important_expenses,
             'budget_analysis': budget_analysis,
-            'summary': summary,
+            'day_of_week_analysis': day_of_week_analysis,
+            'summary_insights': summary_insights,
             'filters': kwargs,
         }
 

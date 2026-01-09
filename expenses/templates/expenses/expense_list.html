@@ -1,342 +1,772 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Expenses{% endblock %}
+{% block title %}Expenses - Expense Tracker{% endblock %}
 
 {% block extra_css %}
 <style>
-    .expenses-container {
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 2rem;
+    :root {
+        --list-card-bg: #ffffff;
+        --list-input-bg: #f8fafc;
+        --list-border: #e2e8f0;
+        --list-text-primary: #1e293b;
+        --list-text-secondary: #64748b;
+        --list-text-tertiary: #94a3b8;
+        --list-hover-bg: #f1f5f9;
+        --list-shadow: rgba(0, 0, 0, 0.1);
     }
 
-    .header-section {
+    [data-theme='dark'] {
+        --list-card-bg: #1e293b;
+        --list-input-bg: #0f172a;
+        --list-border: rgba(255, 255, 255, 0.05);
+        --list-text-primary: #f1f5f9;
+        --list-text-secondary: #94a3b8;
+        --list-text-tertiary: #64748b;
+        --list-hover-bg: rgba(255, 255, 255, 0.03);
+        --list-shadow: rgba(0, 0, 0, 0.3);
+    }
+
+    .expenses-container {
+        padding: 2rem;
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+
+    .page-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 2rem;
     }
 
-    .btn-add {
-        background: #27ae60;
-        color: white;
-        padding: 0.75rem 1.5rem;
-        text-decoration: none;
-        border-radius: 4px;
-        font-weight: 600;
-        transition: background 0.2s;
-    }
-
-    .btn-add:hover {
-        background: #229954;
-    }
-
-    .budget-alerts {
-        background: #fff3cd;
-        border: 1px solid #ffc107;
-        border-radius: 4px;
-        padding: 1rem;
-        margin-bottom: 1.5rem;
-    }
-
-    .budget-alert-item {
-        padding: 0.5rem;
-        margin-bottom: 0.5rem;
-    }
-
-    .summary-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 1.5rem;
-        margin-bottom: 2rem;
-    }
-
-    .summary-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-
-    .summary-card h3 {
-        margin: 0 0 0.5rem 0;
-        color: #666;
-        font-size: 0.9rem;
-        font-weight: 600;
-    }
-
-    .summary-card .value {
+    .page-header h1 {
         font-size: 2rem;
-        font-weight: bold;
-        color: #2c3e50;
+        font-weight: 700;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
 
-    .filter-section {
-        background: white;
+    /* Filter Bar */
+    .filter-bar {
+        background: var(--list-card-bg);
+        border-radius: 16px;
         padding: 1.5rem;
-        border-radius: 8px;
         margin-bottom: 2rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border: 1px solid var(--list-border);
     }
 
     .filter-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 1rem;
-        align-items: end;
+        margin-bottom: 1rem;
     }
 
-    .expenses-table {
-        background: white;
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-
-    table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-
-    thead {
-        background: #3498db;
-        color: white;
-    }
-
-    th, td {
-        padding: 1rem;
-        text-align: left;
-    }
-
-    tbody tr:hover {
-        background: #f8f9fa;
-    }
-
-    .tag-badge {
-        display: inline-block;
-        background: #e3f2fd;
-        color: #1976d2;
-        padding: 0.25rem 0.75rem;
-        border-radius: 12px;
-        font-size: 0.85rem;
-        margin-right: 0.25rem;
-    }
-
-    .action-buttons {
+    .filter-group {
         display: flex;
+        flex-direction: column;
         gap: 0.5rem;
     }
 
-    .btn-icon {
-        padding: 0.4rem 0.8rem;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.85rem;
-    }
-
-    .btn-edit {
-        background: #3498db;
-        color: white;
-    }
-
-    .btn-delete {
-        background: #e74c3c;
-        color: white;
-    }
-
-    .export-buttons {
-        display: flex;
-        gap: 1rem;
-        margin-top: 1rem;
-    }
-
-    .btn-export {
-        padding: 0.5rem 1rem;
-        border: 1px solid #3498db;
-        background: white;
-        color: #3498db;
-        border-radius: 4px;
-        text-decoration: none;
+    .filter-label {
+        font-size: 0.875rem;
         font-weight: 600;
+        color: var(--list-text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .filter-input {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        background: var(--list-input-bg);
+        border: 2px solid var(--list-border);
+        border-radius: 12px;
+        color: var(--list-text-primary);
+        font-size: 1rem;
         transition: all 0.2s;
     }
 
-    .btn-export:hover {
-        background: #3498db;
+    .filter-input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+    }
+
+    .filter-input::placeholder {
+        color: var(--list-text-tertiary);
+    }
+
+    .filter-tags {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.5rem;
+    }
+
+    .filter-tag {
+        padding: 0.5rem 1rem;
+        background: rgba(102, 126, 234, 0.2);
+        color: #818cf8;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 2px solid transparent;
+    }
+
+    .filter-tag:hover {
+        background: rgba(102, 126, 234, 0.3);
+    }
+
+    .filter-tag.active {
+        background: #667eea;
         color: white;
+        border-color: #667eea;
+    }
+
+    .filter-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+        margin-top: 1rem;
+    }
+
+    /* Quick Period Filters */
+    .period-filters {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .period-btn {
+        padding: 0.5rem 1rem;
+        background: transparent;
+        color: var(--list-text-secondary);
+        border: 2px solid var(--list-border);
+        border-radius: 8px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .period-btn:hover {
+        background: rgba(102, 126, 234, 0.1);
+        color: #818cf8;
+        border-color: #667eea;
+    }
+
+    .period-btn.active {
+        background: #667eea;
+        color: white;
+        border-color: #667eea;
+    }
+
+    /* Summary Bar */
+    .summary-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--list-card-bg);
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        border: 1px solid var(--list-border);
+    }
+
+    .summary-item {
+        text-align: center;
+    }
+
+    .summary-label {
+        font-size: 0.875rem;
+        color: var(--list-text-secondary);
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+    }
+
+    .summary-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--list-text-primary);
+    }
+
+    /* Expenses Table */
+    .expenses-table {
+        background: var(--list-card-bg);
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid var(--list-border);
+    }
+
+    .table-header {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1.5fr 1fr 0.5fr;
+        padding: 1rem 1.5rem;
+        background: rgba(102, 126, 234, 0.1);
+        border-bottom: 2px solid #667eea;
+        font-weight: 600;
+        color: var(--list-text-primary);
+        text-transform: uppercase;
+        font-size: 0.875rem;
+        letter-spacing: 0.5px;
+    }
+
+    .table-row {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1.5fr 1fr 0.5fr;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--list-border);
+        transition: all 0.2s;
+        cursor: pointer;
+        align-items: center;
+    }
+
+    .table-row:hover {
+        background: var(--list-hover-bg);
+        transform: translateX(5px);
+    }
+
+    .table-row:last-child {
+        border-bottom: none;
+    }
+
+    .expense-description {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .expense-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        flex-shrink: 0;
+    }
+
+    .expense-text {
+        flex: 1;
+    }
+
+    .expense-title {
+        font-weight: 600;
+        color: var(--list-text-primary);
+        margin-bottom: 0.25rem;
+    }
+
+    .expense-notes {
+        font-size: 0.875rem;
+        color: var(--list-text-tertiary);
+    }
+
+    .expense-amount {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--list-text-primary);
+    }
+
+    .expense-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .tag {
+        padding: 0.25rem 0.75rem;
+        background: rgba(102, 126, 234, 0.2);
+        color: #818cf8;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+    .expense-date {
+        color: var(--list-text-secondary);
+        font-size: 0.875rem;
+    }
+
+    .receipt-indicator {
+        color: #10b981;
+        font-size: 1.25rem;
+    }
+
+    .expense-actions {
+        display: flex;
+        gap: 0.5rem;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    .table-row:hover .expense-actions {
+        opacity: 1;
+    }
+
+    .action-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+        background: transparent;
+        color: var(--list-text-secondary);
+    }
+
+    .action-btn:hover {
+        background: rgba(102, 126, 234, 0.2);
+        color: #818cf8;
+    }
+
+    .action-btn.delete:hover {
+        background: rgba(239, 68, 68, 0.2);
+        color: #f87171;
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: var(--list-text-secondary);
+    }
+
+    .empty-icon {
+        font-size: 5rem;
+        margin-bottom: 1rem;
+        opacity: 0.3;
+    }
+
+    .empty-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: var(--list-text-primary);
+    }
+
+    .empty-text {
+        margin-bottom: 2rem;
+    }
+
+    /* Pagination */
+    .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 2rem;
+    }
+
+    .page-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        border: 2px solid var(--list-border);
+        background: transparent;
+        color: var(--list-text-primary);
+        cursor: pointer;
+        transition: all 0.2s;
+        font-weight: 600;
+    }
+
+    .page-btn:hover {
+        background: rgba(102, 126, 234, 0.2);
+        border-color: #667eea;
+    }
+
+    .page-btn.active {
+        background: #667eea;
+        border-color: #667eea;
+    }
+
+    /* Loading Overlay */
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s;
+    }
+
+    .loading-overlay.active {
+        opacity: 1;
+        pointer-events: all;
+    }
+
+    .spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid rgba(255, 255, 255, 0.2);
+        border-top-color: #667eea;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Button Styles */
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 12px;
+        border: none;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+        background: rgba(102, 126, 234, 0.1);
+        color: #667eea;
+        padding: 0.75rem 1.5rem;
+        border-radius: 12px;
+        border: 2px solid #667eea;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-secondary:hover {
+        background: rgba(102, 126, 234, 0.2);
+    }
+
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+        .expenses-container {
+            padding: 1rem;
+        }
+
+        .filter-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .summary-bar {
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .table-header {
+            display: none;
+        }
+
+        .table-row {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            padding: 1.5rem;
+        }
+
+        .expense-actions {
+            opacity: 1;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="expenses-container">
-    <div class="header-section">
-        <h1>Expense Tracker</h1>
-        <div>
-            <a href="{% url 'expenses:reports' %}" class="btn-add" style="background: #9b59b6; margin-right: 1rem;">
-                📊 Reports
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1>📋 All Expenses</h1>
+        <div style="display: flex; gap: 1rem;">
+            <a href="{% url 'expenses:dashboard' %}" class="btn-secondary">
+                <i class="fas fa-arrow-left"></i> Dashboard
             </a>
-            <a href="{% url 'expenses:budget_list' %}" class="btn-add" style="background: #e67e22; margin-right: 1rem;">
-                💰 Budgets
-            </a>
-            <a href="{% url 'expenses:expense_create' %}" class="btn-add">
-                ➕ Add Expense
+            <a href="{% url 'expenses:expense_create' %}" class="btn-primary">
+                <i class="fas fa-plus"></i> Add Expense
             </a>
         </div>
     </div>
 
-    {% if budget_alerts %}
-    <div class="budget-alerts">
-        <strong>⚠️ Budget Alerts:</strong>
-        {% for alert in budget_alerts %}
-        <div class="budget-alert-item">
-            <strong>{{ alert.budget.name }}</strong>:
-            ${{ alert.spent }} / ${{ alert.budget.amount }}
-            ({{ alert.percentage }}% used)
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+        <form method="get" id="filterForm" action="">
+            <!-- Quick Period Filters -->
+            <div class="period-filters">
+                <button type="button" class="period-btn {% if filters.period == 'today' %}active{% endif %}" data-period="today">
+                    Today
+                </button>
+                <button type="button" class="period-btn {% if filters.period == 'week' %}active{% endif %}" data-period="week">
+                    This Week
+                </button>
+                <button type="button" class="period-btn {% if filters.period == 'month' %}active{% endif %}" data-period="month">
+                    This Month
+                </button>
+                <button type="button" class="period-btn {% if filters.period == 'quarter' %}active{% endif %}" data-period="quarter">
+                    This Quarter
+                </button>
+                <button type="button" class="period-btn {% if filters.period == 'year' %}active{% endif %}" data-period="year">
+                    This Year
+                </button>
+            </div>
 
-    <div class="summary-cards">
-        <div class="summary-card">
-            <h3>TOTAL EXPENSES</h3>
-            <div class="value">${{ summary.total|floatformat:2 }}</div>
-        </div>
-        <div class="summary-card">
-            <h3>NUMBER OF EXPENSES</h3>
-            <div class="value">{{ summary.count }}</div>
-        </div>
-        <div class="summary-card">
-            <h3>AVERAGE EXPENSE</h3>
-            <div class="value">${{ summary.average|floatformat:2 }}</div>
-        </div>
-    </div>
-
-    <div class="filter-section">
-        <h3>Filter Expenses</h3>
-        <form method="get" id="filterForm">
             <div class="filter-grid">
-                <div>
-                    <label>Period</label>
-                    {{ filter_form.period }}
+                <div class="filter-group">
+                    <label class="filter-label">Search</label>
+                    <input type="text"
+                           name="search"
+                           class="filter-input"
+                           placeholder="Search expenses..."
+                           value="{{ filters.search }}"
+                           id="searchInput">
                 </div>
-                <div id="customDateRange" style="display: none;">
-                    <label>Start Date</label>
-                    {{ filter_form.start_date }}
+
+                <div class="filter-group">
+                    <label class="filter-label">Tags</label>
+                    <input type="text"
+                           name="tags"
+                           class="filter-input"
+                           placeholder="e.g., food, travel"
+                           value="{{ filters.tags }}"
+                           id="tagsInput"
+                           list="tagSuggestions">
+                    <datalist id="tagSuggestions">
+                        {% for tag in all_tags %}
+                        <option value="{{ tag }}">
+                        {% endfor %}
+                    </datalist>
                 </div>
-                <div id="customDateRangeEnd" style="display: none;">
-                    <label>End Date</label>
-                    {{ filter_form.end_date }}
+
+                <div class="filter-group">
+                    <label class="filter-label">Payment Method</label>
+                    <select name="payment_method" class="filter-input">
+                        <option value="">All Methods</option>
+                        {% for value, label in payment_methods %}
+                        <option value="{{ value }}" {% if filters.payment_method == value %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <div>
-                    <label>Tags</label>
-                    {{ filter_form.tags }}
+
+                <div class="filter-group">
+                    <label class="filter-label">Date From</label>
+                    <input type="date"
+                           name="date_from"
+                           class="filter-input"
+                           value="{{ filters.date_from }}">
                 </div>
-                <div>
-                    <label>Min Amount</label>
-                    {{ filter_form.min_amount }}
+
+                <div class="filter-group">
+                    <label class="filter-label">Date To</label>
+                    <input type="date"
+                           name="date_to"
+                           class="filter-input"
+                           value="{{ filters.date_to }}">
                 </div>
-                <div>
-                    <label>Max Amount</label>
-                    {{ filter_form.max_amount }}
+
+                <div class="filter-group">
+                    <label class="filter-label">Min Amount</label>
+                    <input type="number"
+                           name="min_amount"
+                           class="filter-input"
+                           placeholder="$0.00"
+                           step="0.01"
+                           value="{{ filters.min_amount }}">
                 </div>
-                <div>
-                    <button type="submit" class="btn-add" style="width: 100%;">Apply Filters</button>
-                </div>
-                <div>
-                    <a href="{% url 'expenses:expense_list' %}" class="btn-export" style="display: block; text-align: center;">Clear</a>
+
+                <div class="filter-group">
+                    <label class="filter-label">Max Amount</label>
+                    <input type="number"
+                           name="max_amount"
+                           class="filter-input"
+                           placeholder="$999,999.99"
+                           step="0.01"
+                           value="{{ filters.max_amount }}">
                 </div>
             </div>
-        </form>
 
-        <div class="export-buttons">
-            <a href="{% url 'expenses:export_pdf' %}?{{ request.GET.urlencode }}" class="btn-export">
-                📄 Export PDF
-            </a>
-            <a href="{% url 'expenses:export_excel' %}?{{ request.GET.urlencode }}" class="btn-export">
-                📊 Export Excel
-            </a>
+            <div class="filter-actions">
+                <button type="button" class="btn-secondary" onclick="clearFilters()">
+                    <i class="fas fa-times"></i> Clear Filters
+                </button>
+                <button type="submit" class="btn-primary">
+                    <i class="fas fa-filter"></i> Apply Filters
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Summary Bar -->
+    <div class="summary-bar">
+        <div class="summary-item">
+            <div class="summary-label">Total Expenses</div>
+            <div class="summary-value">{{ count }}</div>
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">Total Amount</div>
+            <div class="summary-value">${{ total|floatformat:2 }}</div>
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">Average</div>
+            <div class="summary-value">${{ average|floatformat:2 }}</div>
         </div>
     </div>
 
+    <!-- Expenses Table -->
     <div class="expenses-table">
-        <table>
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Tags</th>
-                    <th>Amount</th>
-                    <th>Receipt</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for expense in expenses %}
-                <tr>
-                    <td>{{ expense.date|date:"M d, Y" }}</td>
-                    <td>{{ expense.description }}</td>
-                    <td>
-                        {% for tag in expense.tags.all %}
-                        <span class="tag-badge">{{ tag.name }}</span>
-                        {% endfor %}
-                    </td>
-                    <td><strong>${{ expense.amount|floatformat:2 }}</strong></td>
-                    <td>
-                        {% if expense.receipt %}
-                        <a href="{{ expense.receipt.url }}" target="_blank">📎 View</a>
-                        {% else %}
-                        -
-                        {% endif %}
-                    </td>
-                    <td>
-                        <div class="action-buttons">
-                            <a href="{% url 'expenses:expense_edit' expense.pk %}" class="btn-icon btn-edit">Edit</a>
-                            <button onclick="deleteExpense({{ expense.pk }})" class="btn-icon btn-delete">Delete</button>
-                        </div>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="6" style="text-align: center; padding: 2rem;">
-                        No expenses found. <a href="{% url 'expenses:expense_create' %}">Add your first expense</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+        <div class="table-header">
+            <div>Description</div>
+            <div>Amount</div>
+            <div>Tags</div>
+            <div>Date</div>
+            <div>Actions</div>
+        </div>
 
-    {% if total_expenses > 50 %}
-    <p style="margin-top: 1rem; text-align: center; color: #666;">
-        Showing first 50 of {{ total_expenses }} expenses. Use filters to narrow results.
-    </p>
-    {% endif %}
+        {% if expenses %}
+            {% for expense in expenses %}
+            <div class="table-row" data-expense-id="{{ expense.id }}">
+                <div class="expense-description">
+                    <div class="expense-avatar">
+                        {% if expense.receipt %}
+                        📎
+                        {% else %}
+                        💰
+                        {% endif %}
+                    </div>
+                    <div class="expense-text">
+                        <div class="expense-title">{{ expense.description }}</div>
+                        {% if expense.notes %}
+                        <div class="expense-notes">{{ expense.notes|truncatewords:10 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="expense-amount">
+                    ${{ expense.amount|floatformat:2 }}
+                </div>
+
+                <div class="expense-tags">
+                    {% for tag in expense.tags.all %}
+                    <span class="tag">{{ tag.name }}</span>
+                    {% endfor %}
+                    {% if expense.payment_method %}
+                    <span class="tag" style="background: rgba(16, 185, 129, 0.2); color: #34d399;">
+                        {{ expense.get_payment_method_display }}
+                    </span>
+                    {% endif %}
+                </div>
+
+                <div class="expense-date">
+                    {{ expense.date|date:"M d, Y" }}
+                    <br>
+                    <small style="color: var(--list-text-tertiary);">{{ expense.created_at|timesince }} ago</small>
+                </div>
+
+                <div class="expense-actions">
+                    <button class="action-btn" onclick="editExpense('{{ expense.id }}')" title="Edit">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="action-btn delete" onclick="deleteExpense('{{ expense.id }}')" title="Delete">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <h2 class="empty-title">No Expenses Found</h2>
+            <p class="empty-text">
+                {% if filters.search or filters.tags %}
+                No expenses match your current filters. Try adjusting your search criteria.
+                {% else %}
+                You haven't added any expenses yet. Start tracking your spending!
+                {% endif %}
+            </p>
+            <a href="{% url 'expenses:expense_create' %}" class="btn-primary">
+                <i class="fas fa-plus"></i> Add Your First Expense
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// Show/hide custom date range
-document.getElementById('id_period').addEventListener('change', function() {
-    const customRange = document.getElementById('customDateRange');
-    const customRangeEnd = document.getElementById('customDateRangeEnd');
+// Period filter buttons
+document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
 
-    if (this.value === 'custom') {
-        customRange.style.display = 'block';
-        customRangeEnd.style.display = 'block';
-    } else {
-        customRange.style.display = 'none';
-        customRangeEnd.style.display = 'none';
-    }
+        const form = document.getElementById('filterForm');
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'period';
+        input.value = this.dataset.period;
+        form.appendChild(input);
+        form.submit();
+    });
 });
 
-// Delete expense
+// Real-time search with debounce
+let searchTimeout;
+const searchInput = document.getElementById('searchInput');
+if (searchInput) {
+    searchInput.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            // Auto-submit could be enabled here
+            // document.getElementById('filterForm').submit();
+        }, 500);
+    });
+}
+
+// Clear filters
+function clearFilters() {
+    window.location.href = '{% url "expenses:expense_list" %}';
+}
+
+// Edit expense
+function editExpense(id) {
+    window.location.href = `/expenses/${id}/edit/`;
+}
+
+// Delete expense with confirmation
 function deleteExpense(id) {
-    if (confirm('Are you sure you want to delete this expense?')) {
+    if (confirm('Are you sure you want to delete this expense? This action cannot be undone.')) {
+        const overlay = document.getElementById('loadingOverlay');
+        overlay.classList.add('active');
+
         fetch(`/expenses/${id}/delete/`, {
             method: 'POST',
             headers: {
@@ -347,19 +777,56 @@ function deleteExpense(id) {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                location.reload();
+                // Remove row with animation
+                const row = document.querySelector(`[data-expense-id="${id}"]`);
+                row.style.transition = 'all 0.3s ease';
+                row.style.opacity = '0';
+                row.style.transform = 'translateX(-100%)';
+
+                setTimeout(() => {
+                    row.remove();
+
+                    // Check if table is empty
+                    const remainingRows = document.querySelectorAll('.table-row').length;
+                    if (remainingRows === 0) {
+                        location.reload();
+                    }
+                }, 300);
+            } else {
+                alert('Error deleting expense');
             }
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error deleting expense');
+        })
+        .finally(() => {
+            overlay.classList.remove('active');
+        });
     }
 }
 
-// Keyboard shortcut to add expense
+// Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
+    // Ctrl/Cmd + N = New expense
     if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault();
-        window.location.href = "{% url 'expenses:expense_create' %}";
+        window.location.href = '{% url "expenses:expense_create" %}';
     }
+
+    // Ctrl/Cmd + F = Focus search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        searchInput.focus();
+    }
+});
+
+// Auto-save filter preferences to localStorage
+const form = document.getElementById('filterForm');
+form.addEventListener('submit', function() {
+    const formData = new FormData(form);
+    const filters = Object.fromEntries(formData);
+    localStorage.setItem('expenseFilters', JSON.stringify(filters));
 });
 </script>
 {% endblock %}

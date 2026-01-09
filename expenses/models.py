@@ -1,40 +1,61 @@
 from django.db import models
 from django.contrib.auth import get_user_model
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
+from django.db.models import Sum, Q
 from decimal import Decimal
 from taggit.managers import TaggableManager
+from datetime import datetime, timedelta
+import uuid
 
 User = get_user_model()
 
 
 class Expense(models.Model):
-    # Basic fields
-    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True,blank=True, related_name='expenses')
+    """Streamlined expense tracking model"""
+
+    PAYMENT_METHODS = [
+        ('CASH', '💵 Cash'),
+        ('CREDIT_CARD', '💳 Credit Card'),
+        ('DEBIT_CARD', '💳 Debit Card'),
+        ('BANK_TRANSFER', '🏦 Bank Transfer'),
+        ('DIGITAL_WALLET', '📱 Digital Wallet'),
+        ('OTHER', '📝 Other'),
+    ]
+
+    # Core Fields
+    user = models.ForeignKey(User, on_delete=models.CASCADE,null=True,blank=True, related_name='expenses')
+
+    # Financial
     amount = models.DecimalField(
         max_digits=12,
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.01'))]
     )
-    description = models.CharField(max_length=255)
-    date = models.DateField(default=timezone.now)
+    description = models.CharField(max_length=500)
 
-    # Receipt handling
-    receipt = models.FileField(
-        upload_to='receipts/%Y/%m/',
-        blank=True,
-        null=True
-    )
-
-    # Tags for organization
+    # Organization
     tags = TaggableManager(blank=True)
 
-    # Notes (optional, quick entry)
+    # Payment
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, blank=True)
+
+    # Dates
+    date = models.DateField(default=timezone.now)
+
+    # Attachments
+    receipt = models.FileField(upload_to='receipts/%Y/%m/', blank=True, null=True)
+
+    # Notes
     notes = models.TextField(blank=True)
 
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Quick flags
+    is_recurring = models.BooleanField(default=False)
+    is_important = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['-date', '-created_at']
@@ -44,23 +65,20 @@ class Expense(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.description} - ${self.amount} ({self.date})"
-
-    @property
-    def receipt_filename(self):
-        if self.receipt:
-            return self.receipt.name.split('/')[-1]
-        return None
+        return f"{self.description} - ${self.amount}"
 
 
 class Budget(models.Model):
+    """Budget tracking with smart alerts"""
+
     PERIOD_CHOICES = [
-        ('weekly', 'Weekly'),
-        ('fortnightly', 'Fortnightly'),
-        ('monthly', 'Monthly'),
-        ('quarterly', 'Quarterly'),
-        ('semi_annual', '6 Months'),
-        ('yearly', 'Yearly'),
+        ('daily', '📅 Daily'),
+        ('weekly', '📅 Weekly'),
+        ('fortnightly', '📅 Fortnightly'),
+        ('monthly', '📅 Monthly'),
+        ('quarterly', '📅 Quarterly'),
+        ('semi_annual', '📅 6 Months'),
+        ('yearly', '📅 Yearly'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='budgets')
@@ -68,17 +86,22 @@ class Budget(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     period = models.CharField(max_length=20, choices=PERIOD_CHOICES)
 
-    # Optional: tag-specific budgets
-    tags = TaggableManager(blank=True, help_text="Leave empty for overall budget")
+    # Tag filtering (optional)
+    tags = TaggableManager(blank=True, help_text="Filter by specific tags")
 
     # Alert settings
     alert_threshold = models.IntegerField(
         default=80,
-        help_text="Alert when spending reaches this percentage"
+        validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Alert percentage"
     )
+
+    # Status
     is_active = models.BooleanField(default=True)
 
+    # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['name']
@@ -86,30 +109,55 @@ class Budget(models.Model):
     def __str__(self):
         return f"{self.name} - ${self.amount} ({self.get_period_display()})"
 
+    def get_period_dates(self):
+        """Get start and end dates for current period"""
+        today = timezone.now().date()
+
+        if self.period == 'daily':
+            return today, today
+        elif self.period == 'weekly':
+            start = today - timedelta(days=today.weekday())
+            end = start + timedelta(days=6)
+            return start, end
+        elif self.period == 'fortnightly':
+            return today - timedelta(days=14), today
+        elif self.period == 'monthly':
+            start = today.replace(day=1)
+            if today.month == 12:
+                end = today.replace(day=31)
+            else:
+                end = (today.replace(month=today.month + 1, day=1) - timedelta(days=1))
+            return start, end
+        elif self.period == 'quarterly':
+            quarter_month = ((today.month - 1) // 3) * 3 + 1
+            start = today.replace(month=quarter_month, day=1)
+            end_month = quarter_month + 2
+            end = today.replace(month=end_month, day=1)
+            if end_month == 12:
+                end = today.replace(month=12, day=31)
+            else:
+                end = (today.replace(month=end_month + 1, day=1) - timedelta(days=1))
+            return start, end
+        elif self.period == 'semi_annual':
+            return today - timedelta(days=182), today
+        elif self.period == 'yearly':
+            start = today.replace(month=1, day=1)
+            end = today.replace(month=12, day=31)
+            return start, end
+
+        return today, today
+
     def get_current_spending(self):
         """Calculate current period spending"""
-        from datetime import datetime, timedelta
-        from django.db.models import Sum
-
-        today = timezone.now().date()
-        period_map = {
-            'weekly': timedelta(days=7),
-            'fortnightly': timedelta(days=14),
-            'monthly': timedelta(days=30),
-            'quarterly': timedelta(days=90),
-            'semi_annual': timedelta(days=182),
-            'yearly': timedelta(days=365),
-        }
-
-        start_date = today - period_map[self.period]
+        start_date, end_date = self.get_period_dates()
 
         expenses = Expense.objects.filter(
             user=self.user,
             date__gte=start_date,
-            date__lte=today
+            date__lte=end_date
         )
 
-        # Filter by tags if budget is tag-specific
+        # Filter by tags if budget has tags
         if self.tags.exists():
             tag_names = list(self.tags.names())
             expenses = expenses.filter(tags__name__in=tag_names).distinct()
@@ -118,10 +166,25 @@ class Budget(models.Model):
         return total
 
     def get_percentage_used(self):
+        """Get budget usage percentage"""
         spending = self.get_current_spending()
         if self.amount > 0:
-            return (spending / self.amount) * 100
+            return (spending / self.amount * 100)
         return 0
 
     def is_over_threshold(self):
+        """Check if spending exceeded threshold"""
         return self.get_percentage_used() >= self.alert_threshold
+
+    def get_remaining(self):
+        """Get remaining budget"""
+        return self.amount - self.get_current_spending()
+
+    def get_status_color(self):
+        """Get color based on usage"""
+        percentage = self.get_percentage_used()
+        if percentage >= 100:
+            return 'danger'
+        elif percentage >= self.alert_threshold:
+            return 'warning'
+        return 'success'

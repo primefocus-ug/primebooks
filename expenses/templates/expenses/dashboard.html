@@ -1,64 +1,200 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load static %}
-{% load i18n %}
-{% load humanize %}
-{% load expense_tags %}
-{% load custom_filters %}
 
-{% block title %}{% trans "Expense Dashboard" %}{% endblock %}
+{% block title %}Dashboard - Expense Tracker{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'expenses/css/expenses.css' %}">
-<link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
+    .dashboard-container {
+        padding: 2rem;
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+
+    .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+
+    .dashboard-header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 12px;
+        border: none;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+        background: rgba(102, 126, 234, 0.1);
+        color: #667eea;
+        padding: 0.75rem 1.5rem;
+        border-radius: 12px;
+        border: 2px solid #667eea;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+    }
+
+    .btn-secondary:hover {
+        background: rgba(102, 126, 234, 0.2);
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
     .stat-card {
-        border-left: 4px solid;
-        transition: all 0.3s ease;
-    }
-    [data-theme="dark"] .stat-card {
-        background-color: var(--bg-primary);
-        color: var(--text-primary);
-    }
-    [data-theme="dark"] .card-header {
-        background-color: var(--bg-secondary);
-        border-bottom-color: var(--border-color);
-    }
-    [data-theme="dark"] .list-group-item {
-        background-color: var(--bg-primary);
-        color: var(--text-primary);
-    }
-    
-    [data-theme="dark"] .table thead {
-        border-bottom-color: var(--border-color);
+        background: var(--card-bg, #1e293b);
+        border-radius: 16px;
+        padding: 1.5rem;
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        transition: transform 0.3s, box-shadow 0.3s;
     }
 
     .stat-card:hover {
         transform: translateY(-5px);
-        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+    }
+
+    .stat-card.success::before {
+        background: linear-gradient(90deg, #10b981, #059669);
+    }
+
+    .stat-card.warning::before {
+        background: linear-gradient(90deg, #f59e0b, #d97706);
+    }
+
+    .stat-card.info::before {
+        background: linear-gradient(90deg, #3b82f6, #2563eb);
+    }
+
+    .stat-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+    }
+
+    .stat-label {
+        color: var(--text-secondary, #94a3b8);
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
 
     .stat-icon {
-        width: 60px;
-        height: 60px;
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 12px;
         font-size: 1.5rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
 
-    .category-badge {
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
-        font-weight: 500;
+    .stat-card.success .stat-icon {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     }
 
-    .trend-up {
-        color: #10b981;
+    .stat-card.warning .stat-icon {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
     }
 
-    .trend-down {
-        color: #ef4444;
+    .stat-card.info .stat-icon {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        color: var(--text-primary, #f1f5f9);
+    }
+
+    .stat-subtitle {
+        color: var(--text-tertiary, #94a3b8);
+        font-size: 0.875rem;
+    }
+
+    /* Charts Section */
+    .charts-grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+        .charts-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .chart-card {
+        background: var(--card-bg, #1e293b);
+        border-radius: 16px;
+        padding: 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .chart-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary, #f1f5f9);
     }
 
     .chart-container {
@@ -66,646 +202,516 @@
         height: 300px;
     }
 
-    .quick-action-btn {
-        transition: all 0.3s ease;
+    /* Budget Alerts */
+    .budget-alerts {
+        background: var(--card-bg, #1e293b);
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.05);
     }
 
-    .quick-action-btn:hover {
-        transform: translateY(-2px);
+    .alert-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem;
+        background: rgba(239, 68, 68, 0.1);
+        border-left: 4px solid #ef4444;
+        border-radius: 8px;
+        margin-bottom: 1rem;
     }
 
-    @media (max-width: 767.98px) {
-        .stat-icon {
-            width: 50px;
-            height: 50px;
-            font-size: 1.25rem;
-        }
+    .alert-item:last-child {
+        margin-bottom: 0;
+    }
 
-        .stat-card h3 {
-            font-size: 1.5rem;
-        }
+    .alert-item.warning {
+        background: rgba(245, 158, 11, 0.1);
+        border-left-color: #f59e0b;
+    }
 
-        .chart-container {
-            height: 250px;
-        }
+    .alert-content h4 {
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+
+    .alert-content p {
+        color: var(--text-secondary, #94a3b8);
+        font-size: 0.875rem;
+    }
+
+    .alert-badge {
+        background: #ef4444;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+    }
+
+    .alert-item.warning .alert-badge {
+        background: #f59e0b;
+    }
+
+    /* Recent Expenses */
+    .recent-section {
+        background: var(--card-bg, #1e293b);
+        border-radius: 16px;
+        padding: 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .recent-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .expense-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem;
+        border-radius: 12px;
+        margin-bottom: 0.75rem;
+        transition: background 0.2s;
+        cursor: pointer;
+    }
+
+    .expense-item:hover {
+        background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+    }
+
+    .expense-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .expense-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        font-size: 1.25rem;
+    }
+
+    .expense-details h4 {
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+
+    .expense-meta {
+        display: flex;
+        gap: 1rem;
+        color: var(--text-tertiary, #94a3b8);
+        font-size: 0.875rem;
+    }
+
+    .expense-amount {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-primary, #f1f5f9);
+    }
+
+    .tag {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        background: rgba(102, 126, 234, 0.2);
+        color: #818cf8;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+    /* Loading Animation */
+    .loading {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: #667eea;
+        animation: spin 0.8s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        color: var(--text-secondary, #94a3b8);
+    }
+
+    .empty-state i {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
     }
 </style>
 {% endblock %}
 
-{% block breadcrumb_items %}
-    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
-    <li class="breadcrumb-item active">{% trans "Expense Dashboard" %}</li>
-{% endblock %}
-
 {% block content %}
-<div class="container-fluid">
-    <!-- Page Header -->
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
-        <div>
-            <h1 class="h3 mb-2">
-                <i class="bi bi-graph-up me-2"></i>
-                {% trans "Expense Dashboard" %}
-            </h1>
-            <p class="text-muted mb-0">
-                {% trans "Welcome back," %} {{ user.get_full_name }}!
-                {% trans "Here's your expense overview" %}
-            </p>
-        </div>
-        <div class="mt-3 mt-md-0">
-            <div class="btn-group">
-                <a href="{% url 'expenses:expense_create' %}" class="btn btn-primary">
-                    <i class="bi bi-plus-lg me-2"></i>
-                    <span class="d-none d-sm-inline">{% trans "New Expense" %}</span>
-                    <span class="d-sm-none">{% trans "New" %}</span>
-                </a>
-                <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
-                    <span class="visually-hidden">{% trans "Toggle Dropdown" %}</span>
-                </button>
-                <ul class="dropdown-menu">
-                    <li><a class="dropdown-item" href="{% url 'expenses:expense_list' %}">
-                        <i class="bi bi-list-ul me-2"></i>{% trans "View All Expenses" %}
-                    </a></li>
-                    <li><a class="dropdown-item" href="{% url 'expenses:reports' %}">
-                        <i class="bi bi-bar-chart me-2"></i>{% trans "Reports" %}
-                    </a></li>
-                    {% if perms.expenses.view_expensecategory %}
-                    <li><a class="dropdown-item" href="{% url 'expenses:category_list' %}">
-                        <i class="bi bi-tags me-2"></i>{% trans "Categories" %}
-                    </a></li>
-                    {% endif %}
-                </ul>
-            </div>
+<div class="dashboard-container">
+    <!-- Header -->
+    <div class="dashboard-header">
+        <h1>💰 Dashboard</h1>
+        <div class="header-actions">
+            <a href="{% url 'expenses:analytics' %}" class="btn-secondary">
+                <i class="fas fa-chart-line"></i> Analytics
+            </a>
+            <a href="{% url 'expenses:expense_create' %}" class="btn-primary">
+                <i class="fas fa-plus"></i> Add Expense
+            </a>
         </div>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="row g-2 mb-4">
-        <div class="col-12">
-            <div class="d-flex flex-wrap gap-2">
-                <a href="{% url 'expenses:expense_create' %}" class="btn btn-outline-primary quick-action-btn">
-                    <i class="bi bi-plus-circle me-2"></i>{% trans "New Expense" %}
-                </a>
-                <a href="{% url 'expenses:expense_list' %}?status=SUBMITTED" class="btn btn-outline-warning quick-action-btn">
-                    <i class="bi bi-clock-history me-2"></i>{% trans "Pending" %} ({{ stats.pending_approval }})
-                </a>
-                <a href="{% url 'expenses:expense_list' %}?status=APPROVED" class="btn btn-outline-info quick-action-btn">
-                    <i class="bi bi-check-circle me-2"></i>{% trans "Approved" %} ({{ stats.approved_unpaid }})
-                </a>
-                <a href="{% url 'expenses:expense_list' %}?status=PAID" class="btn btn-outline-success quick-action-btn">
-                    <i class="bi bi-cash-coin me-2"></i>{% trans "Paid" %} ({{ stats.total_paid }})
-                </a>
-                {% if stats.overdue_count > 0 %}
-                <a href="{% url 'expenses:expense_list' %}?is_overdue=true" class="btn btn-outline-danger quick-action-btn">
-                    <i class="bi bi-exclamation-triangle me-2"></i>{% trans "Overdue" %} ({{ stats.overdue_count }})
-                </a>
-                {% endif %}
+    <!-- Budget Alerts -->
+    {% if budget_alerts %}
+    <div class="budget-alerts">
+        <h3 style="margin-bottom: 1rem;">⚠️ Budget Alerts</h3>
+        {% for alert in budget_alerts %}
+        <div class="alert-item {% if alert.percentage >= 100 %}danger{% else %}warning{% endif %}">
+            <div class="alert-content">
+                <h4>{{ alert.budget.name }}</h4>
+                <p>${{ alert.spent|floatformat:2 }} / ${{ alert.budget.amount|floatformat:2 }} spent</p>
             </div>
+            <span class="alert-badge">{{ alert.percentage }}%</span>
         </div>
+        {% endfor %}
     </div>
-
-    <!-- Statistics Cards -->
-    <div class="row g-3 mb-4">
-        <!-- Total This Month -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm h-100 stat-card" style="border-left-color: #3b82f6;">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="stat-icon bg-primary bg-opacity-10 text-primary me-3">
-                            <i class="bi bi-calendar-month"></i>
-                        </div>
-                        <div class="flex-grow-1">
-                            <h6 class="text-muted mb-1 small">{% trans "This Month" %}</h6>
-                            <h3 class="mb-0">{{ stats.total_this_month|currency_format }}</h3>
-                            <div class="d-flex align-items-center mt-1">
-                                {% if stats.month_change_positive %}
-                                    <i class="bi bi-arrow-up-short trend-up me-1"></i>
-                                {% else %}
-                                    <i class="bi bi-arrow-down-short trend-down me-1"></i>
-                                {% endif %}
-                                <small class="{% if stats.month_change_positive %}trend-up{% else %}trend-down{% endif %}">
-                                    {{ stats.month_change|floatformat:1 }}% {% trans "from last month" %}
-                                </small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Pending Approval -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm h-100 stat-card" style="border-left-color: #f59e0b;">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="stat-icon bg-warning bg-opacity-10 text-warning me-3">
-                            <i class="bi bi-clock-history"></i>
-                        </div>
-                        <div class="flex-grow-1">
-                            <h6 class="text-muted mb-1 small">{% trans "Pending Approval" %}</h6>
-                            <h3 class="mb-0">{{ stats.pending_approval }}</h3>
-                            <small class="text-muted mt-1">
-                                {% trans "Awaiting review" %}
-                            </small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Approved Unpaid -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm h-100 stat-card" style="border-left-color: #06b6d4;">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="stat-icon bg-info bg-opacity-10 text-info me-3">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div class="flex-grow-1">
-                            <h6 class="text-muted mb-1 small">{% trans "Approved Unpaid" %}</h6>
-                            <h3 class="mb-0">{{ stats.approved_unpaid }}</h3>
-                            {% if stats.reimbursable_pending > 0 %}
-                            <small class="text-muted mt-1">
-                                {{ stats.reimbursable_pending|currency_format }} {% trans "reimbursable" %}
-                            </small>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- YTD Total -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm h-100 stat-card" style="border-left-color: #10b981;">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="stat-icon bg-success bg-opacity-10 text-success me-3">
-                            <i class="bi bi-graph-up"></i>
-                        </div>
-                        <div class="flex-grow-1">
-                            <h6 class="text-muted mb-1 small">{% trans "Year to Date" %}</h6>
-                            <h3 class="mb-0">{{ stats.ytd_total|currency_format }}</h3>
-                            <small class="text-muted mt-1">
-                                {{ stats.ytd_count }} {% trans "expenses" %}
-                            </small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row g-3">
-        <!-- Category Breakdown -->
-        <div class="col-12 col-lg-6 col-xl-5">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-header dre border-0 py-3 d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">
-                        <i class="bi bi-pie-chart me-2"></i>
-                        {% trans "Top Categories This Month" %}
-                    </h5>
-                    <a href="{% url 'expenses:reports' %}" class="btn btn-sm btn-outline-primary">
-                        {% trans "Details" %}
-                    </a>
-                </div>
-                <div class="card-body">
-                    {% if category_breakdown %}
-                        <div class="category-list">
-                            {% for item in category_breakdown %}
-                                <div class="mb-4">
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <div class="d-flex align-items-center">
-                                            {% if item.category__icon %}
-                                                <i class="{{ item.category__icon }} me-2" style="color: {{ item.category__color_code }};"></i>
-                                            {% endif %}
-                                            <span class="category-badge me-2" style="background-color: {{ item.category__color_code }}; color: white;">
-                                                {{ item.category__name }}
-                                            </span>
-                                        </div>
-                                        <span class="fw-bold">{{ item.total|currency_format }}</span>
-                                    </div>
-                                    <div class="progress" style="height: 10px;">
-                                        {% with percent=item.total|percentage:stats.total_this_month %}
-                                        <div class="progress-bar"
-                                             style="width: {{ percent }}%; background-color: {{ item.category__color_code }};"
-                                             role="progressbar"
-                                             aria-valuenow="{{ percent }}"
-                                             aria-valuemin="0"
-                                             aria-valuemax="100">
-                                        </div>
-                                        {% endwith %}
-                                    </div>
-                                    <div class="d-flex justify-content-between mt-1">
-                                        <small class="text-muted">{{ item.count }} {% trans "expense(s)" %}</small>
-                                        <small class="text-muted">{{ item.total|percentage:stats.total_this_month|floatformat:1 }}%</small>
-                                    </div>
-                                </div>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        <div class="text-center py-5">
-                            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
-                            <p class="text-muted mt-3">{% trans "No expenses this month" %}</p>
-                            <a href="{% url 'expenses:expense_create' %}" class="btn btn-sm btn-primary">
-                                <i class="bi bi-plus-lg me-2"></i>
-                                {% trans "Create Expense" %}
-                            </a>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Recent Expenses & Monthly Trend -->
-        <div class="col-12 col-lg-6 col-xl-7">
-            <div class="row g-3 h-100">
-                <!-- Recent Expenses -->
-                <div class="col-12">
-                    <div class="card border-0 shadow-sm h-100">
-                        <div class="card-header dre border-0 py-3 d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">
-                                <i class="bi bi-clock-history me-2"></i>
-                                {% trans "Recent Expenses" %}
-                            </h5>
-                            <a href="{% url 'expenses:expense_list' %}" class="btn btn-sm btn-outline-primary">
-                                {% trans "View All" %}
-                            </a>
-                        </div>
-                        <div class="card-body p-0">
-                            {% if recent_expenses %}
-                                <div class="list-group list-group-flush">
-                                    {% for expense in recent_expenses %}
-                                        <a href="{% url 'expenses:expense_detail' expense.pk %}"
-                                           class="list-group-item list-group-item-action">
-                                            <div class="d-flex justify-content-between align-items-start">
-                                                <div class="flex-grow-1 me-3">
-                                                    <div class="d-flex align-items-center flex-wrap mb-2">
-                                                        <span class="badge me-2" style="background-color: {{ expense.category.color_code }};">
-                                                            {{ expense.category.name }}
-                                                        </span>
-                                                        {% expense_status_badge expense %}
-                                                    </div>
-                                                    <h6 class="mb-1">{{ expense.title|truncatewords:8 }}</h6>
-                                                    <small class="text-muted">
-                                                        <i class="bi bi-calendar3 me-1"></i>
-                                                        {{ expense.expense_date|date:"M d, Y" }}
-                                                        {% if expense.vendor_name %}
-                                                            • <i class="bi bi-building me-1"></i>{{ expense.vendor_name }}
-                                                        {% endif %}
-                                                    </small>
-                                                </div>
-                                                <div class="text-end">
-                                                    <div class="fw-bold">{{ expense.amount|currency_format:expense.currency }}</div>
-                                                    <small class="text-muted">{{ expense.created_at|timesince }} {% trans "ago" %}</small>
-                                                </div>
-                                            </div>
-                                        </a>
-                                    {% endfor %}
-                                </div>
-                            {% else %}
-                                <div class="text-center py-5">
-                                    <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
-                                    <p class="text-muted mt-3">{% trans "No recent expenses" %}</p>
-                                    <a href="{% url 'expenses:expense_create' %}" class="btn btn-primary">
-                                        <i class="bi bi-plus-lg me-2"></i>
-                                        {% trans "Create First Expense" %}
-                                    </a>
-                                </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Monthly Trend Chart -->
-                <div class="col-12">
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-header dre border-0 py-3">
-                            <h5 class="mb-0">
-                                <i class="bi bi-graph-up me-2"></i>
-                                {% trans "Monthly Trend (Last 6 Months)" %}
-                            </h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="chart-container">
-                                <canvas id="monthlyTrendChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Second Row: Additional Widgets -->
-    <div class="row g-3 mt-3">
-        <!-- Top Vendors -->
-        {% if top_vendors %}
-        <div class="col-12 col-md-6 col-lg-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-building me-2"></i>
-                        {% trans "Top Vendors" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="list-group list-group-flush">
-                        {% for vendor in top_vendors %}
-                        <div class="list-group-item px-0">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="mb-1">{{ vendor.vendor_name|default:"Unknown Vendor" }}</h6>
-                                    <small class="text-muted">{{ vendor.count }} {% trans "expense(s)" %}</small>
-                                </div>
-                                <span class="fw-bold">{{ vendor.total|currency_format }}</span>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Payment Method Breakdown -->
-        {% if payment_breakdown %}
-        <div class="col-12 col-md-6 col-lg-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-credit-card me-2"></i>
-                        {% trans "Payment Methods" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="list-group list-group-flush">
-                        {% for payment in payment_breakdown %}
-                        <div class="list-group-item px-0">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h6 class="mb-1">{{ payment.payment_method|title }}</h6>
-                                    <small class="text-muted">{{ payment.count }} {% trans "payment(s)" %}</small>
-                                </div>
-                                <span class="fw-bold">{{ payment.total|currency_format }}</span>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Quick Stats -->
-        <div class="col-12 col-md-6 col-lg-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-header dre border-0 py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-speedometer2 me-2"></i>
-                        {% trans "Quick Stats" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="row g-2 text-center">
-                        <div class="col-6">
-                            <div class="p-3 border rounded">
-                                <h4 class="mb-1 text-primary">{{ stats.average_expense|currency_format }}</h4>
-                                <small class="text-muted">{% trans "Avg Expense" %}</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="p-3 border rounded">
-                                <h4 class="mb-1 text-success">{{ stats.total_paid }}</h4>
-                                <small class="text-muted">{% trans "Paid Count" %}</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="p-3 border rounded">
-                                <h4 class="mb-1 text-warning">{{ stats.pending_approval }}</h4>
-                                <small class="text-muted">{% trans "Pending" %}</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="p-3 border rounded">
-                                <h4 class="mb-1 text-danger">{{ stats.overdue_count }}</h4>
-                                <small class="text-muted">{% trans "Overdue" %}</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Pending Approvals Section (For Approvers) -->
-    {% if pending_approvals %}
-        <div class="row mt-3">
-            <div class="col-12">
-                <div class="card border-0 shadow-sm border-warning border-start border-4">
-                    <div class="card-header bg-warning bg-opacity-10 border-0 py-3">
-                        <h5 class="mb-0 text-warning">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            {% trans "Expenses Awaiting Your Approval" %}
-                            <span class="badge bg-warning text-dark ms-2">{{ pending_approvals|length }}</span>
-                        </h5>
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0 align-middle">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>{% trans "Expense #" %}</th>
-                                        <th class="d-none d-md-table-cell">{% trans "Title" %}</th>
-                                        <th class="d-none d-lg-table-cell">{% trans "Submitted By" %}</th>
-                                        <th>{% trans "Category" %}</th>
-                                        <th>{% trans "Amount" %}</th>
-                                        <th class="d-none d-md-table-cell">{% trans "Submitted" %}</th>
-                                        <th class="text-end">{% trans "Action" %}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for expense in pending_approvals %}
-                                        <tr>
-                                            <td>
-                                                <a href="{% url 'expenses:expense_detail' expense.pk %}" class="text-decoration-none fw-medium">
-                                                    {{ expense.expense_number }}
-                                                </a>
-                                            </td>
-                                            <td class="d-none d-md-table-cell">{{ expense.title|truncatewords:5 }}</td>
-                                            <td class="d-none d-lg-table-cell">{{ expense.created_by.get_full_name }}</td>
-                                            <td>
-                                                <span class="badge" style="background-color: {{ expense.category.color_code }};">
-                                                    {{ expense.category.name }}
-                                                </span>
-                                            </td>
-                                            <td class="fw-bold">{{ expense.amount|currency_format:expense.currency }}</td>
-                                            <td class="d-none d-md-table-cell">
-                                                <span class="badge {% if expense.days_pending > 5 %}bg-danger{% elif expense.days_pending > 3 %}bg-warning{% else %}bg-info{% endif %}">
-                                                    {{ expense.submitted_at|timesince }} {% trans "ago" %}
-                                                </span>
-                                            </td>
-                                            <td class="text-end">
-                                                <div class="btn-group btn-group-sm">
-                                                    <a href="{% url 'expenses:expense_detail' expense.pk %}"
-                                                       class="btn btn-outline-primary">
-                                                        <i class="bi bi-eye me-1"></i>
-                                                        {% trans "Review" %}
-                                                    </a>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
     {% endif %}
 
-    <!-- Budget Analysis (For Managers) -->
-    {% if budget_analysis %}
-        <div class="row mt-3">
-            <div class="col-12">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-header dre border-0 py-3 d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">
-                            <i class="bi bi-wallet2 me-2"></i>
-                            {% trans "Budget Status" %}
-                        </h5>
-                        <a href="{% url 'expenses:category_budget_report' %}" class="btn btn-sm btn-outline-primary">
-                            {% trans "Full Report" %}
-                        </a>
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-header">
+                <span class="stat-label">Today</span>
+                <div class="stat-icon">💵</div>
+            </div>
+            <div class="stat-value">${{ today_total|floatformat:2 }}</div>
+            <div class="stat-subtitle">{{ today_count }} transaction{{ today_count|pluralize }}</div>
+        </div>
+
+        <div class="stat-card success">
+            <div class="stat-header">
+                <span class="stat-label">This Week</span>
+                <div class="stat-icon">📊</div>
+            </div>
+            <div class="stat-value">${{ week_total|floatformat:2 }}</div>
+            <div class="stat-subtitle">{{ week_count }} transaction{{ week_count|pluralize }}</div>
+        </div>
+
+        <div class="stat-card warning">
+            <div class="stat-header">
+                <span class="stat-label">This Month</span>
+                <div class="stat-icon">📅</div>
+            </div>
+            <div class="stat-value">${{ month_total|floatformat:2 }}</div>
+            <div class="stat-subtitle">{{ month_count }} transaction{{ month_count|pluralize }}</div>
+        </div>
+
+        <div class="stat-card info">
+            <div class="stat-header">
+                <span class="stat-label">This Year</span>
+                <div class="stat-icon">🗓️</div>
+            </div>
+            <div class="stat-value">${{ year_total|floatformat:2 }}</div>
+            <div class="stat-subtitle">{{ year_count }} transaction{{ year_count|pluralize }}</div>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="charts-grid">
+        <div class="chart-card">
+            <div class="chart-header">
+                <h3 class="chart-title">📈 Monthly Trend</h3>
+            </div>
+            <div class="chart-container">
+                <canvas id="monthlyChart"></canvas>
+            </div>
+        </div>
+
+        <div class="chart-card">
+            <div class="chart-header">
+                <h3 class="chart-title">🏷️ Top Tags</h3>
+            </div>
+            <div class="chart-container">
+                <canvas id="tagChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="charts-grid">
+        <div class="chart-card">
+            <div class="chart-header">
+                <h3 class="chart-title">💳 Payment Methods</h3>
+            </div>
+            <div class="chart-container">
+                <canvas id="paymentChart"></canvas>
+            </div>
+        </div>
+
+        <div class="chart-card">
+            <div class="chart-header">
+                <h3 class="chart-title">📊 Quick Stats</h3>
+            </div>
+            <div style="padding: 1rem;">
+                <div style="margin-bottom: 1.5rem;">
+                    <div style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 0.5rem;">Total Expenses</div>
+                    <div style="font-size: 1.5rem; font-weight: 700;">{{ total_expenses }}</div>
+                </div>
+                <div style="margin-bottom: 1.5rem;">
+                    <div style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 0.5rem;">Top Category</div>
+                    <div style="font-size: 1.25rem; font-weight: 600;">
+                        {% if top_tags %}
+                            {{ top_tags.0.0 }}
+                        {% else %}
+                            No data yet
+                        {% endif %}
                     </div>
-                    <div class="card-body">
-                        <div class="row g-3">
-                            {% for item in budget_analysis %}
-                                <div class="col-12 col-md-6 col-lg-4">
-                                    {% include 'expenses/includes/budget_progress.html' with category=item.category budget=item.budget spent=item.spent utilization=item.utilization %}
-                                </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Expenses -->
+    <div class="recent-section">
+        <div class="recent-header">
+            <h3>🕒 Recent Expenses</h3>
+            <a href="{% url 'expenses:expense_list' %}" class="btn-secondary" style="padding: 0.5rem 1rem;">
+                View All
+            </a>
+        </div>
+
+        {% if recent_expenses %}
+            {% for expense in recent_expenses %}
+            <div class="expense-item">
+                <div class="expense-info">
+                    <div class="expense-icon">💰</div>
+                    <div class="expense-details">
+                        <h4>{{ expense.description }}</h4>
+                        <div class="expense-meta">
+                            <span>{{ expense.date|date:"M d, Y" }}</span>
+                            {% if expense.payment_method %}
+                            <span>{{ expense.get_payment_method_display }}</span>
+                            {% endif %}
+                            {% for tag in expense.tags.all %}
+                            <span class="tag">{{ tag.name }}</span>
                             {% endfor %}
                         </div>
                     </div>
                 </div>
+                <div class="expense-amount">${{ expense.amount|floatformat:2 }}</div>
             </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-state">
+            <i class="fas fa-inbox"></i>
+            <p>No expenses yet. Start tracking your spending!</p>
         </div>
-    {% endif %}
+        {% endif %}
+    </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'expenses/js/expenses.js' %}"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize WebSocket for real-time updates
-    initializeWebSocket();
+    // Chart.js default config
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
+    Chart.defaults.font.family = 'Inter';
 
-    // Load monthly trend chart
-    loadMonthlyTrendChart();
+    const monthlyData = {{ monthly_data|safe }};
+    const tagData = {{ tag_stats|safe }};
+    const paymentData = {{ payment_stats|safe }};
 
-    // Refresh stats every 5 minutes
-    setInterval(function() {
-        refreshDashboardStats();
-    }, 300000); // 5 minutes
-});
-
-function loadMonthlyTrendChart() {
-    fetch('{% url "expenses:api_monthly_trend" %}?months=6')
-        .then(response => response.json())
-        .then(data => {
-            const ctx = document.getElementById('monthlyTrendChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: data.labels,
-                    datasets: [{
-                        label: '{% trans "Total Amount" %}',
-                        data: data.datasets[0].data,
-                        borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.4
-                    }]
+    // Monthly Trend Chart
+    const monthlyCtx = document.getElementById('monthlyChart').getContext('2d');
+    new Chart(monthlyCtx, {
+        type: 'line',
+        data: {
+            labels: monthlyData.map(d => d.month),
+            datasets: [{
+                label: 'Total Spent',
+                data: monthlyData.map(d => d.total),
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 5,
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#667eea',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#1e293b',
+                    titleColor: '#f1f5f9',
+                    bodyColor: '#cbd5e1',
+                    borderColor: '#334155',
+                    borderWidth: 1,
+                    padding: 12,
+                    displayColors: false,
+                    callbacks: {
+                        label: function(context) {
+                            return '$' + context.parsed.y.toFixed(2);
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.05)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value;
+                        }
+                    }
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            callbacks: {
-                                label: function(context) {
-                                    return `${context.dataset.label}: ${context.parsed.y.toLocaleString('en-US', {style: 'currency', currency: 'UGX'})}`;
-                                }
-                            }
+                x: {
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+
+    // Tag Doughnut Chart
+    if (tagData.length > 0) {
+        const tagCtx = document.getElementById('tagChart').getContext('2d');
+        new Chart(tagCtx, {
+            type: 'doughnut',
+            data: {
+                labels: tagData.map(t => t.name),
+                datasets: [{
+                    data: tagData.map(t => t.total),
+                    backgroundColor: [
+                        '#667eea', '#764ba2', '#f093fb', '#4facfe',
+                        '#43e97b', '#fa709a', '#fee140', '#30cfd0'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 15,
+                            font: { size: 11 }
                         }
                     },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return value.toLocaleString('en-US', {style: 'currency', currency: 'UGX'});
-                                }
+                    tooltip: {
+                        backgroundColor: '#1e293b',
+                        titleColor: '#f1f5f9',
+                        bodyColor: '#cbd5e1',
+                        borderColor: '#334155',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) {
+                                return context.label + ': $' + context.parsed.toFixed(2);
                             }
                         }
                     }
                 }
-            });
-        })
-        .catch(error => {
-            console.error('Error loading monthly trend chart:', error);
+            }
         });
-}
-
-function refreshDashboardStats() {
-    fetch('{% url "expenses:api_quick_stats" %}')
-        .then(response => response.json())
-        .then(data => {
-            // Update any dynamic stats if needed
-            console.log('Stats refreshed:', data);
-        })
-        .catch(error => {
-            console.error('Error refreshing stats:', error);
-        });
-}
-
-function initializeWebSocket() {
-    // WebSocket initialization for real-time updates
-    // This would connect to your WebSocket endpoint for live updates
-    console.log('WebSocket initialization would happen here');
-
-    // Example WebSocket connection (uncomment and configure when ready)
-    /*
-    const wsScheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsScheme}//${window.location.host}/ws/expenses/`;
-    const socket = new WebSocket(wsUrl);
-
-    socket.onmessage = function(e) {
-        const data = JSON.parse(e.data);
-        if (data.type === 'expense_update') {
-            showNotification(data.message);
-            refreshDashboardStats();
-        }
-    };
-    */
-}
-
-function showNotification(message) {
-    // Simple notification system
-    if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Expense Update', { body: message });
     }
 
-    // Fallback to console
-    console.log('Notification:', message);
-}
+    // Payment Method Bar Chart
+    if (paymentData.length > 0) {
+        const paymentCtx = document.getElementById('paymentChart').getContext('2d');
+        new Chart(paymentCtx, {
+            type: 'bar',
+            data: {
+                labels: paymentData.map(p => p.method),
+                datasets: [{
+                    label: 'Total',
+                    data: paymentData.map(p => p.total),
+                    backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                    borderColor: '#667eea',
+                    borderWidth: 2,
+                    borderRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1e293b',
+                        titleColor: '#f1f5f9',
+                        bodyColor: '#cbd5e1',
+                        borderColor: '#334155',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) {
+                                return '$' + context.parsed.y.toFixed(2);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value;
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Real-time updates every 30 seconds
+    setInterval(function() {
+        fetch('/expenses/api/quick-stats/')
+            .then(response => response.json())
+            .then(data => {
+                // Update today's total if element exists
+                const todayElement = document.querySelector('.stat-card:first-child .stat-value');
+                if (todayElement && data.today !== undefined) {
+                    todayElement.textContent = '$' + parseFloat(data.today).toFixed(2);
+                }
+            })
+            .catch(error => console.error('Error fetching stats:', error));
+    }, 30000);
+});
 </script>
 {% endblock %}

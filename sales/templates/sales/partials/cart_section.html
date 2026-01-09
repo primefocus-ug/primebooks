@@ -1,0 +1,125 @@
+{% load i18n %}
+<!-- Cart Section -->
+<div class="card cart-section">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="mb-0">
+                <i class="bi bi-cart3 me-2"></i>{% trans "Cart" %}
+                <span class="badge bg-primary ms-2" id="cartCount">0</span>
+            </h6>
+            <button type="button" class="btn btn-sm btn-outline-danger btn-with-shortcut"
+                    onclick="clearCart()" id="clearCartBtn"
+                    data-keyboard-hint="F12 or Ctrl+K">
+                <i class="bi bi-trash"></i> Clear
+                <span class="shortcut-hint">F12</span>
+            </button>
+        </div>
+
+        <div id="cartItems">
+            <div class="cart-empty">
+                <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
+                <p class="mt-2">{% trans "Cart is empty" %}</p>
+                <p class="small text-muted">{% trans "Add products or services from the left" %}</p>
+            </div>
+        </div>
+
+        <!-- Discount Section -->
+        <div class="discount-section" id="discountSection" style="display: none;">
+            <h6 class="mb-2"><i class="bi bi-percent me-2"></i>{% trans "Apply Discount" %}</h6>
+            <div class="discount-input-group">
+                <select class="form-select discount-type-select" id="discountType">
+                    <option value="percentage">{% trans "Percentage %" %}</option>
+                    <option value="amount">{% trans "Amount" %}</option>
+                </select>
+                <input type="number" class="form-control" id="discountValue"
+                       placeholder="0" min="0" step="0.01">
+                <button class="btn btn-primary" type="button" onclick="applyDiscount()">
+                    {% trans "Apply" %}
+                </button>
+            </div>
+        </div>
+
+        <!-- Cart Summary -->
+        <div id="cartSummary" style="display: none;">
+            <div class="cart-summary">
+                <div class="summary-row">
+                    <span>{% trans "Subtotal:" %}</span>
+                    <span id="summarySubtotal">0 UGX</span>
+                </div>
+                {% if efris_and_vat_enabled %}
+                <div class="summary-row">
+                    <span>{% trans "Tax:" %}</span>
+                    <span id="summaryTax">0 UGX</span>
+                </div>
+                {% endif %}
+                <div class="summary-row">
+                    <span>{% trans "Discount:" %}</span>
+                    <span id="summaryDiscount">0 UGX</span>
+                </div>
+                <div class="summary-row summary-total">
+                    <strong>{% trans "Total:" %}</strong>
+                    <strong id="summaryTotal">0 UGX</strong>
+                </div>
+            </div>
+
+            <!-- Payment Method -->
+            <div class="mt-3">
+                <label class="form-label">{% trans "Payment Method" %}</label>
+                <select name="payment_method" class="form-select" id="paymentMethod" required
+                        onchange="validatePaymentMethod()">
+                    <option value="CASH">{% trans "Cash" %}</option>
+                    <option value="CARD">{% trans "Card" %}</option>
+                    <option value="MOBILE_MONEY">{% trans "Mobile Money" %}</option>
+                    <option value="BANK_TRANSFER">{% trans "Bank Transfer" %}</option>
+                    <option value="CREDIT">{% trans "Credit" %}</option>
+                </select>
+
+                <!-- Payment Status for Credit -->
+                <div class="payment-status" id="creditPaymentStatus" style="display: none;">
+                    <i class="bi bi-clock-history text-warning"></i>
+                    <small>{% trans "Payment will be marked as pending" %}</small>
+                </div>
+
+                <!-- Credit Limit Warning -->
+                <div id="creditLimitWarning" class="alert alert-danger mt-2 py-2" style="display: none;">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <small id="creditLimitWarningText"></small>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="d-grid gap-2 mt-3">
+                <button type="button" class="btn btn-success btn-lg btn-with-shortcut"
+                        id="completeSaleBtn" onclick="completeSale()" disabled
+                        data-keyboard-hint="F3 or Ctrl+Enter">
+                    <i class="bi bi-check-circle me-2"></i>
+                    Complete Sale
+                    <span class="shortcut-hint">F3</span>
+                </button>
+
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-warning flex-fill btn-with-shortcut"
+                            onclick="saveAsDraft()" id="saveDraftBtn"
+                            data-keyboard-hint="F8 or Ctrl+S">
+                        <i class="bi bi-save me-2"></i>Save Draft
+                        <span class="shortcut-hint">F8</span>
+                    </button>
+
+                    <!-- Print Button -->
+                    <button type="button" class="btn btn-outline-danger flex-fill btn-with-shortcut"
+                            onclick="printReceiptPreview()"
+                            data-keyboard-hint="F10 or Ctrl+P">
+                        <i class="bi bi-printer me-2"></i>Print
+                        <span class="shortcut-hint">F10</span>
+                    </button>
+                </div>
+
+                {% if perms.sales.view_sale %}
+                <a href="{% url 'sales:sales_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle me-2"></i>{% trans "Cancel (Esc)" %}
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>

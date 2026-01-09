@@ -478,237 +478,199 @@ def export_combined_report(request, report_types, filters):
         logger.error(f"Error exporting combined report: {e}", exc_info=True)
         return HttpResponse(f"Error exporting report: {str(e)}", status=500)
 
+
 @login_required
-@permission_required('expenses.view_expense')
+@permission_required('expenses.view_expense', raise_exception=False)
 def expense_report(request):
-    """Comprehensive expense tracking report"""
+    """Comprehensive expense tracking report - Updated for simplified models"""
+    from .forms import ReportFilterForm
 
     form = ReportFilterForm(request.GET or None, user=request.user)
-    stores = get_user_accessible_stores(request.user)
 
     expense_data = []
     summary = {}
     tag_breakdown = []
+    payment_breakdown = []
     monthly_trend = []
 
     if form.is_valid():
         start_date = form.cleaned_data.get('start_date')
         end_date = form.cleaned_data.get('end_date')
-        store_filter = form.cleaned_data.get('store')
 
-        min_amount = request.GET.get('min_amount')
-        max_amount = request.GET.get('max_amount')
+        # Additional expense-specific filters
+        payment_method_filter = request.GET.get('payment_method')
         tag_filter = request.GET.get('tags')
 
-        if store_filter and store_filter not in stores:
-            messages.error(request, "You don't have access to the selected store.")
-            return redirect('reports:expense_report')
+        # Include schema in cache key
+        try:
+            schema_name = connection.schema_name
+        except:
+            schema_name = 'public'
 
-        schema_name = connection.schema_name if hasattr(connection, 'schema_name') else 'default'
-        cache_key = f"expense_report_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}_{min_amount}_{max_amount}_{tag_filter}"
+        cache_key = f'expense_report_{schema_name}_{request.user.id}_{start_date}_{end_date}_{payment_method_filter}_{tag_filter}'
+        cached_result = cache.get(cache_key)
 
-        cached = cache.get(cache_key)
-
-        if cached and not request.GET.get('refresh'):
-            expense_data = cached['expense_data']
-            summary = cached['summary']
-            tag_breakdown = cached['tag_breakdown']
-            monthly_trend = cached['monthly_trend']
+        if cached_result and not request.GET.get('refresh'):
+            expense_data = cached_result['expense_data']
+            summary = cached_result['summary']
+            tag_breakdown = cached_result['tag_breakdown']
+            payment_breakdown = cached_result['payment_breakdown']
+            monthly_trend = cached_result['monthly_trend']
         else:
-            expenses = Expense.objects.filter(user=request.user)
+            try:
+                from .models import SavedReport
+                saved_report = SavedReport(
+                    name='Expense Report',
+                    report_type='EXPENSE_REPORT',
+                    created_by=request.user
+                )
+                saved_report.save()
+            except:
+                saved_report = None
 
-            if start_date:
-                expenses = expenses.filter(date__gte=start_date)
-            if end_date:
-                expenses = expenses.filter(date__lte=end_date)
-            if min_amount:
-                expenses = expenses.filter(amount__gte=min_amount)
-            if max_amount:
-                expenses = expenses.filter(amount__lte=max_amount)
-            if tag_filter:
-                tags = [t.strip() for t in tag_filter.split(',')]
-                expenses = expenses.filter(tags__name__in=tags).distinct()
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
 
-            expense_data = list(
-                expenses.select_related('user').prefetch_related('tags')[:100]
-            )
-
-            summary = {
-                'total_amount': expenses.aggregate(total=Sum('amount'))['total'] or 0,
-                'avg_amount': expenses.aggregate(avg=Avg('amount'))['avg'] or 0,
-                'count': expenses.count(),
-                'min_amount': expenses.aggregate(min=Min('amount'))['min'] or 0,
-                'max_amount': expenses.aggregate(max=Max('amount'))['max'] or 0,
+            filters = {
+                'start_date': start_date,
+                'end_date': end_date,
+                'payment_method': payment_method_filter,
+                'tags': tag_filter,
             }
 
-            # Tag breakdown (simple)
-            tag_counter = Counter()
-            for expense in expenses.prefetch_related('tags'):
-                for tag in expense.tags.all():
-                    tag_counter[tag.name] += 1
+            report_data = generator.generate(**filters)
 
-            tag_breakdown = [
-                {'tag_name': name, 'count': count}
-                for name, count in tag_counter.items()
-            ]
-
-            monthly_trend = list(
-                expenses.annotate(month=TruncMonth('date'))
-                .values('month')
-                .annotate(
-                    total=Sum('amount'),
-                    count=Count('id')
-                )
-                .order_by('month')
-            )
+            expense_data = report_data.get('expenses', [])
+            summary = report_data.get('summary', {})
+            tag_breakdown = report_data.get('tag_breakdown', [])
+            payment_breakdown = report_data.get('payment_breakdown', [])
+            monthly_trend = report_data.get('monthly_trend', [])
 
             cache.set(cache_key, {
                 'expense_data': expense_data,
                 'summary': summary,
                 'tag_breakdown': tag_breakdown,
-                'monthly_trend': monthly_trend,
+                'payment_breakdown': payment_breakdown,
+                'monthly_trend': monthly_trend
             }, 300)
 
+    # Prepare chart data
     tag_chart_data = {
-        'labels': [t['tag_name'] for t in tag_breakdown[:10]],
-        'amounts': [t['count'] for t in tag_breakdown[:10]],
+        'labels': [item['tag_name'] for item in tag_breakdown[:10]],
+        'amounts': [float(item['total_amount']) for item in tag_breakdown[:10]],
+    }
+
+    payment_chart_data = {
+        'labels': [item['payment_method'] for item in payment_breakdown],
+        'amounts': [float(item['total_amount']) for item in payment_breakdown],
     }
 
     monthly_chart_data = {
-        'labels': [m['month'].strftime('%b %Y') for m in monthly_trend],
-        'amounts': [float(m['total'] or 0) for m in monthly_trend],
-        'counts': [m['count'] for m in monthly_trend],
+        'labels': [item['month'] for item in monthly_trend],
+        'amounts': [float(item['total']) for item in monthly_trend],
+        'counts': [item['count'] for item in monthly_trend],
     }
-
-    # Tag suggestions
-    all_tags = []
-    for expense in Expense.objects.filter(user=request.user).prefetch_related('tags'):
-        all_tags.extend(tag.name for tag in expense.tags.all())
-
-    most_common_tags = Counter(all_tags).most_common(10)
 
     context = {
         'form': form,
         'expense_data': expense_data,
         'summary': summary,
+        'tag_breakdown': tag_breakdown,
+        'payment_breakdown': payment_breakdown,
+        'monthly_trend': monthly_trend,
         'tag_chart_data': json.dumps(tag_chart_data),
+        'payment_chart_data': json.dumps(payment_chart_data),
         'monthly_chart_data': json.dumps(monthly_chart_data),
-        'stores': stores,
+        'selected_payment_method': request.GET.get('payment_method', ''),
         'selected_tags': request.GET.get('tags', ''),
-        'most_common_tags': most_common_tags,
+        'payment_method_choices': Expense.PAYMENT_METHODS,
     }
 
     return render(request, 'reports/expense_report.html', context)
 
 
 @login_required
-@permission_required('expenses.view_expense')
+@permission_required('expenses.view_expense', raise_exception=False)
 def expense_analytics(request):
-    """Expense analytics and insights"""
+    """Expense analytics and insights report - Updated for simplified models"""
+    from .forms import ReportFilterForm
 
     form = ReportFilterForm(request.GET or None, user=request.user)
-    stores = get_user_accessible_stores(request.user)
+
     analytics_data = {}
 
     if form.is_valid():
         start_date = form.cleaned_data.get('start_date')
         end_date = form.cleaned_data.get('end_date')
-        store_filter = form.cleaned_data.get('store')
         tag_filter = request.GET.get('tags')
 
-        if store_filter and store_filter not in stores:
-            messages.error(request, "You don't have access to the selected store.")
-            return redirect('reports:expense_analytics')
+        # Include schema in cache key
+        try:
+            schema_name = connection.schema_name
+        except:
+            schema_name = 'public'
 
-        schema_name = connection.schema_name if hasattr(connection, 'schema_name') else 'default'
-        cache_key = f"expense_analytics_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}_{tag_filter}"
+        cache_key = f'expense_analytics_{schema_name}_{request.user.id}_{start_date}_{end_date}_{tag_filter}'
+        cached_result = cache.get(cache_key)
 
-        cached = cache.get(cache_key)
-
-        if cached and not request.GET.get('refresh'):
-            analytics_data = cached['analytics_data']
+        if cached_result and not request.GET.get('refresh'):
+            analytics_data = cached_result['analytics_data']
         else:
-            expenses = Expense.objects.filter(user=request.user)
-
-            if start_date:
-                expenses = expenses.filter(date__gte=start_date)
-            if end_date:
-                expenses = expenses.filter(date__lte=end_date)
-            if tag_filter:
-                tags = [t.strip() for t in tag_filter.split(',')]
-                expenses = expenses.filter(tags__name__in=tags).distinct()
-
-            monthly_data = list(
-                expenses.annotate(month=TruncMonth('date'))
-                .values('month')
-                .annotate(
-                    total=Sum('amount'),
-                    count=Count('id')
+            try:
+                from .models import SavedReport
+                saved_report = SavedReport(
+                    name='Expense Analytics',
+                    report_type='EXPENSE_ANALYTICS',
+                    created_by=request.user
                 )
-                .order_by('month')
+                saved_report.save()
+            except:
+                saved_report = None
+
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
+
+            report_data = generator.generate(
+                start_date=start_date,
+                end_date=end_date,
+                tags=tag_filter
             )
 
-            day_of_week_analysis = list(
-                expenses.annotate(day=ExtractWeekDay('date'))
-                .values('day')
-                .annotate(
-                    total=Sum('amount'),
-                    count=Count('id')
-                )
-                .order_by('day')
-            )
+            analytics_data = report_data
 
-            analytics_data = {
-                'monthly_data': monthly_data,
-                'top_tags': get_top_tags(expenses),
-                'day_of_week_analysis': day_of_week_analysis,
-                'total_expenses': expenses.aggregate(total=Sum('amount'))['total'] or 0,
-                'avg_expense': expenses.aggregate(avg=Avg('amount'))['avg'] or 0,
-                'total_count': expenses.count(),
-                'max_expense': expenses.aggregate(max=Max('amount'))['max'] or 0,
-                'min_expense': expenses.aggregate(min=Min('amount'))['min'] or 0,
-                'recent_expenses': list(expenses.select_related('user').prefetch_related('tags').order_by('-date')[:10]),
-            }
+            cache.set(cache_key, {
+                'analytics_data': analytics_data
+            }, 300)
 
-            cache.set(cache_key, {'analytics_data': analytics_data}, 300)
+    # Prepare chart data
+    monthly_chart = {
+        'labels': [item['month'] for item in analytics_data.get('monthly_data', [])],
+        'amounts': [float(item['total']) for item in analytics_data.get('monthly_data', [])],
+        'counts': [item['count'] for item in analytics_data.get('monthly_data', [])],
+    }
 
-        # Prepare chart data
-        monthly_chart = {
-            'labels': [m['month'].strftime('%b %Y') if m['month'] else 'Unknown' for m in analytics_data['monthly_data']],
-            'amounts': [float(m['total'] or 0) for m in analytics_data['monthly_data']],
-            'counts': [m['count'] for m in analytics_data['monthly_data']],
-        }
+    tag_chart = {
+        'labels': [item['tag_name'] for item in analytics_data.get('top_tags', [])],
+        'amounts': [float(item['total']) for item in analytics_data.get('top_tags', [])],
+    }
 
-        tag_chart = {
-            'labels': [t['tag_name'] for t in analytics_data['top_tags'][:10]],
-            'amounts': [float(t['total']) for t in analytics_data['top_tags'][:10]],
-        }
+    payment_chart = {
+        'labels': [item['payment_method'] for item in analytics_data.get('payment_methods', [])],
+        'amounts': [float(item['total']) for item in analytics_data.get('payment_methods', [])],
+    }
 
-        day_chart = {
-            'labels': [get_day_name(d['day']) for d in analytics_data['day_of_week_analysis']],
-            'amounts': [float(d['total'] or 0) for d in analytics_data['day_of_week_analysis']],
-        }
+    day_of_week_chart = {
+        'labels': [item['day'] for item in analytics_data.get('day_of_week_analysis', [])],
+        'amounts': [float(item['total']) for item in analytics_data.get('day_of_week_analysis', [])],
+    }
 
-        context = {
-            'form': form,
-            'analytics_data': analytics_data,
-            'monthly_chart': json.dumps(monthly_chart),
-            'tag_chart': json.dumps(tag_chart),
-            'day_of_week_chart': json.dumps(day_chart),
-            'stores': stores,
-            'selected_tags': request.GET.get('tags', ''),
-        }
-
-        return render(request, 'reports/expense_analytics.html', context)
-
-    # If form is not valid or not submitted, render empty state
     context = {
         'form': form,
-        'stores': stores,
-        'analytics_data': {},
-        'monthly_chart': json.dumps({'labels': [], 'amounts': [], 'counts': []}),
-        'tag_chart': json.dumps({'labels': [], 'amounts': []}),
-        'day_of_week_chart': json.dumps({'labels': [], 'amounts': []}),
+        'analytics_data': analytics_data,
+        'monthly_chart': json.dumps(monthly_chart),
+        'tag_chart': json.dumps(tag_chart),
+        'payment_chart': json.dumps(payment_chart),
+        'day_of_week_chart': json.dumps(day_of_week_chart),
         'selected_tags': request.GET.get('tags', ''),
     }
 

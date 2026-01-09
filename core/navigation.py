@@ -134,7 +134,7 @@ NAVIGATION_ITEMS = [
         name="Create Expense",
         url_name="expenses:expense_create",
         icon="bi bi-plus-circle",
-        permission="expenses.add_expense",
+        permission="expenses.expense_create",
         css_class="nav-highlight-danger"
     ),
     NavigationItem(
@@ -526,10 +526,17 @@ NAVIGATION_ITEMS = [
             ),
             NavigationItem(
                 name="Reports",
-                url_name="expenses:reports",
+                url_name="expenses:analytics",
                 icon="bi bi-file-earmark-bar-graph",
                 permission="expenses.view_expense",
             ),
+            NavigationItem(
+                name="Budget",
+                url_name="expenses:budget_list",
+                icon="bi bi-file-earmark-bar-graph",
+                permission="expenses.view_budget",
+            ),
+
 
         ],),
     NavigationItem(

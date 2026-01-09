@@ -4092,9 +4092,9 @@ def export_stock_pdf(queryset, filters):
     for stock in queryset[:50]:  # Limit to first 50 records for PDF
         if stock.quantity == 0:
             status = 'Out of Stock'
-        elif stock.quantity <= stock.reorder_level:
+        elif stock.quantity <= stock.low_stock_threshold:
             status = 'Low Stock'
-        elif stock.quantity <= stock.reorder_level * 2:
+        elif stock.quantity <= stock.low_stock_threshold * 2:
             status = 'Medium'
         else:
             status = 'Good'
@@ -4104,7 +4104,7 @@ def export_stock_pdf(queryset, filters):
             stock.product.sku,
             stock.store.name[:15] + ('...' if len(stock.store.name) > 15 else ''),
             f"{stock.quantity:.2f}",
-            f"{stock.reorder_level:.2f}",
+            f"{stock.low_stock_threshold:.2f}",
             status
         ])
 
@@ -4401,6 +4401,19 @@ class StockMovementCreateView(LoginRequiredMixin, PermissionRequiredMixin, Creat
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
         return kwargs
+
+    def get_initial(self):
+        initial = super().get_initial()
+        stock_pk = self.kwargs.get('stock_pk') or self.request.GET.get('stock')
+        if stock_pk:
+            try:
+                stock = Stock.objects.get(pk=stock_pk)
+                initial['product'] = stock.product
+                initial['store'] = stock.store
+                initial['quantity'] = stock.quantity  # <-- prefill quantity
+            except Stock.DoesNotExist:
+                logger.warning(f"Stock pk {stock_pk} not found for prefill")
+        return initial
 
     def get_context_data(self, **kwargs):
         """Enhanced context data for movement form"""
@@ -6490,59 +6503,46 @@ def stock_details_ajax(request, stock_id):
     """AJAX endpoint to get detailed stock information for the modal"""
     try:
         stock = Stock.objects.select_related(
-            'product',
-            'product__category',
-            'store'
+            'product', 'product__category', 'store'
         ).get(id=stock_id)
 
-        # Get recent movements for this stock item
-        recent_movements = StockMovement.objects.filter(
-            product=stock.product,
-            store=stock.store
-        ).select_related('created_by').order_by('-created_at')[:10]
+        # Use model's get_recent_movements
+        recent_movements = stock.get_recent_movements(days=30)[:10]
 
-        movements_data = []
-        for movement in recent_movements:
-            movements_data.append({
-                'date': movement.created_at.strftime('%Y-%m-%d %H:%M'),
-                'type': movement.get_movement_type_display(),
-                'quantity': float(movement.quantity),
-                'reference': movement.reference or '',
-                'created_by': movement.created_by.get_full_name() or movement.created_by.username
-            })
+        movements_data = [
+            {
+                'date': m.created_at.strftime('%Y-%m-%d %H:%M'),
+                'type': m.get_movement_type_display(),
+                'quantity': float(m.quantity),
+                'reference': m.reference or '',
+                'created_by': m.created_by.get_full_name() or m.created_by.username
+            }
+            for m in recent_movements
+        ]
 
-        # Prepare the response data
         data = {
             'success': True,
-            'product_name': stock.product.name,
-            'product_sku': stock.product.sku,
+            'product_name': stock.product.name or 'Unnamed Product',
+            'product_sku': stock.product.sku or 'No SKU',
             'category': stock.product.category.name if stock.product.category else 'No Category',
-            'unit': stock.product.unit_of_measure,
-            'store_name': stock.store.name,
+            'unit': getattr(stock.product, 'unit_of_measure', 'N/A'),
+            'store_name': stock.store.name if stock.store else 'No Store',
             'current_stock': float(stock.quantity),
             'reorder_level': float(stock.low_stock_threshold),
             'last_updated': stock.last_updated.strftime('%Y-%m-%d %H:%M') if stock.last_updated else 'Never',
             'recent_movements': movements_data,
-            'stock_percentage': _calculate_stock_percentage(stock.quantity, stock.low_stock_threshold),
-            'status': 'Out of Stock' if stock.quantity == 0 else
-            'Critical' if stock.quantity <= stock.low_stock_threshold / 2 else
-            'Low Stock' if stock.quantity <= stock.low_stock_threshold else 'Adequate'
+            'stock_percentage': stock.stock_percentage,
+            'status': stock.status,
         }
 
         return JsonResponse(data)
 
     except Stock.DoesNotExist:
-        return JsonResponse({
-            'success': False,
-            'error': 'Stock item not found'
-        }, status=404)
-
+        return JsonResponse({'success': False, 'error': 'Stock item not found'}, status=404)
     except Exception as e:
         logger.error(f"Error fetching stock details: {str(e)}", exc_info=True)
-        return JsonResponse({
-            'success': False,
-            'error': 'Failed to fetch stock details'
-        }, status=500)
+        return JsonResponse({'success': False, 'error': 'Failed to fetch stock details'}, status=500)
+
 
 
 def _calculate_stock_percentage(quantity, threshold):

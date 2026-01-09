@@ -5,332 +5,899 @@
 
 {% block extra_css %}
 <style>
-    .expense-form-container {
-        max-width: 700px;
-        margin: 2rem auto;
+    :root {
+        --form-card-bg: #ffffff;
+        --form-input-bg: #f8fafc;
+        --form-border: #e2e8f0;
+        --form-text-primary: #1e293b;
+        --form-text-secondary: #64748b;
+        --form-text-tertiary: #94a3b8;
+        --form-hover-bg: #f1f5f9;
+    }
+
+    [data-theme='dark'] {
+        --form-card-bg: #1e293b;
+        --form-input-bg: #0f172a;
+        --form-border: rgba(255, 255, 255, 0.1);
+        --form-text-primary: #f1f5f9;
+        --form-text-secondary: #94a3b8;
+        --form-text-tertiary: #64748b;
+        --form-hover-bg: rgba(255, 255, 255, 0.05);
+    }
+
+    .form-container {
         padding: 2rem;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        max-width: 900px;
+        margin: 0 auto;
+    }
+
+    .form-header {
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+
+    .form-header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .form-header p {
+        color: var(--form-text-secondary);
+        font-size: 1.125rem;
+    }
+
+    .form-card {
+        background: var(--form-card-bg);
+        border-radius: 20px;
+        padding: 2.5rem;
+        border: 1px solid var(--form-border);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+    }
+
+    [data-theme='dark'] .form-card {
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     }
 
     .form-group {
-        margin-bottom: 1.2rem;
+        margin-bottom: 2rem;
     }
 
     .form-label {
         display: block;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.75rem;
         font-weight: 600;
-        color: #333;
+        color: var(--form-text-primary);
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
 
-    .form-control {
+    .form-label.required::after {
+        content: " *";
+        color: #f87171;
+    }
+
+    .form-input {
         width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
+        padding: 1rem 1.25rem;
+        background: var(--form-input-bg);
+        border: 2px solid var(--form-border);
+        border-radius: 12px;
+        color: var(--form-text-primary);
         font-size: 1rem;
-        transition: border-color 0.2s;
+        transition: all 0.3s;
+        font-family: 'Inter', sans-serif;
     }
 
-    .form-control:focus {
+    .form-input:focus {
         outline: none;
-        border-color: #3498db;
-        box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        border-color: #667eea;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        background: var(--form-input-bg);
     }
 
-    .btn-container {
+    .form-input::placeholder {
+        color: var(--form-text-tertiary);
+    }
+
+    .form-input.large {
+        font-size: 2rem;
+        font-weight: 700;
+        text-align: center;
+        padding: 1.5rem;
+    }
+
+    textarea.form-input {
+        resize: vertical;
+        min-height: 100px;
+    }
+
+    .input-icon {
+        position: relative;
+    }
+
+    .input-icon i {
+        position: absolute;
+        left: 1.25rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--form-text-tertiary);
+        font-size: 1.25rem;
+    }
+
+    .input-icon .form-input {
+        padding-left: 3.5rem;
+    }
+
+    /* Tag Input */
+    .tag-input-container {
+        position: relative;
+    }
+
+    .tag-pills {
         display: flex;
-        gap: 1rem;
-        margin-top: 2rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
     }
 
-    .btn {
-        padding: 0.75rem 2rem;
+    .tag-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+
+    .tag-pill button {
+        background: none;
         border: none;
-        border-radius: 4px;
+        color: white;
+        cursor: pointer;
         font-size: 1rem;
+        padding: 0;
+        line-height: 1;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+    }
+
+    .tag-pill button:hover {
+        opacity: 1;
+    }
+
+    .tag-suggestions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+    }
+
+    .tag-suggestion {
+        padding: 0.5rem 1rem;
+        background: rgba(102, 126, 234, 0.1);
+        color: #818cf8;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 2px solid transparent;
+    }
+
+    .tag-suggestion:hover {
+        background: rgba(102, 126, 234, 0.2);
+        border-color: #667eea;
+    }
+
+    /* File Upload */
+    .file-upload {
+        border: 2px dashed var(--form-border);
+        border-radius: 12px;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+        position: relative;
+    }
+
+    .file-upload:hover {
+        border-color: #667eea;
+        background: rgba(102, 126, 234, 0.05);
+    }
+
+    .file-upload input[type="file"] {
+        position: absolute;
+        opacity: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+    }
+
+    .file-upload-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .file-upload-text {
+        color: var(--form-text-secondary);
+    }
+
+    .file-preview {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem;
+        background: rgba(102, 126, 234, 0.1);
+        border-radius: 12px;
+        margin-top: 1rem;
+    }
+
+    .file-preview img {
+        width: 60px;
+        height: 60px;
+        object-fit: cover;
+        border-radius: 8px;
+    }
+
+    .file-preview-info {
+        flex: 1;
+    }
+
+    .file-preview-name {
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+        color: var(--form-text-primary);
+    }
+
+    .file-preview-size {
+        font-size: 0.875rem;
+        color: var(--form-text-tertiary);
+    }
+
+    .file-preview-remove {
+        background: rgba(239, 68, 68, 0.2);
+        color: #f87171;
+        border: none;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
         cursor: pointer;
         transition: all 0.2s;
     }
 
-    .btn-primary {
-        background: #3498db;
-        color: white;
+    .file-preview-remove:hover {
+        background: rgba(239, 68, 68, 0.3);
     }
 
-    .btn-primary:hover {
-        background: #2980b9;
+    /* Payment Method Selector */
+    .payment-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
     }
 
-    .btn-secondary {
-        background: #95a5a6;
-        color: white;
+    .payment-option {
+        position: relative;
     }
 
-    .shortcut-hint {
-        position: fixed;
-        bottom: 1rem;
-        right: 1rem;
-        background: #2c3e50;
-        color: white;
-        padding: 1rem;
-        border-radius: 4px;
-        font-size: 0.85rem;
-        opacity: 0.9;
-    }
-
-    .shortcut-hint kbd {
-        background: #34495e;
-        padding: 0.2rem 0.5rem;
-        border-radius: 3px;
-        font-family: monospace;
-    }
-
-    .receipt-preview {
-        margin-top: 0.5rem;
-        max-width: 200px;
-    }
-
-    .receipt-preview img {
-        max-width: 100%;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-    }
-
-    .tag-suggestions {
+    .payment-option input {
         position: absolute;
-        background: white;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        max-height: 200px;
-        overflow-y: auto;
-        z-index: 1000;
-        display: none;
+        opacity: 0;
     }
 
-    .tag-suggestion-item {
-        padding: 0.5rem 1rem;
+    .payment-label {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 1.5rem 1rem;
+        background: var(--form-input-bg);
+        border: 2px solid var(--form-border);
+        border-radius: 12px;
         cursor: pointer;
+        transition: all 0.3s;
+        text-align: center;
+        color: var(--form-text-primary);
     }
 
-    .tag-suggestion-item:hover {
-        background: #f0f0f0;
+    .payment-label:hover {
+        background: rgba(102, 126, 234, 0.1);
+        border-color: #667eea;
+    }
+
+    .payment-option input:checked + .payment-label {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-color: #667eea;
+        color: white;
+    }
+
+    .payment-icon {
+        font-size: 2rem;
+    }
+
+    .payment-name {
+        font-weight: 600;
+        font-size: 0.875rem;
+    }
+
+    /* Form Actions */
+    .form-actions {
+        display: flex;
+        gap: 1rem;
+        margin-top: 2.5rem;
+    }
+
+    .btn-submit {
+        flex: 1;
+        padding: 1.25rem 2rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-size: 1.125rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .btn-submit:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 15px 35px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-submit:active {
+        transform: translateY(0);
+    }
+
+    .btn-submit::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.3);
+        transform: translate(-50%, -50%);
+        transition: width 0.6s, height 0.6s;
+    }
+
+    .btn-submit:hover::before {
+        width: 300px;
+        height: 300px;
+    }
+
+    .btn-cancel {
+        padding: 1.25rem 2rem;
+        background: rgba(239, 68, 68, 0.1);
+        color: #f87171;
+        border: 2px solid #f87171;
+        border-radius: 12px;
+        font-size: 1.125rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .btn-cancel:hover {
+        background: rgba(239, 68, 68, 0.2);
+    }
+
+    /* Shortcuts Panel */
+    .shortcuts-panel {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        background: var(--form-card-bg);
+        border-radius: 12px;
+        padding: 1rem 1.5rem;
+        border: 1px solid var(--form-border);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        opacity: 0.8;
+        transition: opacity 0.2s;
+    }
+
+    [data-theme='dark'] .shortcuts-panel {
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .shortcuts-panel:hover {
+        opacity: 1;
+    }
+
+    .shortcuts-title {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.75rem;
+        color: var(--form-text-secondary);
+    }
+
+    .shortcut-item {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+        color: var(--form-text-primary);
+    }
+
+    .shortcut-key {
+        background: rgba(102, 126, 234, 0.2);
+        color: #818cf8;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-family: monospace;
+        font-weight: 600;
+    }
+
+    /* Animations */
+    @keyframes slideInUp {
+        from {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .form-card {
+        animation: slideInUp 0.5s ease-out;
+    }
+
+    .form-group {
+        animation: slideInUp 0.5s ease-out;
+        animation-fill-mode: both;
+    }
+
+    .form-group:nth-child(1) { animation-delay: 0.1s; }
+    .form-group:nth-child(2) { animation-delay: 0.15s; }
+    .form-group:nth-child(3) { animation-delay: 0.2s; }
+    .form-group:nth-child(4) { animation-delay: 0.25s; }
+    .form-group:nth-child(5) { animation-delay: 0.3s; }
+    .form-group:nth-child(6) { animation-delay: 0.35s; }
+
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+        .form-container {
+            padding: 1rem;
+        }
+
+        .form-card {
+            padding: 1.5rem;
+        }
+
+        .form-actions {
+            flex-direction: column;
+        }
+
+        .shortcuts-panel {
+            display: none;
+        }
+
+        .payment-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="expense-form-container">
-    <h1>{% if expense %}Edit{% else %}Add New{% endif %} Expense</h1>
+<div class="form-container">
+    <div class="form-header">
+        <h1>{% if expense %}✏️ Edit Expense{% else %}➕ Add New Expense{% endif %}</h1>
+        <p>{% if expense %}Update your expense details{% else %}Track your spending in seconds{% endif %}</p>
+    </div>
 
-    <form method="post" enctype="multipart/form-data" id="expenseForm">
+    <form method="post" enctype="multipart/form-data" id="expenseForm" class="form-card">
         {% csrf_token %}
 
+        <!-- Amount (Big and Prominent) -->
         <div class="form-group">
-            <label for="id_amount" class="form-label">Amount *</label>
-            {{ form.amount }}
-            {% if form.amount.errors %}
-                <div class="error">{{ form.amount.errors }}</div>
-            {% endif %}
+            <label for="id_amount" class="form-label required">Amount</label>
+            <div class="input-icon">
+                <i class="fas fa-dollar-sign"></i>
+                <input type="number"
+                       name="amount"
+                       id="id_amount"
+                       class="form-input large"
+                       placeholder="0.00"
+                       step="0.01"
+                       min="0.01"
+                       value="{{ form.amount.value|default:'' }}"
+                       required
+                       autofocus>
+            </div>
         </div>
 
+        <!-- Description -->
         <div class="form-group">
-            <label for="id_description" class="form-label">Description *</label>
-            {{ form.description }}
-            {% if form.description.errors %}
-                <div class="error">{{ form.description.errors }}</div>
-            {% endif %}
+            <label for="id_description" class="form-label required">Description</label>
+            <input type="text"
+                   name="description"
+                   id="id_description"
+                   class="form-input"
+                   placeholder="e.g., Grocery shopping at Walmart"
+                   value="{{ form.description.value|default:'' }}"
+                   maxlength="500"
+                   required>
         </div>
 
+        <!-- Date -->
         <div class="form-group">
-            <label for="id_date" class="form-label">Date *</label>
-            {{ form.date }}
-            {% if form.date.errors %}
-                <div class="error">{{ form.date.errors }}</div>
-            {% endif %}
+            <label for="id_date" class="form-label required">Date</label>
+            <input type="date"
+                   name="date"
+                   id="id_date"
+                   class="form-input"
+                   value="{{ form.date.value|default:'' }}"
+                   required>
         </div>
 
+        <!-- Tags -->
         <div class="form-group">
             <label for="id_tags" class="form-label">Tags</label>
-            {{ form.tags }}
-            <div id="tagSuggestions" class="tag-suggestions"></div>
-            <small style="color: #666;">Separate tags with commas (e.g., food, groceries, weekly)</small>
-            {% if form.tags.errors %}
-                <div class="error">{{ form.tags.errors }}</div>
-            {% endif %}
-        </div>
-
-        <div class="form-group">
-            <label for="id_receipt" class="form-label">Receipt (optional)</label>
-            {{ form.receipt }}
-            {% if expense and expense.receipt %}
-                <div class="receipt-preview">
-                    <p>Current: <a href="{{ expense.receipt.url }}" target="_blank">{{ expense.receipt_filename }}</a></p>
+            <div class="tag-input-container">
+                <div class="tag-pills" id="tagPills">
+                    {% if expense %}
+                        {% for tag in expense.tags.all %}
+                        <span class="tag-pill">
+                            {{ tag.name }}
+                            <button type="button" onclick="removeTag('{{ tag.name }}')">×</button>
+                        </span>
+                        {% endfor %}
+                    {% endif %}
                 </div>
-            {% endif %}
-            {% if form.receipt.errors %}
-                <div class="error">{{ form.receipt.errors }}</div>
-            {% endif %}
+                <input type="text"
+                       id="tagInput"
+                       class="form-input"
+                       placeholder="Add tags (press Enter or comma to add)"
+                       autocomplete="off">
+                <input type="hidden" name="tags" id="tagsHidden" value="{{ form.tags.value|default:'' }}">
+
+                <div class="tag-suggestions" id="tagSuggestions">
+                    {% for tag in recent_tags %}
+                    <span class="tag-suggestion" onclick="addTag('{{ tag }}')">{{ tag }}</span>
+                    {% endfor %}
+                </div>
+            </div>
         </div>
 
+        <!-- Payment Method -->
         <div class="form-group">
-            <label for="id_notes" class="form-label">Notes (optional)</label>
-            {{ form.notes }}
-            {% if form.notes.errors %}
-                <div class="error">{{ form.notes.errors }}</div>
-            {% endif %}
+            <label class="form-label">Payment Method</label>
+            <div class="payment-grid">
+                {% for value, label in form.payment_method.field.choices %}
+                <div class="payment-option">
+                    <input type="radio"
+                           name="payment_method"
+                           value="{{ value }}"
+                           id="payment_{{ value }}"
+                           {% if form.payment_method.value == value %}checked{% endif %}>
+                    <label for="payment_{{ value }}" class="payment-label">
+                        <span class="payment-icon">{{ label|slice:":2" }}</span>
+                        <span class="payment-name">{{ label|slice:"3:" }}</span>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
         </div>
 
-        <div class="btn-container">
-            <button type="submit" class="btn btn-primary" id="submitBtn">
-                {% if expense %}Update{% else %}Save{% endif %} Expense
+        <!-- Receipt Upload -->
+        <div class="form-group">
+            <label class="form-label">Receipt (Optional)</label>
+            {% if expense and expense.receipt %}
+            <div class="file-preview" id="existingReceipt">
+                <img src="{{ expense.receipt.url }}" alt="Receipt" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📄</text></svg>'">
+                <div class="file-preview-info">
+                    <div class="file-preview-name">Current Receipt</div>
+                    <div class="file-preview-size">Uploaded</div>
+                </div>
+                <button type="button" class="file-preview-remove" onclick="removeExistingReceipt()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            {% endif %}
+            <div class="file-upload" id="fileUpload" {% if expense and expense.receipt %}style="display:none;"{% endif %}>
+                <input type="file"
+                       name="receipt"
+                       id="id_receipt"
+                       accept="image/*,.pdf"
+                       onchange="handleFileSelect(event)">
+                <div class="file-upload-icon">📎</div>
+                <div class="file-upload-text">
+                    <strong>Click to upload</strong> or drag and drop<br>
+                    <small>PNG, JPG, PDF up to 10MB</small>
+                </div>
+            </div>
+            <div class="file-preview" id="filePreview" style="display: none;">
+                <img id="previewImage" src="" alt="Preview">
+                <div class="file-preview-info">
+                    <div class="file-preview-name" id="fileName"></div>
+                    <div class="file-preview-size" id="fileSize"></div>
+                </div>
+                <button type="button" class="file-preview-remove" onclick="removeFile()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Notes -->
+        <div class="form-group">
+            <label for="id_notes" class="form-label">Notes (Optional)</label>
+            <textarea name="notes"
+                      id="id_notes"
+                      class="form-input"
+                      placeholder="Add any additional notes or details..."
+                      rows="3">{{ form.notes.value|default:'' }}</textarea>
+        </div>
+
+        <!-- Quick Flags -->
+        <div class="form-group">
+            <div style="display: flex; gap: 1.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--form-text-primary);">
+                    <input type="checkbox"
+                           name="is_recurring"
+                           id="id_is_recurring"
+                           {% if form.is_recurring.value %}checked{% endif %}
+                           style="width: 20px; height: 20px; cursor: pointer;">
+                    <span>🔄 Recurring Expense</span>
+                </label>
+
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--form-text-primary);">
+                    <input type="checkbox"
+                           name="is_important"
+                           id="id_is_important"
+                           {% if form.is_important.value %}checked{% endif %}
+                           style="width: 20px; height: 20px; cursor: pointer;">
+                    <span>⭐ Important</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="form-actions">
+            <button type="submit" class="btn-submit">
+                <span style="position: relative; z-index: 1;">
+                    <i class="fas fa-save"></i>
+                    {% if expense %}Update Expense{% else %}Save Expense{% endif %}
+                </span>
             </button>
-            <a href="{% url 'expenses:expense_list' %}" class="btn btn-secondary">Cancel</a>
+            <a href="{% url 'expenses:expense_list' %}" class="btn-cancel">
+                <i class="fas fa-times"></i> Cancel
+            </a>
         </div>
     </form>
 </div>
 
-<div class="shortcut-hint">
-    <strong>Keyboard Shortcuts:</strong><br>
-    <kbd>Ctrl</kbd> + <kbd>S</kbd> = Save<br>
-    <kbd>Ctrl</kbd> + <kbd>Enter</kbd> = Save & New<br>
-    <kbd>Esc</kbd> = Cancel
+<!-- Keyboard Shortcuts Panel -->
+<div class="shortcuts-panel">
+    <div class="shortcuts-title">⌨️ Keyboard Shortcuts</div>
+    <div class="shortcut-item">
+        <span class="shortcut-key">Ctrl+S</span>
+        <span>Save</span>
+    </div>
+    <div class="shortcut-item">
+        <span class="shortcut-key">Ctrl+Enter</span>
+        <span>Save & New</span>
+    </div>
+    <div class="shortcut-item">
+        <span class="shortcut-key">Esc</span>
+        <span>Cancel</span>
+    </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('expenseForm');
-    const amountInput = document.getElementById('id_amount');
-    const tagsInput = document.getElementById('id_tags');
-    const tagSuggestions = document.getElementById('tagSuggestions');
+// Tag Management
+let tags = new Set();
 
-    // Auto-focus amount field
-    amountInput.focus();
+{% if expense %}
+    {% for tag in expense.tags.all %}
+    tags.add('{{ tag.name }}');
+    {% endfor %}
+{% endif %}
 
-    // Keyboard shortcuts
-    document.addEventListener('keydown', function(e) {
-        // Ctrl+S or Cmd+S to save
-        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-            e.preventDefault();
-            form.submit();
-        }
+function updateTagsInput() {
+    document.getElementById('tagsHidden').value = Array.from(tags).join(',');
+}
 
-        // Ctrl+Enter to save and new
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-            e.preventDefault();
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'save_and_new';
-            input.value = '1';
-            form.appendChild(input);
-            form.submit();
-        }
+function addTag(tagName) {
+    tagName = tagName.trim().toLowerCase();
+    if (tagName && !tags.has(tagName)) {
+        tags.add(tagName);
+        renderTags();
+        updateTagsInput();
+    }
+    document.getElementById('tagInput').value = '';
+}
 
-        // Escape to cancel
-        if (e.key === 'Escape') {
-            window.location.href = "{% url 'expenses:expense_list' %}";
-        }
+function removeTag(tagName) {
+    tags.delete(tagName);
+    renderTags();
+    updateTagsInput();
+}
+
+function renderTags() {
+    const container = document.getElementById('tagPills');
+    container.innerHTML = '';
+
+    tags.forEach(tag => {
+        const pill = document.createElement('span');
+        pill.className = 'tag-pill';
+        pill.innerHTML = `
+            ${tag}
+            <button type="button" onclick="removeTag('${tag}')">×</button>
+        `;
+        container.appendChild(pill);
     });
+}
 
-    // Tag autocomplete
-    let debounceTimer;
-    tagsInput.addEventListener('input', function() {
-        clearTimeout(debounceTimer);
-        const query = this.value.split(',').pop().trim();
-
-        if (query.length < 2) {
-            tagSuggestions.style.display = 'none';
-            return;
-        }
-
-        debounceTimer = setTimeout(() => {
-            fetch(`{% url 'expenses:tag_suggestions' %}?q=${encodeURIComponent(query)}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.tags.length > 0) {
-                        tagSuggestions.innerHTML = data.tags.map(tag =>
-                            `<div class="tag-suggestion-item" data-tag="${tag}">${tag}</div>`
-                        ).join('');
-                        tagSuggestions.style.display = 'block';
-
-                        // Position suggestions
-                        const rect = tagsInput.getBoundingClientRect();
-                        tagSuggestions.style.width = rect.width + 'px';
-                        tagSuggestions.style.top = (rect.bottom + window.scrollY) + 'px';
-                        tagSuggestions.style.left = rect.left + 'px';
-                    } else {
-                        tagSuggestions.style.display = 'none';
-                    }
-                });
-        }, 300);
-    });
-
-    // Click on tag suggestion
-    tagSuggestions.addEventListener('click', function(e) {
-        if (e.target.classList.contains('tag-suggestion-item')) {
-            const tag = e.target.dataset.tag;
-            const currentTags = tagsInput.value.split(',');
-            currentTags.pop(); // Remove incomplete tag
-            currentTags.push(tag);
-            tagsInput.value = currentTags.join(', ') + ', ';
-            tagSuggestions.style.display = 'none';
-            tagsInput.focus();
-        }
-    });
-
-    // Hide suggestions when clicking outside
-    document.addEventListener('click', function(e) {
-        if (e.target !== tagsInput && e.target !== tagSuggestions) {
-            tagSuggestions.style.display = 'none';
-        }
-    });
-
-    // AJAX form submission
-    form.addEventListener('submit', function(e) {
+// Tag Input Handler
+const tagInput = document.getElementById('tagInput');
+tagInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ',') {
         e.preventDefault();
+        addTag(this.value);
+    }
+});
 
-        const formData = new FormData(form);
-        const submitBtn = document.getElementById('submitBtn');
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Saving...';
+tagInput.addEventListener('blur', function() {
+    if (this.value.trim()) {
+        addTag(this.value);
+    }
+});
 
-        fetch(form.action || window.location.href, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
+// Tag Autocomplete
+tagInput.addEventListener('input', function() {
+    const query = this.value.toLowerCase();
+    if (query.length < 2) return;
+
+    fetch(`/expenses/api/tags/?q=${encodeURIComponent(query)}`)
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                // Show success message
-                alert(data.message);
+            const suggestions = document.getElementById('tagSuggestions');
+            suggestions.innerHTML = '';
 
-                // Check if save and new
-                if (formData.get('save_and_new')) {
-                    form.reset();
-                    amountInput.focus();
-                } else {
-                    window.location.href = "{% url 'expenses:expense_list' %}";
+            data.tags.forEach(tag => {
+                if (!tags.has(tag)) {
+                    const span = document.createElement('span');
+                    span.className = 'tag-suggestion';
+                    span.textContent = tag;
+                    span.onclick = () => addTag(tag);
+                    suggestions.appendChild(span);
                 }
-            } else {
-                alert('Error: ' + JSON.stringify(data.errors));
-            }
-        })
-        .catch(error => {
-            alert('Error saving expense');
-            console.error(error);
-        })
-        .finally(() => {
-            submitBtn.disabled = false;
-            submitBtn.textContent = '{% if expense %}Update{% else %}Save{% endif %} Expense';
+            });
         });
-    });
 });
+
+// File Upload Handler
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Show preview
+    document.getElementById('fileUpload').style.display = 'none';
+    document.getElementById('filePreview').style.display = 'flex';
+
+    // Set file info
+    document.getElementById('fileName').textContent = file.name;
+    document.getElementById('fileSize').textContent = formatFileSize(file.size);
+
+    // Show image preview
+    if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('previewImage').src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    } else {
+        document.getElementById('previewImage').src = 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📄</text></svg>';
+    }
+}
+
+function removeFile() {
+    document.getElementById('id_receipt').value = '';
+    document.getElementById('fileUpload').style.display = 'block';
+    document.getElementById('filePreview').style.display = 'none';
+}
+
+function removeExistingReceipt() {
+    document.getElementById('existingReceipt').style.display = 'none';
+    document.getElementById('fileUpload').style.display = 'block';
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Drag and Drop
+const fileUpload = document.getElementById('fileUpload');
+fileUpload.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    this.style.borderColor = '#667eea';
+    this.style.background = 'rgba(102, 126, 234, 0.1)';
+});
+
+fileUpload.addEventListener('dragleave', function(e) {
+    e.preventDefault();
+    this.style.borderColor = '';
+    this.style.background = 'transparent';
+});
+
+fileUpload.addEventListener('drop', function(e) {
+    e.preventDefault();
+    this.style.borderColor = '';
+    this.style.background = 'transparent';
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        document.getElementById('id_receipt').files = files;
+        handleFileSelect({ target: { files: files } });
+    }
+});
+
+// Form Submission with Loading State
+const form = document.getElementById('expenseForm');
+form.addEventListener('submit', function(e) {
+    const submitBtn = this.querySelector('.btn-submit');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+});
+
+// Keyboard Shortcuts
+document.addEventListener('keydown', function(e) {
+    // Ctrl/Cmd + S = Save
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        form.submit();
+    }
+
+    // Ctrl/Cmd + Enter = Save and New
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'save_and_new';
+        input.value = '1';
+        form.appendChild(input);
+        form.submit();
+    }
+
+    // Escape = Cancel
+    if (e.key === 'Escape') {
+        window.location.href = '{% url "expenses:expense_list" %}';
+    }
+});
+
+// Set default date to today
+if (!document.getElementById('id_date').value) {
+    document.getElementById('id_date').valueAsDate = new Date();
+}
+
+// Auto-focus on amount field
+document.getElementById('id_amount').focus();
 </script>
 {% endblock %}
