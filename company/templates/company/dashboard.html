@@ -1,633 +1,13 @@
 {% extends 'base.html' %}
 {% load i18n %}
 {% load static %}
-{% load custom_filters %}
+{% load humanize %}
 
 {% block title %}{% trans "Dashboard" %} - {{ company.trading_name|default:company.name }}{% endblock %}
 
 {% block breadcrumb %}
 {{ block.super }}
 <li class="breadcrumb-item active">{% trans "Dashboard" %}</li>
-{% endblock %}
-
-{% block page_header %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="h3 mb-1">{{ company.trading_name|default:company.name }} {% trans 'Management Dashboard' %}</h1>
-        <p class="text-muted mb-0">{% trans "Welcome back! Here's an overview of your business operations." %}</p>
-    </div>
-    <div class="d-flex gap-2">
-        <!-- Subscription Status Badge -->
-        <div class="me-3">
-            {% if company.plan %}
-                <span class="badge {% if company.status == 'ACTIVE' %}bg-success{% elif company.status == 'TRIAL' %}bg-info{% elif company.status == 'EXPIRED' %}bg-danger{% else %}bg-warning{% endif %} fs-6">
-                    {{ company.plan.display_name|default:company.plan.name }}
-                    {% if company.is_trial %}
-                        - {% trans "Trial" %}
-                    {% endif %}
-                </span>
-            {% else %}
-                <span class="badge bg-secondary fs-6">{% trans "No Plan" %}</span>
-            {% endif %}
-        </div>
-
-        <button class="btn btn-outline-primary" onclick="refreshDashboard()" id="refreshBtn">
-            <i class="bi bi-arrow-clockwise"></i> {% trans 'Refresh'%}
-        </button>
-
-        <div class="dropdown">
-            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                <i class="bi bi-calendar3"></i> {% trans 'Period' %}
-            </button>
-            <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="#" onclick="changePeriod(7)">{% trans 'Last 7 days' %}</a></li>
-                <li><a class="dropdown-item" href="#" onclick="changePeriod(30)">{% trans 'Last 30 days' %}</a></li>
-                <li><a class="dropdown-item" href="#" onclick="changePeriod(90)">{% trans 'Last 90 days' %}</a></li>
-            </ul>
-        </div>
-    </div>
-</div>
-
-<!-- Subscription Alert Banner -->
-{% if subscription_warning %}
-<div class="alert alert-warning alert-dismissible fade show" role="alert">
-    <div class="d-flex align-items-center">
-        <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
-        <div class="flex-grow-1">
-            <strong>{{ subscription_warning.title }}</strong>
-            <p class="mb-0">{{ subscription_warning.message }}</p>
-            {% if subscription_warning.action_url %}
-                <a href="{{ subscription_warning.action_url }}" class="btn btn-sm btn-warning mt-2">
-                    {{ subscription_warning.action_text }}
-                </a>
-            {% endif %}
-        </div>
-    </div>
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
-{% endblock %}
-
-{% block content %}
-<!-- Key Metrics Row -->
-<div class="row mb-4">
-    <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #007bff; --text-color: #ffffff;">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <div class="stat-icon mb-2">
-                            <i class="bi bi-building"></i>
-                        </div>
-                        <h2 class="stat-number mb-1">{{ total_companies|default:0 }}</h2>
-                        <p class="stat-label mb-0">{% trans 'Total Companies' %}</p>
-                    </div>
-                    <div class="stat-trend">
-                        <i class="bi bi-arrow-up-right text-success"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #28a745; --text-color: #ffffff;">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <div class="stat-icon mb-2">
-                            <i class="bi bi-shield-check"></i>
-                        </div>
-                        <h2 class="stat-number mb-1">{{ verified_companies|default:0 }}</h2>
-                        <p class="stat-label mb-0">{% trans 'Verified Companies' %}</p>
-                        <small class="text-light opacity-75">
-                            {% if total_companies > 0 %}
-                                {{ verified_companies|default:0|money }}/{{ total_companies|money }}
-                                ({% widthratio verified_companies total_companies 100 %}%)
-                            {% else %}
-                                0%
-                            {% endif %}
-                        </small>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #17a2b8; --text-color: #ffffff;">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <div class="stat-icon mb-2">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <h2 class="stat-number mb-1 totall">{{ active_companies|default:0 }}</h2>
-                        <p class="stat-label mb-0">{% trans 'Active Companies' %}</p>
-                        <small class="text-light opacity-75">{{ trial_companies|default:0 }} {% trans 'on trial' %}</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #ffc107; --text-color: #000000;">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <div class="stat-icon mb-2">
-                            <i class="bi bi-diagram-3"></i>
-                        </div>
-                        <h2 class="stat-number mb-1 totall">{{ total_branches|default:0 }}</h2>
-                        <p class="stat-label mb-0">{% trans 'Total Branches' %}</p>
-                        <small class="opacity-75 totall">{% trans 'Active locations' %}</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Subscription Metrics Row -->
-<div class="row mb-4">
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card subscription-metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-primary mb-2">
-                    <i class="bi bi-credit-card fs-2"></i>
-                </div>
-                <h4 class="mb-1 totall">{{ active_subscriptions|default:0 }}</h4>
-                <p class="text-muted mb-0 small">{% trans 'Active Subscriptions' %}</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card subscription-metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-warning mb-2">
-                    <i class="bi bi-clock-history fs-2"></i>
-                </div>
-                <h4 class="mb-1 totall">{{ expiring_soon_count|default:0 }}</h4>
-                <p class="text-muted mb-0 small totall">{% trans 'Expiring Soon' %}</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card subscription-metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-info mb-2">
-                    <i class="bi bi-gift fs-2"></i>
-                </div>
-                <h4 class="mb-1 totall">{{ trial_companies|default:0 }}</h4>
-                <p class="text-muted mb-0 small totall">{% trans 'Active Trials' %}</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card subscription-metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-danger mb-2">
-                    <i class="bi bi-x-circle fs-2"></i>
-                </div>
-                <h4 class="mb-1 totall">{{ expired_companies|default:0 }}</h4>
-                <p class="text-muted mb-0 small">{% trans 'Expired' %}</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card subscription-metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-success mb-2">
-                    <i class="bi bi-cash-coin fs-2"></i>
-                </div>
-                <h4 class="mb-1 totall">UGX {{ monthly_revenue|default:0|money }}</h4>
-                <p class="text-muted mb-0 small">{% trans 'Monthly Revenue' %}</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card subscription-metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-secondary mb-2">
-                    <i class="bi bi-arrow-repeat fs-2"></i>
-                </div>
-                <h4 class="mb-1 totall">{{ renewal_rate|default:0 }}%</h4>
-                <p class="text-muted mb-0 small">{% trans 'Renewal Rate' %}</p>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Current Subscription Status Card -->
-{% if company.plan %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent border-0">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-person-badge text-primary me-2"></i>
-                    {% trans 'Your Subscription Status' %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="d-flex align-items-center mb-3">
-                            <div class="subscription-icon me-3">
-                                <i class="bi bi-award fs-1 text-primary"></i>
-                            </div>
-                            <div>
-                                <h4 class="mb-1 totall">{{ company.plan.display_name|default:company.plan.name }}</h4>
-                                <p class="text-muted mb-0">
-                                    ${{ company.plan.price }} {{ company.preferred_currency }}
-                                    / {{ company.plan.billing_cycle|lower }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="subscription-features mb-4">
-                            <h6 class="mb-2">{% trans 'Plan Features:' %}</h6>
-                            <div class="row">
-                                {% for feature in company.plan.get_feature_list %}
-                                <div class="col-sm-6 mb-1 totall">
-                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
-                                    <small>{{ feature }}</small>
-                                </div>
-                                {% endfor %}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="col-md-6">
-                        <div class="subscription-status-info">
-                            <div class="row mb-3">
-                                <div class="col-6">
-                                    <small class="text-muted">{% trans 'Status' %}</small>
-                                    <div>
-                                        <span class="badge {% if company.status == 'ACTIVE' %}bg-success{% elif company.status == 'TRIAL' %}bg-info{% elif company.status == 'EXPIRED' %}bg-danger{% else %}bg-warning{% endif %}">
-                                            {{ company.get_status_display }}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <small class="text-muted">{% trans 'Billing Cycle' %}</small>
-                                    <div>
-                                        <strong>{{ company.plan.billing_cycle }}</strong>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="row mb-3">
-                                <div class="col-6">
-                                    <small class="text-muted">{% trans 'Subscription Ends' %}</small>
-                                    <div>
-                                        <strong>{{ company.subscription_ends_at|date:"M d, Y" }}</strong>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <small class="text-muted">{% trans 'Days Remaining' %}</small>
-                                    <div>
-                                        <strong class="{% if company.days_until_expiry <= 7 %}text-danger{% elif company.days_until_expiry <= 30 %}text-warning{% endif %}">
-                                            {{ company.days_until_expiry }}
-                                        </strong>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {% if company.is_trial %}
-                            <div class="alert alert-info mb-3">
-                                <div class="d-flex align-items-center">
-                                    <i class="bi bi-info-circle me-2"></i>
-                                    <div>
-                                        <strong>{% trans 'Trial Period' %}</strong>
-                                        <p class="mb-0">{% trans 'Your trial ends on' %} {{ company.trial_ends_at|date:"M d, Y" }}</p>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endif %}
-
-                            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                                {% if company.days_until_expiry <= 30 %}
-                                <a href="{% url 'companies:subscription_renew' %}" class="btn btn-primary">
-                                    <i class="bi bi-arrow-clockwise me-1"></i>{% trans 'Renew Now' %}
-                                </a>
-                                {% endif %}
-                                <a href="{% url 'companies:subscription_plans' %}" class="btn btn-outline-primary">
-                                    <i class="bi bi-graph-up me-1"></i>{% trans 'Upgrade Plan' %}
-                                </a>
-                                <a href="{% url 'companies:subscription_dashboard' %}" class="btn btn-outline-secondary">
-                                    <i class="bi bi-speedometer2 me-1"></i>{% trans 'Manage' %}
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<!-- Charts Section -->
-<div class="row mb-4">
-    <div class="col-lg-8 mb-4">
-        <div class="card chart-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0 pb-0">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-graph-up text-primary me-2"></i>
-                        {% trans 'Company Registration Trend' %}
-                    </h5>
-                    <div class="btn-group btn-group-sm" role="group">
-                        <input type="radio" class="btn-check" name="chartPeriod" id="chart7d" value="7">
-                        <label class="btn btn-outline-primary" for="chart7d">7D</label>
-
-                        <input type="radio" class="btn-check" name="chartPeriod" id="chart30d" value="30" checked>
-                        <label class="btn btn-outline-primary" for="chart30d">30D</label>
-
-                        <input type="radio" class="btn-check" name="chartPeriod" id="chart90d" value="90">
-                        <label class="btn btn-outline-primary" for="chart90d">90D</label>
-                    </div>
-                </div>
-            </div>
-            <div class="card-body">
-                <canvas id="registrationChart" height="300"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-4 mb-4">
-        <div class="card chart-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0 pb-0">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-pie-chart text-primary me-2"></i>
-                    {% trans 'Company Status Distribution' %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <canvas id="statusChart" height="300"></canvas>
-                <div class="mt-3">
-                    {% for status in status_distribution %}
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div class="d-flex align-items-center">
-                            <div class="status-indicator status-{{ status.status|lower }} me-2"></div>
-                            <span class="small">{{ status.status|title }}</span>
-                        </div>
-                        <span class="badge bg-light text-dark">{{ status.count }}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Additional Charts Row -->
-<div class="row mb-4">
-    <div class="col-lg-6 mb-4">
-        <div class="card chart-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0 pb-0">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-currency-exchange text-primary me-2"></i>
-                    {% trans 'Currency Distribution' %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <canvas id="currencyChart" height="250"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-6 mb-4">
-        <div class="card chart-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0 pb-0">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-tags text-primary me-2"></i>
-                    {% trans 'Subscription Plans' %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <canvas id="planChart" height="250"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Recent Activity and Quick Actions Section -->
-<div class="row mb-4">
-    <div class="col-lg-8 mb-4">
-        <div class="card activity-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-clock-history text-primary me-2"></i>
-                    {% trans 'Recent Companies' %}
-                </h5>
-            </div>
-            <div class="card-body p-0">
-                {% if recent_companies %}
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>{% trans 'Company' %}</th>
-                                    <th>{% trans 'Status' %}</th>
-                                    <th>{% trans 'Plan' %}</th>
-                                    <th>{% trans 'Subscription Ends' %}</th>
-                                    <th>{% trans 'Actions' %}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for company in recent_companies %}
-                                <tr>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="company-avatar me-3">
-                                                {{ company.name|first|upper }}
-                                            </div>
-                                            <div>
-                                                <h6 class="mb-0">{{ company.name|truncatechars:30 }}</h6>
-                                                <small class="text-muted">{{ company.email|truncatechars:25 }}</small>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <span class="badge badge-status status-{{ company.status|lower }}">
-                                            {{ company.get_status_display }}
-                                        </span>
-                                        {% if company.is_verified %}
-                                            <i class="bi bi-shield-check text-success ms-1" title="{% trans 'Verified' %}"></i>
-                                        {% endif %}
-                                        {% if company.efris_enabled %}
-                                            <i class="bi bi-gear text-warning ms-1" title="{% trans 'EFRIS Enabled' %}"></i>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if company.plan %}
-                                            <span class="badge bg-info">{{ company.plan.display_name|default:company.plan.name }}</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">{% trans 'No Plan' %}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if company.subscription_ends_at %}
-                                            <small class="{% if company.days_until_expiry <= 7 %}text-danger{% elif company.days_until_expiry <= 30 %}text-warning{% endif %}">
-                                                {{ company.subscription_ends_at|date:"M d, Y" }}
-                                            </small>
-                                            <br>
-                                            <small class="text-muted">
-                                                ({{ company.days_until_expiry }} {% trans 'days' %})
-                                            </small>
-                                        {% else %}
-                                            <small class="text-muted">-</small>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <div class="btn-group btn-group-sm">
-                                            {% if perms.company.view_company %}
-                                            <a href="{% url 'companies:company_detail' company_id=company.company_id %}"
-                                               class="btn btn-outline-primary btn-sm" title="{% trans 'View Details' %}">
-                                                <i class="bi bi-eye"></i>
-                                            </a>
-                                            {% endif %}
-                                            {% if perms.change_company %}
-                                            <a href="{% url 'companies:company_update' company_id=company.company_id %}"
-                                               class="btn btn-outline-secondary btn-sm" title="{% trans 'Edit' %}">
-                                                <i class="bi bi-pencil"></i>
-                                            </a>
-                                            {% endif %}
-                                            {% if perms.company.change_company %}
-                                            <a href="{% url 'companies:subscription_dashboard' %}"
-                                               class="btn btn-outline-info btn-sm" title="{% trans 'Manage Subscription' %}">
-                                                <i class="bi bi-credit-card"></i>
-                                            </a>
-                                            {% endif %}
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-4 mb-4">
-        <div class="card actions-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-lightning text-primary me-2"></i>
-                    {% trans 'Quick Actions' %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="d-grid gap-3">
-                    <!-- Subscription Actions -->
-                    {% if company.plan %}
-                    <a href="{% url 'companies:subscription_dashboard' %}" class="btn btn-outline-primary">
-                        <i class="bi bi-speedometer2 me-2"></i>{% trans 'Subscription Dashboard' %}
-                    </a>
-                    <a href="{% url 'companies:subscription_plans' %}" class="btn btn-outline-success">
-                        <i class="bi bi-graph-up me-2"></i>{% trans 'View Plans & Upgrade' %}
-                    </a>
-                    {% if company.days_until_expiry <= 30 %}
-                    <a href="{% url 'companies:subscription_renew' %}" class="btn btn-warning">
-                        <i class="bi bi-arrow-clockwise me-2"></i>{% trans 'Renew Subscription' %}
-                    </a>
-                    {% endif %}
-                    {% else %}
-                    <a href="{% url 'companies:subscription_plans' %}" class="btn btn-success">
-                        <i class="bi bi-credit-card me-2"></i>{% trans 'Choose a Plan' %}
-                    </a>
-                    {% endif %}
-
-                    {% if perms.branches.add_companybranch %}
-                    <a href="{% url 'stores:store_create' %}" class="btn btn-outline-info">
-                        <i class="bi bi-diagram-3 me-2"></i>{% trans 'Add Branch' %}
-                    </a>
-                    {% endif %}
-                    {% if perms.accounts.add_customuser %}
-                    {% if company_id %}
-                    <a href="{% url 'companies:employee_create' company_id=company_id %}" class="btn btn-outline-info">
-                        <i class="bi bi-people me-2"></i>{% trans 'Add Employee' %}
-                    </a>
-                    {% endif %}
-                    {% endif %}
-
-                    <a href="{% url 'companies:billing_history' %}" class="btn btn-outline-secondary">
-                        <i class="bi bi-receipt me-2"></i>{% trans 'Billing History' %}
-                    </a>
-                </div>
-
-                <hr class="my-4">
-
-                <h6 class="text-muted mb-3">{% trans 'System Health' %}</h6>
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1 totall">
-                        <small>{% trans 'Active Subscriptions' %}</small>
-                        <small class="text-muted totall">
-                            {% if total_companies > 0 %}
-                                {% widthratio active_subscriptions total_companies 100 %}%
-                            {% else %}
-                                0%
-                            {% endif %}
-                        </small>
-                    </div>
-                    <div class="progress" style="height: 6px;">
-                        <div class="progress-bar bg-primary" role="progressbar"
-                             style="width: {% if total_companies > 0 %}{% widthratio active_subscriptions total_companies 100 %}%{% else %}0%{% endif %}"></div>
-                    </div>
-                </div>
-
-                <div class="mb-3 totall">
-                    <div class="d-flex justify-content-between mb-1">
-                        <small>{% trans 'Verification Rate' %}</small>
-                        <small class="text-muted">
-                            {% if total_companies > 0 %}
-                                {% widthratio verified_companies total_companies 100 %}%
-                            {% else %}
-                                0%
-                            {% endif %}
-                        </small>
-                    </div>
-                    <div class="progress" style="height: 6px;">
-                        <div class="progress-bar bg-success" role="progressbar"
-                             style="width: {% if total_companies > 0 %}{% widthratio verified_companies total_companies 100 %}%{% else %}0%{% endif %}"></div>
-                    </div>
-                </div>
-
-                <div class="mb-3 totall">
-                    <div class="d-flex justify-content-between mb-1">
-                        <small>{% trans 'EFRIS Adoption' %}</small>
-                        <small class="text-muted">
-                            {% if total_companies > 0 %}
-                                {% widthratio efris_enabled_companies total_companies 100 %}%
-                            {% else %}
-                                0%
-                            {% endif %}
-                        </small>
-                    </div>
-                    <div class="progress" style="height: 6px;">
-                        <div class="progress-bar bg-warning" role="progressbar"
-                             style="width: {% if total_companies > 0 %}{% widthratio efris_enabled_companies total_companies 100 %}%{% else %}0%{% endif %}"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Loading Overlay -->
-<div id="loadingOverlay" class="loading-overlay" style="display: none;">
-    <div class="loading-spinner">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">{% trans 'Loading...' %}</span>
-        </div>
-        <p class="mt-2">{% trans 'Refreshing dashboard...' %}</p>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_css %}
@@ -639,39 +19,6 @@
         --info-color: #17a2b8;
         --warning-color: #ffc107;
         --danger-color: #dc3545;
-        --light-color: #f8f9fa;
-        --dark-color: #343a40;
-        --secondary-color: #6c757d;
-    }
-
-    /* Light Theme (Default) */
-    :root {
-        --bg-primary: #ffffff;
-        --bg-secondary: #f8f9fa;
-        --text-primary: #212529;
-        --text-secondary: #6c757d;
-        --border-color: #dee2e6;
-        --card-bg: #ffffff;
-        --table-hover-bg: rgba(0,123,255,0.05);
-        --loading-overlay-bg: rgba(255, 255, 255, 0.9);
-    }
-
-    /* Dark Theme */
-    [data-theme="dark"] {
-        --bg-primary: #1a1a1a;
-        --bg-secondary: #2d2d2d;
-        --text-primary: #ffffff;
-        --text-secondary: #adb5bd;
-        --border-color: #495057;
-        --card-bg: #2d2d2d;
-        --table-hover-bg: rgba(108, 117, 125, 0.1);
-        --loading-overlay-bg: rgba(26, 26, 26, 0.9);
-    }
-
-    body {
-        background-color: var(--bg-primary);
-        color: var(--text-primary);
-        transition: background-color 0.3s ease, color 0.3s ease;
     }
 
     .stat-card {
@@ -687,122 +34,15 @@
         box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
     }
 
-    .stat-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
-        pointer-events: none;
-    }
-
-    .secondary-card,
-    .chart-card,
-    .activity-card,
-    .actions-card {
-        background-color: var(--card-bg);
-        border-color: var(--border-color);
-        transition: all 0.3s ease;
-    }
-.subscription-metric-card {
-        transition: all 0.3s ease;
-        border-left: 4px solid transparent;
-    }
-
-    .subscription-metric-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
-    }
-
-    .subscription-metric-card:nth-child(1) { border-left-color: #007bff; }
-    .subscription-metric-card:nth-child(2) { border-left-color: #ffc107; }
-    .subscription-metric-card:nth-child(3) { border-left-color: #17a2b8; }
-    .subscription-metric-card:nth-child(4) { border-left-color: #dc3545; }
-    .subscription-metric-card:nth-child(5) { border-left-color: #28a745; }
-    .subscription-metric-card:nth-child(6) { border-left-color: #6c757d; }
-
-    .subscription-icon {
-        width: 60px;
-        height: 60px;
-        background: linear-gradient(135deg, #007bff, #0056b3);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-    }
-
-    .subscription-features {
-        background: var(--bg-secondary);
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #28a745;
-    }
-
-    .subscription-status-info {
-        background: var(--bg-secondary);
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        height: 100%;
-    }
-
-    /* Alert styles for subscription warnings */
-    .alert-warning {
-        border-left: 4px solid #ffc107;
-    }
-
-    /* Badge styles for subscription status */
-    .badge-status {
-        font-size: 0.75rem;
-        padding: 0.35em 0.65em;
-    }
-
-    .status-active { background-color: var(--success-color) !important; color: white !important; }
-    .status-trial { background-color: var(--info-color) !important; color: white !important; }
-    .status-expired { background-color: var(--danger-color) !important; color: white !important; }
-    .status-suspended { background-color: var(--warning-color) !important; color: var(--dark-color) !important; }
-
-    /* Responsive adjustments for subscription metrics */
-    @media (max-width: 768px) {
-        .subscription-metric-card .fs-2 {
-            font-size: 1.5rem !important;
-        }
-
-        .subscription-icon {
-            width: 50px;
-            height: 50px;
-        }
-
-        .subscription-status-info {
-            padding: 1rem;
-        }
-    }
-    .secondary-card:hover,
-    .chart-card:hover,
-    .activity-card:hover,
-    .actions-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
-    }
-
     .stat-icon {
         font-size: 1.5rem;
         opacity: 0.8;
     }
-    [data-theme="dark"] .stat-icon {
-        color: #ffffff;
-    }
 
     .stat-number {
-        font-size: 2.5rem;
+        font-size: 2rem;
         font-weight: 700;
         line-height: 1;
-
-    }
-    [data-theme="dark"] .stat-number {
-        color: #ffffff;
     }
 
     .stat-label {
@@ -810,57 +50,34 @@
         font-weight: 500;
         opacity: 0.9;
     }
-    [data-theme="dark"] .stat-label {
-        color: #ced4da;
+
+    .metric-card,
+    .chart-card,
+    .activity-card,
+    .actions-card {
+        transition: all 0.3s ease;
     }
 
-    .stat-trend {
-        font-size: 1.25rem;
-    }
-    [data-theme="dark"] .stat-trend {
-        color: #ffffff;
+    .metric-card:hover,
+    .chart-card:hover,
+    .activity-card:hover,
+    .actions-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
     }
 
-    .company-avatar {
-        width: 40px;
-        height: 40px;
+    .customer-avatar {
+        width: 32px;
+        height: 32px;
         background: linear-gradient(135deg, var(--primary-color), var(--info-color));
         color: white;
         border-radius: 50%;
-        display: flex;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
         font-weight: 600;
-        font-size: 1.1rem;
+        font-size: 0.875rem;
     }
-    [data-theme="dark"] .company-avatar {
-        background: linear-gradient(135deg, var(--info-color), var(--primary-color));
-    }
-
-    .badge-status {
-        font-size: 0.75rem;
-        padding: 0.35em 0.65em;
-    }
-    [data-theme="dark"] .badge-status {
-        color: #212529 !important;
-    }
-
-    .status-active { background-color: var(--success-color) !important; color: white !important; }
-    .status-trial { background-color: var(--info-color) !important; color: white !important; }
-    .status-expired { background-color: var(--danger-color) !important; color: white !important; }
-    .status-suspended { background-color: var(--warning-color) !important; color: var(--dark-color) !important; }
-
-    .status-indicator {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        display: inline-block;
-    }
-
-    .status-indicator.status-active { background-color: var(--success-color); }
-    .status-indicator.status-trial { background-color: var(--info-color); }
-    .status-indicator.status-expired { background-color: var(--danger-color); }
-    .status-indicator.status-suspended { background-color: var(--warning-color); }
 
     .loading-overlay {
         position: fixed;
@@ -868,76 +85,22 @@
         left: 0;
         width: 100%;
         height: 100%;
-        background: var(--loading-overlay-bg);
+        background: rgba(255, 255, 255, 0.9);
         display: flex;
         align-items: center;
         justify-content: center;
         z-index: 9999;
         backdrop-filter: blur(4px);
     }
-    [data-theme="dark"] .loading-overlay {
-        background: var(--loading-overlay-bg);
-    }
 
     .loading-spinner {
         text-align: center;
-        color: var(--text-primary);
-    }
-
-    .table {
-        --bs-table-bg: var(--card-bg);
-        --bs-table-color: var(--text-primary);
-    }
-
-    .table-hover tbody tr:hover {
-        background-color: var(--table-hover-bg);
-    }
-
-    .table-light {
-        --bs-table-bg: var(--bg-secondary);
-    }
-
-    .progress {
-        background-color: rgba(108, 117, 125, 0.2);
-    }
-
-    .dropdown-menu {
-        background-color: var(--card-bg);
-        border-color: var(--border-color);
-    }
-
-    .dropdown-item {
-        color: var(--text-primary);
-    }
-
-    .dropdown-item:hover {
-        background-color: var(--bg-secondary);
-        color: var(--text-primary);
-    }
-
-    .btn-outline-primary,
-    .btn-outline-secondary,
-    .btn-outline-success,
-    .btn-outline-info,
-    .btn-outline-warning {
-        border-color: var(--border-color);
-    }
-
-    .text-muted {
-        color: var(--text-secondary) !important;
     }
 
     canvas {
         max-height: 300px;
     }
 
-    /* Dark mode toggle button */
-    #darkModeToggle {
-        position: relative;
-        overflow: hidden;
-    }
-
-    /* Animation for refresh button */
     .spin {
         animation: spin 1s linear infinite;
     }
@@ -947,323 +110,877 @@
         to { transform: rotate(360deg); }
     }
 
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        .stat-number {
-            font-size: 2rem;
-        }
-
-        .company-avatar {
-            width: 32px;
-            height: 32px;
-            font-size: 0.9rem;
-        }
-
-        .d-flex.gap-2 {
-            flex-direction: column;
-            gap: 0.5rem !important;
-        }
-
-        .btn-group {
-            width: 100%;
-        }
+    .debug-info {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 15px;
+        margin-bottom: 20px;
     }
 
-    /* Print styles */
-    @media print {
-        .btn, .dropdown, #darkModeToggle {
-            display: none !important;
+    @media (max-width: 768px) {
+        .stat-number {
+            font-size: 1.5rem;
         }
 
-        .stat-card {
-            break-inside: avoid;
-        }
-
-        .loading-overlay {
-            display: none !important;
+        .customer-avatar {
+            width: 28px;
+            height: 28px;
+            font-size: 0.75rem;
         }
     }
 </style>
 {% endblock %}
 
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <i class="bi bi-speedometer2 text-primary me-2"></i>
+            {% if company %}
+                {{ company.trading_name|default:company.name }} {% trans 'Dashboard' %}
+            {% else %}
+                {% trans 'Dashboard' %}
+            {% endif %}
+        </h1>
+        <p class="text-muted mb-0">{% trans "Welcome back! Here's an overview of your business performance." %}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <!-- Subscription Status Badge -->
+        {% if company and company.plan %}
+        <div class="me-3">
+            <span class="badge {% if company.status == 'ACTIVE' %}bg-success{% elif company.status == 'TRIAL' %}bg-info{% elif company.status == 'EXPIRED' %}bg-danger{% else %}bg-warning{% endif %} fs-6">
+                {{ company.plan.display_name|default:company.plan.name }}
+                {% if company.is_trial %}
+                    - {% trans "Trial" %}
+                {% endif %}
+            </span>
+        </div>
+        {% endif %}
+
+        <button class="btn btn-outline-primary" onclick="refreshDashboard()" id="refreshBtn">
+            <i class="bi bi-arrow-clockwise"></i> {% trans 'Refresh'%}
+        </button>
+
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-calendar3"></i> {% trans 'Period' %}
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="#" onclick="changePeriod('today')">{% trans 'Today' %}</a></li>
+                <li><a class="dropdown-item" href="#" onclick="changePeriod('week')">{% trans 'Last 7 days' %}</a></li>
+                <li><a class="dropdown-item active" href="#" onclick="changePeriod('month')">{% trans 'Last 30 days' %}</a></li>
+                <li><a class="dropdown-item" href="#" onclick="changePeriod('quarter')">{% trans 'Last 90 days' %}</a></li>
+                <li><a class="dropdown-item" href="#" onclick="changePeriod('year')">{% trans 'Last year' %}</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- DEBUG INFO (Remove in production) -->
+{% if debug %}
+<div class="debug-info">
+    <h6>Debug Information:</h6>
+    <ul class="mb-0 small">
+        <li>Company: {{ company.company_id|default:"None" }}</li>
+        <li>Schema: {{ company.schema_name|default:"None" }}</li>
+        <li>Sales Today: {{ sales_today_total|default:"0" }}</li>
+        <li>Total Customers: {{ total_customers|default:"0" }}</li>
+        <li>Total Products: {{ total_products|default:"0" }}</li>
+        <li>Dashboard Error: {{ dashboard_error|default:"None" }}</li>
+    </ul>
+</div>
+{% endif %}
+
+<!-- Subscription/System Alerts -->
+{% if subscription_warning %}
+<div class="alert alert-{{ subscription_warning.type }} alert-dismissible fade show" role="alert">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+        <div class="flex-grow-1">
+            <strong>{{ subscription_warning.title }}</strong>
+            <p class="mb-0">{{ subscription_warning.message }}</p>
+            {% if subscription_warning.action_url %}
+                <a href="{{ subscription_warning.action_url }}" class="btn btn-sm btn-{{ subscription_warning.type }} mt-2">
+                    {{ subscription_warning.action_text }}
+                </a>
+            {% endif %}
+        </div>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- Dashboard Error -->
+{% if dashboard_error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-exclamation-octagon-fill me-2 fs-4"></i>
+        <div class="flex-grow-1">
+            <strong>{% trans 'Dashboard Error' %}</strong>
+            <p class="mb-0">{{ dashboard_error }}</p>
+        </div>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- System Alerts -->
+{% if alerts %}
+<div class="mb-4">
+    {% for alert in alerts %}
+    <div class="alert alert-{{ alert.type }} alert-dismissible fade show" role="alert">
+        <div class="d-flex align-items-center">
+            <i class="{{ alert.icon }} me-2"></i>
+            <div class="flex-grow-1">
+                <strong>{{ alert.title }}</strong> - {{ alert.message }}
+                {% if alert.action_url %}
+                <a href="{{ alert.action_url }}" class="btn btn-sm btn-outline-{{ alert.type }} ms-2">
+                    {{ alert.action_text }}
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if company %}
+<!-- Key Performance Indicators -->
+<div class="row mb-4">
+    <!-- Sales Today -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #007bff; --text-color: #ffffff;">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <div class="stat-icon mb-2">
+                            <i class="bi bi-cash-coin"></i>
+                        </div>
+                        <h2 class="stat-number mb-1">{{ company.preferred_currency }} {{ sales_today_total|default:0|floatformat:0|intcomma }}</h2>
+                        <p class="stat-label mb-0">{% trans 'Sales Today' %}</p>
+                        <small class="text-light opacity-75">{{ sales_today_count|default:0 }} {% trans 'transactions' %}</small>
+                    </div>
+                    <div class="stat-trend">
+                        <i class="bi bi-arrow-up-right"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Monthly Revenue -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #28a745; --text-color: #ffffff;">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <div class="stat-icon mb-2">
+                            <i class="bi bi-graph-up-arrow"></i>
+                        </div>
+                        <h2 class="stat-number mb-1">{{ company.preferred_currency }} {{ sales_month_total|default:0|floatformat:0|intcomma }}</h2>
+                        <p class="stat-label mb-0">{% trans 'Monthly Revenue' %}</p>
+                        <small class="text-light opacity-75">
+                            <i class="bi bi-{% if revenue_growth > 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
+                            {{ revenue_growth|default:0 }}% {% trans 'vs last month' %}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Customers -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #17a2b8; --text-color: #ffffff;">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <div class="stat-icon mb-2">
+                            <i class="bi bi-people"></i>
+                        </div>
+                        <h2 class="stat-number mb-1">{{ total_customers|default:0|intcomma }}</h2>
+                        <p class="stat-label mb-0">{% trans 'Total Customers' %}</p>
+                        <small class="text-light opacity-75">{{ new_customers_month|default:0 }} {% trans 'new this month' %}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inventory Value -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #ffc107; --text-color: #000000;">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <div class="stat-icon mb-2">
+                            <i class="bi bi-box-seam"></i>
+                        </div>
+                        <h2 class="stat-number mb-1">{{ company.preferred_currency }} {{ total_stock_value|default:0|floatformat:0|intcomma }}</h2>
+                        <p class="stat-label mb-0">{% trans 'Inventory Value' %}</p>
+                        <small class="opacity-75">{{ total_products|default:0 }} {% trans 'products' %}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Secondary Metrics Row -->
+<div class="row mb-4">
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card metric-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <div class="text-primary mb-2">
+                    <i class="bi bi-receipt fs-2"></i>
+                </div>
+                <h4 class="mb-1">{{ sales_month_count|default:0|intcomma }}</h4>
+                <p class="text-muted mb-0 small">{% trans 'Transactions (30d)' %}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card metric-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <div class="text-success mb-2">
+                    <i class="bi bi-cash-stack fs-2"></i>
+                </div>
+                <h4 class="mb-1">{{ company.preferred_currency }} {{ avg_transaction_value|default:0|floatformat:0|intcomma }}</h4>
+                <p class="text-muted mb-0 small">{% trans 'Avg Transaction' %}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card metric-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <div class="text-info mb-2">
+                    <i class="bi bi-file-earmark-text fs-2"></i>
+                </div>
+                <h4 class="mb-1">{{ total_invoices|default:0|intcomma }}</h4>
+                <p class="text-muted mb-0 small">{% trans 'Total Invoices' %}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card metric-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <div class="text-warning mb-2">
+                    <i class="bi bi-clock-history fs-2"></i>
+                </div>
+                <h4 class="mb-1">{{ overdue_invoices|default:0|intcomma }}</h4>
+                <p class="text-muted mb-0 small">{% trans 'Overdue' %}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card metric-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <div class="text-danger mb-2">
+                    <i class="bi bi-exclamation-triangle fs-2"></i>
+                </div>
+                <h4 class="mb-1">{{ low_stock_items|default:0|intcomma }}</h4>
+                <p class="text-muted mb-0 small">{% trans 'Low Stock' %}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card metric-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <div class="text-secondary mb-2">
+                    <i class="bi bi-diagram-3 fs-2"></i>
+                </div>
+                <h4 class="mb-1">{{ total_branches|default:0|intcomma }}</h4>
+                <p class="text-muted mb-0 small">{% trans 'Branches' %}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main Charts Section -->
+<div class="row mb-4">
+    <!-- Revenue Trend Chart -->
+    <div class="col-lg-8 mb-4">
+        <div class="card chart-card border-0 shadow-sm h-100">
+            <div class="card-header bg-transparent border-0 pb-0">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-graph-up text-primary me-2"></i>
+                        {% trans 'Revenue & Sales Trend' %}
+                    </h5>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <input type="radio" class="btn-check" name="revenuePeriod" id="revenue7d" value="7">
+                        <label class="btn btn-outline-primary" for="revenue7d">7D</label>
+
+                        <input type="radio" class="btn-check" name="revenuePeriod" id="revenue30d" value="30" checked>
+                        <label class="btn btn-outline-primary" for="revenue30d">30D</label>
+
+                        <input type="radio" class="btn-check" name="revenuePeriod" id="revenue90d" value="90">
+                        <label class="btn btn-outline-primary" for="revenue90d">90D</label>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <canvas id="revenueChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sales by Store -->
+    <div class="col-lg-4 mb-4">
+        <div class="card chart-card border-0 shadow-sm h-100">
+            <div class="card-header bg-transparent border-0 pb-0">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-shop text-primary me-2"></i>
+                    {% trans 'Sales by Branch' %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <canvas id="storeChart" height="300"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Secondary Charts Row -->
+<div class="row mb-4">
+    <!-- Top Products -->
+    <div class="col-lg-6 mb-4">
+        <div class="card chart-card border-0 shadow-sm h-100">
+            <div class="card-header bg-transparent border-0 pb-0">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-star text-primary me-2"></i>
+                    {% trans 'Top Selling Products' %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <canvas id="topProductsChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Methods -->
+    <div class="col-lg-6 mb-4">
+        <div class="card chart-card border-0 shadow-sm h-100">
+            <div class="card-header bg-transparent border-0 pb-0">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-credit-card text-primary me-2"></i>
+                    {% trans 'Payment Methods Distribution' %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <canvas id="paymentChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Activity and Quick Actions -->
+<div class="row mb-4">
+    <!-- Recent Activity -->
+    <div class="col-lg-8 mb-4">
+        <div class="card activity-card border-0 shadow-sm h-100">
+            <div class="card-header bg-transparent border-0">
+                <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                    <li class="nav-item">
+                        <a class="nav-link active" data-bs-toggle="tab" href="#recentSales">
+                            <i class="bi bi-receipt me-1"></i>{% trans 'Recent Sales' %}
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#recentCustomers">
+                            <i class="bi bi-people me-1"></i>{% trans 'New Customers' %}
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" data-bs-toggle="tab" href="#stockMovements">
+                            <i class="bi bi-arrow-left-right me-1"></i>{% trans 'Stock Movements' %}
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            <div class="card-body p-0">
+                <div class="tab-content">
+                    <!-- Recent Sales Tab -->
+                    <div class="tab-pane fade show active" id="recentSales">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>{% trans 'Date' %}</th>
+                                        <th>{% trans 'Document' %}</th>
+                                        <th>{% trans 'Customer' %}</th>
+                                        <th>{% trans 'Amount' %}</th>
+                                        <th>{% trans 'Status' %}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if recent_sales %}
+                                        {% for sale in recent_sales %}
+                                        <tr>
+                                            <td><small>{{ sale.created_at|date:"M d, H:i" }}</small></td>
+                                            <td>
+                                                <span class="badge bg-info">{{ sale.document_type }}</span>
+                                                <small class="text-muted">{{ sale.document_number }}</small>
+                                            </td>
+                                            <td>
+                                                {% if sale.customer %}
+                                                    {{ sale.customer.name|truncatechars:25 }}
+                                                {% else %}
+                                                    <span class="text-muted">{% trans 'Walk-in' %}</span>
+                                                {% endif %}
+                                            </td>
+                                            <td><strong>{{ company.preferred_currency }} {{ sale.total_amount|floatformat:0|intcomma }}</strong></td>
+                                            <td>
+                                                <span class="badge bg-success">{{ sale.status }}</span>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted py-4">
+                                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                                {% trans 'No recent sales' %}
+                                            </td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Recent Customers Tab -->
+                    <div class="tab-pane fade" id="recentCustomers">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>{% trans 'Name' %}</th>
+                                        <th>{% trans 'Type' %}</th>
+                                        <th>{% trans 'Phone' %}</th>
+                                        <th>{% trans 'Joined' %}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if recent_customers %}
+                                        {% for customer in recent_customers %}
+                                        <tr>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <div class="customer-avatar me-2">
+                                                        {{ customer.name|first|upper }}
+                                                    </div>
+                                                    {{ customer.name|truncatechars:30 }}
+                                                </div>
+                                            </td>
+                                            <td><span class="badge bg-secondary">{{ customer.customer_type }}</span></td>
+                                            <td>{{ customer.phone|default:"-" }}</td>
+                                            <td><small>{{ customer.created_at|date:"M d, Y" }}</small></td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="4" class="text-center text-muted py-4">
+                                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                                {% trans 'No recent customers' %}
+                                            </td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Stock Movements Tab -->
+                    <div class="tab-pane fade" id="stockMovements">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>{% trans 'Time' %}</th>
+                                        <th>{% trans 'Product' %}</th>
+                                        <th>{% trans 'Type' %}</th>
+                                        <th>{% trans 'Quantity' %}</th>
+                                        <th>{% trans 'Store' %}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if recent_stock_movements %}
+                                        {% for movement in recent_stock_movements %}
+                                        <tr>
+                                            <td><small>{{ movement.created_at|date:"H:i" }}</small></td>
+                                            <td>{{ movement.product.name|truncatechars:30 }}</td>
+                                            <td>
+                                                <span class="badge {% if movement.movement_type == 'IN' %}bg-success{% else %}bg-warning{% endif %}">
+                                                    {{ movement.movement_type }}
+                                                </span>
+                                            </td>
+                                            <td><strong>{{ movement.quantity }}</strong></td>
+                                            <td><small>{{ movement.store.name }}</small></td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted py-4">
+                                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                                {% trans 'No recent movements' %}
+                                            </td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions & Stats -->
+    <div class="col-lg-4 mb-4">
+        <div class="card actions-card border-0 shadow-sm h-100">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-lightning text-primary me-2"></i>
+                    {% trans 'Quick Actions' %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-3">
+                    <a href="{% url 'sales:create_sale' %}" class="btn btn-primary">
+                        <i class="bi bi-plus-circle me-2"></i>{% trans 'New Sale' %}
+                    </a>
+                    <a href="{% url 'customers:create' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-person-plus me-2"></i>{% trans 'Add Customer' %}
+                    </a>
+                    <a href="{% url 'inventory:product_create' %}" class="btn btn-outline-success">
+                        <i class="bi bi-box-seam me-2"></i>{% trans 'Add Product' %}
+                    </a>
+                    <a href="{% url 'sales:create_sale' %}" class="btn btn-outline-info">
+                        <i class="bi bi-file-earmark-text me-2"></i>{% trans 'Create Invoice' %}
+                    </a>
+                </div>
+
+                <hr class="my-4">
+
+                <h6 class="text-muted mb-3">{% trans 'Business Health' %}</h6>
+
+                <!-- Collection Rate -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small>{% trans 'Invoice Collection Rate' %}</small>
+                        <small class="text-muted">{{collection_rate|default:0 }}%</small>
+</div>
+<div class="progress" style="height: 6px;">
+<div class="progress-bar bg-success" role="progressbar" style="width: {{ collection_rate|default:0 }}%"></div>
+</div>
+</div>
+            <!-- Customer Retention -->
+            <div class="mb-3">
+                <div class="d-flex justify-content-between mb-1">
+                    <small>{% trans 'Customer Retention' %}</small>
+                    <small class="text-muted">{{ customer_retention_rate|default:0 }}%</small>
+                </div>
+                <div class="progress" style="height: 6px;">
+                    <div class="progress-bar bg-info" role="progressbar" style="width: {{ customer_retention_rate|default:0 }}%"></div>
+                </div>
+            </div>
+
+            <!-- Stock Health -->
+            <div class="mb-3">
+                <div class="d-flex justify-content-between mb-1">
+                    <small>{% trans 'Stock Health' %}</small>
+                    {% if total_products > 0 %}
+                        {% widthratio total_products low_stock_items 1 as stock_health_calc %}
+                        {% with stock_health=stock_health_calc|default:100 %}
+                            <small class="text-muted">{{ stock_health }}%</small>
+                        {% endwith %}
+                    {% else %}
+                        <small class="text-muted">100%</small>
+                    {% endif %}
+                </div>
+                <div class="progress" style="height: 6px;">
+                    {% if total_products > 0 %}
+                        {% widthratio total_products low_stock_items 1 as stock_health_calc %}
+                        {% with stock_health=stock_health_calc|default:100 %}
+                            <div class="progress-bar bg-warning" role="progressbar" style="width: {{ stock_health }}%"></div>
+                        {% endwith %}
+                    {% else %}
+                        <div class="progress-bar bg-success" role="progressbar" style="width: 100%"></div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <hr class="my-4">
+
+            <div class="d-grid">
+                <a href="#" class="btn btn-outline-secondary">
+                    <i class="bi bi-file-earmark-bar-graph me-2"></i>{% trans 'View Full Reports' %}
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% else %}
+<!-- No Company Assigned -->
+<div class="row">
+    <div class="col-12">
+        <div class="alert alert-warning">
+            <h4 class="alert-heading">{% trans 'No Company Assigned' %}</h4>
+            <p>{% trans 'You are not assigned to any company. Please contact your administrator.' %}</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="loading-overlay" style="display: none;">
+    <div class="loading-spinner">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">{% trans 'Loading...' %}</span>
+        </div>
+        <p class="mt-3">{% trans 'Refreshing dashboard...' %}</p>
+    </div>
+</div>
+{% endblock %}
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('Dashboard loaded');
+    console.log('Company:', '{{ company.company_id|default:"None" }}');
+    console.log('Sales Today:', '{{ sales_today_total|default:0 }}');
+
     initializeCharts();
     setupEventListeners();
-    initializeDarkMode();
-    initializeSubscriptionFeatures();
 });
 
-let registrationChart, currencyChart, statusChart, planChart;
+let revenueChart, storeChart, topProductsChart, paymentChart;
 
 function initializeCharts() {
-    // Registration Trend Chart
-    const registrationCtx = document.getElementById('registrationChart');
-    if (!registrationCtx) return;
+    // Revenue Trend Chart
+    const revenueCtx = document.getElementById('revenueChart');
+    if (revenueCtx) {
+        try {
+            const dailySales = {{ daily_sales_trend|safe|default:"[]" }};
+            console.log('Daily Sales Data:', dailySales);
 
-    const registrationData = {{ monthly_registrations|safe|default:"[]" }};
-
-    registrationChart = new Chart(registrationCtx, {
-        type: 'line',
-        data: {
-            labels: registrationData.map(item => item.month),
-            datasets: [{
-                label: '{% trans "Companies Registered" %}',
-                data: registrationData.map(item => item.count),
-                borderColor: '#007bff',
-                backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                borderWidth: 3,
-                fill: true,
-                tension: 0.4,
-                pointBackgroundColor: '#007bff',
-                pointBorderColor: '#ffffff',
-                pointBorderWidth: 2,
-                pointRadius: 6,
-                pointHoverRadius: 8
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    mode: 'index',
-                    intersect: false,
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                    titleColor: 'white',
-                    bodyColor: 'white',
-                    borderColor: '#007bff',
-                    borderWidth: 1
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: {
-                        color: 'rgba(0, 0, 0, 0.05)'
+            if (dailySales && dailySales.length > 0) {
+                revenueChart = new Chart(revenueCtx, {
+                    type: 'line',
+                    data: {
+                        labels: dailySales.map(item => new Date(item.date).toLocaleDateString('en-US', {month: 'short', day: 'numeric'})),
+                        datasets: [{
+                            label: '{% trans "Revenue" %}',
+                            data: dailySales.map(item => item.revenue),
+                            borderColor: '#007bff',
+                            backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointBackgroundColor: '#007bff',
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }]
                     },
-                    ticks: {
-                        color: '#6c757d'
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        return '{{ company.preferred_currency }} ' + context.parsed.y.toLocaleString();
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return '{{ company.preferred_currency }} ' + value.toLocaleString();
+                                    }
+                                }
+                            }
+                        }
                     }
-                },
-                x: {
-                    grid: {
-                        display: false
+                });
+            } else {
+                revenueCtx.parentElement.innerHTML = '<p class="text-center text-muted py-5">No sales data available</p>';
+            }
+        } catch (error) {
+            console.error('Error creating revenue chart:', error);
+        }
+    }
+
+    // Store Distribution Chart
+    const storeCtx = document.getElementById('storeChart');
+    if (storeCtx) {
+        try {
+            const salesByStore = {{ sales_by_store|safe|default:"[]" }};
+            console.log('Sales by Store:', salesByStore);
+
+            if (salesByStore && salesByStore.length > 0) {
+                storeChart = new Chart(storeCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: salesByStore.map(item => item.store_name),
+                        datasets: [{
+                            data: salesByStore.map(item => item.revenue),
+                            backgroundColor: [
+                                '#007bff', '#28a745', '#ffc107', '#17a2b8', '#dc3545',
+                                '#6f42c1', '#fd7e14', '#20c997', '#e83e8c', '#6c757d'
+                            ],
+                            borderWidth: 0
+                        }]
                     },
-                    ticks: {
-                        color: '#6c757d'
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.label + ': {{ company.preferred_currency }} ' + context.parsed.toLocaleString();
+                                    }
+                                }
+                            }
+                        }
                     }
-                }
-            },
-            interaction: {
-                intersect: false,
-                mode: 'index'
+                });
+            } else {
+                storeCtx.parentElement.innerHTML = '<p class="text-center text-muted py-5">No store data available</p>';
             }
+        } catch (error) {
+            console.error('Error creating store chart:', error);
         }
-    });
+    }
 
-    // Status Distribution Chart
-    const statusCtx = document.getElementById('statusChart');
-    if (!statusCtx) return;
+    // Top Products Chart
+    const productsCtx = document.getElementById('topProductsChart');
+    if (productsCtx) {
+        try {
+            const topProducts = {{ top_products|safe|default:"[]" }};
+            console.log('Top Products:', topProducts);
 
-    const statusData = {{ status_distribution|safe|default:"[]" }};
-
-    const statusColors = {
-        'ACTIVE': '#28a745',
-        'TRIAL': '#17a2b8',
-        'EXPIRED': '#dc3545',
-        'SUSPENDED': '#ffc107'
-    };
-
-    statusChart = new Chart(statusCtx, {
-        type: 'doughnut',
-        data: {
-            labels: statusData.map(item => item.status),
-            datasets: [{
-                data: statusData.map(item => item.count),
-                backgroundColor: statusData.map(item => statusColors[item.status] || '#6c757d'),
-                borderWidth: 0,
-                hoverOffset: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                    titleColor: 'white',
-                    bodyColor: 'white'
-                }
-            }
-        }
-    });
-
-    // Currency Distribution Chart
-    const currencyCtx = document.getElementById('currencyChart');
-    if (!currencyCtx) return;
-
-    const currencyData = {{ currency_distribution|safe|default:"[]" }};
-    const currencyColors = ['#007bff', '#28a745', '#ffc107', '#17a2b8', '#dc3545', '#6f42c1', '#fd7e14'];
-
-    currencyChart = new Chart(currencyCtx, {
-        type: 'bar',
-        data: {
-            labels: currencyData.map(item => item.currency),
-            datasets: [{
-                data: currencyData.map(item => item.count),
-                backgroundColor: currencyColors.slice(0, currencyData.length),
-                borderRadius: 4,
-                borderSkipped: false
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: {
-                        color: 'rgba(0, 0, 0, 0.05)'
+            if (topProducts && topProducts.length > 0) {
+                topProductsChart = new Chart(productsCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: topProducts.map(item => item.name),
+                        datasets: [{
+                            label: '{% trans "Revenue" %}',
+                            data: topProducts.map(item => item.revenue),
+                            backgroundColor: '#28a745',
+                            borderRadius: 4
+                        }]
                     },
-                    ticks: {
-                        color: '#6c757d'
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return '{{ company.preferred_currency }} ' + context.parsed.x.toLocaleString();
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return '{{ company.preferred_currency }} ' + value.toLocaleString();
+                                    }
+                                }
+                            }
+                        }
                     }
-                },
-                x: {
-                    grid: {
-                        display: false
+                });
+            } else {
+                productsCtx.parentElement.innerHTML = '<p class="text-center text-muted py-5">No product data available</p>';
+            }
+        } catch (error) {
+            console.error('Error creating products chart:', error);
+        }
+    }
+
+    // Payment Methods Chart
+    const paymentCtx = document.getElementById('paymentChart');
+    if (paymentCtx) {
+        try {
+            const paymentDist = {{ payment_distribution|safe|default:"[]" }};
+            console.log('Payment Distribution:', paymentDist);
+
+            if (paymentDist && paymentDist.length > 0) {
+                paymentChart = new Chart(paymentCtx, {
+                    type: 'pie',
+                    data: {
+                        labels: paymentDist.map(item => item.method),
+                        datasets: [{
+                            data: paymentDist.map(item => item.total),
+                            backgroundColor: ['#007bff', '#28a745', '#ffc107', '#17a2b8', '#dc3545'],
+                            borderWidth: 0
+                        }]
                     },
-                    ticks: {
-                        color: '#6c757d'
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.label + ': {{ company.preferred_currency }} ' + context.parsed.toLocaleString();
+                                    }
+                                }
+                            }
+                        }
                     }
-                }
+                });
+            } else {
+                paymentCtx.parentElement.innerHTML = '<p class="text-center text-muted py-5">No payment data available</p>';
             }
+        } catch (error) {
+            console.error('Error creating payment chart:', error);
         }
-    });
-
-    // Plan Distribution Chart
-    const planCtx = document.getElementById('planChart');
-    if (!planCtx) return;
-
-    const planData = {{ plan_distribution|safe|default:"[]" }};
-
-    planChart = new Chart(planCtx, {
-        type: 'polarArea',
-        data: {
-            labels: planData.map(item => item.plan),
-            datasets: [{
-                data: planData.map(item => item.count),
-                backgroundColor: currencyColors.slice(0, planData.length).map(color => color + '80'),
-                borderColor: currencyColors.slice(0, planData.length),
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        color: '#6c757d'
-                    }
-                }
-            }
-        }
-    });
-}
-
-function setupEventListeners() {
-    // Chart period buttons
-    document.querySelectorAll('input[name="chartPeriod"]').forEach(radio => {
-        radio.addEventListener('change', function() {
-            changePeriod(parseInt(this.value));
-        });
-    });
-}
-
-function initializeDarkMode() {
-    const darkModeToggle = document.getElementById('darkModeToggle');
-    if (!darkModeToggle) return;
-
-    const savedTheme = localStorage.getItem('theme') || 'light';
-
-    // Apply saved theme
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    updateDarkModeButton(savedTheme === 'dark');
-
-    // Toggle event listener
-    darkModeToggle.addEventListener('click', function() {
-        const currentTheme = document.documentElement.getAttribute('data-theme');
-        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-
-        document.documentElement.setAttribute('data-theme', newTheme);
-        localStorage.setItem('theme', newTheme);
-        updateDarkModeButton(newTheme === 'dark');
-
-        // Update charts if they exist
-        updateChartsForTheme(newTheme);
-    });
-}
-
-function updateDarkModeButton(isDark) {
-    const darkModeToggle = document.getElementById('darkModeToggle');
-    if (!darkModeToggle) return;
-
-    const icon = darkModeToggle.querySelector('i');
-    if (!icon) return;
-
-    if (isDark) {
-        icon.className = 'bi bi-sun';
-        darkModeToggle.title = '{% trans "Switch to light mode" %}';
-    } else {
-        icon.className = 'bi bi-moon';
-        darkModeToggle.title = '{% trans "Switch to dark mode" %}';
     }
 }
 
-function updateChartsForTheme(theme) {
-    const textColor = theme === 'dark' ? '#ffffff' : '#6c757d';
-    const gridColor = theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
-
-    [registrationChart, currencyChart, statusChart, planChart].forEach(chart => {
-        if (chart && chart.options) {
-            // Update text colors
-            if (chart.options.scales) {
-                if (chart.options.scales.y) {
-                    chart.options.scales.y.ticks.color = textColor;
-                    chart.options.scales.y.grid.color = gridColor;
-                }
-                if (chart.options.scales.x) {
-                    chart.options.scales.x.ticks.color = textColor;
-                    if (chart.options.scales.x.grid) {
-                        chart.options.scales.x.grid.color = gridColor;
-                    }
-                }
-            }
-
-            // Update legend colors
-            if (chart.options.plugins && chart.options.plugins.legend) {
-                chart.options.plugins.legend.labels = chart.options.plugins.legend.labels || {};
-                chart.options.plugins.legend.labels.color = textColor;
-            }
-
-            chart.update('none'); // Use 'none' to prevent animation
-        }
+function setupEventListeners() {
+    document.querySelectorAll('input[name="revenuePeriod"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            updateRevenuePeriod(this.value);
+        });
     });
 }
 
@@ -1271,276 +988,31 @@ function refreshDashboard() {
     const refreshBtn = document.getElementById('refreshBtn');
     const loadingOverlay = document.getElementById('loadingOverlay');
 
-    if (!refreshBtn || !loadingOverlay) return;
-
-    // Show loading state
     refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> {% trans "Refreshing..." %}';
     refreshBtn.disabled = true;
     loadingOverlay.style.display = 'flex';
 
-    // Simulate refresh (in real app, you'd make an AJAX call)
     setTimeout(() => {
         location.reload();
     }, 1000);
 }
 
-function changePeriod(days) {
-    console.log('Changing period to:', days, 'days');
-
+function changePeriod(period) {
     const loadingOverlay = document.getElementById('loadingOverlay');
-    if (!loadingOverlay) return;
-
-    // Show loading overlay
     loadingOverlay.style.display = 'flex';
 
-    // In a real application, you would make an AJAX call to update the dashboard data
-    // for the selected time period
-    fetch(`?period=${days}`, {
-        method: 'GET',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-        },
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        return response.json();
-    })
-    .then(data => {
-        // Update charts with new data
-        updateChartData(data);
-        loadingOverlay.style.display = 'none';
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        loadingOverlay.style.display = 'none';
-        // Show error message to user
-        showNotification('{% trans "Failed to update dashboard data" %}', 'error');
-    });
+    // In production, make AJAX call to update dashboard data
+    window.location.href = `?period=${period}`;
 }
 
-function updateChartData(data) {
-    // Update registration chart
-    if (registrationChart && data.monthly_registrations) {
-        registrationChart.data.labels = data.monthly_registrations.map(item => item.month);
-        registrationChart.data.datasets[0].data = data.monthly_registrations.map(item => item.count);
-        registrationChart.update();
-    }
-
-    // Update status chart
-    if (statusChart && data.status_distribution) {
-        const statusColors = {
-            'ACTIVE': '#28a745',
-            'TRIAL': '#17a2b8',
-            'EXPIRED': '#dc3545',
-            'SUSPENDED': '#ffc107'
-        };
-
-        statusChart.data.labels = data.status_distribution.map(item => item.status);
-        statusChart.data.datasets[0].data = data.status_distribution.map(item => item.count);
-        statusChart.data.datasets[0].backgroundColor = data.status_distribution.map(item => statusColors[item.status] || '#6c757d');
-        statusChart.update();
-    }
-
-    // Update currency chart
-    if (currencyChart && data.currency_distribution) {
-        currencyChart.data.labels = data.currency_distribution.map(item => item.currency);
-        currencyChart.data.datasets[0].data = data.currency_distribution.map(item => item.count);
-        currencyChart.update();
-    }
-
-    // Update plan chart
-    if (planChart && data.plan_distribution) {
-        planChart.data.labels = data.plan_distribution.map(item => item.plan);
-        planChart.data.datasets[0].data = data.plan_distribution.map(item => item.count);
-        planChart.update();
-    }
-
-    // Update subscription metrics
-    if (data.subscription_metrics) {
-        updateSubscriptionMetrics(data.subscription_metrics);
-    }
+function updateRevenuePeriod(days) {
+    console.log('Updating revenue chart for', days, 'days');
+    // In production, fetch new data via AJAX
 }
 
-function toggleDarkMode() {
-    const darkModeToggle = document.getElementById('darkModeToggle');
-    if (darkModeToggle) {
-        darkModeToggle.click();
-    }
-}
-
-function initializeSubscriptionFeatures() {
-    // Add any subscription-specific JavaScript functionality here
-    console.log('Subscription features initialized');
-
-    // Example: Auto-show renewal reminder if subscription is expiring soon
-    const daysUntilExpiry = {{ company.days_until_expiry|default:0 }};
-    if (daysUntilExpiry > 0 && daysUntilExpiry <= 7) {
-        showRenewalReminder(daysUntilExpiry);
-    }
-
-    // Initialize subscription action buttons
-    initializeSubscriptionActions();
-}
-
-function initializeSubscriptionActions() {
-    // Add event listeners for subscription action buttons
-    document.querySelectorAll('[data-subscription-action]').forEach(button => {
-        button.addEventListener('click', function() {
-            const action = this.getAttribute('data-subscription-action');
-            const planId = this.getAttribute('data-plan-id');
-            handleSubscriptionAction(action, planId);
-        });
-    });
-}
-
-function handleSubscriptionAction(action, planId = null) {
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    if (!loadingOverlay) return;
-
-    loadingOverlay.style.display = 'flex';
-
-    let url = '';
-
-    switch(action) {
-        case 'renew':
-            url = '{% url "companies:subscription_renew" %}';
-            break;
-        case 'upgrade':
-            url = `/companies/subscription/upgrade/${planId}/`;
-            break;
-        case 'downgrade':
-            url = `/companies/subscription/downgrade/${planId}/`;
-            break;
-        case 'cancel':
-            url = '{% url "companies:subscription_cancel" %}';
-            break;
-        default:
-            console.error('Unknown subscription action:', action);
-            loadingOverlay.style.display = 'none';
-            return;
-    }
-
-    // In a real implementation, you would make an AJAX call here
-    // For now, we'll redirect to the appropriate page
-    setTimeout(() => {
-        if (url) {
-            window.location.href = url;
-        } else {
-            loadingOverlay.style.display = 'none';
-            showNotification('{% trans "Action not available" %}', 'error');
-        }
-    }, 500);
-}
-
-function updateSubscriptionMetrics(data) {
-    // Update subscription metrics on the dashboard
-    const metricCards = document.querySelectorAll('.subscription-metric-card');
-
-    if (data.active_subscriptions !== undefined && metricCards[0]) {
-        metricCards[0].querySelector('h4').textContent = data.active_subscriptions;
-    }
-    if (data.expiring_soon_count !== undefined && metricCards[1]) {
-        metricCards[1].querySelector('h4').textContent = data.expiring_soon_count;
-    }
-    if (data.trial_companies !== undefined && metricCards[2]) {
-        metricCards[2].querySelector('h4').textContent = data.trial_companies;
-    }
-    if (data.expired_companies !== undefined && metricCards[3]) {
-        metricCards[3].querySelector('h4').textContent = data.expired_companies;
-    }
-    if (data.monthly_revenue !== undefined && metricCards[4]) {
-        metricCards[4].querySelector('h4').textContent = '$' + data.monthly_revenue.toFixed(2);
-    }
-    if (data.renewal_rate !== undefined && metricCards[5]) {
-        metricCards[5].querySelector('h4').textContent = data.renewal_rate + '%';
-    }
-}
-
-function showRenewalReminder(daysUntilExpiry) {
-    // Create a renewal reminder notification
-    const reminderHtml = `
-        <div class="alert alert-warning alert-dismissible fade show" role="alert">
-            <div class="d-flex align-items-center">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                <div>
-                    <strong>{% trans "Subscription Expiring Soon" %}</strong>
-                    <p class="mb-0">{% trans "Your subscription expires in" %} ${daysUntilExpiry} {% trans "days" %}.</p>
-                </div>
-            </div>
-            <div class="mt-2">
-                <a href="{% url 'companies:subscription_renew' %}" class="btn btn-warning btn-sm">
-                    <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Renew Now" %}
-                </a>
-            </div>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    `;
-
-    // You could insert this at the top of the page or show as a toast notification
-    console.log('Renewal reminder: Subscription expires in', daysUntilExpiry, 'days');
-}
-
-function showNotification(message, type = 'info') {
-    // Simple notification function - you might want to use a proper notification library
-    const alertClass = type === 'error' ? 'alert-danger' :
-                      type === 'success' ? 'alert-success' :
-                      type === 'warning' ? 'alert-warning' : 'alert-info';
-
-    const notificationHtml = `
-        <div class="alert ${alertClass} alert-dismissible fade show position-fixed"
-             style="top: 20px; right: 20px; z-index: 9999; min-width: 300px;">
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    `;
-
-    document.body.insertAdjacentHTML('beforeend', notificationHtml);
-
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        const alerts = document.querySelectorAll('.alert.position-fixed');
-        alerts.forEach(alert => {
-            if (alert.parentNode) {
-                alert.parentNode.removeChild(alert);
-            }
-        });
-    }, 5000);
-}
-
-// Error handling for chart initialization
-window.addEventListener('error', function(e) {
-    if (e.message.includes('Chart') || e.message.includes('canvas')) {
-        console.error('Chart initialization error:', e);
-        // Hide chart containers if there's an error
-        document.querySelectorAll('canvas').forEach(canvas => {
-            const container = canvas.closest('.card-body');
-            if (container) {
-                container.innerHTML = '<div class="text-center py-4 text-muted">{% trans "Chart loading error. Please refresh the page." %}</div>';
-            }
-        });
-    }
-});
-
-// Performance monitoring
-if ('performance' in window) {
-    window.addEventListener('load', function() {
-        setTimeout(() => {
-            const perfData = performance.getEntriesByType('navigation')[0];
-            if (perfData && perfData.loadEventEnd - perfData.loadEventStart > 3000) {
-                console.warn('Dashboard loaded slowly:', perfData.loadEventEnd - perfData.loadEventStart, 'ms');
-            }
-        }, 100);
-    });
-}
-
-// Export functions for global access if needed
 window.Dashboard = {
     refresh: refreshDashboard,
-    changePeriod: changePeriod,
-    toggleDarkMode: toggleDarkMode,
-    handleSubscriptionAction: handleSubscriptionAction
+    changePeriod: changePeriod
 };
 </script>
 {% endblock %}

@@ -389,6 +389,19 @@ class EFRISSaleMixin:
         return tax_details
 
 
+from django.db import models
+from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.utils import timezone
+from decimal import Decimal, ROUND_HALF_UP
+from datetime import timedelta
+import uuid
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class Sale(models.Model, EFRISSaleMixin):
     # ==================== NEW: Document Type System ====================
     DOCUMENT_TYPE_CHOICES = [
@@ -478,17 +491,25 @@ class Sale(models.Model, EFRISSaleMixin):
     customer = models.ForeignKey('customers.Customer', on_delete=models.SET_NULL, null=True, blank=True)
 
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES, default='SALE')
-    # REMOVED: document_type (now using new DOCUMENT_TYPE_CHOICES)
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, default='CASH')
     currency = models.CharField(max_length=3, default='UGX')
 
     # ==================== NEW: Due Date for Invoices ====================
     due_date = models.DateField(null=True, blank=True, verbose_name="Due Date")
 
-    subtotal = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)], default=0)
-    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)], default=0)
-    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)])
-    total_amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)], default=0)
+    # ✅ CHANGED: Removed MinValueValidator to allow negative values for refunds
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    # Add discount percentage field (keep validator for percentage)
+    discount = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)]
+    )
 
     # EFRIS
     efris_invoice_number = models.CharField(max_length=50, blank=True, null=True, db_index=True)
@@ -498,11 +519,22 @@ class Sale(models.Model, EFRISSaleMixin):
     fiscalization_time = models.DateTimeField(blank=True, null=True)
     fiscal_number = models.CharField(max_length=64, blank=True, null=True)
     fiscalization_status = models.CharField(max_length=32, blank=True, null=True, default='pending')
+    fiscalization_error = models.TextField(blank=True, null=True)
 
-    # ==================== CHANGED: Remove is_completed, use status field ====================
+    # Void tracking
     is_refunded = models.BooleanField(default=False)
     is_voided = models.BooleanField(default=False)
     void_reason = models.TextField(blank=True, null=True)
+    void_notes = models.TextField(blank=True, null=True)
+    voided_at = models.DateTimeField(blank=True, null=True)
+    voided_by = models.ForeignKey(
+        'accounts.CustomUser',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='voided_sales'
+    )
+
     notes = models.TextField(blank=True, null=True)
     duplicated_from = models.ForeignKey(
         "self",
@@ -533,13 +565,15 @@ class Sale(models.Model, EFRISSaleMixin):
         ]
         verbose_name = "Sale"
         verbose_name_plural = "Sales"
+        # ✅ REMOVED: Constraints that enforce positive values
 
     def __str__(self):
         doc_type = self.get_document_type_display()
-        return f"{doc_type} #{self.document_number or self.transaction_id}"
+        prefix = "REFUND: " if self.transaction_type == 'REFUND' else ""
+        return f"{prefix}{doc_type} #{self.document_number or self.transaction_id}"
 
     def clean(self):
-        """Model-level validation"""
+        """Model-level validation - handles both sales and refunds"""
         super().clean()
 
         # Convert to Decimal explicitly
@@ -548,70 +582,34 @@ class Sale(models.Model, EFRISSaleMixin):
         discount = Decimal(str(self.discount_amount or 0))
         total = Decimal(str(self.total_amount or 0))
 
-        # ✅ For tax-inclusive prices:
-        # total should equal subtotal - discount (not subtotal + tax)
-        calculated_total = subtotal - discount
+        # ✅ CHANGED: Validation based on transaction type
+        if self.transaction_type == 'SALE':
+            # For sales: total should equal subtotal - discount
+            calculated_total = subtotal - discount
 
-        if abs(total - calculated_total) > Decimal('0.01'):
-            raise ValidationError("Total amount doesn't match calculated total")
+            if abs(total - calculated_total) > Decimal('0.01'):
+                raise ValidationError("Total amount doesn't match calculated total")
 
-        # Validate discount doesn't exceed subtotal
-        if discount > subtotal:
-            raise ValidationError("Discount amount cannot exceed subtotal")
+            # Validate discount doesn't exceed subtotal for sales
+            if discount > subtotal:
+                raise ValidationError("Discount amount cannot exceed subtotal")
+
+            # Validate amounts are positive for sales
+            if subtotal < 0 or total < 0:
+                raise ValidationError("Sale amounts must be positive")
+
+        elif self.transaction_type == 'REFUND':
+            # For refunds: amounts should be negative or zero
+            if total > 0:
+                raise ValidationError("Refund total amount must be negative or zero")
 
         # Validate due date for invoices
-        if self.document_type == 'INVOICE' and not self.due_date:
+        if self.document_type == 'INVOICE' and self.transaction_type == 'SALE' and not self.due_date:
             raise ValidationError("Due date is required for invoices")
 
         # Validate payment status based on document type
-        if self.document_type == 'RECEIPT' and self.payment_status != 'PAID':
+        if self.document_type == 'RECEIPT' and self.transaction_type == 'SALE' and self.payment_status != 'PAID':
             self.payment_status = 'PAID'
-
-    def _create_invoice_if_needed(self):
-        """
-        Create invoice for EFRIS fiscalization if needed
-        """
-        try:
-            # Don't create invoice for zero-amount sales
-            if not self.total_amount or self.total_amount <= 0:
-                logger.warning(f"Skipping invoice creation for sale {self.id} - zero or negative amount")
-                return None
-
-            # Check if we should create an invoice
-            store_config = self.store.effective_efris_config
-
-            if (store_config.get('enabled', False) and
-                    store_config.get('auto_fiscalize_sales', False) and
-                    self.status in ['COMPLETED', 'PAID']):
-
-                from invoices.models import Invoice
-
-                # Check if invoice already exists
-                if hasattr(self, 'invoice_detail') and self.invoice_detail:
-                    logger.info(f"Invoice already exists for sale {self.id}")
-                    return self.invoice_detail
-
-                # Create invoice
-                invoice = Invoice.objects.create(
-                    sale=self,
-                    store=self.store,
-                    terms='',
-                    purchase_order='',
-                    business_type=self._determine_business_type() if hasattr(self,
-                                                                             '_determine_business_type') else 'B2C',
-                    operator_name=self.created_by.get_full_name() if self.created_by else 'System',
-                    created_by=self.created_by,
-                    auto_fiscalize=True
-                )
-
-                logger.info(f"Created invoice {invoice.id} for sale {self.id}")
-                return invoice
-
-            return None
-
-        except Exception as e:
-            logger.error(f"Error creating invoice for sale {self.id}: {e}")
-            return None
 
     def save(self, *args, **kwargs):
         # Auto-generate document number based on type
@@ -619,7 +617,8 @@ class Sale(models.Model, EFRISSaleMixin):
             self.document_number = self.generate_document_number()
 
         # Set appropriate status and payment status based on document type
-        self.set_auto_statuses()
+        if self.transaction_type != 'REFUND':
+            self.set_auto_statuses()
 
         # Calculate total if not set
         if not self.total_amount or self.total_amount == 0:
@@ -635,64 +634,60 @@ class Sale(models.Model, EFRISSaleMixin):
 
         super().save(*args, **kwargs)
 
-        if self.document_type == 'INVOICE' and self.customer:
-            self.customer.update_credit_balance()
-            # Only create if Invoice doesn't exist
-            if not hasattr(self, 'invoice_detail') or self.invoice_detail is None:
-                try:
-                    # Import here to avoid circular imports
-                    from invoices.models import Invoice as InvoiceModel
+        # ✅ CHANGED: Only create invoice/receipt for non-refund transactions
+        if self.transaction_type != 'REFUND':
+            if self.document_type == 'INVOICE' and self.customer:
+                self.customer.update_credit_balance()
+                if not hasattr(self, 'invoice_detail') or self.invoice_detail is None:
+                    try:
+                        from invoices.models import Invoice as InvoiceModel
 
-                    # Determine business type
-                    business_type = 'B2C'  # Default
-                    if self.customer:
-                        if hasattr(self.customer, 'customer_type'):
-                            if self.customer.customer_type == 'BUSINESS':
+                        business_type = 'B2C'
+                        if self.customer:
+                            if hasattr(self.customer, 'customer_type'):
+                                if self.customer.customer_type == 'BUSINESS':
+                                    business_type = 'B2B'
+                                elif self.customer.customer_type in ['GOVERNMENT', 'PUBLIC']:
+                                    business_type = 'B2G'
+                            elif hasattr(self.customer, 'tin') and self.customer.tin:
                                 business_type = 'B2B'
-                            elif self.customer.customer_type in ['GOVERNMENT', 'PUBLIC']:
-                                business_type = 'B2G'
-                        elif hasattr(self.customer, 'tin') and self.customer.tin:
-                            business_type = 'B2B'
 
-                    # Create Invoice record
-                    InvoiceModel.objects.create(
-                        sale=self,
-                        store=self.store,
-                        terms='',
-                        purchase_order='',
-                        created_by=self.created_by,
-                        business_type=business_type,
-                        operator_name=self.created_by.get_full_name() if self.created_by else 'System',
-                        fiscalization_status='pending',
-                        efris_document_type='1',  # Normal Invoice
-                        auto_fiscalize=True
-                    )
-                    logger.info(f"✅ Auto-created Invoice record for sale {self.document_number}")
-                except Exception as e:
-                    logger.error(f"❌ Failed to auto-create Invoice record for sale {self.id}: {e}", exc_info=True)
-        # ===============================================================
+                        InvoiceModel.objects.create(
+                            sale=self,
+                            store=self.store,
+                            terms='',
+                            purchase_order='',
+                            created_by=self.created_by,
+                            business_type=business_type,
+                            operator_name=self.created_by.get_full_name() if self.created_by else 'System',
+                            fiscalization_status='pending',
+                            efris_document_type='1',
+                            auto_fiscalize=True
+                        )
+                        logger.info(f"✅ Auto-created Invoice record for sale {self.document_number}")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to auto-create Invoice record for sale {self.id}: {e}", exc_info=True)
 
-        # Auto-create Receipt record for RECEIPT document type
-        if self.document_type == 'RECEIPT' and is_new:
-            try:
-                from sales.models import Receipt as ReceiptModel
-                if not hasattr(self, 'receipt_detail') or self.receipt_detail is None:
-                    ReceiptModel.objects.create(
-                        sale=self,
-                        printed_by=self.created_by,
-                        receipt_data={
-                            'items': [],
-                            'totals': {
-                                'subtotal': str(self.subtotal),
-                                'tax': str(self.tax_amount),
-                                'discount': str(self.discount_amount),
-                                'total': str(self.total_amount),
+            if self.document_type == 'RECEIPT' and is_new:
+                try:
+                    from sales.models import Receipt as ReceiptModel
+                    if not hasattr(self, 'receipt_detail') or self.receipt_detail is None:
+                        ReceiptModel.objects.create(
+                            sale=self,
+                            printed_by=self.created_by,
+                            receipt_data={
+                                'items': [],
+                                'totals': {
+                                    'subtotal': str(self.subtotal),
+                                    'tax': str(self.tax_amount),
+                                    'discount': str(self.discount_amount),
+                                    'total': str(self.total_amount),
+                                }
                             }
-                        }
-                    )
-                    logger.info(f"✅ Auto-created Receipt record for sale {self.document_number}")
-            except Exception as e:
-                logger.error(f"❌ Failed to auto-create Receipt record: {e}", exc_info=True)
+                        )
+                        logger.info(f"✅ Auto-created Receipt record for sale {self.document_number}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to auto-create Receipt record: {e}", exc_info=True)
 
         # Send WebSocket update
         if self.status in ['COMPLETED', 'PAID']:
@@ -701,8 +696,8 @@ class Sale(models.Model, EFRISSaleMixin):
             except Exception as e:
                 logger.error(f"WebSocket update failed for sale {self.id}: {e}")
 
-        # Auto-fiscalize if needed
-        if is_new and self.status in ['COMPLETED', 'PAID']:
+        # Auto-fiscalize if needed (not for refunds)
+        if is_new and self.status in ['COMPLETED', 'PAID'] and self.transaction_type != 'REFUND':
             try:
                 store_config = self.store.effective_efris_config
                 if store_config.get('enabled', False) and store_config.get('is_active', False):
@@ -718,18 +713,23 @@ class Sale(models.Model, EFRISSaleMixin):
 
     def generate_document_number(self):
         """Generate document number based on type"""
-        prefix = {
-            'RECEIPT': 'RCP',
-            'INVOICE': 'INV',
-            'PROFORMA': 'PRO',
-            'ESTIMATE': 'EST',
-        }.get(self.document_type, 'SAL')
+        # ✅ CHANGED: Add REFUND prefix
+        if self.transaction_type == 'REFUND':
+            prefix = 'REF'
+        else:
+            prefix = {
+                'RECEIPT': 'RCP',
+                'INVOICE': 'INV',
+                'PROFORMA': 'PRO',
+                'ESTIMATE': 'EST',
+            }.get(self.document_type, 'SAL')
 
         date_str = timezone.now().strftime('%Y%m%d')
 
         # Get last number for this type today
         last_sale = Sale.objects.filter(
             document_type=self.document_type,
+            transaction_type=self.transaction_type,
             created_at__date=timezone.now().date()
         ).order_by('-id').first()
 
@@ -743,26 +743,8 @@ class Sale(models.Model, EFRISSaleMixin):
 
         return f"{prefix}-{date_str}-{sequence:04d}"
 
-    def set_auto_statuses(self):
-        """Set status and payment status based on document type and payment"""
-        if self.document_type == 'RECEIPT':
-            # Receipts are always paid immediately
-            self.payment_status = 'PAID'
-            self.status = 'COMPLETED'
-        elif self.document_type == 'INVOICE':
-            if self.payment_method == 'CREDIT':
-                self.payment_status = 'PENDING'
-                self.status = 'PENDING_PAYMENT'
-            else:
-                # If invoice paid with non-credit method
-                self.payment_status = 'PAID'
-                self.status = 'COMPLETED'
-        elif self.document_type in ['PROFORMA', 'ESTIMATE']:
-            self.payment_status = 'NOT_APPLICABLE'
-            self.status = 'DRAFT'
-
     def update_totals(self):
-        """Update totals using SaleItems with proper aggregation"""
+        """Update totals using SaleItems - handles both sales and refunds"""
         from django.db.models import Sum
 
         aggregates = self.items.aggregate(
@@ -780,11 +762,17 @@ class Sale(models.Model, EFRISSaleMixin):
         self.discount_amount = discount
         self.tax_amount = tax
 
-        self.total_amount = (subtotal - discount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        # ✅ CHANGED: Handle both positive (sales) and negative (refunds) totals
+        if self.transaction_type == 'REFUND':
+            # For refunds: all values are negative, so add them
+            self.total_amount = (subtotal + discount + tax).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        else:
+            # For sales: normal calculation
+            self.total_amount = (subtotal - discount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-        # Ensure total_amount is positive
-        if self.total_amount < 0:
-            self.total_amount = Decimal('0')
+            # Ensure total_amount is not negative for sales
+            if self.total_amount < 0:
+                self.total_amount = Decimal('0')
 
         self.save(update_fields=['subtotal', 'tax_amount', 'discount_amount', 'total_amount'])
 
@@ -800,8 +788,11 @@ class Sale(models.Model, EFRISSaleMixin):
 
     def send_sale_update(self):
         """Send WebSocket message for real-time updates per store"""
-        if not hasattr(self, '_websocket_sent'):  # Prevent duplicate sends
+        if not hasattr(self, '_websocket_sent'):
             try:
+                from channels.layers import get_channel_layer
+                from asgiref.sync import async_to_sync
+
                 channel_layer = get_channel_layer()
                 if channel_layer:
                     async_to_sync(channel_layer.group_send)(
@@ -812,6 +803,7 @@ class Sale(models.Model, EFRISSaleMixin):
                                 'sale_id': str(self.id),
                                 'document_number': self.document_number,
                                 'document_type': self.document_type,
+                                'transaction_type': self.transaction_type,
                                 'status': self.status,
                                 'payment_status': self.payment_status,
                                 'total_amount': str(self.total_amount),
@@ -824,7 +816,7 @@ class Sale(models.Model, EFRISSaleMixin):
             except Exception as e:
                 logger.error(f"WebSocket Error for Sale {self.id}: {e}")
 
-    # ==================== NEW: Helper Properties ====================
+    # ==================== Helper Properties ====================
     @property
     def item_count(self):
         return self.items.count()
@@ -880,11 +872,6 @@ class Sale(models.Model, EFRISSaleMixin):
         self.efris_invoice_number = value
 
     @property
-    def items(self):
-        """Get sale items - EFRIS expects this property"""
-        return getattr(self, 'sale_items', self.items)
-
-    @property
     def company(self):
         """Get company from store for EFRIS"""
         return self.store.company
@@ -916,12 +903,10 @@ class Sale(models.Model, EFRISSaleMixin):
 
             updates = {}
 
-            # --- Extract main sections safely ---
             basic_info = response_data.get('basicInformation', {})
             summary = response_data.get('summary', {})
             data_section = response_data.get('data', {})
 
-            # --- Fiscal document number ---
             fiscal_doc_number = (
                     basic_info.get('invoiceNo')
                     or response_data.get('invoiceNo')
@@ -930,7 +915,6 @@ class Sale(models.Model, EFRISSaleMixin):
             if fiscal_doc_number:
                 updates['efris_invoice_number'] = fiscal_doc_number
 
-            # --- Verification (Anti-fake) code ---
             verification_code = (
                     basic_info.get('antifakeCode')
                     or response_data.get('antifakeCode')
@@ -939,7 +923,6 @@ class Sale(models.Model, EFRISSaleMixin):
             if verification_code:
                 updates['verification_code'] = verification_code
 
-            # --- QR Code (handle variants) ---
             qr_code = (
                     summary.get('qrCode')
                     or summary.get('qr_code')
@@ -951,11 +934,9 @@ class Sale(models.Model, EFRISSaleMixin):
                 self.qr_code = qr_code
                 updates['qr_code'] = qr_code
 
-            # --- Mark as fiscalized ---
             updates['is_fiscalized'] = True
             updates['fiscalization_time'] = timezone.now()
 
-            # --- Apply updates ---
             if updates:
                 for field, value in updates.items():
                     setattr(self, field, value)
@@ -975,11 +956,9 @@ class Sale(models.Model, EFRISSaleMixin):
             logger.warning(f"Sale {self.id} is not an invoice, cannot process for EFRIS")
             return None
 
-        # If we have a separate invoice detail, use that
         if hasattr(self, 'invoice_detail') and self.invoice_detail:
             return self.invoice_detail
 
-        # Otherwise use the sale itself as the invoice
         return self
 
     def mark_fiscalization_failed(self, error_message):
@@ -993,7 +972,6 @@ class Sale(models.Model, EFRISSaleMixin):
         from django.db.models import Sum
         from decimal import Decimal
 
-        # Calculate total paid
         total_paid = self.payments.aggregate(
             total=Sum('amount')
         )['total'] or Decimal('0')
@@ -1003,9 +981,9 @@ class Sale(models.Model, EFRISSaleMixin):
 
         # Determine status
         if total_paid >= total_amount:
-            self.payment_status = 'PAID'
+            self.payment_status = 'PAID'  # ✅ Use 'PAID' not 'COMPLETED'
             if self.status != 'CANCELLED':
-                self.status = 'COMPLETED'
+                self.status = 'COMPLETED'  # ✅ This is correct (status field)
         elif total_paid > Decimal('0'):
             self.payment_status = 'PARTIALLY_PAID'
             if self.status == 'DRAFT':
@@ -1026,7 +1004,7 @@ class Sale(models.Model, EFRISSaleMixin):
         )
 
     def calculate_payment_status(self):
-        """Calculate payment status without saving (for use in Payment model)"""
+        """Calculate payment status without saving"""
         from django.db.models import Sum
         from decimal import Decimal
 
@@ -1047,50 +1025,26 @@ class Sale(models.Model, EFRISSaleMixin):
 
         return 'PENDING'
 
-    @transaction.atomic
-    def void_sale(self, reason):
-        """Void a sale and restore stock atomically"""
-        if self.is_voided:
-            raise ValidationError("Sale is already voided")
-
-        self.is_voided = True
-        self.void_reason = reason
-        self.status = 'VOIDED'
-        self.save()
-
-        # Restore stock for all items
-        for item in self.items.select_for_update():
-            item.restore_stock()
-
-    @transaction.atomic
-    def process_refund(self):
-        """Process a refund and restore stock atomically"""
-        if self.is_refunded:
-            raise ValidationError("Sale is already refunded")
-
-        self.is_refunded = True
-        self.status = 'REFUNDED'
-        self.save()
-
-        # Restore stock for all items
-        for item in self.items.select_for_update():
-            item.restore_stock()
-
     def create_stock_movements_for_efris(self):
         """Create comprehensive stock movements for EFRIS audit trail"""
         try:
+            from inventory.models import StockMovement
+
             for item in self.items.select_related('product'):
-                # Create detailed stock movement with EFRIS reference
+                # Skip services (they don't have stock)
+                if item.item_type != 'PRODUCT' or not item.product:
+                    continue
+
                 movement_reference = self.efris_invoice_number or self.document_number or f"SALE-{self.id}"
 
                 StockMovement.objects.create(
                     product=item.product,
                     store=self.store,
                     movement_type='SALE',
-                    quantity=item.quantity,
+                    quantity=abs(item.quantity),  # Use absolute value
                     reference=movement_reference,
                     unit_price=item.unit_price,
-                    total_value=item.total_price,
+                    total_value=abs(item.total_price),
                     created_by=self.created_by,
                     notes=f'EFRIS Sale: {movement_reference}' if self.is_fiscalized else f'Sale: {movement_reference}',
                     efris_reference=self.efris_invoice_number if self.is_fiscalized else None,
@@ -1102,20 +1056,34 @@ class Sale(models.Model, EFRISSaleMixin):
             logger.error(f"Error creating EFRIS stock movements for sale {self.id}: {e}")
             return False
 
+    def set_auto_statuses(self):
+        """Set status and payment status based on document type and payment"""
+        if self.document_type == 'RECEIPT':
+            self.payment_status = 'PAID'  # ✅ Correct
+            self.status = 'COMPLETED'  # ✅ Correct (status, not payment_status)
+        elif self.document_type == 'INVOICE':
+            if self.payment_method == 'CREDIT':
+                self.payment_status = 'PENDING'
+                self.status = 'PENDING_PAYMENT'
+            else:
+                self.payment_status = 'PAID'  # ✅ Changed from 'COMPLETED' to 'PAID'
+                self.status = 'COMPLETED'
+        elif self.document_type in ['PROFORMA', 'ESTIMATE']:
+            self.payment_status = 'NOT_APPLICABLE'
+            self.status = 'DRAFT'
 
     def convert_to_invoice(self, due_date=None, terms=None):
         """Convert a proforma/estimate to an invoice"""
         if self.document_type not in ['PROFORMA', 'ESTIMATE']:
             raise ValidationError("Only proforma and estimates can be converted to invoices")
 
-        # Create a new sale as invoice
         invoice_sale = Sale.objects.create(
             store=self.store,
             created_by=self.created_by,
             customer=self.customer,
             document_type='INVOICE',
-            payment_method='CREDIT',  # Default to credit
-            due_date=due_date or (timezone.now() + timedelta(days=30)),
+            payment_method='CREDIT',
+            due_date=due_date or (timezone.now().date() + timedelta(days=30)),
             subtotal=self.subtotal,
             tax_amount=self.tax_amount,
             discount_amount=self.discount_amount,
@@ -1125,10 +1093,12 @@ class Sale(models.Model, EFRISSaleMixin):
             duplicated_from=self
         )
 
-        # Copy items - FIX: Remove _skip_sale_update parameter
+        # Copy items
         for item in self.items.all():
-            sale_item = SaleItem(
+            from sales.models import SaleItem
+            SaleItem.objects.create(
                 sale=invoice_sale,
+                item_type=item.item_type,
                 product=item.product,
                 service=item.service,
                 quantity=item.quantity,
@@ -1140,43 +1110,36 @@ class Sale(models.Model, EFRISSaleMixin):
                 discount_amount=item.discount_amount,
                 description=item.description
             )
-            # Save the item without the extra parameter
-            sale_item.save()
 
         invoice_sale.update_totals()
 
-        # Create invoice detail
         from invoices.models import Invoice
         Invoice.objects.create(
             sale=invoice_sale,
+            store=self.store,
             terms=terms or '',
-            purchase_order=''
+            purchase_order='',
+            created_by=self.created_by
         )
 
         return invoice_sale
 
     def fiscalize_and_sync_stock(self):
-        """
-        Mark sale as fiscalized and sync related stock movements to EFRIS.
-        Called after successful EFRIS fiscalization.
-        """
+        """Mark sale as fiscalized and sync related stock movements to EFRIS"""
         try:
             from inventory.models import StockMovement
 
-            # Mark as fiscalized if not already
             if not self.is_fiscalized:
                 self.is_fiscalized = True
                 self.fiscalization_time = timezone.now()
                 self.save(update_fields=['is_fiscalized', 'fiscalization_time'])
 
-            # Find all related stock movements
             movements = StockMovement.objects.filter(
                 reference__icontains=self.document_number,
                 store=self.store,
                 synced_to_efris=False
             )
 
-            # Queue each movement for EFRIS sync
             synced_count = 0
             for movement in movements:
                 if movement.sync_to_efris_now():
@@ -1196,17 +1159,14 @@ class Sale(models.Model, EFRISSaleMixin):
     def _auto_fiscalize_sale(self):
         """Auto-fiscalize sale after creation"""
         try:
-            # Check if already fiscalized
             if self.is_fiscalized:
                 return
 
-            # Check if can be fiscalized
             can_fiscalize, reason = self.can_fiscalize()
             if not can_fiscalize:
                 logger.warning(f"Cannot auto-fiscalize sale {self.id}: {reason}")
                 return
 
-            # Queue for fiscalization
             from .tasks import fiscalize_invoice_async
             fiscalize_invoice_async.delay(
                 self.id,
@@ -1217,6 +1177,46 @@ class Sale(models.Model, EFRISSaleMixin):
 
         except Exception as e:
             logger.error(f"Error in auto-fiscalization for sale {self.id}: {e}")
+
+    def _create_invoice_if_needed(self):
+        """Create invoice for EFRIS fiscalization if needed"""
+        try:
+            if not self.total_amount or self.total_amount <= 0:
+                logger.warning(f"Skipping invoice creation for sale {self.id} - zero or negative amount")
+                return None
+
+            store_config = self.store.effective_efris_config
+
+            if (store_config.get('enabled', False) and
+                    store_config.get('auto_fiscalize_sales', False) and
+                    self.status in ['COMPLETED', 'PAID']):
+
+                from invoices.models import Invoice
+
+                if hasattr(self, 'invoice_detail') and self.invoice_detail:
+                    logger.info(f"Invoice already exists for sale {self.id}")
+                    return self.invoice_detail
+
+                invoice = Invoice.objects.create(
+                    sale=self,
+                    store=self.store,
+                    terms='',
+                    purchase_order='',
+                    business_type=self._determine_business_type() if hasattr(self,
+                                                                             '_determine_business_type') else 'B2C',
+                    operator_name=self.created_by.get_full_name() if self.created_by else 'System',
+                    created_by=self.created_by,
+                    auto_fiscalize=True
+                )
+
+                logger.info(f"Created invoice {invoice.id} for sale {self.id}")
+                return invoice
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error creating invoice for sale {self.id}: {e}")
+            return None
 
 
 class SaleItem(models.Model):
@@ -1233,17 +1233,27 @@ class SaleItem(models.Model):
         ('SERVICE', 'Service'),
     ]
 
-    sale = models.ForeignKey(Sale, related_name='items', on_delete=models.CASCADE)
+    sale = models.ForeignKey('Sale', related_name='items', on_delete=models.CASCADE)
     item_type = models.CharField(
         max_length=10,
         choices=ITEM_TYPE_CHOICES,
         default='PRODUCT',
         help_text="Type of item being sold"
     )
-    product = models.ForeignKey('inventory.Product', on_delete=models.PROTECT, blank=True, null=True,
-                                related_name='sale_items')
-    service = models.ForeignKey('inventory.Service', on_delete=models.PROTECT, related_name='sale_items', null=True,
-                                blank=True)
+    product = models.ForeignKey(
+        'inventory.Product',
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name='sale_items'
+    )
+    service = models.ForeignKey(
+        'inventory.Service',
+        on_delete=models.PROTECT,
+        related_name='sale_items',
+        null=True,
+        blank=True
+    )
     original_price = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -1251,35 +1261,43 @@ class SaleItem(models.Model):
         blank=True,
         help_text='Original product/service price before any override'
     )
-
     price_override_reason = models.CharField(
         max_length=200,
         blank=True,
         null=True,
         help_text='Reason for price override'
     )
-    quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
-    unit_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
-    total_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+
+    # Changed from PositiveIntegerField to IntegerField to allow negative values for refunds
+    quantity = models.IntegerField()
+
+    # Removed MinValueValidator to allow negative values for refunds
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    total_price = models.DecimalField(max_digits=12, decimal_places=2)
+
     tax_rate = models.CharField(max_length=1, choices=TAX_RATE_CHOICES, default='A')
-    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)], default=0)
-    discount = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+
+    # Removed MinValueValidator to allow negative values for refunds
+    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    discount = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)]
+    )
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     description = models.TextField(blank=True, null=True)
     stock_deducted = models.BooleanField(default=False, verbose_name="Stock Deducted")
+
     class Meta:
         verbose_name = "Sale Item"
         verbose_name_plural = "Sale Items"
         ordering = ['id']
         constraints = [
-            models.CheckConstraint(
-                check=models.Q(quantity__gt=0),
-                name='positive_quantity_saleitem'
-            ),
-            models.CheckConstraint(
-                check=models.Q(unit_price__gte=0),
-                name='non_negative_unit_price_saleitem'
-            ),
+            # Removed positive_quantity and non_negative_unit_price constraints
+            # to allow negative values for refunds
+
             # Ensure either product OR service is set, but not both
             models.CheckConstraint(
                 check=(
@@ -1306,7 +1324,9 @@ class SaleItem(models.Model):
             item_name = 'Unknown'
 
         doc_num = self.sale.document_number if self.sale else 'N/A'
-        return f"{item_name} x {self.quantity} - {doc_num}"
+        qty_display = abs(self.quantity) if self.quantity < 0 else self.quantity
+        prefix = "REFUND: " if self.quantity < 0 else ""
+        return f"{prefix}{item_name} x {qty_display} - {doc_num}"
 
     def clean(self):
         """Enhanced model-level validation"""
@@ -1318,6 +1338,17 @@ class SaleItem(models.Model):
 
         if self.product_id and self.service_id:
             raise ValidationError("Cannot have both product and service in the same item")
+
+        # Validate quantity based on transaction type
+        if self.sale:
+            if self.sale.transaction_type == 'SALE' and self.quantity <= 0:
+                raise ValidationError({
+                    'quantity': 'Quantity must be greater than 0 for sales'
+                })
+            elif self.sale.transaction_type == 'REFUND' and self.quantity >= 0:
+                raise ValidationError({
+                    'quantity': 'Quantity must be negative for refunds'
+                })
 
         # Validate discount percentage
         if self.discount < 0 or self.discount > 100:
@@ -1332,44 +1363,50 @@ class SaleItem(models.Model):
             raise ValidationError("Item type cannot be determined - no product or service")
 
     def save(self, *args, **kwargs):
-        # ✅ Track original price before override
+        # Track original price before override
         if not self.pk:  # Only on creation
             if self.product:
                 self.original_price = self.product.selling_price
             elif self.service:
                 self.original_price = self.service.unit_price
 
-        # Calculate totals with proper rounding (using custom unit_price)
+        # Calculate totals with proper rounding (preserving sign for refunds)
         self.total_price = (self.unit_price * self.quantity).quantize(
             Decimal('0.01'), rounding=ROUND_HALF_UP
         )
 
+        # Calculate discount amount (always work with absolute values)
+        base_amount = abs(self.total_price)
         self.discount_amount = (
-            (self.discount / Decimal('100')) * self.total_price if self.discount else Decimal('0')
+            (self.discount / Decimal('100')) * base_amount if self.discount else Decimal('0')
         ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-        final_price = self.total_price - self.discount_amount
+        # Calculate final price after discount
+        final_price = base_amount - self.discount_amount
 
         # Calculate tax (extracted from selling price)
         if self.tax_rate in ['A', 'D']:
-            self.tax_amount = (final_price / Decimal('1.18') * Decimal('0.18')).quantize(
+            tax_calc = (final_price / Decimal('1.18') * Decimal('0.18')).quantize(
                 Decimal('0.01'), rounding=ROUND_HALF_UP
             )
         elif self.tax_rate == 'E':
             if self.product_id and self.product and getattr(self.product, 'excise_duty_rate', None):
                 excise_rate = self.product.excise_duty_rate / Decimal('100')
-                self.tax_amount = (final_price / (Decimal('1') + excise_rate) * excise_rate).quantize(
+                tax_calc = (final_price / (Decimal('1') + excise_rate) * excise_rate).quantize(
                     Decimal('0.01'), rounding=ROUND_HALF_UP
                 )
             else:
-                self.tax_amount = Decimal('0.00')
+                tax_calc = Decimal('0.00')
         else:
-            self.tax_amount = Decimal('0.00')
+            tax_calc = Decimal('0.00')
+
+        # Apply sign based on quantity for refunds (negative quantity = negative tax)
+        self.tax_amount = tax_calc if self.quantity > 0 else -tax_calc
 
         # Run model validation
         self.full_clean()
 
-        # Only deduct stock for new PRODUCT items in completed sales
+        # Only deduct stock for new PRODUCT items in completed sales with positive quantities
         is_new = not self.pk
         should_deduct_stock = (
                 is_new and
@@ -1378,7 +1415,8 @@ class SaleItem(models.Model):
                 self.item_type == 'PRODUCT' and
                 self.product_id is not None and
                 self.sale.document_type in ['RECEIPT', 'INVOICE'] and
-                not self.stock_deducted
+                not self.stock_deducted and
+                self.quantity > 0  # Only deduct for positive quantities
         )
 
         skip_deduction = getattr(self, '_skip_deduction', False)
@@ -1423,10 +1461,19 @@ class SaleItem(models.Model):
 
     @property
     def line_total(self):
-        """Compute total line amount"""
+        """Compute total line amount (handles both sales and refunds)"""
         total = self.total_price or Decimal("0.00")
         discount = self.discount_amount or Decimal("0.00")
-        return total - discount
+
+        # For refunds (negative quantity), total is already negative
+        # Discount reduces the absolute value
+        if self.quantity < 0:
+            # For negative totals: -100 + (-10) = -110 (more negative)
+            # But we want: -100 - (-10) = -90 (less negative refund)
+            return total + discount
+        else:
+            # For positive totals: 100 - 10 = 90
+            return total - discount
 
     @property
     def net_amount(self):
@@ -1434,7 +1481,13 @@ class SaleItem(models.Model):
         total = self.total_price or Decimal("0.00")
         discount = self.discount_amount or Decimal("0.00")
         tax = self.tax_amount or Decimal("0.00")
-        return total - discount - tax
+
+        if self.quantity < 0:
+            # For refunds
+            return total + discount - tax
+        else:
+            # For sales
+            return total - discount - tax
 
     @property
     def unit_of_measure(self):
@@ -1460,8 +1513,16 @@ class SaleItem(models.Model):
             logger.info(f"Skipping stock deduction for service item: {self.item_name}")
             return
 
+        # Don't deduct stock for negative quantities (refunds)
+        if self.quantity <= 0:
+            logger.info(f"Skipping stock deduction for refund item: {self.item_name}")
+            return
+
         try:
             logger.info(f"Deducting stock for product: {self.product.name}")
+
+            # Import here to avoid circular imports
+            from inventory.models import Stock, StockMovement
 
             store_stock = Stock.objects.select_for_update().filter(
                 product=self.product,
@@ -1507,10 +1568,8 @@ class SaleItem(models.Model):
                 notes=f'Sale item: {self.product.name} - Qty: {self.quantity}',
             )
 
-            # ========== CRITICAL FIX: Mark as deducted but DON'T save yet ==========
+            # Mark as deducted but DON'T save yet (will be saved by main save method)
             self.stock_deducted = True
-            # DON'T call self.save() here - it will be saved by the main save() method
-            # =======================================================================
 
             logger.info(f"✅ Stock deducted successfully: {self.product.name} - Qty: {self.quantity}")
 
@@ -1523,13 +1582,19 @@ class SaleItem(models.Model):
         """
         Restore stock for product items only when voiding/refunding.
         Services don't have stock to restore.
+        Works with both positive quantities (void) and negative quantities (refund).
         """
         if self.item_type != 'PRODUCT' or not self.product:
             logger.info(f"Skipping stock restoration for service item: {self.item_name}")
             return  # Services don't have stock
 
         try:
-            logger.info(f"Restoring stock for product: {self.product.name}")
+            # Use absolute value of quantity for restoration
+            restore_qty = abs(self.quantity)
+            logger.info(f"Restoring stock for product: {self.product.name}, Qty: {restore_qty}")
+
+            # Import here to avoid circular imports
+            from inventory.models import Stock, StockMovement
 
             store_stock = Stock.objects.select_for_update().filter(
                 product=self.product,
@@ -1538,7 +1603,7 @@ class SaleItem(models.Model):
 
             if store_stock:
                 Stock.objects.filter(id=store_stock.id).update(
-                    quantity=F('quantity') + self.quantity,
+                    quantity=F('quantity') + restore_qty,
                     last_updated=timezone.now()
                 )
             else:
@@ -1546,7 +1611,7 @@ class SaleItem(models.Model):
                 Stock.objects.create(
                     product=self.product,
                     store=self.sale.store,
-                    quantity=self.quantity,
+                    quantity=restore_qty,
                     last_updated=timezone.now()
                 )
 
@@ -1561,16 +1626,16 @@ class SaleItem(models.Model):
                 product=self.product,
                 store=self.sale.store,
                 movement_type=movement_type,
-                quantity=self.quantity,
+                quantity=restore_qty,
                 reference=movement_reference,
                 unit_price=self.unit_price,
-                total_value=self.total_price,
+                total_value=abs(self.total_price),
                 created_by=self.sale.created_by,
                 notes=f'Stock restoration: {movement_type.lower()} - {self.product.name}',
                 efris_reference=self.sale.efris_invoice_number if self.sale.is_fiscalized else None
             )
 
-            logger.info(f"✅ Stock restored successfully: {self.product.name} - Qty: {self.quantity}")
+            logger.info(f"✅ Stock restored successfully: {self.product.name} - Qty: {restore_qty}")
 
         except Exception as e:
             logger.error(f"❌ Stock restoration error for {self.product.name}: {e}", exc_info=True)

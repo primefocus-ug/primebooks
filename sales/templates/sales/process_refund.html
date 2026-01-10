@@ -3,8 +3,7 @@
 {% load custom_filters %}
 {% load i18n %}
 
-
-{% block title %}Process Refund - Sale #{{ sale.invoice_number }} | {{ block.super }}{% endblock %}
+{% block title %}Process Refund - Sale #{{ sale.document_number }} | {{ block.super }}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
@@ -106,36 +105,6 @@
     color: #991b1b;
 }
 
-.refund-method-card {
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 1rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    text-align: center;
-}
-
-.refund-method-card:hover {
-    border-color: #10b981;
-    background-color: rgba(16, 185, 129, 0.05);
-}
-
-.refund-method-card.selected {
-    border-color: #10b981;
-    background-color: rgba(16, 185, 129, 0.1);
-    color: #065f46;
-}
-
-.refund-method-card i {
-    font-size: 1.5rem;
-    margin-bottom: 0.5rem;
-    opacity: 0.7;
-}
-
-.refund-method-card.selected i {
-    opacity: 1;
-}
-
 .total-refund-display {
     font-size: 2rem;
     font-weight: 800;
@@ -148,6 +117,41 @@
     height: 8px;
     border-radius: 4px;
     transition: width 0.5s ease;
+}
+
+.item-type-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-weight: 600;
+}
+
+.badge-product {
+    background-color: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+}
+
+.badge-service {
+    background-color: #fce7f3;
+    color: #9f1239;
+    border: 1px solid #f9a8d4;
+}
+
+.stock-indicator {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+}
+
+.stock-restored {
+    background-color: #d1fae5;
+    color: #065f46;
+}
+
+.no-stock-impact {
+    background-color: #e0e7ff;
+    color: #3730a3;
 }
 </style>
 {% endblock %}
@@ -166,7 +170,7 @@
                 {% endif %}
                 {% if perms.sales.view_sale %}
                 <li class="breadcrumb-item"><a href="{% url 'sales:sales_list' %}">Sales</a></li>
-                <li class="breadcrumb-item"><a href="{% url 'sales:sale_detail' sale.pk %}">Sale #{{ sale.invoice_number }}</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'sales:sale_detail' sale.pk %}">Sale #{{ sale.document_number }}</a></li>
                 {% endif %}
                 <li class="breadcrumb-item active">Process Refund</li>
             </ol>
@@ -196,11 +200,11 @@
                         <strong>Refund Processing Guidelines</strong>
                     </h4>
                     <p class="mb-2">
-                        Processing a refund will create a refund transaction and restore selected items to inventory.
-                        You can process partial or full refunds based on your business needs.
+                        Processing a refund will create a refund transaction. Product stock will be restored, but services cannot be returned to inventory.
                     </p>
                     <ul class="mb-0">
-                        <li>Selected items will be returned to stock</li>
+                        <li><strong>Products:</strong> Selected items will be returned to stock</li>
+                        <li><strong>Services:</strong> Will be refunded and logged (no stock restoration)</li>
                         <li>Refund payment will be processed via selected method</li>
                         <li>All refund actions are logged for audit purposes</li>
                         <li>Customer will be notified of the refund processing</li>
@@ -217,12 +221,14 @@
                     Original Sale Details
                 </h5>
             </div>
-            <div class="card-body dre">
+            <div class="card-body">
                 <div class="row">
                     <div class="col-md-6">
                         <dl class="row">
-                            <dt class="col-sm-5">Invoice Number:</dt>
-                            <dd class="col-sm-7"><strong>{{ sale.invoice_number }}</strong></dd>
+                            <dt class="col-sm-5">Document Number:</dt>
+                            <dd class="col-sm-7"><strong>{{ sale.document_number }}</strong></dd>
+                            <dt class="col-sm-5">Document Type:</dt>
+                            <dd class="col-sm-7">{{ sale.get_document_type_display }}</dd>
                             <dt class="col-sm-5">Transaction ID:</dt>
                             <dd class="col-sm-7">{{ sale.transaction_id }}</dd>
                             <dt class="col-sm-5">Sale Date:</dt>
@@ -246,15 +252,15 @@
                             <dd class="col-sm-7">{{ sale.store.name }}</dd>
                             <dt class="col-sm-5">Original Total:</dt>
                             <dd class="col-sm-7">
-                                <strong class="text-primary h5">{{ sale.currency }} {{ sale.total_amount|money}}</strong>
+                                <strong class="text-primary h5">{{ sale.currency }} {{ sale.total_amount|money }}</strong>
                             </dd>
                             <dt class="col-sm-5">Total Refunded:</dt>
                             <dd class="col-sm-7">
-                                <span class="text-warning h6">{{ sale.currency }} {{ total_refunded|money}}</span>
+                                <span class="text-warning h6">{{ sale.currency }} {{ total_refunded|money }}</span>
                             </dd>
                             <dt class="col-sm-5">Remaining Amount:</dt>
                             <dd class="col-sm-7">
-                                <strong class="text-success h5">{{ sale.currency }} {{ remaining_amount|money}}</strong>
+                                <strong class="text-success h5">{{ sale.currency }} {{ remaining_amount|money }}</strong>
                             </dd>
                         </dl>
                     </div>
@@ -265,7 +271,7 @@
                     <div class="d-flex justify-content-between align-items-center mb-1">
                         <small class="text-muted">Refund Progress</small>
                         <small class="text-muted">
-                            {{ total_refunded|money}} / {{ sale.total_amount|money}}
+                            {{ total_refunded|money }} / {{ sale.total_amount|money }}
                             ({% widthratio total_refunded sale.total_amount 100 %}%)
                         </small>
                     </div>
@@ -305,12 +311,14 @@
                                 <td>
                                     {% if perms.sales.view_sale %}
                                     <a href="{% url 'sales:sale_detail' refund.pk %}" class="text-decoration-none">
-                                        {{ refund.invoice_number }}
+                                        {{ refund.document_number }}
                                     </a>
+                                    {% else %}
+                                    {{ refund.document_number }}
                                     {% endif %}
                                 </td>
                                 <td>{{ refund.created_at|date:"M d, Y H:i" }}</td>
-                                <td class="text-end">{{ sale.currency }} {{ refund.total_amount|money}}</td>
+                                <td class="text-end">{{ sale.currency }} {{ refund.total_amount|money }}</td>
                                 <td>{{ refund.items.count }} item(s)</td>
                                 <td>
                                     <small class="text-muted">{{ refund.notes|truncatechars:50 }}</small>
@@ -337,16 +345,47 @@
                         Select Items to Refund
                     </h5>
                 </div>
-                <div class="card-body totall">
+                <div class="card-body">
                     {% for item_data in items_data %}
                     <div class="refund-item-card {% if item_data.refunded_quantity > 0 %}has-refund{% endif %}"
                          data-item-id="{{ item_data.id }}" data-unit-price="{{ item_data.unit_price }}">
                         <div class="row align-items-center">
                             <div class="col-md-4">
-                                <h6 class="mb-1">{{ item_data.product.name }}</h6>
-                                <small class="text-muted">SKU: {{ item_data.product.sku|default:"N/A" }}</small>
+                                <h6 class="mb-1">
+                                    {% if item_data.product %}
+                                        {{ item_data.product.name }}
+                                    {% elif item_data.service %}
+                                        {{ item_data.service.name }}
+                                    {% else %}
+                                        {{ item_data.item.name }}
+                                    {% endif %}
+                                </h6>
+
+                                <div class="d-flex gap-2 align-items-center mb-1">
+                                    <span class="item-type-badge badge-{{ item_data.item_type }}">
+                                        {{ item_data.item_type|upper }}
+                                    </span>
+
+                                    {% if item_data.has_stock %}
+                                    <span class="stock-indicator stock-restored">
+                                        <i class="bi bi-box-seam me-1"></i>Stock Will Restore
+                                    </span>
+                                    {% else %}
+                                    <span class="stock-indicator no-stock-impact">
+                                        <i class="bi bi-info-circle me-1"></i>No Stock Impact
+                                    </span>
+                                    {% endif %}
+                                </div>
+
+                                <small class="text-muted">
+                                    {% if item_data.product %}
+                                        SKU: {{ item_data.product.sku|default:"N/A" }}
+                                    {% elif item_data.service %}
+                                        Code: {{ item_data.service.code|default:"N/A" }}
+                                    {% endif %}
+                                </small>
                                 <br>
-                                <small class="text-muted">Unit Price: {{ sale.currency }} {{ item_data.unit_price|money}}</small>
+                                <small class="text-muted">Unit Price: {{ sale.currency }} {{ item_data.unit_price|money }}</small>
                             </div>
 
                             <div class="col-md-2 text-center">
@@ -378,7 +417,8 @@
                                        max="{{ item_data.available_quantity }}"
                                        value="0"
                                        data-item-id="{{ item_data.id }}"
-                                       data-unit-price="{{ item_data.unit_price }}">
+                                       data-unit-price="{{ item_data.unit_price }}"
+                                       data-item-type="{{ item_data.item_type }}">
                             </div>
 
                             <div class="col-md-2 text-end">
@@ -432,6 +472,7 @@
                                     <option value="CUSTOMER_REQUEST">Customer Request</option>
                                     <option value="QUALITY_ISSUES">Quality Issues</option>
                                     <option value="STORE_POLICY">Store Policy</option>
+                                    <option value="SERVICE_NOT_RENDERED">Service Not Rendered</option>
                                     <option value="OTHER">Other (specify in notes)</option>
                                 </select>
                             </div>
@@ -454,9 +495,10 @@
                     </div>
 
                     <div class="mb-3">
-                        <label for="notes" class="form-label fw-bold">Additional Notes</label>
-                        <textarea class="form-control" id="notes" name="notes" rows="4"
+                        <label for="refund_notes" class="form-label fw-bold">Additional Notes</label>
+                        <textarea class="form-control" id="refund_notes" name="refund_notes" rows="4"
                                   placeholder="Provide additional details about this refund, including any special circumstances or customer communications..."></textarea>
+                        <small class="text-muted">Required if selecting "Other" as refund reason</small>
                     </div>
                 </div>
             </div>
@@ -476,6 +518,12 @@
                         </button>
                         <button type="button" class="btn btn-sm btn-outline-info" onclick="setHalfQuantities()">
                             <i class="bi bi-pie-chart me-1"></i>Select Half Quantities
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectProductsOnly()">
+                            <i class="bi bi-box-seam me-1"></i>Products Only
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectServicesOnly()">
+                            <i class="bi bi-briefcase me-1"></i>Services Only
                         </button>
                     </div>
                 </div>
@@ -521,7 +569,7 @@
 
     <!-- Sidebar with Refund Summary -->
     <div class="col-lg-4">
-        <div class="refund-summary mb-4 dre">
+        <div class="refund-summary mb-4">
             <h5 class="text-primary mb-3">
                 <i class="bi bi-calculator me-2"></i>
                 Refund Summary
@@ -536,6 +584,14 @@
                     <span>Total Quantity:</span>
                     <strong id="totalQuantity">0</strong>
                 </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Products:</span>
+                    <strong id="productCount" class="text-primary">0</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Services:</span>
+                    <strong id="serviceCount" class="text-info">0</strong>
+                </div>
                 <hr>
                 <div class="d-flex justify-content-between align-items-center">
                     <span class="h6 mb-0">Refund Amount:</span>
@@ -549,7 +605,7 @@
                 <i class="bi bi-info-circle me-2"></i>
                 <small>
                     <strong>Note:</strong> The refund amount will be processed via the selected payment method.
-                    Selected items will be returned to inventory immediately upon processing.
+                    <strong>Products</strong> will be returned to inventory. <strong>Services</strong> will be logged but not restocked.
                 </small>
             </div>
         </div>
@@ -565,28 +621,37 @@
             <div class="card-body">
                 <div class="small">
                     <h6 class="text-success">Refund Process:</h6>
-                    <ul class="mb-3 totall">
+                    <ul class="mb-3">
                         <li>Select items and quantities to refund</li>
                         <li>Provide a clear refund reason</li>
-                        <li>Items will be returned to inventory</li>
+                        <li>Products will be returned to inventory</li>
+                        <li>Services will be refunded and logged</li>
                         <li>Refund payment will be processed</li>
                         <li>Customer notification will be sent</li>
                     </ul>
 
+                    <h6 class="text-primary">Product vs Service Handling:</h6>
+                    <ul class="mb-3">
+                        <li><strong>Products:</strong> Stock automatically restored</li>
+                        <li><strong>Services:</strong> Refunded but no stock impact</li>
+                        <li>Both create audit trail entries</li>
+                        <li>Both affect financial reports</li>
+                    </ul>
+
                     <h6 class="text-info">Important Notes:</h6>
-                    <ul class="mb-3 totall">
+                    <ul class="mb-3">
                         <li>Partial refunds are allowed</li>
                         <li>Multiple refunds can be processed</li>
                         <li>All refunds are tracked and audited</li>
-                        <li>Stock levels update immediately</li>
+                        <li>Stock levels update immediately for products</li>
                     </ul>
 
                     <h6 class="text-warning">Restrictions:</h6>
                     <ul>
-                        <li class="totall">Cannot refund voided sales</li>
-                        <li class="totall">Cannot exceed available quantities</li>
-                        <li class="totall"> class="totall"Refund reason is mandatory</li>
-                        <li class="totall">Some payment methods may have delays</li>
+                        <li>Cannot refund voided sales</li>
+                        <li>Cannot exceed available quantities</li>
+                        <li>Refund reason is mandatory</li>
+                        <li>Some payment methods may have delays</li>
                     </ul>
                 </div>
             </div>
@@ -608,16 +673,26 @@ document.addEventListener('DOMContentLoaded', function() {
         let totalItems = 0;
         let totalQuantity = 0;
         let totalAmount = 0;
+        let productCount = 0;
+        let serviceCount = 0;
 
         quantityInputs.forEach(input => {
             const quantity = parseInt(input.value) || 0;
             const unitPrice = parseFloat(input.dataset.unitPrice) || 0;
             const itemId = input.dataset.itemId;
+            const itemType = input.dataset.itemType || 'PRODUCT';
 
             if (quantity > 0) {
                 totalItems++;
                 totalQuantity += quantity;
                 totalAmount += quantity * unitPrice;
+
+                // Count by type
+                if (itemType === 'PRODUCT') {
+                    productCount++;
+                } else if (itemType === 'SERVICE') {
+                    serviceCount++;
+                }
 
                 // Update individual item amount
                 const amountElement = document.getElementById(`amount_${itemId}`);
@@ -636,73 +711,133 @@ document.addEventListener('DOMContentLoaded', function() {
         // Update summary
         document.getElementById('selectedItemsCount').textContent = totalItems;
         document.getElementById('totalQuantity').textContent = totalQuantity;
+        document.getElementById('productCount').textContent = productCount;
+        document.getElementById('serviceCount').textContent = serviceCount;
         document.getElementById('totalRefundAmount').textContent = `{{ sale.currency }} ${totalAmount.toFixed(2)}`;
 
         // Enable/disable submit button
-        const reasonSelected = document.getElementById('refund_reason').value;
-        submitButton.disabled = totalItems === 0 || !reasonSelected;
+        submitButton.disabled = totalItems === 0;
     }
 
-    // Add event listeners
+    // Add event listeners to quantity inputs
     quantityInputs.forEach(input => {
         input.addEventListener('input', updateRefundCalculations);
     });
 
-    document.getElementById('refund_reason').addEventListener('change', updateRefundCalculations);
+    // Handle form submission
+    form.addEventListener('submit', function(e) {
+        const refundReason = document.getElementById('refund_reason').value;
+        const refundNotes = document.getElementById('refund_notes').value.trim();
+        const totalItems = parseInt(document.getElementById('selectedItemsCount').textContent);
 
-    // Quick action functions
-    window.selectAllItems = function() {
-        quantityInputs.forEach(input => {
-            input.value = input.max;
-        });
-        updateRefundCalculations();
-    };
+        if (totalItems === 0) {
+            e.preventDefault();
+            alert('Please select at least one item to refund.');
+            return;
+        }
 
-    window.clearAllSelections = function() {
-        quantityInputs.forEach(input => {
-            input.value = 0;
-        });
-        updateRefundCalculations();
-    };
+        if (!refundReason) {
+            e.preventDefault();
+            alert('Please select a refund reason.');
+            return;
+        }
 
-    window.setHalfQuantities = function() {
-        quantityInputs.forEach(input => {
-            const maxQty = parseInt(input.max);
-            input.value = Math.floor(maxQty / 2);
-        });
-        updateRefundCalculations();
-    };
+        if (refundReason === 'OTHER' && !refundNotes) {
+            e.preventDefault();
+            alert('Please provide detailed notes when selecting "Other" as refund reason.');
+            return;
+        }
 
-    // Form submission
-    if (form) {
-        form.addEventListener('submit', function(e) {
-            const totalItems = parseInt(document.getElementById('selectedItemsCount').textContent);
+        // Show loading state
+        submitButton.disabled = true;
+        refundSpinner.classList.remove('d-none');
+        submitButton.innerHTML = '<i class="bi bi-arrow-return-left me-2"></i><span class="spinner-border spinner-border-sm me-2"></span>Processing Refund...';
 
-            if (totalItems === 0) {
-                e.preventDefault();
-                alert('Please select at least one item to refund.');
-                return;
-            }
-
-            // Show loading state
-            submitButton.disabled = true;
-            refundSpinner.classList.remove('d-none');
-            submitButton.innerHTML = '<i class="bi bi-arrow-return-left me-2"></i><span class="spinner-border spinner-border-sm me-2"></span>Processing Refund...';
-
-            // Confirm action
-            if (!confirm(`Are you sure you want to process this refund for ${totalItems} item(s)? This action cannot be undone.`)) {
-                e.preventDefault();
-                // Reset button state
-                submitButton.disabled = false;
-                refundSpinner.classList.add('d-none');
-                submitButton.innerHTML = '<i class="bi bi-arrow-return-left me-2"></i>Process Refund';
-                updateRefundCalculations();
-            }
-        });
-    }
+        // Confirmation dialog
+        const totalAmount = document.getElementById('totalRefundAmount').textContent;
+        if (!confirm(`Are you sure you want to process a refund of ${totalAmount}? This action will affect inventory and cannot be undone.`)) {
+            e.preventDefault();
+            // Reset button state
+            submitButton.disabled = false;
+            refundSpinner.classList.add('d-none');
+            submitButton.innerHTML = '<i class="bi bi-arrow-return-left me-2"></i>Process Refund';
+            updateRefundCalculations();
+        }
+    });
 
     // Initial calculation
     updateRefundCalculations();
 });
+
+// Quick action functions
+function selectAllItems() {
+    const quantityInputs = document.querySelectorAll('.refund-quantity');
+    quantityInputs.forEach(input => {
+        const max = parseInt(input.getAttribute('max'));
+        input.value = max;
+    });
+    document.dispatchEvent(new Event('input'));
+    // Trigger update
+    if (quantityInputs.length > 0) {
+        quantityInputs[0].dispatchEvent(new Event('input'));
+    }
+}
+
+function clearAllSelections() {
+    const quantityInputs = document.querySelectorAll('.refund-quantity');
+    quantityInputs.forEach(input => {
+        input.value = 0;
+    });
+    // Trigger update
+    if (quantityInputs.length > 0) {
+        quantityInputs[0].dispatchEvent(new Event('input'));
+    }
+}
+
+function setHalfQuantities() {
+    const quantityInputs = document.querySelectorAll('.refund-quantity');
+    quantityInputs.forEach(input => {
+        const max = parseInt(input.getAttribute('max'));
+        input.value = Math.ceil(max / 2);
+    });
+    // Trigger update
+    if (quantityInputs.length > 0) {
+        quantityInputs[0].dispatchEvent(new Event('input'));
+    }
+}
+
+function selectProductsOnly() {
+    const quantityInputs = document.querySelectorAll('.refund-quantity');
+    quantityInputs.forEach(input => {
+        const itemType = input.dataset.itemType;
+        if (itemType === 'product') {
+            const max = parseInt(input.getAttribute('max'));
+            input.value = max;
+        } else {
+            input.value = 0;
+        }
+    });
+    // Trigger update
+    if (quantityInputs.length > 0) {
+        quantityInputs[0].dispatchEvent(new Event('input'));
+    }
+}
+
+function selectServicesOnly() {
+    const quantityInputs = document.querySelectorAll('.refund-quantity');
+    quantityInputs.forEach(input => {
+        const itemType = input.dataset.itemType;
+        if (itemType === 'service') {
+            const max = parseInt(input.getAttribute('max'));
+            input.value = max;
+        } else {
+            input.value = 0;
+        }
+    });
+    // Trigger update
+    if (quantityInputs.length > 0) {
+        quantityInputs[0].dispatchEvent(new Event('input'));
+    }
+}
 </script>
 {% endblock %}

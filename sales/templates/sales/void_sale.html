@@ -3,7 +3,7 @@
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}Void Sale - Sale #{{ sale.invoice_number }} | {{ block.super }}{% endblock %}
+{% block title %}Void Sale - Sale #{{ sale.document_number }} | {{ block.super }}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
@@ -151,6 +151,22 @@
 :root {
     --danger-color: #dc2626;
 }
+
+.item-type-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+}
+
+.badge-product {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.badge-service {
+    background-color: #fce7f3;
+    color: #9f1239;
+}
 </style>
 {% endblock %}
 
@@ -168,7 +184,7 @@
                 {% endif %}
                 {% if perms.sales.view_sale %}
                 <li class="breadcrumb-item"><a href="{% url 'sales:sales_list' %}">Sales</a></li>
-                <li class="breadcrumb-item"><a href="{% url 'sales:sale_detail' sale.pk %}">Sale #{{ sale.invoice_number }}</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'sales:sale_detail' sale.pk %}">Sale #{{ sale.document_number }}</a></li>
                 {% endif %}
                 <li class="breadcrumb-item active">Void Sale</li>
             </ol>
@@ -198,13 +214,12 @@
                         <strong>Warning: Irreversible Action</strong>
                     </h4>
                     <p class="mb-2">
-                        Voiding this sale will permanently cancel the transaction and restore all items to inventory.
-                        This action cannot be undone and will affect your sales reports and inventory levels.
+                        Voiding this sale will permanently cancel the transaction. Products will be returned to inventory, but services cannot be restored.
                     </p>
                     <ul class="mb-0">
-                        <li>All sale items will be returned to stock</li>
+                        <li>All product items will be returned to stock ({{ product_count }} item{% if product_count != 1 %}s{% endif %})</li>
+                        <li>All service items will be voided and logged ({{ service_count }} item{% if service_count != 1 %}s{% endif %})</li>
                         <li>All payments will be marked as voided</li>
-                        <li>The sale will be permanently marked as void</li>
                         <li>This action will appear in audit logs</li>
                     </ul>
                 </div>
@@ -219,12 +234,14 @@
                     Sale Details
                 </h5>
             </div>
-            <div class="card-body sale-summary dre">
+            <div class="card-body sale-summary">
                 <div class="row">
                     <div class="col-md-6">
                         <dl class="row">
-                            <dt class="col-sm-5">Invoice Number:</dt>
-                            <dd class="col-sm-7"><strong>{{ sale.invoice_number }}</strong></dd>
+                            <dt class="col-sm-5">Document Number:</dt>
+                            <dd class="col-sm-7"><strong>{{ sale.document_number }}</strong></dd>
+                            <dt class="col-sm-5">Document Type:</dt>
+                            <dd class="col-sm-7">{{ sale.get_document_type_display }}</dd>
                             <dt class="col-sm-5">Transaction ID:</dt>
                             <dd class="col-sm-7">{{ sale.transaction_id }}</dd>
                             <dt class="col-sm-5">Date & Time:</dt>
@@ -268,42 +285,43 @@
                     Void Impact Assessment
                 </h5>
             </div>
-            <div class="card-body ">
+            <div class="card-body">
                 <div class="row g-4">
                     <div class="col-md-3">
-                        <div class="impact-stat dre">
+                        <div class="impact-stat">
                             <div class="number">{{ items_count }}</div>
-                            <div class="label">Items Affected</div>
+                            <div class="label">Total Items</div>
                         </div>
                     </div>
                     <div class="col-md-3">
-                        <div class="impact-stat dre">
+                        <div class="impact-stat">
+                            <div class="number">{{ product_count }}</div>
+                            <div class="label">Products</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="impact-stat">
+                            <div class="number">{{ service_count }}</div>
+                            <div class="label">Services</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="impact-stat">
                             <div class="number">{{ sale.currency }} {{ total_payments|money }}</div>
                             <div class="label">Payments to Void</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="impact-stat dre">
-                            <div class="number">{{ sale.currency }} {{ sale.total_amount|money }}</div>
-                            <div class="label">Revenue Impact</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="impact-stat dre">
-                            <div class="number">{{ sale.created_at|timesince }}</div>
-                            <div class="label">Sale Age</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="mt-4">
-                    <h6 class="text-danger">Items to be Returned to Stock:</h6>
+                    <h6 class="text-danger">Items to be Processed:</h6>
                     <div class="table-responsive">
                         <table class="table table-sm">
                             <thead class="table-light">
                                 <tr>
-                                    <th>Product</th>
-                                    <th>SKU</th>
+                                    <th>Item</th>
+                                    <th>Type</th>
+                                    <th>Code/SKU</th>
                                     <th class="text-end">Quantity</th>
                                     <th class="text-end">Unit Price</th>
                                     <th class="text-end">Line Total</th>
@@ -312,8 +330,31 @@
                             <tbody>
                                 {% for item in sale.items.all %}
                                 <tr>
-                                    <td>{{ item.product.name }}</td>
-                                    <td><small class="text-muted">{{ item.product.sku|default:"N/A" }}</small></td>
+                                    <td>
+                                        {% if item.item_type == 'PRODUCT' and item.product %}
+                                            {{ item.product.name }}
+                                        {% elif item.item_type == 'SERVICE' and item.service %}
+                                            {{ item.service.name }}
+                                        {% else %}
+                                            {{ item.item_name }}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="item-type-badge badge-{{ item.item_type|lower }}">
+                                            {{ item.get_item_type_display }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {% if item.item_type == 'PRODUCT' and item.product %}
+                                                {{ item.product.sku|default:"N/A" }}
+                                            {% elif item.item_type == 'SERVICE' and item.service %}
+                                                {{ item.service.code|default:"N/A" }}
+                                            {% else %}
+                                                N/A
+                                            {% endif %}
+                                        </small>
+                                    </td>
                                     <td class="text-end">{{ item.quantity }}</td>
                                     <td class="text-end">{{ sale.currency }} {{ item.unit_price|money }}</td>
                                     <td class="text-end">{{ sale.currency }} {{ item.line_total|money }}</td>
@@ -327,10 +368,10 @@
         </div>
 
         <!-- Void Form -->
-        <form method="post" id="voidForm" class="danger-zone p-4 dre">
+        <form method="post" id="voidForm" class="danger-zone p-4">
             {% csrf_token %}
 
-            <h5 class="text-danger mb-3 ">
+            <h5 class="text-danger mb-3">
                 <i class="bi bi-shield-exclamation me-2"></i>
                 Void Authorization Required
             </h5>
@@ -379,7 +420,7 @@
             </div>
 
             <!-- Confirmation Checklist -->
-            <div class="confirmation-checklist p-3 mb-4 dre">
+            <div class="confirmation-checklist p-3 mb-4">
                 <h6 class="text-danger mb-3">
                     <i class="bi bi-check2-square me-2"></i>
                     Confirmation Checklist
@@ -400,7 +441,7 @@
                         <input class="form-check-input checklist-checkbox" type="checkbox" id="confirm_inventory" required>
                         <label class="form-check-label" for="confirm_inventory">
                             <strong>I acknowledge the inventory impact</strong><br>
-                            <small class="text-muted">All {{ items_count }} item(s) will be returned to stock, affecting current inventory levels.</small>
+                            <small class="text-muted">{{ product_count }} product(s) will be returned to stock. {{ service_count }} service(s) will be voided and logged.</small>
                         </label>
                     </div>
                 </div>
@@ -427,15 +468,15 @@
             </div>
 
             <!-- Final Confirmation -->
-            <div class="alert alert-danger mb-4 dre">
+            <div class="alert alert-danger mb-4">
                 <div class="d-flex">
                     <i class="bi bi-exclamation-triangle-fill me-3 mt-1"></i>
                     <div>
                         <h6 class="alert-heading">Final Confirmation Required</h6>
-                        <p class="mb-2 totall">
+                        <p class="mb-2">
                             By proceeding with this void, you acknowledge that:
                         </p>
-                        <ul class="mb-2 totall">
+                        <ul class="mb-2">
                             <li>This action will be logged and audited</li>
                             <li>The sale will be permanently marked as voided</li>
                             <li>Inventory and financial reports will be affected</li>
@@ -474,10 +515,10 @@
                     Void Guidelines
                 </h6>
             </div>
-            <div class="card-body dre">
+            <div class="card-body">
                 <div class="small">
                     <h6 class="text-info">When to Void a Sale:</h6>
-                    <ul class="mb-3 totall">
+                    <ul class="mb-3">
                         <li>Customer requests cancellation immediately</li>
                         <li>Pricing errors discovered before fulfillment</li>
                         <li>Duplicate transactions identified</li>
@@ -485,16 +526,23 @@
                         <li>Fraud prevention measures</li>
                     </ul>
 
+                    <h6 class="text-primary">Product vs Service Handling:</h6>
+                    <ul class="mb-3">
+                        <li><strong>Products:</strong> Stock will be restored to inventory</li>
+                        <li><strong>Services:</strong> Will be voided and logged (no stock restoration)</li>
+                        <li>Both types will appear in audit logs</li>
+                    </ul>
+
                     <h6 class="text-warning">Important Reminders:</h6>
-                    <ul class="mb-3 totall">
+                    <ul class="mb-3">
                         <li>Voids are different from refunds</li>
                         <li>Sales with existing refunds cannot be voided</li>
                         <li>All void actions are permanently logged</li>
                         <li>Consider using refunds for completed transactions</li>
                     </ul>
 
-                    <h6 class="text-danger totall">Restrictions:</h6>
-                    <ul class="totall">
+                    <h6 class="text-danger">Restrictions:</h6>
+                    <ul>
                         <li>Sales older than 7 days cannot be voided</li>
                         <li>Only regular sales can be voided</li>
                         <li>Refunded sales cannot be voided</li>
@@ -506,21 +554,22 @@
 
         <div class="card">
             <div class="card-header bg-secondary text-white">
-                <h6 class="mb-0 totall">
+                <h6 class="mb-0">
                     <i class="bi bi-clock-history me-2"></i>
                     Audit Trail
                 </h6>
             </div>
-            <div class="card-body totall">
-                <div class="small totall">
+            <div class="card-body">
+                <div class="small">
                     <p><strong>What gets recorded:</strong></p>
-                    <ul class="mb-3 totall">
+                    <ul class="mb-3">
                         <li>User who performed the void</li>
                         <li>Date and time of void action</li>
                         <li>Void reason and detailed notes</li>
                         <li>Original sale details</li>
-                        <li>Items and quantities affected</li>
+                        <li>Items and quantities affected (products & services)</li>
                         <li>Payment information</li>
+                        <li>Stock movements (for products)</li>
                     </ul>
 
                     <p><strong>Access Requirements:</strong></p>

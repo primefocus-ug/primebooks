@@ -2,6 +2,7 @@ import secrets
 import string
 from django.views.decorators.http import require_http_methods
 from django.urls import reverse
+from django.db.models.functions import TruncDate, TruncMonth, Coalesce
 from django.shortcuts import redirect
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db import transaction
@@ -29,7 +30,8 @@ from django.http import Http404
 import logging
 from django.views.decorators.http import require_POST
 from accounts.utils import require_saas_admin, require_company_access
-
+from customers.models import Customer
+from invoices.models import Invoice
 
 from sales.models import Sale, SaleItem
 from stores.models import Store, DeviceOperatorLog #StoreInventory,
@@ -39,7 +41,7 @@ from datetime import  timedelta
 from accounts.forms import CompanyUserForm
 from .models import Company, Domain, SubscriptionPlan
 from accounts.models import CustomUser
-from inventory.models import Stock
+from inventory.models import Stock, StockMovement
 from accounts.utils import get_visible_users, can_access_company
 from .forms import (
     CompanyForm, DomainForm, BulkActionForm, SearchForm,
@@ -319,10 +321,11 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
             return JsonResponse({'error': str(e)}, status=500)
 
 
-
-
 class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
-    """Dashboard view showing only the current logged-in user's company."""
+    """
+    Enhanced dashboard view showing comprehensive analytics for the current company.
+    Aggregates data from all tenant apps to provide actionable insights.
+    """
     template_name = 'company/dashboard.html'
     permission_required = 'company.view_company'
 
@@ -330,77 +333,805 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         user_company = getattr(self.request.user, 'company', None)
 
+        # Handle users without company assignment
         if not user_company:
-            # User has no company assigned
-            context.update({
-                'total_companies': 0,
-                'verified_companies': 0,
-                'efris_enabled_companies': 0,
-                'active_companies': 0,
-                'trial_companies': 0,
-                'expired_companies': 0,
-                'total_branches': 0,
-                'total_employees': 0,
-                'recent_companies': [],
-                'company': None,
-                'company_id': None,
-                'is_saas_admin': False,
-                'monthly_registrations': [],
-                'currency_distribution': [],
-                'plan_distribution': [],
-                'status_distribution': [],
-            })
-            return context
+            return self._get_empty_context(context)
 
-        # Always show only the current user's company
+        # Store user company information (from public schema)
         company = user_company
         context['company'] = company
         context['company_id'] = company.company_id
-        context['is_saas_admin'] = self.request.user.is_saas_admin if hasattr(self.request.user, 'is_saas_admin') else False
+        context['is_saas_admin'] = getattr(self.request.user, 'is_saas_admin', False)
 
-        # Company stats - always for current company only
-        total_branches = Store.objects.filter(company=company, is_active=True).count()
-        total_employees = CustomUser.objects.filter(company=company, is_active=True, is_hidden=False).count()
+        # Get company schema name
+        schema_name = company.schema_name
 
+        try:
+            # Execute all tenant queries within the company's schema context
+            with schema_context(schema_name):
+                # Import tenant models inside schema context
+                from stores.models import Store
+                from sales.models import Sale, SaleItem
+                from customers.models import Customer
+                from inventory.models import Stock, StockMovement
+                from invoices.models import Invoice
+
+                # Get date ranges for analytics
+                date_ranges = self._get_date_ranges()
+
+                # Gather all analytics data
+                context.update({
+                    # Company Overview Metrics (from public schema data)
+                    **self._get_company_overview(company),
+
+                    # Subscription & Billing Metrics (from public schema)
+                    **self._get_subscription_metrics(company),
+
+                    # Sales & Revenue Analytics (from tenant schema)
+                    **self._get_sales_analytics(company, date_ranges, Store, Sale, SaleItem),
+
+                    # Inventory Analytics (from tenant schema)
+                    **self._get_inventory_analytics(company, Store, Stock, StockMovement),
+
+                    # Customer Analytics (from tenant schema)
+                    **self._get_customer_analytics(company, date_ranges, Customer, Sale, Store),
+
+                    # Invoice & Credit Analytics (from tenant schema)
+                    **self._get_invoice_analytics(company, date_ranges, Invoice, Sale, Store),
+
+                    # Employee & User Analytics (public schema - outside with block)
+                    **self._get_employee_analytics(company),
+
+                    # Chart Data (from tenant schema)
+                    **self._get_chart_data(company, date_ranges, Store, Sale, SaleItem),
+
+                    # Recent Activity (from tenant schema)
+                    **self._get_recent_activity(company, Store, Sale, Customer, StockMovement),
+
+                    # Alerts & Warnings (from tenant schema)
+                    **self._get_alerts_and_warnings(company, Store, Stock, Invoice, Sale),
+                })
+
+            # Add subscription warning if applicable (public schema data)
+            subscription_warning = self._get_subscription_warning(company)
+            if subscription_warning:
+                context['subscription_warning'] = subscription_warning
+
+        except Exception as e:
+            logger.error(f"Error fetching dashboard data for company {company.company_id}: {e}", exc_info=True)
+            # Return partial context with error message
+            context['dashboard_error'] = str(e)
+            context.update(self._get_empty_context({}))
+
+        return context
+
+    def _get_empty_context(self, context):
+        """Return empty context for users without company assignment."""
         context.update({
-            'total_companies': 1,  # Always 1 - showing only current company
+            'total_companies': 0,
+            'verified_companies': 0,
+            'efris_enabled_companies': 0,
+            'active_companies': 0,
+            'trial_companies': 0,
+            'expired_companies': 0,
+            'total_branches': 0,
+            'total_employees': 0,
+            'recent_companies': [],
+            'company': None,
+            'company_id': None,
+            'is_saas_admin': False,
+            'sales_today_total': 0,
+            'sales_today_count': 0,
+            'sales_week_total': 0,
+            'sales_week_count': 0,
+            'sales_month_total': 0,
+            'sales_month_count': 0,
+            'revenue_growth': 0,
+            'total_customers': 0,
+            'new_customers_month': 0,
+            'active_customers_month': 0,
+            'customer_retention_rate': 0,
+            'total_products': 0,
+            'total_stock_value': 0,
+            'low_stock_items': 0,
+            'out_of_stock_items': 0,
+            'movements_today': 0,
+            'total_invoices': 0,
+            'paid_invoices': 0,
+            'pending_invoices_amount': 0,
+            'overdue_invoices': 0,
+            'collection_rate': 0,
+            'total_credit_invoices': 0,
+            'outstanding_credit': 0,
+            'avg_transaction_value': 0,
+            'alerts': [],
+            'alert_count': 0,
+            'recent_sales': [],
+            'recent_customers': [],
+            'recent_stock_movements': [],
+            'monthly_registrations': json.dumps([]),
+            'currency_distribution': json.dumps([]),
+            'plan_distribution': json.dumps([]),
+            'status_distribution': json.dumps([]),
+            'monthly_sales_trend': json.dumps([]),
+            'daily_sales_trend': json.dumps([]),
+            'sales_by_store': json.dumps([]),
+            'top_products': json.dumps([]),
+            'payment_distribution': json.dumps([]),
+        })
+        return context
+
+    def _get_date_ranges(self):
+        """Calculate standard date ranges for analytics."""
+        today = timezone.now().date()
+        return {
+            'today': today,
+            'yesterday': today - timedelta(days=1),
+            'week_ago': today - timedelta(days=7),
+            'month_ago': today - timedelta(days=30),
+            'quarter_ago': today - timedelta(days=90),
+            'year_ago': today - timedelta(days=365),
+            'week_start': today - timedelta(days=today.weekday()),
+            'month_start': today.replace(day=1),
+            'year_start': today.replace(month=1, day=1),
+        }
+
+    def _get_company_overview(self, company):
+        """Get basic company overview metrics from public schema."""
+        # This data comes from public schema, so no schema context needed
+        return {
+            'total_companies': 1,
             'verified_companies': 1 if company.is_verified else 0,
             'efris_enabled_companies': 1 if company.efris_enabled else 0,
             'active_companies': 1 if company.status == 'ACTIVE' else 0,
             'trial_companies': 1 if company.status == 'TRIAL' else 0,
             'expired_companies': 1 if company.status == 'EXPIRED' else 0,
-            'recent_companies': [company],  # Only current company
-            'total_branches': total_branches,
+            'recent_companies': [company],
+        }
+
+    def _get_subscription_metrics(self, company):
+        """Get subscription and billing related metrics from public schema."""
+        days_until_expiry = 0
+        if company.subscription_ends_at:
+            days_until_expiry = (company.subscription_ends_at - timezone.now().date()).days
+
+        return {
+            'active_subscriptions': 1 if company.status == 'ACTIVE' else 0,
+            'expiring_soon_count': 1 if 0 < days_until_expiry <= 30 else 0,
+            'monthly_revenue': company.plan.price if company.plan else 0,
+            'renewal_rate': 100 if company.status == 'ACTIVE' else 0,
+        }
+
+    def _get_sales_analytics(self, company, date_ranges, Store, Sale, SaleItem):
+        """Get comprehensive sales analytics from tenant schema."""
+        try:
+            # Get all active stores (already in tenant schema context)
+            stores = Store.objects.filter(is_active=True)
+            store_count = stores.count()
+
+            # Today's sales
+            today_sales = Sale.objects.filter(
+                store__in=stores,
+                created_at__date=date_ranges['today'],
+                status__in=['COMPLETED', 'PAID'],
+                is_voided=False
+            ).aggregate(
+                total=Coalesce(Sum('total_amount'), Decimal('0')),
+                count=Count('id')
+            )
+
+            # Week's sales
+            week_sales = Sale.objects.filter(
+                store__in=stores,
+                created_at__date__gte=date_ranges['week_ago'],
+                status__in=['COMPLETED', 'PAID'],
+                is_voided=False
+            ).aggregate(
+                total=Coalesce(Sum('total_amount'), Decimal('0')),
+                count=Count('id')
+            )
+
+            # Month's sales
+            month_sales = Sale.objects.filter(
+                store__in=stores,
+                created_at__date__gte=date_ranges['month_ago'],
+                status__in=['COMPLETED', 'PAID'],
+                is_voided=False
+            ).aggregate(
+                total=Coalesce(Sum('total_amount'), Decimal('0')),
+                count=Count('id')
+            )
+
+            # Previous period comparison for trends
+            prev_month_sales = Sale.objects.filter(
+                store__in=stores,
+                created_at__date__gte=date_ranges['month_ago'] - timedelta(days=30),
+                created_at__date__lt=date_ranges['month_ago'],
+                status__in=['COMPLETED', 'PAID'],
+                is_voided=False
+            ).aggregate(
+                total=Coalesce(Sum('total_amount'), Decimal('0'))
+            )
+
+            # Calculate growth
+            revenue_growth = 0
+            if prev_month_sales['total'] > 0:
+                revenue_growth = round(
+                    ((month_sales['total'] - prev_month_sales['total']) / prev_month_sales['total']) * 100,
+                    1
+                )
+
+            # Sales by document type
+            sales_by_type = list(Sale.objects.filter(
+                store__in=stores,
+                created_at__date__gte=date_ranges['month_ago'],
+                status__in=['COMPLETED', 'PAID'],
+                is_voided=False
+            ).values('document_type').annotate(
+                count=Count('id'),
+                total=Coalesce(Sum('total_amount'), Decimal('0'))
+            ))
+
+            # Sales by payment method
+            sales_by_payment = list(Sale.objects.filter(
+                store__in=stores,
+                created_at__date__gte=date_ranges['month_ago'],
+                status__in=['COMPLETED', 'PAID'],
+                is_voided=False
+            ).values('payment_method').annotate(
+                count=Count('id'),
+                total=Coalesce(Sum('total_amount'), Decimal('0'))
+            ))
+
+            return {
+                'total_branches': store_count,
+                'active_branches': store_count,
+                'sales_today_total': float(today_sales['total']),
+                'sales_today_count': today_sales['count'],
+                'sales_week_total': float(week_sales['total']),
+                'sales_week_count': week_sales['count'],
+                'sales_month_total': float(month_sales['total']),
+                'sales_month_count': month_sales['count'],
+                'revenue_growth': revenue_growth,
+                'sales_by_type': sales_by_type,
+                'sales_by_payment': sales_by_payment,
+                'avg_transaction_value': float(month_sales['total'] / month_sales['count']) if month_sales['count'] > 0 else 0,
+            }
+
+        except Exception as e:
+            logger.error(f"Error in _get_sales_analytics: {e}", exc_info=True)
+            return {
+                'total_branches': 0,
+                'active_branches': 0,
+                'sales_today_total': 0,
+                'sales_today_count': 0,
+                'sales_week_total': 0,
+                'sales_week_count': 0,
+                'sales_month_total': 0,
+                'sales_month_count': 0,
+                'revenue_growth': 0,
+                'sales_by_type': [],
+                'sales_by_payment': [],
+                'avg_transaction_value': 0,
+            }
+
+    def _get_inventory_analytics(self, company, Store, Stock, StockMovement):
+        """Get inventory analytics and stock status from tenant schema."""
+        try:
+            stores = Store.objects.filter(is_active=True)
+
+            stock_stats = Stock.objects.filter(store__in=stores).aggregate(
+                total_products=Count('product', distinct=True),
+                total_stock_value=Coalesce(
+                    Sum(F('quantity') * F('product__cost_price')),
+                    Decimal('0')
+                ),
+                low_stock=Count('id', filter=Q(
+                    quantity__gt=0,
+                    quantity__lte=F('low_stock_threshold')
+                )),
+                out_of_stock=Count('id', filter=Q(quantity=0)),
+            )
+
+            # Recent stock movements
+            movements_today = StockMovement.objects.filter(
+                store__in=stores,
+                created_at__date=timezone.now().date()
+            ).count()
+
+            return {
+                'total_products': stock_stats['total_products'],
+                'total_stock_value': float(stock_stats['total_stock_value']),
+                'low_stock_items': stock_stats['low_stock'],
+                'out_of_stock_items': stock_stats['out_of_stock'],
+                'movements_today': movements_today,
+            }
+
+        except Exception as e:
+            logger.error(f"Error in _get_inventory_analytics: {e}", exc_info=True)
+            return {
+                'total_products': 0,
+                'total_stock_value': 0,
+                'low_stock_items': 0,
+                'out_of_stock_items': 0,
+                'movements_today': 0,
+            }
+
+    def _get_customer_analytics(self, company, date_ranges, Customer, Sale, Store):
+        """Get customer analytics and engagement metrics from tenant schema."""
+        try:
+            stores = Store.objects.filter(is_active=True)
+
+            # Total customers
+            total_customers = Customer.objects.filter(is_active=True).count()
+
+            # New customers this month
+            new_customers = Customer.objects.filter(
+                created_at__date__gte=date_ranges['month_ago']
+            ).count()
+
+            # Active customers (made purchase this month)
+            active_customers = Sale.objects.filter(
+                store__in=stores,
+                created_at__date__gte=date_ranges['month_ago'],
+                customer__isnull=False,
+                status__in=['COMPLETED', 'PAID']
+            ).values('customer').distinct().count()
+
+            # Customer segments
+            customer_segments = list(Customer.objects.filter(
+                is_active=True
+            ).values('customer_type').annotate(
+                count=Count('id')
+            ))
+
+            return {
+                'total_customers': total_customers,
+                'new_customers_month': new_customers,
+                'active_customers_month': active_customers,
+                'customer_segments': customer_segments,
+                'customer_retention_rate': round(
+                    (active_customers / total_customers * 100) if total_customers > 0 else 0,
+                    1
+                ),
+            }
+
+        except Exception as e:
+            logger.error(f"Error in _get_customer_analytics: {e}", exc_info=True)
+            return {
+                'total_customers': 0,
+                'new_customers_month': 0,
+                'active_customers_month': 0,
+                'customer_segments': [],
+                'customer_retention_rate': 0,
+            }
+
+    def _get_invoice_analytics(self, company, date_ranges, Invoice, Sale, Store):
+        """Get invoice and credit analytics from tenant schema."""
+        try:
+            stores = Store.objects.filter(is_active=True)
+
+            invoices = Invoice.objects.filter(
+                sale__store__in=stores,
+                sale__document_type='INVOICE'
+            )
+
+            # Invoice metrics
+            invoice_stats = invoices.aggregate(
+                total_invoices=Count('id'),
+                paid_invoices=Count('id', filter=Q(sale__payment_status='PAID')),
+                pending_amount=Coalesce(
+                    Sum('sale__total_amount', filter=Q(
+                        sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
+                    )),
+                    Decimal('0')
+                ),
+                overdue_count=Count('id', filter=Q(
+                    sale__payment_status='OVERDUE'
+                )),
+            )
+
+            # Credit invoice metrics
+            credit_invoices = invoices.filter(sale__payment_method='CREDIT')
+
+            credit_stats = credit_invoices.aggregate(
+                total_credit=Count('id'),
+                outstanding_credit=Coalesce(
+                    Sum('sale__total_amount', filter=Q(
+                        sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+                    )),
+                    Decimal('0')
+                ),
+            )
+
+            # Collection rate
+            collection_rate = 0
+            if invoice_stats['total_invoices'] > 0:
+                collection_rate = round(
+                    (invoice_stats['paid_invoices'] / invoice_stats['total_invoices']) * 100,
+                    1
+                )
+
+            return {
+                'total_invoices': invoice_stats['total_invoices'],
+                'paid_invoices': invoice_stats['paid_invoices'],
+                'pending_invoices_amount': float(invoice_stats['pending_amount']),
+                'overdue_invoices': invoice_stats['overdue_count'],
+                'collection_rate': collection_rate,
+                'total_credit_invoices': credit_stats['total_credit'],
+                'outstanding_credit': float(credit_stats['outstanding_credit']),
+            }
+
+        except Exception as e:
+            logger.error(f"Error in _get_invoice_analytics: {e}", exc_info=True)
+            return {
+                'total_invoices': 0,
+                'paid_invoices': 0,
+                'pending_invoices_amount': 0,
+                'overdue_invoices': 0,
+                'collection_rate': 0,
+                'total_credit_invoices': 0,
+                'outstanding_credit': 0,
+            }
+
+    def _get_employee_analytics(self, company):
+        """Get employee and user analytics from public schema."""
+        # User data is in public schema with company FK
+        total_employees = CustomUser.objects.filter(
+            company=company,
+            is_active=True,
+            is_hidden=False
+        ).count()
+
+        active_today = CustomUser.objects.filter(
+            company=company,
+            is_active=True,
+            is_hidden=False,
+            last_login__date=timezone.now().date()
+        ).count()
+
+        return {
             'total_employees': total_employees,
-            # Charts data - all for current company only
-            'monthly_registrations': self.get_monthly_registrations_single(company),
-            'currency_distribution': [{'currency': company.preferred_currency, 'count': 1}],
-            'plan_distribution': [{'plan': company.plan.display_name if company.plan else 'No Plan', 'count': 1}],
-            'status_distribution': [{'status': company.status, 'count': 1}],
-        })
+            'active_employees_today': active_today,
+        }
 
-        return context
+    def _get_chart_data(self, company, date_ranges, Store, Sale, SaleItem):
+        """Get data for charts and visualizations from tenant schema."""
+        try:
+            stores = Store.objects.filter(is_active=True)
 
-    def get_monthly_registrations_single(self, company):
-        """Get registration data for single company over the past 12 months."""
+            # Monthly sales trend (last 12 months)
+            monthly_sales = self._get_monthly_sales_trend(stores, Sale)
+
+            # Daily sales trend (last 30 days)
+            daily_sales = self._get_daily_sales_trend(stores, date_ranges, Sale)
+
+            # Sales by store
+            sales_by_store = self._get_sales_by_store(stores, date_ranges, Sale)
+
+            # Product performance
+            top_products = self._get_top_products(stores, date_ranges, SaleItem)
+
+            # Payment method distribution
+            payment_distribution = self._get_payment_distribution(stores, date_ranges, Sale)
+
+            return {
+                'monthly_sales_trend': json.dumps(monthly_sales),
+                'daily_sales_trend': json.dumps(daily_sales),
+                'sales_by_store': json.dumps(sales_by_store),
+                'top_products': json.dumps(top_products),
+                'payment_distribution': json.dumps(payment_distribution),
+                'monthly_registrations': json.dumps(self._get_monthly_registrations_single(company)),
+                'currency_distribution': json.dumps([{
+                    'currency': company.preferred_currency,
+                    'count': 1
+                }]),
+                'plan_distribution': json.dumps([{
+                    'plan': company.plan.display_name if company.plan else 'No Plan',
+                    'count': 1
+                }]),
+                'status_distribution': json.dumps([{
+                    'status': company.status,
+                    'count': 1
+                }]),
+            }
+
+        except Exception as e:
+            logger.error(f"Error in _get_chart_data: {e}", exc_info=True)
+            return {
+                'monthly_sales_trend': json.dumps([]),
+                'daily_sales_trend': json.dumps([]),
+                'sales_by_store': json.dumps([]),
+                'top_products': json.dumps([]),
+                'payment_distribution': json.dumps([]),
+                'monthly_registrations': json.dumps([]),
+                'currency_distribution': json.dumps([]),
+                'plan_distribution': json.dumps([]),
+                'status_distribution': json.dumps([]),
+            }
+
+    def _get_monthly_sales_trend(self, stores, Sale):
+        """Get monthly sales trend for the last 12 months."""
         data = []
         now = timezone.now()
 
         for i in range(12):
-            month_start = (now - relativedelta(months=i)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            month_start = (now - relativedelta(months=i)).replace(
+                day=1, hour=0, minute=0, second=0, microsecond=0
+            )
             next_month_start = month_start + relativedelta(months=1)
-            month_end = next_month_start - timedelta(seconds=1)
 
-            # Check if company was created in this month
-            count = 1 if (company.created_at >= month_start and company.created_at <= month_end) else 0
+            month_sales = Sale.objects.filter(
+                store__in=stores,
+                created_at__gte=month_start,
+                created_at__lt=next_month_start,
+                status__in=['COMPLETED', 'PAID'],
+                is_voided=False
+            ).aggregate(
+                total=Coalesce(Sum('total_amount'), Decimal('0')),
+                count=Count('id')
+            )
 
             data.append({
                 'month': month_start.strftime('%b %Y'),
-                'count': count
+                'revenue': float(month_sales['total']),
+                'count': month_sales['count']
             })
 
         return list(reversed(data))
 
+    def _get_daily_sales_trend(self, stores, date_ranges, Sale):
+        """Get daily sales trend for the last 30 days."""
+        data = []
+
+        for i in range(30):
+            date = date_ranges['today'] - timedelta(days=i)
+
+            daily_sales = Sale.objects.filter(
+                store__in=stores,
+                created_at__date=date,
+                status__in=['COMPLETED', 'PAID'],
+                is_voided=False
+            ).aggregate(
+                total=Coalesce(Sum('total_amount'), Decimal('0')),
+                count=Count('id')
+            )
+
+            data.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'revenue': float(daily_sales['total']),
+                'count': daily_sales['count']
+            })
+
+        return list(reversed(data))
+
+    def _get_sales_by_store(self, stores, date_ranges, Sale):
+        """Get sales breakdown by store."""
+        store_sales = Sale.objects.filter(
+            store__in=stores,
+            created_at__date__gte=date_ranges['month_ago'],
+            status__in=['COMPLETED', 'PAID'],
+            is_voided=False
+        ).values(
+            'store__name', 'store__id'
+        ).annotate(
+            total=Coalesce(Sum('total_amount'), Decimal('0')),
+            count=Count('id')
+        ).order_by('-total')
+
+        return [
+            {
+                'store_name': item['store__name'],
+                'revenue': float(item['total']),
+                'count': item['count']
+            }
+            for item in store_sales
+        ]
+
+    def _get_top_products(self, stores, date_ranges, SaleItem):
+        """Get top selling products."""
+        top_products = SaleItem.objects.filter(
+            sale__store__in=stores,
+            sale__created_at__date__gte=date_ranges['month_ago'],
+            sale__status__in=['COMPLETED', 'PAID'],
+            sale__is_voided=False,
+            item_type='PRODUCT'  # Only products, not services
+        ).values(
+            'product__name', 'product__sku'
+        ).annotate(
+            total_quantity=Sum('quantity'),
+            total_revenue=Coalesce(Sum('total_price'), Decimal('0'))
+        ).order_by('-total_revenue')[:10]
+
+        return [
+            {
+                'name': item['product__name'],
+                'sku': item['product__sku'],
+                'quantity': float(item['total_quantity']),
+                'revenue': float(item['total_revenue'])
+            }
+            for item in top_products
+        ]
+
+    def _get_payment_distribution(self, stores, date_ranges, Sale):
+        """Get payment method distribution."""
+        payment_dist = Sale.objects.filter(
+            store__in=stores,
+            created_at__date__gte=date_ranges['month_ago'],
+            status__in=['COMPLETED', 'PAID'],
+            is_voided=False
+        ).values('payment_method').annotate(
+            count=Count('id'),
+            total=Coalesce(Sum('total_amount'), Decimal('0'))
+        ).order_by('-total')
+
+        return [
+            {
+                'method': item['payment_method'],
+                'count': item['count'],
+                'total': float(item['total'])
+            }
+            for item in payment_dist
+        ]
+
+    def _get_recent_activity(self, company, Store, Sale, Customer, StockMovement):
+        """Get recent activity across all modules from tenant schema."""
+        try:
+            stores = Store.objects.filter(is_active=True)
+
+            # Recent sales
+            recent_sales = list(Sale.objects.filter(
+                store__in=stores,
+                status__in=['COMPLETED', 'PAID']
+            ).select_related(
+                'store', 'customer', 'created_by'
+            ).order_by('-created_at')[:5])
+
+            # Recent customers
+            recent_customers = list(Customer.objects.order_by('-created_at')[:5])
+
+            # Recent stock movements
+            recent_stock_movements = list(StockMovement.objects.filter(
+                store__in=stores
+            ).select_related(
+                'product', 'store', 'created_by'
+            ).order_by('-created_at')[:5])
+
+            return {
+                'recent_sales': recent_sales,
+                'recent_customers': recent_customers,
+                'recent_stock_movements': recent_stock_movements,
+            }
+
+        except Exception as e:
+            logger.error(f"Error in _get_recent_activity: {e}", exc_info=True)
+            return {
+                'recent_sales': [],
+                'recent_customers': [],
+                'recent_stock_movements': [],
+            }
+
+    def _get_alerts_and_warnings(self, company, Store, Stock, Invoice, Sale):
+        """Get system alerts and warnings from tenant schema."""
+        try:
+            stores = Store.objects.filter(is_active=True)
+            alerts = []
+
+            # Low stock alerts
+            low_stock = Stock.objects.filter(
+                store__in=stores,
+                quantity__gt=0,
+                quantity__lte=F('low_stock_threshold')
+            ).count()
+
+            if low_stock > 0:
+                alerts.append({
+                    'type': 'warning',
+                    'icon': 'bi-exclamation-triangle',
+                    'title': 'Low Stock Items',
+                    'message': f'{low_stock} items are running low on stock',
+                    'action_url': '/inventory/stock/',
+                    'action_text': 'View Inventory'
+                })
+
+            # Out of stock alerts
+            out_of_stock = Stock.objects.filter(
+                store__in=stores,
+                quantity=0
+            ).count()
+
+            if out_of_stock > 0:
+                alerts.append({
+                    'type': 'danger',
+                    'icon': 'bi-x-circle',
+                    'title': 'Out of Stock',
+                    'message': f'{out_of_stock} items are out of stock',
+                    'action_url': '/inventory/stock/',
+                    'action_text': 'Restock Now'
+                })
+
+            # Overdue invoices
+            overdue_invoices = Invoice.objects.filter(
+                sale__store__in=stores,
+                sale__payment_status='OVERDUE'
+            ).count()
+
+            if overdue_invoices > 0:
+                alerts.append({
+                    'type': 'warning',
+                    'icon': 'bi-clock-history',
+                    'title': 'Overdue Invoices',
+                    'message': f'{overdue_invoices} invoices are overdue',
+                    'action_url': '/invoices/',
+                    'action_text': 'View Invoices'
+                })
+
+            return {
+                'alerts': alerts,
+                'alert_count': len(alerts)
+            }
+
+        except Exception as e:
+            logger.error(f"Error in _get_alerts_and_warnings: {e}", exc_info=True)
+            return {
+                'alerts': [],
+                'alert_count': 0
+            }
+
+    def _get_subscription_warning(self, company):
+        """Get subscription warning if applicable (public schema data)."""
+        if not company.subscription_ends_at:
+            return None
+
+        days_until_expiry = (company.subscription_ends_at - timezone.now().date()).days
+
+        if days_until_expiry <= 0:
+            return {
+                'title': 'Subscription Expired',
+                'message': 'Your subscription has expired. Renew now to continue using all features.',
+                'action_url': '/companies/subscription/renew/',
+                'action_text': 'Renew Now',
+                'type': 'danger'
+            }
+        elif days_until_expiry <= 7:
+            return {
+                'title': 'Subscription Expiring Soon',
+                'message': f'Your subscription expires in {days_until_expiry} days.',
+                'action_url': '/companies/subscription/renew/',
+                'action_text': 'Renew Now',
+                'type': 'warning'
+            }
+        elif days_until_expiry <= 30:
+            return {
+                'title': 'Subscription Renewal Reminder',
+                'message': f'Your subscription expires in {days_until_expiry} days.',
+                'action_url': '/companies/subscription/renew/',
+                'action_text': 'Renew Subscription',
+                'type': 'info'
+                }
+        return None
+
+        def _get_monthly_registrations_single(self, company):
+            """Get registration data for single company over the past 12 months."""
+            data = []
+            now = timezone.now()
+
+            for i in range(12):
+                month_start = (now - relativedelta(months=i)).replace(
+                    day=1, hour=0, minute=0, second=0, microsecond=0
+                )
+                next_month_start = month_start + relativedelta(months=1)
+                month_end = next_month_start - timedelta(seconds=1)
+
+                # Check if company was created in this month
+                count = 1 if (company.created_at >= month_start and company.created_at <= month_end) else 0
+
+                data.append({
+                    'month': month_start.strftime('%b %Y'),
+                    'count': count
+                })
+
+            return list(reversed(data))
 
 class CompanyListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """Enhanced company list with proper tenant filtering."""

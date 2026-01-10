@@ -688,6 +688,12 @@ NAVIGATION_ITEMS = [
                 permission="reports.view_reportschedule"
             ),
             NavigationItem(
+                name="Business Health",
+                url_name="reports:combined_business",
+                icon="bi bi-calendar-check",
+                permission="reports.view_reportschedule"
+            ),
+            NavigationItem(
                 name="Analytics",
                 url_name="reports:analytics",
                 icon="bi bi-graph-up",

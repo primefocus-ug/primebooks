@@ -2208,6 +2208,8 @@ class StockMovement(models.Model):
         ('PURCHASE', 'Purchase'),
         ('SALE', 'Sale'),
         ('RETURN', 'Return'),
+        ('VOID', 'Void'),
+        ('REFUND', 'Refund'),
         ('ADJUSTMENT', 'Adjustment'),
         ('TRANSFER_IN', 'Transfer In'),
         ('TRANSFER_OUT', 'Transfer Out'),
