@@ -2092,6 +2092,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setupKeyboardShortcuts();
     setupCustomerSearchListeners();
     setupCustomerDropdownCloseHandler();
+    setupDocumentTypeProtection();
     loadRecentCustomers();
     checkForDrafts();
 
@@ -3970,6 +3971,17 @@ function validatePaymentMethod() {
     if (creditStatusDiv) creditStatusDiv.style.display = 'none';
 
     if (paymentMethod === 'CREDIT') {
+        // ✅ NEW: Auto-switch to INVOICE if currently on RECEIPT
+        const docTypeRadio = document.querySelector('input[name="document_type"]:checked');
+        if (docTypeRadio && docTypeRadio.value === 'RECEIPT') {
+            const invoiceRadio = document.getElementById('docInvoice');
+            if (invoiceRadio) {
+                invoiceRadio.checked = true;
+                toggleDueDateSection();
+                showToast('Document type changed to Invoice (required for credit sales)', 'info');
+            }
+        }
+
         const customerId = document.getElementById('customerId')?.value;
 
         if (!customerId) {
@@ -4049,6 +4061,68 @@ function validatePaymentMethod() {
         completeSaleBtn.disabled = cartCount === 0;
     }
     return true;
+}
+function setupDocumentTypeProtection() {
+    document.querySelectorAll('input[name="document_type"]').forEach(radio => {
+        // Store the original change handler
+        const originalHandler = radio.onchange;
+
+        radio.addEventListener('change', function(e) {
+            const paymentMethod = document.getElementById('paymentMethod')?.value;
+
+            // Prevent switching to Receipt when Credit is selected
+            if (this.value === 'RECEIPT' && paymentMethod === 'CREDIT') {
+                e.preventDefault();
+
+                // Switch back to Invoice
+                const invoiceRadio = document.getElementById('docInvoice');
+                if (invoiceRadio) {
+                    invoiceRadio.checked = true;
+                }
+
+                // Show warning
+                showToast('Cannot use Receipt for credit sales. Invoice is required.', 'warning');
+
+                // Optional: Show a more detailed modal
+                const warningModal = `
+                    <div class="alert alert-warning mt-2" role="alert">
+                        <h6><i class="bi bi-exclamation-triangle me-2"></i>Invoice Required for Credit Sales</h6>
+                        <p class="mb-0">
+                            Credit transactions must be documented with invoices that include:
+                        </p>
+                        <ul class="mb-0 mt-2">
+                            <li>Due date for payment</li>
+                            <li>Payment terms and conditions</li>
+                            <li>Proper tax documentation</li>
+                            <li>Customer TIN (Tax Identification Number)</li>
+                        </ul>
+                        <p class="mt-2 mb-0">
+                            <strong>Receipts</strong> are for immediate cash transactions only.
+                        </p>
+                    </div>
+                `;
+
+                // Insert warning near document type section
+                const docTypeCard = this.closest('.card');
+                if (docTypeCard && !docTypeCard.querySelector('.credit-receipt-warning')) {
+                    const warningDiv = document.createElement('div');
+                    warningDiv.className = 'credit-receipt-warning';
+                    warningDiv.innerHTML = warningModal;
+                    docTypeCard.querySelector('.card-body')?.appendChild(warningDiv);
+
+                    // Auto-remove after 10 seconds
+                    setTimeout(() => warningDiv.remove(), 10000);
+                }
+
+                return false;
+            }
+
+            // Call original handler if exists
+            if (originalHandler) {
+                originalHandler.call(this, e);
+            }
+        });
+    });
 }
 // ============================================
 // CREDIT ADJUSTMENT VISIBILITY

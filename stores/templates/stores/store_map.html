@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
+{% load humanize %}
+{% load custom_filters %}
 
 {% block title %}Store Locations Map | Prime Book{% endblock %}
 
@@ -7,6 +9,10 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<link rel="stylesheet" href="{% static 'themes.css' %}" />
+
+
+
 <style>
     :root {
         --map-height: 600px;
@@ -18,7 +24,7 @@
         border-radius: var(--border-radius);
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
-
+   
     .map-container {
         position: relative;
     }
@@ -32,6 +38,10 @@
         padding: 10px;
         border-radius: 8px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    [data-theme="dark"] .map-controls {
+        background: #343a40;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.7);
     }
 
     .map-search {
@@ -48,6 +58,10 @@
         height: var(--sidebar-height);
         overflow-y: auto;
     }
+    [data-theme="dark"] .map-sidebar {
+        background: #343a40;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.7);
+    }
 
     .store-item {
         border-left: 4px solid transparent;
@@ -62,10 +76,16 @@
         background-color: #f8f9fa;
         transform: translateX(2px);
     }
+    [data-theme="dark"] .store-item:hover {
+        background-color: #495057;
+    }
 
     .store-item.active {
         border-left-color: var(--primary-color);
         background-color: #e8f4f8;
+    }
+    [data-theme="dark"] .store-item.active {
+        background-color: #3a5068;
     }
 
     .store-badge {
@@ -139,6 +159,11 @@
         z-index: 1000;
         font-size: 0.85rem;
     }
+    [data-theme="dark"] .legend {
+        background: #343a40;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.7);
+        color: #f8f9fa;
+    }
 
     .legend-item {
         display: flex;
@@ -189,6 +214,9 @@
         border-bottom: 1px solid #f0f0f0;
         background: #fff9e6;
     }
+    [data-theme="dark"] .unmapped-item {
+        background: #5a3e00;
+    }
 
     .loading-spinner {
         display: none;
@@ -211,6 +239,20 @@
             width: 100%;
         }
     }
+    [data-theme="dark"] .tab-btn {
+        color: #adb5bd;
+    }
+    [data-theme="dark"] .tab-btn.active {
+        color: #66b2ff;
+        border-bottom-color: #66b2ff;
+    }
+    [data-theme="dark"] .unmapped-item {
+        background: #5a3e00;
+    }
+    [data-theme="dark"] .tabs-container {
+        border-bottom-color: #495057;
+    }   
+
 </style>
 {% endblock %}
 
@@ -277,9 +319,9 @@
 <!-- Region Filters -->
 {% if region_stats %}
 <div class="card mb-4">
-    <div class="card-body">
-        <h6 class="mb-3"><i class="bi bi-filter-circle"></i> Filter by Region</h6>
-        <div class="region-filter">
+    <div class="card-body totall">
+        <h6 class="mb-3 totall"><i class="bi bi-filter-circle"></i> Filter by Region</h6>
+        <div class="region-filter totall">
             <span class="region-tag active" data-region="all">
                 <i class="bi bi-globe"></i> All Regions ({{ total_stores }})
             </span>
@@ -298,7 +340,7 @@
     <!-- Map Container -->
     <div class="col-lg-8 mb-4">
         <div class="card border-0 shadow">
-            <div class="card-header bg-white">
+            <div class="card-header dre">
                 <h5 class="mb-0"><i class="bi bi-map"></i> Store Locations</h5>
             </div>
             <div class="card-body p-0 position-relative">
@@ -330,7 +372,7 @@
     <!-- Sidebar -->
     <div class="col-lg-4">
         <div class="card border-0 shadow">
-            <div class="card-header bg-white">
+            <div class="card-header dre">
                 <div class="tabs-container">
                     <button class="tab-btn active" data-tab="mapped">
                         Mapped ({{ mapped_stores }})
