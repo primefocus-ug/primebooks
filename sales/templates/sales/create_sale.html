@@ -2009,6 +2009,23 @@ function getCookie(name) {
             }
         }
     }
+
+    // ✅ FIX: Fallback to check meta tag if cookie not found
+    if (!cookieValue) {
+        const metaTag = document.querySelector('meta[name="csrf-token"]');
+        if (metaTag) {
+            cookieValue = metaTag.getAttribute('content');
+        }
+    }
+
+    // ✅ FIX: Try input field as last resort
+    if (!cookieValue) {
+        const csrfInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        if (csrfInput) {
+            cookieValue = csrfInput.value;
+        }
+    }
+
     return cookieValue;
 }
 
@@ -2600,15 +2617,31 @@ async function searchCustomers(controller = null) {
     try {
         const cacheKey = `customer-search-${query}-store-${storeId}`;
 
+        // ✅ FIX: Better cache management
         if (SaleState.searchCache.has(cacheKey)) {
             const cached = SaleState.searchCache.get(cacheKey);
             const cacheAge = Date.now() - (cached.timestamp || 0);
 
+            // Use cache if less than 2 minutes old
             if (cacheAge < 120000) {
                 console.log('✅ Using cached customer search results');
-                displayCustomerList(cached);
+
+                // Extract customers array properly
+                let customers = [];
+                if (Array.isArray(cached)) {
+                    customers = cached;
+                } else if (cached.customers) {
+                    customers = cached.customers;
+                } else if (cached.results) {
+                    customers = cached.results;
+                }
+
+                displayCustomerList(customers);
                 if (searchLoading) searchLoading.style.display = 'none';
                 return;
+            } else {
+                // Remove stale cache
+                SaleState.searchCache.delete(cacheKey);
             }
         }
 
@@ -2627,25 +2660,45 @@ async function searchCustomers(controller = null) {
 
         console.log('🔍 Fetching customer search results for:', query, 'in store:', storeId);
 
-        // ✅ ADD: Include store_id parameter
         const response = await fetch(
             `/sales/customer-search/?q=${encodeURIComponent(query)}&store_id=${storeId}`,
             fetchOptions
         );
 
+        // ✅ FIX: Better response validation
         if (!response.ok) {
             if (response.status === 0) {
                 console.log('Request aborted');
                 return;
             }
-            throw new Error(`Search failed with status: ${response.status}`);
+
+            // Try to get error message from response
+            let errorMessage = `Search failed with status: ${response.status}`;
+            try {
+                const errorData = await response.json();
+                if (errorData.error || errorData.message) {
+                    errorMessage = errorData.error || errorData.message;
+                }
+            } catch (e) {
+                // Could not parse error as JSON
+            }
+
+            throw new Error(errorMessage);
+        }
+
+        // ✅ FIX: Validate JSON response
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const textResponse = await response.text();
+            console.error('Non-JSON response:', textResponse.substring(0, 200));
+            throw new Error('Invalid response format from server');
         }
 
         const data = await response.json();
         console.log('📦 Customer search response:', data);
 
+        // ✅ FIX: Better data extraction
         let customers = [];
-
         if (Array.isArray(data)) {
             customers = data;
         } else if (data.customers && Array.isArray(data.customers)) {
@@ -2661,8 +2714,9 @@ async function searchCustomers(controller = null) {
         console.log('✅ Extracted customers:', customers.length);
 
         if (customers.length > 0) {
+            // ✅ FIX: Cache customers array with timestamp
             SaleState.searchCache.set(cacheKey, {
-                ...customers,
+                customers: customers,
                 timestamp: Date.now()
             });
 
@@ -2689,8 +2743,16 @@ async function searchCustomers(controller = null) {
 
         console.error('❌ Customer search error:', error);
 
+        // ✅ FIX: User-friendly error messages
+        let userMessage = error.message;
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+            userMessage = 'Network error. Please check your connection and try again.';
+        } else if (error.message.includes('Invalid response')) {
+            userMessage = 'Server error. Please try again or contact support.';
+        }
+
         if (searchError) {
-            searchError.textContent = `Search failed: ${error.message}. Please try again.`;
+            searchError.textContent = `Search failed: ${userMessage}`;
             searchError.style.display = 'block';
         }
 
@@ -2700,7 +2762,7 @@ async function searchCustomers(controller = null) {
                 <div class="text-center py-3 text-danger">
                     <i class="bi bi-exclamation-triangle" style="font-size: 2rem;"></i>
                     <p class="mt-2 mb-1">Search failed</p>
-                    <small>${escapeHtml(error.message)}</small>
+                    <small>${escapeHtml(userMessage)}</small>
                     <div class="mt-2">
                         <button class="btn btn-sm btn-outline-secondary"
                                 onclick="searchCustomers()">
@@ -2830,6 +2892,8 @@ async function fetchAndSelectCustomer(customerId) {
 }
 
 function selectCustomer(customer) {
+    console.log('👤 Selecting customer:', customer);
+
     SaleState.selectedCustomer = customer;
 
     const customerId = document.getElementById('customerId');
@@ -2879,48 +2943,77 @@ function selectCustomer(customer) {
         }
     }
 
+    // ✅ FIX: Properly parse and set credit info with type coercion
     if (customer.credit_info) {
+        console.log('💳 Raw credit_info from customer:', customer.credit_info);
+
+        // ✅ FIX: Ensure boolean values are properly converted
+        const allowCredit = customer.credit_info.allow_credit === true ||
+                           customer.credit_info.allow_credit === 'true' ||
+                           customer.credit_info.allow_credit === 1;
+
+        const hasOverdue = customer.credit_info.has_overdue === true ||
+                          customer.credit_info.has_overdue === 'true' ||
+                          customer.credit_info.has_overdue === 1;
+
         currentCustomerCredit = {
-            allowCredit: customer.credit_info.allow_credit,
-            creditLimit: parseFloat(customer.credit_info.credit_limit),
-            creditBalance: parseFloat(customer.credit_info.credit_balance),
-            creditAvailable: parseFloat(customer.credit_info.credit_available),
-            creditStatus: customer.credit_info.credit_status,
-            hasOverdue: customer.credit_info.has_overdue,
+            allowCredit: allowCredit,
+            creditLimit: parseFloat(customer.credit_info.credit_limit) || 0,
+            creditBalance: parseFloat(customer.credit_info.credit_balance) || 0,
+            creditAvailable: parseFloat(customer.credit_info.credit_available) || 0,
+            creditStatus: customer.credit_info.credit_status || 'NONE',
+            hasOverdue: hasOverdue,
             overdue_amount: parseFloat(customer.credit_info.overdue_amount || 0)
         };
 
+        console.log('✅ Processed credit info:', currentCustomerCredit);
+
+        // Update hidden fields for form submission
         const customerAllowCredit = document.getElementById('customerAllowCredit');
         const customerCreditLimit = document.getElementById('customerCreditLimit');
         const customerCreditBalance = document.getElementById('customerCreditBalance');
         const customerCreditAvailable = document.getElementById('customerCreditAvailable');
         const customerCreditStatus = document.getElementById('customerCreditStatus');
 
-        if (customerAllowCredit) customerAllowCredit.value = customer.credit_info.allow_credit;
-        if (customerCreditLimit) customerCreditLimit.value = customer.credit_info.credit_limit;
-        if (customerCreditBalance) customerCreditBalance.value = customer.credit_info.credit_balance;
-        if (customerCreditAvailable) customerCreditAvailable.value = customer.credit_info.credit_available;
-        if (customerCreditStatus) customerCreditStatus.value = customer.credit_info.credit_status;
+        if (customerAllowCredit) customerAllowCredit.value = allowCredit ? 'true' : 'false';
+        if (customerCreditLimit) customerCreditLimit.value = currentCustomerCredit.creditLimit;
+        if (customerCreditBalance) customerCreditBalance.value = currentCustomerCredit.creditBalance;
+        if (customerCreditAvailable) customerCreditAvailable.value = currentCustomerCredit.creditAvailable;
+        if (customerCreditStatus) customerCreditStatus.value = currentCustomerCredit.creditStatus;
 
         displayCustomerCreditInfo(customer.credit_info);
     } else {
+        console.log('⚠️ No credit_info available for customer');
+
+        // Reset credit info to defaults
+        currentCustomerCredit = {
+            allowCredit: false,
+            creditLimit: 0,
+            creditBalance: 0,
+            creditAvailable: 0,
+            creditStatus: 'NONE',
+            hasOverdue: false
+        };
+
         const creditInfoDiv = document.getElementById('customerCreditInfo');
         if (creditInfoDiv) {
             creditInfoDiv.style.display = 'none';
         }
     }
 
-    // NEW: Show customer notes section when customer is selected
+    // Show customer notes section when customer is selected
     const notesSection = document.getElementById('customerNotesSection');
     if (notesSection) {
         notesSection.style.display = 'block';
     }
 
-    // NEW: Check if we should show credit adjustment section
+    // Update credit adjustment visibility
     updateCreditAdjustmentVisibility();
 
     addToRecentCustomers(customer);
     showToast(`Selected customer: ${customer.name}`, 'success');
+
+    // Validate payment method after selection
     validatePaymentMethod();
 }
 
@@ -3967,6 +4060,7 @@ function validatePaymentMethod() {
 
     const paymentMethod = paymentMethodSelect.value;
 
+    // Hide warnings by default
     if (creditLimitWarning) creditLimitWarning.style.display = 'none';
     if (creditStatusDiv) creditStatusDiv.style.display = 'none';
 
@@ -3984,6 +4078,7 @@ function validatePaymentMethod() {
 
         const customerId = document.getElementById('customerId')?.value;
 
+        // Check if customer is selected
         if (!customerId) {
             if (creditLimitWarning) {
                 creditLimitWarning.style.display = 'block';
@@ -3996,7 +4091,20 @@ function validatePaymentMethod() {
             return false;
         }
 
-        if (!currentCustomerCredit.allowCredit) {
+        // ✅ FIX: Properly check credit authorization with better logging
+        console.log('💳 Credit Check Debug:', {
+            customerId: customerId,
+            customerName: SaleState.selectedCustomer?.name,
+            allowCredit: currentCustomerCredit.allowCredit,
+            creditLimit: currentCustomerCredit.creditLimit,
+            creditBalance: currentCustomerCredit.creditBalance,
+            creditAvailable: currentCustomerCredit.creditAvailable,
+            creditStatus: currentCustomerCredit.creditStatus,
+            hasOverdue: currentCustomerCredit.hasOverdue
+        });
+
+        // ✅ FIX: Check if allowCredit is explicitly false (not just falsy)
+        if (currentCustomerCredit.allowCredit === false) {
             if (creditLimitWarning) {
                 creditLimitWarning.style.display = 'block';
                 if (creditLimitWarningText) {
@@ -4008,6 +4116,7 @@ function validatePaymentMethod() {
             return false;
         }
 
+        // ✅ FIX: Check credit status more carefully
         if (currentCustomerCredit.creditStatus === 'SUSPENDED' ||
             currentCustomerCredit.creditStatus === 'BLOCKED') {
             if (creditLimitWarning) {
@@ -4020,7 +4129,8 @@ function validatePaymentMethod() {
             return false;
         }
 
-        if (currentCustomerCredit.hasOverdue) {
+        // Check for overdue invoices
+        if (currentCustomerCredit.hasOverdue === true) {
             if (creditLimitWarning) {
                 creditLimitWarning.style.display = 'block';
                 if (creditLimitWarningText) {
@@ -4031,15 +4141,24 @@ function validatePaymentMethod() {
             return false;
         }
 
+        // Check credit limit
         const cartTotal = getCartTotal();
-        if (cartTotal > currentCustomerCredit.creditAvailable) {
+        const creditAvailable = parseFloat(currentCustomerCredit.creditAvailable) || 0;
+
+        console.log('💰 Credit Amount Check:', {
+            cartTotal: cartTotal,
+            creditAvailable: creditAvailable,
+            exceeds: cartTotal > creditAvailable
+        });
+
+        if (cartTotal > creditAvailable) {
             if (creditLimitWarning) {
                 creditLimitWarning.style.display = 'block';
                 if (creditLimitWarningText) {
                     creditLimitWarningText.innerHTML = `
                         <strong>Credit Limit Exceeded!</strong><br>
                         Sale Total: UGX ${cartTotal.toLocaleString()}<br>
-                        Available Credit: UGX ${currentCustomerCredit.creditAvailable.toLocaleString()}
+                        Available Credit: UGX ${creditAvailable.toLocaleString()}
                     `;
                 }
             }
@@ -4047,6 +4166,7 @@ function validatePaymentMethod() {
             return false;
         }
 
+        // All checks passed - allow credit sale
         if (creditStatusDiv) {
             creditStatusDiv.style.display = 'block';
         }
@@ -4056,12 +4176,14 @@ function validatePaymentMethod() {
         return true;
     }
 
+    // For non-credit payment methods
     if (completeSaleBtn) {
         const cartCount = parseInt(document.getElementById('cartCount')?.textContent || '0');
         completeSaleBtn.disabled = cartCount === 0;
     }
     return true;
 }
+
 function setupDocumentTypeProtection() {
     document.querySelectorAll('input[name="document_type"]').forEach(radio => {
         // Store the original change handler
@@ -4203,34 +4325,72 @@ async function submitCreditAdjustment() {
     if (submitBtn) submitBtn.disabled = true;
 
     try {
+        // ✅ FIX: Use FormData instead of JSON for better compatibility
+        const formData = new FormData();
+        formData.append('adjustment_type', adjustmentType);
+        formData.append('amount', amount.toString());
+        formData.append('reason', reason);
+
+        console.log('📤 Sending credit adjustment:', {
+            customerId,
+            adjustmentType,
+            amount,
+            reason
+        });
+
         const response = await fetch(`/en/customers/api/customers/${customerId}/adjust-credit/`, {
             method: 'POST',
+            body: formData,
             headers: {
-                'Content-Type': 'application/json',
                 'X-CSRFToken': getCookie('csrftoken'),
                 'X-Requested-With': 'XMLHttpRequest'
             },
-            body: JSON.stringify({
-                adjustment_type: adjustmentType,
-                amount: amount,
-                reason: reason
-            })
+            credentials: 'same-origin'
         });
 
+        console.log('📥 Response status:', response.status);
+
+        // ✅ FIX: Better error handling for non-JSON responses
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const textResponse = await response.text();
+            console.error('Non-JSON response:', textResponse.substring(0, 500));
+
+            if (textResponse.includes('<html') || textResponse.includes('<!DOCTYPE')) {
+                if (textResponse.includes('login') || textResponse.includes('Login')) {
+                    throw new Error('Session expired. Please refresh the page and log in again.');
+                }
+                throw new Error('Server error. Expected JSON but received HTML.');
+            }
+            throw new Error(`Invalid response type: ${contentType}. Expected JSON.`);
+        }
+
         const data = await response.json();
+        console.log('✅ Credit adjustment response:', data);
 
         if (data.success) {
             // Update current customer credit info
             if (data.customer_credit) {
+                // ✅ FIX: Properly convert boolean values
+                const allowCredit = data.customer_credit.allow_credit === true ||
+                                   data.customer_credit.allow_credit === 'true' ||
+                                   data.customer_credit.allow_credit === 1;
+
+                const hasOverdue = data.customer_credit.has_overdue === true ||
+                                  data.customer_credit.has_overdue === 'true' ||
+                                  data.customer_credit.has_overdue === 1;
+
                 currentCustomerCredit = {
-                    allowCredit: data.customer_credit.allow_credit,
+                    allowCredit: allowCredit,
                     creditLimit: parseFloat(data.customer_credit.credit_limit),
                     creditBalance: parseFloat(data.customer_credit.credit_balance),
                     creditAvailable: parseFloat(data.customer_credit.credit_available),
                     creditStatus: data.customer_credit.credit_status,
-                    hasOverdue: data.customer_credit.has_overdue,
+                    hasOverdue: hasOverdue,
                     overdue_amount: parseFloat(data.customer_credit.overdue_amount || 0)
                 };
+
+                console.log('✅ Updated credit info:', currentCustomerCredit);
 
                 // Update display
                 displayCustomerCreditInfo(data.customer_credit);
@@ -4251,12 +4411,21 @@ async function submitCreditAdjustment() {
             validatePaymentMethod();
 
         } else {
-            throw new Error(data.error || 'Failed to adjust credit');
+            throw new Error(data.error || data.message || 'Failed to adjust credit');
         }
 
     } catch (error) {
-        console.error('Credit adjustment error:', error);
-        showError(`Failed to adjust credit: ${error.message}`);
+        console.error('❌ Credit adjustment error:', error);
+
+        // User-friendly error messages
+        let userMessage = error.message;
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+            userMessage = 'Network error. Please check your internet connection and try again.';
+        } else if (error.message.includes('Session expired')) {
+            userMessage = 'Your session has expired. Please refresh the page and log in again.';
+        }
+
+        showError(`Failed to adjust credit: ${userMessage}`);
 
     } finally {
         // Hide loading state

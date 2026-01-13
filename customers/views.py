@@ -575,9 +575,9 @@ def adjust_customer_credit(request, customer_id):
         customer = Customer.objects.get(id=customer_id)
 
         # Parse request data
-        data = json.loads(request.body)
+        data = request.POST
         adjustment_type = data.get('adjustment_type')
-        amount = Decimal(str(data.get('amount', 0)))
+        amount = Decimal(data.get('amount', '0'))
         reason = data.get('reason', '').strip()
 
         if not reason:
