@@ -200,6 +200,66 @@ def process_receipt_async(self, sale_id, user_id=None):
                 pass
 
 
+@shared_task(bind=True, max_retries=3)
+def fiscalize_export_invoice_async(self, sale_id, user_id, export_data):
+    """
+    Asynchronously fiscalize an export invoice via EFRIS
+    """
+    try:
+        from sales.models import Sale
+        from django.contrib.auth import get_user_model
+        from efris.services import create_efris_service
+
+        User = get_user_model()
+        sale = Sale.objects.select_related('store', 'customer').get(pk=sale_id)
+        user = User.objects.get(pk=user_id)
+
+        logger.info(f"Starting export fiscalization for sale {sale.document_number}")
+
+        # Create EFRIS service
+        export_service = create_efris_service(
+            sale.store.company,
+            'export',
+            sale.store
+        )
+
+        # Build HS codes from product export configurations
+        hs_codes = []
+        for item in sale.items.filter(item_type='PRODUCT'):
+            if item.product and hasattr(item.product, 'hs_code') and item.product.hs_code:
+                hs_codes.append(item.product.hs_code)
+
+        if not hs_codes:
+            raise Exception("No HS codes found on products. Configure products for export first.")
+
+        # Fiscalize export invoice
+        result = export_service.fiscalize_export_sale(
+            sale_or_invoice=sale,
+            delivery_terms=export_data['delivery_terms'],
+            hs_codes=hs_codes,
+            total_weight=export_data['total_weight'],
+            buyer_country=export_data['buyer_country'],
+            buyer_passport=export_data.get('buyer_passport'),
+            foreign_currency=export_data.get('foreign_currency'),
+            exchange_rate=export_data.get('exchange_rate'),
+            user=user
+        )
+
+        if result.get('success'):
+            logger.info(f"Export invoice {sale.document_number} fiscalized successfully")
+            return {
+                'success': True,
+                'invoice_no': result['data']['invoice_no'],
+                'fiscal_code': result['data'].get('fiscal_code')
+            }
+        else:
+            logger.error(f"Export fiscalization failed: {result.get('error')}")
+            raise Exception(result.get('error'))
+
+    except Exception as e:
+        logger.error(f"Export fiscalization task failed: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)
+
 @shared_task
 def send_receipt_notification(sale_id):
     """
@@ -268,7 +328,7 @@ def send_receipt_notification(sale_id):
 @shared_task(bind=True)
 def create_sale_background(self, form_data, user_id, task_id):
     """
-    Create sale in background with progress updates
+    Create sale in background with progress updates and export sale support
     """
     initial_schema = TenantResolver.get_current_schema()
 
@@ -278,8 +338,8 @@ def create_sale_background(self, form_data, user_id, task_id):
         from stores.models import Store
         from django.db import transaction
         from decimal import Decimal
-        from inventory.models import Product,Service
-        from sales.models import SaleItem,Payment
+        from inventory.models import Product, Service
+        from sales.models import SaleItem, Payment
         from .signals import send_receipt_ws_update
         from .views import create_stock_movements
         import json
@@ -320,6 +380,9 @@ def create_sale_background(self, form_data, user_id, task_id):
                 update_task_progress(task_id, 100, 'Error: Invalid items data', 'error')
                 return {'success': False, 'error': 'Invalid items data'}
 
+            # Check if this is an export sale
+            is_export_sale = form_data.get('is_export_sale') == 'true'
+
             # Create sale
             update_task_progress(task_id, 40, 'Creating sale record...')
 
@@ -338,12 +401,21 @@ def create_sale_background(self, form_data, user_id, task_id):
                     status='DRAFT',
                 )
 
-                # Add items
+                # Add items with export field support
                 update_task_progress(task_id, 50, 'Adding items to sale...')
 
                 for item_data in items_data:
                     try:
                         item_type = item_data.get('item_type', 'PRODUCT')
+
+                        # ✅ Prepare export fields if this is an export sale
+                        export_fields = {}
+                        if is_export_sale:
+                            export_fields = {
+                                'export_total_weight': Decimal(str(item_data.get('export_total_weight', 0))) if item_data.get('export_total_weight') else None,
+                                'export_piece_qty': int(item_data.get('export_piece_qty', 0)) if item_data.get('export_piece_qty') else None,
+                                'export_piece_measure_unit': item_data.get('export_piece_measure_unit', ''),
+                            }
 
                         if item_type == 'PRODUCT':
                             product = Product.objects.get(
@@ -358,6 +430,7 @@ def create_sale_background(self, form_data, user_id, task_id):
                                 unit_price=Decimal(str(item_data.get('unit_price', 0))),
                                 tax_rate=item_data.get('tax_rate', 'A'),
                                 discount=Decimal(str(item_data.get('discount', 0))),
+                                **export_fields  # ✅ Add export fields
                             )
                         elif item_type == 'SERVICE':
                             service = Service.objects.get(
@@ -372,6 +445,7 @@ def create_sale_background(self, form_data, user_id, task_id):
                                 unit_price=Decimal(str(item_data.get('unit_price', 0))),
                                 tax_rate=item_data.get('tax_rate', 'A'),
                                 discount=Decimal(str(item_data.get('discount', 0))),
+                                **export_fields  # ✅ Add export fields
                             )
                     except (Product.DoesNotExist, Service.DoesNotExist) as e:
                         logger.error(f"Item not found: {e}")
@@ -419,11 +493,15 @@ def create_sale_background(self, form_data, user_id, task_id):
                     if store_config.get('enabled', False):
                         fiscalize_invoice_async.delay(sale.pk, user_id)
 
-                # Final update
+                # Final update with export sale indicator
+                success_message = f'{sale.get_document_type_display()} #{sale.document_number} created successfully!'
+                if is_export_sale:
+                    success_message += ' [EXPORT INVOICE]'
+
                 update_task_progress(
                     task_id,
                     100,
-                    f'{sale.get_document_type_display()} #{sale.document_number} created successfully!',
+                    success_message,
                     'completed',
                     sale_id=sale.pk
                 )
@@ -432,7 +510,8 @@ def create_sale_background(self, form_data, user_id, task_id):
                     'success': True,
                     'sale_id': sale.pk,
                     'document_number': sale.document_number,
-                    'total_amount': float(sale.total_amount)
+                    'total_amount': float(sale.total_amount),
+                    'is_export_sale': is_export_sale
                 }
 
     except Exception as e:

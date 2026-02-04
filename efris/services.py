@@ -5,7 +5,7 @@ import os
 import pytz
 from cryptography.hazmat.backends import default_backend
 from django.utils import timezone as django_timezone
-from datetime import datetime, timedelta,date
+from datetime import datetime, timedelta, date
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass, field
@@ -32,12 +32,15 @@ from pydantic import BaseModel, field_validator, Field, ConfigDict
 import threading
 import gzip
 from django_tenants.utils import schema_context
+from tenancy.utils import schema_context_safe
 from .models import (
     EFRISConfiguration, EFRISAPILog, FiscalizationAudit,
     EFRISSystemDictionary
 )
 import re
+
 logger = structlog.get_logger(__name__)
+
 
 class EFRISConstants:
     class InterfaceCodes:
@@ -119,11 +122,13 @@ class OperationStatus(Enum):
     RETRYING = "retrying"
     CANCELLED = "cancelled"
 
+
 class EFRISErrorSeverity(Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
+
 
 class EFRISError(Exception):
     def __init__(
@@ -151,17 +156,21 @@ class EFRISError(Exception):
             "exception_type": self.__class__.__name__
         }
 
+
 class EFRISConfigurationError(EFRISError):
     def __init__(self, message: str, **kwargs):
         super().__init__(message, severity=EFRISErrorSeverity.HIGH, **kwargs)
+
 
 class EFRISNetworkError(EFRISError):
     def __init__(self, message: str, **kwargs):
         super().__init__(message, severity=EFRISErrorSeverity.MEDIUM, retryable=True, **kwargs)
 
+
 class EFRISValidationError(EFRISError):
     def __init__(self, message: str, **kwargs):
         super().__init__(message, severity=EFRISErrorSeverity.HIGH, **kwargs)
+
 
 class EFRISSecurityError(EFRISError):
     """Security related errors"""
@@ -173,6 +182,7 @@ class EFRISSecurityError(EFRISError):
 class EFRISBusinessLogicError(EFRISError):
     def __init__(self, message: str, **kwargs):
         super().__init__(message, severity=EFRISErrorSeverity.MEDIUM, **kwargs)
+
 
 class InvoiceData(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, validate_assignment=True)
@@ -196,13 +206,14 @@ class InvoiceData(BaseModel):
     @field_validator('currency_code')
     @classmethod
     def validate_currency(cls, v: str) -> str:
-        if v not in ["UGX", "USD", "EUR","KES", "GBP"]:
+        if v not in ["UGX", "USD", "EUR", "KES", "GBP"]:
             raise ValueError(f'Unsupported currency: {v}')
         return v
 
     def validate_amounts_consistency(self) -> bool:
         expected_total = self.subtotal + self.tax_amount - self.discount_amount
         return abs(self.total_amount - expected_total) <= Decimal('0.01')
+
 
 @dataclass
 class EFRISResponse:
@@ -365,7 +376,7 @@ class SecurityManager:
         """Create globalInfo section for EFRIS requests"""
         return {
             "appId": self.app_id,
-            "version": settings.APP_VERSION  , #"1.1.20191201",
+            "version": settings.APP_VERSION,  # "1.1.20191201",
             "dataExchangeId": str(uuid.uuid4()).replace('-', '')[:32],
             "interfaceCode": interface_code,
             "requestCode": "TP",
@@ -381,6 +392,7 @@ class SecurityManager:
             "latitude": "0.3476",
             "agentType": "0"
         }
+
 
 class ConfigurationManager:
     """Enhanced configuration management"""
@@ -432,7 +444,6 @@ class ConfigurationManager:
             raise EFRISConfigurationError(
                 f"EFRIS configuration not found: {e}"
             )
-
 
     def _is_cache_valid(self) -> bool:
         """Check if cached config is still valid"""
@@ -571,6 +582,7 @@ class ConfigurationManager:
 
         self._last_validation = None
         return self._load_and_validate_config()
+
 
 class EnhancedHTTPClient:
     def __init__(self, config: Dict[str, Any]):
@@ -718,7 +730,6 @@ class EnhancedHTTPClient:
         metrics['last_updated'] = timezone.now().isoformat()
 
         cache.set(cache_key, metrics, 3600)  # Cache for 1 hour
-
 
     def get_metrics(self) -> Dict[str, float]:
         """Get client performance metrics"""
@@ -972,7 +983,6 @@ class SystemDictionaryManager:
             from efris.models import EFRISSystemDictionary
 
             version = data.get('version', 'unknown')
-
 
             dictionary_mapping = {
                 'creditNoteMaximumInvoicingDays': 'creditNoteMaximumInvoicingDays',
@@ -1247,6 +1257,7 @@ def schedule_daily_dictionary_update(company):
         logger.error(f"Scheduled dictionary update failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
+
 class ZReportService:
     """Service for Z-Report Daily Upload (T116)"""
 
@@ -1398,6 +1409,7 @@ class ZReportService:
             report_date: Date to generate report for
         """
         from django_tenants.utils import schema_context
+        from tenancy.utils import schema_context_safe
 
         try:
             with schema_context(self.company.schema_name):
@@ -1909,6 +1921,7 @@ class GoodsInquiryService:
             "goods": None
         }
 
+
 class DataValidator:
     """Enhanced data validation with specific EFRIS rules"""
 
@@ -2056,6 +2069,7 @@ class DataValidator:
 
         return errors
 
+
 class EFRISDataTransformer:
     """Transform invoice data into EFRIS T109 format"""
 
@@ -2085,8 +2099,8 @@ class EFRISDataTransformer:
         if isinstance(tax_rate_value, str):
             tax_rate_mapping = {
                 'A': 18.0,  # Standard VAT
-                'B': 0.0,   # Zero rate
-                'C': 0.0,   # Exempt
+                'B': 0.0,  # Zero rate
+                'C': 0.0,  # Exempt
                 'D': 18.0,  # Deemed
                 'E': 18.0,  # Standard
             }
@@ -2205,9 +2219,10 @@ class EFRISDataTransformer:
         return len(errors) == 0, errors
 
     def _build_basic_info_from_sale(self, sale, invoice=None) -> Dict[str, Any]:
-        """Build basic information from Sale object"""
+        """
+        ✅ ENHANCED: Build basic information with export industry support
+        """
         document_number = sale.document_number or ''
-
         if not document_number:
             document_number = f"TMP-{timezone.now().strftime('%Y%m%d%H%M%S')}-{sale.id}"
             logger.warning(f"Sale has no document_number, using: {document_number}")
@@ -2238,13 +2253,18 @@ class EFRISDataTransformer:
 
         operator = (
             getattr(invoice, 'operator_name', None) if invoice else None or
-            (sale.created_by.get_full_name() if sale.created_by else None) or
-            'System'
+                                                                    (
+                                                                        sale.created_by.get_full_name() if sale.created_by else None) or
+                                                                    'System'
         )
 
         # VAT-aware invoiceKind and invoiceType
         company = sale.store.company if sale.store else None
         is_vat_enabled = getattr(company, 'is_vat_enabled', False) if company else False
+
+        # ✅ NEW: Detect if this is an export invoice
+        is_export = getattr(sale, 'is_export_sale', False) or \
+                    getattr(sale, 'invoice_industry_code', None) == '102'
 
         if is_vat_enabled:
             efris_invoice_kind = {
@@ -2263,13 +2283,15 @@ class EFRISDataTransformer:
             }.get(sale.document_type, '2')
             efris_invoice_type = '1'
 
-        logger.info(
-            f"EFRIS Basic Info for {document_number}: "
-            f"invoiceKind={efris_invoice_kind}, invoiceType={efris_invoice_type}, "
-            f"VAT={is_vat_enabled}, DocType={sale.document_type}"
-        )
+        # ✅ NEW: Determine invoiceIndustryCode
+        industry_code = "101"  # Default: General Industry
 
-        return {
+        if is_export:
+            industry_code = "102"  # Export
+        elif getattr(sale, 'invoice_industry_code', None):
+            industry_code = sale.invoice_industry_code
+
+        basic_info = {
             "deviceNo": self.device_no,
             "invoiceNo": '',
             "issuedDate": issued_date_str,
@@ -2278,15 +2300,34 @@ class EFRISDataTransformer:
             "invoiceType": efris_invoice_type,
             "invoiceKind": efris_invoice_kind,
             "dataSource": "103",
-            "invoiceIndustryCode": "101"
+            "invoiceIndustryCode": industry_code
         }
+
+        # ✅ CRITICAL: Add deliveryTermsCode for exports (MANDATORY)
+        if is_export:
+            delivery_terms = getattr(sale, 'delivery_terms_code', None)
+
+            if not delivery_terms:
+                logger.error(f"Export invoice {document_number} missing deliveryTermsCode")
+                # Default to FOB if not specified (should be validated earlier)
+                delivery_terms = "FOB"
+
+            basic_info["deliveryTermsCode"] = delivery_terms
+
+        logger.info(
+            f"EFRIS Basic Info for {document_number}: "
+            f"invoiceKind={efris_invoice_kind}, invoiceType={efris_invoice_type}, "
+            f"industry={industry_code}, VAT={is_vat_enabled}, DocType={sale.document_type}"
+        )
+
+        return basic_info
 
     def _build_buyer_details_from_sale(self, sale) -> Dict[str, Any]:
         """Build buyer details from Sale"""
         customer = sale.customer
 
         if not customer:
-            return {
+            buyer_details = {
                 "buyerType": "1",
                 "buyerLegalName": "Walk-in Customer",
                 "buyerTin": "",
@@ -2295,31 +2336,52 @@ class EFRISDataTransformer:
                 "buyerEmail": "",
                 "buyerMobilePhone": ""
             }
+        else:
+            buyer_type = "1"
+            customer_tin = getattr(customer, 'tin', None)
+            if customer_tin:
+                buyer_type = "0"
 
-        buyer_type = "1"
-        customer_tin = getattr(customer, 'tin', None)
-        if customer_tin:
-            buyer_type = "0"
+            buyer_details = {
+                "buyerTin": customer_tin or "",
+                "buyerNinBrn": (getattr(customer, 'nin', '') or getattr(customer, 'brn', '') or ""),
+                "buyerLegalName": getattr(customer, 'name', '') or "Unknown Customer",
+                "buyerType": buyer_type,
+                "buyerEmail": getattr(customer, 'email', '') or "",
+                "buyerMobilePhone": getattr(customer, 'phone', '') or "",
+                "buyerAddress": getattr(customer, 'address', '') or ""
+            }
 
-        return {
-            "buyerTin": customer_tin or "",
-            "buyerNinBrn": (getattr(customer, 'nin', '') or getattr(customer, 'brn', '') or ""),
-            "buyerLegalName": getattr(customer, 'name', '') or "Unknown Customer",
-            "buyerType": buyer_type,
-            "buyerEmail": getattr(customer, 'email', '') or "",
-            "buyerMobilePhone": getattr(customer, 'phone', '') or "",
-            "buyerAddress": getattr(customer, 'address', '') or ""
-        }
+        # ✅ ADD deliveryTermsCode here for export invoices
+        is_export = getattr(sale, 'is_export_sale', False) or \
+                    getattr(sale, 'invoice_industry_code', None) == '102'
+
+        if is_export:
+            delivery_terms = getattr(sale, 'delivery_terms_code', None)
+
+            if not delivery_terms:
+                logger.error(f"Export invoice {sale.document_number} missing deliveryTermsCode")
+                # Default to FOB if not specified
+                delivery_terms = "FOB"
+
+            buyer_details["deliveryTermsCode"] = delivery_terms
+
+        return buyer_details
 
     def _build_goods_details_from_sale(self, sale) -> List[Dict[str, Any]]:
-        """Build goods details from Sale items"""
+        """
+        ✅ ENHANCED: Build goods details with export-specific fields
+        """
         goods_details = []
         items = sale.items.all()
-
         if not items:
             raise Exception("Sale must have at least one item")
 
         is_vat_enabled = getattr(sale.store.company, 'is_vat_enabled', False) if sale.store else False
+
+        # ✅ NEW: Check if this is an export invoice
+        is_export = getattr(sale, 'is_export_sale', False) or \
+                    getattr(sale, 'invoice_industry_code', None) == '102'
 
         for idx, item in enumerate(items, 0):
             try:
@@ -2364,20 +2426,40 @@ class EFRISDataTransformer:
                 unit_price = float(item.unit_price)
                 line_total = quantity * unit_price
 
-                # Tax calculation
+                # ✅ CRITICAL FIX: Tax calculation based on invoice type
                 tax_rate_raw = item.tax_rate
 
-                if is_vat_enabled:
+                if is_export:
+                    # ✅ EXPORTS: Zero-rated (0% VAT) per EFRIS T109 spec
+                    # Per docs: "For example, the taxRate is zero Fill in: 0"
+                    tax_rate = 0.0
+                    net_amount = line_total
+                    tax_amount = 0.0
+                    tax_rate_str = "0"  # ✅ CRITICAL: Use "0" not "0.0000" for exports
+
+                    logger.info(
+                        f"Export item '{item_name}': zero-rated (taxRate=0)",
+                        extra={'item': item_name, 'amount': line_total}
+                    )
+
+                elif is_vat_enabled:
+                    # Normal VAT calculation for domestic sales
                     tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
                     net_amount = line_total / (1 + tax_rate / 100)
                     tax_amount = line_total - net_amount
-                    tax_rate_str = f"{tax_rate / 100:.4f}"
+
+                    # ✅ Format tax rate correctly per EFRIS spec
+                    if tax_rate == 0.0:
+                        tax_rate_str = "0"  # Zero-rated domestic
+                    else:
+                        tax_rate_str = f"{tax_rate / 100:.4f}"  # e.g., "0.1800" for 18%
+
                 else:
-                    # Non-VAT: use "-" for taxRate in goods details (this is correct)
+                    # Non-VAT company: Use EXEMPT (-)
                     tax_rate = None
                     net_amount = line_total
                     tax_amount = 0.0
-                    tax_rate_str = "-"
+                    tax_rate_str = "-"  # ✅ Exempt as per T109 docs
 
                     if tax_rate_raw not in ['B', 'C', '0', '0.0', '0%', '-']:
                         logger.warning(
@@ -2393,7 +2475,7 @@ class EFRISDataTransformer:
                     "unitOfMeasure": unit_of_measure,
                     "unitPrice": f"{unit_price:.2f}",
                     "total": f"{line_total:.2f}",
-                    "taxRate": tax_rate_str,
+                    "taxRate": tax_rate_str,  # ✅ Now correctly "0" for exports, "0.1800" for 18%, "-" for exempt
                     "tax": f"{tax_amount:.2f}",
                     "orderNumber": idx,
                     "discountFlag": "2",
@@ -2403,6 +2485,7 @@ class EFRISDataTransformer:
                     "goodsCategoryName": goods_category_name,
                 }
 
+                # Handle discounts
                 discount_amount = float(getattr(item, 'discount_amount', 0) or 0)
                 if discount_amount > 0:
                     goods_detail["discountTotal"] = f"{discount_amount:.2f}"
@@ -2410,6 +2493,7 @@ class EFRISDataTransformer:
                 else:
                     goods_detail["discountTotal"] = ""
 
+                # Handle excise tax
                 if has_excise and excise_entity:
                     goods_detail["exciseFlag"] = "1"
                     goods_detail["categoryId"] = str(getattr(excise_entity, 'excise_category_id', ''))[:18]
@@ -2427,6 +2511,55 @@ class EFRISDataTransformer:
                     goods_detail["exciseUnit"] = ""
                     goods_detail["exciseDutyCode"] = ""
 
+                # ✅ CRITICAL: Export-specific fields (MANDATORY for invoiceIndustryCode=102)
+                if is_export and product:  # Only products have export fields
+                    # ✅ Get weight from PRODUCT, calculate total weight
+                    item_weight = float(getattr(product, 'item_weight', 0) or 0)
+
+                    if item_weight <= 0:
+                        logger.error(
+                            f"❌ Export item '{item_name}' has no weight configured. "
+                            f"Product.item_weight = {item_weight}"
+                        )
+                        raise Exception(
+                            f"Product '{item_name}' must have item_weight configured for export invoices"
+                        )
+
+                    # Calculate total weight: item_weight * quantity
+                    total_weight = item_weight * quantity
+
+                    # Get other export fields from product
+                    hs_code = getattr(product, 'hs_code', None)
+                    hs_name = getattr(product, 'hs_name', None) or ''
+                    piece_qty = float(getattr(product, 'piece_qty', 0) or quantity)
+                    piece_measure_unit = getattr(product, 'customs_measure_unit', None) or \
+                                         getattr(product, 'efris_piece_measure_unit', '101')
+
+                    # MANDATORY validation for export
+                    if not hs_code:
+                        logger.error(f"❌ Export item '{item_name}' missing HS code")
+                        raise Exception(f"Product '{item_name}' must have HS code for export invoices")
+
+                    if not piece_measure_unit:
+                        logger.error(f"❌ Export item '{item_name}' missing customs measure unit")
+                        raise Exception(
+                            f"Product '{item_name}' must have customs_measure_unit for export invoices"
+                        )
+
+                    logger.info(
+                        f"✅ Export item '{item_name}': "
+                        f"weight={item_weight}kg/unit × {quantity} = {total_weight}kg total, "
+                        f"HS={hs_code}, customs_unit={piece_measure_unit}"
+                    )
+
+                    goods_detail.update({
+                        "hsCode": str(hs_code or "")[:50],
+                        "hsName": str(hs_name)[:1000],
+                        "totalWeight": f"{total_weight:.2f}",  # ✅ CALCULATED: item_weight * quantity
+                        "pieceQty": f"{piece_qty:.2f}",
+                        "pieceMeasureUnit": piece_measure_unit,
+                    })
+
                 goods_details.append(goods_detail)
 
             except Exception as e:
@@ -2437,11 +2570,14 @@ class EFRISDataTransformer:
 
     def _build_tax_details_from_sale(self, sale) -> List[Dict[str, Any]]:
         """
-        Build tax details from Sale items
-        CRITICAL FIX: For non-VAT companies, OMIT taxCategoryCode field entirely (don't use "-")
+        ✅ ENHANCED: Support export invoices with zero-rating
         """
         items = sale.items.all()
         is_vat_enabled = getattr(sale.store.company, 'is_vat_enabled', False) if sale.store else False
+
+        # Check if export
+        is_export = getattr(sale, 'is_export_sale', False) or \
+                    getattr(sale, 'invoice_industry_code', None) == '102'
 
         # Group items by tax rate
         tax_categories = {}
@@ -2449,10 +2585,20 @@ class EFRISDataTransformer:
         for item in items:
             tax_rate_raw = item.tax_rate
 
-            if is_vat_enabled:
-                tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
-                rate_key = f"{tax_rate:.2f}"
+            # ✅ Determine tax category
+            if is_export:
+                # Exports are always zero-rated (category 02)
+                tax_category_code = "02"
+                tax_rate = 0.0
+                rate_key = "EXPORT_ZERO"
+            elif is_vat_enabled:
+                tax_category_code, tax_rate, rate_key = self._determine_tax_category(
+                    tax_rate_raw,
+                    is_vat_enabled
+                )
             else:
+                # Non-VAT: no category code
+                tax_category_code = ""
                 tax_rate = None
                 rate_key = "EXEMPT"
 
@@ -2460,15 +2606,24 @@ class EFRISDataTransformer:
             unit_price = float(item.unit_price)
             line_total = quantity * unit_price
 
-            if is_vat_enabled and tax_rate is not None:
+            # Calculate amounts
+            if is_export or (is_vat_enabled and tax_rate == 0.0):
+                # Zero-rated: no tax
+                net_amount = line_total
+                tax_amount = 0.0
+            elif is_vat_enabled and tax_rate is not None:
+                # Standard VAT calculation
                 net_amount = line_total / (1 + tax_rate / 100)
                 tax_amount = line_total - net_amount
             else:
+                # Exempt
                 net_amount = line_total
                 tax_amount = 0.0
 
+            # Group by rate
             if rate_key not in tax_categories:
                 tax_categories[rate_key] = {
+                    'category_code': tax_category_code,
                     'rate': tax_rate,
                     'net_amount': 0,
                     'tax_amount': 0
@@ -2480,43 +2635,129 @@ class EFRISDataTransformer:
         # Build tax details array
         tax_details = []
         for rate_key, amounts in tax_categories.items():
+            category_code = amounts['category_code']
             rate = amounts['rate']
             net = amounts['net_amount']
             tax = amounts['tax_amount']
             gross = net + tax
 
             if rate_key == "EXEMPT":
-                # ✅ CRITICAL FIX: For non-VAT, OMIT taxCategoryCode and use "-" for taxRate
+                # ✅ Non-VAT: OMIT taxCategoryCode, use "-" for taxRate
                 tax_details.append({
                     "netAmount": f"{net:.2f}",
-                    "taxRate": "-",  # ✅ "-" is correct for taxRate in non-VAT
+                    "taxRate": "-",
                     "taxAmount": f"{tax:.2f}",
                     "grossAmount": f"{gross:.2f}",
                     "taxRateName": "Non-VAT Exempt"
-                    # ✅ NO taxCategoryCode field for non-VAT
+                })
+            elif rate_key == "EXPORT_ZERO" or rate == 0.0:
+                # ✅ EXPORTS or Zero-rated: category 02, taxRate = "0"
+                tax_details.append({
+                    "taxCategoryCode": "02",  # Zero rate
+                    "netAmount": f"{net:.2f}",
+                    "taxRate": "0",  # ✅ Use "0" per EFRIS spec
+                    "taxAmount": f"{tax:.2f}",
+                    "grossAmount": f"{gross:.2f}",
+                    "taxRateName": "Zero Rate (0%)" if rate_key == "EXPORT_ZERO" else "Zero Rated"
                 })
             else:
-                # VAT companies: include taxCategoryCode
-                if rate == 18.0:
-                    tax_category_code = "01"
-                    tax_rate_name = "Standard Rate (18%)"
-                elif rate == 0.0:
-                    tax_category_code = "02"
-                    tax_rate_name = "Zero Rate (0%)"
-                else:
-                    tax_category_code = "01"
-                    tax_rate_name = f"Rate ({rate}%)"
+                # ✅ Standard VAT rates
+                tax_rate_name = self._get_tax_rate_name(category_code, rate)
 
                 tax_details.append({
-                    "taxCategoryCode": tax_category_code,  # ✅ Include for VAT companies
+                    "taxCategoryCode": category_code,
                     "netAmount": f"{net:.2f}",
-                    "taxRate": f"{rate / 100:.4f}",
+                    "taxRate": f"{rate / 100:.4f}",  # e.g., "0.1800"
                     "taxAmount": f"{tax:.2f}",
                     "grossAmount": f"{gross:.2f}",
                     "taxRateName": tax_rate_name
                 })
 
         return tax_details
+
+    def _get_tax_rate_name(self, category_code: str, rate: Optional[float]) -> str:
+        """
+        ✅ NEW: Get human-readable tax rate name
+        """
+        category_names = {
+            '01': f'Standard Rate ({rate}%)' if rate else 'Standard Rate',
+            '02': 'Zero Rate (0%)',
+            '03': 'Exempt',
+            '04': 'Deemed',
+            '05': 'Excise Duty',
+            '06': 'Over the Top Service (OTT)',
+            '07': 'Stamp Duty',
+            '08': 'Local Hotel Service Tax',
+            '09': 'UCC Levy',
+            '10': 'Others',
+            '11': 'VAT Out of Scope',
+        }
+        return category_names.get(category_code, f'Rate ({rate}%)' if rate else 'Unknown')
+
+    def _determine_tax_category(self, tax_rate_raw, is_vat_enabled) -> Tuple[str, Optional[float], str]:
+        """
+        ✅ NEW: Dynamically determine tax category code from tax rate
+        Per T109 documentation: taxCategoryCode values
+        Returns: (tax_category_code, numeric_rate, rate_key)
+        """
+        if not is_vat_enabled:
+            return ("", None, "EXEMPT")
+
+        # ✅ Enhanced tax category mapping
+        tax_mapping = {
+            'A': ('01', 18.0, 'A'),  # A: Standard (18%)
+            '18%': ('01', 18.0, '18'),
+            '18': ('01', 18.0, '18'),
+
+            'B': ('02', 0.0, 'B'),  # B: Zero (0%)
+            '0%': ('02', 0.0, '0'),
+            '0': ('02', 0.0, '0'),
+
+            'C': ('03', None, 'C'),  # C: Exempt (-)
+            'EXEMPT': ('03', None, 'EXEMPT'),
+
+            'D': ('04', 18.0, 'D'),  # D: Deemed (18%)
+            'DEEMED': ('04', 18.0, 'DEEMED'),
+
+            'E': ('05', None, 'E'),  # E: Excise Duty
+            'EXCISE': ('05', None, 'EXCISE'),
+
+            'OTT': ('06', None, 'OTT'),  # Over the Top Service
+
+            'STAMP': ('07', None, 'STAMP'),  # Stamp Duty
+
+            'HOTEL': ('08', None, 'HOTEL'),  # Local Hotel Service Tax
+
+            'UCC': ('09', None, 'UCC'),  # UCC Levy
+
+            'OTHER': ('10', None, 'OTHER'),  # Others
+
+            'F': ('11', None, 'F'),  # F: VAT Out of Scope
+            'OUT_OF_SCOPE': ('11', None, 'OUT_OF_SCOPE'),
+        }
+
+        # Normalize tax rate
+        tax_key = str(tax_rate_raw).upper().strip()
+
+        if tax_key in tax_mapping:
+            return tax_mapping[tax_key]
+
+        # Try numeric parsing
+        try:
+            numeric_rate = float(tax_rate_raw)
+            if numeric_rate == 18.0 or numeric_rate == 0.18:
+                return ('01', 18.0, '18')
+            elif numeric_rate == 0.0:
+                return ('02', 0.0, '0')
+            else:
+                # Custom rate - use standard category
+                return ('01', numeric_rate, f'{numeric_rate:.2f}')
+        except (ValueError, TypeError):
+            pass
+
+        # Default to standard rate
+        logger.warning(f"Unknown tax rate '{tax_rate_raw}', defaulting to Standard 18%")
+        return ('01', 18.0, 'UNKNOWN')
 
     def _build_payment_modes_from_sale(self, sale, total_amount: float) -> List[Dict]:
         """Build payment modes from Sale"""
@@ -3300,7 +3541,13 @@ class EnhancedEFRISAPIClient:
                 encrypted_content = self.security_manager.aes_encrypt(content_json)
                 content_b64 = base64.b64encode(encrypted_content).decode()
 
-                sha1_interfaces = ["T119", "T103","T146","T110", "T115", "T130","T108","T132","T133","T134","T135","T136","T137","T38", "T116", "T117", "T127", "T144", "T109","T106", "T107", "T111", "T112", "T113", "T114", "T118", "T120", "T121", "T122", "T125", "T126", "T129", "T126","T128", "T131", "T139", "T145", "T147", "T148", "T149", "T160", "T184","T162","T163","T164","T166","T167","T168","T169","T170","T171","T172","T173","T175","T176","T177","T178","T179","T180","T181","T182","T183","T184","T185","T186","T187" ]
+                sha1_interfaces = ["T119", "T103", "T146", "T110", "T115", "T130", "T108", "T132", "T133", "T134",
+                                   "T135", "T136", "T137", "T38", "T116", "T117", "T127", "T144", "T109", "T106",
+                                   "T107", "T111", "T112", "T113", "T114", "T118", "T120", "T121", "T122", "T125",
+                                   "T126", "T129", "T126", "T128", "T131", "T139", "T145", "T147", "T148", "T149",
+                                   "T160", "T184", "T162", "T163", "T164", "T166", "T167", "T168", "T169", "T170",
+                                   "T171", "T172", "T173", "T175", "T176", "T177", "T178", "T179", "T180", "T181",
+                                   "T182", "T183", "T184", "T185", "T186", "T187"]
                 algorithm = "SHA1" if interface_code in sha1_interfaces else "SHA256"
 
                 data_section["signature"] = self.security_manager.sign_content(
@@ -3720,13 +3967,6 @@ class EnhancedEFRISAPIClient:
                 if category_id:
                     # ✅ VALIDATE: Ensure it's actually a product category (serviceMark should be '102')
                     efris_cat = product.category.efris_commodity_category_code
-                    if efris_cat and efris_cat.service_mark == '101':
-                        logger.warning(
-                            f"Product {product.sku} has category with serviceMark='101', "
-                            f"but should be '102' for products"
-                        )
-                        # Don't use invalid category, fall back to default
-                        return "101113010000000000"  # Default product category
 
                     # Step 3: Convert to string and pad zeros to the RIGHT (end)
                     category_id = str(category_id)
@@ -3874,7 +4114,7 @@ class EnhancedEFRISAPIClient:
     def register_product_with_efris(self, product) -> Dict[str, Any]:
         """
         Register or update product with EFRIS (T130)
-        CRITICAL: T130 response DOES NOT include goods ID - must query via T144
+        ENHANCED: Full dynamic support for all conditional fields per documentation
         """
         try:
             # Ensure authentication
@@ -3901,42 +4141,108 @@ class EnhancedEFRISAPIClient:
             # Check excise tax
             has_excise = self._product_has_excise_tax(product)
 
-            # Get commodity category ID (18 digits)
-            commodity_category_idd = self._get_commodity_category_id(product)
+            # ✅ NEW: Check if product has piece unit (alternative measurement)
+            has_piece_unit = getattr(product, 'efris_has_piece_unit', False)
 
-            # ✅ CRITICAL FIX: Validate commodity category
-            if not commodity_category_idd or len(commodity_category_idd) != 18:
+            # ✅ NEW: Check if product is for export (has customs info)
+            is_export_product = getattr(product, 'is_export_product', False)
+
+            # ✅ NEW: Check if product has other units
+            has_other_units = getattr(product, 'efris_has_other_units', False)
+
+            # Validate commodity category ID (18 digits)
+            commodity_category_id = self._get_commodity_category_id(product)
+            if not commodity_category_id or len(commodity_category_id) != 18:
                 return {
                     "success": False,
-                    "error": f"Invalid commodity category ID: {commodity_category_idd}. Must be 18 digits."
+                    "error": f"Invalid commodity category ID: {commodity_category_id}. Must be 18 digits."
                 }
 
-            # Build T130 goods data
+            # Build base T130 goods data
             goods_data = {
                 "operationType": operation_type,
                 "goodsName": str(product.name[:200] if product.name else "Unnamed Product"),
                 "goodsCode": str(goods_code),
-                "measureUnit": product.unit_of_measure or "101",  # Default to pieces
+                "measureUnit": product.unit_of_measure or "101",
                 "unitPrice": f"{selling_price:.2f}",
                 "currency": "101",  # UGX
                 "commodityCategoryId": product.category.efris_commodity_category_code,
                 "haveExciseTax": "101" if has_excise else "102",
                 "description": str((getattr(product, 'description', None) or product.name or "")[:1024]),
                 "stockPrewarning": str(min_stock),
-                "havePieceUnit": "102",  # No piece unit
-                "pieceMeasureUnit": "",
-                "pieceUnitPrice": "",
-                "packageScaledValue": "",
-                "pieceScaledValue": "",
-                "exciseDutyCode": "",
-                "haveOtherUnit": "102",  # No other units
-                "goodsTypeCode": "101"  # Goods (not fuel)
+                "havePieceUnit": "101" if has_piece_unit else "102",
+                "haveOtherUnit": "101" if has_other_units else "102",
+                "goodsTypeCode": "101"  # 101=Goods, 102=Fuel
             }
 
-            # Add excise tax info if applicable
+            # ✅ CRITICAL: Conditional fields based on havePieceUnit
+            if has_piece_unit:
+                # MANDATORY when havePieceUnit = 101
+                piece_measure_unit = getattr(product, 'efris_piece_measure_unit', None)
+                piece_unit_price = float(getattr(product, 'efris_piece_unit_price', 0) or 0)
+                package_scaled = float(getattr(product, 'efris_package_scaled_value', 1) or 1)
+                piece_scaled = float(getattr(product, 'efris_piece_scaled_value', 1) or 1)
+
+                if not piece_measure_unit:
+                    return {
+                        "success": False,
+                        "error": "pieceMeasureUnit is required when havePieceUnit=101"
+                    }
+
+                goods_data.update({
+                    "pieceMeasureUnit": piece_measure_unit,
+                    "pieceUnitPrice": f"{piece_unit_price:.2f}",
+                    "packageScaledValue": str(package_scaled),
+                    "pieceScaledValue": str(piece_scaled),
+                })
+            else:
+                # MUST BE EMPTY when havePieceUnit = 102
+                goods_data.update({
+                    "pieceMeasureUnit": "",
+                    "pieceUnitPrice": "",
+                    "packageScaledValue": "",
+                    "pieceScaledValue": "",
+                })
+
+            # ✅ CRITICAL: Conditional excise tax fields
             if has_excise:
-                excise_info = self._build_excise_tax_info(product)
-                goods_data.update(excise_info)
+                # MANDATORY when haveExciseTax = 101
+                excise_duty_code = getattr(product, 'efris_excise_duty_code', None)
+
+                if excise_duty_code:
+                    goods_data["exciseDutyCode"] = str(excise_duty_code)[:20]
+
+                # ✅ NEW: Handle excise with piece unit measurement
+                if has_piece_unit:
+                    goods_data.update({
+                        "havePieceUnit": "101",
+                        "pieceMeasureUnit": getattr(product, 'efris_piece_measure_unit', '101'),
+                        "pieceUnitPrice": f"{float(getattr(product, 'efris_piece_unit_price', 0) or 0):.2f}",
+                        "packageScaledValue": str(getattr(product, 'efris_package_scaled_value', 1)),
+                        "pieceScaledValue": str(getattr(product, 'efris_piece_scaled_value', 1)),
+                    })
+            else:
+                # MUST BE EMPTY when haveExciseTax = 102
+                goods_data["exciseDutyCode"] = ""
+
+            # ✅ NEW: Conditional commodityGoodsExtendEntity (customs/export)
+            if is_export_product:
+                customs_measure_unit = getattr(product, 'efris_customs_measure_unit', None)
+                customs_unit_price = float(getattr(product, 'efris_customs_unit_price', 0) or 0)
+
+                if customs_measure_unit:
+                    goods_data["commodityGoodsExtendEntity"] = {
+                        "customsMeasureUnit": customs_measure_unit,
+                        "customsUnitPrice": f"{customs_unit_price:.2f}",
+                        "packageScaledValueCustoms": str(getattr(product, 'efris_package_scaled_customs', 1)),
+                        "customsScaledValue": str(getattr(product, 'efris_customs_scaled_value', 1)),
+                    }
+
+            # ✅ NEW: Conditional goodsOtherUnits array
+            if has_other_units:
+                other_units = self._build_other_units(product)
+                if other_units:
+                    goods_data["goodsOtherUnits"] = other_units
 
             # T130 expects an array
             product_data = [goods_data]
@@ -3952,151 +4258,102 @@ class EnhancedEFRISAPIClient:
             operation_name = "Updating" if operation_type == "102" else "Registering"
             logger.info(f"{operation_name} product {goods_code} with EFRIS (T130)")
 
-            try:
-                # Make T130 request
-                request_data = self._build_request("T130", product_data, encrypt=True)
-                response = self._make_http_request(request_data)
+            # Make T130 request
+            request_data = self._build_request("T130", product_data, encrypt=True)
+            response = self._make_http_request(request_data)
 
-                if response.status_code != 200:
-                    return {
-                        "success": False,
-                        "error": f"HTTP {response.status_code}",
-                        "item_code": goods_code
-                    }
-
-                response_data = response.json()
-                return_info = response_data.get('returnStateInfo', {})
-                return_code = return_info.get('returnCode', '99')
-
-                # Check for overall failure
-                if return_code not in ['00', '45']:
-                    error_message = return_info.get('returnMessage', 'T130 API call failed')
-                    logger.error(f"T130 failed: {return_code} - {error_message}")
-                    return {
-                        "success": False,
-                        "error": error_message,
-                        "error_code": return_code,
-                        "item_code": goods_code
-                    }
-
-                # ✅ CRITICAL: Check individual item response
-                data_section = response_data.get('data', {})
-                decrypted_content = self._decrypt_response_content(data_section)
-
-                # Normalize response to list
-                if isinstance(decrypted_content, dict):
-                    for key in ['goodsStockIn', 'records', 'data', 'results']:
-                        if key in decrypted_content and isinstance(decrypted_content[key], list):
-                            decrypted_content = decrypted_content[key]
-                            break
-
-                # Check item-level return code
-                if isinstance(decrypted_content, list) and decrypted_content:
-                    item_result = decrypted_content[0]
-                    item_return_code = item_result.get('returnCode', '')
-                    item_return_message = item_result.get('returnMessage', '')
-
-                    # ✅ CRITICAL: Check if item registration failed
-                    if item_return_code and item_return_code not in ['00', '601', '']:
-                        logger.error(
-                            f"T130 item failed: code={item_return_code}, message={item_return_message}"
-                        )
-                        return {
-                            "success": False,
-                            "error": f"Product registration failed: {item_return_message}",
-                            "error_code": item_return_code,
-                            "item_code": goods_code
-                        }
-
-                # ✅ SUCCESS - Now query EFRIS to get the actual goods ID
-                logger.info(f"T130 successful for {goods_code}, querying EFRIS for goods ID...")
-
-                # Wait a moment for EFRIS to index
-                time.sleep(2)
-
-                # Query using T144
-                query_result = self.t144_query_goods_by_code(goods_code)
-
-                if not query_result.get('success'):
-                    logger.error(f"T144 query failed after T130 success: {query_result.get('error')}")
-                    return {
-                        "success": False,
-                        "error": f"Product registered but couldn't retrieve EFRIS ID: {query_result.get('error')}",
-                        "item_code": goods_code,
-                        "warning": "Product may exist in EFRIS but ID not retrieved"
-                    }
-
-                goods_list = query_result.get('goods', [])
-
-                if not goods_list:
-                    logger.error(f"T144 returned no goods for code: {goods_code}")
-                    return {
-                        "success": False,
-                        "error": f"Product registered but not found in EFRIS query. Code may not match.",
-                        "item_code": goods_code,
-                        "warning": "Check EFRIS portal manually - product may exist with different code"
-                    }
-
-                # ✅ Extract goods ID from T144 response
-                efris_goods = goods_list[0]
-                efris_goods_id = (
-                        efris_goods.get('id') or
-                        efris_goods.get('commodityGoodsId') or
-                        efris_goods.get('goodsId')
-                )
-                efris_goods_code = efris_goods.get('goodsCode') or goods_code
-
-                if not efris_goods_id:
-                    logger.error(f"T144 response missing goods ID for {goods_code}")
-                    logger.debug(f"T144 response: {json.dumps(efris_goods, indent=2)}")
-                    return {
-                        "success": False,
-                        "error": "Product found but missing EFRIS goods ID in response",
-                        "item_code": goods_code,
-                        "efris_data": efris_goods
-                    }
-
-                # ✅ Update product with EFRIS data
-                product.efris_is_uploaded = True
-                product.efris_upload_date = timezone.now()
-                product.efris_goods_id = efris_goods_id
-                product.efris_goods_code_field = efris_goods_code
-                product.save(update_fields=[
-                    'efris_is_uploaded',
-                    'efris_upload_date',
-                    'efris_goods_id',
-                    'efris_goods_code_field'
-                ])
-
-                logger.info(
-                    f"Product {goods_code} {operation_name.lower()}: "
-                    f"ID={efris_goods_id}, Code={efris_goods_code}"
-                )
-
+            if response.status_code != 200:
                 return {
-                    "success": True,
-                    "message": f"Product {operation_name.lower()} with EFRIS",
+                    "success": False,
+                    "error": f"HTTP {response.status_code}",
+                    "item_code": goods_code
+                }
+
+            response_data = response.json()
+            return_info = response_data.get('returnStateInfo', {})
+            return_code = return_info.get('returnCode', '99')
+
+            if return_code not in ['00', '45']:
+                error_message = return_info.get('returnMessage', 'T130 API call failed')
+                logger.error(f"T130 failed: {return_code} - {error_message}")
+                return {
+                    "success": False,
+                    "error": error_message,
+                    "error_code": return_code,
+                    "item_code": goods_code
+                }
+
+            # SUCCESS - Query EFRIS for the actual goods ID
+            logger.info(f"T130 successful for {goods_code}, querying EFRIS for goods ID...")
+            time.sleep(2)
+
+            # Query using T144
+            query_result = self.t144_query_goods_by_code(goods_code)
+
+            if not query_result.get('success'):
+                logger.error(f"T144 query failed after T130 success: {query_result.get('error')}")
+                return {
+                    "success": False,
+                    "error": f"Product registered but couldn't retrieve EFRIS ID: {query_result.get('error')}",
                     "item_code": goods_code,
-                    "efris_goods_id": efris_goods_id,
-                    "efris_goods_code": efris_goods_code,
-                    "operation_type": operation_type,
+                    "warning": "Product may exist in EFRIS but ID not retrieved"
+                }
+
+            goods_list = query_result.get('goods', [])
+
+            if not goods_list:
+                logger.error(f"T144 returned no goods for code: {goods_code}")
+                return {
+                    "success": False,
+                    "error": f"Product registered but not found in EFRIS query.",
+                    "item_code": goods_code,
+                    "warning": "Check EFRIS portal manually"
+                }
+
+            # Extract goods ID from T144 response
+            efris_goods = goods_list[0]
+            efris_goods_id = (
+                    efris_goods.get('id') or
+                    efris_goods.get('commodityGoodsId') or
+                    efris_goods.get('goodsId')
+            )
+            efris_goods_code = efris_goods.get('goodsCode') or goods_code
+
+            if not efris_goods_id:
+                logger.error(f"T144 response missing goods ID for {goods_code}")
+                return {
+                    "success": False,
+                    "error": "Product found but missing EFRIS goods ID in response",
+                    "item_code": goods_code,
                     "efris_data": efris_goods
                 }
 
-            except json.JSONDecodeError as e:
-                logger.error(f"T130 JSON parsing error: {e}")
-                return {
-                    "success": False,
-                    "error": f"Invalid JSON response: {e}",
-                    "item_code": goods_code
-                }
-            except Exception as api_error:
-                logger.error(f"T130 processing error: {api_error}", exc_info=True)
-                return {
-                    "success": False,
-                    "error": str(api_error),
-                    "item_code": goods_code
-                }
+            # Update product with EFRIS data
+            product.efris_is_uploaded = True
+            product.efris_upload_date = timezone.now()
+            product.efris_goods_id = efris_goods_id
+            product.efris_goods_code_field = efris_goods_code
+            product.save(update_fields=[
+                'efris_is_uploaded',
+                'efris_upload_date',
+                'efris_goods_id',
+                'efris_goods_code_field'
+            ])
+
+            logger.info(
+                f"Product {goods_code} {operation_name.lower()}: "
+                f"ID={efris_goods_id}, Code={efris_goods_code}"
+            )
+
+            return {
+                "success": True,
+                "message": f"Product {operation_name.lower()} with EFRIS",
+                "item_code": goods_code,
+                "efris_goods_id": efris_goods_id,
+                "efris_goods_code": efris_goods_code,
+                "operation_type": operation_type,
+                "efris_data": efris_goods
+            }
 
         except Exception as e:
             logger.error(f"Product registration failed: {e}", exc_info=True)
@@ -4104,7 +4361,6 @@ class EnhancedEFRISAPIClient:
                 "success": False,
                 "error": str(e)
             }
-
 
     def refresh_product_from_efris(self, product) -> Dict[str, Any]:
         """
@@ -4247,26 +4503,44 @@ class EnhancedEFRISAPIClient:
         }
 
     def _build_other_units(self, product) -> Optional[List[Dict[str, str]]]:
-        if not hasattr(product, 'efris_other_units') or not product.efris_other_units:
+        """
+        ✅ NEW: Build goodsOtherUnits array dynamically
+        Per T130 documentation: Alternative units of measurement
+        """
+        other_units_data = getattr(product, 'efris_other_units', None)
+        if not other_units_data:
             return None
 
         other_units = []
 
         try:
-            # Assuming efris_other_units is a JSON field or related objects
-            units_data = product.efris_other_units
-            if isinstance(units_data, str):
+            # If stored as JSON string, parse it
+            if isinstance(other_units_data, str):
                 import json
-                units_data = json.loads(units_data)
+                other_units_data = json.loads(other_units_data)
 
-            for unit_data in units_data:
+            # If it's a queryset or list of objects
+            for unit_data in other_units_data:
+                # Validate: otherUnit cannot equal measureUnit or pieceMeasureUnit
+                other_unit_code = unit_data.get('unit_code') or unit_data.get('otherUnit')
+
+                if other_unit_code == product.unit_of_measure:
+                    logger.warning(f"Skipping otherUnit {other_unit_code}: equals measureUnit")
+                    continue
+
+                if hasattr(product, 'efris_piece_measure_unit'):
+                    if other_unit_code == product.efris_piece_measure_unit:
+                        logger.warning(f"Skipping otherUnit {other_unit_code}: equals pieceMeasureUnit")
+                        continue
+
                 other_unit = {
-                    "otherUnit": str(unit_data.get('unit_code', 'U')),
+                    "otherUnit": str(other_unit_code),
                     "otherPrice": f"{float(unit_data.get('price', 0)):.2f}",
                     "otherScaled": f"{float(unit_data.get('scaled_value', 1)):.2f}",
                     "packageScaled": f"{float(unit_data.get('package_scaled', 1)):.2f}"
                 }
                 other_units.append(other_unit)
+
         except Exception as e:
             logger.warning(f"Failed to build other units: {e}")
             return None
@@ -4278,7 +4552,9 @@ class EnhancedEFRISAPIClient:
         return "101"  # Default from T115 rateUnit - adjust based on your business
 
     def _validate_t130_data(self, goods_data: Dict) -> List[str]:
-        """Validate T130 goods data against EFRIS rules"""
+        """
+        ✅ ENHANCED: Complete validation per T130 documentation
+        """
         errors = []
 
         # Required fields validation
@@ -4292,10 +4568,10 @@ class EnhancedEFRISAPIClient:
             if field not in goods_data or not str(goods_data[field]).strip():
                 errors.append(f"Missing required field: {field}")
 
-        # Conditional validation for piece unit
+        # ✅ NEW: Conditional validation for piece unit (PER DOCUMENTATION)
         have_piece_unit = goods_data.get('havePieceUnit')
         if have_piece_unit == '101':
-            # Piece unit fields required
+            # Piece unit fields REQUIRED
             if not goods_data.get('pieceMeasureUnit'):
                 errors.append("pieceMeasureUnit required when havePieceUnit=101")
             if not goods_data.get('pieceUnitPrice'):
@@ -4305,16 +4581,22 @@ class EnhancedEFRISAPIClient:
             if not goods_data.get('pieceScaledValue'):
                 errors.append("pieceScaledValue required when havePieceUnit=101")
         elif have_piece_unit == '102':
-            # Piece unit fields must be empty
+            # Piece unit fields must be EMPTY
             if goods_data.get('pieceMeasureUnit'):
                 errors.append("pieceMeasureUnit must be empty when havePieceUnit=102")
 
-        # Conditional validation for excise tax
+        # ✅ NEW: Conditional validation for excise tax
         have_excise = goods_data.get('haveExciseTax')
         if have_excise == '102' and goods_data.get('exciseDutyCode'):
             errors.append("exciseDutyCode must be empty when haveExciseTax=102")
+        elif have_excise == '101':
+            # If excise has unit measurement, havePieceUnit must be 101
+            excise_rule = goods_data.get('exciseRule')
+            if excise_rule == '2':  # Per unit calculation
+                if have_piece_unit != '101':
+                    errors.append("havePieceUnit must be 101 when excise uses unit measurement")
 
-        # Conditional validation for other units
+        # ✅ NEW: Conditional validation for other units
         have_other_unit = goods_data.get('haveOtherUnit')
         if have_piece_unit == '102' and have_other_unit == '101':
             errors.append("haveOtherUnit must be 102 when havePieceUnit=102")
@@ -4330,6 +4612,64 @@ class EnhancedEFRISAPIClient:
             errors.append("description cannot exceed 1024 characters")
 
         return errors
+
+    def validate_export_invoice(self, sale) -> Tuple[bool, List[str]]:
+        """
+        ✅ NEW: Validate export-specific requirements
+        Per T109 documentation for invoiceIndustryCode=102
+        """
+        errors = []
+
+        # Check if marked as export
+        is_export = getattr(sale, 'is_export_sale', False) or \
+                    getattr(sale, 'invoice_industry_code', None) == '102'
+
+        if not is_export:
+            return True, []
+
+        # MANDATORY: deliveryTermsCode
+        delivery_terms = getattr(sale, 'delivery_terms_code', None)
+        valid_delivery_terms = [
+            'CFR', 'CIF', 'CIP', 'CPT', 'DAP', 'DDP',
+            'DPU', 'EXW', 'FAS', 'FCA', 'FOB'
+        ]
+
+        if not delivery_terms:
+            errors.append("deliveryTermsCode is MANDATORY for export invoices")
+        elif delivery_terms not in valid_delivery_terms:
+            errors.append(
+                f"Invalid deliveryTermsCode: {delivery_terms}. Must be one of: {', '.join(valid_delivery_terms)}")
+
+        # MANDATORY: Export-specific fields in goods details
+        items = sale.items.all()
+
+        for idx, item in enumerate(items, 1):
+            product = getattr(item, 'product', None)
+
+            if not product:
+                continue
+
+            # Check HS code
+            hs_code = getattr(product, 'hs_code', None)
+            if not hs_code:
+                errors.append(f"Item {idx} ({product.name}): HS Code is MANDATORY for export")
+
+            # Check totalWeight
+            total_weight = float(getattr(item, 'total_weight_kgm', 0) or 0)
+            if total_weight <= 0:
+                errors.append(f"Item {idx} ({product.name}): totalWeight (Net Weight in KGM) is MANDATORY for export")
+
+            # Check pieceQty
+            piece_qty = float(getattr(item, 'piece_quantity', 0) or 0)
+            if piece_qty <= 0:
+                errors.append(f"Item {idx} ({product.name}): pieceQty is MANDATORY for export")
+
+            # Check pieceMeasureUnit (customs unit)
+            piece_measure = getattr(product, 'efris_piece_measure_unit', None)
+            if not piece_measure:
+                errors.append(f"Item {idx} ({product.name}): pieceMeasureUnit (customs unit) is MANDATORY for export")
+
+        return len(errors) == 0, errors
 
     def _process_t130_success_response(self, product, response_data: Dict):
         """Process successful T130 response and update product"""
@@ -4352,7 +4692,8 @@ class EnhancedEFRISAPIClient:
                                 product.efris_upload_date = timezone.now()
 
                             # Store any returned commodity goods ID
-                            goods_id = goods_info.get('commodityGoodsId') or goods_info.get('goodsId') or goods_info.get('id')
+                            goods_id = goods_info.get('commodityGoodsId') or goods_info.get(
+                                'goodsId') or goods_info.get('id')
                             if goods_id and hasattr(product, 'efris_goods_id'):
                                 product.efris_goods_id = goods_id
 
@@ -4587,7 +4928,6 @@ class EnhancedEFRISAPIClient:
                 "categories": []
             }
 
-
     def upload_invoice(self, sale_or_invoice, user=None) -> Dict[str, Any]:
         """
         Upload sale (receipt or invoice) to EFRIS - PRODUCTION VERSION
@@ -4686,6 +5026,57 @@ class EnhancedEFRISAPIClient:
                 "data": None
             }
 
+    def _extract_and_save_hs_codes(self, content) -> list:
+        """Extract HS codes from T185 response and save to DB safely"""
+        from django.utils import timezone as django_timezone
+        from company.models import EFRISHsCode
+
+        def safe_str(value, default=""):
+            if value is None:
+                return default
+            return str(value).strip()
+
+        def safe_bool(value):
+            return str(value) == "1"
+
+        hs_codes = []
+
+        # T185 always returns a list, but let's stay defensive
+        if isinstance(content, list):
+            hs_codes = content
+        elif isinstance(content, dict):
+            for key in ["records", "data", "hsCodes"]:
+                if key in content and isinstance(content[key], list):
+                    hs_codes = content[key]
+                    break
+
+        saved_codes = []
+
+        for item in hs_codes:
+            if not isinstance(item, dict):
+                continue
+
+            hs_code = safe_str(item.get("hsCode"))
+            description = safe_str(item.get("description"))
+
+            if not hs_code or not description:
+                continue
+
+            obj, created = EFRISHsCode.objects.update_or_create(
+                hs_code=hs_code,
+                defaults={
+                    "description": description,
+                    "parent_code": safe_str(item.get("parentClass")),
+                    "is_leaf": safe_bool(item.get("isLeaf")),
+                    "last_synced": django_timezone.now(),
+                },
+            )
+
+            saved_codes.append(obj)
+
+        logger.info(f"Saved {len(saved_codes)} HS codes to database")
+        return saved_codes
+
     def _extract_and_save_categories(self, content) -> list:
         """Extract categories from API response and save to DB safely"""
         from decimal import Decimal, InvalidOperation
@@ -4761,9 +5152,9 @@ class EnhancedEFRISAPIClient:
         self.logger.info(f"Saved {len(saved_categories)} categories to database")
         return saved_categories
 
-    #==========================
+    # ==========================
     # credit note and more
-    #===============
+    # ===============
     # Add these methods to the EnhancedEFRISAPIClient class
 
     def t146_query_commodity_category_excise_by_date(
@@ -6125,6 +6516,7 @@ class EnhancedEFRISAPIClient:
             # Make request (not encrypted per documentation)
             response = self._make_request("T185", content=None, encrypt=False, decrypt_response=False)
 
+            saved = self._extract_and_save_hs_codes(response)
             # Response is a list of HS codes
             hs_codes = response if isinstance(response, list) else []
 
@@ -6133,7 +6525,6 @@ class EnhancedEFRISAPIClient:
             return {
                 "success": True,
                 "hs_codes": hs_codes,
-                "total_count": len(hs_codes)
             }
 
         except Exception as e:
@@ -6368,7 +6759,7 @@ class EnhancedEFRISAPIClient:
                 - "1": Windows (default)
 
         Returns:
-            Dict with upgrade file information including pre-commands, 
+            Dict with upgrade file information including pre-commands,
             commands, file lists, and SQL scripts
         """
         try:
@@ -6891,7 +7282,6 @@ class EnhancedEFRISAPIClient:
 
         return result
 
-  
     def t106_query_invoices(
             self,
             ori_invoice_no: Optional[str] = None,
@@ -8763,7 +9153,6 @@ class EnhancedEFRISAPIClient:
                 "rates": []
             }
 
-
     def t129_batch_invoice_upload(
             self,
             invoices_data: List[Dict[str, str]]
@@ -8962,7 +9351,6 @@ class EnhancedEFRISAPIClient:
                 "results": []
             }
 
-
     def search_invoices_by_date_range(
             self,
             start_date: str,
@@ -9047,10 +9435,9 @@ class EnhancedEFRISAPIClient:
             page_size=10
         )
 
-
     def get_invoice_with_credit_note_eligibility(
-        self,
-        invoice_no: str
+            self,
+            invoice_no: str
     ) -> Dict[str, Any]:
         """
         Helper: Check if an invoice can have a credit note issued
@@ -9087,7 +9474,6 @@ class EnhancedEFRISAPIClient:
             "invoice_no": invoice_no
         }
 
-
     def get_current_exchange_rates(self) -> Dict[str, Any]:
         """
         Helper: Get current exchange rates for all currencies
@@ -9117,7 +9503,6 @@ class EnhancedEFRISAPIClient:
             "currencies": list(rates_map.keys()),
             "total_currencies": len(rates_map)
         }
-
 
     def get_excise_duty_by_code(self, excise_duty_code: str) -> Dict[str, Any]:
         """
@@ -9173,7 +9558,6 @@ class EnhancedEFRISAPIClient:
             query_type="3",  # My approvals
             page_size=100
         )
-
 
     # ============================================================================
     # ADDITIONAL EFRIS INTERFACES (T108, T116, T117, T127, T144)
@@ -9685,7 +10069,8 @@ class EnhancedEFRISAPIClient:
                             'name': goods.get('goodsName', 'Imported from EFRIS'),
                             'selling_price': float(goods.get('unitPrice', 0)),
                             'unit_of_measure': goods.get('measureUnit'),
-                            'efris_goods_id': (goods.get('id') or goods.get('goodsId') or goods.get('commodityGoodsId')),
+                            'efris_goods_id': (
+                                        goods.get('id') or goods.get('goodsId') or goods.get('commodityGoodsId')),
                             'efris_is_uploaded': True
                         }
                     )
@@ -9694,7 +10079,8 @@ class EnhancedEFRISAPIClient:
                         results['created'] += 1
                     else:
                         # Update existing product
-                        product.efris_goods_id = (goods.get('id') or goods.get('goodsId') or goods.get('commodityGoodsId'))
+                        product.efris_goods_id = (
+                                    goods.get('id') or goods.get('goodsId') or goods.get('commodityGoodsId'))
                         product.efris_is_uploaded = True
                         product.save()
                         results['updated'] += 1
@@ -9789,7 +10175,7 @@ class EnhancedEFRISAPIClient:
         if branch_id:
             payload["branchId"] = branch_id
 
-        return self._make_request("T128", payload,encrypt=True)
+        return self._make_request("T128", payload, encrypt=True)
 
     def sync_product_to_efris_stock(self, product, store=None):
         """
@@ -10058,7 +10444,7 @@ class EnhancedEFRISAPIClient:
             "goodsStockInItem": stock_items
         }
 
-        return self._make_request("T131", payload,encrypt=True)
+        return self._make_request("T131", payload, encrypt=True)
 
     def t139_transfer_stock(
             self,
@@ -10107,7 +10493,7 @@ class EnhancedEFRISAPIClient:
             "goodsStockTransferItem": transfer_items
         }
 
-        return self._make_request("T139", payload,encrypt=True)
+        return self._make_request("T139", payload, encrypt=True)
 
     def t139_transfer_stock_from_movement(self, movement, destination_branch_id: str):
         """
@@ -10171,7 +10557,7 @@ class EnhancedEFRISAPIClient:
         if reference_no:
             payload["referenceNo"] = reference_no
 
-        return self._make_request("T145", payload,encrypt=True)
+        return self._make_request("T145", payload, encrypt=True)
 
     def t147_query_stock_records_advanced(
             self,
@@ -10208,12 +10594,12 @@ class EnhancedEFRISAPIClient:
         if supplier_name:
             payload["supplierName"] = supplier_name
 
-        return self._make_request("T147", payload,encrypt=True)
+        return self._make_request("T147", payload, encrypt=True)
 
     def t148_query_stock_record_detail(self, record_id: str) -> Dict:
         """T148: Query detailed information for a specific stock record"""
         payload = {"id": record_id}
-        return self._make_request("T148", payload,encrypt=True)
+        return self._make_request("T148", payload, encrypt=True)
 
     def t149_query_adjust_records(
             self,
@@ -10239,17 +10625,17 @@ class EnhancedEFRISAPIClient:
         if end_date:
             payload["endDate"] = end_date
 
-        return self._make_request("T149", payload,encrypt=True)
+        return self._make_request("T149", payload, encrypt=True)
 
     def t160_query_adjust_detail(self, adjust_id: str) -> Dict:
         """T160: Query detailed information for a specific stock adjustment"""
         payload = {"id": adjust_id}
-        return self._make_request("T160", payload,encrypt=True)
+        return self._make_request("T160", payload, encrypt=True)
 
     def t184_query_transfer_detail(self, transfer_id: str) -> Dict:
         """T184: Query detailed information for a specific stock transfer"""
         payload = {"id": transfer_id}
-        return self._make_request("T184", payload,encrypt=True)
+        return self._make_request("T184", payload, encrypt=True)
 
     # ============================================================================
     # HELPER METHODS FOR DJANGO INTEGRATION
@@ -10476,6 +10862,7 @@ class EnhancedEFRISAPIClient:
         except Exception as e:
             logger.error(f"T124 failed: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
+
 
 def bulk_register_services_with_efris(company):
     """
@@ -10728,6 +11115,7 @@ def bulk_register_products_with_efris(company, store=None):
     )
 
     return results
+
 
 class EFRISCustomerService:
     """Enhanced service for handling EFRIS customer operations"""
@@ -11364,6 +11752,7 @@ def debug_query_goods(self, goods_code: str, verbose: bool = True) -> Dict[str, 
             "error": str(e)
         }
 
+
 def diagnose_efris_issue(company, invoice=None):
     """Comprehensive EFRIS diagnostic tool"""
     print("=== EFRIS DIAGNOSTIC REPORT ===")
@@ -11458,7 +11847,6 @@ def diagnose_efris_issue(company, invoice=None):
 
     except Exception as e:
         print(f"Diagnostic failed: {e}")
-
 
 
 def sync_commodity_categories(company) -> Dict[str, Any]:
@@ -11611,6 +11999,7 @@ def test_efris_connection(company) -> Dict[str, Any]:
         results['error'] = str(e)
 
     return results
+
 
 class EFRISServiceManager:
     """
@@ -11962,30 +12351,42 @@ class EFRISProductService:
 
     def _get_commodity_category_id(self, product) -> str:
         """
-        Get the EFRIS commodity category ID (18 digits total),
+        Get the EFRIS commodity category ID (18 digits) for a product,
         fetched from the related Category model.
         Pads with zeros at the END until the length is 18.
-        Falls back to a default if missing.
+        Falls back to default if missing.
         """
         try:
             # Step 1: Try to fetch the EFRIS category ID from related category
-            category_id = getattr(product.category, 'efris_category_id', None)
+            if hasattr(product, 'category') and product.category:
+                category_id = getattr(product.category, 'efris_commodity_category_code', None)
 
-            # Step 2: Use default if missing
-            if not category_id:
-                category_id = "1010101000"
+                if category_id:
+                    # ✅ VALIDATE: Ensure it's actually a product category (serviceMark should be '102')
+                    efris_cat = product.category.efris_commodity_category_code
+                    if efris_cat and efris_cat.service_mark == '101':
+                        logger.warning(
+                            f"Product {product.sku} has category with serviceMark='101', "
+                            f"but should be '102' for products"
+                        )
+                        # Don't use invalid category, fall back to default
+                        return "101113010000000000"  # Default product category
 
-            # Step 3: Convert to string and pad zeros to the RIGHT (end)
-            category_id = str(category_id)
-            if len(category_id) < 18:
-                category_id = category_id.ljust(18, '0')
+                    # Step 3: Convert to string and pad zeros to the RIGHT (end)
+                    category_id = str(category_id)
+                    if len(category_id) < 18:
+                        category_id = category_id.ljust(18, '0')
 
-            # Step 4: Truncate if longer than 18 just to be safe
-            return category_id[:18]
+                    # Step 4: Truncate if longer than 18 just to be safe
+                    return category_id[:18]
 
-        except AttributeError:
+            # Step 2: Use default if missing or None
+            return "101113010000000000"  # Default product category
+
+        except AttributeError as e:
             # In case product.category is missing or None
-            return "101010100000000000"
+            logger.warning(f"Failed to get commodity category for product: {e}")
+            return "101113010000000000"
 
     def _has_excise_tax(self, product) -> bool:
         """Check if product has excise tax"""
@@ -12104,6 +12505,7 @@ def create_efris_service(company, service_type: str = 'client', store=None):
         )
         raise EFRISConfigurationError(f"Failed to create {service_type} service: {e}")
 
+
 def validate_efris_configuration(company) -> Tuple[bool, List[str]]:
     """Comprehensive EFRIS configuration validation"""
     try:
@@ -12116,6 +12518,7 @@ def validate_efris_configuration(company) -> Tuple[bool, List[str]]:
         logger.error("Unexpected error during configuration validation", error=str(e))
         return False, [f"Validation error: {e}"]
 
+
 @asynccontextmanager
 async def efris_client_context(company):
     """Async context manager for EFRIS client"""
@@ -12126,6 +12529,7 @@ async def efris_client_context(company):
     finally:
         if client:
             client.close()
+
 
 class EFRISHealthChecker:
     """Health check utilities for EFRIS integration"""
@@ -12282,6 +12686,7 @@ class EFRISHealthChecker:
                 'check_type': 'recent_operations'
             }
 
+
 class EFRISMetricsCollector:
     """Enhanced metrics collection for EFRIS operations"""
 
@@ -12384,7 +12789,7 @@ class EFRISMetricsCollector:
     @staticmethod
     def get_invoice_fiscalization_metrics(company, days: int = 30) -> Dict[str, Any]:
         """Get invoice fiscalization-specific metrics"""
-        from django_tenants.utils import tenant_context
+        from tenancy.utils import tenant_context_safe
         from django.utils import timezone
         from datetime import timedelta
 
@@ -12401,7 +12806,7 @@ class EFRISMetricsCollector:
         }
 
         # Use tenant context for correct schema
-        with tenant_context(company):
+        with tenant_context_safe(company):
             audits = FiscalizationAudit.objects.filter(
                 created_at__date__gte=start_date
             ).values('action', 'efris_return_code', 'efris_return_message', 'created_at__date').order_by(
@@ -12518,7 +12923,8 @@ class EFRISConfigurationWizard:
         """Validate network access to EFRIS servers"""
         try:
             config = {
-                'api_url': getattr(settings, 'EFRIS_API_URL', 'https://efristest.ura.go.ug/efrisws/ws/taapp/getInformation'),
+                'api_url': getattr(settings, 'EFRIS_API_URL',
+                                   'https://efristest.ura.go.ug/efrisws/ws/taapp/getInformation'),
                 'timeout': 10
             }
 
@@ -12608,6 +13014,7 @@ class EFRISConfigurationWizard:
             'next_steps': validation_result['next_steps']
         }
 
+
 def setup_efris_for_company(company) -> Dict[str, Any]:
     """Complete EFRIS setup workflow for a company"""
 
@@ -12672,6 +13079,7 @@ def setup_efris_for_company(company) -> Dict[str, Any]:
         setup_result['errors'].append(f"Setup failed: {e}")
 
     return setup_result
+
 
 __version__ = "2.0.0"
 __author__ = "Nash Vybzes Team"

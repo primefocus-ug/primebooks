@@ -648,11 +648,13 @@ class Company(TenantMixin,EFRISCompanyMixin):
     def __str__(self):
         return self.display_name
 
+
     def save(self, *args, **kwargs):
         """Save company with optional skip_status_update parameter"""
 
         # Extract custom parameters
         skip_status_update = kwargs.pop('skip_status_update', False)
+        is_initial_sync = kwargs.pop('is_initial_sync', False)  # NEW PARAMETER
 
         # Generate slug from name if not provided
         if not self.slug:
@@ -685,34 +687,26 @@ class Company(TenantMixin,EFRISCompanyMixin):
             )
             self.plan = free_plan
 
-        # NEW: Handle manual transition from trial to paid subscription
-        # This prevents auto-expiring when admin unchecks is_trial
-        if not skip_status_update and self.pk:  # Only for existing companies
+        # Handle manual transition from trial to paid subscription
+        if not skip_status_update and self.pk:
             try:
                 old_instance = Company.objects.get(pk=self.pk)
 
-                # Check if admin is manually converting from trial to paid
                 if old_instance.is_trial and not self.is_trial:
-                    # Admin is converting trial to paid subscription
-                    # Set subscription dates if not already set
                     if not self.subscription_starts_at:
                         self.subscription_starts_at = timezone.now().date()
 
                     if not self.subscription_ends_at:
-                        # Default to 30 days subscription
                         from datetime import timedelta
                         self.subscription_ends_at = self.subscription_starts_at + timedelta(days=30)
 
-                    # Set grace period
                     if not self.grace_period_ends_at and self.subscription_ends_at:
                         from datetime import timedelta
                         self.grace_period_ends_at = self.subscription_ends_at + timedelta(days=7)
 
-                    # Set next billing date
                     if not self.next_billing_date:
                         self.next_billing_date = self.subscription_ends_at
 
-                    # Ensure company is active
                     self.status = 'ACTIVE'
                     self.is_active = True
 
@@ -728,8 +722,8 @@ class Company(TenantMixin,EFRISCompanyMixin):
             from datetime import timedelta
             self.grace_period_ends_at = self.subscription_ends_at + timedelta(days=7)
 
-        # Update status based on subscription (SKIP if requested)
-        if not skip_status_update:
+        # Update status based on subscription (SKIP if requested OR during initial sync)
+        if not skip_status_update and not is_initial_sync:  # MODIFIED
             self.check_and_update_access_status()
 
         result = super().save(*args, **kwargs)
@@ -1135,28 +1129,20 @@ class Company(TenantMixin,EFRISCompanyMixin):
 
         # Check subscription status
         else:
-            # FIXED: Check if subscription dates are set before comparing
             if not self.subscription_ends_at:
-                # No subscription end date set - this is likely a manual conversion
-                # Check if subscription_starts_at exists
                 if self.subscription_starts_at:
-                    # Admin just set start date, assume active for now
                     self.status = 'ACTIVE'
                     self.is_active = True
                 else:
-                    # No dates at all - mark as expired
                     self.status = 'EXPIRED'
                     self.is_active = False
             elif self.subscription_ends_at >= today:
-                # Valid subscription
                 self.status = 'ACTIVE'
                 self.is_active = True
             elif self.grace_period_ends_at and self.grace_period_ends_at >= today:
-                # In grace period
                 self.status = 'SUSPENDED'
                 self.is_active = False
             else:
-                # Expired
                 self.status = 'EXPIRED'
                 self.is_active = False
 
@@ -1167,19 +1153,56 @@ class Company(TenantMixin,EFRISCompanyMixin):
         # Save if changed (using update_fields to avoid recursion)
         status_changed = (old_status != self.status or old_is_active != self.is_active)
         if status_changed and self.pk:
-            # Use update_fields to prevent recursion
             Company.objects.filter(pk=self.pk).update(
                 status=self.status,
                 is_active=self.is_active,
                 updated_at=timezone.now()
             )
 
-            if not self.is_active:
-                self.deactivate_all_users()
-            elif self.is_active and not old_is_active:
-                self.reactivate_all_users()
+            # NEW: Check if schema exists before trying to deactivate users
+            if self._tenant_schema_exists():
+                if not self.is_active:
+                    self.deactivate_all_users()
+                elif self.is_active and not old_is_active:
+                    self.reactivate_all_users()
+            else:
+                logger.warning(
+                    f"Skipping user deactivation for {self.company_id} - "
+                    f"tenant schema not fully initialized"
+                )
 
         return status_changed
+
+    def _tenant_schema_exists(self):
+        """Check if tenant schema exists and has tables"""
+        from django.db import connection
+
+        try:
+            with connection.cursor() as cursor:
+                # Check if schema exists
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.schemata 
+                        WHERE schema_name = %s
+                    )
+                """, [self.schema_name])
+
+                if not cursor.fetchone()[0]:
+                    return False
+
+                # Check if accounts_customuser table exists in schema
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables 
+                        WHERE table_schema = %s AND table_name = 'accounts_customuser'
+                    )
+                """, [self.schema_name])
+
+                return cursor.fetchone()[0]
+
+        except Exception as e:
+            logger.error(f"Error checking tenant schema: {e}")
+            return False
 
     def deactivate_company(self, reason="Subscription expired"):
         """Manually deactivate company and all users"""
@@ -1623,3 +1646,17 @@ class EFRISCommodityCategory(models.Model):
     def type(self):
         """Human-readable category type"""
         return "Product" if self.service_mark == '102' else "Service"
+
+class EFRISHsCode(models.Model):
+    hs_code = models.CharField(max_length=20, unique=True, db_index=True)
+    description = models.TextField()
+    parent_code = models.CharField(max_length=20, blank=True, null=True, db_index=True)
+    is_leaf = models.BooleanField(default=False)
+
+    last_synced = models.DateTimeField()
+
+    class Meta:
+        ordering = ["hs_code"]
+
+    def __str__(self):
+        return f"{self.hs_code} - {self.description}"

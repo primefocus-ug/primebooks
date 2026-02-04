@@ -1,0 +1,436 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Export Invoice {{ invoice_no }} - EFRIS{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    .detail-label {
+        font-weight: 600;
+        color: #495057;
+        min-width: 180px;
+    }
+    .detail-row {
+        padding: 10px 0;
+        border-bottom: 1px solid #eee;
+    }
+    .detail-row:last-child {
+        border-bottom: none;
+    }
+    .status-badge {
+        font-size: 0.95rem;
+        padding: 6px 14px;
+    }
+    .timeline-step {
+        position: relative;
+        padding-left: 40px;
+        margin-bottom: 20px;
+    }
+    .timeline-step .step-icon {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 0.8rem;
+    }
+    .timeline-step .step-icon.done { background: #28a745; }
+    .timeline-step .step-icon.active { background: #ffc107; color: #333; }
+    .timeline-step .step-icon.pending { background: #dee2e6; color: #666; }
+    .timeline-step .step-line {
+        position: absolute;
+        left: 13px;
+        top: 28px;
+        bottom: -20px;
+        width: 2px;
+        background: #dee2e6;
+    }
+    .timeline-step:last-child .step-line { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2><i class="fas fa-file-export"></i> Export Invoice Detail</h2>
+                    <p class="text-muted">
+                        Invoice <code>{{ invoice_no }}</code>
+                        {% if is_cleared %}
+                            &nbsp;<span class="badge badge-success status-badge">
+                                <i class="fas fa-check-circle"></i> Cleared
+                            </span>
+                        {% elif clearance_status == '101' %}
+                            &nbsp;<span class="badge badge-warning status-badge">
+                                <i class="fas fa-hourglass-half"></i> Processing
+                            </span>
+                        {% else %}
+                            &nbsp;<span class="badge badge-secondary status-badge">
+                                <i class="fas fa-question-circle"></i> Unknown
+                            </span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div>
+                    <a href="{% url 'efris:export_invoices_list' %}" class="btn btn-outline-secondary mr-2">
+                        <i class="fas fa-arrow-left"></i> Back
+                    </a>
+                    {% if invoice.fiscal_document_number and not invoice.export_sad_number %}
+                    <a href="{% url 'efris:submit_export_sad' invoice.fiscal_document_number %}" class="btn btn-warning">
+                        <i class="fas fa-file-upload"></i> Submit SAD
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Django messages -->
+    {% if messages %}
+    <div class="row mb-3">
+        <div class="col-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <!-- LEFT: Invoice & Customer Info -->
+        <div class="col-lg-5">
+            <!-- Invoice Info -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-receipt"></i> Invoice Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="detail-row d-flex">
+                        <span class="detail-label">FDN</span>
+                        <span><code>{{ invoice.fiscal_document_number|default:"—" }}</code></span>
+                    </div>
+                    <div class="detail-row d-flex">
+                        <span class="detail-label">Sale Doc No</span>
+                        <span>{{ invoice.sale.document_number|default:"—" }}</span>
+                    </div>
+                    <div class="detail-row d-flex">
+                        <span class="detail-label">Created</span>
+                        <span>{{ invoice.created_at|date:"Y-m-d H:i" }}</span>
+                    </div>
+                    <div class="detail-row d-flex">
+                        <span class="detail-label">Fiscalized At</span>
+                        <span>{{ invoice.fiscalization_time|date:"Y-m-d H:i"|default:"—" }}</span>
+                    </div>
+                    <div class="detail-row d-flex">
+                        <span class="detail-label">Verification Code</span>
+                        <span><small>{{ invoice.verification_code|default:"—" }}</small></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Customer Info -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-user"></i> Customer</h5>
+                </div>
+                <div class="card-body">
+                    {% if invoice.sale and invoice.sale.customer %}
+                        <div class="detail-row d-flex">
+                            <span class="detail-label">Name</span>
+                            <span><strong>{{ invoice.sale.customer.name }}</strong></span>
+                        </div>
+                        <div class="detail-row d-flex">
+                            <span class="detail-label">Country</span>
+                            <span>{{ invoice.sale.customer.country|default:"—" }}</span>
+                        </div>
+                        <div class="detail-row d-flex">
+                            <span class="detail-label">TIN</span>
+                            <span>{{ invoice.sale.customer.tin|default:"—" }}</span>
+                        </div>
+                        <div class="detail-row d-flex">
+                            <span class="detail-label">Email</span>
+                            <span>{{ invoice.sale.customer.email|default:"—" }}</span>
+                        </div>
+                    {% else %}
+                        <p class="text-muted">Walk-in Customer</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Amounts -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-calculator"></i> Amounts</h5>
+                </div>
+                <div class="card-body">
+                    <div class="detail-row d-flex">
+                        <span class="detail-label">Subtotal</span>
+                        <span>{{ invoice.subtotal|floatformat:2|intcomma }} UGX</span>
+                    </div>
+                    <div class="detail-row d-flex">
+                        <span class="detail-label">Tax</span>
+                        <span>{{ invoice.tax_amount|floatformat:2|intcomma }} UGX</span>
+                    </div>
+                    <div class="detail-row d-flex">
+                        <span class="detail-label">Discount</span>
+                        <span>{{ invoice.discount_amount|floatformat:2|intcomma }} UGX</span>
+                    </div>
+                    <div class="detail-row d-flex">
+                        <span class="detail-label"><strong>Total</strong></span>
+                        <span><strong>{{ invoice.total_amount|floatformat:2|intcomma }} UGX</strong></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Export & Clearance Info -->
+        <div class="col-lg-7">
+            <!-- Export Details -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-shipping-fast"></i> Export Details</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="detail-row d-flex">
+                                <span class="detail-label">Delivery Terms</span>
+                                <span>
+                                    {% if invoice.export_delivery_terms %}
+                                        <span class="badge badge-info">{{ invoice.export_delivery_terms }}</span>
+                                    {% else %}—{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="detail-row d-flex">
+                                <span class="detail-label">Total Weight</span>
+                                <span>
+                                    {% if invoice.export_total_weight %}
+                                        {{ invoice.export_total_weight|floatformat:2 }} KGM
+                                    {% else %}—{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SAD Information -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-file-alt"></i> SAD Declaration</h5>
+                </div>
+                <div class="card-body">
+                    {% if invoice.export_sad_number %}
+                        <div class="detail-row d-flex">
+                            <span class="detail-label">SAD Number</span>
+                            <span><code>{{ invoice.export_sad_number }}</code></span>
+                        </div>
+                        <div class="detail-row d-flex">
+                            <span class="detail-label">Submitted At</span>
+                            <span>{{ invoice.export_sad_submitted_at|date:"Y-m-d H:i"|default:"—" }}</span>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-warning mb-0">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            SAD declaration has not been submitted yet.
+                            {% if invoice.fiscal_document_number %}
+                                <a href="{% url 'efris:submit_export_sad' invoice.fiscal_document_number %}"
+                                   class="btn btn-sm btn-warning ml-2">
+                                    <i class="fas fa-file-upload"></i> Submit SAD Now
+                                </a>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Clearance Status + Live Check -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-passport"></i> Customs Clearance</h5>
+                    <button class="btn btn-sm btn-outline-primary" id="checkBtn" onclick="checkClearance()">
+                        <i class="fas fa-sync" id="checkIcon"></i> Check Status
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="clearanceStatusArea">
+                        {% if invoice.export_status == '102' %}
+                            <div class="alert alert-success">
+                                <i class="fas fa-check-circle fa-lg"></i>
+                                <strong>Cleared / Exited</strong>
+                                <br>
+                                <small>Cleared on: {{ invoice.export_cleared_at|date:"Y-m-d H:i"|default:"—" }}</small>
+                            </div>
+                        {% elif invoice.export_status == '101' %}
+                            <div class="alert alert-warning">
+                                <i class="fas fa-hourglass-half fa-lg"></i>
+                                <strong>Under Processing</strong>
+                                <br>
+                                <small>Waiting for customs clearance at URA.</small>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-secondary">
+                                <i class="fas fa-question-circle fa-lg"></i>
+                                <strong>Status Unknown</strong>
+                                <br>
+                                <small>Click "Check Status" to query EFRIS.</small>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workflow Timeline -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-list-ol"></i> Workflow Status</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Step 1: Fiscalized -->
+                    <div class="timeline-step">
+                        <div class="step-line"></div>
+                        <div class="step-icon done"><i class="fas fa-check"></i></div>
+                        <strong>Fiscalized</strong>
+                        <p class="text-muted mb-0 small">Invoice fiscalized with EFRIS (T109)</p>
+                    </div>
+
+                    <!-- Step 2: SAD Submitted -->
+                    <div class="timeline-step">
+                        <div class="step-line"></div>
+                        <div class="step-icon {% if invoice.export_sad_number %}done{% elif invoice.export_status == '101' or invoice.export_status == '102' %}done{% else %}pending{% endif %}">
+                            <i class="fas fa-{% if invoice.export_sad_number %}check{% else %}file-alt{% endif %}"></i>
+                        </div>
+                        <strong>SAD Submitted</strong>
+                        <p class="text-muted mb-0 small">
+                            {% if invoice.export_sad_number %}
+                                SAD {{ invoice.export_sad_number }} submitted on {{ invoice.export_sad_submitted_at|date:"Y-m-d" }}
+                            {% else %}
+                                Pending SAD submission
+                            {% endif %}
+                        </p>
+                    </div>
+
+                    <!-- Step 3: Under Processing -->
+                    <div class="timeline-step">
+                        <div class="step-line"></div>
+                        <div class="step-icon {% if invoice.export_status == '101' %}active{% elif invoice.export_status == '102' %}done{% else %}pending{% endif %}">
+                            <i class="fas fa-{% if invoice.export_status == '102' %}check{% elif invoice.export_status == '101' %}hourglass-half{% else %}clock{% endif %}"></i>
+                        </div>
+                        <strong>Under Processing</strong>
+                        <p class="text-muted mb-0 small">URA customs clearance in progress</p>
+                    </div>
+
+                    <!-- Step 4: Cleared -->
+                    <div class="timeline-step">
+                        <div class="step-icon {% if invoice.export_status == '102' %}done{% else %}pending{% endif %}">
+                            <i class="fas fa-{% if invoice.export_status == '102' %}check{% else %}plane-departure{% endif %}"></i>
+                        </div>
+                        <strong>Cleared / Exited</strong>
+                        <p class="text-muted mb-0 small">
+                            {% if invoice.export_status == '102' %}
+                                Cleared on {{ invoice.export_cleared_at|date:"Y-m-d H:i" }}
+                            {% else %}
+                                Awaiting clearance
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function checkClearance() {
+    const btn = document.getElementById('checkBtn');
+    const icon = document.getElementById('checkIcon');
+    const statusArea = document.getElementById('clearanceStatusArea');
+
+    btn.disabled = true;
+    icon.classList.add('fa-spin');
+
+    fetch('{% url "efris:check_export_clearance_api" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: 'invoice_no={{ invoice_no }}'
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        icon.classList.remove('fa-spin');
+
+        if (data.success) {
+            const status = data.documentStatusCode;
+
+            if (status === '102') {
+                statusArea.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle fa-lg"></i>
+                        <strong>Cleared / Exited</strong>
+                        <br><small>Status updated just now.</small>
+                    </div>
+                `;
+                // Reload page to update timeline too
+                setTimeout(() => location.reload(), 1500);
+            } else if (status === '101') {
+                statusArea.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="fas fa-hourglass-half fa-lg"></i>
+                        <strong>Under Processing</strong>
+                        <br><small>Still waiting for customs clearance. Check again later.</small>
+                    </div>
+                `;
+            } else {
+                statusArea.innerHTML = `
+                    <div class="alert alert-secondary">
+                        <i class="fas fa-question-circle fa-lg"></i>
+                        <strong>Status: ${status}</strong>
+                        <br><small>Unknown status code returned by EFRIS.</small>
+                    </div>
+                `;
+            }
+        } else {
+            statusArea.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-circle fa-lg"></i>
+                    <strong>Check Failed</strong>
+                    <br><small>${data.error}</small>
+                </div>
+            `;
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        icon.classList.remove('fa-spin');
+        statusArea.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-circle fa-lg"></i>
+                <strong>Network Error</strong>
+                <br><small>Could not reach EFRIS. Try again.</small>
+            </div>
+        `;
+    });
+}
+</script>
+{% endblock %}

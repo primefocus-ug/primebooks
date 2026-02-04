@@ -5,6 +5,7 @@ from . import goods
 from . import version
 from . import views_advanced
 from inventory import view
+from . import efris_export_views
 
 
 
@@ -68,6 +69,41 @@ urlpatterns = [
     path('goods/import/', goods.goods_import_to_product, name='goods_import'),
     path('goods/batch/', goods.goods_batch_query, name='goods_batch_query'),
     path('goods/sync/', goods.goods_sync_from_efris, name='goods_sync'),
+    path('export-invoices/',
+         efris_export_views.export_invoices_list_view,
+         name='export_invoices_list'),
+    path('products/<int:product_id>/configure-export/',
+       efris_export_views.configure_product_for_export_view,
+       name='configure_product_export'),
+
+    path('api/export/sale-items/',
+       efris_export_views.get_sale_items_export_api,
+       name='get_sale_items_export_api'),
+
+    path('export-invoices/create/',
+         efris_export_views.create_export_invoice_view,
+         name='create_export_invoice'),
+
+    path('export-invoices/<str:invoice_no>/',
+         efris_export_views.export_invoice_detail_view,
+         name='export_invoice_detail'),
+
+    path('export-invoices/<str:invoice_no>/submit-sad/',
+         efris_export_views.submit_export_sad_view,
+         name='submit_export_sad'),
+
+    # Export API Endpoints
+    path('api/export/check-clearance/',
+         efris_export_views.check_export_clearance_api,
+         name='check_export_clearance_api'),
+
+    path('api/export/bulk-check-status/',
+         efris_export_views.bulk_check_export_status,
+         name='bulk_check_export_status'),
+
+    path('api/export/exchange-rate/',
+         efris_export_views.get_exchange_rate_for_export_api,
+         name='get_exchange_rate_for_export_api'),
 ]
 
 
@@ -190,6 +226,8 @@ urlpatterns += [
          name='hs_code_list'),
     path('advanced/invoice-remain/<str:invoice_no>/', views_advanced.invoice_remain_details,
          name='invoice_remain_details'),
+    path("hs-codes/sync/", views_advanced.sync_hs_codes, name="sync_hs_codes"),
+
     path('advanced/invoice-remain/', views_advanced.invoice_remain_details,
          name='invoice_remain_details_search'),
     path('advanced/fdn-status/', views_advanced.fdn_status_query,

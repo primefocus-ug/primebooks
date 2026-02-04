@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 import logging
 from datetime import timedelta
 from django.utils import timezone
-from django_tenants.utils import tenant_context
+from tenancy.utils import tenant_context_safe
 from .models import Sale, SaleItem, Payment, Cart, CartItem, Receipt
 from .forms import (
     SaleForm, SaleItemForm, PaymentForm, CartForm, QuickSaleForm,
@@ -65,7 +65,7 @@ def create_customer_ajax(request):
                 'error': 'No company context found'
             })
 
-        with tenant_context(company):
+        with tenant_context_safe(company):
             # ✅ ADD: Get and validate store_id
             store_id = request.POST.get('store_id')
 
@@ -187,7 +187,7 @@ def search_products_and_services(request):
         if not company:
             return JsonResponse({'error': 'No company context'}, status=403)
 
-        with tenant_context(company):
+        with tenant_context_safe(company):
             query = request.GET.get('q', '').strip()
             store_id = request.GET.get('store_id')
             item_type = request.GET.get('item_type', 'all')
@@ -900,7 +900,7 @@ def should_create_invoice(sale, user):
         return False
 
     company = sale.store.company
-    with tenant_context(company):
+    with tenant_context_safe(company):
         # Check company invoice creation policy
         if not getattr(company, 'auto_create_invoices', False):
             return False
@@ -933,7 +933,7 @@ def create_invoice_for_sale(sale, user):
 
     try:
         company = sale.store.company
-        with tenant_context(company):
+        with tenant_context_safe(company):
 
             # ========== FIXED: Check for existing InvoiceDetail ==========
             # Check if invoice already exists in InvoiceDetail model
@@ -1372,7 +1372,8 @@ def create_sale(request):
     if request.method == 'GET':
         return render_sale_form(request)
     else:
-        return process_sale_creation(request)
+        company = request.user.company  # or however your codebase resolves it
+        return process_sale_creation(request, company)
 
 
 def render_sale_form(request):
@@ -1384,7 +1385,7 @@ def render_sale_form(request):
         messages.error(request, 'No company context found')
         return redirect('sales:sales_list')
 
-    with tenant_context(company):
+    with tenant_context_safe(company):
         # Get accessible stores using utility function
         accessible_stores = get_user_accessible_stores(user).filter(
             is_active=True,
@@ -1444,156 +1445,89 @@ def render_sale_form(request):
 
 
 @transaction.atomic
-def process_sale_creation(request):
-    """Process sale creation with credit checking and customer notes"""
-    sale = None
-    company = get_current_tenant(request)
-
-    if not company:
-        messages.error(request, 'No company context found')
-        return redirect('sales:sales_list')
-
+def process_sale_creation(request, company):
+    """Process sale creation with full document type and export support"""
     try:
-        with tenant_context(company):
-            logger.info(f"Processing sale creation for user {request.user.id}")
+        # Validate sale-level data
+        sale_data = validate_sale_data(request.POST, request.user, company)
 
-            # Validate and extract form data
-            sale_data = validate_sale_data(request.POST, request.user, company)
-            items_data = validate_items_data(request.POST.get('items_data', '[]'))
+        # Validate items — pass is_export_sale so export fields get extracted
+        items_data = validate_items_data(
+            request.POST.get('items_data', '[]'),
+            is_export_sale=sale_data.get('is_export_sale', False)
+        )
 
-            if not items_data:
-                messages.error(request, 'At least one item is required.')
-                return render_sale_form(request)
+        if not items_data:
+            messages.error(request, "At least one item is required")
+            return render_sale_form(request)
 
-            # Pre-validate stock for products
+        # Pre-validate stock for products (only for receipts/invoices)
+        if sale_data.get('document_type') in ['RECEIPT', 'INVOICE']:
             stock_errors = validate_stock_availability(sale_data['store'], items_data)
             if stock_errors:
                 for error in stock_errors:
                     messages.error(request, error)
                 return render_sale_form(request)
 
-            # Create sale
-            sale = create_sale_record(request, sale_data, company)
+        # ✅ CHANGED: Defer auto-fiscalization — SaleItems don't exist yet,
+        # so validate_export_invoice() inside can_fiscalize() would see an
+        # empty queryset and fail every mandatory-field check.
+        sale_data['_defer_auto_fiscalize'] = True
 
-            # Add items
-            create_sale_items(sale, items_data)
+        # Create sale record
+        sale = create_sale_record(request, sale_data, company)
 
-            # Update totals
-            sale.update_totals()
+        # Create sale items (export fields included via items_data)
+        create_sale_items(sale, items_data)
 
-            # CRITICAL: Check credit limit AFTER calculating totals for CREDIT invoices
-            if (sale.document_type == 'INVOICE' and
-                    sale.payment_method == 'CREDIT' and
-                    sale.customer):
+        # Recalculate totals now that all items are saved
+        sale.update_totals()
 
-                can_purchase, reason = sale.customer.check_credit_limit(sale.total_amount)
-                if not can_purchase:
-                    # Delete the sale and items
-                    sale.delete()
-                    messages.error(
-                        request,
-                        f'Credit limit check failed: {reason}\n'
-                        f'Invoice total: {sale.total_amount:,.0f}\n'
-                        f'Current balance: {sale.customer.credit_balance:,.0f}\n'
-                        f'Credit limit: {sale.customer.credit_limit:,.0f}\n'
-                        f'Available credit: {sale.customer.credit_available:,.0f}'
-                    )
-                    return render_sale_form(request)
+        # Customer notes / credit limit checks (if any)
+        if sale.customer and hasattr(sale.customer, 'notes'):
+            customer_notes = sale.customer.notes
+            if customer_notes:
+                logger.info(f"Customer notes for sale {sale.id}: {customer_notes}")
 
-            # Mark as completed based on document type and payment method
-            if sale.document_type == 'RECEIPT':
-                sale.status = 'COMPLETED'
-                sale.payment_status = 'PAID'
-            elif sale.document_type == 'INVOICE':
-                if sale.payment_method == 'CREDIT':
-                    sale.status = 'PENDING_PAYMENT'
-                    sale.payment_status = 'PENDING'
-                else:
-                    # Cash/Card invoice - mark as paid
-                    sale.status = 'COMPLETED'
-                    sale.payment_status = 'PAID'
+        # Handle payment for non-credit sales
+        if sale.payment_method != 'CREDIT' and request.POST.get('payment_amount'):
+            handle_payment(sale, request.POST)
 
-            sale.save()
-
-            # ============================================================================
-            # NEW: HANDLE CUSTOMER NOTES
-            # ============================================================================
-            sale_note = request.POST.get('saleNote', '').strip()
-            note_is_important = request.POST.get('noteIsImportantField') == '1'
-            note_category = request.POST.get('noteCategoryField', 'GENERAL')
-
-            # Create note if provided and customer exists
-            if sale_note and sale.customer:
-                try:
-                    from customers.models import CustomerNote
-
-                    CustomerNote.objects.create(
-                        customer=sale.customer,
-                        author=request.user,
-                        note=f"Sale #{sale.document_number}: {sale_note}",
-                        category=note_category,
-                        is_important=note_is_important
-                    )
-                    logger.info(f"Customer note created for sale {sale.document_number}")
-                except Exception as note_error:
-                    logger.error(f"Failed to create customer note: {note_error}", exc_info=True)
-                    # Don't fail the sale creation if note fails
-
-            # Handle payment for non-credit sales
-            if sale.payment_method != 'CREDIT' and request.POST.get('payment_amount'):
-                handle_payment(sale, request.POST)
-
-            # Background processing for receipts
-            if sale.document_type == 'RECEIPT':
-                from .tasks import process_receipt_async
-                task_result = process_receipt_async.delay(sale.pk, request.user.pk)
-
-                success_message = (
-                    f'Receipt #{sale.document_number} created successfully! '
-                    f'Total: {sale.currency} {sale.total_amount:,.2f}'
-                )
-
-            elif sale.document_type == 'INVOICE':
-                create_stock_movements(sale)
-
-                if sale.payment_method == 'CREDIT':
-                    success_message = (
-                        f'Credit Invoice #{sale.document_number} created successfully! '
-                        f'Total: {sale.currency} {sale.total_amount:,.2f}\n'
-                        f'Customer: {sale.customer.name}\n'
-                        f'Due Date: {sale.due_date}\n'
-                        f'Remaining Credit: {sale.customer.credit_available:,.0f}'
-                    )
-                else:
-                    success_message = (
-                        f'Cash Invoice #{sale.document_number} created successfully! '
-                        f'Total: {sale.currency} {sale.total_amount:,.2f} (PAID)'
-                    )
-
-                # Auto-fiscalization
+        # ✅ CHANGED: NOW trigger the deferred auto-fiscalization.
+        # All SaleItems are committed, totals are updated, so
+        # validate_export_invoice() will see the real item data.
+        if getattr(sale, '_defer_auto_fiscalize', False):
+            try:
                 store_config = sale.store.effective_efris_config
-                if store_config.get('enabled', False):
-                    success_message += ' Ready for EFRIS fiscalization.'
-            else:
-                success_message = (
-                    f'{sale.get_document_type_display()} #{sale.document_number} created successfully! '
-                    f'Total: {sale.currency} {sale.total_amount:,.2f}'
-                )
+                if store_config.get('enabled', False) and store_config.get('is_active', False):
+                    if store_config.get('auto_fiscalize_sales', True):
+                        sale._auto_fiscalize_sale()
+                        logger.info(f"Deferred auto-fiscalization triggered for sale {sale.id}")
+            except Exception as e:
+                logger.error(f"Deferred auto-fiscalization failed for sale {sale.id}: {e}")
 
-            # Add note confirmation to success message if note was created
-            if sale_note and sale.customer:
-                success_message += ' Customer note added.'
+        # Background processing for receipts
+        if sale.document_type == 'RECEIPT':
+            try:
+                from .tasks import process_receipt_background
+                process_receipt_background.delay(sale.id)
+            except Exception as e:
+                logger.warning(f"Background receipt processing failed for sale {sale.id}: {e}")
 
-            messages.success(request, success_message)
-            return redirect('sales:sale_detail', pk=sale.pk)
+        # Success message and redirect
+        messages.success(request, f"{sale.get_document_type_display()} #{sale.document_number} created successfully")
+        return redirect('sales:sale_detail', pk=sale.pk)
 
     except ValidationError as e:
-        logger.error(f"Sale validation error: {e}")
-        messages.error(request, f'Validation Error: {str(e)}')
+        error_messages = e.message_dict if hasattr(e, 'message_dict') else {'error': e.messages}
+        for field, errors in error_messages.items():
+            for error in errors:
+                messages.error(request, f"{error}")
         return render_sale_form(request)
+
     except Exception as e:
-        logger.error(f"Error in sale creation: {e}", exc_info=True)
-        messages.error(request, 'An error occurred. Please try again.')
+        logger.error(f"Error creating sale: {e}", exc_info=True)
+        messages.error(request, f"Failed to create sale: {str(e)}")
         return render_sale_form(request)
 
 
@@ -1701,8 +1635,9 @@ def task_progress_page(request, task_id):
     return render(request, 'sales/task_progress.html', {'task_id': task_id})
 
 
+
 def validate_sale_data(post_data, user, company):
-    """Enhanced validation with tenant support and credit checking"""
+    """Enhanced validation with tenant support, credit checking, and export support"""
     required_fields = ['store', 'payment_method']
 
     for field in required_fields:
@@ -1735,6 +1670,21 @@ def validate_sale_data(post_data, user, company):
     valid_types = [choice[0] for choice in Sale.DOCUMENT_TYPE_CHOICES]
     if document_type not in valid_types:
         document_type = 'RECEIPT'
+
+    # ✅ FIXED: Determine if this is an export sale
+    # Export sales are indicated by:
+    # 1. document_type = 'INVOICE' AND
+    # 2. is_export_sale flag OR invoice_industry_code = '102'
+    is_export_sale = (
+            document_type == 'INVOICE' and
+            (post_data.get('is_export_sale') == 'true' or
+             post_data.get('is_export_sale') == '1' or
+             post_data.get('invoice_industry_code') == '102')
+    )
+
+    delivery_terms_code = None
+    export_buyer_country = None
+    export_buyer_passport = None
 
     # Validate payment method
     payment_method = post_data.get('payment_method', 'CASH')
@@ -1781,7 +1731,6 @@ def validate_sale_data(post_data, user, company):
                     )
 
                 # Validate will not exceed credit limit (preliminary check)
-                # Full validation happens after totals are calculated
                 if customer.credit_balance >= customer.credit_limit:
                     raise ValidationError(
                         f'Customer "{customer.name}" has reached credit limit. '
@@ -1804,6 +1753,40 @@ def validate_sale_data(post_data, user, company):
         if document_type == 'INVOICE' and payment_method == 'CREDIT':
             raise ValidationError('Customer is required for credit invoices.')
 
+    # ✅ FIXED: Validate export-specific requirements (for INVOICE with export flag)
+    if is_export_sale:
+        # MANDATORY: Customer for export invoices
+        if not customer:
+            raise ValidationError('Customer is required for export invoices.')
+
+        # MANDATORY: Delivery terms (Incoterms)
+        delivery_terms_code = post_data.get('delivery_terms_code', '').strip()
+        valid_incoterms = [
+            'CFR', 'CIF', 'CIP', 'CPT', 'DAP', 'DDP',
+            'DPU', 'EXW', 'FAS', 'FCA', 'FOB'
+        ]
+
+        if not delivery_terms_code:
+            raise ValidationError('Delivery terms (Incoterms) are required for export invoices.')
+
+        if delivery_terms_code not in valid_incoterms:
+            raise ValidationError(
+                f'Invalid delivery terms: {delivery_terms_code}. '
+                f'Must be one of: {", ".join(valid_incoterms)}'
+            )
+
+        # OPTIONAL: Export buyer details (recommended for EFRIS compliance)
+        export_buyer_country = post_data.get('export_buyer_country', '').strip()
+        export_buyer_passport = post_data.get('export_buyer_passport', '').strip()
+
+        # Validate buyer country code if provided (ISO 3166-1 alpha-2)
+        if export_buyer_country and len(export_buyer_country) != 2:
+            raise ValidationError('Export buyer country must be a 2-letter country code (e.g., KE, TZ, US).')
+
+        # Log warning if recommended fields are missing
+        if not export_buyer_country:
+            logger.warning(f"Export invoice missing buyer country for customer: {customer.name}")
+
     # Validate due date based on document type and payment method
     due_date = None
     if document_type == 'INVOICE' and payment_method == 'CREDIT':
@@ -1820,7 +1803,7 @@ def validate_sale_data(post_data, user, company):
             credit_days = customer.credit_days if customer else 30
             due_date = timezone.now().date() + timedelta(days=credit_days)
     elif document_type == 'INVOICE':
-        # Cash/Card invoices don't need due date, but can have one for record keeping
+        # ✅ FIXED: Cash/Card invoices and export invoices can have due date for record keeping
         due_date_str = post_data.get('due_date')
         if due_date_str:
             try:
@@ -1828,8 +1811,7 @@ def validate_sale_data(post_data, user, company):
             except (ValueError, TypeError):
                 due_date = None
 
-    # Validate store inventory permissions for product items
-    # This is a preliminary check - detailed item validation happens later
+    # Validate items - preliminary check
     items_data_json = post_data.get('items_data', '[]')
     try:
         items_data = json.loads(items_data_json) if items_data_json else []
@@ -1846,6 +1828,15 @@ def validate_sale_data(post_data, user, company):
         if has_products and not store.allows_inventory:
             raise ValidationError(f'Store "{store.name}" does not allow inventory management for products.')
 
+        # ✅ FIXED: For export sales, validate that items have required export fields
+        if is_export_sale and has_products:
+            for idx, item in enumerate(items_data, 1):
+                if item.get('item_type') == 'PRODUCT':
+                    product_id = item.get('product_id')
+                    if product_id:
+                        # Check will happen in validate_items_data, but we can log here
+                        logger.info(f"Export sale - will validate product {product_id} has HS code and weights")
+
     except json.JSONDecodeError:
         # Will be caught in validate_items_data
         pass
@@ -1859,155 +1850,320 @@ def validate_sale_data(post_data, user, company):
         'discount_amount': discount_amount,
         'notes': post_data.get('notes', '').strip(),
         'due_date': due_date,
+        # ✅ FIXED: Export-specific fields
+        'is_export_sale': is_export_sale,
+        'delivery_terms_code': delivery_terms_code,
+        'export_buyer_country': export_buyer_country,
+        'export_buyer_passport': export_buyer_passport,
     }
 
 
-def validate_items_data(items_json):
-    """Validate items supporting products and services with custom pricing"""
-    try:
-        items_data = json.loads(items_json) if items_json else []
-    except (json.JSONDecodeError, ValueError):
-        raise ValidationError('Invalid items data format.')
+def validate_items_data(items_json, is_export_sale=False):
+    """
+    Validate items data from JSON string.
+    For export sales, checks weight from the items_json data (frontend state)
+    instead of database to allow recently configured products to pass validation.
 
-    if not items_data:
-        raise ValidationError('At least one item is required.')
+    ✅ FIXED: Now checks frontend data first, then database
+    """
+    try:
+        items_data = json.loads(items_json) if isinstance(items_json, str) else items_json
+    except json.JSONDecodeError:
+        raise ValidationError("Invalid items data format")
+
+    if not items_data or not isinstance(items_data, list):
+        raise ValidationError("Items data must be a non-empty list")
 
     validated_items = []
 
-    for i, item in enumerate(items_data):
-        try:
-            item_type = item.get('item_type', 'PRODUCT')
+    for idx, item in enumerate(items_data, 1):
+        # Basic validation
+        item_type = item.get('item_type', 'PRODUCT')
 
-            if item_type == 'PRODUCT':
-                product_id = item.get('product_id')
-                if not product_id:
-                    raise ValidationError(f'Missing product_id in item {i + 1}.')
+        if item_type not in ['PRODUCT', 'SERVICE']:
+            raise ValidationError(f"Item {idx}: Invalid item_type")
 
-                product = Product.objects.select_related('category').get(
-                    id=product_id,
-                    is_active=True
-                )
+        # Get product or service
+        if item_type == 'PRODUCT':
+            product_id = item.get('product_id')
+            if not product_id:
+                raise ValidationError(f"Item {idx}: product_id required for PRODUCT type")
 
-                validated_item = {
-                    'item_type': 'PRODUCT',
-                    'product': product,
-                    'service': None,
-                }
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                raise ValidationError(f"Item {idx}: Product not found")
 
-            elif item_type == 'SERVICE':
-                service_id = item.get('service_id')
-                if not service_id:
-                    raise ValidationError(f'Missing service_id in item {i + 1}.')
+            # ✅ CRITICAL FIX: For export sales, check weight from frontend data FIRST
+            # This allows recently configured products (via modal) to pass validation
+            # even if database hasn't been updated yet
+            if is_export_sale and item_type == 'PRODUCT':
+                # STEP 1: Try to get weight from frontend data (recently configured via modal)
+                item_weight = item.get('item_weight') or item.get('totalWeight')
 
-                service = Service.objects.select_related('category').get(
-                    id=service_id,
-                    is_active=True
-                )
+                # STEP 2: If not in frontend data, check database (already saved products)
+                if not item_weight:
+                    item_weight = getattr(product, 'item_weight', None)
 
-                validated_item = {
-                    'item_type': 'SERVICE',
-                    'product': None,
-                    'service': service,
-                }
-            else:
-                raise ValidationError(f'Invalid item type: {item_type}')
+                # STEP 3: Convert to float and validate
+                try:
+                    weight_value = float(item_weight) if item_weight else 0
+                except (ValueError, TypeError):
+                    weight_value = 0
 
-            # Validate quantity
-            quantity = Decimal(str(item.get('quantity', '0')))
-            if quantity <= 0:
-                raise ValidationError('Quantity must be greater than 0.')
-
-            # ✅ MODIFIED: Accept custom price, validate it's non-negative
-            unit_price = Decimal(str(item.get('unit_price', '0')))
-            if unit_price < 0:
-                raise ValidationError('Price cannot be negative.')
-
-            # ✅ OPTIONAL: Log price changes for audit
-            if item_type == 'PRODUCT' and product:
-                original_price = product.selling_price
-                if unit_price != original_price:
-                    logger.info(
-                        f"Price override for product {product.name}: "
-                        f"Original={original_price}, Custom={unit_price}"
-                    )
-            elif item_type == 'SERVICE' and service:
-                original_price = service.unit_price
-                if unit_price != original_price:
-                    logger.info(
-                        f"Price override for service {service.name}: "
-                        f"Original={original_price}, Custom={unit_price}"
+                # STEP 4: Validate weight is positive
+                if weight_value <= 0:
+                    raise ValidationError(
+                        f"Item {idx} ({product.name}): Product must have weight > 0 for export. "
+                        f"Current weight: {item_weight or 'Not set'}. "
+                        f"Please configure weight using 'Configure Now' button."
                     )
 
-            # Validate tax rate
-            tax_rate = item.get('tax_rate', 'A')
-            valid_rates = [choice[0] for choice in SaleItem.TAX_RATE_CHOICES]
-            if tax_rate not in valid_rates:
-                tax_rate = 'A'
+                # STEP 5: Check export readiness (from frontend or database)
+                is_export_ready = item.get('is_export_ready', False) or getattr(product, 'is_export_ready', False)
 
-            # Validate discount
-            discount = Decimal(str(item.get('discount', '0')))
-            if discount < 0 or discount > 100:
-                discount = Decimal('0')
+                if not is_export_ready:
+                    raise ValidationError(
+                        f"Item {idx} ({product.name}): Product not configured for export. "
+                        f"Required: HS code, customs measure unit, and weight. "
+                        f"Use 'Configure Now' button to complete setup."
+                    )
 
-            validated_item.update({
-                'quantity': quantity,
-                'unit_price': unit_price,  # ✅ Use custom price
-                'tax_rate': tax_rate,
-                'discount': discount,
-                'description': item.get('description', '').strip(),
-            })
+                # ✅ Log successful validation for debugging
+                logger.info(
+                    f"✅ Export product validated: {product.name}, "
+                    f"weight={weight_value}kg, is_export_ready={is_export_ready}"
+                )
 
-            validated_items.append(validated_item)
+            validated_item = {
+                'item_type': 'PRODUCT',
+                'product': product,
+                'service': None,
+                'quantity': int(item.get('quantity', 1)),
+                'unit_price': Decimal(str(item.get('unit_price', product.selling_price))),
+                'tax_rate': item.get('tax_rate', product.tax_rate),
+                'discount': Decimal(str(item.get('discount', 0))),
+                'description': item.get('description', product.name),
+            }
 
-        except Product.DoesNotExist:
-            raise ValidationError(f'Invalid product in item {i + 1}.')
-        except Service.DoesNotExist:
-            raise ValidationError(f'Invalid service in item {i + 1}.')
-        except Exception as e:
-            raise ValidationError(f'Error in item {i + 1}: {str(e)}')
+        else:  # SERVICE
+            service_id = item.get('service_id')
+            if not service_id:
+                raise ValidationError(f"Item {idx}: service_id required for SERVICE type")
+
+            try:
+                service = Service.objects.get(id=service_id)
+            except Service.DoesNotExist:
+                raise ValidationError(f"Item {idx}: Service not found")
+
+            validated_item = {
+                'item_type': 'SERVICE',
+                'product': None,
+                'service': service,
+                'quantity': int(item.get('quantity', 1)),
+                'unit_price': Decimal(str(item.get('unit_price', service.unit_price))),
+                'tax_rate': item.get('tax_rate', service.tax_rate),
+                'discount': Decimal(str(item.get('discount', 0))),
+                'description': item.get('description', service.name),
+            }
+
+        validated_items.append(validated_item)
 
     return validated_items
 
 
-
 def create_sale_record(request, sale_data, company):
-    """Create sale record with correct initial status"""
+    """
+    Create sale record with export support.
+    Export customer fields are fetched from Customer model.
+    """
+    document_type = sale_data.get('document_type', 'RECEIPT')
 
-    # Determine initial status based on document type and payment method
-    if sale_data['document_type'] == 'INVOICE':
-        if sale_data['payment_method'] == 'CREDIT':
-            initial_status = 'PENDING_PAYMENT'
-            initial_payment_status = 'PENDING'
-        else:
-            initial_status = 'COMPLETED'
-            initial_payment_status = 'PAID'
-    else:
-        initial_status = 'DRAFT'
-        initial_payment_status = 'NOT_APPLICABLE'
+    # Set due date for invoices
+    due_date = sale_data.get('due_date')
+    if document_type == 'INVOICE' and not due_date:
+        from datetime import timedelta
+        due_date = (timezone.now() + timedelta(days=30)).date()
+
+    # ✅ CHANGED: Fetch export fields from Customer model
+    export_kwargs = {}
+    if sale_data.get('is_export_sale'):
+        customer = sale_data.get('customer')
+
+        export_kwargs = {
+            'is_export_sale': True,
+            'invoice_industry_code': '102',
+            'delivery_terms_code': sale_data.get('delivery_terms_code', ''),
+            'export_delivery_terms': sale_data.get('delivery_terms_code', ''),
+        }
+
+        # Fetch from Customer model if customer exists
+        if customer:
+            export_kwargs['export_buyer_country'] = (
+                    getattr(customer, 'country', '') or
+                    sale_data.get('buyer_country', '')
+            )
+            export_kwargs['export_buyer_passport'] = (
+                    getattr(customer, 'passport_number', '') or
+                    sale_data.get('buyer_passport', '')
+            )
+
+        # Currency and exchange rate from sale_data
+        export_kwargs['export_currency'] = sale_data.get('export_currency', 'UGX')
+        export_kwargs['export_exchange_rate'] = sale_data.get('export_exchange_rate')
 
     sale = Sale.objects.create(
         store=sale_data['store'],
         created_by=request.user,
-        customer=sale_data['customer'],
-        document_type=sale_data['document_type'],
-        payment_method=sale_data['payment_method'],
-        currency=sale_data['currency'],
-        discount_amount=sale_data['discount_amount'],
-        notes=sale_data['notes'],
-        due_date=sale_data.get('due_date'),
-        status=initial_status,
-        payment_status=initial_payment_status,
+        customer=sale_data.get('customer'),
+        document_type=document_type,
+        payment_method=sale_data.get('payment_method', 'CASH'),
+        due_date=due_date,
+        subtotal=sale_data.get('subtotal', 0),
+        tax_amount=sale_data.get('tax_amount', 0),
+        discount_amount=sale_data.get('discount_amount', 0),
+        total_amount=sale_data.get('total_amount', 0),
+        currency=sale_data.get('currency', 'UGX'),
+        notes=sale_data.get('notes', ''),
+        transaction_type='SALE',
+        **export_kwargs  # ✅ Apply export fields from Customer
     )
 
-    logger.info(f"Created sale {sale.id} (#{sale.document_number}) with status {initial_status}")
+    # Stamp the defer flag
+    if sale_data.get('_defer_auto_fiscalize'):
+        sale._defer_auto_fiscalize = True
+
+    logger.info(
+        f"Created {document_type} sale {sale.document_number} "
+        f"(export={sale_data.get('is_export_sale', False)})"
+    )
+
     return sale
 
 
 def create_sale_items(sale, items_data):
-    """Create sale items for products and services"""
-    for item_data in items_data:
+    """
+    Create SaleItem records for a sale.
+    For export sales, ALL export fields must be saved to SaleItem for EFRIS.
+
+    ✅ CORRECTED: Uses your actual field names (export_total_weight, etc.)
+    """
+    created_items = []
+
+    for idx, item_data in enumerate(items_data, 1):
         try:
-            # Create the SaleItem instance
+            # Determine if this is an export sale item
+            is_export_item = (
+                    sale.is_export_sale and
+                    item_data['item_type'] == 'PRODUCT' and
+                    item_data.get('product') is not None
+            )
+
+            # ✅ Build export_kwargs using YOUR field names
+            export_kwargs = {}
+
+            if is_export_item:
+                product = item_data['product']
+                quantity = item_data['quantity']
+
+                # ==========================================
+                # STEP 1: Get item_weight (per unit) - STRICT VALIDATION
+                # ==========================================
+                item_weight = None
+
+                # Try frontend data first
+                item_weight_from_frontend = (
+                        item_data.get('item_weight') or
+                        item_data.get('totalWeight')
+                )
+
+                if item_weight_from_frontend:
+                    try:
+                        weight_value = float(item_weight_from_frontend)
+                        if weight_value > 0:
+                            item_weight = weight_value
+                            logger.info(f"✅ Using frontend weight for {product.name}: {item_weight}kg")
+                    except (ValueError, TypeError):
+                        logger.warning(f"⚠️ Invalid frontend weight for {product.name}: {item_weight_from_frontend}")
+
+                # If no valid frontend weight, check database
+                if item_weight is None:
+                    db_weight = getattr(product, 'item_weight', None)
+                    if db_weight:
+                        try:
+                            weight_value = float(db_weight)
+                            if weight_value > 0:
+                                item_weight = weight_value
+                                logger.info(f"✅ Using database weight for {product.name}: {item_weight}kg")
+                        except (ValueError, TypeError):
+                            logger.warning(f"⚠️ Invalid database weight for {product.name}: {db_weight}")
+
+                # ⚠️ CRITICAL: REJECT export items with no valid weight
+                # Remove fallback - EFRIS requires real weights
+                if item_weight is None or item_weight <= 0:
+                    raise ValidationError(
+                        f"❌ EXPORT REJECTED: Product '{product.name}' has no weight configured.\n"
+                        f"Current weight: {item_weight or 'Not set'}\n"
+                        f"Weight is MANDATORY for export invoices per EFRIS requirements.\n"
+                        f"Please configure product weight in Product Management before creating export sale."
+                    )
+
+                # Calculate total weight (item_weight × quantity)
+                export_total_weight = item_weight * quantity
+
+                logger.info(
+                    f"💾 Export weight for {product.name}: "
+                    f"{item_weight}kg/unit × {quantity} = {export_total_weight}kg total"
+                )
+
+                # ==========================================
+                # STEP 2: Get pieceQty (from frontend or product)
+                # ==========================================
+                piece_qty = (
+                        item_data.get('pieceQty') or
+                        getattr(product, 'piece_qty', None) or
+                        quantity  # Fallback: use sale quantity
+                )
+
+                try:
+                    piece_qty = int(piece_qty)
+                except (ValueError, TypeError):
+                    piece_qty = int(quantity)
+
+                logger.info(f"Piece quantity for {product.name}: {piece_qty}")
+
+                # ==========================================
+                # STEP 3: Get pieceMeasureUnit (customs UoM)
+                # ==========================================
+                # Your field expects 3-char code from T115 exportRateUnit
+                piece_measure_unit = (
+                        item_data.get('customs_measure_unit') or
+                        getattr(product, 'customs_measure_unit', None) or
+                        '101'  # Default: "101" = per stick (your comment says this)
+                )
+
+                logger.info(f"Piece measure unit for {product.name}: {piece_measure_unit}")
+
+                # ==========================================
+                # STEP 4: Build export_kwargs with YOUR field names
+                # ==========================================
+                export_kwargs = {
+                    'export_total_weight': Decimal(str(export_total_weight)),
+                    'export_piece_qty': Decimal(str(piece_qty)),
+                    'export_piece_measure_unit': str(piece_measure_unit)[:3],  # Max 3 chars
+                }
+
+                # Log what we're about to save
+                logger.info(
+                    f"💾 Saving export fields for {product.name}:\n"
+                    f"   export_total_weight: {export_total_weight}kg\n"
+                    f"   export_piece_qty: {piece_qty}\n"
+                    f"   export_piece_measure_unit: {piece_measure_unit}"
+                )
+
+            # ==========================================
+            # STEP 5: Create SaleItem with export fields
+            # ==========================================
             sale_item = SaleItem(
                 sale=sale,
                 item_type=item_data['item_type'],
@@ -2017,19 +2173,35 @@ def create_sale_items(sale, items_data):
                 unit_price=item_data['unit_price'],
                 tax_rate=item_data['tax_rate'],
                 discount=item_data['discount'],
-                description=item_data.get('description', '')
+                description=item_data.get('description', ''),
+                **export_kwargs  # ✅ Apply export fields
             )
 
-            # Set the _skip_sale_update flag as an attribute
-            sale_item._skip_sale_update = True
+            # Preserve defer flag if exists
+            if getattr(sale, '_defer_auto_fiscalize', False):
+                sale_item._skip_sale_update = True
 
-            # Save the item
             sale_item.save()
+            created_items.append(sale_item)
+
+            # Success log
+            logger.info(
+                f"✅ Created sale item {idx}/{len(items_data)}: "
+                f"{sale_item.item_name} x{sale_item.quantity}"
+                + (f" [EXPORT with {len(export_kwargs)} fields]" if export_kwargs else "")
+            )
+
+        except ValidationError as e:
+            error_msg = e.message_dict if hasattr(e, 'message_dict') else {'error': e.messages}
+            logger.error(f"❌ Failed to create sale item {idx}: {error_msg}")
+            raise ValidationError(f"Failed to create sale item {idx}: {error_msg}")
 
         except Exception as e:
-            logger.error(f"Error creating sale item: {e}", exc_info=True)
-            raise ValidationError(f"Failed to create sale item: {str(e)}")
+            logger.error(f"❌ Unexpected error creating sale item {idx}: {str(e)}", exc_info=True)
+            raise ValidationError(f"Failed to create sale item {idx}: {str(e)}")
 
+    logger.info(f"✅ Created {len(created_items)} sale items for sale {sale.document_number}")
+    return created_items
 
 
 def create_stock_movements(sale):

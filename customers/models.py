@@ -52,7 +52,8 @@ class Customer(models.Model,EFRISCustomerMixin):
     phone = models.CharField(
         max_length=20,
         validators=[RegexValidator(r'^\+?[0-9]+$', 'Enter a valid phone number.')],
-        verbose_name=_("Phone Number")
+        verbose_name=_("Phone Number"),
+        blank=True,null=True
     )
     tin = models.CharField(
         max_length=20,

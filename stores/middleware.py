@@ -1,79 +1,65 @@
+# stores/middleware.py - FIXED WITH SCHEMA AWARENESS
+"""
+Store middleware with schema awareness
+✅ Checks tenant exists before accessing
+✅ Handles None tenant gracefully
+"""
 from django.utils import timezone
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.utils.deprecation import MiddlewareMixin
-from .utils import (
-    get_device_session_from_request,
-    detect_suspicious_activity,
-    get_client_ip
-)
+from django.db import connection
 from django_tenants.utils import get_tenant
 from django.urls import reverse
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class StoreAccessMiddleware(MiddlewareMixin):
     """
     Middleware to enforce store access control and set current store in request
+    ✅ FIXED: Checks tenant exists before accessing
     """
 
-    # Define URLs that should be exempt from store access checks
     EXEMPT_URLS = [
-        'no_store_access',  # Store no access page
-        'check_access',  # Store access check API
-        'select_store',  # Store selection page
-        'login',  # Login page
-        'logout',  # Logout page
-        'custom_logout',  # Custom logout
-        'password_reset',  # Password reset
-        'set_language',  # Language switcher
+        'no_store_access',
+        'check_access',
+        'select_store',
+        'login',
+        'logout',
+        'custom_logout',
+        'password_reset',
+        'set_language',
     ]
 
-    def is_exempt_url(self, request):
-        """Check if the current URL should be exempt from store access checks"""
-        # Get the URL name from the request
-        try:
-            resolver_match = request.resolver_match
-            if resolver_match:
-                url_name = resolver_match.url_name
-                return url_name in self.EXEMPT_URLS
-        except:
-            pass
-
-        # Check by path patterns
-        exempt_paths = [
-            '/accounts/login/',
-            '/accounts/logout/',
-            '/en/accounts/login/',
-            '/en/accounts/logout/',
-            '/stores/no-access/',  # Your no_store_access URL path
-            '/en/stores/no-access/',
-            '/stores/check-access/',
-            '/en/stores/check-access/',
-            '/api/',  # API endpoints
-            '/admin/',  # Admin site
-            '/static/',  # Static files
-            '/media/',  # Media files
-            '/i18n/',  # Django i18n
-        ]
-
-        for path in exempt_paths:
-            if request.path.startswith(path):
-                return True
-
-        return False
-
     def process_request(self, request):
-        tenant = get_tenant(request)
+        # ✅ CHECK SCHEMA FIRST
+        schema_name = getattr(connection, 'schema_name', 'public')
 
-        # 🔒 Skip public schema entirely
-        if tenant.schema_name == "public":
+        # Skip if in public schema
+        if schema_name == 'public':
+            return None
+
+        # ✅ CHECK TENANT EXISTS
+        try:
+            tenant = get_tenant(request)
+        except:
+            tenant = None
+
+        # Skip if no tenant
+        if not tenant:
+            return None
+
+        # Skip if tenant is public
+        if hasattr(tenant, 'schema_name') and tenant.schema_name == "public":
             return None
 
         # Skip unauthenticated users
         if not request.user.is_authenticated:
             return None
 
-        # Skip SaaS admin safely
+        # Skip SaaS admin
         if getattr(request.user, "is_saas_admin", False):
             return None
 
@@ -87,9 +73,7 @@ class StoreAccessMiddleware(MiddlewareMixin):
         # Check if user has access to any store
         has_store_access = self.check_store_access(request.user, request)
 
-        # If user doesn't have ANY store access, redirect to no_store_access
         if not has_store_access:
-            # Don't redirect if we're already on the no_access page
             if not self.is_exempt_url(request):
                 messages.error(
                     request,
@@ -98,101 +82,95 @@ class StoreAccessMiddleware(MiddlewareMixin):
                 return redirect("stores:no_store_access")
             return None
 
-        # User has store access, now check if they have a current store selected
+        # User has store access, check current store
         from stores.models import Store
 
         if current_store_id:
             try:
                 store = Store.objects.get(id=current_store_id, is_active=True)
 
-                # Check if user can access this specific store
                 if not self.can_access_store(request.user, store):
                     messages.warning(request, "You no longer have access to that store.")
                     request.session.pop("current_store_id", None)
-                    # Redirect to store selection page
                     return redirect("stores:select_store")
 
                 request.current_store = store
 
             except Store.DoesNotExist:
                 request.session.pop("current_store_id", None)
-                # Redirect to store selection page
                 return redirect("stores:select_store")
         else:
-            # User has store access but no store selected
-            # Try to get a default or first accessible store
             default_store = self.get_default_store(request.user, request)
 
             if default_store:
                 request.session["current_store_id"] = default_store.id
                 request.current_store = default_store
             else:
-                # This shouldn't happen if has_store_access is True, but just in case
-                messages.error(
-                    request,
-                    "Please select a store to continue."
-                )
+                messages.error(request, "Please select a store to continue.")
                 return redirect("stores:select_store")
 
         return None
 
+    def is_exempt_url(self, request):
+        try:
+            resolver_match = request.resolver_match
+            if resolver_match:
+                url_name = resolver_match.url_name
+                if url_name in self.EXEMPT_URLS:
+                    return True
+        except:
+            pass
+
+        exempt_paths = [
+            '/accounts/login/',
+            '/accounts/logout/',
+            '/en/accounts/login/',
+            '/en/accounts/logout/',
+            '/stores/no-access/',
+            '/en/stores/no-access/',
+            '/stores/check-access/',
+            '/en/stores/check-access/',
+            '/api/',
+            '/admin/',
+            '/static/',
+            '/media/',
+            '/i18n/',
+        ]
+
+        return any(request.path.startswith(path) for path in exempt_paths)
+
     def check_store_access(self, user, request):
-        """
-        Check if user has access to any active store
-        """
         from stores.models import Store, StoreAccess
 
-        # Check through multiple access methods
         if hasattr(user, 'stores') and user.stores.filter(is_active=True).exists():
             return True
 
         if hasattr(user, 'managed_stores') and user.managed_stores.filter(is_active=True).exists():
             return True
 
-        # Check store access permissions
-        if StoreAccess.objects.filter(
-                user=user,
-                is_active=True,
-                store__is_active=True
-        ).exists():
+        if StoreAccess.objects.filter(user=user, is_active=True, store__is_active=True).exists():
             return True
 
-        # Check company-wide access
         if hasattr(request, 'company') or hasattr(user, 'company'):
             company = getattr(request, 'company', getattr(user, 'company', None))
             if company:
-                if Store.objects.filter(
-                        company=company,
-                        is_active=True,
-                        accessible_by_all=True
-                ).exists():
+                if Store.objects.filter(company=company, is_active=True, accessible_by_all=True).exists():
                     return True
 
         return False
 
     def can_access_store(self, user, store):
-        """
-        Check if user can access a specific store
-        """
         from stores.models import StoreAccess
 
-        # Direct store assignment
         if hasattr(user, 'stores') and store in user.stores.all():
             return True
 
-        # Store manager assignment
         if hasattr(user, 'managed_stores') and store in user.managed_stores.all():
             return True
 
-        # Store access permissions
-        if StoreAccess.objects.filter(
-                user=user,
-                store=store,
-                is_active=True
-        ).exists():
+        if StoreAccess.objects.filter(user=user, store=store, is_active=True).exists():
             return True
 
-        # Company-wide access
         if hasattr(user, 'company') and user.company:
             if store.company == user.company and store.accessible_by_all:
                 return True
@@ -200,17 +178,12 @@ class StoreAccessMiddleware(MiddlewareMixin):
         return False
 
     def get_default_store(self, user, request):
-        """
-        Get a default store for the user
-        """
-        from stores.models import Store
+        from stores.models import Store, StoreAccess
 
-        # Try user's default store property
         default_store = getattr(user, 'default_store', None)
         if default_store and self.can_access_store(user, default_store):
             return default_store
 
-        # Try to find any accessible store
         if hasattr(user, 'stores'):
             store = user.stores.filter(is_active=True).first()
             if store:
@@ -221,8 +194,6 @@ class StoreAccessMiddleware(MiddlewareMixin):
             if store:
                 return store
 
-        # Check store access permissions
-        from stores.models import StoreAccess
         access = StoreAccess.objects.filter(
             user=user,
             is_active=True,
@@ -232,7 +203,6 @@ class StoreAccessMiddleware(MiddlewareMixin):
         if access:
             return access.store
 
-        # Company-wide accessible stores
         if hasattr(request, 'company') or hasattr(user, 'company'):
             company = getattr(request, 'company', getattr(user, 'company', None))
             if company:
@@ -246,118 +216,105 @@ class StoreAccessMiddleware(MiddlewareMixin):
 
         return None
 
+
 class DeviceSessionMiddleware(MiddlewareMixin):
-    """
-    Middleware to track and manage device sessions
-    """
+    """Track and manage device sessions"""
 
     def process_request(self, request):
-        """
-        Check and update device session on each request
-        """
+        # ✅ CHECK SCHEMA
+        schema_name = getattr(connection, 'schema_name', 'public')
+        if schema_name == 'public':
+            return None
+
         if not request.user.is_authenticated:
             return None
 
-        # Skip for admin requests
         if request.path.startswith('/admin/'):
             return None
 
-        # Get current device session
-        session = get_device_session_from_request(request)
+        try:
+            from .utils import get_device_session_from_request, get_client_ip
 
-        if session:
-            # Check if session is expired
-            if session.is_expired:
-                session.terminate(reason='EXPIRED')
-                # Clear session data
-                request.session.pop('device_session_id', None)
-                request.session.pop('device_fingerprint', None)
-                return None
+            session = get_device_session_from_request(request)
 
-            # Update last activity
-            session.last_activity_at = timezone.now()
+            if session:
+                if session.is_expired:
+                    session.terminate(reason='EXPIRED')
+                    request.session.pop('device_session_id', None)
+                    request.session.pop('device_fingerprint', None)
+                    return None
 
-            # Check for IP change (potential session hijacking)
-            current_ip = get_client_ip(request)
-            if session.ip_address != current_ip:
-                from .models import SecurityAlert
+                session.last_activity_at = timezone.now()
 
-                # ✅ FIX: Safely get store from session
-                store = getattr(session, 'store', None)
+                current_ip = get_client_ip(request)
+                if session.ip_address != current_ip:
+                    from .models import SecurityAlert
 
-                if store:  # Only create alert if store exists
-                    SecurityAlert.objects.create(
-                        user=request.user,
-                        store=store,
-                        session=session,
-                        device=getattr(session, 'store_device', None),
-                        alert_type='IP_CHANGE',
-                        severity='MEDIUM',
-                        title=f'IP address changed during session for {request.user.get_full_name()}',
-                        description=f'Session IP changed from {session.ip_address} to {current_ip}',
-                        ip_address=current_ip,
-                        alert_data={
-                            'original_ip': session.ip_address,
-                            'new_ip': current_ip,
-                            'session_age': str(timezone.now() - session.created_at),
-                        }
-                    )
+                    store = getattr(session, 'store', None)
 
-                # Update session IP
-                session.ip_address = current_ip
-                session.security_alerts_count += 1
+                    if store:
+                        SecurityAlert.objects.create(
+                            user=request.user,
+                            store=store,
+                            session=session,
+                            device=getattr(session, 'store_device', None),
+                            alert_type='IP_CHANGE',
+                            severity='MEDIUM',
+                            title=f'IP changed for {request.user.get_full_name()}',
+                            description=f'IP changed from {session.ip_address} to {current_ip}',
+                            ip_address=current_ip,
+                            alert_data={
+                                'original_ip': session.ip_address,
+                                'new_ip': current_ip,
+                            }
+                        )
 
-            session.save(update_fields=['last_activity_at', 'ip_address', 'security_alerts_count'])
+                    session.ip_address = current_ip
+                    session.security_alerts_count += 1
 
-            # Attach session to request for easy access
-            request.device_session = session
+                session.save(update_fields=['last_activity_at', 'ip_address', 'security_alerts_count'])
+                request.device_session = session
+
+        except Exception as e:
+            logger.error(f"Error in DeviceSessionMiddleware: {e}")
 
         return None
 
 
 class SessionActivityMiddleware(MiddlewareMixin):
-    """
-    Middleware to detect suspicious activity patterns
-    """
+    """Detect suspicious activity patterns"""
 
     def process_request(self, request):
-        """
-        Check for suspicious activity on each request
-        """
+        # ✅ CHECK SCHEMA
+        schema_name = getattr(connection, 'schema_name', 'public')
+        if schema_name == 'public':
+            return None
+
         if not request.user.is_authenticated:
             return None
 
-        # Skip for admin and static requests
         if request.path.startswith('/admin/') or request.path.startswith('/static/'):
             return None
 
-        # ✅ FIX: Safely get store from multiple sources
-        store = getattr(request, 'store', None)
+        try:
+            store = getattr(request, 'store', None) or getattr(request, 'current_store', None)
 
-        if not store:
-            store = getattr(request, 'current_store', None)
-
-        if not store and hasattr(request.user, 'company'):
-            try:
+            if not store and hasattr(request.user, 'company'):
                 from stores.models import Store
                 store = Store.objects.filter(
                     company=request.user.company,
                     is_active=True
                 ).first()
-            except Exception:
-                pass
 
-        if not store:
-            return None
+            if not store:
+                return None
 
-        # Run suspicious activity detection periodically (not on every request)
-        # Check if we should run detection (stored in session)
-        last_check = request.session.get('last_suspicious_check')
-        now = timezone.now().timestamp()
+            last_check = request.session.get('last_suspicious_check')
+            now = timezone.now().timestamp()
 
-        # Run check every 5 minutes
-        if not last_check or (now - last_check) > 300:
-            try:
+            if not last_check or (now - last_check) > 300:
+                from .utils import detect_suspicious_activity, get_device_session_from_request
+
                 is_suspicious, reasons = detect_suspicious_activity(
                     request.user,
                     store,
@@ -365,41 +322,36 @@ class SessionActivityMiddleware(MiddlewareMixin):
                 )
 
                 if is_suspicious:
-                    # Mark current session as suspicious if it exists
                     session = get_device_session_from_request(request)
                     if session and not session.is_suspicious:
                         session.flag_suspicious('. '.join(reasons))
 
-                # Update last check time
                 request.session['last_suspicious_check'] = now
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Error detecting suspicious activity: {e}")
+
+        except Exception as e:
+            logger.error(f"Error in SessionActivityMiddleware: {e}")
 
         return None
 
 
 class ConcurrentSessionLimitMiddleware(MiddlewareMixin):
-    """
-    Middleware to enforce concurrent session limits
-    """
+    """Enforce concurrent session limits"""
 
     MAX_CONCURRENT_SESSIONS = 3
 
     def process_request(self, request):
-        """
-        Check concurrent session limit
-        """
+        # ✅ CHECK SCHEMA
+        schema_name = getattr(connection, 'schema_name', 'public')
+        if schema_name == 'public':
+            return None
+
         if not request.user.is_authenticated:
             return None
 
-        # Skip for admin requests
         if request.path.startswith('/admin/'):
             return None
 
         try:
-            # Get active sessions count
             from .models import UserDeviceSession
 
             active_count = UserDeviceSession.objects.filter(
@@ -408,38 +360,27 @@ class ConcurrentSessionLimitMiddleware(MiddlewareMixin):
                 expires_at__gt=timezone.now()
             ).count()
 
-            # If over limit, terminate oldest sessions
             if active_count > self.MAX_CONCURRENT_SESSIONS:
                 from .utils import log_device_action
 
-                # Get oldest sessions to terminate
                 oldest_sessions = UserDeviceSession.objects.filter(
                     user=request.user,
                     is_active=True,
                     expires_at__gt=timezone.now()
                 ).order_by('created_at')[:(active_count - self.MAX_CONCURRENT_SESSIONS)]
 
-                # ✅ FIX: Safely get store from multiple sources
-                store = getattr(request, 'store', None)
-
-                if not store:
-                    store = getattr(request, 'current_store', None)
+                store = getattr(request, 'store', None) or getattr(request, 'current_store', None)
 
                 if not store and hasattr(request.user, 'company'):
-                    try:
-                        from stores.models import Store
-                        store = Store.objects.filter(
-                            company=request.user.company,
-                            is_active=True
-                        ).first()
-                    except Exception:
-                        pass
+                    from stores.models import Store
+                    store = Store.objects.filter(
+                        company=request.user.company,
+                        is_active=True
+                    ).first()
 
                 for session in oldest_sessions:
-                    # ✅ FIX: Use store from session if request store not available
                     session_store = getattr(session, 'store', None) or store
 
-                    # Log the termination only if we have a store
                     if session_store:
                         try:
                             log_device_action(
@@ -449,20 +390,73 @@ class ConcurrentSessionLimitMiddleware(MiddlewareMixin):
                                 device=getattr(session, 'store_device', None),
                                 session=session,
                                 success=True,
-                                reason='Concurrent session limit exceeded',
-                                terminated_sessions=active_count
+                                reason='Concurrent session limit exceeded'
                             )
                         except Exception as e:
-                            import logging
-                            logger = logging.getLogger(__name__)
-                            logger.error(f"Error logging session termination: {e}")
+                            logger.error(f"Error logging termination: {e}")
 
-                    # Terminate session regardless
                     session.terminate(reason='FORCE_CLOSED')
 
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Error in ConcurrentSessionLimitMiddleware: {e}")
+
+        return None
+
+
+class StoreDetectionMiddleware(MiddlewareMixin):
+    """
+    Detect and attach current store to request
+    ✅ FIXED: Schema-aware
+    """
+
+    def process_request(self, request):
+        # ✅ CHECK SCHEMA
+        schema_name = getattr(connection, 'schema_name', 'public')
+        if schema_name == 'public':
+            return None
+
+        store = None
+
+        try:
+            from stores.models import Store
+
+            # Method 1: From URL parameter
+            store_id = request.GET.get('store_id') or request.POST.get('store_id')
+            if store_id:
+                try:
+                    store = Store.objects.select_related('company').get(id=store_id, is_active=True)
+                except (Store.DoesNotExist, ValueError):
+                    pass
+
+            # Method 2: From session
+            if not store and request.session.get('current_store_id'):
+                try:
+                    store = Store.objects.select_related('company').get(
+                        id=request.session['current_store_id'],
+                        is_active=True
+                    )
+                except Store.DoesNotExist:
+                    del request.session['current_store_id']
+
+            # Method 3: User's default store
+            if not store and request.user.is_authenticated:
+                store = getattr(request.user, 'default_store', None)
+
+            # Method 4: Main store from tenant
+            if not store and hasattr(request, 'tenant') and request.tenant:
+                store = Store.objects.filter(
+                    company=request.tenant,
+                    is_main_branch=True,
+                    is_active=True
+                ).first()
+
+            # Attach to request
+            request.current_store = store
+            request.store = store
+            request.current_branch = store
+            request.branch = store
+
+        except Exception as e:
+            logger.error(f"Error in StoreDetectionMiddleware: {e}")
 
         return None

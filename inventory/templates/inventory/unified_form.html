@@ -127,7 +127,36 @@
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         animation: slideDown 0.3s ease-out;
     }
+     /* Export field highlighting */
+    .export-field {
+        border-left: 3px solid #17a2b8;
+    }
 
+    .export-required {
+        display: none;
+    }
+
+    /* Show required indicators when export is enabled */
+    #id_is_export_product:checked ~ * .export-required {
+        display: inline;
+    }
+
+    /* Highlight export section when enabled */
+    #id_is_export_product:checked ~ .card {
+        border-color: #17a2b8;
+        box-shadow: 0 0 10px rgba(23, 162, 184, 0.2);
+    }
+
+    /* Piece unit fields styling */
+    #pieceUnitFields {
+        border-left: 3px solid #ffc107;
+        padding-left: 15px;
+        margin-top: 15px;
+    }
+
+    [data-theme="dark"] .export-field {
+        border-left-color: #20c997;
+    }
     .efris-info-card.show {
         display: block;
     }
@@ -938,6 +967,250 @@
                                 </div>
                             </div>
                             {% endif %}
+                            {% if efris_enabled %}
+                            <!-- EFRIS Advanced Configuration -->
+                            <div class="row mb-4">
+                                <div class="col-12">
+                                    <h6 class="form-section-header">
+                                        <i class="fas fa-cogs"></i> EFRIS Advanced Configuration
+                                    </h6>
+                                </div>
+
+                                <div class="col-12 mb-3">
+                                    <div class="card nash">
+                                        <div class="card-header">
+                                            <h6 class="mb-0">
+                                                <i class="fas fa-balance-scale"></i> Alternative Measurement Units (Piece Unit)
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-md-12 mb-3">
+                                                    <div class="form-check form-switch">
+                                                        {{ form.efris_has_piece_unit }}
+                                                        <label class="form-check-label" for="{{ form.efris_has_piece_unit.id_for_label }}">
+                                                            <strong>Enable Piece Unit Measurement</strong>
+                                                        </label>
+                                                    </div>
+                                                    <small class="form-text text-muted">
+                                                        Enable if product has alternative measurement
+                                                        (e.g., sold by stick but also measured in kg)
+                                                    </small>
+                                                    {% if form.efris_has_piece_unit.errors %}
+                                                        <div class="invalid-feedback d-block">{{ form.efris_has_piece_unit.errors.0 }}</div>
+                                                    {% endif %}
+                                                </div>
+
+                                                <!-- Piece Unit Fields (shown when enabled) -->
+                                                <div id="pieceUnitFields" style="display: none;">
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="{{ form.efris_piece_measure_unit.id_for_label }}" class="form-label">
+                                                            Piece Measure Unit <span class="text-danger">*</span>
+                                                        </label>
+                                                        {{ form.efris_piece_measure_unit }}
+                                                        <small class="form-text text-muted">
+                                                            Alternative unit (MANDATORY when piece unit enabled)
+                                                        </small>
+                                                        {% if form.efris_piece_measure_unit.errors %}
+                                                            <div class="invalid-feedback d-block">{{ form.efris_piece_measure_unit.errors.0 }}</div>
+                                                        {% endif %}
+                                                    </div>
+
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="{{ form.efris_piece_unit_price.id_for_label }}" class="form-label">
+                                                            Piece Unit Price <span class="text-danger">*</span>
+                                                        </label>
+                                                        <div class="input-group">
+                                                            <span class="input-group-text">UGX</span>
+                                                            {{ form.efris_piece_unit_price }}
+                                                        </div>
+                                                        {% if form.efris_piece_unit_price.errors %}
+                                                            <div class="invalid-feedback d-block">{{ form.efris_piece_unit_price.errors.0 }}</div>
+                                                        {% endif %}
+                                                    </div>
+
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="{{ form.efris_package_scaled_value.id_for_label }}" class="form-label">
+                                                            Package Scaled Value
+                                                        </label>
+                                                        {{ form.efris_package_scaled_value }}
+                                                        <small class="form-text text-muted">
+                                                            Package scaling factor (usually 1)
+                                                        </small>
+                                                        {% if form.efris_package_scaled_value.errors %}
+                                                            <div class="invalid-feedback d-block">{{ form.efris_package_scaled_value.errors.0 }}</div>
+                                                        {% endif %}
+                                                    </div>
+
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="{{ form.efris_piece_scaled_value.id_for_label }}" class="form-label">
+                                                            Piece Scaled Value
+                                                        </label>
+                                                        {{ form.efris_piece_scaled_value }}
+                                                        <small class="form-text text-muted">
+                                                            Piece scaling factor (usually 1)
+                                                        </small>
+                                                        {% if form.efris_piece_scaled_value.errors %}
+                                                            <div class="invalid-feedback d-block">{{ form.efris_piece_scaled_value.errors.0 }}</div>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+
+                                                <!-- Other Units Toggle -->
+                                                <div class="col-md-12 mb-3">
+                                                    <div class="form-check form-switch">
+                                                        {{ form.efris_has_other_units }}
+                                                        <label class="form-check-label" for="{{ form.efris_has_other_units.id_for_label }}">
+                                                            <strong>Has Other Units</strong>
+                                                        </label>
+                                                    </div>
+                                                    <small class="form-text text-muted">
+                                                        Product has additional alternative measurement units
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <!-- ✅ EXPORT CONFIGURATION SECTION -->
+                            <div class="row mb-4">
+                                <div class="col-12">
+                                    <h6 class="form-section-header">
+                                        <i class="fas fa-globe"></i> Export Configuration
+                                    </h6>
+                                </div>
+
+                                <div class="col-12 mb-3">
+                                    <div class="card nash">
+                                        <div class="card-header">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <h6 class="mb-0">
+                                                    <i class="fas fa-ship"></i> Export & Customs Information
+                                                </h6>
+                                                <div class="form-check form-switch mb-0">
+                                                    {{ form.is_export_product }}
+                                                    <label class="form-check-label" for="{{ form.is_export_product.id_for_label }}">
+                                                        <strong>Export Product</strong>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="alert alert-info mb-3">
+                                                <i class="fas fa-info-circle"></i>
+                                                <strong>Export products</strong> require additional customs information
+                                                for international shipments and EFRIS compliance.
+                                            </div>
+
+                                            <div class="row">
+                                                <!-- HS Code -->
+                                                <div class="col-md-6 mb-3">
+                                                    <label for="{{ form.hs_code.id_for_label }}" class="form-label">
+                                                        HS Code <span class="text-danger export-required">*</span>
+                                                    </label>
+                                                    {{ form.hs_code }}
+                                                    <small class="form-text text-muted">
+                                                        Harmonized System code (MANDATORY for exports)
+                                                    </small>
+                                                    {% if form.hs_code.errors %}
+                                                        <div class="invalid-feedback d-block">{{ form.hs_code.errors.0 }}</div>
+                                                    {% endif %}
+                                                </div>
+
+                                                <!-- HS Name -->
+                                                <div class="col-md-6 mb-3">
+                                                    <label for="{{ form.hs_name.id_for_label }}" class="form-label">
+                                                        HS Description
+                                                    </label>
+                                                    {{ form.hs_name }}
+                                                    <small class="form-text text-muted">
+                                                        Description of the HS code
+                                                    </small>
+                                                    {% if form.hs_name.errors %}
+                                                        <div class="invalid-feedback d-block">{{ form.hs_name.errors.0 }}</div>
+                                                    {% endif %}
+                                                </div>
+
+                                                <!-- Customs Measure Unit -->
+                                                <div class="col-md-6 mb-3">
+                                                    <label for="{{ form.efris_customs_measure_unit.id_for_label }}" class="form-label">
+                                                        Customs Measure Unit <span class="text-danger export-required">*</span>
+                                                    </label>
+                                                    {{ form.efris_customs_measure_unit }}
+                                                    <small class="form-text text-muted">
+                                                        Unit for customs (e.g., KGM, LTR, NTT)
+                                                    </small>
+                                                    {% if form.efris_customs_measure_unit.errors %}
+                                                        <div class="invalid-feedback d-block">{{ form.efris_customs_measure_unit.errors.0 }}</div>
+                                                    {% endif %}
+                                                </div>
+
+                                                <!-- Customs Unit Price -->
+                                                <div class="col-md-6 mb-3">
+                                                    <label for="{{ form.efris_customs_unit_price.id_for_label }}" class="form-label">
+                                                        Customs Unit Price
+                                                    </label>
+                                                    <div class="input-group">
+                                                        <span class="input-group-text">UGX</span>
+                                                        {{ form.efris_customs_unit_price }}
+                                                    </div>
+                                                    <small class="form-text text-muted">
+                                                        Unit price in customs measure unit
+                                                    </small>
+                                                    {% if form.efris_customs_unit_price.errors %}
+                                                        <div class="invalid-feedback d-block">{{ form.efris_customs_unit_price.errors.0 }}</div>
+                                                    {% endif %}
+                                                </div>
+
+                                                <!-- Package Scaled Value (Customs) -->
+                                                <div class="col-md-6 mb-3">
+                                                    <label for="{{ form.efris_package_scaled_value_customs.id_for_label }}" class="form-label">
+                                                        Package Scaled Value (Customs)
+                                                    </label>
+                                                    {{ form.efris_package_scaled_value_customs }}
+                                                    <small class="form-text text-muted">
+                                                        Package scaling for customs (usually 1)
+                                                    </small>
+                                                    {% if form.efris_package_scaled_value_customs.errors %}
+                                                        <div class="invalid-feedback d-block">{{ form.efris_package_scaled_value_customs.errors.0 }}</div>
+                                                    {% endif %}
+                                                </div>
+
+                                                <!-- Customs Scaled Value -->
+                                                <div class="col-md-6 mb-3">
+                                                    <label for="{{ form.efris_customs_scaled_value.id_for_label }}" class="form-label">
+                                                        Customs Scaled Value
+                                                    </label>
+                                                    {{ form.efris_customs_scaled_value }}
+                                                    <small class="form-text text-muted">
+                                                        Conversion factor for customs (usually 1)
+                                                    </small>
+                                                    {% if form.efris_customs_scaled_value.errors %}
+                                                        <div class="invalid-feedback d-block">{{ form.efris_customs_scaled_value.errors.0 }}</div>
+                                                    {% endif %}
+                                                </div>
+
+                                                <!-- Export Ready Status -->
+                                                <div class="col-md-12 mb-3">
+                                                    <div class="form-check form-switch">
+                                                        {{ form.is_export_ready }}
+                                                        <label class="form-check-label" for="{{ form.is_export_ready.id_for_label }}">
+                                                            <strong>Mark as Export Ready</strong>
+                                                        </label>
+                                                    </div>
+                                                    <small class="form-text text-muted">
+                                                        Check when all export fields are configured and product is ready for export invoices
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
                         <div class="d-flex justify-content-between mt-4">
                             {% if perms.inventory.view_product %}
@@ -1802,6 +2075,122 @@ Fiscal Receipt
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="{% static 'js/product_popup_handler.js' %}"></script>
+<script>
+$(document).ready(function() {
+    // Toggle piece unit fields visibility
+    function togglePieceUnitFields() {
+        const isEnabled = $('#id_efris_has_piece_unit').is(':checked');
+
+        if (isEnabled) {
+            $('#pieceUnitFields').slideDown(300);
+            // Make fields required
+            $('#id_efris_piece_measure_unit, #id_efris_piece_unit_price').attr('required', true);
+        } else {
+            $('#pieceUnitFields').slideUp(300);
+            // Remove required attribute
+            $('#id_efris_piece_measure_unit, #id_efris_piece_unit_price').removeAttr('required');
+        }
+    }
+
+    // Toggle export fields visibility and requirements
+    function toggleExportFields() {
+        const isExport = $('#id_is_export_product').is(':checked');
+
+        if (isExport) {
+            $('.export-field').addClass('border-info');
+            $('#id_hs_code, #id_efris_customs_measure_unit').attr('required', true);
+
+            // Show info message
+            if ($('#exportWarning').length === 0) {
+                const warning = $('<div id="exportWarning" class="alert alert-warning mt-2">' +
+                    '<i class="fas fa-exclamation-triangle"></i> ' +
+                    '<strong>Export Product:</strong> Ensure HS Code and Customs Measure Unit are filled.' +
+                    '</div>');
+                warning.insertAfter($('#id_is_export_product').closest('.form-check'));
+            }
+        } else {
+            $('.export-field').removeClass('border-info');
+            $('#id_hs_code, #id_efris_customs_measure_unit').removeAttr('required');
+            $('#exportWarning').remove();
+        }
+    }
+
+    // Auto-set export ready based on required fields
+    function checkExportReadiness() {
+        const hsCode = $('#id_hs_code').val();
+        const customsUnit = $('#id_efris_customs_measure_unit').val();
+        const isExport = $('#id_is_export_product').is(':checked');
+
+        if (isExport && hsCode && customsUnit) {
+            if (!$('#id_is_export_ready').is(':checked')) {
+                $('#id_is_export_ready').prop('checked', true);
+
+                // Show success message
+                showSuccessMessage('Product marked as export ready! All required fields are filled.');
+            }
+        } else {
+            if ($('#id_is_export_ready').is(':checked') && isExport) {
+                $('#id_is_export_ready').prop('checked', false);
+            }
+        }
+    }
+
+    // Event listeners
+    $('#id_efris_has_piece_unit').on('change', togglePieceUnitFields);
+    $('#id_is_export_product').on('change', function() {
+        toggleExportFields();
+        checkExportReadiness();
+    });
+
+    // Check export readiness on field changes
+    $('#id_hs_code, #id_efris_customs_measure_unit').on('change blur', checkExportReadiness);
+
+    // Initialize on page load
+    togglePieceUnitFields();
+    toggleExportFields();
+
+    // Validation enhancement for product form
+    $('#productForm').on('submit', function(e) {
+        const isExport = $('#id_is_export_product').is(':checked');
+        const hasPieceUnit = $('#id_efris_has_piece_unit').is(':checked');
+        let isValid = true;
+
+        // Export validation
+        if (isExport) {
+            if (!$('#id_hs_code').val()) {
+                $('#id_hs_code').addClass('is-invalid');
+                isValid = false;
+            }
+
+            if (!$('#id_efris_customs_measure_unit').val()) {
+                $('#id_efris_customs_measure_unit').addClass('is-invalid');
+                isValid = false;
+            }
+        }
+
+        // Piece unit validation
+        if (hasPieceUnit) {
+            if (!$('#id_efris_piece_measure_unit').val()) {
+                $('#id_efris_piece_measure_unit').addClass('is-invalid');
+                isValid = false;
+            }
+
+            const piecePrice = parseFloat($('#id_efris_piece_unit_price').val());
+            if (!piecePrice || piecePrice <= 0) {
+                $('#id_efris_piece_unit_price').addClass('is-invalid');
+                isValid = false;
+            }
+        }
+
+        if (!isValid) {
+            e.preventDefault();
+            alert('Please fill in all required export/EFRIS fields before submitting.');
+            $('html, body').animate({scrollTop: $('.is-invalid').first().offset().top - 100}, 500);
+            return false;
+        }
+    });
+});
+</script>
 <script>
 const EFRIS_ENABLED = {{ efris_enabled|yesno:"true,false" }};
 

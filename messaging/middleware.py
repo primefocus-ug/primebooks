@@ -1,35 +1,58 @@
+# messaging/middleware.py - FIXED VERSION
+"""
+Messaging middleware with schema awareness
+✅ Checks schema before accessing user
+✅ Skips processing in public schema
+"""
+import logging
+from django.db import connection
+
+logger = logging.getLogger(__name__)
+
+
 class EncryptionKeyMiddleware:
     """
     Ensure all authenticated users have encryption keys
+    ✅ FIXED: Checks schema before accessing user
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        if request.user.is_authenticated:
-            # Check if user has encryption keys
-            from messaging.models import EncryptionKeyManager
-            if not hasattr(request.user, 'encryption_keys'):
-                # Generate keys in background
-                from messaging.services import EncryptionService
-                try:
-                    EncryptionService.generate_user_keys(request.user)
-                except Exception as e:
-                    # Log error but don't break the request
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Failed to generate encryption keys for user {request.user.id}: {e}")
+        # ✅ CHECK SCHEMA FIRST - CRITICAL FIX!
+        schema_name = getattr(connection, 'schema_name', 'public')
+
+        # Skip if in public schema or no tenant
+        if schema_name == 'public':
+            return self.get_response(request)
+
+        if not hasattr(connection, 'tenant') or connection.tenant is None:
+            return self.get_response(request)
+
+        # ✅ NOW safe to check user
+        try:
+            if request.user.is_authenticated:
+                # Check if user has encryption keys
+                from messaging.models import EncryptionKeyManager
+                if not hasattr(request.user, 'encryption_keys'):
+                    # Generate keys in background
+                    from messaging.services import EncryptionService
+                    try:
+                        EncryptionService.generate_user_keys(request.user)
+                    except Exception as e:
+                        logger.error(f"Failed to generate encryption keys: {e}")
+        except Exception as e:
+            logger.error(f"Error in EncryptionKeyMiddleware: {e}")
 
         response = self.get_response(request)
         return response
-
-from .models import MessageAuditLog
 
 
 class MessageAuditMiddleware:
     """
     Automatically log messaging actions for admin monitoring
+    ✅ FIXED: Checks schema before accessing user
     """
 
     def __init__(self, get_response):
@@ -38,15 +61,30 @@ class MessageAuditMiddleware:
     def __call__(self, request):
         response = self.get_response(request)
 
-        # Log messaging-related actions
-        if request.user.is_authenticated and request.path.startswith('/api/messaging/'):
-            self.log_action(request, response)
+        # ✅ CHECK SCHEMA FIRST
+        schema_name = getattr(connection, 'schema_name', 'public')
+
+        # Skip if in public schema
+        if schema_name == 'public':
+            return response
+
+        if not hasattr(connection, 'tenant') or connection.tenant is None:
+            return response
+
+        # ✅ NOW safe to check user and log
+        try:
+            if request.user.is_authenticated and request.path.startswith('/api/messaging/'):
+                self.log_action(request, response)
+        except Exception as e:
+            logger.error(f"Error in MessageAuditMiddleware: {e}")
 
         return response
 
     def log_action(self, request, response):
         """Log the action"""
         try:
+            from messaging.models import MessageAuditLog
+
             # Determine action type
             action_type = None
             metadata = {}
@@ -64,7 +102,7 @@ class MessageAuditMiddleware:
                 action_type = 'edited'
 
             if action_type:
-                # Get tenant info if available
+                # Get tenant info
                 tenant_id = None
                 tenant_name = ''
 
@@ -83,9 +121,6 @@ class MessageAuditMiddleware:
                 )
 
         except Exception as e:
-            # Don't break the request if logging fails
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Error logging audit: {e}")
 
     def get_client_ip(self, request):
@@ -96,4 +131,3 @@ class MessageAuditMiddleware:
         else:
             ip = request.META.get('REMOTE_ADDR')
         return ip
-

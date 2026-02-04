@@ -1435,8 +1435,23 @@ def create_schedule(request):
     if request.method == 'POST':
         form = ReportScheduleForm(request.POST, user=request.user)
         if form.is_valid():
-            schedule = form.save()
-            messages.success(request, 'Report schedule created successfully!')
+            schedule = form.save(commit=False)
+
+            # ✓ CALCULATE INITIAL next_scheduled
+            schedule.calculate_next_run()
+
+            schedule.save()
+
+            logger.info(
+                f"Created schedule {schedule.id}: {schedule.report.name} "
+                f"(next run: {schedule.next_scheduled})"
+            )
+
+            messages.success(
+                request,
+                f'Report schedule created successfully! '
+                f'Next run: {schedule.next_scheduled.strftime("%Y-%m-%d %H:%M")}'
+            )
             return redirect('reports:schedules')
         else:
             messages.error(request, 'Please correct the errors below.')

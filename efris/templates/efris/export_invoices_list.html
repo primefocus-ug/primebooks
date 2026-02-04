@@ -1,0 +1,515 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Export Invoices - EFRIS{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    .status-badge {
+        font-size: 0.9rem;
+        padding: 6px 12px;
+    }
+    .export-card {
+        transition: all 0.3s ease;
+    }
+    .export-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    }
+    .stat-card {
+        border-left: 4px solid;
+    }
+    .stat-card.cleared {
+        border-left-color: #28a745;
+    }
+    .stat-card.pending {
+        border-left-color: #ffc107;
+    }
+    .stat-card.total {
+        border-left-color: #007bff;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2><i class="fas fa-shipping-fast"></i> Export Invoices</h2>
+                    <p class="text-muted">Manage export invoices and customs clearance status</p>
+                </div>
+                <div>
+                    <a href="{% url 'efris:create_export_invoice' %}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-plus-circle"></i> Create Export Invoice
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card stat-card total">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-1">Total Export Invoices</h6>
+                            <h2 class="mb-0">{{ stats.total|default:0 }}</h2>
+                        </div>
+                        <div class="text-primary" style="font-size: 3rem;">
+                            <i class="fas fa-file-export"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card stat-card cleared">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-1">Cleared (Exited)</h6>
+                            <h2 class="mb-0 text-success">{{ stats.cleared|default:0 }}</h2>
+                        </div>
+                        <div class="text-success" style="font-size: 3rem;">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card stat-card pending">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-1">Pending Clearance</h6>
+                            <h2 class="mb-0 text-warning">{{ stats.pending|default:0 }}</h2>
+                        </div>
+                        <div class="text-warning" style="font-size: 3rem;">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Card -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-list"></i> Export Invoices</h5>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="bulkCheckStatus()">
+                            <i class="fas fa-sync"></i> Refresh All Status
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    <!-- Filters -->
+                    <form method="get" class="mb-4">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h6><i class="fas fa-filter"></i> Filters</h6>
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <div class="form-group">
+                                            <label>Status</label>
+                                            <select name="status" class="form-control">
+                                                <option value="">All Status</option>
+                                                <option value="cleared" {% if filters.status == 'cleared' %}selected{% endif %}>Cleared (102)</option>
+                                                <option value="pending" {% if filters.status == 'pending' %}selected{% endif %}>Pending (101)</option>
+                                                <option value="failed" {% if filters.status == 'failed' %}selected{% endif %}>Not Submitted</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <div class="form-group">
+                                            <label>Start Date</label>
+                                            <input type="date" name="start_date" class="form-control" 
+                                                   value="{{ filters.start_date }}">
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <div class="form-group">
+                                            <label>End Date</label>
+                                            <input type="date" name="end_date" class="form-control" 
+                                                   value="{{ filters.end_date }}">
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <label>&nbsp;</label>
+                                        <button type="submit" class="btn btn-primary btn-block">
+                                            <i class="fas fa-search"></i> Apply Filters
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+
+                    <!-- Invoices Table -->
+                    {% if invoices %}
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover">
+                            <thead class="thead-dark">
+                                <tr>
+                                    <th width="5%">
+                                        <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
+                                    </th>
+                                    <th width="15%">Invoice No</th>
+                                    <th width="12%">Date</th>
+                                    <th width="18%">Customer</th>
+                                    <th width="12%">Delivery Terms</th>
+                                    <th width="10%" class="text-right">Amount</th>
+                                    <th width="10%" class="text-center">SAD Status</th>
+                                    <th width="10%" class="text-center">Clearance</th>
+                                    <th width="8%" class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for invoice in invoices %}
+                                <tr id="invoice-row-{{ invoice.id }}">
+                                    <!-- Checkbox: only enable if the invoice has an FDN -->
+                                    <td>
+                                        {% if invoice.fiscal_document_number %}
+                                            <input type="checkbox" class="invoice-checkbox"
+                                                   value="{{ invoice.fiscal_document_number }}">
+                                        {% endif %}
+                                    </td>
+
+                                    <!-- Invoice No column -->
+                                    <td>
+                                        {% if invoice.fiscal_document_number %}
+                                            <a href="{% url 'efris:export_invoice_detail' invoice.fiscal_document_number %}">
+                                                <code>{{ invoice.fiscal_document_number }}</code>
+                                            </a>
+                                        {% else %}
+                                            <span class="text-muted">Not fiscalized</span>
+                                        {% endif %}
+                                    </td>
+
+                                    <!-- Date -->
+                                    <td>{{ invoice.created_at|date:"Y-m-d H:i" }}</td>
+
+                                    <!-- Customer -->
+                                    <td>
+                                        {% if invoice.sale and invoice.sale.customer %}
+                                            <strong>{{ invoice.sale.customer.name }}</strong><br>
+                                            <small class="text-muted">
+                                                {{ invoice.sale.customer.country|default:"N/A" }}
+                                            </small>
+                                        {% else %}
+                                            <span class="text-muted">Walk-in Customer</span>
+                                        {% endif %}
+                                    </td>
+
+                                    <!-- Delivery Terms -->
+                                    <td>
+                                        {% if invoice.export_delivery_terms %}
+                                            <span class="badge badge-info">
+                                                {{ invoice.export_delivery_terms }}
+                                            </span>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+
+                                    <!-- Amount -->
+                                    <td class="text-right">
+                                        <strong>{{ invoice.total_amount|floatformat:2|intcomma }}</strong>
+                                        <small class="text-muted">UGX</small>
+                                    </td>
+
+                                    <!-- SAD Status column -->
+                                    <td class="text-center">
+                                        {% if invoice.export_sad_number %}
+                                            <span class="badge badge-success status-badge">
+                                                <i class="fas fa-check"></i> Submitted
+                                            </span><br>
+                                            <small class="text-muted">{{ invoice.export_sad_number }}</small>
+                                        {% elif invoice.fiscal_document_number %}
+                                            <span class="badge badge-warning status-badge">
+                                                <i class="fas fa-exclamation-triangle"></i> Pending
+                                            </span><br>
+                                            <a href="{% url 'efris:submit_export_sad' invoice.fiscal_document_number %}"
+                                               class="btn btn-sm btn-outline-warning mt-1">
+                                                Submit SAD
+                                            </a>
+                                        {% else %}
+                                            <span class="badge badge-secondary status-badge">
+                                                <i class="fas fa-lock"></i> Awaiting Fiscalization
+                                            </span>
+                                        {% endif %}
+                                    </td>
+
+                                    <!-- Clearance Status column -->
+                                    <td class="text-center" id="status-cell-{{ invoice.id }}">
+                                        {% if invoice.export_status == '102' %}
+                                            <span class="badge badge-success status-badge">
+                                                <i class="fas fa-plane-departure"></i> Cleared
+                                            </span><br>
+                                            <small class="text-muted">
+                                                {{ invoice.export_cleared_at|date:"Y-m-d" }}
+                                            </small>
+                                        {% elif invoice.export_status == '101' %}
+                                            <span class="badge badge-warning status-badge">
+                                                <i class="fas fa-hourglass-half"></i> Processing
+                                            </span><br>
+                                            {% if invoice.fiscal_document_number %}
+                                                <button class="btn btn-sm btn-outline-primary mt-1"
+                                                        onclick="checkSingleStatus('{{ invoice.fiscal_document_number }}', {{ invoice.id }})">
+                                                    <i class="fas fa-sync"></i> Check
+                                                </button>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="badge badge-secondary status-badge">
+                                                <i class="fas fa-question"></i> Unknown
+                                            </span>
+                                        {% endif %}
+                                    </td>
+
+                                    <!-- Actions column -->
+                                    <td class="text-center">
+                                        <div class="btn-group" role="group">
+                                            {% if invoice.fiscal_document_number %}
+                                                {% if not invoice.export_sad_number %}
+                                                    <a href="{% url 'efris:submit_export_sad' invoice.fiscal_document_number %}"
+                                                       class="btn btn-sm btn-warning" title="Submit SAD">
+                                                        <i class="fas fa-file-upload"></i>
+                                                    </a>
+                                                {% endif %}
+                                                <a href="{% url 'efris:export_invoice_detail' invoice.fiscal_document_number %}"
+                                                   class="btn btn-sm btn-outline-primary" title="View Details">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
+                                            {% else %}
+                                                <span class="badge badge-secondary mt-1">Pending Fiscalization</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    {% if invoices.has_other_pages %}
+                    <nav aria-label="Export invoices pagination" class="mt-4">
+                        <ul class="pagination justify-content-center">
+                            {% if invoices.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page=1{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.start_date %}&start_date={{ filters.start_date }}{% endif %}{% if filters.end_date %}&end_date={{ filters.end_date }}{% endif %}">
+                                    <i class="fas fa-angle-double-left"></i>
+                                </a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ invoices.previous_page_number }}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.start_date %}&start_date={{ filters.start_date }}{% endif %}{% if filters.end_date %}&end_date={{ filters.end_date }}{% endif %}">
+                                    <i class="fas fa-angle-left"></i>
+                                </a>
+                            </li>
+                            {% endif %}
+
+                            <li class="page-item active">
+                                <span class="page-link">
+                                    Page {{ invoices.number }} of {{ invoices.paginator.num_pages }}
+                                </span>
+                            </li>
+
+                            {% if invoices.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ invoices.next_page_number }}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.start_date %}&start_date={{ filters.start_date }}{% endif %}{% if filters.end_date %}&end_date={{ filters.end_date }}{% endif %}">
+                                    <i class="fas fa-angle-right"></i>
+                                </a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ invoices.paginator.num_pages }}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.start_date %}&start_date={{ filters.start_date }}{% endif %}{% if filters.end_date %}&end_date={{ filters.end_date }}{% endif %}">
+                                    <i class="fas fa-angle-double-right"></i>
+                                </a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>No export invoices found</strong><br>
+                        {% if filters.status or filters.start_date %}
+                            No export invoices match your search criteria.
+                        {% else %}
+                            You haven't created any export invoices yet.
+                            <a href="{% url 'efris:create_export_invoice' %}" class="alert-link">Create your first export invoice</a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" data-backdrop="static" data-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center py-5">
+                <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+                <p class="mt-3 mb-0">Checking clearance status...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.invoice-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+}
+
+function checkSingleStatus(invoiceNo, invoiceId) {
+    const statusCell = document.getElementById(`status-cell-${invoiceId}`);
+
+    statusCell.innerHTML = `
+        <span class="badge badge-info status-badge">
+            <i class="fas fa-spinner fa-spin"></i> Checking...
+        </span>
+    `;
+
+    fetch('{% url "efris:check_export_clearance_api" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: `invoice_no=${invoiceNo}`
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const status = data.documentStatusCode;
+            let badgeHtml = '';
+
+            if (status === '102') {
+                badgeHtml = `
+                    <span class="badge badge-success status-badge">
+                        <i class="fas fa-plane-departure"></i> Cleared
+                    </span>
+                `;
+            } else if (status === '101') {
+                badgeHtml = `
+                    <span class="badge badge-warning status-badge">
+                        <i class="fas fa-hourglass-half"></i> Processing
+                    </span><br>
+                    <button class="btn btn-sm btn-outline-primary mt-1"
+                            onclick="checkSingleStatus('${invoiceNo}', ${invoiceId})">
+                        <i class="fas fa-sync"></i> Check Again
+                    </button>
+                `;
+            } else {
+                badgeHtml = `
+                    <span class="badge badge-secondary status-badge">
+                        <i class="fas fa-question"></i> Unknown (${status})
+                    </span>
+                `;
+            }
+
+            statusCell.innerHTML = badgeHtml;
+
+            if (status === '102') {
+                showToast('success', `Invoice ${invoiceNo} has been cleared!`);
+            }
+        } else {
+            statusCell.innerHTML = `
+                <span class="badge badge-danger status-badge">
+                    <i class="fas fa-exclamation-circle"></i> Error
+                </span><br>
+                <small class="text-danger">${data.error}</small>
+            `;
+        }
+    })
+    .catch(error => {
+        statusCell.innerHTML = `
+            <span class="badge badge-danger status-badge">
+                <i class="fas fa-exclamation-circle"></i> Error
+            </span>
+        `;
+        console.error('Error:', error);
+    });
+}
+
+function bulkCheckStatus() {
+    const checkboxes = document.querySelectorAll('.invoice-checkbox:checked');
+
+    if (checkboxes.length === 0) {
+        alert('Please select at least one invoice to check');
+        return;
+    }
+
+    const invoiceNos = Array.from(checkboxes).map(cb => cb.value);
+
+    $('#loadingModal').modal('show');
+
+    const formData = new FormData();
+    invoiceNos.forEach(no => formData.append('invoice_nos', no));
+
+    fetch('{% url "efris:bulk_check_export_status" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        $('#loadingModal').modal('hide');
+
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Bulk check failed: ' + data.error);
+        }
+    })
+    .catch(error => {
+        $('#loadingModal').modal('hide');
+        console.error('Error:', error);
+        alert('An error occurred while checking status');
+    });
+}
+
+function showToast(type, message) {
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type} position-fixed`;
+    toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    toast.innerHTML = `
+        <strong>${type === 'success' ? 'Success!' : 'Info'}</strong><br>
+        ${message}
+    `;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => toast.remove(), 3000);
+}
+</script>
+{% endblock %}

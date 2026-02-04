@@ -1,8 +1,14 @@
 from pathlib import Path
 from datetime import timedelta
-from celery.schedules import crontab
 from django.utils.translation import gettext_lazy as _
 import os
+import sys
+try:
+    from celery.schedules import crontab
+    CELERY_AVAILABLE = True
+except ImportError:
+    CELERY_AVAILABLE = False
+    crontab = None
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -14,15 +20,48 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env_path = BASE_DIR / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
-# CRITICAL: Determine DEBUG mode first
-DEBUG_VALUE = os.getenv('DEBUG', 'True')  # Default to True if not set
-DEBUG = DEBUG_VALUE.strip().lower() in ('true', '1', 'yes', 'on')
-import os
-from datetime import datetime
-import pytz
+# =============================================================================
+# DEPLOYMENT MODE DETECTION
+# =============================================================================
 
-from dotenv import load_dotenv
-load_dotenv()
+# Detect deployment mode
+IS_DESKTOP = os.getenv('DESKTOP_MODE', 'False').lower() == 'true'
+DEBUG_VALUE = os.getenv('DEBUG', 'True')
+DEBUG = DEBUG_VALUE.strip().lower() in ('true', '1', 'yes', 'on')
+
+if IS_DESKTOP:
+    # Prevent Celery-related imports in desktop mode
+    import sys
+    from unittest.mock import MagicMock
+
+    # Mock Celery modules
+    sys.modules['celery'] = MagicMock()
+    sys.modules['celery.schedules'] = MagicMock()
+    sys.modules['celery.result'] = MagicMock()
+    sys.modules['kombu'] = MagicMock()
+
+# Helper function for desktop data directory
+def get_desktop_data_dir():
+    """Get appropriate data directory for desktop mode"""
+    if not IS_DESKTOP:
+        return BASE_DIR
+
+    if os.name == 'nt':  # Windows
+        data_dir = Path(os.environ.get('APPDATA', '')) / 'PrimeBooks'
+    elif sys.platform == 'darwin':  # macOS
+        data_dir = Path.home() / 'Library' / 'Application Support' / 'PrimeBooks'
+    else:  # Linux
+        data_dir = Path.home() / '.local' / 'share' / 'PrimeBooks'
+
+    # Create directory if it doesn't exist
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+# Desktop data directory
+DESKTOP_DATA_DIR = get_desktop_data_dir()
+
+import pytz
+from datetime import datetime
 
 # Django timezone
 TIME_ZONE = os.getenv("TIME_ZONE", "Africa/Nairobi")
@@ -40,23 +79,134 @@ if maintenance_time_str:
 else:
     MAINTENANCE_START_TIME = None
 
-
 # =============================================================================
-# DEVELOPMENT vs PRODUCTION CONFIGURATION
+# MODE-SPECIFIC CONFIGURATION
 # =============================================================================
+REST_FRAMEWORK_THROTTLE_RATES = {
+    'user': '1000/day',
+    'anon': '100/day',
+}
 
-if DEBUG:
+if IS_DESKTOP:
     # =========================================================================
-    # DEVELOPMENT MODE - Uses hardcoded values
+    # DESKTOP MODE - PostgreSQL with schema-per-tenant
     # =========================================================================
     print("=" * 50)
-    print("🔧 RUNNING IN DEVELOPMENT MODE")
+    print("💻 RUNNING IN DESKTOP MODE (PostgreSQL)")
+    print(f"📁 Data Directory: {DESKTOP_DATA_DIR}")
+    print("=" * 50)
+
+    # Secret key - generate unique per installation
+    SECRET_KEY_FILE = DESKTOP_DATA_DIR / '.secret_key'
+    if not SECRET_KEY_FILE.exists():
+        from django.core.management.utils import get_random_secret_key
+        SECRET_KEY_FILE.write_text(get_random_secret_key())
+    SECRET_KEY = SECRET_KEY_FILE.read_text().strip()
+
+    ALLOWED_HOSTS = ['*']
+    PUBLIC_ADMIN_URL = 'http://localhost:8000'
+
+    # ✅ PostgreSQL Database (embedded instance)
+    # This will be updated by postgres_manager after initialization
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django_tenants.postgresql_backend',  # ✅ CRITICAL - Use django-tenants backend
+            'NAME': 'primebooks',
+            'USER': 'primebooks_user',
+            'PASSWORD': '',
+            'HOST': 'localhost',
+            'PORT': '5433',  # Non-standard port to avoid conflicts
+        }
+    }
+
+    # ✅ Django-Tenants Configuration
+    TENANT_MODEL = "company.Company"
+    TENANT_DOMAIN_MODEL = "company.Domain"
+    PUBLIC_SCHEMA_NAME = 'public'
+    PUBLIC_SCHEMA_URLCONF = 'tenancy.public_urls'
+    SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
+
+    # Redis - Disable for desktop or use minimal config
+    REDIS_URL = None
+    CELERY_TASK_ALWAYS_EAGER = True  # Run tasks synchronously
+    CELERY_TASK_EAGER_PROPAGATES = True
+
+    # Email - Console backend for desktop
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    EMAIL_HOST = 'localhost'
+    EMAIL_PORT = 25
+    EMAIL_USE_TLS = False
+    EMAIL_HOST_USER = ''
+    EMAIL_HOST_PASSWORD = ''
+    DEFAULT_FROM_EMAIL = 'noreply@localhost'
+    SUPPORT_EMAIL = 'support@localhost'
+
+    # Site
+    FRONTEND_URL = 'http://localhost:8000'
+    SITE_NAME = 'Prime Books Desktop'
+    BASE_DOMAIN = 'localhost'
+    USE_SSL = False
+
+
+    # CORS
+    CORS_ALLOW_ALL_ORIGINS = True
+
+    # Security - Relaxed for desktop
+    SECURE_BROWSER_XSS_FILTER = False
+    SECURE_CONTENT_TYPE_NOSNIFF = False
+    X_FRAME_OPTIONS = 'SAMEORIGIN'
+    SECURE_HSTS_SECONDS = 0
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SECURE_SSL_REDIRECT = False
+    SECURE_PROXY_SSL_HEADER = None
+
+    # Static files
+    STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
+    # Sessions
+    SESSION_COOKIE_AGE = 86400  # 1 day
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Use DB instead of cache
+
+    # Cache - Use dummy cache for desktop
+    CACHE_BACKEND = 'django.core.cache.backends.dummy.DummyCache'
+    CACHE_OPTIONS = {}
+
+    # Logging
+    LOG_LEVEL = 'DEBUG'
+    CONSOLE_LOG_LEVEL = 'INFO'
+    FILE_LOG_FORMATTER = 'simple'
+    MAX_LOG_BYTES = 5 * 1024 * 1024
+    LOG_BACKUP_COUNT = 3
+    LOG_DIR = DESKTOP_DATA_DIR / 'logs'
+
+    # Media files - Store in desktop data directory
+    MEDIA_ROOT = DESKTOP_DATA_DIR / 'media'
+
+    # Disable WebSocket for desktop
+    WEBSOCKET_ALLOWED_ORIGINS = ['http://localhost:8000']
+
+    # ✅ Database routing - django-tenants ONLY
+    DATABASE_ROUTERS = ['django_tenants.routers.TenantSyncRouter']
+
+elif DEBUG:
+    # =========================================================================
+    # DEVELOPMENT MODE (WEB) - Uses hardcoded values
+    # =========================================================================
+    print("=" * 50)
+    print("🔧 RUNNING IN WEB DEVELOPMENT MODE")
     print("=" * 50)
 
     SECRET_KEY = 'django-insecure-9mghr4buf3l(sinf2(lez20c&*=2)lha_qkdyrxeu1#14@p&(%'
     ALLOWED_HOSTS = ['*']
     PUBLIC_ADMIN_URL = 'http://localhost:8000'
-    # Database
+
+    # Database - PostgreSQL with schema-per-tenant
     DATABASES = {
         'default': {
             'ENGINE': 'django_tenants.postgresql_backend',
@@ -71,7 +221,7 @@ if DEBUG:
     # Redis
     REDIS_URL = 'redis://127.0.0.1:6379'
 
-    # Email - Console backend for development
+    # Email
     EMAIL_BACKEND = 'company.email.TenantAwareEmailBackend'
     EMAIL_HOST = 'smtp.gmail.com'
     EMAIL_PORT = 587
@@ -84,12 +234,8 @@ if DEBUG:
     # Site
     FRONTEND_URL = 'http://localhost:8000'
     SITE_NAME = 'Prime Books'
-    # Base domain for tenant subdomains
-    BASE_DOMAIN = os.getenv('BASE_DOMAIN', default='localhost')  # e.g., 'yoursaas.com'
-
-    # Use SSL in production
+    BASE_DOMAIN = os.getenv('BASE_DOMAIN', default='localhost')
     USE_SSL = os.getenv('USE_SSL', 'False').lower() in ('true', '1', 'yes')
-
 
     # CORS
     CORS_ALLOW_ALL_ORIGINS = True
@@ -107,13 +253,15 @@ if DEBUG:
     SECURE_SSL_REDIRECT = False
     SECURE_PROXY_SSL_HEADER = None
 
-    # Static files - No WhiteNoise in development
+    # Static files
     STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 
     # Sessions
-    SESSION_COOKIE_AGE = 86400  # 1 day
+    SESSION_COOKIE_AGE = 86400
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+    SESSION_CACHE_ALIAS = 'default'
 
     # Celery
     CELERY_TASK_ALWAYS_EAGER = True
@@ -131,29 +279,40 @@ if DEBUG:
     FILE_LOG_FORMATTER = 'simple'
     MAX_LOG_BYTES = 5 * 1024 * 1024
     LOG_BACKUP_COUNT = 3
+    LOG_DIR = BASE_DIR / 'logs'
 
     # Cache settings
     CACHE_OPTIONS = {}
+    CACHE_BACKEND = 'django_redis.cache.RedisCache'
+
+    # Media
+    MEDIA_ROOT = BASE_DIR / 'media'
 
     # Celery beat schedule intervals
     ANALYTICS_UPDATE_INTERVAL = 60.0
 
+    # WebSocket
+    WEBSOCKET_ALLOWED_ORIGINS = ['http://localhost:8000']
+
+    # Database routing
+    DATABASE_ROUTERS = ['django_tenants.routers.TenantSyncRouter']
+
 else:
     # =========================================================================
-    # PRODUCTION MODE - Loads from .env
+    # PRODUCTION MODE (WEB) - Loads from .env
     # =========================================================================
     print("=" * 50)
-    print("🚀 RUNNING IN PRODUCTION MODE")
+    print("🚀 RUNNING IN WEB PRODUCTION MODE")
     print("=" * 50)
 
     SECRET_KEY = os.getenv('SECRET_KEY')
     if not SECRET_KEY:
         raise ValueError("SECRET_KEY environment variable must be set in production")
 
-    # Clean and parse host lists
     ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'primebooks.sale').split(',')]
     PUBLIC_ADMIN_URL = 'https://primebooks.sale'
-    # Database
+
+    # Database - PostgreSQL with schema-per-tenant
     DATABASES = {
         'default': {
             'ENGINE': 'django_tenants.postgresql_backend',
@@ -173,7 +332,7 @@ else:
     # Redis
     REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
 
-    # Email - Tenant-aware backend for production
+    # Email
     EMAIL_BACKEND = 'company.email.TenantAwareEmailBackend'
     EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
     EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
@@ -189,13 +348,12 @@ else:
     BASE_DOMAIN = os.getenv('BASE_DOMAIN', 'primebooks.sale')
     USE_SSL = os.getenv('USE_SSL', 'True').lower() in ('true', '1', 'yes')
 
-
     # CORS
     CORS_ALLOW_ALL_ORIGINS = False
     CORS_ALLOWED_ORIGINS = [h.strip() for h in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if h.strip()]
     CORS_ALLOW_CREDENTIALS = True
 
-    # Security - Enabled for production
+    # Security
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
@@ -208,15 +366,17 @@ else:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     CSRF_TRUSTED_ORIGINS = [h.strip() for h in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if h.strip()]
 
-    # Static files - WhiteNoise for production
+    # Static files
     STATICFILES_STORAGE = 'whitenoise.storage.StaticFilesStorage'
 
     # Sessions
-    SESSION_COOKIE_AGE = 1209600  # 2 weeks
+    SESSION_COOKIE_AGE = 1209600
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
     CSRF_COOKIE_HTTPONLY = True
     CSRF_COOKIE_SAMESITE = 'Lax'
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+    SESSION_CACHE_ALIAS = 'default'
 
     # Celery
     CELERY_TASK_ALWAYS_EAGER = False
@@ -234,6 +394,7 @@ else:
     FILE_LOG_FORMATTER = 'json'
     MAX_LOG_BYTES = 10 * 1024 * 1024
     LOG_BACKUP_COUNT = 10
+    LOG_DIR = BASE_DIR / 'logs'
 
     # Cache settings
     CACHE_OPTIONS = {
@@ -244,19 +405,59 @@ else:
             'retry_on_timeout': True
         }
     }
+    CACHE_BACKEND = 'django_redis.cache.RedisCache'
 
-    # Celery beat schedule intervals
+    # Media
+    MEDIA_ROOT = BASE_DIR / 'media'
+
+    # Celery beat intervals
     ANALYTICS_UPDATE_INTERVAL = 300.0
 
+    # WebSocket
+    WEBSOCKET_ALLOWED_ORIGINS = os.getenv('WEBSOCKET_ALLOWED_ORIGINS', 'wss://primebooks.sale').split(',')
+
+    # Database routing
+    DATABASE_ROUTERS = ['django_tenants.routers.TenantSyncRouter']
+
+if IS_DESKTOP:
+    # ✅ Desktop mode: Don't set SYNC_SERVER_URL
+    # Let SyncManager auto-detect based on schema/subdomain:
+    #   - DEBUG=True  → http://{schema}.localhost:8000
+    #   - DEBUG=False → https://{schema}.primebooks.sale
+
+    # Don't set SYNC_SERVER_URL - auto-detection will handle it
+    SYNC_AUTH_TOKEN = ''  # Set after login
+
+    # Update server (for version updates)
+    if DEBUG:
+        UPDATE_SERVER_URL = 'http://localhost:8000'  # Update server doesn't need subdomain
+    else:
+        UPDATE_SERVER_URL = 'https://primebooks.sale'
+
+else:
+    # ✅ Web mode: Traditional server URLs
+    if DEBUG:
+        SYNC_SERVER_URL = 'http://localhost:8000'
+        UPDATE_SERVER_URL = 'http://localhost:8000'
+    else:
+        # Production
+        SYNC_SERVER_URL = 'https://primebooks.sale'
+        UPDATE_SERVER_URL = 'https://primebooks.sale'
+
+    SYNC_AUTH_TOKEN = ''
+
 # =============================================================================
-# SHARED CONFIGURATION (Common to both modes)
+# SHARED CONFIGURATION (Common to all modes)
 # =============================================================================
+
+# Create log directory
+os.makedirs(LOG_DIR, exist_ok=True)
 
 # Application definition
 SHARED_APPS = [
-    'daphne',
-    'django_tenants',
-    'company',
+    'django_tenants',  # ✅ Must be first
+    'primebooks',
+    'company',  # ✅ Must be in shared apps (public schema)
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
@@ -264,9 +465,6 @@ SHARED_APPS = [
     'django.contrib.humanize',
     'rest_framework',
     'django_countries',
-    'django_celery_beat',
-    'django_celery_results',
-    'channels',
     'django_extensions',
     'public_accounts',
     'public_admin',
@@ -275,13 +473,17 @@ SHARED_APPS = [
     'public_blog',
     'public_analytics',
     'public_support',
-    'channels_redis',
     'widget_tweaks',
     'django_filters',
     "crispy_forms",
     "crispy_bootstrap5",
     'corsheaders',
 ]
+
+# Add web-specific apps only for web mode
+if not IS_DESKTOP:
+    SHARED_APPS.insert(1, 'daphne')  # ASGI server for channels
+    SHARED_APPS.extend(['django_celery_beat', 'django_celery_results', 'channels', 'channels_redis'])
 
 TENANT_APPS = [
     'django.contrib.auth',
@@ -309,45 +511,75 @@ TENANT_APPS = [
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
 TAGGIT_CASE_INSENSITIVE = True
 
-# Middleware
+# ============================================================================
+# MIDDLEWARE CONFIGURATION
+# ============================================================================
+
+# ================= BASE MIDDLEWARE (ALWAYS FIRST) =================
 MIDDLEWARE = [
+    # 🔥 CRITICAL: Tenant detection MUST be FIRST!
     'django_tenants.middleware.main.TenantMainMiddleware',
+    'tenancy.middleware.TenantAwareMiddleware',
+
+    # Security & CORS
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
-]
 
-# Add WhiteNoise for production only
-if not DEBUG:
-    MIDDLEWARE.append('whitenoise.middleware.WhiteNoiseMiddleware')
-
-MIDDLEWARE.extend([
+    # Session & Common
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.middleware.locale.LocaleMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
+
+    # Messages (needs session)
     'django.contrib.messages.middleware.MessageMiddleware',
+
+    # 🔥 AUTH AFTER SCHEMA IS SET
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django_otp.middleware.OTPMiddleware',
+
+    # Clickjacking protection
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+# ================= DESKTOP MODE SPECIFIC =================
+if IS_DESKTOP:
+    MIDDLEWARE += [
+        'primebooks.middleware.DesktopTenantMiddleware',
+    ]
+
+# ================= WEB MODE SPECIFIC =================
+if not IS_DESKTOP:
+    if not DEBUG:
+        MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+
+    MIDDLEWARE += [
+        'accounts.middleware.SaaSAdminAccessMiddleware',
+        'accounts.middleware.HiddenUserMiddleware',
+        'accounts.middleware.SaaSAdminContextMiddleware',
+        'accounts.middleware.AuditMiddleware',
+        'public_accounts.middleware.PublicSchemaAuthMiddleware',
+        'public_seo.middleware.SEORedirectMiddleware',
+        'public_admin.middleware.PublicStaffAuthMiddleware',
+        'public_analytics.middleware.AnalyticsMiddleware',
+        'errors.middleware.CustomErrorMiddleware',
+    ]
+
+# ================= COMMON (BOTH MODES) =================
+MIDDLEWARE += [
+    # Company-level guards (schema-aware)
     'company.middleware.CompanyAccessMiddleware',
     'company.middleware.PlanLimitsMiddleware',
-    'company.middleware.EFRISStatusMiddleware', 
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'tenancy.middleware.TenantAwareMiddleware',
-    'accounts.middleware.SaaSAdminAccessMiddleware',
-    'accounts.middleware.HiddenUserMiddleware',
-    'accounts.middleware.SaaSAdminContextMiddleware',
-    'accounts.middleware.AuditMiddleware',
-    'public_accounts.middleware.PublicSchemaAuthMiddleware',
-    'errors.middleware.CustomErrorMiddleware',
+    'company.middleware.EFRISStatusMiddleware',
+
+    # Messaging (schema-aware)
     'messaging.middleware.EncryptionKeyMiddleware',
     'messaging.middleware.MessageAuditMiddleware',
+
+    # Permissions & Store access (schema-aware)
     'accounts.middleware.RefreshPermissionsMiddleware',
     'stores.middleware.StoreAccessMiddleware',
-    'public_seo.middleware.SEORedirectMiddleware',
-    'public_admin.middleware.PublicStaffAuthMiddleware',
-    'public_analytics.middleware.AnalyticsMiddleware',
-])
-
+]
 # Crispy Forms
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
@@ -388,21 +620,23 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'tenancy.wsgi.application'
-ASGI_APPLICATION = 'tenancy.asgi.application'
 
-DATABASE_ROUTERS = ('django_tenants.routers.TenantSyncRouter',)
+# ASGI only for web mode (needed for channels/websockets)
+if not IS_DESKTOP:
+    ASGI_APPLICATION = 'tenancy.asgi.application'
 
-# Channel Layers
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            "hosts": [REDIS_URL],
-            "capacity": 1500,
-            "expiry": 10,
+# Channel Layers - Only for web mode
+if not IS_DESKTOP and REDIS_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                "hosts": [REDIS_URL],
+                "capacity": 1500,
+                "expiry": 10,
+            },
         },
-    },
-}
+    }
 
 EXPENSE_ATTACHMENT_ALLOWED_TYPES = [
     'image/jpeg', 'image/png', 'image/gif',
@@ -414,107 +648,86 @@ EXPENSE_ATTACHMENT_ALLOWED_TYPES = [
 ]
 
 EXPENSE_ATTACHMENT_MAX_SIZE = 5 * 1024 * 1024
+
 # Caches
-CACHES = {
-    'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': f'{REDIS_URL}/1',
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-            **CACHE_OPTIONS
-        },
-        'KEY_PREFIX': 'tenant',
-        'VERSION': 1,
+if IS_DESKTOP:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.dummy.DummyCache',
+        }
     }
-}
-
-# Celery Configuration
-CELERY_BROKER_URL = f'{REDIS_URL}/0'
-CELERY_RESULT_BACKEND = f'{REDIS_URL}/0'
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'Africa/Kampala'
-
-CELERY_BEAT_SCHEDULE = {
-    'check-company-access': {
-        'task': 'company.tasks.check_company_access_status',
-        'schedule': crontab(minute=0, hour='*/6'),
-    },
-    'check-trial-expirations': {
-        'task': 'company.tasks.check_trial_expirations',
-        'schedule': crontab(hour=1, minute=0),
-    },
-    'check-subscription-expirations': {
-        'task': 'company.tasks.check_subscription_expirations',
-        'schedule': crontab(hour=1, minute=30),
-    },
-    'generate-daily-performance-report': {
-        'task': 'company.tasks.generate_daily_reports',
-        'schedule': crontab(hour=6, minute=0),
-    },
-    'analytics-update': {
-        'task': 'company.tasks.send_periodic_analytics_update',
-        'schedule': ANALYTICS_UPDATE_INTERVAL,
-    },
-    'generate-daily-statistics': {
-        'task': 'messaging.tasks.generate_message_analytics',
-        'schedule': crontab(hour=0, minute=5),  # Daily at 00:05
-    },
-    'cleanup-failed-signups': {
-        'task': 'public_router.tasks.cleanup_failed_signups',
-        'schedule': crontab(minute='*/5'),  # Every 5 minutes
-    },
-    'cleanup-stale-signups': {
-        'task': 'public_router.tasks.cleanup_stale_pending_signups',
-        'schedule': crontab(minute='*/15'),  # Every 15 minutes
-    },
-    'generate-daily-analytics': {
-        'task': 'public_analytics.tasks.generate_daily_stats',
-        'schedule': crontab(hour=1, minute=0),  # 1 AM daily
-    },
-    'cleanup-old-statistics': {
-        'task': 'messaging.tasks.cleanup_old_statistics',
-        'schedule': crontab(hour=2, minute=0, day_of_week=0),  # Weekly on Sunday at 2am
-    },
-    'process-scheduled-reports': {
-        'task': 'reports.tasks.process_scheduled_reports',
-        'schedule': crontab(minute='*'),  # Every minute
-    },
-
-    # Clean up expired reports every day at 2 AM
-    'cleanup-expired-reports': {
-        'task': 'reports.tasks.cleanup_expired_reports',
-        'schedule': crontab(minute=0, hour=2),  # 2 AM daily
-    },
-
-    # Update dashboard cache every 5 minutes
-    'update-dashboard-cache': {
-        'task': 'reports.tasks.update_dashboard_cache',
-        'schedule': crontab(minute='*/5'),  # Every 5 minutes
-    },
-    'send-admin-digest': {
-        'task': 'messaging.tasks.send_admin_digest_email',
-        'schedule': crontab(hour=8, minute=0),  # Daily at 8am
-        'args': (1,),  # Replace with actual admin user ID
-    },
-}
-CELERY_TASK_ROUTES = {
-    'public_router.tasks.create_tenant_async': {'queue': 'tenant_creation'},
-    'public_router.tasks.send_welcome_email': {'queue': 'emails'},
-}
-CELERY_WORKER_CONCURRENCY = 4  # Adjust based on your resources
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Prevent worker from grabbing too many tasks
-
-# Rate limiting for tenant creation
-CELERY_TASK_ANNOTATIONS = {
-    'public_router.tasks.create_tenant_async': {
-        'rate_limit': '10/m',  # Max 10 tenant creations per minute
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': CACHE_BACKEND,
+            'LOCATION': f'{REDIS_URL}/1',
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                **CACHE_OPTIONS
+            },
+            'KEY_PREFIX': 'tenant',
+            'VERSION': 1,
+        }
     }
-}
-# WebSocket
-WEBSOCKET_ALLOWED_ORIGINS = os.getenv('WEBSOCKET_ALLOWED_ORIGINS',
-                                      'http://localhost:8000' if DEBUG else 'wss://primebooks.sale').split(',')
+
+# Celery Configuration - Only for web mode
+if not IS_DESKTOP and REDIS_URL:
+    CELERY_BROKER_URL = f'{REDIS_URL}/0'
+    CELERY_RESULT_BACKEND = f'{REDIS_URL}/0'
+    CELERY_ACCEPT_CONTENT = ['json']
+    CELERY_TASK_SERIALIZER = 'json'
+    CELERY_RESULT_SERIALIZER = 'json'
+    CELERY_TIMEZONE = 'Africa/Kampala'
+    if CELERY_AVAILABLE:
+        CELERY_BEAT_SCHEDULE = {
+            'check-company-access': {
+                'task': 'company.tasks.check_company_access_status',
+                'schedule': crontab(minute=0, hour='*/6'),
+            },
+            'check-trial-expirations': {
+                'task': 'company.tasks.check_trial_expirations',
+                'schedule': crontab(hour=1, minute=0),
+            },
+            'check-subscription-expirations': {
+                'task': 'company.tasks.check_subscription_expirations',
+                'schedule': crontab(hour=1, minute=30),
+            },
+            'generate-daily-performance-report': {
+                'task': 'company.tasks.generate_daily_reports',
+                'schedule': crontab(hour=6, minute=0),
+            },
+            'analytics-update': {
+                'task': 'company.tasks.send_periodic_analytics_update',
+                'schedule': ANALYTICS_UPDATE_INTERVAL,
+            },
+            'efris-daily-maintenance': {
+                'task': 'efris.tasks.daily_efris_maintenance',
+                'schedule': crontab(hour=2, minute=0),
+            },
+            'efris-process-sync-queue': {
+                'task': 'efris.tasks.process_efris_sync_queue',
+                'schedule': 300.0,
+            },
+            'process-scheduled-reports': {
+                'task': 'reports.tasks.process_scheduled_reports',
+                'schedule': crontab(minute='*/5'),
+            },
+        }
+    else:
+        CELERY_BEAT_SCHEDULE = {}
+
+    CELERY_TASK_ROUTES = {
+        'public_router.tasks.create_tenant_async': {'queue': 'tenant_creation'},
+        'public_router.tasks.send_welcome_email': {'queue': 'emails'},
+    }
+    CELERY_WORKER_CONCURRENCY = 4
+    CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+    CELERY_TASK_ANNOTATIONS = {
+        'public_router.tasks.create_tenant_async': {
+            'rate_limit': '10/m',
+        }
+    }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -541,35 +754,40 @@ LANGUAGES = [
 ]
 LOCALE_PATHS = [BASE_DIR / 'locale']
 
-# Session configuration
-SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
-SESSION_CACHE_ALIAS = 'default'
-
 # Authentication
 AUTH_USER_MODEL = 'accounts.CustomUser'
-AUTHENTICATION_BACKENDS = [
-    'public_accounts.backends.PublicIdentifierBackend',
-    'company.authentication.CompanyAwareAuthBackend',
-    'accounts.backends.RoleBasedAuthBackend',
-    'django.contrib.auth.backends.ModelBackend',
-]
+if IS_DESKTOP:
+    AUTHENTICATION_BACKENDS = [
+        'public_accounts.backends.PublicIdentifierBackend',
+        'company.authentication.CompanyAwareAuthBackend',
+        'accounts.backends.RoleBasedAuthBackend',
+    ]
+else:
+    AUTHENTICATION_BACKENDS = [
+        'public_accounts.backends.PublicIdentifierBackend',
+        'company.authentication.CompanyAwareAuthBackend',
+        'accounts.backends.RoleBasedAuthBackend',
+        'django.contrib.auth.backends.ModelBackend',
+    ]
+
 
 VERSION_MAJOR = 1
 VERSION_MINOR = 0
 DEPLOYMENT_YEAR = 2025
 DEPLOYMENT_MONTH = 12
 DEPLOYMENT_DAY = 1
-
-# Or create it dynamically from components:
 APP_VERSION = f"{VERSION_MAJOR}.{VERSION_MINOR}.{DEPLOYMENT_YEAR}{DEPLOYMENT_MONTH:02d}{DEPLOYMENT_DAY:02d}"
-# Django Tenants
+
+# Django Tenants - Define for both modes (models need it)
 TENANT_MODEL = "company.Company"
 TENANT_DOMAIN_MODEL = "company.Domain"
-TENANT_HEADER = 'X-Company-ID'
-PUBLIC_SCHEMA_NAME = 'public'
-PUBLIC_SCHEMA_URLCONF = 'tenancy.public_urls'
 
-SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
+# These only apply to web mode
+if not IS_DESKTOP:
+    TENANT_HEADER = 'X-Company-ID'
+    PUBLIC_SCHEMA_NAME = 'public'
+    PUBLIC_SCHEMA_URLCONF = 'tenancy.public_urls'
+    SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
 
 # Static files
 STATIC_URL = '/static/'
@@ -578,7 +796,6 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 
 # Media files
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
 
 # EFRIS Settings
 EFRIS_WEBSOCKET_SETTINGS = {
@@ -656,102 +873,3 @@ SIMPLE_JWT = {
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 DEFAULT_FILE_STORAGE = 'django_tenants.files.storage.TenantFileSystemStorage'
-
-# Logging
-LOG_DIR = BASE_DIR / 'logs'
-os.makedirs(LOG_DIR, exist_ok=True)
-
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} [{name}] {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-        'json': {
-            'class': 'pythonjsonlogger.jsonlogger.JsonFormatter',
-            'format': '%(asctime)s %(name)s %(levelname)s %(message)s'
-        } if not DEBUG else {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'level': CONSOLE_LOG_LEVEL,
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple' if DEBUG else 'verbose',
-        },
-        'tenant_file': {
-            'level': LOG_LEVEL,
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': LOG_DIR / 'companies.log',
-            'maxBytes': MAX_LOG_BYTES,
-            'backupCount': LOG_BACKUP_COUNT,
-            'formatter': FILE_LOG_FORMATTER if not DEBUG else 'verbose',
-        },
-        'tenant_general_file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': LOG_DIR / 'tenant.log',
-            'maxBytes': MAX_LOG_BYTES,
-            'backupCount': LOG_BACKUP_COUNT,
-            'formatter': FILE_LOG_FORMATTER if not DEBUG else 'verbose',
-        },
-        'invoice_file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': LOG_DIR / 'invoices.log',
-            'maxBytes': MAX_LOG_BYTES,
-            'backupCount': LOG_BACKUP_COUNT,
-            'formatter': FILE_LOG_FORMATTER if not DEBUG else 'verbose',
-        },
-    },
-    'loggers': {
-        'django_tenants': {
-            'handlers': ['tenant_general_file', 'console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'company': {
-            'handlers': ['tenant_file', 'console'],
-            'level': LOG_LEVEL,
-            'propagate': False,
-        },
-        'tenant_middleware': {
-            'handlers': ['tenant_general_file', 'console'],
-            'level': LOG_LEVEL,
-            'propagate': False,
-        },
-        'invoices': {
-            'handlers': ['invoice_file', 'console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
-    },
-}
-
-# Add security logging in production
-if not DEBUG:
-    LOGGING['handlers']['security_file'] = {
-        'level': 'WARNING',
-        'class': 'logging.handlers.RotatingFileHandler',
-        'filename': LOG_DIR / 'security.log',
-        'maxBytes': MAX_LOG_BYTES,
-        'backupCount': LOG_BACKUP_COUNT,
-        'formatter': 'json',
-    }
-    LOGGING['loggers']['django.security'] = {
-        'handlers': ['security_file', 'console'],
-        'level': 'WARNING',
-        'propagate': False,
-    }

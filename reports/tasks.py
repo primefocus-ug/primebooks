@@ -240,36 +240,50 @@ def process_scheduled_reports():
     from django.utils import timezone
 
     now = timezone.now()
+    logger.info(f"=== Processing scheduled reports at {now} ===")
 
-    # Get all active tenants
     tenants = Company.objects.filter(is_active=True).exclude(schema_name='public')
 
     for tenant in tenants:
         with tenant_context(tenant):
             from .models import ReportSchedule
 
-            # Get due schedules AND schedules without next_scheduled
+            # Get schedules that need processing
             due_schedules = ReportSchedule.objects.filter(
                 is_active=True
             ).filter(
                 Q(next_scheduled__lte=now) | Q(next_scheduled__isnull=True)
-            ).select_related('report')
+            ).select_related('report', 'report__created_by')  # ✓ Added created_by
+
+            logger.info(
+                f"Tenant {tenant.schema_name}: "
+                f"Found {due_schedules.count()} schedules to process"
+            )
 
             for schedule in due_schedules:
                 try:
-                    # If no next_scheduled, calculate it
+                    # Calculate next_scheduled if missing
                     if not schedule.next_scheduled:
+                        logger.info(f"Schedule {schedule.id} missing next_scheduled, calculating...")
                         schedule.calculate_next_run()
                         schedule.save()
-                        logger.info(f"Calculated next run for new schedule: {schedule.id}")
-                        continue  # Skip execution for this run
 
-                    logger.info(f"Processing scheduled report: {schedule.report.name} for tenant {tenant.schema_name}")
+                        # ✓ FIX: Check if it's actually due now
+                        if schedule.next_scheduled > now:
+                            logger.info(
+                                f"Schedule {schedule.id} next run is {schedule.next_scheduled}, "
+                                f"skipping for now"
+                            )
+                            continue
 
-                    # Get report creator
+                    logger.info(
+                        f"Executing scheduled report: {schedule.report.name} "
+                        f"(ID: {schedule.id}, Next: {schedule.next_scheduled})"
+                    )
+
                     user = schedule.report.created_by
 
-                    # Generate report
+                    # Build parameters
                     kwargs = schedule.report.filters or {}
                     kwargs['format'] = schedule.format
                     kwargs['email_report'] = True
@@ -277,11 +291,10 @@ def process_scheduled_reports():
                     kwargs['cc_recipients'] = schedule.cc_recipients
                     kwargs['include_efris'] = schedule.include_efris
 
-                    # Add schedule-specific parameters
                     if schedule.efris_report_format:
                         kwargs['efris_format'] = schedule.efris_report_format
 
-                    # Start async generation with schema_name
+                    # ✓ Generate report
                     generate_report_async.delay(
                         schedule.report.id,
                         user.id,
@@ -289,23 +302,33 @@ def process_scheduled_reports():
                         **kwargs
                     )
 
-                    # Update schedule
+                    # ✓ Update schedule
                     schedule.last_sent = now
                     schedule.calculate_next_run()
                     schedule.retry_count = 0
                     schedule.save()
 
-                    logger.info(f"Triggered scheduled report {schedule.report.name} (ID: {schedule.id})")
+                    logger.info(
+                        f"✓ Triggered report {schedule.report.name} "
+                        f"(Next run: {schedule.next_scheduled})"
+                    )
 
                 except Exception as e:
-                    logger.error(f"Error processing scheduled report {schedule.id}: {str(e)}", exc_info=True)
+                    logger.error(
+                        f"✗ Error processing schedule {schedule.id}: {str(e)}",
+                        exc_info=True
+                    )
 
                     schedule.retry_count += 1
                     if schedule.retry_count >= schedule.max_retries:
                         schedule.is_active = False
-                        logger.error(f"Deactivating schedule {schedule.id} after max retries")
-
+                        logger.error(
+                            f"Deactivating schedule {schedule.id} after "
+                            f"{schedule.retry_count} failed attempts"
+                        )
                     schedule.save()
+
+    logger.info("=== Finished processing scheduled reports ===")
 
 
 @shared_task

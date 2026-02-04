@@ -1,0 +1,132 @@
+<!-- templates/desktop/sync_settings.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync Settings - {{ SITE_NAME }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-8 mx-auto">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white">
+                        <h4 class="mb-0"><i class="bi bi-cloud-arrow-down"></i> Sync Settings</h4>
+                    </div>
+                    <div class="card-body">
+                        {% if messages %}
+                            {% for message in messages %}
+                                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                                    {{ message }}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+
+                        {% if is_authenticated %}
+                            <!-- Authenticated State -->
+                            <div class="alert alert-success">
+                                <i class="bi bi-check-circle"></i> Connected to {{ SITE_NAME }}
+                            </div>
+
+                            {% if user_info %}
+                                <div class="mb-4">
+                                    <h5>Account Information</h5>
+                                    <table class="table table-sm">
+                                        <tr>
+                                            <th>Email:</th>
+                                            <td>{{ user_info.email }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Name:</th>
+                                            <td>{{ user_info.first_name }} {{ user_info.last_name }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            {% endif %}
+
+                            {% if company_info %}
+                                <div class="mb-4">
+                                    <h5>Company Information</h5>
+                                    <table class="table table-sm">
+                                        <tr>
+                                            <th>Company:</th>
+                                            <td>{{ company_info.name }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Subdomain:</th>
+                                            <td>{{ company_info.schema_name }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            {% endif %}
+
+                            <div class="d-grid gap-2">
+                                <form method="post">
+                                    {% csrf_token %}
+                                    <button type="submit" name="action" value="sync_now" class="btn btn-primary btn-lg w-100">
+                                        <i class="bi bi-arrow-repeat"></i> Sync Now
+                                    </button>
+                                </form>
+
+                                <form method="post">
+                                    {% csrf_token %}
+                                    <button type="submit" name="action" value="logout" class="btn btn-outline-danger w-100">
+                                        <i class="bi bi-box-arrow-right"></i> Disconnect
+                                    </button>
+                                </form>
+                            </div>
+
+                        {% else %}
+                            <!-- Not Authenticated State -->
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle"></i> Not connected. You're working offline.
+                            </div>
+
+                            <p class="mb-4">
+                                Connect your account to sync data with the cloud and enable backup.
+                            </p>
+
+                            <div class="d-grid">
+                                <a href="{% url 'primebooks:desktop_login' %}" class="btn btn-primary btn-lg">
+                                    <i class="bi bi-cloud-arrow-up"></i> Connect Account
+                                </a>
+                            </div>
+                        {% endif %}
+
+                        <hr class="my-4">
+
+                        <h5>Sync Information</h5>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-info-circle text-primary"></i> Last sync: Never</li>
+                            <li><i class="bi bi-database text-primary"></i> Local data only</li>
+                        </ul>
+
+                        <div class="alert alert-info">
+                            <i class="bi bi-lightbulb"></i> <strong>Tip:</strong>
+                            Syncing allows you to:
+                            <ul class="mb-0 mt-2">
+                                <li>Backup your data to the cloud</li>
+                                <li>Access data from multiple devices</li>
+                                <li>Share data with team members</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-center mt-3">
+                    <a href="{% url 'primebooks:tenant_selector' %}" class="btn btn-link">
+                        <i class="bi bi-arrow-left"></i> Back to Companies
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

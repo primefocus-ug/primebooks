@@ -1,0 +1,275 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Configure Export Settings - {{ product.name }} - EFRIS{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    .required-field::after {
+        content: " *";
+        color: red;
+    }
+    .info-box {
+        background: #e3f2fd;
+        border-left: 4px solid #2196f3;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2><i class="fas fa-cog"></i> Configure Export Settings</h2>
+                    <p class="text-muted">Product: <strong>{{ product.name }}</strong></p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:product_detail' pk=product.id %}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Product
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Instructions Sidebar -->
+        <div class="col-md-4">
+            <div class="card sticky-top" style="top: 20px;">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0"><i class="fas fa-info-circle"></i> What is Customs UoM?</h6>
+                </div>
+                <div class="card-body">
+                    <p><strong>Customs Unit of Measure (UoM)</strong> is required by Uganda Revenue Authority for export documentation.</p>
+                    
+                    <h6 class="text-primary mt-3">Why is this needed?</h6>
+                    <ul class="small">
+                        <li>Mandatory for export invoices (v23.4+)</li>
+                        <li>Different from regular sales UoM</li>
+                        <li>Used in T130 product registration</li>
+                        <li>Must be from T115 exportRateUnit list</li>
+                    </ul>
+
+                    <div class="alert alert-warning small mt-3">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Important:</strong>
+                        <ul class="mb-0 pl-3">
+                            <li>Configure BEFORE creating export invoices</li>
+                            <li>Cannot export without this</li>
+                            <li>Sent to EFRIS via T130</li>
+                        </ul>
+                    </div>
+
+                    <div class="info-box mt-3">
+                        <h6 class="text-primary">Examples:</h6>
+                        <ul class="mb-0 small">
+                            <li><strong>Coffee:</strong> NTT (Net Metric Tons)</li>
+                            <li><strong>Juice:</strong> LTR (Litres)</li>
+                            <li><strong>Cotton:</strong> KGM (Kilograms)</li>
+                            <li><strong>Fabric:</strong> MTK (Square Meters)</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Form -->
+        <div class="col-md-8">
+            <form method="post">
+                {% csrf_token %}
+
+                <!-- Current Product Info -->
+                <div class="card mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">
+                            <i class="fas fa-box"></i> Current Product Information
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <table class="table table-sm table-borderless">
+                                    <tr>
+                                        <th width="40%">Product Name:</th>
+                                        <td>{{ product.name }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>SKU/Code:</th>
+                                        <td>{{ product.sku|default:product.barcode|default:"-" }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Regular UoM:</th>
+                                        <td>{{ product.get_measure_unit_display|default:"-" }}</td>
+                                    </tr>
+                                </table>
+                            </div>
+
+                            <div class="col-md-6">
+                                <table class="table table-sm table-borderless">
+                                    <tr>
+                                        <th width="40%">Regular Price:</th>
+                                        <td>{{ product.selling_price|floatformat:2|intcomma }} UGX</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Export Status:</th>
+                                        <td>
+                                            {% if product.is_export_ready %}
+                                            <span class="badge badge-success">✓ Configured</span>
+                                            {% else %}
+                                            <span class="badge badge-warning">Not Configured</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Customs UoM Configuration -->
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-globe"></i> Customs UoM Configuration (MANDATORY)
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="info-box">
+                            <i class="fas fa-info-circle"></i>
+                            <strong>NEW REQUIREMENT (EFRIS v23.4):</strong> All products for export must have customs UoM configured via the <code>commodityGoodsExtendEntity</code> field in T130.
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label class="required-field">Customs Measure Unit</label>
+                                    <select name="customs_measure_unit" class="form-control form-control-lg" required>
+                                        <option value="">-- Select Unit --</option>
+                                        {% for code, name in customs_units %}
+                                        <option value="{{ code }}" {% if product.customs_measure_unit == code %}selected{% endif %}>
+                                            {{ name }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="form-text text-muted">
+                                        <i class="fas fa-info-circle"></i> From T115 exportRateUnit dictionary
+                                    </small>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label class="required-field">Customs Unit Price</label>
+                                    <input type="number" name="customs_unit_price" class="form-control form-control-lg" 
+                                           step="0.01" min="0.01" 
+                                           value="{{ product.customs_unit_price|default:product.selling_price }}"
+                                           placeholder="e.g. 5000.00" required>
+                                    <small class="form-text text-muted">
+                                        <i class="fas fa-info-circle"></i> Price per customs unit (in UGX)
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label>Package Scaled Value (Customs)</label>
+                                    <input type="number" name="package_scaled_value_customs" class="form-control" 
+                                           step="0.00000001" min="0.00000001" 
+                                           value="{{ product.package_scaled_value_customs|default:1 }}" 
+                                           placeholder="Default: 1">
+                                    <small class="form-text text-muted">
+                                        <i class="fas fa-info-circle"></i> Scaling factor for packages (usually 1)
+                                    </small>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label>Customs Scaled Value</label>
+                                    <input type="number" name="customs_scaled_value" class="form-control" 
+                                           step="0.00000001" min="0.00000001" 
+                                           value="{{ product.customs_scaled_value|default:1 }}" 
+                                           placeholder="Default: 1">
+                                    <small class="form-text text-muted">
+                                        <i class="fas fa-info-circle"></i> Conversion factor between units
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Optional: Piece Measure Unit -->
+                <div class="card mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">
+                            <i class="fas fa-box-open"></i> Piece Measure Unit (Optional)
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>Piece Measure Unit</label>
+                            <select name="piece_measure_unit" class="form-control">
+                                <option value="">-- None (use customs unit) --</option>
+                                {% for code, name in piece_units %}
+                                <option value="{{ code }}" {% if product.piece_measure_unit == code %}selected{% endif %}>
+                                    {{ name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="form-text text-muted">
+                                <i class="fas fa-info-circle"></i> Optional: For products sold by piece (e.g., per stick, per bottle)
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <p class="mb-0 text-muted">
+                                    <i class="fas fa-cloud-upload-alt"></i> 
+                                    This will register the product with EFRIS (T130) with customs UoM
+                                </p>
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-secondary mr-2" onclick="window.history.back()">
+                                    Cancel
+                                </button>
+                                <button type="submit" class="btn btn-success btn-lg">
+                                    <i class="fas fa-check-circle"></i> Configure for Export
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-fill customs unit price from regular price if empty
+document.addEventListener('DOMContentLoaded', function() {
+    const customsPriceInput = document.querySelector('input[name="customs_unit_price"]');
+    if (customsPriceInput && !customsPriceInput.value) {
+        customsPriceInput.value = {{ product.selling_price }};
+    }
+});
+</script>
+{% endblock %}

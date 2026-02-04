@@ -24,6 +24,23 @@ from celery import shared_task
 from django_tenants.utils import schema_context
 from .services import sync_commodity_categories
 
+@shared_task(bind=True, max_retries=3)
+def sync_hs_codes_task(self, company_id, schema_name):
+    """Async task to sync HS codes for a specific company"""
+    try:
+        from company.models import Company
+        with schema_context(schema_name):
+            company = Company.objects.get(company_id=company_id)
+            # Client now knows which company to use
+            with EnhancedEFRISAPIClient(company) as client:
+                result = client.t185_query_hs_code_list()
+
+            return result
+
+    except Exception as e:
+        logger.error(f"HS Code sync failed: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
+
 
 @shared_task(bind=True, max_retries=3)
 def sync_categories_async(self, company_id, schema_name):
@@ -91,64 +108,246 @@ def create_efris_notification(company, title: str, message: str,
         logger.error(f"Failed to create EFRIS notification: {e}")
         return None
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=300)
-def fiscalize_invoice_async(self, invoice_id,user=None):
+@shared_task(bind=True, max_retries=3)
+def fiscalize_invoice_async(self, sale_id, user_id=None):
     """
-    Celery task to fiscalize invoice with EFRIS
+    Fiscalize a regular (non-export) invoice/receipt via T109.
+    This task is NOT called for export invoices — see fiscalize_export_invoice_async below.
     """
     try:
-        from invoices.models import Invoice
+        from sales.models import Sale
+        from efris.services import EFRISInvoiceService
 
-        invoice = Invoice.objects.get(id=invoice_id)
-        company = invoice.company
+        sale = Sale.objects.select_related('store', 'customer', 'created_by').get(id=sale_id)
 
-        # Check if company has EFRIS enabled
-        if not getattr(company, 'efris_enabled', False):
-            logger.warning(f"EFRIS not enabled for company {company.name}")
-            return {
-                'success': False,
-                'message': 'EFRIS not enabled for this company'
-            }
+        if sale.is_fiscalized:
+            return {'success': False, 'error': 'Already fiscalized'}
 
-        # Initialize EFRIS service
-        service = EFRISInvoiceService(company)
+        can_fiscalize, reason = sale.can_fiscalize()
+        if not can_fiscalize:
+            sale.mark_fiscalization_failed(reason)
+            return {'success': False, 'error': reason}
 
-        # Call fiscalize_invoice
-        result = service.fiscalize_invoice(invoice)
-        logger.debug(f"fiscalize_invoice result for invoice {invoice_id}: {result} (type: {type(result)})")
+        service = EFRISInvoiceService(sale.store)
+        result = service.fiscalize_invoice(sale)          # <-- standard T109 call
 
-        # Check result
         if result.get('success'):
-            logger.info(
-                f"Invoice {invoice.number} fiscalized successfully: "
-                f"{result.get('message')}"
-            )
-
-            # Update invoice status if needed
-            if hasattr(invoice, 'is_fiscalized'):
-                invoice.is_fiscalized = True
-                invoice.fiscalization_time = timezone.now()
-                invoice.save(update_fields=['is_fiscalized', 'fiscalization_time'])
-
+            sale.update_from_efris_response(result.get('data', {}))
+            return {
+                'success': True,
+                'efris_invoice_number': sale.efris_invoice_number,
+            }
         else:
-            logger.error(
-                f"Failed to fiscalize invoice {invoice.number}: "
-                f"{result.get('message')}"
-            )
+            error_msg = result.get('error', 'Unknown error')
+            sale.mark_fiscalization_failed(error_msg)
+            return {'success': False, 'error': error_msg}
 
-        return result
-
-    except Invoice.DoesNotExist:
-        error_msg = f"Invoice {invoice_id} not found"
-        logger.error(error_msg)
-        return {'success': False, 'message': error_msg}
-
+    except Sale.DoesNotExist:
+        return {'success': False, 'error': 'Sale not found'}
     except Exception as e:
-        error_msg = f"EFRIS service error for invoice {invoice_id}: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        if self.request.retries < self.max_retries:
-            raise self.retry(countdown=300, exc=e)
-        return {'success': False, 'message': error_msg}
+        try:
+            sale = Sale.objects.get(id=sale_id)
+            sale.mark_fiscalization_failed(str(e))
+        except Exception:
+            pass
+        raise self.retry(exc=e, countdown=60)
+
+
+# ---------------------------------------------------------------------------
+# CORRECTED TASK — export invoices also go through T109, but with extra fields
+# ---------------------------------------------------------------------------
+@shared_task(bind=True, max_retries=3)
+def fiscalize_export_invoice_async(self, sale_id, user_id=None, export_data=None):
+    """
+    Fiscalize an export invoice via the SAME T109 endpoint used for regular invoices.
+
+    EFRIS does NOT have a separate "export" endpoint.  What makes an export invoice
+    different is a handful of fields that get set in the T109 payload:
+        • basicInformation.invoiceIndustryCode = "102"  (or "112" for Export Service)
+        • buyerDetails.deliveryTermsCode                 (mandatory for 102)
+        • goodsDetails[*].totalWeight                    (mandatory per line for 102)
+        • goodsDetails[*].pieceQty                       (mandatory per line for 102)
+        • goodsDetails[*].pieceMeasureUnit               (mandatory per line for 102)
+        • goodsDetails[*].exciseFlag = "2"               (excise blocked on exports)
+
+    The EFRISInvoiceService.fiscalize_invoice() method already builds the T109 payload.
+    We pass `is_export=True` so it knows to inject the export-specific fields.
+    After a successful T109 response, we kick off poll_export_status_async so we can
+    track the FDN through customs via T187.
+    """
+    try:
+        from sales.models import Sale
+        from efris.services import EFRISInvoiceService
+
+        sale = Sale.objects.select_related('store', 'customer', 'created_by').get(id=sale_id)
+        logger.info(f"🌍 Starting export invoice fiscalization for {sale.document_number}")
+
+        # ── already done? ──────────────────────────────────────────────────
+        if sale.is_fiscalized:
+            logger.warning(f"{sale.document_number} is already fiscalized")
+            return {'success': False, 'error': 'Already fiscalized'}
+
+        # ── can we fiscalize? ──────────────────────────────────────────────
+        can_fiscalize, reason = sale.can_fiscalize()
+        if not can_fiscalize:
+            sale.mark_fiscalization_failed(reason)
+            return {'success': False, 'error': reason}
+
+        # ── update export fields on the sale if the task received them ─────
+        # (they may already be persisted from create_sale_record; this is a
+        #  safety net for cases where they weren't saved yet)
+        if export_data:
+            update_fields = []
+            field_map = {
+                'export_delivery_terms': export_data.get('delivery_terms'),
+                'export_total_weight': export_data.get('total_weight'),
+                'export_buyer_country': export_data.get('buyer_country'),
+                'export_buyer_passport': export_data.get('buyer_passport'),
+                'export_currency': export_data.get('currency', 'USD'),
+                'export_exchange_rate': export_data.get('exchange_rate'),
+            }
+            for field, value in field_map.items():
+                if value is not None:
+                    setattr(sale, field, value)
+                    update_fields.append(field)
+            if update_fields:
+                sale.save(update_fields=update_fields)
+
+        # ── call EFRIS T109 with is_export=True ────────────────────────────
+        # The service inspects sale.document_type == 'EXPORT_INVOICE' and
+        # pulls delivery_terms / per-item weights from the sale + its items.
+        service = EFRISInvoiceService(sale.store)
+        result = service.fiscalize_invoice(sale, is_export=True)   # <── same method, export flag
+
+        if result.get('success'):
+            logger.info(f"✅ Export invoice {sale.document_number} fiscalized successfully")
+
+            # Persist the FDN, QR code, verification code, etc.
+            sale.update_from_efris_response(result.get('data', {}))
+
+            # export_status stays at '101' (Processing) — customs hasn't cleared it yet.
+            # We now start polling T187 to detect when it flips to '102' (Exited).
+            sale.export_status = '101'
+            sale.save(update_fields=['export_status'])
+
+            # Kick off the T187 polling task
+            poll_export_status_async.apply_async(
+                kwargs={'sale_id': sale.id},
+                countdown=300,   # first poll after 5 minutes
+            )
+            logger.info(f"📡 Queued T187 status polling for {sale.document_number}")
+
+            return {
+                'success': True,
+                'sale_id': sale.id,
+                'document_number': sale.document_number,
+                'efris_invoice_number': sale.efris_invoice_number,
+            }
+        else:
+            error_msg = result.get('error', 'Unknown error during fiscalization')
+            logger.error(f"❌ Export fiscalization failed for {sale.document_number}: {error_msg}")
+            sale.mark_fiscalization_failed(error_msg)
+            return {'success': False, 'error': error_msg}
+
+    except Sale.DoesNotExist:
+        logger.error(f"Sale {sale_id} not found")
+        return {'success': False, 'error': 'Sale not found'}
+    except Exception as e:
+        logger.error(f"❌ Error fiscalizing export invoice {sale_id}: {e}", exc_info=True)
+        try:
+            from sales.models import Sale
+            sale = Sale.objects.get(id=sale_id)
+            sale.mark_fiscalization_failed(str(e))
+        except Exception:
+            pass
+        raise self.retry(exc=e, countdown=60)
+
+
+# ---------------------------------------------------------------------------
+# NEW TASK — polls T187 to track when customs clears the export FDN
+# ---------------------------------------------------------------------------
+@shared_task(bind=True, max_retries=48)   # up to 48 polls (one per 30 min = 24 h)
+def poll_export_status_async(self, sale_id):
+    """
+    Poll EFRIS T187 ("Query FDN status") to check whether customs has cleared
+    this export invoice.
+
+    T187 request:   { "invoiceNo": "<FDN>" }
+    T187 response:  { "invoiceNo": "<FDN>", "documentStatusCode": "101"|"102" }
+
+        101 = FDN under processing  (customs hasn't cleared yet)
+        102 = Exited                (customs cleared — goods have left the country)
+
+    We keep polling until we get 102, then update the local sale and stop.
+    If the sale has been voided/cancelled in the meantime we also stop.
+    """
+    try:
+        from sales.models import Sale
+        from efris.services import EFRISInvoiceService
+
+        sale = Sale.objects.select_related('store').get(id=sale_id)
+
+        # ── safety checks — stop polling if no longer relevant ────────────
+        if not sale.is_fiscalized or not sale.efris_invoice_number:
+            logger.warning(f"Stopping poll for sale {sale_id}: not fiscalized or no FDN")
+            return {'stopped': True, 'reason': 'not_fiscalized'}
+
+        if sale.status in ('VOIDED', 'CANCELLED'):
+            logger.info(f"Stopping poll for sale {sale_id}: status is {sale.status}")
+            return {'stopped': True, 'reason': sale.status.lower()}
+
+        if sale.export_status == '102':
+            logger.info(f"Sale {sale_id} already cleared — no need to poll")
+            return {'stopped': True, 'reason': 'already_cleared'}
+
+        # ── call T187 ──────────────────────────────────────────────────────
+        service = EFRISInvoiceService(sale.store)
+        result = service.query_export_fdn_status(sale.efris_invoice_number)  # <── T187
+
+        if not result.get('success'):
+            error_msg = result.get('error', 'T187 query failed')
+            logger.warning(f"T187 poll failed for {sale.document_number}: {error_msg}")
+            # Retry — don't mark as permanently failed, this is just a poll
+            raise self.retry(exc=Exception(error_msg), countdown=1800)  # retry in 30 min
+
+        document_status_code = result.get('data', {}).get('documentStatusCode', '101')
+        logger.info(
+            f"T187 poll for {sale.document_number}: documentStatusCode={document_status_code}"
+        )
+
+        if document_status_code == '102':
+            # ── customs cleared! ───────────────────────────────────────────
+            sale.export_status = '102'
+            sale.export_cleared_at = timezone.now()
+            sale.save(update_fields=['export_status', 'export_cleared_at'])
+            logger.info(f"✅ Export invoice {sale.document_number} cleared by customs")
+            return {
+                'success': True,
+                'document_number': sale.document_number,
+                'export_status': '102',
+                'cleared_at': sale.export_cleared_at.isoformat(),
+            }
+        else:
+            # Still processing — schedule another poll in 30 minutes
+            logger.info(f"📡 {sale.document_number} still processing, re-polling in 30 min")
+            raise self.retry(exc=Exception('still_processing'), countdown=1800)
+
+    except Sale.DoesNotExist:
+        logger.error(f"Sale {sale_id} not found — stopping poll")
+        return {'stopped': True, 'reason': 'sale_not_found'}
+    except self.MaxRetriesExceededError:
+        logger.warning(
+            f"Max polls reached for sale {sale_id} without customs clearance. "
+            f"Manual check may be needed."
+        )
+        return {'stopped': True, 'reason': 'max_retries_exceeded'}
+    except Exception as e:
+        if 'still_processing' in str(e) or 'T187 query failed' in str(e):
+            # These are expected — the retry was already raised above
+            raise
+        logger.error(f"Unexpected error polling export status for {sale_id}: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=1800)
+
 
 
 @shared_task(bind=True, max_retries=2)

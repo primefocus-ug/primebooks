@@ -1,0 +1,186 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Export Invoice Operations{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Export Invoice Operations - {{ sale.document_number }}</h4>
+                    <p class="mb-0 text-muted">
+                        EFRIS FDN: <strong>{{ sale.efris_invoice_number }}</strong>
+                        {% if sale.export_status %}
+                        | Status: <span class="badge badge-info">{{ sale.get_export_status_display }}</span>
+                        {% endif %}
+                    </p>
+                </div>
+                
+                <div class="card-body">
+                    <!-- SAD Registration -->
+                    <div class="mb-4">
+                        <h5>
+                            <i class="fas fa-file-alt"></i> SAD Registration
+                            {% if has_sad %}
+                            <span class="badge badge-success">Registered</span>
+                            {% endif %}
+                        </h5>
+                        
+                        {% if not has_sad %}
+                        <form method="post" class="mt-3">
+                            {% csrf_token %}
+                            <input type="hidden" name="operation" value="register_sad">
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>SAD Number *</label>
+                                        <input type="text" name="sad_number" class="form-control" required maxlength="20">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>SAD Date *</label>
+                                        <input type="datetime-local" name="sad_date" class="form-control" required>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Customs Office *</label>
+                                        <input type="text" name="customs_office" class="form-control" required>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>CIF Value *</label>
+                                        <input type="number" name="cif_value" class="form-control" step="0.01" required>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i> Register SAD
+                            </button>
+                        </form>
+                        {% else %}
+                        <div class="alert alert-success mt-3">
+                            <p class="mb-0">
+                                <strong>SAD Number:</strong> {{ sale.export_sad_number }}<br>
+                                <strong>Submitted:</strong> {{ sale.export_sad_submitted_at|date:"Y-m-d H:i" }}
+                            </p>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <hr>
+                    
+                    <!-- Export Confirmation -->
+                    <div class="mb-4">
+                        <h5>
+                            <i class="fas fa-check-circle"></i> Export Confirmation
+                            {% if is_cleared %}
+                            <span class="badge badge-success">Cleared</span>
+                            {% endif %}
+                        </h5>
+                        
+                        {% if has_sad and not is_cleared %}
+                        <form method="post" class="mt-3">
+                            {% csrf_token %}
+                            <input type="hidden" name="operation" value="confirm_export">
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Exit Station/Office *</label>
+                                        <input type="text" name="exit_station" class="form-control" required>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Exit Officer *</label>
+                                        <input type="text" name="exit_officer" class="form-control" required>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Exit Date *</label>
+                                        <input type="datetime-local" name="exit_date" class="form-control" required>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label>Status Code *</label>
+                                        <select name="status_code" class="form-control" required>
+                                            <option value="101">Processing</option>
+                                            <option value="102">Cleared</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-check"></i> Confirm Export
+                            </button>
+                        </form>
+                        {% elif is_cleared %}
+                        <div class="alert alert-success mt-3">
+                            <p class="mb-0">
+                                <strong>Status:</strong> Export Cleared<br>
+                                <strong>Cleared At:</strong> {{ sale.export_cleared_at|date:"Y-m-d H:i" }}
+                            </p>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-warning mt-3">
+                            Please register SAD first before confirming export.
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Export Items -->
+                    <h5 class="mt-4"><i class="fas fa-list"></i> Export Items</h5>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>HS Code</th>
+                                    <th>Quantity</th>
+                                    <th>Weight (KGM)</th>
+                                    <th>Piece Qty</th>
+                                    <th>Unit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in export_items %}
+                                <tr>
+                                    <td>{{ item.product.name }}</td>
+                                    <td>{{ item.product.hs_code|default:"—" }}</td>
+                                    <td>{{ item.quantity }}</td>
+                                    <td>{{ item.export_total_weight|default:"—" }}</td>
+                                    <td>{{ item.export_piece_qty|default:"—" }}</td>
+                                    <td>{{ item.export_piece_measure_unit|default:"—" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="card-footer">
+                    <a href="{% url 'sales:sale_detail' sale.id %}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Sale
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -188,7 +188,43 @@ class Invoice(models.Model, EFRISInvoiceMixin):
         verbose_name=_("Auto-Fiscalize"),
         help_text=_("Automatically fiscalize when invoice is sent")
     )
-
+    # EFRIS Export Fields
+    export_status = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="EFRIS export status: 101=Processing, 102=Cleared"
+    )
+    export_delivery_terms = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        help_text="Incoterms: FOB, CIF, CFR, etc."
+    )
+    export_total_weight = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        help_text="Total gross weight in KGM"
+    )
+    export_sad_number = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="Customs SAD declaration number (20 digits)"
+    )
+    export_sad_submitted_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="When the SAD was submitted"
+    )
+    export_cleared_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="When customs clearance was completed"
+    )
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -221,6 +257,7 @@ class Invoice(models.Model, EFRISInvoiceMixin):
             models.Index(fields=['fiscalization_status']),
             models.Index(fields=['business_type']),
             models.Index(fields=['efris_document_type']),
+            models.Index(fields=['export_status']),
         ]
 
         constraints = [
@@ -255,6 +292,35 @@ class Invoice(models.Model, EFRISInvoiceMixin):
             raise ValidationError({
                 'original_fdn': _('Original Fiscal Document Number is required for credit/debit notes')
             })
+
+    def validate_export_fields(self):
+        """Validate export invoice fields"""
+        errors = []
+
+        if not self.sale.is_export_sale:
+            return errors
+
+        # Validate delivery terms synced from sale
+        if not self.export_delivery_terms and not self.sale.delivery_terms_code:
+            errors.append("Delivery terms required for export invoice")
+
+        # Validate total weight calculated
+        if not self.export_total_weight or self.export_total_weight <= 0:
+            errors.append("Total weight required for export invoice")
+
+        return errors
+
+    def sync_export_fields_from_sale(self):
+        """Sync export fields from sale"""
+        if self.sale and self.sale.is_export_sale:
+            self.export_delivery_terms = self.sale.delivery_terms_code
+            # Calculate total weight from items
+            total_weight = sum(
+                item.export_total_weight or 0
+                for item in self.sale.items.filter(item_type='PRODUCT')
+            )
+            self.export_total_weight = total_weight
+            self.save(update_fields=['export_delivery_terms', 'export_total_weight'])
 
     def save(self, *args, **kwargs):
         # Auto-populate store from sale

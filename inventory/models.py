@@ -1148,6 +1148,156 @@ class Product(models.Model, EFRISProductMixin):
         related_name='efris_products_created',
         verbose_name=_("EFRIS Created By")
     )
+    customs_measure_unit = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+        verbose_name=_("Customs Measure Unit"),
+        help_text=_("Customs measure unit for exports (from T115 exportRateUnit) - e.g., NTT, KGM, LTR")
+    )
+
+    customs_unit_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name=_("Customs Unit Price"),
+        help_text=_("Unit price in customs measure unit (for export documentation)")
+    )
+
+    package_scaled_value_customs = models.DecimalField(
+        max_digits=12,
+        decimal_places=8,
+        null=True,
+        blank=True,
+        default=1,
+        verbose_name=_("Package Scaled Value (Customs)"),
+        help_text=_("Package scaling factor for customs unit (usually 1)")
+    )
+
+    customs_scaled_value = models.DecimalField(
+        max_digits=12,
+        decimal_places=8,
+        null=True,
+        blank=True,
+        default=1,
+        verbose_name=_("Customs Scaled Value"),
+        help_text=_("Conversion factor between units (usually 1)")
+    )
+
+    piece_measure_unit = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+        verbose_name=_("Piece Measure Unit"),
+        help_text=_("Piece measure unit (from T115 rateUnit) - e.g., 101=Per Stick, 102=Per Litre")
+    )
+
+    # T130 Piece Unit Fields (conditional)
+    efris_package_scaled_value = models.DecimalField(
+        max_digits=12,
+        decimal_places=8,
+        default=1,
+        verbose_name=_("Package Scaled Value"),
+        help_text=_("MANDATORY when havePieceUnit=101")
+    )
+
+    efris_piece_scaled_value = models.DecimalField(
+        max_digits=12,
+        decimal_places=8,
+        default=1,
+        verbose_name=_("Piece Scaled Value"),
+        help_text=_("MANDATORY when havePieceUnit=101")
+    )
+
+    # T130 Other Units Support
+    efris_has_other_units = models.BooleanField(
+        default=False,
+        verbose_name=_("Has Other Units"),
+        help_text=_("Product has alternative measurement units")
+    )
+
+    efris_other_units = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name=_("Other Units"),
+        help_text=_("Array of {otherUnit, otherPrice, otherScaled, packageScaled}")
+    )
+
+    # T130 Export/Customs Fields (for commodityGoodsExtendEntity)
+    is_export_product = models.BooleanField(
+        default=False,
+        verbose_name=_("Export Product"),
+        help_text=_("Product configured for export sales")
+    )
+
+    efris_customs_measure_unit = models.CharField(
+        max_length=10,
+        blank=True,
+        verbose_name=_("Customs Measure Unit"),
+        help_text=_("From T115 exportRateUnit (e.g., KGM, LTR, NTT)")
+    )
+
+    efris_customs_unit_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name=_("Customs Unit Price"),
+        help_text=_("Unit price in customs measure unit")
+    )
+
+    efris_package_scaled_value_customs = models.DecimalField(
+        max_digits=12,
+        decimal_places=8,
+        default=1,
+        verbose_name=_("Package Scaled Value (Customs)"),
+        help_text=_("Package scaling for customs unit")
+    )
+
+    efris_customs_scaled_value = models.DecimalField(
+        max_digits=12,
+        decimal_places=8,
+        default=1,
+        verbose_name=_("Customs Scaled Value"),
+        help_text=_("Conversion factor for customs unit")
+    )
+
+    # T109 Export - HS Code Fields
+    hs_code = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name=_("HS Code"),
+        help_text=_("Harmonized System code for exports")
+    )
+
+    hs_name = models.CharField(
+        max_length=1000,
+        blank=True,
+        verbose_name=_("HS Description"),
+        help_text=_("Description of HS code")
+    )
+    item_weight = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Weight per unit in KG (required for export)"
+    )
+    piece_qty = models.IntegerField(
+        null=True,
+        blank=True,
+        default=1,
+        help_text="Number of pieces per unit"
+    )
+    # Service Mark (T130 field)
+    efris_service_mark = models.CharField(
+        max_length=3,
+        blank=True,
+        default='102',
+        verbose_name=_("Service Mark"),
+        help_text=_("101=Service, 102=Product")
+    )
 
     # Other Fields
     is_active = models.BooleanField(
@@ -1191,6 +1341,16 @@ class Product(models.Model, EFRISProductMixin):
 
     def __str__(self):
         return f"{self.name} ({self.sku})"
+
+    @property
+    def is_export_ready(self):
+        '''Check if product has all required export configuration'''
+        return bool(
+            self.hs_code and
+            self.item_weight and
+            self.item_weight > 0 and
+            self.customs_measure_unit
+        )
 
     def clean(self):
         """Validate product data before saving"""
@@ -1412,6 +1572,70 @@ class Product(models.Model, EFRISProductMixin):
         self.efris_is_uploaded = False
         self.save(update_fields=['efris_is_uploaded'])
 
+    def get_efris_commodity_goods_extend(self):
+        """Get commodityGoodsExtendEntity for export products"""
+        if not self.is_export_product:
+            return None
+
+        return {
+            "customsMeasureUnit": self.efris_customs_measure_unit or "",
+            "customsUnitPrice": f"{self.efris_customs_unit_price:.2f}" if self.efris_customs_unit_price else "",
+            "packageScaledValueCustoms": str(self.efris_package_scaled_value_customs or 1),
+            "customsScaledValue": str(self.efris_customs_scaled_value or 1),
+        }
+
+    def get_efris_other_units(self):
+        """Get goodsOtherUnits array for T130"""
+        if not self.efris_has_other_units or not self.efris_other_units:
+            return []
+
+        # Validate that otherUnit != measureUnit and != pieceMeasureUnit
+        other_units = []
+        for unit_data in self.efris_other_units:
+            other_unit = unit_data.get('otherUnit', '')
+            if other_unit and other_unit != self.unit_of_measure and other_unit != self.efris_piece_measure_unit:
+                other_units.append({
+                    "otherUnit": other_unit,
+                    "otherPrice": str(unit_data.get('otherPrice', 0)),
+                    "otherScaled": str(unit_data.get('otherScaled', 1)),
+                    "packageScaled": str(unit_data.get('packageScaled', 1)),
+                })
+
+        return other_units
+
+    def validate_efris_piece_unit_fields(self):
+        """Validate conditional piece unit fields per T130 spec"""
+        errors = []
+
+        if self.efris_has_piece_unit:
+            # MANDATORY fields when havePieceUnit=101
+            if not self.efris_piece_measure_unit:
+                errors.append("pieceMeasureUnit MANDATORY when havePieceUnit=101")
+            if not self.efris_piece_unit_price:
+                errors.append("pieceUnitPrice MANDATORY when havePieceUnit=101")
+            if not self.efris_package_scaled_value:
+                errors.append("packageScaledValue MANDATORY when havePieceUnit=101")
+            if not self.efris_piece_scaled_value:
+                errors.append("pieceScaledValue MANDATORY when havePieceUnit=101")
+        else:
+            # MUST BE EMPTY when havePieceUnit=102
+            if self.efris_piece_measure_unit:
+                errors.append("pieceMeasureUnit must be empty when havePieceUnit=102")
+            if self.efris_piece_unit_price:
+                errors.append("pieceUnitPrice must be empty when havePieceUnit=102")
+
+        return errors
+
+    @property
+    def efris_have_piece_unit(self):
+        """Return EFRIS havePieceUnit code"""
+        return '101' if self.efris_has_piece_unit else '102'
+
+    @property
+    def efris_have_other_unit(self):
+        """Return EFRIS haveOtherUnit code"""
+        return '101' if self.efris_has_other_units else '102'
+
     def save(self, *args, **kwargs):
         # Get the company (tenant) context
         from django_tenants.utils import get_tenant_model
@@ -1549,7 +1773,13 @@ class Service(models.Model):
         verbose_name=_("Unit Price (UGX)"),
         help_text=_("Price per unit of service")
     )
-
+    # Service should always have serviceMark=101
+    efris_service_mark = models.CharField(
+        max_length=3,
+        default='101',
+        verbose_name=_("Service Mark"),
+        help_text=_("Always 101 for services")
+    )
     # Tax Information
     tax_rate = models.CharField(
         max_length=1,

@@ -638,8 +638,9 @@ class CustomAuthenticationForm(AuthenticationForm):
         self.request = request
         self.user_cache = None
 
+
     def clean_username(self):
-        """Validate email field"""
+        """Validate email field - with tenant schema awareness"""
         username = self.cleaned_data.get('username', '').strip()
 
         if not username:
@@ -648,14 +649,46 @@ class CustomAuthenticationForm(AuthenticationForm):
         if '@' not in username:
             raise forms.ValidationError(_('Please enter a valid email address.'))
 
-        # Check if user exists
+        # Get current schema from connection
+        from django.db import connection
+
+        schema_name = getattr(connection, 'schema_name', 'public')
+
+        # Skip user validation if we're in public schema or schema not initialized
+        if schema_name == 'public' or not schema_name:
+            logger.warning(f"Login form validation in public schema - skipping user check")
+            return username
+
+        # Check if schema has the accounts_customuser table
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables 
+                        WHERE table_schema = %s AND table_name = 'accounts_customuser'
+                    )
+                """, [schema_name])
+
+                table_exists = cursor.fetchone()[0]
+
+                if not table_exists:
+                    logger.warning(f"accounts_customuser table not found in schema {schema_name}")
+                    # Schema not ready, skip validation
+                    # Authentication will handle this properly
+                    return username
+        except Exception as e:
+            logger.error(f"Error checking schema tables: {e}")
+            # On error, skip validation and let authentication handle it
+            return username
+
+        # Now safe to query users
         try:
             user = CustomUser.objects.get(email=username)
             if not user.is_active:
                 raise forms.ValidationError(
                     _('This account has been deactivated. Please contact support.')
                 )
-            if user.is_locked:
+            if hasattr(user, 'is_locked') and user.is_locked:
                 raise forms.ValidationError(
                     _('Account is temporarily locked. Please try again later or reset your password.')
                 )
@@ -689,44 +722,91 @@ class CustomAuthenticationForm(AuthenticationForm):
 
     def clean(self):
         """
-        Validate credentials WITHOUT enforcing 2FA here.
-        2FA enforcement is handled in the view layer.
+        Validate credentials WITH schema awareness
+        ✅ CRITICAL FIX: Check schema BEFORE calling authenticate
         """
-        cleaned_data = super(AuthenticationForm, self).clean()  # Skip AuthenticationForm.clean()
+        from django.db import connection
+
+        cleaned_data = super(AuthenticationForm, self).clean()
         username = cleaned_data.get('username')
         password = cleaned_data.get('password')
 
-        if username and password:
-            # Only validate credentials, not 2FA
+        if not username or not password:
+            return cleaned_data
+
+        # ✅ CHECK SCHEMA FIRST!
+        schema_name = getattr(connection, 'schema_name', 'public')
+
+        # ✅ If in public schema, don't try to authenticate tenant users
+        if schema_name == 'public':
+            logger.warning(f"Login attempt in public schema for {username} - authentication skipped")
+            raise forms.ValidationError(
+                _('Please access the application through your company subdomain.'),
+                code='wrong_schema'
+            )
+
+        # ✅ Check if schema has required tables
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.tables 
+                        WHERE table_schema = %s AND table_name = 'accounts_customuser'
+                    )
+                """, [schema_name])
+
+                table_exists = cursor.fetchone()[0]
+
+                if not table_exists:
+                    logger.error(f"Schema {schema_name} missing accounts_customuser table")
+                    raise forms.ValidationError(
+                        _('Database not properly initialized. Please contact support.'),
+                        code='schema_not_ready'
+                    )
+        except Exception as e:
+            logger.error(f"Error checking schema tables: {e}")
+            raise forms.ValidationError(
+                _('Database error. Please try again later.'),
+                code='database_error'
+            )
+
+        # ✅ NOW safe to authenticate (we're in tenant schema with proper tables)
+        try:
             self.user_cache = authenticate(
                 self.request,
                 username=username,
                 password=password
             )
+        except Exception as e:
+            logger.error(f"Authentication error in schema {schema_name}: {e}")
+            raise forms.ValidationError(
+                _('Authentication failed. Please try again.'),
+                code='auth_error'
+            )
 
-            if self.user_cache is None:
-                # Invalid credentials
-                try:
-                    user = CustomUser.objects.get(email=username)
-                    # User exists but wrong password
-                    user.record_login_attempt(success=False, ip_address=self.get_client_ip())
-                    raise forms.ValidationError(
-                        _('Incorrect password. Please try again.'),
-                        code='invalid_login'
-                    )
-                except CustomUser.DoesNotExist:
-                    # This shouldn't happen due to clean_username, but just in case
-                    raise forms.ValidationError(
-                        _('Invalid credentials.'),
-                        code='invalid_login'
-                    )
-            else:
-                # Valid credentials - check if account is active
-                if not self.user_cache.is_active:
-                    raise forms.ValidationError(
-                        _('This account is inactive.'),
-                        code='inactive'
-                    )
+        if self.user_cache is None:
+            # Invalid credentials
+            try:
+                from accounts.models import CustomUser
+                user = CustomUser.objects.get(email=username)
+                # User exists but wrong password
+                user.record_login_attempt(success=False, ip_address=self.get_client_ip())
+                raise forms.ValidationError(
+                    _('Incorrect password. Please try again.'),
+                    code='invalid_login'
+                )
+            except CustomUser.DoesNotExist:
+                raise forms.ValidationError(
+                    _('No account found with this email address.'),
+                    code='invalid_login'
+                )
+        else:
+            # Valid credentials - check if account is active
+            if not self.user_cache.is_active:
+                raise forms.ValidationError(
+                    _('This account is inactive.'),
+                    code='inactive'
+                )
 
         return cleaned_data
 

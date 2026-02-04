@@ -1,0 +1,229 @@
+<!-- templates/desktop/dashboard.html -->
+{% extends "base_desktop.html" %}
+
+{% block title %}Dashboard - {{ company.name }}{% endblock %}
+{% block css %}
+<style>
+.sync-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #5a6268;
+}
+
+.btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.sync-icon {
+    display: inline-block;
+    transition: transform 0.3s;
+}
+
+.sync-icon.spinning {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.sync-status {
+    font-size: 14px;
+    color: #666;
+}
+
+.sync-status.success {
+    color: #28a745;
+}
+
+.sync-status.error {
+    color: #dc3545;
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h1 class="mb-4">📊 {{ company.name }}</h1>
+
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="card bg-primary text-white mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">Welcome!</h5>
+                                    <p class="card-text">{{ user.get_full_name }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="card bg-success text-white mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">Company</h5>
+                                    <p class="card-text">{{ company.trading_name }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="card bg-info text-white mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">Status</h5>
+                                    <p class="card-text">
+                                        {% if company.is_trial %}
+                                        🎯 Trial Mode
+                                        {% else %}
+                                        ✅ Active
+                                        {% endif %}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+                    <div class="sync-controls">
+                        <button id="manualSyncBtn" class="btn btn-secondary">
+                            <span class="sync-icon">🔄</span>
+                            <span class="sync-text">Sync Data</span>
+                        </button>
+                        <span id="syncStatus" class="sync-status"></span>
+                    </div>
+                    <div class="row mt-4">
+                        <div class="col-md-6 mb-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">📦 Quick Actions</h5>
+                                    <div class="d-grid gap-2">
+                                        <a href="#" class="btn btn-outline-primary">New Sale</a>
+                                        <a href="#" class="btn btn-outline-primary">Inventory</a>
+                                        <a href="#" class="btn btn-outline-primary">Customers</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">ℹ️ System Info</h5>
+                                    <ul class="list-unstyled">
+                                        <li><strong>User:</strong> {{ user.email }}</li>
+                                        <li><strong>Role:</strong> {{ user.display_role }}</li>
+                                        <li><strong>Company ID:</strong> {{ company.company_id }}</li>
+                                        <li><strong>Mode:</strong> Desktop Application</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const syncBtn = document.getElementById('manualSyncBtn');
+    const syncIcon = syncBtn.querySelector('.sync-icon');
+    const syncText = syncBtn.querySelector('.sync-text');
+    const syncStatus = document.getElementById('syncStatus');
+
+    let pollInterval;
+
+    syncBtn.addEventListener('click', function() {
+        // Start sync
+        syncBtn.disabled = true;
+        syncIcon.classList.add('spinning');
+        syncText.textContent = 'Syncing...';
+        syncStatus.textContent = '';
+
+        fetch("{% url 'primebooks:manual_sync' %}", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Start polling for status
+                pollInterval = setInterval(checkSyncStatus, 500);
+            } else {
+                showError(data.error);
+            }
+        })
+        .catch(error => {
+            showError('Failed to start sync: ' + error.message);
+        });
+    });
+
+    function checkSyncStatus() {
+        fetch("{% url 'primebooks:sync_status' %}")
+            .then(response => response.json())
+            .then(data => {
+                if (data.complete) {
+                    clearInterval(pollInterval);
+                    syncIcon.classList.remove('spinning');
+
+                    if (data.success) {
+                        syncText.textContent = 'Sync Data';
+                        syncStatus.textContent = '✅ Synced successfully';
+                        syncStatus.className = 'sync-status success';
+
+                        // Reload page after 2 seconds
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 2000);
+                    } else {
+                        showError(data.message);
+                    }
+
+                    syncBtn.disabled = false;
+                } else {
+                    syncStatus.textContent = data.message + ' (' + data.progress + '%)';
+                }
+            });
+    }
+
+    function showError(message) {
+        syncIcon.classList.remove('spinning');
+        syncText.textContent = 'Sync Data';
+        syncStatus.textContent = '❌ ' + message;
+        syncStatus.className = 'sync-status error';
+        syncBtn.disabled = false;
+
+        // Clear error after 5 seconds
+        setTimeout(() => {
+            syncStatus.textContent = '';
+        }, 5000);
+    }
+});
+</script>
+{% endblock %}

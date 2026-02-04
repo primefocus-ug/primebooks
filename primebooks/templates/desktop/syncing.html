@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Syncing - PrimeBooks Desktop</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .sync-container {
+            background: white;
+            border-radius: 20px;
+            padding: 60px 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        .sync-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 30px;
+            border: 4px solid #667eea;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .step {
+            color: #667eea;
+            font-weight: 600;
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+
+        .message {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+            min-height: 20px;
+        }
+
+        .progress-container {
+            background: #f0f0f0;
+            border-radius: 10px;
+            height: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .progress-bar {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            height: 100%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        .progress-text {
+            color: #999;
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+
+        .error {
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .success {
+            background: #efe;
+            border: 1px solid #cfc;
+            color: #3c3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="sync-container">
+        <div class="sync-icon" id="syncIcon"></div>
+        <h1>Syncing Your Data</h1>
+        <div class="step" id="step">Initializing...</div>
+        <div class="message" id="message">Please wait while we sync your company data</div>
+
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+        </div>
+        <div class="progress-text" id="progressText">0%</div>
+
+        <div id="statusMessage"></div>
+
+        <a href="{% url 'user_dashboard' %}" class="btn" id="continueBtn" style="display: none;">
+            Continue to Dashboard
+        </a>
+
+        <a href="{% url 'primebooks:login' %}" class="btn" id="retryBtn" style="display: none;">
+            Back to Login
+        </a>
+    </div>
+
+    <script>
+        let pollInterval;
+        let statusUrl = "{% url 'primebooks:sync_status' %}";
+
+        function updateProgress(data) {
+            // Update progress bar
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const step = document.getElementById('step');
+            const message = document.getElementById('message');
+            const statusMessage = document.getElementById('statusMessage');
+            const syncIcon = document.getElementById('syncIcon');
+            const continueBtn = document.getElementById('continueBtn');
+            const retryBtn = document.getElementById('retryBtn');
+
+            // Update progress
+            progressBar.style.width = data.progress + '%';
+            progressText.textContent = data.progress + '%';
+
+            // Update step
+            if (data.step === 'auth') {
+                step.textContent = '🔐 Authenticating...';
+            } else if (data.step === 'sync') {
+                step.textContent = '📦 Syncing Data...';
+            } else if (data.step === 'complete') {
+                step.textContent = '✅ Complete';
+            }
+
+            // Update message
+            message.textContent = data.message || 'Processing...';
+
+            // Handle completion
+            if (data.complete) {
+                clearInterval(pollInterval);
+                syncIcon.style.display = 'none';
+
+                if (data.success) {
+                    statusMessage.innerHTML = '<div class="success">✅ Sync completed successfully!</div>';
+                    continueBtn.style.display = 'inline-block';
+
+                    // Auto-redirect after 2 seconds
+                    setTimeout(() => {
+                        window.location.href = "{% url 'user_dashboard' %}";
+                    }, 2000);
+                } else {
+                    statusMessage.innerHTML = '<div class="error">❌ ' + data.message + '</div>';
+                    retryBtn.style.display = 'inline-block';
+                }
+            }
+        }
+
+        function pollSyncStatus() {
+            fetch(statusUrl)
+                .then(response => response.json())
+                .then(data => {
+                    updateProgress(data);
+                })
+                .catch(error => {
+                    console.error('Error polling sync status:', error);
+                });
+        }
+
+        // Start polling every 500ms
+        pollInterval = setInterval(pollSyncStatus, 500);
+
+        // Initial poll
+        pollSyncStatus();
+    </script>
+</body>
+</html>

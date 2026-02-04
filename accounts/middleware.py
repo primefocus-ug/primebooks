@@ -1,73 +1,78 @@
+# accounts/middleware.py - FIXED WITH SCHEMA AWARENESS
+"""
+Accounts middleware with schema awareness
+✅ All middleware check schema before accessing user
+"""
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.utils.deprecation import MiddlewareMixin
 from django.contrib.auth import get_user_model
 from django.utils.functional import SimpleLazyObject
 from django_tenants.utils import get_tenant_model, get_public_schema_name
+from django.db import connection
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
 
 class RolePermissionMiddleware:
-    """
-    Middleware to ensure permissions are loaded from roles
-    """
+    """Ensure permissions are loaded from roles"""
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        if hasattr(request, 'user') and request.user.is_authenticated:
-            # Force permission refresh on each request
-            request.user = SimpleLazyObject(lambda: self._get_user_with_perms(request.user))
+        # ✅ CHECK SCHEMA
+        schema_name = getattr(connection, 'schema_name', 'public')
+
+        if schema_name != 'public':
+            if hasattr(request, 'user') and request.user.is_authenticated:
+                request.user = SimpleLazyObject(lambda: self._get_user_with_perms(request.user))
 
         response = self.get_response(request)
         return response
 
     def _get_user_with_perms(self, user):
-        """Refresh user permissions from database"""
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
+        try:
+            User = get_user_model()
+            fresh_user = User.objects.select_related('company').prefetch_related(
+                'groups__permissions',
+                'user_permissions'
+            ).get(pk=user.pk)
+            return fresh_user
+        except Exception as e:
+            logger.error(f"Error refreshing user permissions: {e}")
+            return user
 
-        # Get fresh user instance with permissions
-        fresh_user = User.objects.select_related('company').prefetch_related(
-            'groups__permissions',
-            'user_permissions'
-        ).get(pk=user.pk)
-
-        return fresh_user
 
 class SaaSAdminAccessMiddleware(MiddlewareMixin):
-    """
-    Middleware to handle SaaS admin access across all tenants.
-    Allows SaaS admins to access any company's tenant.
-    """
+    """Handle SaaS admin access across all tenants"""
 
     def __init__(self, get_response=None):
         super().__init__(get_response)
         self.get_response = get_response
 
     def process_request(self, request):
-        """Process request to handle SaaS admin tenant switching"""
-
-        # Skip processing for certain paths
         if self._should_skip_processing(request):
             return None
 
-        # Only process authenticated users
+        # ✅ CHECK SCHEMA - But SaaS admins can access any schema
+        # So we don't skip based on schema, but we check tenant exists
+        if not hasattr(connection, 'tenant') or connection.tenant is None:
+            return None
+
         if not hasattr(request, 'user') or not request.user.is_authenticated:
             return None
 
-        # Check if user is a SaaS admin
         if not getattr(request.user, 'is_saas_admin', False):
             return None
 
-        # Handle tenant switching for SaaS admins
         return self._handle_saas_admin_access(request)
 
     def _should_skip_processing(self, request):
-        """Determine if we should skip processing this request"""
         skip_paths = [
             '/admin/login/',
             '/admin/logout/',
@@ -77,23 +82,17 @@ class SaaSAdminAccessMiddleware(MiddlewareMixin):
             '/health/',
             '/favicon.ico'
         ]
-
         return any(request.path.startswith(path) for path in skip_paths)
 
     def _handle_saas_admin_access(self, request):
-        """Handle SaaS admin access to different tenants"""
-
-        # Get the current tenant
         current_tenant = getattr(request, 'tenant', None)
         if not current_tenant:
             return None
 
-        # Check if SaaS admin is trying to access a specific company
         tenant_switch = request.GET.get('switch_tenant')
         if tenant_switch:
             return self._handle_tenant_switch(request, tenant_switch)
 
-        # Add tenant context to the request for SaaS admins
         request.saas_admin_context = {
             'can_switch_tenants': True,
             'current_tenant': current_tenant,
@@ -103,99 +102,70 @@ class SaaSAdminAccessMiddleware(MiddlewareMixin):
         return None
 
     def _handle_tenant_switch(self, request, tenant_id):
-        """Handle tenant switching for SaaS admin"""
         try:
-            # Get the target tenant
             Tenant = get_tenant_model()
             target_tenant = Tenant.objects.get(id=tenant_id)
-
-            # Build the URL for the target tenant
             target_url = self._build_tenant_url(target_tenant, request)
-
-            # Add success message
-            messages.success(
-                request,
-                f'Switched to tenant: {target_tenant.name}'
-            )
-
+            messages.success(request, f'Switched to tenant: {target_tenant.name}')
             return redirect(target_url)
-
-        except Tenant.DoesNotExist:
-            messages.error(request, 'Invalid tenant specified')
-            return None
         except Exception as e:
             messages.error(request, f'Error switching tenant: {str(e)}')
             return None
 
     def _build_tenant_url(self, tenant, request):
-        """Build URL for accessing a specific tenant"""
-        # Get the primary domain for the tenant
         primary_domain = tenant.domains.filter(is_primary=True).first()
-
         if primary_domain:
-            protocol = 'https' if primary_domain.ssl_enabled else 'http'
+            protocol = 'https' if getattr(primary_domain, 'ssl_enabled', False) else 'http'
             domain = primary_domain.domain
             path = request.path
             query_string = request.META.get('QUERY_STRING', '')
 
-            # Remove switch_tenant from query string
             if query_string:
-                query_parts = []
-                for part in query_string.split('&'):
-                    if not part.startswith('switch_tenant='):
-                        query_parts.append(part)
+                query_parts = [part for part in query_string.split('&')
+                               if not part.startswith('switch_tenant=')]
                 query_string = '&'.join(query_parts)
 
             url = f"{protocol}://{domain}{path}"
             if query_string:
                 url += f"?{query_string}"
-
             return url
 
-        # Fallback to current domain with tenant parameter
         return request.build_absolute_uri(request.path)
 
     def _get_available_tenants(self, user):
-        """Get list of tenants available to the SaaS admin"""
         if not user.is_saas_admin:
             return []
 
         try:
             Tenant = get_tenant_model()
-            return Tenant.objects.filter(
-                schema_name__ne=get_public_schema_name()
-            ).exclude(
+            return Tenant.objects.exclude(
                 schema_name='public'
-            ).select_related().order_by('name')[:50]  # Limit for performance
+            ).select_related().order_by('name')[:50]
         except Exception:
             return []
 
 
 class HiddenUserMiddleware(MiddlewareMixin):
-    """
-    Middleware to ensure hidden users (SaaS admins) are not shown in
-    regular user listings and don't affect user counts.
-    """
+    """Ensure hidden users are not shown in regular listings"""
 
     def process_view(self, request, view_func, view_args, view_kwargs):
-        """Add context about hidden users to requests"""
+        # ✅ CHECK SCHEMA
+        schema_name = getattr(connection, 'schema_name', 'public')
+        if schema_name == 'public':
+            return None
 
         if hasattr(request, 'user') and request.user.is_authenticated:
-            # Add helper methods to the request for filtering hidden users
             request.get_visible_users = lambda qs=None: self._get_visible_users(qs)
             request.get_company_user_count = lambda company: self._get_company_user_count(company)
 
         return None
 
     def _get_visible_users(self, queryset=None):
-        """Get only visible users (excluding hidden SaaS admins)"""
         if queryset is None:
             queryset = User.objects.all()
-
         return queryset.filter(is_hidden=False)
 
     def _get_company_user_count(self, company):
-        """Get user count for a company excluding hidden users"""
         return User.objects.filter(
             company=company,
             is_hidden=False,
@@ -204,42 +174,34 @@ class HiddenUserMiddleware(MiddlewareMixin):
 
 
 class SaaSAdminContextMiddleware(MiddlewareMixin):
-    """
-    Middleware to add SaaS admin context to templates
-    """
+    """Add SaaS admin context to templates"""
 
     def process_template_response(self, request, response):
-        """Add SaaS admin context to template responses"""
+        # ✅ CHECK SCHEMA
+        schema_name = getattr(connection, 'schema_name', 'public')
 
         if hasattr(response, 'context_data') and response.context_data is not None:
-            # Add SaaS admin context
             if hasattr(request, 'user') and request.user.is_authenticated:
                 response.context_data.update({
                     'is_saas_admin': getattr(request.user, 'is_saas_admin', False),
                     'can_access_all_companies': getattr(request.user, 'can_access_all_companies', False),
                     'saas_admin_context': getattr(request, 'saas_admin_context', {}),
+                    'current_schema': schema_name,
                 })
 
         return response
 
 
-
-
 class AuditMiddleware(MiddlewareMixin):
-    """
-    Middleware to track request timing for audit logs
-    """
+    """Track request timing for audit logs"""
 
     def process_request(self, request):
-        """Store request start time"""
         request._audit_start_time = time.time()
 
     def process_response(self, request, response):
-        """Calculate request duration"""
         if hasattr(request, '_audit_start_time'):
-            duration = (time.time() - request._audit_start_time) * 1000  # Convert to ms
+            duration = (time.time() - request._audit_start_time) * 1000
             request._audit_duration = int(duration)
-
         return response
 
 
@@ -250,14 +212,15 @@ class RefreshPermissionsMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if hasattr(request, 'user') and request.user.is_authenticated:
-            # Clear permission cache
-            if hasattr(request.user, '_perm_cache'):
-                delattr(request.user, '_perm_cache')
-            if hasattr(request.user, '_user_perm_cache'):
-                delattr(request.user, '_user_perm_cache')
-            if hasattr(request.user, '_group_perm_cache'):
-                delattr(request.user, '_group_perm_cache')
+        # ✅ CHECK SCHEMA
+        schema_name = getattr(connection, 'schema_name', 'public')
+
+        if schema_name != 'public':
+            if hasattr(request, 'user') and request.user.is_authenticated:
+                # Clear permission cache
+                for cache_attr in ['_perm_cache', '_user_perm_cache', '_group_perm_cache']:
+                    if hasattr(request.user, cache_attr):
+                        delattr(request.user, cache_attr)
 
         response = self.get_response(request)
         return response

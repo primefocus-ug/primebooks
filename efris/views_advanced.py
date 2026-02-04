@@ -737,27 +737,33 @@ def frequent_contacts_management(request):
         'contacts': contacts
     })
 
+from company.models import EFRISHsCode
+
 @login_required
 def hs_code_list(request):
-    """T185 - Query HS Code List"""
+    """HS Code List (from database only)"""
+
+    hs_codes = EFRISHsCode.objects.all().order_by("hs_code")
+
+    return render(
+        request,
+        "efris/advanced/hs_code_list.html",
+        {
+            "page_title": "HS Code List",
+            "hs_codes": hs_codes,
+        },
+    )
+
+from efris.tasks import sync_hs_codes_task
+
+@login_required
+def sync_hs_codes(request):
     company = request.tenant
-    hs_codes = []
-
-    try:
-        with EnhancedEFRISAPIClient(company) as client:
-            result = client.t185_query_hs_code_list()
-
-            if result.get('success'):
-                hs_codes = result.get('hs_codes', [])
-            else:
-                messages.error(request, f"Failed to fetch HS codes: {result.get('error')}")
-    except Exception as e:
-        messages.error(request, f"Error: {str(e)}")
-
-    return render(request, 'efris/advanced/hs_code_list.html', {
-        'page_title': 'HS Code List',
-        'hs_codes': hs_codes
-    })
+    # Pass company_id and current schema to Celery
+    sync_hs_codes_task.delay(company_id=company.company_id,
+                             schema_name=company.schema_name)
+    messages.success(request, "HS code sync started in the background.")
+    return redirect("efris:hs_code_list")
 
 @login_required
 def invoice_remain_details(request, invoice_no=None):

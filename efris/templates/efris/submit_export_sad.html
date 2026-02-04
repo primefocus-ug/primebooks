@@ -1,0 +1,306 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Submit SAD - {{ invoice_no }} - EFRIS{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    .item-row {
+        background: #f8f9fa;
+        border-radius: 6px;
+        padding: 12px;
+        margin-bottom: 10px;
+        border: 1px solid #eee;
+    }
+    .item-row:hover {
+        border-color: #007bff44;
+    }
+    .required-star { color: #dc3545; }
+    .section-header {
+        font-weight: 600;
+        color: #343a40;
+        font-size: 1rem;
+        margin-bottom: 12px;
+        padding-bottom: 6px;
+        border-bottom: 2px solid #dee2e6;
+    }
+    .sad-preview {
+        font-family: 'Courier New', monospace;
+        letter-spacing: 2px;
+        font-size: 1.1rem;
+        text-align: center;
+        color: #28a745;
+        font-weight: bold;
+        padding: 8px;
+        background: #f0fff4;
+        border-radius: 6px;
+        border: 1px solid #c3e6cb;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2><i class="fas fa-file-alt"></i> Submit Customs SAD Declaration</h2>
+                    <p class="text-muted">
+                        For invoice <code>{{ invoice_no }}</code>
+                        {% if invoice.sale and invoice.sale.customer %}
+                            &middot; {{ invoice.sale.customer.name }}
+                        {% endif %}
+                        &middot; <strong>{{ invoice.total_amount|floatformat:2|intcomma }} UGX</strong>
+                    </p>
+                </div>
+                <div>
+                    <a href="{% url 'efris:export_invoice_detail' invoice_no %}" class="btn btn-outline-secondary mr-2">
+                        <i class="fas fa-arrow-left"></i> Back
+                    </a>
+                    <a href="{% url 'efris:export_invoices_list' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-list"></i> All Exports
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Django messages -->
+    {% if messages %}
+    <div class="row mb-3">
+        <div class="col-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Already submitted check -->
+    {% if invoice.export_sad_number %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle fa-lg"></i>
+                <strong>SAD already submitted.</strong>
+                SAD Number: <code>{{ invoice.export_sad_number }}</code> &mdash;
+                Submitted on {{ invoice.export_sad_submitted_at|date:"Y-m-d H:i" }}
+                <br>
+                <a href="{% url 'efris:export_invoice_detail' invoice_no %}" class="btn btn-sm btn-outline-success mt-2">
+                    <i class="fas fa-eye"></i> View Invoice Detail
+                </a>
+            </div>
+        </div>
+    </div>
+    {% else %}
+
+    <form method="post" id="sadForm">
+        {% csrf_token %}
+        <input type="hidden" name="item_count" id="itemCountField" value="0">
+
+        <div class="row">
+            <!-- LEFT: SAD Number + Exit Info -->
+            <div class="col-lg-5">
+                <!-- SAD Number -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-barcode"></i> SAD Number</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="sad_number" class="font-weight-bold">
+                                SAD Declaration Number <span class="required-star">*</span>
+                            </label>
+                            <input type="text" name="sad_number" id="sad_number" class="form-control"
+                                   placeholder="Enter 20-digit SAD number" maxlength="20"
+                                   oninput="previewSAD()" required>
+                            <small class="text-muted">Must be exactly 20 digits as issued by URA.</small>
+                        </div>
+                        <div id="sadPreview" style="display:none;" class="sad-preview mt-2">
+                        </div>
+                        <div id="sadLenWarning" class="text-danger small mt-1" style="display:none;">
+                            <i class="fas fa-exclamation-triangle"></i> SAD number must be exactly 20 digits.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Exit Information -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-door-open"></i> Exit Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="exit_office" class="font-weight-bold">
+                                Exit Office <span class="required-star">*</span>
+                            </label>
+                            <input type="text" name="exit_office" id="exit_office" class="form-control"
+                                   placeholder="e.g. Nansana Border Post" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="exit_officer" class="font-weight-bold">
+                                Exit Officer <span class="required-star">*</span>
+                            </label>
+                            <input type="text" name="exit_officer" id="exit_officer" class="form-control"
+                                   placeholder="e.g. Officer Name / Badge No" required>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-7">
+                                <div class="form-group">
+                                    <label for="exit_date" class="font-weight-bold">
+                                        Exit Date <span class="required-star">*</span>
+                                    </label>
+                                    <input type="date" name="exit_date" id="exit_date" class="form-control" required>
+                                </div>
+                            </div>
+                            <div class="col-md-5">
+                                <div class="form-group">
+                                    <label for="exit_time" class="font-weight-bold">Exit Time</label>
+                                    <input type="time" name="exit_time" id="exit_time" class="form-control"
+                                           value="00:00:00" step="1">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Items with HS Codes -->
+            <div class="col-lg-7">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-boxes"></i> Exported Items</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if sale_items %}
+                            {% for item in sale_items %}
+                            <div class="item-row">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <strong>
+                                        {% if item.product %}{{ item.product.name }}{% else %}{{ item.description|default:"Item" }}{% endif %}
+                                    </strong>
+                                    <span class="badge badge-light">
+                                        Qty: {{ item.quantity }} &middot; {{ item.unit_price|floatformat:2|intcomma }} UGX each
+                                    </span>
+                                </div>
+
+                                <!-- Hidden fields for this item -->
+                                <input type="hidden" name="item_id_{{ forloop.counter0 }}" value="{{ item.id }}">
+
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label class="font-weight-bold small">
+                                            HS Code <span class="required-star">*</span>
+                                        </label>
+                                        <input type="text" name="hs_code_{{ forloop.counter0 }}"
+                                               class="form-control form-control-sm"
+                                               placeholder="e.g. 4802.55.00" maxlength="20" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="font-weight-bold small">Exported Quantity</label>
+                                        <input type="number" name="quantity_{{ forloop.counter0 }}"
+                                               class="form-control form-control-sm"
+                                               value="{{ item.quantity }}" min="1" max="{{ item.quantity }}"
+                                               step="1" required>
+                                        <small class="text-muted">Max: {{ item.quantity }}</small>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                No items found for this invoice. Please check the sale.
+                            </div>
+                        {% endif %}
+
+                        <!-- Submit -->
+                        <div class="mt-4 pt-3 border-top">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <a href="{% url 'efris:export_invoice_detail' invoice_no %}" class="btn btn-outline-secondary">
+                                    <i class="fas fa-times"></i> Cancel
+                                </a>
+                                <button type="submit" class="btn btn-primary btn-lg" onclick="return validateSADForm()">
+                                    <i class="fas fa-paper-plane"></i> Submit SAD Declaration
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Set item_count hidden field on page load
+document.addEventListener('DOMContentLoaded', function() {
+    {% if sale_items %}
+        document.getElementById('itemCountField').value = {{ sale_items|length }};
+
+        // Default exit_date to today
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('exit_date').value = today;
+    {% endif %}
+});
+
+// Live SAD number preview & length validation
+function previewSAD() {
+    const input = document.getElementById('sad_number');
+    const preview = document.getElementById('sadPreview');
+    const warning = document.getElementById('sadLenWarning');
+    const val = input.value.replace(/\D/g, ''); // digits only
+
+    input.value = val; // enforce digits only
+
+    if (val.length > 0) {
+        preview.style.display = 'block';
+        preview.textContent = val;
+    } else {
+        preview.style.display = 'none';
+    }
+
+    if (val.length > 0 && val.length !== 20) {
+        warning.style.display = 'block';
+    } else {
+        warning.style.display = 'none';
+    }
+}
+
+// Client-side validation before POST
+function validateSADForm() {
+    const sadNumber = document.getElementById('sad_number').value.trim();
+
+    if (sadNumber.length !== 20) {
+        alert('SAD number must be exactly 20 digits.');
+        document.getElementById('sad_number').focus();
+        return false;
+    }
+
+    // Check all HS code fields are filled
+    const hsCodes = document.querySelectorAll('[name^="hs_code_"]');
+    for (const input of hsCodes) {
+        if (!input.value.trim()) {
+            alert('All items must have an HS code.');
+            input.focus();
+            return false;
+        }
+    }
+
+    return true; // let the form POST
+}
+</script>
+{% endblock %}

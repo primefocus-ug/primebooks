@@ -83,53 +83,68 @@ class EFRISSaleMixin:
                 if not getattr(self.customer, 'tin', None):
                     return False, f"{customer_type} customers must have a TIN for fiscalization"
 
+        if self.is_export_invoice():
+            export_errors = self.validate_export_invoice()
+            if export_errors:
+                error_summary = f"Export validation failed: {'; '.join(export_errors[:3])}"
+                if len(export_errors) > 3:
+                    error_summary += f" (and {len(export_errors) - 3} more errors)"
+                return False, error_summary
+
         return True, "Sale can be fiscalized"
 
     def get_efris_basic_info(self):
-        """Get basic information for EFRIS - works for ALL sales with VAT-aware invoiceKind"""
+        """Get basic information for EFRIS - works for ALL sales with VAT-aware invoiceKind and export support"""
 
         # Get company VAT status from store
         company = self.store.company if self.store else None
         is_vat_enabled = getattr(company, 'is_vat_enabled', False) if company else False
 
-        # ========== CRITICAL FIX: invoiceKind based on VAT registration ==========
-        # If company is VAT registered (is_vat_enabled=True):
-        #   - Must use invoiceKind '1' (Tax Invoice) regardless of document_type
-        # If company is NOT VAT registered (is_vat_enabled=False):
-        #   - Must use invoiceKind '2' (Simplified Invoice/Receipt)
+        # Determine if this is an export invoice
+        is_export = self.is_export_invoice()
 
+        # Invoice kind based on VAT status
         if is_vat_enabled:
-            # VAT registered company MUST issue Tax Invoices (invoiceKind = '1')
             efris_invoice_kind = '1'  # Tax Invoice
             efris_invoice_type = '1'  # Tax Invoice
         else:
-            # Non-VAT company issues Simplified Invoices/Receipts (invoiceKind = '2')
             efris_invoice_kind = '2'  # Simplified Invoice/Receipt
             efris_invoice_type = '1'  # Simplified Invoice
 
-        # Log the determination for debugging
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(
-            f"EFRIS Invoice Kind for {self.document_number}: "
-            f"invoiceKind={efris_invoice_kind}, "
-            f"invoiceType={efris_invoice_type}, "
-            f"VAT Enabled={is_vat_enabled}, "
-            f"Document Type={self.document_type}"
-        )
+        # Industry code: 101=Domestic, 102=Export
+        invoice_industry_code = '102' if is_export else '101'
 
-        return {
+        basic_info = {
             "invoiceNo": "",
             "issuedDate": self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             "operator": getattr(self, 'operator_name', None) or (
                 self.created_by.get_full_name() if self.created_by else 'System'
             ),
             "currency": self.currency or 'UGX',
-            "invoiceType": efris_invoice_type,  # Based on VAT status
-            "invoiceKind": efris_invoice_kind,  # Based on VAT status
+            "invoiceType": efris_invoice_type,
+            "invoiceKind": efris_invoice_kind,
             "dataSource": "103",  # Electronic system
-            "invoiceIndustryCode": "101"  # General trade
+            "invoiceIndustryCode": invoice_industry_code,  # ✅ NEW: Export support
         }
+
+        # ✅ NEW: Add deliveryTermsCode for exports (MANDATORY)
+        if is_export:
+            delivery_terms = getattr(self, 'delivery_terms_code', None) or getattr(self, 'export_delivery_terms', None)
+            if not delivery_terms:
+                logger.warning(f"Export sale {self.id} missing deliveryTermsCode, using FOB as default")
+                delivery_terms = "FOB"
+            basic_info["deliveryTermsCode"] = delivery_terms
+
+        logger.info(
+            f"EFRIS Invoice Kind for {self.document_number}: "
+            f"invoiceKind={efris_invoice_kind}, "
+            f"invoiceType={efris_invoice_type}, "
+            f"invoiceIndustryCode={invoice_industry_code}, "
+            f"VAT Enabled={is_vat_enabled}, "
+            f"Is Export={is_export}"
+        )
+
+        return basic_info
 
     def get_efris_summary(self):
         """Get summary information for EFRIS - works for ALL sales"""
@@ -145,8 +160,11 @@ class EFRISSaleMixin:
         }
 
     def get_efris_goods_details(self):
-        """Get goods/services details for EFRIS from sale items - works for ALL sales"""
+        """Get goods/services details for EFRIS - supports export fields"""
         goods_details = []
+
+        # Check if this is an export invoice
+        is_export = self.is_export_invoice()
 
         for idx, item in enumerate(self.items.select_related('product', 'service').all(), 1):
             # Determine if it's a product or service
@@ -157,7 +175,7 @@ class EFRISSaleMixin:
                 item_code = item.product.efris_goods_code
                 unit_measure = getattr(item.product, 'unit_of_measure', 'U')
 
-                # Get EFRIS product data if available
+                # Get EFRIS product data
                 product_efris_data = {}
                 if hasattr(item.product, 'get_efris_goods_data'):
                     try:
@@ -165,20 +183,18 @@ class EFRISSaleMixin:
                     except:
                         pass
 
-                # ✅ FIX: Use item.product (not undefined 'product')
                 if item.product.category:
                     category_id = item.product.category.efris_commodity_category_code
                     category_name = product_efris_data.get('efris_commodity_category_name', 'General Goods')
                 else:
-                    category_id = "101113010000000000"  # Default product category
+                    category_id = "101113010000000000"
                     category_name = "General Goods"
             else:
                 # Service
                 item_name = item.service.name
                 item_code = item.service.efris_service_code
-                unit_measure = getattr(item.service, 'unit_of_measure', '207')  # Hours
+                unit_measure = getattr(item.service, 'unit_of_measure', '207')
 
-                # Get EFRIS service data if available
                 service_efris_data = {}
                 if hasattr(item.service, 'get_efris_data'):
                     try:
@@ -186,12 +202,11 @@ class EFRISSaleMixin:
                     except:
                         pass
 
-                # ✅ FIX: Use item.service (not undefined 'service')
                 if item.service.category:
                     category_id = item.service.category.efris_commodity_category_code
                     category_name = service_efris_data.get('efris_commodity_category_name', 'General Services')
                 else:
-                    category_id = "100000000000000000"  # Default service category
+                    category_id = "100000000000000000"
                     category_name = "General Services"
 
             goods_detail = {
@@ -213,6 +228,41 @@ class EFRISSaleMixin:
 
             if item.discount_amount and item.discount_amount > 0:
                 goods_detail["discountTotal"] = str(item.discount_amount)
+
+            # ✅ NEW: Add export-specific fields for products
+            if is_export and is_product:
+                # HS Code (MANDATORY for exports)
+                hs_code = getattr(item.product, 'hs_code', '') or ''
+                hs_name = getattr(item.product, 'hs_name', '') or ''
+
+                if hs_code:
+                    goods_detail["hsCode"] = str(hs_code)[:50]
+                if hs_name:
+                    goods_detail["hsName"] = str(hs_name)[:1000]
+
+                # Total weight (MANDATORY for exports)
+                total_weight = getattr(item, 'export_total_weight', None)
+                if total_weight:
+                    goods_detail["totalWeight"] = f"{total_weight:.2f}"
+                else:
+                    logger.warning(f"Export item {idx} missing totalWeight")
+                    goods_detail["totalWeight"] = "0.00"
+
+                # Piece quantity (MANDATORY for exports)
+                piece_qty = getattr(item, 'export_piece_qty', None)
+                if piece_qty:
+                    goods_detail["pieceQty"] = f"{piece_qty:.2f}"
+                else:
+                    logger.warning(f"Export item {idx} missing pieceQty")
+                    goods_detail["pieceQty"] = "0.00"
+
+                # Piece measure unit (MANDATORY for exports)
+                piece_measure_unit = getattr(item, 'export_piece_measure_unit', '')
+                if piece_measure_unit:
+                    goods_detail["pieceMeasureUnit"] = piece_measure_unit
+                else:
+                    logger.warning(f"Export item {idx} missing pieceMeasureUnit")
+                    goods_detail["pieceMeasureUnit"] = unit_measure  # Fallback to main unit
 
             goods_details.append(goods_detail)
 
@@ -240,6 +290,44 @@ class EFRISSaleMixin:
             })
 
         return payment_details
+
+    def validate_export_invoice(self):
+        """Validate export invoice requirements per T109 spec"""
+        errors = []
+
+        if not self.is_export_invoice():
+            return errors  # Not an export
+
+        # MANDATORY: deliveryTermsCode
+        valid_incoterms = ['CFR', 'CIF', 'CIP', 'CPT', 'DAP', 'DDP',
+                           'DPU', 'EXW', 'FAS', 'FCA', 'FOB']
+        delivery_terms = getattr(self, 'delivery_terms_code', None) or getattr(self, 'export_delivery_terms', None)
+
+        if not delivery_terms:
+            errors.append("deliveryTermsCode MANDATORY for export invoices")
+        elif delivery_terms not in valid_incoterms:
+            errors.append(f"Invalid Incoterms: {delivery_terms}. Must be one of: {', '.join(valid_incoterms)}")
+
+        # Validate each item has export fields
+        for idx, item in enumerate(self.items.all(), 1):
+            if item.item_type == 'PRODUCT' and item.product:
+                # HS Code
+                if not getattr(item.product, 'hs_code', None):
+                    errors.append(f"Item {idx} ({item.product.name}): HS Code MANDATORY for export")
+
+                # Total Weight
+                if not getattr(item, 'export_total_weight', None) or item.export_total_weight <= 0:
+                    errors.append(f"Item {idx} ({item.product.name}): totalWeight MANDATORY for export")
+
+                # Piece Quantity
+                if not getattr(item, 'export_piece_qty', None) or item.export_piece_qty <= 0:
+                    errors.append(f"Item {idx} ({item.product.name}): pieceQty MANDATORY for export")
+
+                # Piece Measure Unit
+                if not getattr(item, 'export_piece_measure_unit', None):
+                    errors.append(f"Item {idx} ({item.product.name}): pieceMeasureUnit MANDATORY for export")
+
+        return errors
 
     def _get_efris_tax_rate_string(self, tax_rate_code):
         """Convert tax rate code to EFRIS string value"""
@@ -396,6 +484,7 @@ from django.db import transaction
 from django.utils import timezone
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import timedelta
+from django.utils.translation import gettext_lazy as _
 import uuid
 import logging
 
@@ -520,6 +609,72 @@ class Sale(models.Model, EFRISSaleMixin):
     fiscal_number = models.CharField(max_length=64, blank=True, null=True)
     fiscalization_status = models.CharField(max_length=32, blank=True, null=True, default='pending')
     fiscalization_error = models.TextField(blank=True, null=True)
+    # EFRIS Export Fields
+    export_status = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="EFRIS export status: 101=Processing, 102=Cleared"
+    )
+    export_delivery_terms = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        help_text="Incoterms: FOB, CIF, CFR, etc."
+    )
+    export_total_weight = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        help_text="Total gross weight in KGM"
+    )
+
+    export_sad_number = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="Customs SAD declaration number (20 digits)"
+    )
+    export_sad_submitted_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="When the SAD was submitted"
+    )
+    export_cleared_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="When customs clearance was completed"
+    )
+    # Export invoice fields
+    export_buyer_country = models.CharField(max_length=100, blank=True, null=True)
+    export_buyer_passport = models.CharField(max_length=50, blank=True, null=True)
+    export_currency = models.CharField(max_length=3, default='UGX')
+    export_exchange_rate = models.DecimalField(max_digits=10, decimal_places=4, blank=True, null=True)
+
+    # T109 Export Invoice Support
+    is_export_sale = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name=_("Export Sale"),
+        help_text=_("Sale is an export invoice (invoiceIndustryCode=102)")
+    )
+
+    invoice_industry_code = models.CharField(
+        max_length=3,
+        default='101',
+        verbose_name=_("Invoice Industry Code"),
+        help_text=_("101=Domestic, 102=Export")
+    )
+
+    delivery_terms_code = models.CharField(
+        max_length=3,
+        blank=True,
+        verbose_name=_("Delivery Terms (Incoterms)"),
+        help_text=_("MANDATORY for exports: FOB, CIF, CFR, CPT, DAP, DDP, etc.")
+    )
+
 
     # Void tracking
     is_refunded = models.BooleanField(default=False)
@@ -562,6 +717,7 @@ class Sale(models.Model, EFRISSaleMixin):
             models.Index(fields=['document_number']),
             models.Index(fields=['payment_status']),
             models.Index(fields=['due_date']),
+            models.Index(fields=['export_status']),
         ]
         verbose_name = "Sale"
         verbose_name_plural = "Sales"
@@ -610,6 +766,52 @@ class Sale(models.Model, EFRISSaleMixin):
         # Validate payment status based on document type
         if self.document_type == 'RECEIPT' and self.transaction_type == 'SALE' and self.payment_status != 'PAID':
             self.payment_status = 'PAID'
+
+    def is_export_invoice(self):
+        """
+        Helper method to check if this is an export invoice.
+        Export invoices are regular invoices with invoice_industry_code='102'
+        """
+        return (
+                self.document_type == 'INVOICE' and
+                (self.invoice_industry_code == '102' or self.is_export_sale)
+        )
+
+    def validate_export_invoice(self):
+        """Validate export invoice requirements per T109 spec"""
+        errors = []
+
+        if not self.is_export_invoice():
+            return errors
+
+        # MANDATORY: deliveryTermsCode
+        valid_incoterms = ['CFR', 'CIF', 'CIP', 'CPT', 'DAP', 'DDP',
+                           'DPU', 'EXW', 'FAS', 'FCA', 'FOB']
+        if not self.delivery_terms_code:
+            errors.append("deliveryTermsCode MANDATORY for export invoices")
+        elif self.delivery_terms_code not in valid_incoterms:
+            errors.append(f"Invalid Incoterms: {self.delivery_terms_code}")
+
+        # Validate each item has export fields
+        for idx, item in enumerate(self.items.all(), 1):
+            if item.item_type == 'PRODUCT':
+                if not item.product.hs_code:
+                    errors.append(f"Item {idx}: HS Code MANDATORY for export")
+                if not item.export_total_weight or item.export_total_weight <= 0:
+                    errors.append(f"Item {idx}: totalWeight MANDATORY for export")
+                if not item.export_piece_qty or item.export_piece_qty <= 0:
+                    errors.append(f"Item {idx}: pieceQty MANDATORY for export")
+                if not item.export_piece_measure_unit:
+                    errors.append(f"Item {idx}: pieceMeasureUnit MANDATORY for export")
+
+        return errors
+
+    @property
+    def efris_invoice_industry_code(self):
+        """Get EFRIS invoiceIndustryCode"""
+        if self.is_export_invoice():
+            return '102'
+        return '101'
 
     def save(self, *args, **kwargs):
         # Auto-generate document number based on type
@@ -698,18 +900,27 @@ class Sale(models.Model, EFRISSaleMixin):
 
         # Auto-fiscalize if needed (not for refunds)
         if is_new and self.status in ['COMPLETED', 'PAID'] and self.transaction_type != 'REFUND':
-            try:
-                store_config = self.store.effective_efris_config
-                if store_config.get('enabled', False) and store_config.get('is_active', False):
-                    auto_fiscalize = store_config.get('auto_fiscalize_sales', True)
-                    if auto_fiscalize:
-                        from django.db import transaction
-                        if not transaction.get_autocommit():
-                            transaction.on_commit(lambda: self._auto_fiscalize_sale())
-                        else:
-                            self._auto_fiscalize_sale()
-            except Exception as e:
-                logger.error(f"Auto-fiscalization check failed for sale {self.id}: {e}")
+            # ✅ CHANGED: Skip if caller explicitly deferred fiscalization
+            # (e.g. process_sale_creation — items don't exist yet at this point)
+            if getattr(self, '_defer_auto_fiscalize', False):
+                logger.info(
+                    f"Auto-fiscalization deferred for sale {self.id} "
+                    f"— will be triggered after items are created"
+                )
+            else:
+                try:
+                    store_config = self.store.effective_efris_config
+                    if store_config.get('enabled', False) and store_config.get('is_active', False):
+                        auto_fiscalize = store_config.get('auto_fiscalize_sales', True)
+                        if auto_fiscalize:
+                            from django.db import transaction
+                            if not transaction.get_autocommit():
+                                transaction.on_commit(lambda: self._auto_fiscalize_sale())
+                            else:
+                                self._auto_fiscalize_sale()
+                except Exception as e:
+                    logger.error(f"Auto-fiscalization check failed for sale {self.id}: {e}")
+
 
     def generate_document_number(self):
         """Generate document number based on type"""
@@ -1270,7 +1481,26 @@ class SaleItem(models.Model):
 
     # Changed from PositiveIntegerField to IntegerField to allow negative values for refunds
     quantity = models.IntegerField()
-
+    export_total_weight = models.DecimalField(
+        decimal_places=4,
+        max_digits=12,
+        null=True,
+        blank=True,
+        help_text='Net weight in KGM — mandatory in T109 goodsDetails when invoiceIndustryCode=102',
+    )
+    export_piece_qty = models.DecimalField(
+        decimal_places=2,
+        max_digits=12,
+        null=True,
+        blank=True,
+        help_text='Number of pieces — mandatory in T109 goodsDetails when invoiceIndustryCode=102',
+    )
+    export_piece_measure_unit = models.CharField(
+        max_length=3,
+        null=True,
+        blank=True,
+        help_text='3-char code from T115 exportRateUnit (e.g. "101"=per stick)',
+    )
     # Removed MinValueValidator to allow negative values for refunds
     unit_price = models.DecimalField(max_digits=12, decimal_places=2)
     total_price = models.DecimalField(max_digits=12, decimal_places=2)
@@ -1362,6 +1592,19 @@ class SaleItem(models.Model):
         else:
             raise ValidationError("Item type cannot be determined - no product or service")
 
+    def get_export_details_for_efris(self):
+        """Get export-specific fields for T109 goodsDetails"""
+        if not self.sale.is_export_sale or self.item_type != 'PRODUCT':
+            return {}
+
+        return {
+            "hsCode": self.product.hs_code or "",
+            "hsName": self.product.hs_name or "",
+            "totalWeight": f"{self.export_total_weight:.2f}" if self.export_total_weight else "0.00",
+            "pieceQty": f"{self.export_piece_qty:.2f}" if self.export_piece_qty else "0.00",
+            "pieceMeasureUnit": self.export_piece_measure_unit or "",
+        }
+
     def save(self, *args, **kwargs):
         # Track original price before override
         if not self.pk:  # Only on creation
@@ -1414,9 +1657,9 @@ class SaleItem(models.Model):
                 self.sale.transaction_type == 'SALE' and
                 self.item_type == 'PRODUCT' and
                 self.product_id is not None and
-                self.sale.document_type in ['RECEIPT', 'INVOICE'] and
+                self.sale.document_type in ['RECEIPT', 'INVOICE'] and  # ✅ FIXED
                 not self.stock_deducted and
-                self.quantity > 0  # Only deduct for positive quantities
+                self.quantity > 0
         )
 
         skip_deduction = getattr(self, '_skip_deduction', False)

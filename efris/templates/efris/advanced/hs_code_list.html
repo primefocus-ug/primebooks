@@ -2,6 +2,12 @@
 {% load static %}
 
 {% block efris_content %}
+        <form method="post" action="{% url 'efris:sync_hs_codes' %}" class="mb-3">
+        {% csrf_token %}
+        <button class="btn btn-primary">
+            <i class="fas fa-sync"></i> Sync HS Codes
+        </button>
+    </form>
 <div class="efris-card">
     <div class="card-body">
         <h5 class="card-title">
@@ -10,7 +16,9 @@
         </h5>
 
         <div class="mb-3">
-            <input type="text" id="hsCodeSearch" class="form-control"
+            <input type="text"
+                   id="hsCodeSearch"
+                   class="form-control"
                    placeholder="Search by HS Code or Description...">
         </div>
 
@@ -21,23 +29,25 @@
                     <tr>
                         <th>HS Code</th>
                         <th>Description</th>
-                        <th>Is Leaf</th>
-                        <th>Parent Class</th>
+                        <th>Leaf Node</th>
+                        <th>Parent Code</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for hs in hs_codes %}
                     <tr>
-                        <td><code>{{ hs.hsCode }}</code></td>
+                        <td><code>{{ hs.hs_code }}</code></td>
                         <td>{{ hs.description }}</td>
                         <td>
-                            {% if hs.isLeaf == '0' %}
+                            {% if hs.is_leaf %}
                                 <span class="badge bg-success">Yes</span>
                             {% else %}
                                 <span class="badge bg-secondary">No</span>
                             {% endif %}
                         </td>
-                        <td><small>{{ hs.parentClass|default:"-" }}</small></td>
+                        <td>
+                            <small>{{ hs.parent_code|default:"-" }}</small>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -45,28 +55,29 @@
         </div>
         {% else %}
         <div class="alert alert-info">
-            <i class="fas fa-info-circle"></i> No HS codes available.
+            <i class="fas fa-info-circle"></i>
+            No HS codes available. Please run a sync.
         </div>
         {% endif %}
     </div>
 </div>
 
 <script>
-// Simple table search
-document.getElementById('hsCodeSearch').addEventListener('keyup', function() {
+document.getElementById('hsCodeSearch').addEventListener('keyup', function () {
     const searchValue = this.value.toLowerCase();
     const table = document.getElementById('hsCodeTable');
-    const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+    if (!table) return;
+
+    const rows = table.tBodies[0].rows;
 
     for (let i = 0; i < rows.length; i++) {
         const hsCode = rows[i].cells[0].textContent.toLowerCase();
         const description = rows[i].cells[1].textContent.toLowerCase();
 
-        if (hsCode.includes(searchValue) || description.includes(searchValue)) {
-            rows[i].style.display = '';
-        } else {
-            rows[i].style.display = 'none';
-        }
+        rows[i].style.display =
+            (hsCode.includes(searchValue) || description.includes(searchValue))
+                ? ''
+                : 'none';
     }
 });
 </script>
