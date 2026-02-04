@@ -61,6 +61,158 @@
     font-size: 1rem;
 }
 
+/* ==========================================
+   HS CODE SEARCH STYLES
+   ========================================== */
+
+/* HS Code Dropdown Container */
+.hs-code-dropdown {
+    position: relative;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow-md);
+    max-height: 400px;
+    overflow-y: auto;
+    margin-top: 0.5rem;
+    z-index: 1050;
+}
+
+/* HS Code Result Item */
+.hs-code-result-item {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.hs-code-result-item:last-child {
+    border-bottom: none;
+}
+
+.hs-code-result-item:hover {
+    background: var(--card-hover);
+    border-left: 3px solid #667eea;
+}
+
+.hs-code-result-code {
+    display: flex;
+    align-items: center;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+    color: var(--text-primary);
+}
+
+.hs-code-result-code strong {
+    color: #667eea;
+}
+
+.hs-code-result-desc {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    padding-left: 1.75rem;
+}
+
+/* Selected HS Code Display */
+.selected-hs-code-display {
+    background: var(--bg-secondary);
+    border: 1px solid #667eea;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-top: 0.5rem;
+}
+
+.selected-hs-code-display strong {
+    color: #667eea;
+    font-size: 1rem;
+}
+
+.selected-hs-code-display .text-muted {
+    margin-top: 0.25rem;
+}
+
+/* Loading state for HS code search */
+#hsCodeSearchLoading {
+    padding: 1rem;
+}
+
+/* Dark mode support */
+[data-bs-theme="dark"] .hs-code-dropdown {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+}
+
+[data-bs-theme="dark"] .hs-code-result-item:hover {
+    background: rgba(102, 126, 234, 0.2);
+}
+
+[data-bs-theme="dark"] .selected-hs-code-display {
+    background: var(--bg-tertiary);
+    border-color: #667eea;
+}
+
+/* Scrollbar for HS code dropdown */
+.hs-code-dropdown::-webkit-scrollbar {
+    width: 8px;
+}
+
+.hs-code-dropdown::-webkit-scrollbar-track {
+    background: var(--bg-tertiary);
+    border-radius: 10px;
+}
+
+.hs-code-dropdown::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 10px;
+}
+
+.hs-code-dropdown::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+/* Badge for non-leaf HS codes */
+.hs-code-result-item .badge.bg-warning {
+    font-size: 0.65rem;
+    padding: 0.2rem 0.5rem;
+}
+
+/* Focus state for HS code search input */
+#hsCodeSearch:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
+
+/* Empty state styling */
+.hs-code-dropdown .text-muted,
+.hs-code-dropdown .text-danger {
+    font-size: 0.875rem;
+}
+
+.hs-code-dropdown .bi {
+    font-size: 2rem;
+    opacity: 0.5;
+}
+
+/* Responsive adjustments */
+@media (max-width: 576px) {
+    .hs-code-dropdown {
+        max-height: 300px;
+    }
+
+    .hs-code-result-item {
+        padding: 0.5rem;
+    }
+
+    .hs-code-result-code {
+        font-size: 0.85rem;
+    }
+
+    .hs-code-result-desc {
+        font-size: 0.75rem;
+        padding-left: 1.5rem;
+    }
+}
 .credit-limit {
     color: var(--bs-primary);
 }
@@ -1485,7 +1637,7 @@ body {
             </ul>
             <small class="text-muted mt-2 d-block">
                 <i class="bi bi-lightbulb me-1"></i>
-                Make sure the customer has their country and passport number filled in their profile.
+                Make sure the customer has their country and name filled in their profile.
             </small>
         </div>
 
@@ -2807,12 +2959,12 @@ function showProductExportConfigModal(productId) {
         return;
     }
 
-    // ✅ Get current weight from multiple sources
     const currentWeight = product.item_weight || product.totalWeight || '';
+    const currentHsCode = product.hsCode || '';
 
     const modalHTML = `
         <div class="modal fade" id="productExportConfigModal" tabindex="-1">
-            <div class="modal-dialog">
+            <div class="modal-dialog modal-lg">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">
@@ -2826,16 +2978,65 @@ function showProductExportConfigModal(productId) {
                         </div>
 
                         <form id="exportConfigForm">
+                            <!-- HS Code with Search -->
                             <div class="mb-3">
                                 <label class="form-label">
                                     HS Code (Harmonized System) <span class="text-danger">*</span>
                                 </label>
-                                <input type="text" name="hs_code"
-                                       class="form-control" placeholder="e.g. 8471.30"
-                                       pattern="[0-9]{4,10}(\.[0-9]{1,4})?"
-                                       value="${product.hsCode || ''}"
+
+                                <!-- Search Input -->
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text">
+                                        <i class="bi bi-search"></i>
+                                    </span>
+                                    <input type="text"
+                                           id="hsCodeSearch"
+                                           class="form-control"
+                                           placeholder="Search HS codes by code or description..."
+                                           autocomplete="off">
+                                    <button class="btn btn-outline-secondary"
+                                            type="button"
+                                            onclick="clearHsCodeSearch()"
+                                            title="Clear search">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                </div>
+
+                                <!-- Search Results Dropdown -->
+                                <div id="hsCodeDropdown" class="hs-code-dropdown" style="display: none;">
+                                    <div id="hsCodeSearchLoading" class="text-center py-2" style="display: none;">
+                                        <div class="spinner-border spinner-border-sm text-primary"></div>
+                                        <small class="text-muted ms-2">Searching...</small>
+                                    </div>
+                                    <div id="hsCodeResults"></div>
+                                </div>
+
+                                <!-- Selected HS Code Display -->
+                                <div id="selectedHsCodeDisplay" class="selected-hs-code-display" style="display: none;">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <strong id="selectedHsCodeValue"></strong>
+                                            <p class="mb-0 text-muted small" id="selectedHsCodeDesc"></p>
+                                        </div>
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-danger"
+                                                onclick="clearSelectedHsCode()">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Hidden input for form submission -->
+                                <input type="hidden"
+                                       name="hs_code"
+                                       id="hsCodeInput"
+                                       value="${currentHsCode}"
                                        required>
-                                <small class="text-muted">Customs commodity code (4–10 digits)</small>
+
+                                <small class="text-muted">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Search for the commodity classification code. Type at least 2 characters.
+                                </small>
                             </div>
 
                             <div class="mb-3">
@@ -2844,13 +3045,470 @@ function showProductExportConfigModal(productId) {
                                 </label>
                                 <select name="customs_measure_unit" class="form-select" required>
                                     <option value="">-- Select Unit --</option>
-                                    <option value="NTT" ${product.customs_measure_unit === 'NTT' ? 'selected' : ''}>NTT - Net Metric Tons</option>
-                                    <option value="KGM" ${product.customs_measure_unit === 'KGM' ? 'selected' : ''}>KGM - Kilograms</option>
-                                    <option value="LTR" ${product.customs_measure_unit === 'LTR' ? 'selected' : ''}>LTR - Litres</option>
-                                    <option value="MTR" ${product.customs_measure_unit === 'MTR' ? 'selected' : ''}>MTR - Meters</option>
-                                    <option value="MTK" ${product.customs_measure_unit === 'MTK' ? 'selected' : ''}>MTK - Square Meters</option>
-                                    <option value="MTQ" ${product.customs_measure_unit === 'MTQ' ? 'selected' : ''}>MTQ - Cubic Meters</option>
-                                    <option value="PCE" ${product.customs_measure_unit === 'PCE' ? 'selected' : ''}>PCE - Pieces</option>
+                                    <option value="NF" ${product.customs_measure_unit === 'NF' ? 'selected' : ''}>NF - Unpacked or unpackaged</option>
+                                    <option value="NG" ${product.customs_measure_unit === 'NG' ? 'selected' : ''}>NG - Unpacked or unpackaged</option>
+                                    <option value="NS" ${product.customs_measure_unit === 'NS' ? 'selected' : ''}>NS - Nest</option>
+                                    <option value="NT" ${product.customs_measure_unit === 'NT' ? 'selected' : ''}>NT - Net</option>
+                                    <option value="NU" ${product.customs_measure_unit === 'NU' ? 'selected' : ''}>NU - Net, tube, plastic</option>
+                                    <option value="NV" ${product.customs_measure_unit === 'NV' ? 'selected' : ''}>NV - Net, tube, textile</option>
+                                    <option value="OA" ${product.customs_measure_unit === 'OA' ? 'selected' : ''}>OA - Pallet</option>
+                                    <option value="OB" ${product.customs_measure_unit === 'OB' ? 'selected' : ''}>OB - Pallet</option>
+                                    <option value="OC" ${product.customs_measure_unit === 'OC' ? 'selected' : ''}>OC - Pallet</option>
+                                    <option value="OD" ${product.customs_measure_unit === 'OD' ? 'selected' : ''}>OD - Pallet</option>
+                                    <option value="OE" ${product.customs_measure_unit === 'OE' ? 'selected' : ''}>OE - Pallet</option>
+                                    <option value="OF" ${product.customs_measure_unit === 'OF' ? 'selected' : ''}>OF - Platform</option>
+                                    <option value="OK" ${product.customs_measure_unit === 'OK' ? 'selected' : ''}>OK - Block</option>
+                                    <option value="OT" ${product.customs_measure_unit === 'OT' ? 'selected' : ''}>OT - Octabin</option>
+                                    <option value="OU" ${product.customs_measure_unit === 'OU' ? 'selected' : ''}>OU - Container</option>
+                                    <option value="P2" ${product.customs_measure_unit === 'P2' ? 'selected' : ''}>P2 - Pan</option>
+                                    <option value="PA" ${product.customs_measure_unit === 'PA' ? 'selected' : ''}>PA - Packet</option>
+                                    <option value="PB" ${product.customs_measure_unit === 'PB' ? 'selected' : ''}>PB - Pallet, box</option>
+                                    <option value="PC" ${product.customs_measure_unit === 'PC' ? 'selected' : ''}>PC - Parcel</option>
+                                    <option value="PE" ${product.customs_measure_unit === 'PE' ? 'selected' : ''}>PE - Pallet, modular,collars 80cm*120cms</option>
+                                    <option value="PF" ${product.customs_measure_unit === 'PF' ? 'selected' : ''}>PF - Pen</option>
+                                    <option value="PG" ${product.customs_measure_unit === 'PG' ? 'selected' : ''}>PG - Plate</option>
+                                    <option value="PH" ${product.customs_measure_unit === 'PH' ? 'selected' : ''}>PH - Pitcher</option>
+                                    <option value="PI" ${product.customs_measure_unit === 'PI' ? 'selected' : ''}>PI - Pipe</option>
+                                    <option value="PJ" ${product.customs_measure_unit === 'PJ' ? 'selected' : ''}>PJ - Punnet</option>
+                                    <option value="PK" ${product.customs_measure_unit === 'PK' ? 'selected' : ''}>PK - Package</option>
+                                    <option value="PL" ${product.customs_measure_unit === 'PL' ? 'selected' : ''}>PL - Pail</option>
+                                    <option value="PLT" ${product.customs_measure_unit === 'PLT' ? 'selected' : ''}>PLT - Pallet modular collars 80cm x 100cms</option>
+                                    <option value="PN" ${product.customs_measure_unit === 'PN' ? 'selected' : ''}>PN - Plank</option>
+                                    <option value="PO" ${product.customs_measure_unit === 'PO' ? 'selected' : ''}>PO - Pouch</option>
+                                    <option value="PP" ${product.customs_measure_unit === 'PP' ? 'selected' : ''}>PP - Piece</option>
+                                    <option value="PR" ${product.customs_measure_unit === 'PR' ? 'selected' : ''}>PR - Receptable, plastic</option>
+                                    <option value="PT" ${product.customs_measure_unit === 'PT' ? 'selected' : ''}>PT - Pot</option>
+                                    <option value="PU" ${product.customs_measure_unit === 'PU' ? 'selected' : ''}>PU - Tray</option>
+                                    <option value="PV" ${product.customs_measure_unit === 'PV' ? 'selected' : ''}>PV - Pipes, in bundle/bunch/truss</option>
+                                    <option value="PX" ${product.customs_measure_unit === 'PX' ? 'selected' : ''}>PX - Pallet</option>
+                                    <option value="PY" ${product.customs_measure_unit === 'PY' ? 'selected' : ''}>PY - Plates, in bundle/bunch/truss</option>
+                                    <option value="PZ" ${product.customs_measure_unit === 'PZ' ? 'selected' : ''}>PZ - Planks, in bundle/bunch/truss</option>
+                                    <option value="QA" ${product.customs_measure_unit === 'QA' ? 'selected' : ''}>QA - Drum,steel,non-removable head</option>
+                                    <option value="QB" ${product.customs_measure_unit === 'QB' ? 'selected' : ''}>QB - Drum, steel, removable head</option>
+                                    <option value="QC" ${product.customs_measure_unit === 'QC' ? 'selected' : ''}>QC - Drum,aluminium,non-removable head</option>
+                                    <option value="QD" ${product.customs_measure_unit === 'QD' ? 'selected' : ''}>QD - Drum, aluminium, removable head</option>
+                                    <option value="QF" ${product.customs_measure_unit === 'QF' ? 'selected' : ''}>QF - Drum, plastic, non-removable head</option>
+                                    <option value="QG" ${product.customs_measure_unit === 'QG' ? 'selected' : ''}>QG - Drum, plastic, removable head</option>
+                                    <option value="QH" ${product.customs_measure_unit === 'QH' ? 'selected' : ''}>QH - Barrel, wooden, bung type</option>
+                                    <option value="QJ" ${product.customs_measure_unit === 'QJ' ? 'selected' : ''}>QJ - Barrel, wooden, removable head</option>
+                                    <option value="QK" ${product.customs_measure_unit === 'QK' ? 'selected' : ''}>QK - Jerrican, steel, non-removable head</option>
+                                    <option value="QL" ${product.customs_measure_unit === 'QL' ? 'selected' : ''}>QL - Jerrican, steel, removable head</option>
+                                    <option value="QM" ${product.customs_measure_unit === 'QM' ? 'selected' : ''}>QM - Jerrican,plastic,non-removable head</option>
+                                    <option value="QN" ${product.customs_measure_unit === 'QN' ? 'selected' : ''}>QN - Jerrican, plastic, removable head</option>
+                                    <option value="QP" ${product.customs_measure_unit === 'QP' ? 'selected' : ''}>QP - Box, wooden, natural wood, ordinary</option>
+                                    <option value="QQ" ${product.customs_measure_unit === 'QQ' ? 'selected' : ''}>QQ - Box,natural wood,with sift walls</option>
+                                    <option value="QR" ${product.customs_measure_unit === 'QR' ? 'selected' : ''}>QR - Box, plastic, expanded</option>
+                                    <option value="QS" ${product.customs_measure_unit === 'QS' ? 'selected' : ''}>QS - Box, plastic, solid</option>
+                                    <option value="RD" ${product.customs_measure_unit === 'RD' ? 'selected' : ''}>RD - Rod</option>
+                                    <option value="RG" ${product.customs_measure_unit === 'RG' ? 'selected' : ''}>RG - Ring</option>
+                                    <option value="RJ" ${product.customs_measure_unit === 'RJ' ? 'selected' : ''}>RJ - Rack, clothing hanger</option>
+                                    <option value="RK" ${product.customs_measure_unit === 'RK' ? 'selected' : ''}>RK - Rack</option>
+                                    <option value="RL" ${product.customs_measure_unit === 'RL' ? 'selected' : ''}>RL - Reel</option>
+                                    <option value="RO" ${product.customs_measure_unit === 'RO' ? 'selected' : ''}>RO - Roll</option>
+                                    <option value="RT" ${product.customs_measure_unit === 'RT' ? 'selected' : ''}>RT - Rednet</option>
+                                    <option value="RZ" ${product.customs_measure_unit === 'RZ' ? 'selected' : ''}>RZ - Rods, in bundle/bunch/truss</option>
+                                    <option value="SA" ${product.customs_measure_unit === 'SA' ? 'selected' : ''}>SA - Sack</option>
+                                    <option value="SB" ${product.customs_measure_unit === 'SB' ? 'selected' : ''}>SB - Slab</option>
+                                    <option value="SC" ${product.customs_measure_unit === 'SC' ? 'selected' : ''}>SC - Crate, shallow</option>
+                                    <option value="SD" ${product.customs_measure_unit === 'SD' ? 'selected' : ''}>SD - Spindle</option>
+                                    <option value="SE" ${product.customs_measure_unit === 'SE' ? 'selected' : ''}>SE - Sea-chest</option>
+                                    <option value="SH" ${product.customs_measure_unit === 'SH' ? 'selected' : ''}>SH - Sachet</option>
+                                    <option value="SI" ${product.customs_measure_unit === 'SI' ? 'selected' : ''}>SI - Skid</option>
+                                    <option value="SK" ${product.customs_measure_unit === 'SK' ? 'selected' : ''}>SK - Case, skeleton</option>
+                                    <option value="SL" ${product.customs_measure_unit === 'SL' ? 'selected' : ''}>SL - Slipsheet</option>
+                                    <option value="SM" ${product.customs_measure_unit === 'SM' ? 'selected' : ''}>SM - Sheetmetal</option>
+                                    <option value="SO" ${product.customs_measure_unit === 'SO' ? 'selected' : ''}>SO - Spool</option>
+                                    <option value="SP" ${product.customs_measure_unit === 'SP' ? 'selected' : ''}>SP - Sheet, plastic wrapping</option>
+                                    <option value="SS" ${product.customs_measure_unit === 'SS' ? 'selected' : ''}>SS - Case</option>
+                                    <option value="ST" ${product.customs_measure_unit === 'ST' ? 'selected' : ''}>ST - Sheet</option>
+                                    <option value="SU" ${product.customs_measure_unit === 'SU' ? 'selected' : ''}>SU - Suitcase</option>
+                                    <option value="SV" ${product.customs_measure_unit === 'SV' ? 'selected' : ''}>SV - Envelope</option>
+                                    <option value="SW" ${product.customs_measure_unit === 'SW' ? 'selected' : ''}>SW - Shrinkwrapped</option>
+                                    <option value="SX" ${product.customs_measure_unit === 'SX' ? 'selected' : ''}>SX - Set</option>
+                                    <option value="SY" ${product.customs_measure_unit === 'SY' ? 'selected' : ''}>SY - Sleeve</option>
+                                    <option value="SZ" ${product.customs_measure_unit === 'SZ' ? 'selected' : ''}>SZ - Sheets, in bundle/bunch/truss</option>
+                                    <option value="T1" ${product.customs_measure_unit === 'T1' ? 'selected' : ''}>T1 - Tablet</option>
+                                    <option value="TB" ${product.customs_measure_unit === 'TB' ? 'selected' : ''}>TB - Tub</option>
+                                    <option value="TC" ${product.customs_measure_unit === 'TC' ? 'selected' : ''}>TC - Tea-chest</option>
+                                    <option value="TD" ${product.customs_measure_unit === 'TD' ? 'selected' : ''}>TD - Tube, collapsible</option>
+                                    <option value="TE" ${product.customs_measure_unit === 'TE' ? 'selected' : ''}>TE - Tyre</option>
+                                    <option value="TG" ${product.customs_measure_unit === 'TG' ? 'selected' : ''}>TG - Tank container</option>
+                                    <option value="TI" ${product.customs_measure_unit === 'TI' ? 'selected' : ''}>TI - Tierce</option>
+                                    <option value="TK" ${product.customs_measure_unit === 'TK' ? 'selected' : ''}>TK - Tank, rectangular</option>
+                                    <option value="TL" ${product.customs_measure_unit === 'TL' ? 'selected' : ''}>TL - Tub</option>
+                                    <option value="TN" ${product.customs_measure_unit === 'TN' ? 'selected' : ''}>TN - Tin</option>
+                                    <option value="TO" ${product.customs_measure_unit === 'TO' ? 'selected' : ''}>TO - Tun</option>
+                                    <option value="TR" ${product.customs_measure_unit === 'TR' ? 'selected' : ''}>TR - Trunk</option>
+                                    <option value="TS" ${product.customs_measure_unit === 'TS' ? 'selected' : ''}>TS - Truss</option>
+                                    <option value="TT" ${product.customs_measure_unit === 'TT' ? 'selected' : ''}>TT - Bag</option>
+                                    <option value="TU" ${product.customs_measure_unit === 'TU' ? 'selected' : ''}>TU - Tube</option>
+                                    <option value="TV" ${product.customs_measure_unit === 'TV' ? 'selected' : ''}>TV - Tube, with nozzle</option>
+                                    <option value="TW" ${product.customs_measure_unit === 'TW' ? 'selected' : ''}>TW - Pallet</option>
+                                    <option value="TY" ${product.customs_measure_unit === 'TY' ? 'selected' : ''}>TY - Tank, cylindrical</option>
+                                    <option value="TZ" ${product.customs_measure_unit === 'TZ' ? 'selected' : ''}>TZ - Tubes, in bundle/bunch/truss</option>
+                                    <option value="UC" ${product.customs_measure_unit === 'UC' ? 'selected' : ''}>UC - Uncaged</option>
+                                    <option value="UN" ${product.customs_measure_unit === 'UN' ? 'selected' : ''}>UN - Unit</option>
+                                    <option value="VA" ${product.customs_measure_unit === 'VA' ? 'selected' : ''}>VA - Vat</option>
+                                    <option value="VG" ${product.customs_measure_unit === 'VG' ? 'selected' : ''}>VG - Bulk</option>
+                                    <option value="VI" ${product.customs_measure_unit === 'VI' ? 'selected' : ''}>VI - Vial</option>
+                                    <option value="VK" ${product.customs_measure_unit === 'VK' ? 'selected' : ''}>VK - Vanpack</option>
+                                    <option value="VL" ${product.customs_measure_unit === 'VL' ? 'selected' : ''}>VL - Bulk, liquid</option>
+                                    <option value="VN" ${product.customs_measure_unit === 'VN' ? 'selected' : ''}>VN - Vehicle</option>
+                                    <option value="VO" ${product.customs_measure_unit === 'VO' ? 'selected' : ''}>VO - Bulk,solid,large particles(nodules)</option>
+                                    <option value="VP" ${product.customs_measure_unit === 'VP' ? 'selected' : ''}>VP - Vacuum-packed</option>
+                                    <option value="VQ" ${product.customs_measure_unit === 'VQ' ? 'selected' : ''}>VQ - Bulk,liquefied gas(abnormal temp/pr)</option>
+                                    <option value="VR" ${product.customs_measure_unit === 'VR' ? 'selected' : ''}>VR - Bulk, solid, granular particles</option>
+                                    <option value="VS" ${product.customs_measure_unit === 'VS' ? 'selected' : ''}>VS - Bulk</option>
+                                    <option value="VY" ${product.customs_measure_unit === 'VY' ? 'selected' : ''}>VY - Bulk, solid, fine particles(powder)</option>
+                                    <option value="WA" ${product.customs_measure_unit === 'WA' ? 'selected' : ''}>WA - Intermediate bulk container</option>
+                                    <option value="WB" ${product.customs_measure_unit === 'WB' ? 'selected' : ''}>WB - Wickerbottle</option>
+                                    <option value="WC" ${product.customs_measure_unit === 'WC' ? 'selected' : ''}>WC - Intermediate bulk container,steel</option>
+                                    <option value="WD" ${product.customs_measure_unit === 'WD' ? 'selected' : ''}>WD - Intermediate bulk container,aluminium</option>
+                                    <option value="WF" ${product.customs_measure_unit === 'WF' ? 'selected' : ''}>WF - Intermediate bulk container,metal</option>
+                                    <option value="WG" ${product.customs_measure_unit === 'WG' ? 'selected' : ''}>WG - Intermediate bulk cont,steel,pressu</option>
+                                    <option value="WH" ${product.customs_measure_unit === 'WH' ? 'selected' : ''}>WH - Inter bulk container,alumin,pressur</option>
+                                    <option value="WJ" ${product.customs_measure_unit === 'WJ' ? 'selected' : ''}>WJ - Inter bulk container,metal,pressure</option>
+                                    <option value="WK" ${product.customs_measure_unit === 'WK' ? 'selected' : ''}>WK - Interme bulk container,steel,liquid</option>
+                                    <option value="WL" ${product.customs_measure_unit === 'WL' ? 'selected' : ''}>WL - Inter bulk container,alumin liquid</option>
+                                    <option value="WM" ${product.customs_measure_unit === 'WM' ? 'selected' : ''}>WM - Interm bulk container,metal,liquid</option>
+                                    <option value="WN" ${product.customs_measure_unit === 'WN' ? 'selected' : ''}>WN - Int bulk cont,woven plastic,no coat</option>
+                                    <option value="WP" ${product.customs_measure_unit === 'WP' ? 'selected' : ''}>WP - Inter bulk cont,woven plastic,coate</option>
+                                    <option value="WQ" ${product.customs_measure_unit === 'WQ' ? 'selected' : ''}>WQ - Inter bulk cont,woven plastic,liner</option>
+                                    <option value="WR" ${product.customs_measure_unit === 'WR' ? 'selected' : ''}>WR - Inter bulk cont,woven plastic,coate</option>
+                                    <option value="WS" ${product.customs_measure_unit === 'WS' ? 'selected' : ''}>WS - Interm bulk container, plastic film</option>
+                                    <option value="WT" ${product.customs_measure_unit === 'WT' ? 'selected' : ''}>WT - Inter bulk cont,textile no coat/lin</option>
+                                    <option value="WU" ${product.customs_measure_unit === 'WU' ? 'selected' : ''}>WU - Inter bulk cont,natural wood,liner</option>
+                                    <option value="WV" ${product.customs_measure_unit === 'WV' ? 'selected' : ''}>WV - Inter bulk contain, textile, coated</option>
+                                    <option value="WW" ${product.customs_measure_unit === 'WW' ? 'selected' : ''}>WW - Inter bulk conta,textile,with liner</option>
+                                    <option value="WX" ${product.customs_measure_unit === 'WX' ? 'selected' : ''}>WX - Inter bulk cont,textile,coated/line</option>
+                                    <option value="WY" ${product.customs_measure_unit === 'WY' ? 'selected' : ''}>WY - Inter bulk cont,plywood,inner liner</option>
+                                    <option value="WZ" ${product.customs_measure_unit === 'WZ' ? 'selected' : ''}>WZ - Interm bulk conta,reconsituted wood</option>
+                                    <option value="XA" ${product.customs_measure_unit === 'XA' ? 'selected' : ''}>XA - Bag,woven plastic,without inner coa</option>
+                                    <option value="XB" ${product.customs_measure_unit === 'XB' ? 'selected' : ''}>XB - Bag,woven plastic, sift proof</option>
+                                    <option value="XC" ${product.customs_measure_unit === 'XC' ? 'selected' : ''}>XC - Bag, woven plastic, water resistant</option>
+                                    <option value="XD" ${product.customs_measure_unit === 'XD' ? 'selected' : ''}>XD - Bag, plastics film</option>
+                                    <option value="XF" ${product.customs_measure_unit === 'XF' ? 'selected' : ''}>XF - Bag, textile,without inner coat/lin</option>
+                                    <option value="XG" ${product.customs_measure_unit === 'XG' ? 'selected' : ''}>XG - Bag, textile, sift proof</option>
+                                    <option value="XH" ${product.customs_measure_unit === 'XH' ? 'selected' : ''}>XH - Bag, textile, water resistant</option>
+                                    <option value="XJ" ${product.customs_measure_unit === 'XJ' ? 'selected' : ''}>XJ - Bag, paper, multi-wall</option>
+                                    <option value="XK" ${product.customs_measure_unit === 'XK' ? 'selected' : ''}>XK - Bag,paper,multi-wall,water resistant</option>
+                                    <option value="XX" ${product.customs_measure_unit === 'XX' ? 'selected' : ''}>XX - SCT UN-IDENTIFIED</option>
+                                    <option value="YA" ${product.customs_measure_unit === 'YA' ? 'selected' : ''}>YA - Composte pack,plast recp steel drum</option>
+                                    <option value="YB" ${product.customs_measure_unit === 'YB' ? 'selected' : ''}>YB - Composte pack,plast recp steel crat</option>
+                                    <option value="YC" ${product.customs_measure_unit === 'YC' ? 'selected' : ''}>YC - Composte pack,plast recp alumi drum</option>
+                                    <option value="YD" ${product.customs_measure_unit === 'YD' ? 'selected' : ''}>YD - Composte pack,plast recp alum crate</option>
+                                    <option value="YF" ${product.customs_measure_unit === 'YF' ? 'selected' : ''}>YF - Composte pack,plast recp wooden box</option>
+                                    <option value="YG" ${product.customs_measure_unit === 'YG' ? 'selected' : ''}>YG - Composte pack,plast recp plywo drum</option>
+                                    <option value="YH" ${product.customs_measure_unit === 'YH' ? 'selected' : ''}>YH - Composte pack,plast recp plywo box</option>
+                                    <option value="YJ" ${product.customs_measure_unit === 'YJ' ? 'selected' : ''}>YJ - Composte pack,plast recp fibre drum</option>
+                                    <option value="YK" ${product.customs_measure_unit === 'YK' ? 'selected' : ''}>YK - Composte pack,plast recp fibreb box</option>
+                                    <option value="YL" ${product.customs_measure_unit === 'YL' ? 'selected' : ''}>YL - Composte pack,plast recp plast drum</option>
+                                    <option value="YM" ${product.customs_measure_unit === 'YM' ? 'selected' : ''}>YM - Composte pack,plast recp plastc box</option>
+                                    <option value="YN" ${product.customs_measure_unit === 'YN' ? 'selected' : ''}>YN - Composte pack,glass recp steel drum</option>
+                                    <option value="YP" ${product.customs_measure_unit === 'YP' ? 'selected' : ''}>YP - Composte pack,glass recp steel crat</option>
+                                    <option value="YQ" ${product.customs_measure_unit === 'YQ' ? 'selected' : ''}>YQ - Composte pack,glass recp alumi drum</option>
+                                    <option value="YR" ${product.customs_measure_unit === 'YR' ? 'selected' : ''}>YR - Composte pack,glass recp alum crate</option>
+                                    <option value="YS" ${product.customs_measure_unit === 'YS' ? 'selected' : ''}>YS - Composte pack,glass recp wooden box</option>
+                                    <option value="YT" ${product.customs_measure_unit === 'YT' ? 'selected' : ''}>YT - Composte pack,glass recp plywo drum</option>
+                                    <option value="YV" ${product.customs_measure_unit === 'YV' ? 'selected' : ''}>YV - Composte pack,glass recp wicker ham</option>
+                                    <option value="YW" ${product.customs_measure_unit === 'YW' ? 'selected' : ''}>YW - Composte pack,glass recp fibre drum</option>
+                                    <option value="YX" ${product.customs_measure_unit === 'YX' ? 'selected' : ''}>YX - Composte pack,glass recp fibreb box</option>
+                                    <option value="YY" ${product.customs_measure_unit === 'YY' ? 'selected' : ''}>YY - Composte pack,glas rec ex plas pack</option>
+                                    <option value="YZ" ${product.customs_measure_unit === 'YZ' ? 'selected' : ''}>YZ - Composte pack,glas rec so plas pack</option>
+                                    <option value="ZA" ${product.customs_measure_unit === 'ZA' ? 'selected' : ''}>ZA - Interm bulk cont, paper, multi-wall</option>
+                                    <option value="ZB" ${product.customs_measure_unit === 'ZB' ? 'selected' : ''}>ZB - Bag, large</option>
+                                    <option value="ZC" ${product.customs_measure_unit === 'ZC' ? 'selected' : ''}>ZC - Inter bulk cont,paper,water resista</option>
+                                    <option value="ZD" ${product.customs_measure_unit === 'ZD' ? 'selected' : ''}>ZD - Int.bulk.cont,plast,struc equip sol</option>
+                                    <option value="ZF" ${product.customs_measure_unit === 'ZF' ? 'selected' : ''}>ZF - Int.bulk.cont,plast,free standing</option>
+                                    <option value="ZG" ${product.customs_measure_unit === 'ZG' ? 'selected' : ''}>ZG - Int.bulk.cont,plast,struc equp pres</option>
+                                    <option value="ZH" ${product.customs_measure_unit === 'ZH' ? 'selected' : ''}>ZH - Int.bulk.cont,plast,freestand,press</option>
+                                    <option value="ZJ" ${product.customs_measure_unit === 'ZJ' ? 'selected' : ''}>ZJ - Int.bulk.cont,plast,struc equip liq</option>
+                                    <option value="ZK" ${product.customs_measure_unit === 'ZK' ? 'selected' : ''}>ZK - Int.bulk.cont,plast,freestand,liqui</option>
+                                    <option value="ZL" ${product.customs_measure_unit === 'ZL' ? 'selected' : ''}>ZL - Int.bulk.cont,comp,rigid plast,soli</option>
+                                    <option value="ZM" ${product.customs_measure_unit === 'ZM' ? 'selected' : ''}>ZM - Int.bulk.cont,comp,flexi plast,soli</option>
+                                    <option value="ZN" ${product.customs_measure_unit === 'ZN' ? 'selected' : ''}>ZN - Int.bulk.cont,comp,rigid plast,pres</option>
+                                    <option value="ZP" ${product.customs_measure_unit === 'ZP' ? 'selected' : ''}>ZP - Int.bulk.cont,comp,flex plast,press</option>
+                                    <option value="ZQ" ${product.customs_measure_unit === 'ZQ' ? 'selected' : ''}>ZQ - Int.bulk.cont,comp,rigid plast,liqu</option>
+                                    <option value="ZR" ${product.customs_measure_unit === 'ZR' ? 'selected' : ''}>ZR - Int.bulk.cont,comp,flex plast,liqui</option>
+                                    <option value="ZS" ${product.customs_measure_unit === 'ZS' ? 'selected' : ''}>ZS - Intermediate bulk container</option>
+                                    <option value="ZT" ${product.customs_measure_unit === 'ZT' ? 'selected' : ''}>ZT - Intermediate bulk container</option>
+                                    <option value="ZU" ${product.customs_measure_unit === 'ZU' ? 'selected' : ''}>ZU - Intermediate bulk container</option>
+                                    <option value="ZV" ${product.customs_measure_unit === 'ZV' ? 'selected' : ''}>ZV - Intermediate bulk container</option>
+                                    <option value="ZW" ${product.customs_measure_unit === 'ZW' ? 'selected' : ''}>ZW - Intermediate bulk container</option>
+                                    <option value="ZX" ${product.customs_measure_unit === 'ZX' ? 'selected' : ''}>ZX - Intermediate bulk container</option>
+                                    <option value="ZY" ${product.customs_measure_unit === 'ZY' ? 'selected' : ''}>ZY - Intermediate bulk container</option>
+                                    <option value="ZZ" ${product.customs_measure_unit === 'ZZ' ? 'selected' : ''}>ZZ - Mutually defined</option>
+                                    <option value="AA" ${product.customs_measure_unit === 'AA' ? 'selected' : ''}>AA - Intermediate bulk container</option>
+                                    <option value="AB" ${product.customs_measure_unit === 'AB' ? 'selected' : ''}>AB - Receptacle</option>
+                                    <option value="AC" ${product.customs_measure_unit === 'AC' ? 'selected' : ''}>AC - Receptacle</option>
+                                    <option value="AD" ${product.customs_measure_unit === 'AD' ? 'selected' : ''}>AD - Receptacle</option>
+                                    <option value="AE" ${product.customs_measure_unit === 'AE' ? 'selected' : ''}>AE - Aerosol</option>
+                                    <option value="AF" ${product.customs_measure_unit === 'AF' ? 'selected' : ''}>AF - Pallet</option>
+                                    <option value="AG" ${product.customs_measure_unit === 'AG' ? 'selected' : ''}>AG - Pallet</option>
+                                    <option value="AH" ${product.customs_measure_unit === 'AH' ? 'selected' : ''}>AH - Pallet</option>
+                                    <option value="AI" ${product.customs_measure_unit === 'AI' ? 'selected' : ''}>AI - Clamshell</option>
+                                    <option value="AJ" ${product.customs_measure_unit === 'AJ' ? 'selected' : ''}>AJ - Cone</option>
+                                    <option value="AL" ${product.customs_measure_unit === 'AL' ? 'selected' : ''}>AL - Ball</option>
+                                    <option value="AM" ${product.customs_measure_unit === 'AM' ? 'selected' : ''}>AM - Ampoule, non protected</option>
+                                    <option value="AP" ${product.customs_measure_unit === 'AP' ? 'selected' : ''}>AP - Ampoule, protected</option>
+                                    <option value="AT" ${product.customs_measure_unit === 'AT' ? 'selected' : ''}>AT - Atomizer</option>
+                                    <option value="AV" ${product.customs_measure_unit === 'AV' ? 'selected' : ''}>AV - Capsule</option>
+                                    <option value="BA" ${product.customs_measure_unit === 'BA' ? 'selected' : ''}>BA - Barrel</option>
+                                    <option value="BB" ${product.customs_measure_unit === 'BB' ? 'selected' : ''}>BB - Bobbin</option>
+                                    <option value="BC" ${product.customs_measure_unit === 'BC' ? 'selected' : ''}>BC - Bottle crate / bottle rack</option>
+                                    <option value="BD" ${product.customs_measure_unit === 'BD' ? 'selected' : ''}>BD - Board</option>
+                                    <option value="BE" ${product.customs_measure_unit === 'BE' ? 'selected' : ''}>BE - Bundle</option>
+                                    <option value="BF" ${product.customs_measure_unit === 'BF' ? 'selected' : ''}>BF - Ballon, non-protected</option>
+                                    <option value="BG" ${product.customs_measure_unit === 'BG' ? 'selected' : ''}>BG - Bag</option>
+                                    <option value="BH" ${product.customs_measure_unit === 'BH' ? 'selected' : ''}>BH - Bunch</option>
+                                    <option value="BI" ${product.customs_measure_unit === 'BI' ? 'selected' : ''}>BI - Bin</option>
+                                    <option value="BJ" ${product.customs_measure_unit === 'BJ' ? 'selected' : ''}>BJ - Bucket</option>
+                                    <option value="BK" ${product.customs_measure_unit === 'BK' ? 'selected' : ''}>BK - Basket</option>
+                                    <option value="BL" ${product.customs_measure_unit === 'BL' ? 'selected' : ''}>BL - Bale, compressed</option>
+                                    <option value="BM" ${product.customs_measure_unit === 'BM' ? 'selected' : ''}>BM - Basin</option>
+                                    <option value="BN" ${product.customs_measure_unit === 'BN' ? 'selected' : ''}>BN - Bale, non compressed</option>
+                                    <option value="BO" ${product.customs_measure_unit === 'BO' ? 'selected' : ''}>BO - Bottle, non protected, cylindrical</option>
+                                    <option value="BP" ${product.customs_measure_unit === 'BP' ? 'selected' : ''}>BP - Ballon, protected</option>
+                                    <option value="BQ" ${product.customs_measure_unit === 'BQ' ? 'selected' : ''}>BQ - Bottle, protected cylindrical</option>
+                                    <option value="BR" ${product.customs_measure_unit === 'BR' ? 'selected' : ''}>BR - Bar</option>
+                                    <option value="BS" ${product.customs_measure_unit === 'BS' ? 'selected' : ''}>BS - Bottle, non protected, bulbous</option>
+                                    <option value="BT" ${product.customs_measure_unit === 'BT' ? 'selected' : ''}>BT - Bolt</option>
+                                    <option value="BU" ${product.customs_measure_unit === 'BU' ? 'selected' : ''}>BU - Butt</option>
+                                    <option value="BV" ${product.customs_measure_unit === 'BV' ? 'selected' : ''}>BV - Bottle, protected bulbous</option>
+                                    <option value="BW" ${product.customs_measure_unit === 'BW' ? 'selected' : ''}>BW - Box, for liquids</option>
+                                    <option value="BX" ${product.customs_measure_unit === 'BX' ? 'selected' : ''}>BX - Box 21 to</option>
+                                    <option value="BY" ${product.customs_measure_unit === 'BY' ? 'selected' : ''}>BY - Board, in bundle/bunch/truss</option>
+                                    <option value="BZ" ${product.customs_measure_unit === 'BZ' ? 'selected' : ''}>BZ - Bars, in bundle/bunch/truss</option>
+                                    <option value="CA" ${product.customs_measure_unit === 'CA' ? 'selected' : ''}>CA - Can, rectangular</option>
+                                    <option value="CB" ${product.customs_measure_unit === 'CB' ? 'selected' : ''}>CB - Crate, beer</option>
+                                    <option value="CC" ${product.customs_measure_unit === 'CC' ? 'selected' : ''}>CC - Churn</option>
+                                    <option value="CD" ${product.customs_measure_unit === 'CD' ? 'selected' : ''}>CD - Can, with handle and spout</option>
+                                    <option value="CE" ${product.customs_measure_unit === 'CE' ? 'selected' : ''}>CE - Creel</option>
+                                    <option value="CF" ${product.customs_measure_unit === 'CF' ? 'selected' : ''}>CF - Coffer</option>
+                                    <option value="CG" ${product.customs_measure_unit === 'CG' ? 'selected' : ''}>CG - Cage</option>
+                                    <option value="CH" ${product.customs_measure_unit === 'CH' ? 'selected' : ''}>CH - Chest</option>
+                                    <option value="CI" ${product.customs_measure_unit === 'CI' ? 'selected' : ''}>CI - Canister</option>
+                                    <option value="CJ" ${product.customs_measure_unit === 'CJ' ? 'selected' : ''}>CJ - Coffin</option>
+                                    <option value="CK" ${product.customs_measure_unit === 'CK' ? 'selected' : ''}>CK - Cask</option>
+                                    <option value="CL" ${product.customs_measure_unit === 'CL' ? 'selected' : ''}>CL - Coil</option>
+                                    <option value="CM" ${product.customs_measure_unit === 'CM' ? 'selected' : ''}>CM - Card</option>
+                                    <option value="CN" ${product.customs_measure_unit === 'CN' ? 'selected' : ''}>CN - Container,nes as transport equipment</option>
+                                    <option value="CO" ${product.customs_measure_unit === 'CO' ? 'selected' : ''}>CO - Carboy, non-protected</option>
+                                    <option value="CP" ${product.customs_measure_unit === 'CP' ? 'selected' : ''}>CP - Carboy, protected</option>
+                                    <option value="CQ" ${product.customs_measure_unit === 'CQ' ? 'selected' : ''}>CQ - Cartridge</option>
+                                    <option value="CR" ${product.customs_measure_unit === 'CR' ? 'selected' : ''}>CR - Crate</option>
+                                    <option value="CS" ${product.customs_measure_unit === 'CS' ? 'selected' : ''}>CS - Case</option>
+                                    <option value="CT" ${product.customs_measure_unit === 'CT' ? 'selected' : ''}>CT - Carton</option>
+                                    <option value="CU" ${product.customs_measure_unit === 'CU' ? 'selected' : ''}>CU - Cup</option>
+                                    <option value="CV" ${product.customs_measure_unit === 'CV' ? 'selected' : ''}>CV - Cover</option>
+                                    <option value="CW" ${product.customs_measure_unit === 'CW' ? 'selected' : ''}>CW - Cage, roll</option>
+                                    <option value="CX" ${product.customs_measure_unit === 'CX' ? 'selected' : ''}>CX - Can, cylindrical</option>
+                                    <option value="CY" ${product.customs_measure_unit === 'CY' ? 'selected' : ''}>CY - Cylinder</option>
+                                    <option value="CZ" ${product.customs_measure_unit === 'CZ' ? 'selected' : ''}>CZ - Canvas</option>
+                                    <option value="DA" ${product.customs_measure_unit === 'DA' ? 'selected' : ''}>DA - Crate, multiple layer, plastic</option>
+                                    <option value="DB" ${product.customs_measure_unit === 'DB' ? 'selected' : ''}>DB - Crate, multiple layer, wooden</option>
+                                    <option value="DC" ${product.customs_measure_unit === 'DC' ? 'selected' : ''}>DC - Crate</option>
+                                    <option value="DG" ${product.customs_measure_unit === 'DG' ? 'selected' : ''}>DG - Cage,commonwealth handlg equip pool</option>
+                                    <option value="DH" ${product.customs_measure_unit === 'DH' ? 'selected' : ''}>DH - Box,commonwealth handlig equip pool</option>
+                                    <option value="DI" ${product.customs_measure_unit === 'DI' ? 'selected' : ''}>DI - Drum, iron</option>
+                                    <option value="DJ" ${product.customs_measure_unit === 'DJ' ? 'selected' : ''}>DJ - Demijohn, non-protected</option>
+                                    <option value="DK" ${product.customs_measure_unit === 'DK' ? 'selected' : ''}>DK - Crate, bulk, cardboard</option>
+                                    <option value="DL" ${product.customs_measure_unit === 'DL' ? 'selected' : ''}>DL - Crate, bulk, plastic</option>
+                                    <option value="DM" ${product.customs_measure_unit === 'DM' ? 'selected' : ''}>DM - Crate, bulk, wooden</option>
+                                    <option value="DN" ${product.customs_measure_unit === 'DN' ? 'selected' : ''}>DN - Dispenser</option>
+                                    <option value="DP" ${product.customs_measure_unit === 'DP' ? 'selected' : ''}>DP - Demijohn, protected</option>
+                                    <option value="DR" ${product.customs_measure_unit === 'DR' ? 'selected' : ''}>DR - Drum</option>
+                                    <option value="DS" ${product.customs_measure_unit === 'DS' ? 'selected' : ''}>DS - Tray, one layer no cover,plastic</option>
+                                    <option value="DT" ${product.customs_measure_unit === 'DT' ? 'selected' : ''}>DT - Tray, one layer no cover, wooden</option>
+                                    <option value="DU" ${product.customs_measure_unit === 'DU' ? 'selected' : ''}>DU - Tray, one layer no cover,polystyrene</option>
+                                    <option value="DV" ${product.customs_measure_unit === 'DV' ? 'selected' : ''}>DV - Tray, one layer no cover, cardboard</option>
+                                    <option value="DW" ${product.customs_measure_unit === 'DW' ? 'selected' : ''}>DW - Tray,two layers no cover,platic tray</option>
+                                    <option value="DX" ${product.customs_measure_unit === 'DX' ? 'selected' : ''}>DX - Tray, two layers no cover, wooden</option>
+                                    <option value="DY" ${product.customs_measure_unit === 'DY' ? 'selected' : ''}>DY - Tray, two layers no cover,cardboard</option>
+                                    <option value="EC" ${product.customs_measure_unit === 'EC' ? 'selected' : ''}>EC - Bag, plastic</option>
+                                    <option value="ED" ${product.customs_measure_unit === 'ED' ? 'selected' : ''}>ED - Case, with pallet base</option>
+                                    <option value="EE" ${product.customs_measure_unit === 'EE' ? 'selected' : ''}>EE - Case, with pallet base, wooden</option>
+                                    <option value="EF" ${product.customs_measure_unit === 'EF' ? 'selected' : ''}>EF - Case, with pallet base, cardboard</option>
+                                    <option value="EG" ${product.customs_measure_unit === 'EG' ? 'selected' : ''}>EG - Case, with pallet base, plastic</option>
+                                    <option value="EH" ${product.customs_measure_unit === 'EH' ? 'selected' : ''}>EH - Case, with pallet base, metal</option>
+                                    <option value="EI" ${product.customs_measure_unit === 'EI' ? 'selected' : ''}>EI - Case, isothermic</option>
+                                    <option value="EN" ${product.customs_measure_unit === 'EN' ? 'selected' : ''}>EN - Envelope</option>
+                                    <option value="FB" ${product.customs_measure_unit === 'FB' ? 'selected' : ''}>FB - Flexibag</option>
+                                    <option value="FC" ${product.customs_measure_unit === 'FC' ? 'selected' : ''}>FC - Crate, fruit</option>
+                                    <option value="FD" ${product.customs_measure_unit === 'FD' ? 'selected' : ''}>FD - Crate, framed</option>
+                                    <option value="FE" ${product.customs_measure_unit === 'FE' ? 'selected' : ''}>FE - Flexitank</option>
+                                    <option value="FI" ${product.customs_measure_unit === 'FI' ? 'selected' : ''}>FI - Firkin</option>
+                                    <option value="FL" ${product.customs_measure_unit === 'FL' ? 'selected' : ''}>FL - Flask</option>
+                                    <option value="FO" ${product.customs_measure_unit === 'FO' ? 'selected' : ''}>FO - Footlocker</option>
+                                    <option value="FP" ${product.customs_measure_unit === 'FP' ? 'selected' : ''}>FP - Filmpack</option>
+                                    <option value="FR" ${product.customs_measure_unit === 'FR' ? 'selected' : ''}>FR - Frame</option>
+                                    <option value="FT" ${product.customs_measure_unit === 'FT' ? 'selected' : ''}>FT - Foodtainer</option>
+                                    <option value="FW" ${product.customs_measure_unit === 'FW' ? 'selected' : ''}>FW - Cart</option>
+                                    <option value="FX" ${product.customs_measure_unit === 'FX' ? 'selected' : ''}>FX - Bag</option>
+                                    <option value="GB" ${product.customs_measure_unit === 'GB' ? 'selected' : ''}>GB - Bottle, gas</option>
+                                    <option value="GI" ${product.customs_measure_unit === 'GI' ? 'selected' : ''}>GI - Girder</option>
+                                    <option value="GL" ${product.customs_measure_unit === 'GL' ? 'selected' : ''}>GL - Container</option>
+                                    <option value="GR" ${product.customs_measure_unit === 'GR' ? 'selected' : ''}>GR - Receptable, glass</option>
+                                    <option value="GU" ${product.customs_measure_unit === 'GU' ? 'selected' : ''}>GU - Tray</option>
+                                    <option value="GY" ${product.customs_measure_unit === 'GY' ? 'selected' : ''}>GY - Bag</option>
+                                    <option value="GZ" ${product.customs_measure_unit === 'GZ' ? 'selected' : ''}>GZ - Girders, in bundle/bunch/truss</option>
+                                    <option value="HA" ${product.customs_measure_unit === 'HA' ? 'selected' : ''}>HA - Basket, with handle, plastic</option>
+                                    <option value="HB" ${product.customs_measure_unit === 'HB' ? 'selected' : ''}>HB - Basket, with handle, wooden</option>
+                                    <option value="HC" ${product.customs_measure_unit === 'HC' ? 'selected' : ''}>HC - Basket, with handle, cardboard</option>
+                                    <option value="HG" ${product.customs_measure_unit === 'HG' ? 'selected' : ''}>HG - Hogshead</option>
+                                    <option value="HN" ${product.customs_measure_unit === 'HN' ? 'selected' : ''}>HN - Hanger</option>
+                                    <option value="HR" ${product.customs_measure_unit === 'HR' ? 'selected' : ''}>HR - Hamper</option>
+                                    <option value="IA" ${product.customs_measure_unit === 'IA' ? 'selected' : ''}>IA - Package, display, wooden</option>
+                                    <option value="IB" ${product.customs_measure_unit === 'IB' ? 'selected' : ''}>IB - Package, display, cardboard</option>
+                                    <option value="IC" ${product.customs_measure_unit === 'IC' ? 'selected' : ''}>IC - Package, display, plastic</option>
+                                    <option value="ID" ${product.customs_measure_unit === 'ID' ? 'selected' : ''}>ID - Package, display, metal</option>
+                                    <option value="IE" ${product.customs_measure_unit === 'IE' ? 'selected' : ''}>IE - Package, show</option>
+                                    <option value="IF" ${product.customs_measure_unit === 'IF' ? 'selected' : ''}>IF - Package, flow</option>
+                                    <option value="IG" ${product.customs_measure_unit === 'IG' ? 'selected' : ''}>IG - Package, paper wrapped</option>
+                                    <option value="IH" ${product.customs_measure_unit === 'IH' ? 'selected' : ''}>IH - Drum, plastic</option>
+                                    <option value="IK" ${product.customs_measure_unit === 'IK' ? 'selected' : ''}>IK - Package</option>
+                                    <option value="IL" ${product.customs_measure_unit === 'IL' ? 'selected' : ''}>IL - Tray</option>
+                                    <option value="IN" ${product.customs_measure_unit === 'IN' ? 'selected' : ''}>IN - Ingot</option>
+                                    <option value="IZ" ${product.customs_measure_unit === 'IZ' ? 'selected' : ''}>IZ - Ingots, in bundle/bunch/truss</option>
+                                    <option value="JB" ${product.customs_measure_unit === 'JB' ? 'selected' : ''}>JB - Bag</option>
+                                    <option value="JC" ${product.customs_measure_unit === 'JC' ? 'selected' : ''}>JC - Jerrican, rectangular</option>
+                                    <option value="JG" ${product.customs_measure_unit === 'JG' ? 'selected' : ''}>JG - Jug</option>
+                                    <option value="JR" ${product.customs_measure_unit === 'JR' ? 'selected' : ''}>JR - Jar</option>
+                                    <option value="JT" ${product.customs_measure_unit === 'JT' ? 'selected' : ''}>JT - Jute bag</option>
+                                    <option value="JY" ${product.customs_measure_unit === 'JY' ? 'selected' : ''}>JY - Jerrican, cylindrical</option>
+                                    <option value="KG" ${product.customs_measure_unit === 'KG' ? 'selected' : ''}>KG - Keg</option>
+                                    <option value="KI" ${product.customs_measure_unit === 'KI' ? 'selected' : ''}>KI - Kit</option>
+                                    <option value="LE" ${product.customs_measure_unit === 'LE' ? 'selected' : ''}>LE - Luggage</option>
+                                    <option value="LG" ${product.customs_measure_unit === 'LG' ? 'selected' : ''}>LG - Log</option>
+                                    <option value="LT" ${product.customs_measure_unit === 'LT' ? 'selected' : ''}>LT - Lot</option>
+                                    <option value="LU" ${product.customs_measure_unit === 'LU' ? 'selected' : ''}>LU - Lug</option>
+                                    <option value="LV" ${product.customs_measure_unit === 'LV' ? 'selected' : ''}>LV - Liftvan</option>
+                                    <option value="LZ" ${product.customs_measure_unit === 'LZ' ? 'selected' : ''}>LZ - Logs, in bundle/bunch/truss</option>
+                                    <option value="MA" ${product.customs_measure_unit === 'MA' ? 'selected' : ''}>MA - Crate</option>
+                                    <option value="MB" ${product.customs_measure_unit === 'MB' ? 'selected' : ''}>MB - Bag, multiply</option>
+                                    <option value="MC" ${product.customs_measure_unit === 'MC' ? 'selected' : ''}>MC - Crate, milk</option>
+                                    <option value="ME" ${product.customs_measure_unit === 'ME' ? 'selected' : ''}>ME - Container</option>
+                                    <option value="MR" ${product.customs_measure_unit === 'MR' ? 'selected' : ''}>MR - Receptable, metal</option>
+                                    <option value="MS" ${product.customs_measure_unit === 'MS' ? 'selected' : ''}>MS - Sack, multi-wall</option>
+                                    <option value="MT" ${product.customs_measure_unit === 'MT' ? 'selected' : ''}>MT - Mat</option>
+                                    <option value="MW" ${product.customs_measure_unit === 'MW' ? 'selected' : ''}>MW</option>
+                                    <option value="MX" ${product.customs_measure_unit === 'MX' ? 'selected' : ''}>MX - Matchbox</option>
+                                    <option value="NA" ${product.customs_measure_unit === 'NA' ? 'selected' : ''}>NA - Not available</option>
+                                    <option value="NE" ${product.customs_measure_unit === 'NE' ? 'selected' : ''}>NE - Unpacked or unpackaged</option>
+                                    <option value="KPP" ${product.customs_measure_unit === 'KPP' ? 'selected' : ''}>KPP - Kilogram of phosphoric anhydride</option>
+                                    <option value="KSD" ${product.customs_measure_unit === 'KSD' ? 'selected' : ''}>KSD - Kilogram of substance 90 % dry</option>
+                                    <option value="KSH" ${product.customs_measure_unit === 'KSH' ? 'selected' : ''}>KSH - Kilogram of caustic soda</option>
+                                    <option value="KUR" ${product.customs_measure_unit === 'KUR' ? 'selected' : ''}>KUR - Kilogram of uranium</option>
+                                    <option value="LBR" ${product.customs_measure_unit === 'LBR' ? 'selected' : ''}>LBR - Pound gb, us (0,45359237 kg)</option>
+                                    <option value="LBT" ${product.customs_measure_unit === 'LBT' ? 'selected' : ''}>LBT - Troy pound, us (373,242 g)</option>
+                                    <option value="LEF" ${product.customs_measure_unit === 'LEF' ? 'selected' : ''}>LEF - Leaf</option>
+                                    <option value="LPA" ${product.customs_measure_unit === 'LPA' ? 'selected' : ''}>LPA - Litre of pure alcohol</option>
+                                    <option value="LTN" ${product.customs_measure_unit === 'LTN' ? 'selected' : ''}>LTN - Long ton gb, us (1,0160469 t)</option>
+                                    <option value="LTR" ${product.customs_measure_unit === 'LTR' ? 'selected' : ''}>LTR - Litre (1 dm3)</option>
+                                    <option value="MAL" ${product.customs_measure_unit === 'MAL' ? 'selected' : ''}>MAL - Megalitre</option>
+                                    <option value="MAM" ${product.customs_measure_unit === 'MAM' ? 'selected' : ''}>MAM - Megametre</option>
+                                    <option value="MBF" ${product.customs_measure_unit === 'MBF' ? 'selected' : ''}>MBF - Thousand board feet (2,36 m3)</option>
+                                    <option value="MGM" ${product.customs_measure_unit === 'MGM' ? 'selected' : ''}>MGM - Milligram</option>
+                                    <option value="MIL" ${product.customs_measure_unit === 'MIL' ? 'selected' : ''}>MIL - Thousand</option>
+                                    <option value="MTK" ${product.customs_measure_unit === 'MTK' ? 'selected' : ''}>MTK - Square metre</option>
+                                    <option value="MTQ" ${product.customs_measure_unit === 'MTQ' ? 'selected' : ''}>MTQ - Cubic metre</option>
+                                    <option value="MTR" ${product.customs_measure_unit === 'MTR' ? 'selected' : ''}>MTR - Metre</option>
+                                    <option value="NAR" ${product.customs_measure_unit === 'NAR' ? 'selected' : ''}>NAR - Number of articles</option>
+                                    <option value="NBB" ${product.customs_measure_unit === 'NBB' ? 'selected' : ''}>NBB - Number of bobbins</option>
+                                    <option value="NIU" ${product.customs_measure_unit === 'NIU' ? 'selected' : ''}>NIU - Number of international units</option>
+                                    <option value="NMB" ${product.customs_measure_unit === 'NMB' ? 'selected' : ''}>NMB - Number</option>
+                                    <option value="NMP" ${product.customs_measure_unit === 'NMP' ? 'selected' : ''}>NMP - Number of packs</option>
+                                    <option value="NPL" ${product.customs_measure_unit === 'NPL' ? 'selected' : ''}>NPL - Number of parcels</option>
+                                    <option value="NPR" ${product.customs_measure_unit === 'NPR' ? 'selected' : ''}>NPR - Number of pairs</option>
+                                    <option value="NPT" ${product.customs_measure_unit === 'NPT' ? 'selected' : ''}>NPT - Number of parts</option>
+                                    <option value="NRL" ${product.customs_measure_unit === 'NRL' ? 'selected' : ''}>NRL - Number of rolls</option>
+                                    <option value="NTT" ${product.customs_measure_unit === 'NTT' ? 'selected' : ''}>NTT - Net [register] ton</option>
+                                    <option value="ONZ" ${product.customs_measure_unit === 'ONZ' ? 'selected' : ''}>ONZ - Ounce gb, us (28,349523 g)</option>
+                                    <option value="OZA" ${product.customs_measure_unit === 'OZA' ? 'selected' : ''}>OZA - Fluid ounce (29,5735 cm3)</option>
+                                    <option value="OZI" ${product.customs_measure_unit === 'OZI' ? 'selected' : ''}>OZI - Fluid ounce (28,413 cm3)</option>
+                                    <option value="PCE" ${product.customs_measure_unit === 'PCE' ? 'selected' : ''}>PCE - Piece</option>
+                                    <option value="PGL" ${product.customs_measure_unit === 'PGL' ? 'selected' : ''}>PGL - Proof gallon</option>
+                                    <option value="PTD" ${product.customs_measure_unit === 'PTD' ? 'selected' : ''}>PTD - Dry pint (0,55061 dm3)</option>
+                                    <option value="PTI" ${product.customs_measure_unit === 'PTI' ? 'selected' : ''}>PTI - Pint (0,568262 dm3)</option>
+                                    <option value="PTL" ${product.customs_measure_unit === 'PTL' ? 'selected' : ''}>PTL - Liquid pint (0,473176 dm3)</option>
+                                    <option value="QTD" ${product.customs_measure_unit === 'QTD' ? 'selected' : ''}>QTD - Dry quart (1,101221 dm3)</option>
+                                    <option value="QTI" ${product.customs_measure_unit === 'QTI' ? 'selected' : ''}>QTI - Quart (1,136523 dm3)</option>
+                                    <option value="QTL" ${product.customs_measure_unit === 'QTL' ? 'selected' : ''}>QTL - Liquid quart (0,946353 dm3)</option>
+                                    <option value="SET" ${product.customs_measure_unit === 'SET' ? 'selected' : ''}>SET - Set</option>
+                                    <option value="SHT" ${product.customs_measure_unit === 'SHT' ? 'selected' : ''}>SHT - Shipping ton</option>
+                                    <option value="STI" ${product.customs_measure_unit === 'STI' ? 'selected' : ''}>STI - Stone gb (6,350293 kg)</option>
+                                    <option value="STN" ${product.customs_measure_unit === 'STN' ? 'selected' : ''}>STN - Short ton gb, us (0,90718474 t)</option>
+                                    <option value="TNE" ${product.customs_measure_unit === 'TNE' ? 'selected' : ''}>TNE - Metric ton (1000 kg)</option>
+                                    <option value="TPR" ${product.customs_measure_unit === 'TPR' ? 'selected' : ''}>TPR - Ten pairs</option>
+                                    <option value="TSD" ${product.customs_measure_unit === 'TSD' ? 'selected' : ''}>TSD - Tonne of substance 90 per cent dry</option>
+                                    <option value="WCD" ${product.customs_measure_unit === 'WCD' ? 'selected' : ''}>WCD - Cord 3-63 m3</option>
+                                    <option value="YDK" ${product.customs_measure_unit === 'YDK' ? 'selected' : ''}>YDK - Square yard</option>
+                                    <option value="YDQ" ${product.customs_measure_unit === 'YDQ' ? 'selected' : ''}>YDQ - Cubic yard</option>
+                                    <option value="YRD" ${product.customs_measure_unit === 'YRD' ? 'selected' : ''}>YRD - Yard 0-9144 m</option>
+                                    <option value="APZ" ${product.customs_measure_unit === 'APZ' ? 'selected' : ''}>APZ - Ounce gb, us (31,10348 g)</option>
+                                    <option value="ASM" ${product.customs_measure_unit === 'ASM' ? 'selected' : ''}>ASM - Alcoholic strength by mass</option>
+                                    <option value="ASV" ${product.customs_measure_unit === 'ASV' ? 'selected' : ''}>ASV - Alcoholic strength by volume</option>
+                                    <option value="BFT" ${product.customs_measure_unit === 'BFT' ? 'selected' : ''}>BFT - Board foot</option>
+                                    <option value="AGE" ${product.customs_measure_unit === 'AGE' ? 'selected' : ''}>AGE - YEAR OF MANUFACTURE</option>
+                                    <option value="CCP" ${product.customs_measure_unit === 'CCP' ? 'selected' : ''}>CCP - ENGINE CAPACITY(c.c)</option>
+                                    <option value="BHX" ${product.customs_measure_unit === 'BHX' ? 'selected' : ''}>BHX - Hundred boxes</option>
+                                    <option value="BLD" ${product.customs_measure_unit === 'BLD' ? 'selected' : ''}>BLD - Dry barrel (115,627 dm3)</option>
+                                    <option value="BLL" ${product.customs_measure_unit === 'BLL' ? 'selected' : ''}>BLL - Barrel (petroleum) (158,987 dm3)</option>
+                                    <option value="BUA" ${product.customs_measure_unit === 'BUA' ? 'selected' : ''}>BUA - Bushel (35,2391 dm3)</option>
+                                    <option value="BUI" ${product.customs_measure_unit === 'BUI' ? 'selected' : ''}>BUI - Bushel (36,36874 dm3)</option>
+                                    <option value="CEN" ${product.customs_measure_unit === 'CEN' ? 'selected' : ''}>CEN - Hundred</option>
+                                    <option value="CGM" ${product.customs_measure_unit === 'CGM' ? 'selected' : ''}>CGM - Centigram</option>
+                                    <option value="CLF" ${product.customs_measure_unit === 'CLF' ? 'selected' : ''}>CLF - Hundred leaves</option>
+                                    <option value="VEH" ${product.customs_measure_unit === 'VEH' ? 'selected' : ''}>VEH - Vehicle</option>
+                                    <option value="CLT" ${product.customs_measure_unit === 'CLT' ? 'selected' : ''}>CLT - Centilitre</option>
+                                    <option value="CMK" ${product.customs_measure_unit === 'CMK' ? 'selected' : ''}>CMK - Square centimetre</option>
+                                    <option value="CMQ" ${product.customs_measure_unit === 'CMQ' ? 'selected' : ''}>CMQ - Cubic centimetre</option>
+                                    <option value="CMT" ${product.customs_measure_unit === 'CMT' ? 'selected' : ''}>CMT - Centimetre</option>
+                                    <option value="CNP" ${product.customs_measure_unit === 'CNP' ? 'selected' : ''}>CNP - Hundred packs</option>
+                                    <option value="CNT" ${product.customs_measure_unit === 'CNT' ? 'selected' : ''}>CNT - Cental gb (45,359237 kg)</option>
+                                    <option value="CTM" ${product.customs_measure_unit === 'CTM' ? 'selected' : ''}>CTM - Metric carat (200 mg = 2.10-4 kg)</option>
+                                    <option value="CWA" ${product.customs_measure_unit === 'CWA' ? 'selected' : ''}>CWA - Hundredweight us (45,3592 kg)</option>
+                                    <option value="CWI" ${product.customs_measure_unit === 'CWI' ? 'selected' : ''}>CWI - Hundredweight gb (50,802345 kg)</option>
+                                    <option value="DLT" ${product.customs_measure_unit === 'DLT' ? 'selected' : ''}>DLT - Decilitre</option>
+                                    <option value="DMK" ${product.customs_measure_unit === 'DMK' ? 'selected' : ''}>DMK - Square decimetre</option>
+                                    <option value="DMQ" ${product.customs_measure_unit === 'DMQ' ? 'selected' : ''}>DMQ - Cubic decimetre</option>
+                                    <option value="DMT" ${product.customs_measure_unit === 'DMT' ? 'selected' : ''}>DMT - Decimetre</option>
+                                    <option value="DPC" ${product.customs_measure_unit === 'DPC' ? 'selected' : ''}>DPC - Dozen pieces</option>
+                                    <option value="DPR" ${product.customs_measure_unit === 'DPR' ? 'selected' : ''}>DPR - Dozen pairs</option>
+                                    <option value="DRA" ${product.customs_measure_unit === 'DRA' ? 'selected' : ''}>DRA - Dram us (3,887935 g)</option>
+                                    <option value="DRI" ${product.customs_measure_unit === 'DRI' ? 'selected' : ''}>DRI - Dram gb (1,771745 g)</option>
+                                    <option value="DRL" ${product.customs_measure_unit === 'DRL' ? 'selected' : ''}>DRL - Dozen rolls</option>
+                                    <option value="DRM" ${product.customs_measure_unit === 'DRM' ? 'selected' : ''}>DRM - Drachm gb (3,887935 g)</option>
+                                    <option value="DTH" ${product.customs_measure_unit === 'DTH' ? 'selected' : ''}>DTH - Hectokilogram</option>
+                                    <option value="DTN" ${product.customs_measure_unit === 'DTN' ? 'selected' : ''}>DTN - Centner, metric (100 kg)</option>
+                                    <option value="DWT" ${product.customs_measure_unit === 'DWT' ? 'selected' : ''}>DWT - Pennyweight gb, us (1,555174 g)</option>
+                                    <option value="DZN" ${product.customs_measure_unit === 'DZN' ? 'selected' : ''}>DZN - Dozen</option>
+                                    <option value="DZP" ${product.customs_measure_unit === 'DZP' ? 'selected' : ''}>DZP - Dozen packs</option>
+                                    <option value="FOT" ${product.customs_measure_unit === 'FOT' ? 'selected' : ''}>FOT - Foot (0,3048 m)</option>
+                                    <option value="FTK" ${product.customs_measure_unit === 'FTK' ? 'selected' : ''}>FTK - Square foot</option>
+                                    <option value="FTQ" ${product.customs_measure_unit === 'FTQ' ? 'selected' : ''}>FTQ - Cubic foot</option>
+                                    <option value="GGR" ${product.customs_measure_unit === 'GGR' ? 'selected' : ''}>GGR - Great gross (12 gross)</option>
+                                    <option value="GIA" ${product.customs_measure_unit === 'GIA' ? 'selected' : ''}>GIA - Gill (11,8294 cm3)</option>
+                                    <option value="GII" ${product.customs_measure_unit === 'GII' ? 'selected' : ''}>GII - Gill (0,142065 dm3)</option>
+                                    <option value="GLD" ${product.customs_measure_unit === 'GLD' ? 'selected' : ''}>GLD - Dry gallon (4,404884 dm3)</option>
+                                    <option value="GLI" ${product.customs_measure_unit === 'GLI' ? 'selected' : ''}>GLI - Gallon (4,546092 dm3)</option>
+                                    <option value="GLL" ${product.customs_measure_unit === 'GLL' ? 'selected' : ''}>GLL - Liquid gallon (3,78541 dm3)</option>
+                                    <option value="GRM" ${product.customs_measure_unit === 'GRM' ? 'selected' : ''}>GRM - Gram</option>
+                                    <option value="GRN" ${product.customs_measure_unit === 'GRN' ? 'selected' : ''}>GRN - Grain gb, us (64,798910 mg)</option>
+                                    <option value="GRO" ${product.customs_measure_unit === 'GRO' ? 'selected' : ''}>GRO - Gross</option>
+                                    <option value="GRT" ${product.customs_measure_unit === 'GRT' ? 'selected' : ''}>GRT - Gross [register] ton</option>
+                                    <option value="HGM" ${product.customs_measure_unit === 'HGM' ? 'selected' : ''}>HGM - Hectogram</option>
+                                    <option value="HIU" ${product.customs_measure_unit === 'HIU' ? 'selected' : ''}>HIU - Hundred international units</option>
+                                    <option value="HLT" ${product.customs_measure_unit === 'HLT' ? 'selected' : ''}>HLT - Hectolitre</option>
+                                    <option value="HPA" ${product.customs_measure_unit === 'HPA' ? 'selected' : ''}>HPA - Hectolitre of pure alcohol</option>
+                                    <option value="INH" ${product.customs_measure_unit === 'INH' ? 'selected' : ''}>INH - Inch (25,4 mm)</option>
+                                    <option value="INK" ${product.customs_measure_unit === 'INK' ? 'selected' : ''}>INK - Square inch</option>
+                                    <option value="INQ" ${product.customs_measure_unit === 'INQ' ? 'selected' : ''}>INQ - Cubic inch</option>
+                                    <option value="KGM" ${product.customs_measure_unit === 'KGM' ? 'selected' : ''}>KGM - Kilogram</option>
+                                    <option value="KNI" ${product.customs_measure_unit === 'KNI' ? 'selected' : ''}>KNI - Kilogram of nitrogen</option>
+                                    <option value="KNS" ${product.customs_measure_unit === 'KNS' ? 'selected' : ''}>KNS - Kilogram of named substance</option>
+                                    <option value="KPH" ${product.customs_measure_unit === 'KPH' ? 'selected' : ''}>KPH - Kilogram of caustic potash</option>
+                                    <option value="KPO" ${product.customs_measure_unit === 'KPO' ? 'selected' : ''}>KPO - Kilogram of potassium oxide</option>
                                 </select>
                             </div>
 
@@ -2929,6 +3587,14 @@ function showProductExportConfigModal(productId) {
     // Add modal to page
     document.body.insertAdjacentHTML('beforeend', modalHTML);
 
+    // Initialize HS code search
+    setupHsCodeSearch();
+
+    // If there's an existing HS code, display it
+    if (currentHsCode) {
+        loadExistingHsCode(currentHsCode);
+    }
+
     // Show modal
     const modal = new bootstrap.Modal(document.getElementById('productExportConfigModal'));
     modal.show();
@@ -2937,6 +3603,205 @@ function showProductExportConfigModal(productId) {
     document.getElementById('productExportConfigModal').addEventListener('hidden.bs.modal', function() {
         this.remove();
     });
+}
+
+/**
+ * Setup HS code search functionality
+ */
+function setupHsCodeSearch() {
+    const searchInput = document.getElementById('hsCodeSearch');
+    if (!searchInput) return;
+
+    // Debounced search
+    let searchTimeout;
+    searchInput.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        const query = this.value.trim();
+
+        if (query.length < 2) {
+            hideHsCodeDropdown();
+            return;
+        }
+
+        searchTimeout = setTimeout(() => {
+            searchHsCodes(query);
+        }, 300);
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        const dropdown = document.getElementById('hsCodeDropdown');
+        const searchInput = document.getElementById('hsCodeSearch');
+
+        if (dropdown && searchInput &&
+            !dropdown.contains(e.target) &&
+            e.target !== searchInput) {
+            hideHsCodeDropdown();
+        }
+    });
+}
+
+/**
+ * Search HS codes via API
+ */
+async function searchHsCodes(query) {
+    const loading = document.getElementById('hsCodeSearchLoading');
+    const results = document.getElementById('hsCodeResults');
+    const dropdown = document.getElementById('hsCodeDropdown');
+
+    if (!results || !dropdown) return;
+
+    // Show loading
+    if (loading) loading.style.display = 'block';
+    results.innerHTML = '';
+    dropdown.style.display = 'block';
+
+    try {
+        const response = await fetch(
+            `/api/v1/api/hs-codes/search/?q=${encodeURIComponent(query)}&limit=20`,
+            {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            }
+        );
+
+        const data = await response.json();
+
+        if (loading) loading.style.display = 'none';
+
+        if (data.success && data.results && data.results.length > 0) {
+            displayHsCodeResults(data.results);
+        } else {
+            results.innerHTML = `
+                <div class="text-center py-3 text-muted">
+                    <i class="bi bi-search"></i>
+                    <p class="mb-0 mt-2">No HS codes found for "${escapeHtml(query)}"</p>
+                </div>
+            `;
+        }
+
+    } catch (error) {
+        console.error('HS code search error:', error);
+        if (loading) loading.style.display = 'none';
+        results.innerHTML = `
+            <div class="text-center py-3 text-danger">
+                <i class="bi bi-exclamation-triangle"></i>
+                <p class="mb-0 mt-2">Search failed. Please try again.</p>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Display HS code search results
+ */
+function displayHsCodeResults(results) {
+    const resultsDiv = document.getElementById('hsCodeResults');
+    if (!resultsDiv) return;
+
+    resultsDiv.innerHTML = results.map(code => `
+        <div class="hs-code-result-item" onclick='selectHsCode(${JSON.stringify(code)})'>
+            <div class="hs-code-result-code">
+                <i class="bi bi-tag me-2"></i>
+                <strong>${escapeHtml(code.hs_code)}</strong>
+                ${!code.is_leaf ? '<span class="badge bg-warning ms-2">Has children</span>' : ''}
+            </div>
+            <div class="hs-code-result-desc">
+                ${escapeHtml(code.description)}
+            </div>
+        </div>
+    `).join('');
+}
+
+/**
+ * Select an HS code from search results
+ */
+function selectHsCode(code) {
+    if (!code.is_leaf) {
+        showToast('Please select a specific HS code (leaf node)', 'warning');
+        return;
+    }
+
+    const hsCodeInput = document.getElementById('hsCodeInput');
+    const hsCodeSearch = document.getElementById('hsCodeSearch');
+    const selectedDisplay = document.getElementById('selectedHsCodeDisplay');
+    const selectedValue = document.getElementById('selectedHsCodeValue');
+    const selectedDesc = document.getElementById('selectedHsCodeDesc');
+
+    if (hsCodeInput) hsCodeInput.value = code.hs_code;
+    if (hsCodeSearch) hsCodeSearch.value = '';
+
+    if (selectedDisplay && selectedValue && selectedDesc) {
+        selectedValue.textContent = code.hs_code;
+        selectedDesc.textContent = code.description;
+        selectedDisplay.style.display = 'block';
+    }
+
+    hideHsCodeDropdown();
+    showToast(`Selected HS code: ${code.hs_code}`, 'success');
+}
+
+/**
+ * Load and display existing HS code
+ */
+async function loadExistingHsCode(hsCode) {
+    try {
+        const response = await fetch(
+            `/api/v1/api/hs-codes/${encodeURIComponent(hsCode)}/`,
+            {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            }
+        );
+
+        const data = await response.json();
+
+        if (data.success && data.hs_code) {
+            selectHsCode(data.hs_code);
+        }
+    } catch (error) {
+        console.error('Error loading HS code:', error);
+    }
+}
+
+/**
+ * Clear HS code search
+ */
+function clearHsCodeSearch() {
+    const searchInput = document.getElementById('hsCodeSearch');
+    if (searchInput) {
+        searchInput.value = '';
+        searchInput.focus();
+    }
+    hideHsCodeDropdown();
+}
+
+/**
+ * Clear selected HS code
+ */
+function clearSelectedHsCode() {
+    const hsCodeInput = document.getElementById('hsCodeInput');
+    const selectedDisplay = document.getElementById('selectedHsCodeDisplay');
+
+    if (hsCodeInput) hsCodeInput.value = '';
+    if (selectedDisplay) selectedDisplay.style.display = 'none';
+
+    const searchInput = document.getElementById('hsCodeSearch');
+    if (searchInput) searchInput.focus();
+}
+
+/**
+ * Hide HS code dropdown
+ */
+function hideHsCodeDropdown() {
+    const dropdown = document.getElementById('hsCodeDropdown');
+    if (dropdown) {
+        dropdown.style.display = 'none';
+    }
 }
 
 // Save product export configuration

@@ -1,15 +1,3 @@
-# sales/api_views.py
-"""
-REST API Views for Sales Application
-Provides comprehensive API endpoints for sales management including:
-- Sales CRUD operations
-- Cart management
-- Payment processing
-- Receipt generation
-- Analytics and reporting
-- EFRIS integration
-"""
-
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -22,7 +10,6 @@ from django.shortcuts import get_object_or_404
 from decimal import Decimal
 from datetime import datetime, timedelta
 import logging
-
 from .models import Sale, SaleItem, Payment, Cart, CartItem, Receipt
 from .serializers import (
     SaleSerializer, SaleItemSerializer, PaymentSerializer,
@@ -32,11 +19,246 @@ from .serializers import (
 )
 from stores.models import Store
 from stores.utils import validate_store_access, get_user_accessible_stores
-from customers.models import Customer
 from inventory.models import Product, Service, Stock
-from company.models import Company
+
+from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+from django.contrib.auth.decorators import login_required
+from django.db.models import Q
+from company.models import EFRISHsCode
+from tenancy.utils import tenant_context_safe, get_current_tenant
 
 logger = logging.getLogger(__name__)
+
+
+@login_required
+@require_http_methods(["GET"])
+def search_hs_codes(request):
+    """
+    Search HS codes with autocomplete functionality
+
+    Query params:
+        - q: search query (searches code and description)
+        - limit: number of results (default: 20, max: 50)
+        - leaf_only: if 'true', only return leaf nodes (default: true)
+    """
+    query = request.GET.get('q', '').strip()
+    limit = min(int(request.GET.get('limit', 20)), 50)
+    leaf_only = request.GET.get('leaf_only', 'true').lower() == 'true'
+
+    # FIXED: get_current_tenant() doesn't take arguments
+    # It automatically gets tenant from connection/thread-local
+    company = get_current_tenant()
+
+    if not company:
+        return JsonResponse({
+            'success': False,
+            'error': 'No company context found'
+        }, status=400)
+
+    try:
+        # Use tenant_context_safe to ensure we're in the right schema/database
+        with tenant_context_safe(company):
+            # Base queryset
+            qs = EFRISHsCode.objects.all()
+
+            # Filter to leaf nodes only (these are the ones that can be used)
+            if leaf_only:
+                qs = qs.filter(is_leaf=True)
+
+            # Apply search filter
+            if query:
+                # Search in both code and description
+                qs = qs.filter(
+                    Q(hs_code__icontains=query) |
+                    Q(description__icontains=query)
+                )
+
+                # Prioritize exact code matches
+                # Note: Django ORM doesn't support .desc() on Q objects directly
+                # So we'll use a more compatible approach
+                qs = qs.order_by('hs_code')
+
+                # Split into exact matches and partial matches for better ordering
+                exact_matches = list(qs.filter(hs_code__iexact=query))
+                starts_with = list(qs.filter(hs_code__istartswith=query).exclude(hs_code__iexact=query))
+                contains = list(qs.exclude(
+                    Q(hs_code__iexact=query) | Q(hs_code__istartswith=query)
+                ))
+
+                # Combine and limit
+                all_results = exact_matches + starts_with + contains
+                hs_codes = all_results[:limit]
+            else:
+                hs_codes = list(qs.order_by('hs_code')[:limit])
+
+            # Format response
+            results = [
+                {
+                    'hs_code': code.hs_code,
+                    'description': code.description,
+                    'is_leaf': code.is_leaf,
+                    'parent_code': code.parent_code,
+                    # For display in dropdown
+                    'display': f"{code.hs_code} - {code.description[:60]}{'...' if len(code.description) > 60 else ''}"
+                }
+                for code in hs_codes
+            ]
+
+            return JsonResponse({
+                'success': True,
+                'results': results,
+                'total': len(results),
+                'query': query
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["GET"])
+def get_hs_code_details(request, hs_code):
+    """
+    Get detailed information about a specific HS code
+    """
+    # FIXED: get_current_tenant() doesn't take arguments
+    company = get_current_tenant()
+
+    if not company:
+        return JsonResponse({
+            'success': False,
+            'error': 'No company context found'
+        }, status=400)
+
+    try:
+        with tenant_context_safe(company):
+            try:
+                code = EFRISHsCode.objects.get(hs_code=hs_code)
+
+                # Get parent information if exists
+                parent_info = None
+                if code.parent_code:
+                    try:
+                        parent = EFRISHsCode.objects.get(hs_code=code.parent_code)
+                        parent_info = {
+                            'hs_code': parent.hs_code,
+                            'description': parent.description
+                        }
+                    except EFRISHsCode.DoesNotExist:
+                        pass
+
+                # Get children if not a leaf
+                children = []
+                if not code.is_leaf:
+                    children = list(
+                        EFRISHsCode.objects.filter(parent_code=code.hs_code)
+                        .values('hs_code', 'description', 'is_leaf')[:10]
+                    )
+
+                return JsonResponse({
+                    'success': True,
+                    'hs_code': {
+                        'hs_code': code.hs_code,
+                        'description': code.description,
+                        'is_leaf': code.is_leaf,
+                        'parent_code': code.parent_code,
+                        'parent_info': parent_info,
+                        'children': children,
+                        'last_synced': code.last_synced.isoformat() if code.last_synced else None
+                    }
+                })
+
+            except EFRISHsCode.DoesNotExist:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'HS code {hs_code} not found'
+                }, status=404)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+@require_http_methods(["GET"])
+def browse_hs_codes(request):
+    """
+    Browse HS codes by parent code (hierarchical browsing)
+    """
+    parent_code = request.GET.get('parent_code', None)
+    limit = min(int(request.GET.get('limit', 50)), 100)
+
+    # FIXED: get_current_tenant() doesn't take arguments
+    company = get_current_tenant()
+
+    if not company:
+        return JsonResponse({
+            'success': False,
+            'error': 'No company context found'
+        }, status=400)
+
+    try:
+        with tenant_context_safe(company):
+            if parent_code:
+                # Get children of specific parent
+                qs = EFRISHsCode.objects.filter(parent_code=parent_code)
+
+                # Get parent info
+                try:
+                    parent = EFRISHsCode.objects.get(hs_code=parent_code)
+                    parent_info = {
+                        'hs_code': parent.hs_code,
+                        'description': parent.description,
+                        'parent_code': parent.parent_code
+                    }
+                except EFRISHsCode.DoesNotExist:
+                    parent_info = None
+            else:
+                # Get top-level codes (no parent)
+                qs = EFRISHsCode.objects.filter(
+                    Q(parent_code__isnull=True) | Q(parent_code='')
+                )
+                parent_info = None
+
+            hs_codes = list(qs.order_by('hs_code')[:limit])
+
+            results = [
+                {
+                    'hs_code': code.hs_code,
+                    'description': code.description,
+                    'is_leaf': code.is_leaf,
+                    'parent_code': code.parent_code,
+                    'has_children': not code.is_leaf,
+                    'display': f"{code.hs_code} - {code.description}"
+                }
+                for code in hs_codes
+            ]
+
+            return JsonResponse({
+                'success': True,
+                'results': results,
+                'total': len(results),
+                'parent_code': parent_code,
+                'parent_info': parent_info
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
 
 # ==================== CUSTOM PAGINATION ====================
