@@ -693,6 +693,59 @@ class EFRISConfiguration(models.Model):
         self.api_base_url = value
 
 
+class ProductUploadTask(models.Model):
+    """Track background product upload jobs"""
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+
+    task_id = models.CharField(max_length=100, unique=True, db_index=True)
+
+    # Progress tracking
+    total_products = models.IntegerField(default=0)
+    processed_count = models.IntegerField(default=0)
+    successful_count = models.IntegerField(default=0)
+    failed_count = models.IntegerField(default=0)
+
+    # Status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    error_details = models.JSONField(null=True, blank=True)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    # User tracking
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['task_id']),
+            models.Index(fields=['status', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"Upload Task {self.task_id} - {self.status}"
+
+    @property
+    def progress_percentage(self):
+        """Calculate progress percentage"""
+        if self.total_products == 0:
+            return 0
+        return int((self.processed_count / self.total_products) * 100)
+
+    @property
+    def is_complete(self):
+        return self.status in ['completed', 'failed']
+
+
+
 class EFRISDigitalKey(models.Model):
     """Store and manage digital keys for EFRIS"""
 

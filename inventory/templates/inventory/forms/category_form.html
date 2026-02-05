@@ -1,0 +1,269 @@
+{% load widget_tweaks %}
+{% load static %}
+{% load widget_tweaks %}
+{% load custom_filters %}
+{% load efris_tags %}
+<form method="post" enctype="multipart/form-data" id="categoryForm" novalidate>
+    {% csrf_token %}
+
+    <!-- Basic Category Information -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h6 class="form-section-header">
+                <i class="fas fa-info-circle"></i> Category Information
+            </h6>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <label for="id_category_type" class="form-label">
+                Category Type <span class="text-danger">*</span>
+            </label>
+            <select name="category_type" id="id_category_type" class="form-select" required>
+                <option value="">Select type...</option>
+                <option value="product" {% if form.instance.category_type == 'product' %}selected{% endif %}>
+                    🛍️ Product Category
+                </option>
+                <option value="service" {% if form.instance.category_type == 'service' %}selected{% endif %}>
+                    ⚙️ Service Category
+                </option>
+            </select>
+            <small class="form-text text-muted">
+                <i class="fas fa-info-circle"></i>
+                Select whether this category is for products or services
+            </small>
+            {% if form.category_type.errors %}
+                <div class="invalid-feedback d-block">{{ form.category_type.errors.0 }}</div>
+            {% endif %}
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <label for="{{ form.name.id_for_label }}" class="form-label">
+                Category Name <span class="text-danger">*</span>
+            </label>
+            {{ form.name|add_class:"form-control" }}
+            <small class="form-text text-muted">Your internal category name</small>
+            {% if form.name.errors %}
+                <div class="invalid-feedback d-block">{{ form.name.errors.0 }}</div>
+            {% endif %}
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <label for="{{ form.code.id_for_label }}" class="form-label">
+                Category Code
+            </label>
+            <div class="input-group">
+                {{ form.code|add_class:"form-control" }}
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        id="generateCategoryCode"
+                        aria-label="Generate category code">
+                    <i class="fas fa-magic" aria-hidden="true"></i>
+                </button>
+            </div>
+            {% if form.code.errors %}
+                <div class="invalid-feedback d-block">{{ form.code.errors.0 }}</div>
+            {% endif %}
+        </div>
+
+        {% if form.parent %}
+        <div class="col-md-6 mb-3">
+            <label for="{{ form.parent.id_for_label }}" class="form-label">Parent Category</label>
+            {{ form.parent|add_class:"form-select select2" }}
+            {% if form.parent.errors %}
+                <div class="invalid-feedback d-block">{{ form.parent.errors.0 }}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="col-12 mb-3">
+            <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+            {{ form.description|add_class:"form-control" }}
+            {% if form.description.errors %}
+                <div class="invalid-feedback d-block">{{ form.description.errors.0 }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if efris_enabled %}
+    <!-- EFRIS Configuration -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h6 class="form-section-header">
+                <i class="fas fa-sync"></i> EFRIS Configuration
+            </h6>
+        </div>
+
+        <!-- Selected Category Display -->
+        <div class="col-12 mb-3">
+            <div id="selectedCategoryDisplay" class="selected-category-display" role="status" aria-live="polite">
+                <div class="selected-category-content">
+                    <div class="selected-category-info">
+                        <h6 class="mb-1">
+                            <i class="fas fa-check-circle" aria-hidden="true"></i> Selected EFRIS Category
+                        </h6>
+                        <div class="d-flex align-items-center gap-3">
+                            <strong id="selectedCategoryCode">-</strong>
+                            <span id="selectedCategoryName">No category selected</span>
+                            <div id="selectedCategoryBadges" class="category-badges"></div>
+                        </div>
+                    </div>
+                    <div class="selected-category-actions">
+                        <button type="button"
+                                class="btn btn-outline-light btn-sm"
+                                onclick="clearEFRISSelection()"
+                                aria-label="Clear EFRIS category selection">
+                            <i class="fas fa-times" aria-hidden="true"></i> Change
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Category Selector -->
+        <div class="col-12">
+            <div class="efris-category-selector">
+                <!-- Search Box -->
+                <div class="efris-search-container">
+                    <i class="fas fa-search efris-search-icon" aria-hidden="true"></i>
+                    <input type="text"
+                           id="efrisSearchInput"
+                           class="form-control efris-search-input"
+                           placeholder="Search EFRIS categories by code or name..."
+                           aria-label="Search EFRIS categories">
+                </div>
+
+                <!-- Quick Access Section -->
+                <div class="quick-access-section">
+                    <h6 class="small text-muted mb-2">Quick Access</h6>
+                    <div class="quick-access-scroller" role="group" aria-label="Quick access categories">
+                        <div id="recentCategories" class="d-flex gap-1"></div>
+                        <div id="popularCategories" class="d-flex gap-1"></div>
+                    </div>
+                </div>
+
+                <!-- Two-Panel Layout -->
+                <div class="two-panel-layout">
+                    <!-- Left Panel - Tree View -->
+                    <div class="tree-panel">
+                        <div class="tree-header">
+                            <i class="fas fa-folder-tree" aria-hidden="true"></i> Browse Categories
+                        </div>
+                        <div class="tree-content" role="tree" aria-label="Category tree">
+                            <div id="categoryTree">
+                                <div class="efris-loading" id="treeLoading" role="status">
+                                    <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
+                                    <div>Loading categories...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Panel - Results -->
+                    <div class="results-panel">
+                        <div class="results-header">
+                            <div>
+                                <strong id="resultsTitle">All Categories</strong>
+                                <small class="text-muted ms-2" id="resultsCount">(0 items)</small>
+                            </div>
+                            <div class="az-scroller" role="group" aria-label="Alphabetical navigation"></div>
+                        </div>
+                        <div class="results-content">
+                            <div id="categoryResults" class="category-results-grid" role="list">
+                                <div class="efris-empty" id="emptyResults" role="status">
+                                    <i class="fas fa-inbox" aria-hidden="true"></i>
+                                    <div>Select a category group or search to see results</div>
+                                </div>
+                            </div>
+                            <div class="efris-loading" id="resultsLoading" role="status">
+                                <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
+                                <div>Loading categories...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hidden form field for selected category -->
+        <input type="hidden"
+               id="efris_commodity_category_code"
+               name="efris_commodity_category_code"
+               value="{{ form.instance.efris_commodity_category_code|default:'' }}">
+
+        <!-- Category Settings -->
+        <div class="col-md-6 mb-3">
+            <div class="form-check form-switch">
+                {{ form.is_active|add_class:"form-check-input" }}
+                <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                    <strong>Is Active</strong>
+                </label>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <div class="form-check form-switch">
+                {{ form.efris_auto_sync|add_class:"form-check-input" }}
+                <label class="form-check-label" for="{{ form.efris_auto_sync.id_for_label }}">
+                    <strong>Enable EFRIS Auto Sync</strong>
+                </label>
+            </div>
+            <small class="form-text text-muted">
+                Automatically sync this category and its products to EFRIS
+            </small>
+        </div>
+    </div>
+
+    <!-- EFRIS Statistics -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="mb-3">
+                        <i class="fas fa-chart-bar" aria-hidden="true"></i> EFRIS Database Statistics
+                    </h6>
+                    <div class="row text-center" id="efris-stats-container">
+                        <div class="col-md-3">
+                            <div class="h4 text-primary mb-1" id="stat-products" aria-label="Product categories">-</div>
+                            <small class="text-muted">Product Categories</small>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="h4 text-info mb-1" id="stat-services" aria-label="Service categories">-</div>
+                            <small class="text-muted">Service Categories</small>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="h4 text-warning mb-1" id="stat-exempt" aria-label="Tax exempt categories">-</div>
+                            <small class="text-muted">Tax Exempt</small>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="h4 text-success mb-1" id="stat-zero" aria-label="Zero rated categories">-</div>
+                            <small class="text-muted">Zero Rated</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Form Actions -->
+    <div class="d-flex justify-content-between mt-4">
+        {% if perms.inventory.view_category %}
+        <a href="{% url 'inventory:category_list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left" aria-hidden="true"></i> Back to Categories
+        </a>
+        {% endif %}
+        <div>
+            <button type="button" class="btn btn-outline-info" id="validateCategoryBtn">
+                <i class="fas fa-check-circle" aria-hidden="true"></i> Validate
+            </button>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save" aria-hidden="true"></i> {% if object %}Update{% else %}Save{% endif %} Category
+            </button>
+            {% if not object %}
+            <button type="submit" name="save_and_add_another" class="btn btn-success">
+                <i class="fas fa-plus" aria-hidden="true"></i> Save & Add Another
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</form>

@@ -1051,58 +1051,165 @@ def diagnostic_tool(request):
     return render(request, 'efris/diagnostic_tool.html', context)
 
 
+from .models import ProductUploadTask  # New model to track upload jobs
+from .tasks import bulk_upload_products_task  # Celery task
+import uuid
+from django.urls import reverse
+
+
+
 @require_http_methods(["GET", "POST"])
 def upload_products_to_efris(request):
-    company = request.tenant  # Assuming tenant is a Company instance
+    """
+    FIXED: Handle bulk uploads via background task to prevent timeout
+    """
+    company = request.tenant
 
     if request.method == "POST":
         selected_product_ids = request.POST.getlist('products')
+
         if not selected_product_ids:
             messages.warning(request, "No products selected for upload.")
             return redirect('efris:upload_products')
 
-        results = {
-            'successful': [],
-            'failed': []
-        }
-
-        # Tenant-aware query
+        # Validate products exist and aren't uploaded
         with schema_context(company.schema_name):
             products_to_upload = Product.objects.filter(
                 id__in=selected_product_ids,
                 efris_is_uploaded=False
             )
 
-            if not products_to_upload.exists():
+            count = products_to_upload.count()
+
+            if count == 0:
                 messages.info(request, "Selected products are already uploaded.")
                 return redirect('efris:upload_products')
 
-            # Upload products via EFRIS API
-            with EnhancedEFRISAPIClient(company) as client:
-                for product in products_to_upload:
-                    result = client.register_product_with_efris(product)
-                    data = result.get('data', None)
+        # Decision: Sync vs Async based on count
+        if count <= 5:
+            # Small batch - process synchronously (immediate feedback)
+            return _process_sync_upload(request, company, list(selected_product_ids))
+        else:
+            # Large batch - process asynchronously (background task)
+            return _process_async_upload(request, company, list(selected_product_ids), count)
 
-                    if data is None or (isinstance(data, list) and len(data) == 0):
-                        product.mark_efris_uploaded()
-                        results['successful'].append(product)
-                    else:
-                        results['failed'].append({
-                            'product': product,
-                            'error': result.get('error') or "Unknown error",
-                            'details': data
-                        })
-
-        messages.success(request, f"{len(results['successful'])} products uploaded successfully.")
-        if results['failed']:
-            messages.error(request, f"{len(results['failed'])} products failed to upload.")
-
-        return redirect('efris:upload_products')
-
+    # GET request - show product list
     with schema_context(company.schema_name):
         products = Product.objects.all().order_by('name')
 
     return render(request, 'efris/upload_products.html', {
         'products': products
     })
+
+
+def _process_sync_upload(request, company, product_ids):
+    """Process small batches synchronously (≤5 products)"""
+    results = {'successful': [], 'failed': []}
+
+    with schema_context(company.schema_name):
+        products = Product.objects.filter(id__in=product_ids)
+
+        with EnhancedEFRISAPIClient(company) as client:
+            for product in products:
+                result = client.register_product_with_efris(product)
+
+                if result.get('success'):
+                    results['successful'].append(product.name)
+                else:
+                    results['failed'].append({
+                        'name': product.name,
+                        'error': result.get('error', 'Unknown error')
+                    })
+
+    # Show results
+    if results['successful']:
+        messages.success(
+            request,
+            f"✅ {len(results['successful'])} products uploaded successfully."
+        )
+
+    if results['failed']:
+        error_details = "; ".join([
+            f"{f['name']}: {f['error']}"
+            for f in results['failed'][:3]
+        ])
+        messages.error(
+            request,
+            f"❌ {len(results['failed'])} products failed. {error_details}"
+        )
+
+    return redirect('efris:upload_products')
+
+
+def _process_async_upload(request, company, product_ids, count):
+    """Process large batches asynchronously (>5 products)"""
+
+    # Create tracking record
+    task_id = str(uuid.uuid4())
+
+    with schema_context(company.schema_name):
+        upload_task = ProductUploadTask.objects.create(
+            task_id=task_id,
+            company=company,
+            total_products=count,
+            status='pending',
+            created_by=request.user
+        )
+
+    # Queue background task
+    bulk_upload_products_task.delay(
+        company_id=company.id,
+        schema_name=company.schema_name,
+        product_ids=product_ids,
+        task_id=task_id
+    )
+
+    messages.info(
+        request,
+        f"⏳ Upload started for {count} products. "
+        f"<a href='{reverse('efris:upload_status', args=[task_id])}'>Track progress here</a>",
+        extra_tags='safe'  # Allow HTML in message
+    )
+
+    return redirect('efris:upload_status', task_id=task_id)
+
+
+@require_http_methods(["GET"])
+def upload_status(request, task_id):
+    """Show progress page for async uploads"""
+    company = request.tenant
+
+    with schema_context(company.schema_name):
+        try:
+            task = ProductUploadTask.objects.get(task_id=task_id)
+        except ProductUploadTask.DoesNotExist:
+            messages.error(request, "Upload task not found.")
+            return redirect('efris:upload_products')
+
+    return render(request, 'efris/upload_status.html', {
+        'task': task
+    })
+
+
+@require_http_methods(["GET"])
+def upload_status_api(request, task_id):
+    """API endpoint for progress polling (AJAX)"""
+    company = request.tenant
+
+    with schema_context(company.schema_name):
+        try:
+            task = ProductUploadTask.objects.get(task_id=task_id)
+
+            return JsonResponse({
+                'status': task.status,
+                'progress': task.progress_percentage,
+                'processed': task.processed_count,
+                'total': task.total_products,
+                'successful': task.successful_count,
+                'failed': task.failed_count,
+                'errors': task.error_details or [],
+                'completed_at': task.completed_at.isoformat() if task.completed_at else None
+            })
+        except ProductUploadTask.DoesNotExist:
+            return JsonResponse({'error': 'Task not found'}, status=404)
 

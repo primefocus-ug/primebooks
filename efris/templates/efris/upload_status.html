@@ -1,0 +1,244 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Upload Progress - EFRIS{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:product_list' %}">Products</a></li>
+<li class="breadcrumb-item active">Upload Progress</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">Product Upload Progress</h1>
+            <p class="text-muted mb-0">Uploading products to EFRIS system</p>
+        </div>
+        <a href="{% url 'efris:product_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Products
+        </a>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <!-- Status Badge -->
+                    <div class="text-center mb-4">
+                        <div id="statusBadge" class="badge badge-lg fs-5 mb-2">
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span id="statusText">Processing...</span>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">Progress</span>
+                            <span class="fw-bold">
+                                <span id="processedCount">{{ task.processed_count }}</span> / 
+                                <span id="totalCount">{{ task.total_products }}</span>
+                            </span>
+                        </div>
+                        <div class="progress" style="height: 25px;">
+                            <div id="progressBar" 
+                                 class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" 
+                                 style="width: {{ task.progress_percentage }}%"
+                                 aria-valuenow="{{ task.progress_percentage }}" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="100">
+                                <span id="progressPercent">{{ task.progress_percentage }}%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Statistics -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <div class="text-muted small mb-1">Successful</div>
+                                    <div class="h3 mb-0 text-success">
+                                        <i class="bi bi-check-circle"></i>
+                                        <span id="successCount">{{ task.successful_count }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <div class="text-muted small mb-1">Failed</div>
+                                    <div class="h3 mb-0 text-danger">
+                                        <i class="bi bi-x-circle"></i>
+                                        <span id="failedCount">{{ task.failed_count }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <div class="text-muted small mb-1">Remaining</div>
+                                    <div class="h3 mb-0 text-primary">
+                                        <i class="bi bi-clock"></i>
+                                        <span id="remainingCount">{{ task.total_products|add:task.processed_count|add:"-" }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error List (initially hidden) -->
+                    <div id="errorSection" class="d-none">
+                        <hr>
+                        <div class="alert alert-danger">
+                            <h5 class="alert-heading">
+                                <i class="bi bi-exclamation-triangle"></i> 
+                                Failed Products
+                            </h5>
+                            <div id="errorList" class="mt-3">
+                                <!-- Populated via JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons (shown on completion) -->
+                    <div id="actionButtons" class="text-center d-none">
+                        <hr>
+                        <a href="{% url 'efris:product_list' %}" class="btn btn-primary">
+                            <i class="bi bi-list"></i> View Product List
+                        </a>
+                        <a href="{% url 'efris:upload_products' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-upload"></i> Upload More Products
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const TASK_ID = '{{ task.task_id }}';
+const STATUS_API_URL = "{% url 'efris:upload_status_api' task.task_id %}";
+let pollInterval;
+
+// Poll for updates every 2 seconds
+function pollStatus() {
+    fetch(STATUS_API_URL)
+        .then(response => response.json())
+        .then(data => {
+            updateProgress(data);
+            
+            // Stop polling if complete
+            if (data.status === 'completed' || data.status === 'failed') {
+                clearInterval(pollInterval);
+                handleCompletion(data);
+            }
+        })
+        .catch(error => {
+            console.error('Polling error:', error);
+        });
+}
+
+function updateProgress(data) {
+    // Update counts
+    document.getElementById('processedCount').textContent = data.processed;
+    document.getElementById('totalCount').textContent = data.total;
+    document.getElementById('successCount').textContent = data.successful;
+    document.getElementById('failedCount').textContent = data.failed;
+    document.getElementById('remainingCount').textContent = data.total - data.processed;
+    
+    // Update progress bar
+    const progressBar = document.getElementById('progressBar');
+    const progressPercent = document.getElementById('progressPercent');
+    progressBar.style.width = data.progress + '%';
+    progressBar.setAttribute('aria-valuenow', data.progress);
+    progressPercent.textContent = data.progress + '%';
+    
+    // Update status badge
+    const statusBadge = document.getElementById('statusBadge');
+    const statusText = document.getElementById('statusText');
+    
+    if (data.status === 'processing') {
+        statusBadge.className = 'badge bg-primary badge-lg fs-5 mb-2';
+        statusText.textContent = 'Processing...';
+    }
+}
+
+function handleCompletion(data) {
+    const statusBadge = document.getElementById('statusBadge');
+    const statusText = document.getElementById('statusText');
+    const progressBar = document.getElementById('progressBar');
+    
+    // Remove spinner
+    document.querySelector('.spinner-border')?.remove();
+    
+    if (data.status === 'completed') {
+        statusBadge.className = 'badge bg-success badge-lg fs-5 mb-2';
+        statusText.innerHTML = '<i class="bi bi-check-circle"></i> Upload Complete!';
+        progressBar.classList.remove('progress-bar-animated');
+        
+        // Show success message
+        if (data.successful > 0) {
+            window.showAlert(`Successfully uploaded ${data.successful} products!`, 'success');
+        }
+    } else if (data.status === 'failed') {
+        statusBadge.className = 'badge bg-danger badge-lg fs-5 mb-2';
+        statusText.innerHTML = '<i class="bi bi-x-circle"></i> Upload Failed';
+        progressBar.classList.remove('progress-bar-animated');
+        progressBar.classList.add('bg-danger');
+    }
+    
+    // Show errors if any
+    if (data.errors && data.errors.length > 0) {
+        displayErrors(data.errors);
+    }
+    
+    // Show action buttons
+    document.getElementById('actionButtons').classList.remove('d-none');
+}
+
+function displayErrors(errors) {
+    const errorSection = document.getElementById('errorSection');
+    const errorList = document.getElementById('errorList');
+    
+    errorSection.classList.remove('d-none');
+    
+    const errorHtml = errors.slice(0, 10).map(err => `
+        <div class="mb-2">
+            <strong>${err.name || 'Unknown'}</strong> (SKU: ${err.sku || 'N/A'})
+            <br>
+            <small class="text-danger">${err.error}</small>
+        </div>
+    `).join('');
+    
+    errorList.innerHTML = errorHtml;
+    
+    if (errors.length > 10) {
+        errorList.innerHTML += `<div class="text-muted mt-2">... and ${errors.length - 10} more errors</div>`;
+    }
+}
+
+// Start polling when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Initial status check
+    pollStatus();
+    
+    // Poll every 2 seconds
+    pollInterval = setInterval(pollStatus, 2000);
+});
+
+// Clean up on page unload
+window.addEventListener('beforeunload', function() {
+    if (pollInterval) {
+        clearInterval(pollInterval);
+    }
+});
+</script>
+{% endblock %}

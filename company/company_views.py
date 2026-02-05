@@ -1,4 +1,5 @@
 import secrets
+from django.utils.safestring import mark_safe
 import string
 from django.views.decorators.http import require_http_methods
 from django.urls import reverse
@@ -86,6 +87,7 @@ def company_action(request, company_id):
 
     # For GET requests, render the confirmation page
     return render(request, "company/company_action.html", {"company": company})
+
 
 
 def generate_random_password(length=12):
@@ -321,6 +323,28 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
             return JsonResponse({'error': str(e)}, status=500)
 
 
+"""
+Fixed dashboard view - matches actual database values
+"""
+import json
+import logging
+from decimal import Decimal
+from datetime import timedelta
+
+from django.contrib.auth import get_user_model
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.core.cache import cache
+from django.db.models import Q, F, Sum, Count
+from django.utils import timezone
+from django.utils.safestring import mark_safe
+from django.views.generic import TemplateView
+from dateutil.relativedelta import relativedelta
+from django_tenants.utils import schema_context
+
+logger = logging.getLogger(__name__)
+CustomUser = get_user_model()
+
+
 class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
     """
     Enhanced dashboard view showing comprehensive analytics for the current company.
@@ -329,13 +353,36 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
     template_name = 'company/dashboard.html'
     permission_required = 'company.view_company'
 
+    # Configuration constants
+    RECENT_ITEMS_LIMIT = 5
+    TOP_PRODUCTS_LIMIT = 10
+    MONTHS_TO_DISPLAY = 12
+    DAYS_TO_DISPLAY = 30
+    CACHE_TIMEOUT = 300  # 5 minutes
+
+    # Status choices - UPDATED to match your actual database values
+    COMPLETED_SALE_STATUSES = ['COMPLETED']  # Only COMPLETED, not PAID
+    PENDING_PAYMENT_STATUSES = ['PENDING_PAYMENT', 'pending']  # Both cases
+    DRAFT_STATUSES = ['DRAFT']
+
     def get_context_data(self, **kwargs):
+        """Build dashboard context with caching support."""
         context = super().get_context_data(**kwargs)
         user_company = getattr(self.request.user, 'company', None)
 
         # Handle users without company assignment
         if not user_company:
-            return self._get_empty_context(context)
+            context.update(self._get_empty_context())
+            return context
+
+        # Try to get cached data first
+        cache_key = f'dashboard_data_{user_company.company_id}_{self.request.user.id}'
+        cached_data = cache.get(cache_key)
+
+        if cached_data and not self.request.GET.get('refresh'):
+            context.update(cached_data)
+            context['from_cache'] = True
+            return context
 
         # Store user company information (from public schema)
         company = user_company
@@ -359,8 +406,11 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
                 # Get date ranges for analytics
                 date_ranges = self._get_date_ranges()
 
+                # Get active stores once (used by multiple methods)
+                active_stores = Store.objects.filter(is_active=True).select_related('company')
+
                 # Gather all analytics data
-                context.update({
+                dashboard_data = {
                     # Company Overview Metrics (from public schema data)
                     **self._get_company_overview(company),
 
@@ -368,46 +418,60 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
                     **self._get_subscription_metrics(company),
 
                     # Sales & Revenue Analytics (from tenant schema)
-                    **self._get_sales_analytics(company, date_ranges, Store, Sale, SaleItem),
+                    **self._get_sales_analytics(company, date_ranges, active_stores, Sale, SaleItem),
 
                     # Inventory Analytics (from tenant schema)
-                    **self._get_inventory_analytics(company, Store, Stock, StockMovement),
+                    **self._get_inventory_analytics(company, active_stores, Stock, StockMovement),
 
                     # Customer Analytics (from tenant schema)
-                    **self._get_customer_analytics(company, date_ranges, Customer, Sale, Store),
+                    **self._get_customer_analytics(company, date_ranges, active_stores, Customer, Sale),
 
                     # Invoice & Credit Analytics (from tenant schema)
-                    **self._get_invoice_analytics(company, date_ranges, Invoice, Sale, Store),
-
-                    # Employee & User Analytics (public schema - outside with block)
-                    **self._get_employee_analytics(company),
+                    **self._get_invoice_analytics(company, date_ranges, active_stores, Invoice, Sale),
 
                     # Chart Data (from tenant schema)
-                    **self._get_chart_data(company, date_ranges, Store, Sale, SaleItem),
+                    **self._get_chart_data(company, date_ranges, active_stores, Sale, SaleItem),
 
                     # Recent Activity (from tenant schema)
-                    **self._get_recent_activity(company, Store, Sale, Customer, StockMovement),
+                    **self._get_recent_activity(company, active_stores, Sale, Customer, StockMovement),
 
                     # Alerts & Warnings (from tenant schema)
-                    **self._get_alerts_and_warnings(company, Store, Stock, Invoice, Sale),
-                })
+                    **self._get_alerts_and_warnings(company, active_stores, Stock, Invoice),
+                }
+
+                context.update(dashboard_data)
+
+            # Employee & User Analytics (public schema - outside schema context)
+            context.update(self._get_employee_analytics(company))
 
             # Add subscription warning if applicable (public schema data)
             subscription_warning = self._get_subscription_warning(company)
             if subscription_warning:
                 context['subscription_warning'] = subscription_warning
 
+            # Cache the dashboard data
+            cache.set(cache_key, dashboard_data, self.CACHE_TIMEOUT)
+            context['from_cache'] = False
+
         except Exception as e:
-            logger.error(f"Error fetching dashboard data for company {company.company_id}: {e}", exc_info=True)
+            logger.error(
+                f"Error fetching dashboard data for company {company.company_id}: {e}",
+                exc_info=True,
+                extra={
+                    'company_id': company.company_id,
+                    'schema_name': schema_name,
+                    'user_id': self.request.user.id,
+                }
+            )
             # Return partial context with error message
             context['dashboard_error'] = str(e)
-            context.update(self._get_empty_context({}))
+            context.update(self._get_empty_context())
 
         return context
 
-    def _get_empty_context(self, context):
-        """Return empty context for users without company assignment."""
-        context.update({
+    def _get_empty_context(self):
+        """Return empty context for users without company assignment or errors."""
+        return {
             'total_companies': 0,
             'verified_companies': 0,
             'efris_enabled_companies': 0,
@@ -449,17 +513,16 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             'recent_sales': [],
             'recent_customers': [],
             'recent_stock_movements': [],
-            'monthly_registrations': json.dumps([]),
-            'currency_distribution': json.dumps([]),
-            'plan_distribution': json.dumps([]),
-            'status_distribution': json.dumps([]),
-            'monthly_sales_trend': json.dumps([]),
-            'daily_sales_trend': json.dumps([]),
-            'sales_by_store': json.dumps([]),
-            'top_products': json.dumps([]),
-            'payment_distribution': json.dumps([]),
-        })
-        return context
+            'monthly_registrations_json': mark_safe('[]'),
+            'currency_distribution_json': mark_safe('[]'),
+            'plan_distribution_json': mark_safe('[]'),
+            'status_distribution_json': mark_safe('[]'),
+            'monthly_sales_trend_json': mark_safe('[]'),
+            'daily_sales_trend_json': mark_safe('[]'),
+            'sales_by_store_json': mark_safe('[]'),
+            'top_products_json': mark_safe('[]'),
+            'payment_distribution_json': mark_safe('[]'),
+        }
 
     def _get_date_ranges(self):
         """Calculate standard date ranges for analytics."""
@@ -478,7 +541,6 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
 
     def _get_company_overview(self, company):
         """Get basic company overview metrics from public schema."""
-        # This data comes from public schema, so no schema context needed
         return {
             'total_companies': 1,
             'verified_companies': 1 if company.is_verified else 0,
@@ -498,74 +560,83 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
         return {
             'active_subscriptions': 1 if company.status == 'ACTIVE' else 0,
             'expiring_soon_count': 1 if 0 < days_until_expiry <= 30 else 0,
-            'monthly_revenue': company.plan.price if company.plan else 0,
+            'monthly_revenue': float(company.plan.price) if company.plan else 0,
             'renewal_rate': 100 if company.status == 'ACTIVE' else 0,
         }
 
-    def _get_sales_analytics(self, company, date_ranges, Store, Sale, SaleItem):
+    def _get_completed_sales_filter(self, stores, start_date=None):
+        """Helper method to get base filter for completed sales."""
+        filters = Q(
+            store__in=stores,
+            status__in=self.COMPLETED_SALE_STATUSES,
+            is_voided=False
+        )
+        if start_date:
+            filters &= Q(created_at__date__gte=start_date)
+        return filters
+
+    def _get_sales_analytics(self, company, date_ranges, stores, Sale, SaleItem):
         """Get comprehensive sales analytics from tenant schema."""
         try:
-            # Get all active stores (already in tenant schema context)
-            stores = Store.objects.filter(is_active=True)
             store_count = stores.count()
 
-            # Today's sales
-            today_sales = Sale.objects.filter(
+            # Optimize with single aggregate query for multiple periods
+            # Using only COMPLETED status (not PAID which doesn't exist in your DB)
+            sales_stats = Sale.objects.filter(
                 store__in=stores,
-                created_at__date=date_ranges['today'],
-                status__in=['COMPLETED', 'PAID'],
+                status__in=self.COMPLETED_SALE_STATUSES,
                 is_voided=False
             ).aggregate(
-                total=Coalesce(Sum('total_amount'), Decimal('0')),
-                count=Count('id')
-            )
+                # Today's sales
+                today_total=Coalesce(
+                    Sum('total_amount', filter=Q(created_at__date=date_ranges['today'])),
+                    Decimal('0')
+                ),
+                today_count=Count('id', filter=Q(created_at__date=date_ranges['today'])),
 
-            # Week's sales
-            week_sales = Sale.objects.filter(
-                store__in=stores,
-                created_at__date__gte=date_ranges['week_ago'],
-                status__in=['COMPLETED', 'PAID'],
-                is_voided=False
-            ).aggregate(
-                total=Coalesce(Sum('total_amount'), Decimal('0')),
-                count=Count('id')
-            )
+                # Week's sales
+                week_total=Coalesce(
+                    Sum('total_amount', filter=Q(created_at__date__gte=date_ranges['week_ago'])),
+                    Decimal('0')
+                ),
+                week_count=Count('id', filter=Q(created_at__date__gte=date_ranges['week_ago'])),
 
-            # Month's sales
-            month_sales = Sale.objects.filter(
-                store__in=stores,
-                created_at__date__gte=date_ranges['month_ago'],
-                status__in=['COMPLETED', 'PAID'],
-                is_voided=False
-            ).aggregate(
-                total=Coalesce(Sum('total_amount'), Decimal('0')),
-                count=Count('id')
-            )
+                # Month's sales
+                month_total=Coalesce(
+                    Sum('total_amount', filter=Q(created_at__date__gte=date_ranges['month_ago'])),
+                    Decimal('0')
+                ),
+                month_count=Count('id', filter=Q(created_at__date__gte=date_ranges['month_ago'])),
 
-            # Previous period comparison for trends
-            prev_month_sales = Sale.objects.filter(
-                store__in=stores,
-                created_at__date__gte=date_ranges['month_ago'] - timedelta(days=30),
-                created_at__date__lt=date_ranges['month_ago'],
-                status__in=['COMPLETED', 'PAID'],
-                is_voided=False
-            ).aggregate(
-                total=Coalesce(Sum('total_amount'), Decimal('0'))
+                # Previous month's sales
+                prev_month_total=Coalesce(
+                    Sum('total_amount', filter=Q(
+                        created_at__date__gte=date_ranges['month_ago'] - timedelta(days=30),
+                        created_at__date__lt=date_ranges['month_ago']
+                    )),
+                    Decimal('0')
+                ),
             )
 
             # Calculate growth
             revenue_growth = 0
-            if prev_month_sales['total'] > 0:
+            if sales_stats['prev_month_total'] > 0:
                 revenue_growth = round(
-                    ((month_sales['total'] - prev_month_sales['total']) / prev_month_sales['total']) * 100,
+                    ((sales_stats['month_total'] - sales_stats['prev_month_total']) /
+                     sales_stats['prev_month_total']) * 100,
                     1
                 )
+
+            # Calculate average transaction value
+            avg_transaction_value = 0
+            if sales_stats['month_count'] > 0:
+                avg_transaction_value = float(sales_stats['month_total'] / sales_stats['month_count'])
 
             # Sales by document type
             sales_by_type = list(Sale.objects.filter(
                 store__in=stores,
                 created_at__date__gte=date_ranges['month_ago'],
-                status__in=['COMPLETED', 'PAID'],
+                status__in=self.COMPLETED_SALE_STATUSES,
                 is_voided=False
             ).values('document_type').annotate(
                 count=Count('id'),
@@ -576,7 +647,7 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             sales_by_payment = list(Sale.objects.filter(
                 store__in=stores,
                 created_at__date__gte=date_ranges['month_ago'],
-                status__in=['COMPLETED', 'PAID'],
+                status__in=self.COMPLETED_SALE_STATUSES,
                 is_voided=False
             ).values('payment_method').annotate(
                 count=Count('id'),
@@ -586,20 +657,24 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             return {
                 'total_branches': store_count,
                 'active_branches': store_count,
-                'sales_today_total': float(today_sales['total']),
-                'sales_today_count': today_sales['count'],
-                'sales_week_total': float(week_sales['total']),
-                'sales_week_count': week_sales['count'],
-                'sales_month_total': float(month_sales['total']),
-                'sales_month_count': month_sales['count'],
+                'sales_today_total': float(sales_stats['today_total']),
+                'sales_today_count': sales_stats['today_count'],
+                'sales_week_total': float(sales_stats['week_total']),
+                'sales_week_count': sales_stats['week_count'],
+                'sales_month_total': float(sales_stats['month_total']),
+                'sales_month_count': sales_stats['month_count'],
                 'revenue_growth': revenue_growth,
                 'sales_by_type': sales_by_type,
                 'sales_by_payment': sales_by_payment,
-                'avg_transaction_value': float(month_sales['total'] / month_sales['count']) if month_sales['count'] > 0 else 0,
+                'avg_transaction_value': avg_transaction_value,
             }
 
         except Exception as e:
-            logger.error(f"Error in _get_sales_analytics: {e}", exc_info=True)
+            logger.error(
+                f"Error in _get_sales_analytics for company {company.company_id}: {e}",
+                exc_info=True,
+                extra={'company_id': company.company_id}
+            )
             return {
                 'total_branches': 0,
                 'active_branches': 0,
@@ -615,11 +690,9 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
                 'avg_transaction_value': 0,
             }
 
-    def _get_inventory_analytics(self, company, Store, Stock, StockMovement):
+    def _get_inventory_analytics(self, company, stores, Stock, StockMovement):
         """Get inventory analytics and stock status from tenant schema."""
         try:
-            stores = Store.objects.filter(is_active=True)
-
             stock_stats = Stock.objects.filter(store__in=stores).aggregate(
                 total_products=Count('product', distinct=True),
                 total_stock_value=Coalesce(
@@ -648,7 +721,11 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             }
 
         except Exception as e:
-            logger.error(f"Error in _get_inventory_analytics: {e}", exc_info=True)
+            logger.error(
+                f"Error in _get_inventory_analytics for company {company.company_id}: {e}",
+                exc_info=True,
+                extra={'company_id': company.company_id}
+            )
             return {
                 'total_products': 0,
                 'total_stock_value': 0,
@@ -657,11 +734,9 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
                 'movements_today': 0,
             }
 
-    def _get_customer_analytics(self, company, date_ranges, Customer, Sale, Store):
+    def _get_customer_analytics(self, company, date_ranges, stores, Customer, Sale):
         """Get customer analytics and engagement metrics from tenant schema."""
         try:
-            stores = Store.objects.filter(is_active=True)
-
             # Total customers
             total_customers = Customer.objects.filter(is_active=True).count()
 
@@ -674,8 +749,9 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             active_customers = Sale.objects.filter(
                 store__in=stores,
                 created_at__date__gte=date_ranges['month_ago'],
-                customer__isnull=False,
-                status__in=['COMPLETED', 'PAID']
+                status__in=self.COMPLETED_SALE_STATUSES,
+                is_voided=False,
+                customer__isnull=False
             ).values('customer').distinct().count()
 
             # Customer segments
@@ -685,19 +761,25 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
                 count=Count('id')
             ))
 
+            # Calculate retention rate
+            customer_retention_rate = 0
+            if total_customers > 0:
+                customer_retention_rate = round((active_customers / total_customers * 100), 1)
+
             return {
                 'total_customers': total_customers,
                 'new_customers_month': new_customers,
                 'active_customers_month': active_customers,
                 'customer_segments': customer_segments,
-                'customer_retention_rate': round(
-                    (active_customers / total_customers * 100) if total_customers > 0 else 0,
-                    1
-                ),
+                'customer_retention_rate': customer_retention_rate,
             }
 
         except Exception as e:
-            logger.error(f"Error in _get_customer_analytics: {e}", exc_info=True)
+            logger.error(
+                f"Error in _get_customer_analytics for company {company.company_id}: {e}",
+                exc_info=True,
+                extra={'company_id': company.company_id}
+            )
             return {
                 'total_customers': 0,
                 'new_customers_month': 0,
@@ -706,39 +788,37 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
                 'customer_retention_rate': 0,
             }
 
-    def _get_invoice_analytics(self, company, date_ranges, Invoice, Sale, Store):
+    def _get_invoice_analytics(self, company, date_ranges, stores, Invoice, Sale):
         """Get invoice and credit analytics from tenant schema."""
         try:
-            stores = Store.objects.filter(is_active=True)
-
             invoices = Invoice.objects.filter(
                 sale__store__in=stores,
                 sale__document_type='INVOICE'
-            )
+            ).select_related('sale')
 
-            # Invoice metrics
+            # Invoice metrics - Updated to use actual payment_status values
             invoice_stats = invoices.aggregate(
                 total_invoices=Count('id'),
-                paid_invoices=Count('id', filter=Q(sale__payment_status='PAID')),
+                # Assuming COMPLETED means paid
+                paid_invoices=Count('id', filter=Q(sale__status='COMPLETED')),
                 pending_amount=Coalesce(
                     Sum('sale__total_amount', filter=Q(
-                        sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
+                        sale__status__in=self.PENDING_PAYMENT_STATUSES
                     )),
                     Decimal('0')
                 ),
-                overdue_count=Count('id', filter=Q(
-                    sale__payment_status='OVERDUE'
-                )),
+                # Check if you have OVERDUE status, otherwise this will be 0
+                overdue_count=Count('id', filter=Q(sale__payment_status='OVERDUE')),
             )
 
             # Credit invoice metrics
-            credit_invoices = invoices.filter(sale__payment_method='CREDIT')
-
-            credit_stats = credit_invoices.aggregate(
+            credit_stats = invoices.filter(
+                sale__payment_method='CREDIT'
+            ).aggregate(
                 total_credit=Count('id'),
                 outstanding_credit=Coalesce(
                     Sum('sale__total_amount', filter=Q(
-                        sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+                        sale__status__in=self.PENDING_PAYMENT_STATUSES
                     )),
                     Decimal('0')
                 ),
@@ -763,7 +843,11 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             }
 
         except Exception as e:
-            logger.error(f"Error in _get_invoice_analytics: {e}", exc_info=True)
+            logger.error(
+                f"Error in _get_invoice_analytics for company {company.company_id}: {e}",
+                exc_info=True,
+                extra={'company_id': company.company_id}
+            )
             return {
                 'total_invoices': 0,
                 'paid_invoices': 0,
@@ -776,30 +860,38 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
 
     def _get_employee_analytics(self, company):
         """Get employee and user analytics from public schema."""
-        # User data is in public schema with company FK
-        total_employees = CustomUser.objects.filter(
-            company=company,
-            is_active=True,
-            is_hidden=False
-        ).count()
+        try:
+            total_employees = CustomUser.objects.filter(
+                company=company,
+                is_active=True,
+                is_hidden=False
+            ).count()
 
-        active_today = CustomUser.objects.filter(
-            company=company,
-            is_active=True,
-            is_hidden=False,
-            last_login__date=timezone.now().date()
-        ).count()
+            active_today = CustomUser.objects.filter(
+                company=company,
+                is_active=True,
+                is_hidden=False,
+                last_login__date=timezone.now().date()
+            ).count()
 
-        return {
-            'total_employees': total_employees,
-            'active_employees_today': active_today,
-        }
+            return {
+                'total_employees': total_employees,
+                'active_employees_today': active_today,
+            }
+        except Exception as e:
+            logger.error(
+                f"Error in _get_employee_analytics for company {company.company_id}: {e}",
+                exc_info=True,
+                extra={'company_id': company.company_id}
+            )
+            return {
+                'total_employees': 0,
+                'active_employees_today': 0,
+            }
 
-    def _get_chart_data(self, company, date_ranges, Store, Sale, SaleItem):
+    def _get_chart_data(self, company, date_ranges, stores, Sale, SaleItem):
         """Get data for charts and visualizations from tenant schema."""
         try:
-            stores = Store.objects.filter(is_active=True)
-
             # Monthly sales trend (last 12 months)
             monthly_sales = self._get_monthly_sales_trend(stores, Sale)
 
@@ -815,39 +907,46 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             # Payment method distribution
             payment_distribution = self._get_payment_distribution(stores, date_ranges, Sale)
 
+            # Company-specific charts
+            monthly_registrations = self._get_monthly_registrations_single(company)
+
             return {
-                'monthly_sales_trend': json.dumps(monthly_sales),
-                'daily_sales_trend': json.dumps(daily_sales),
-                'sales_by_store': json.dumps(sales_by_store),
-                'top_products': json.dumps(top_products),
-                'payment_distribution': json.dumps(payment_distribution),
-                'monthly_registrations': json.dumps(self._get_monthly_registrations_single(company)),
-                'currency_distribution': json.dumps([{
+                'monthly_sales_trend_json': mark_safe(json.dumps(monthly_sales)),
+                'daily_sales_trend_json': mark_safe(json.dumps(daily_sales)),
+                'sales_by_store_json': mark_safe(json.dumps(sales_by_store)),
+                'top_products_json': mark_safe(json.dumps(top_products)),
+                'payment_distribution_json': mark_safe(json.dumps(payment_distribution)),
+                'monthly_registrations_json': mark_safe(json.dumps(monthly_registrations)),
+                'currency_distribution_json': mark_safe(json.dumps([{
                     'currency': company.preferred_currency,
                     'count': 1
-                }]),
-                'plan_distribution': json.dumps([{
+                }])),
+                'plan_distribution_json': mark_safe(json.dumps([{
                     'plan': company.plan.display_name if company.plan else 'No Plan',
                     'count': 1
-                }]),
-                'status_distribution': json.dumps([{
+                }])),
+                'status_distribution_json': mark_safe(json.dumps([{
                     'status': company.status,
                     'count': 1
-                }]),
+                }])),
             }
 
         except Exception as e:
-            logger.error(f"Error in _get_chart_data: {e}", exc_info=True)
+            logger.error(
+                f"Error in _get_chart_data for company {company.company_id}: {e}",
+                exc_info=True,
+                extra={'company_id': company.company_id}
+            )
             return {
-                'monthly_sales_trend': json.dumps([]),
-                'daily_sales_trend': json.dumps([]),
-                'sales_by_store': json.dumps([]),
-                'top_products': json.dumps([]),
-                'payment_distribution': json.dumps([]),
-                'monthly_registrations': json.dumps([]),
-                'currency_distribution': json.dumps([]),
-                'plan_distribution': json.dumps([]),
-                'status_distribution': json.dumps([]),
+                'monthly_sales_trend_json': mark_safe('[]'),
+                'daily_sales_trend_json': mark_safe('[]'),
+                'sales_by_store_json': mark_safe('[]'),
+                'top_products_json': mark_safe('[]'),
+                'payment_distribution_json': mark_safe('[]'),
+                'monthly_registrations_json': mark_safe('[]'),
+                'currency_distribution_json': mark_safe('[]'),
+                'plan_distribution_json': mark_safe('[]'),
+                'status_distribution_json': mark_safe('[]'),
             }
 
     def _get_monthly_sales_trend(self, stores, Sale):
@@ -855,7 +954,7 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
         data = []
         now = timezone.now()
 
-        for i in range(12):
+        for i in range(self.MONTHS_TO_DISPLAY):
             month_start = (now - relativedelta(months=i)).replace(
                 day=1, hour=0, minute=0, second=0, microsecond=0
             )
@@ -863,10 +962,10 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
 
             month_sales = Sale.objects.filter(
                 store__in=stores,
+                status__in=self.COMPLETED_SALE_STATUSES,
+                is_voided=False,
                 created_at__gte=month_start,
-                created_at__lt=next_month_start,
-                status__in=['COMPLETED', 'PAID'],
-                is_voided=False
+                created_at__lt=next_month_start
             ).aggregate(
                 total=Coalesce(Sum('total_amount'), Decimal('0')),
                 count=Count('id')
@@ -884,14 +983,14 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
         """Get daily sales trend for the last 30 days."""
         data = []
 
-        for i in range(30):
+        for i in range(self.DAYS_TO_DISPLAY):
             date = date_ranges['today'] - timedelta(days=i)
 
             daily_sales = Sale.objects.filter(
                 store__in=stores,
-                created_at__date=date,
-                status__in=['COMPLETED', 'PAID'],
-                is_voided=False
+                status__in=self.COMPLETED_SALE_STATUSES,
+                is_voided=False,
+                created_at__date=date
             ).aggregate(
                 total=Coalesce(Sum('total_amount'), Decimal('0')),
                 count=Count('id')
@@ -910,7 +1009,7 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
         store_sales = Sale.objects.filter(
             store__in=stores,
             created_at__date__gte=date_ranges['month_ago'],
-            status__in=['COMPLETED', 'PAID'],
+            status__in=self.COMPLETED_SALE_STATUSES,
             is_voided=False
         ).values(
             'store__name', 'store__id'
@@ -933,15 +1032,15 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
         top_products = SaleItem.objects.filter(
             sale__store__in=stores,
             sale__created_at__date__gte=date_ranges['month_ago'],
-            sale__status__in=['COMPLETED', 'PAID'],
+            sale__status__in=self.COMPLETED_SALE_STATUSES,
             sale__is_voided=False,
-            item_type='PRODUCT'  # Only products, not services
+            item_type='PRODUCT'
         ).values(
             'product__name', 'product__sku'
         ).annotate(
             total_quantity=Sum('quantity'),
             total_revenue=Coalesce(Sum('total_price'), Decimal('0'))
-        ).order_by('-total_revenue')[:10]
+        ).order_by('-total_revenue')[:self.TOP_PRODUCTS_LIMIT]
 
         return [
             {
@@ -958,7 +1057,7 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
         payment_dist = Sale.objects.filter(
             store__in=stores,
             created_at__date__gte=date_ranges['month_ago'],
-            status__in=['COMPLETED', 'PAID'],
+            status__in=self.COMPLETED_SALE_STATUSES,
             is_voided=False
         ).values('payment_method').annotate(
             count=Count('id'),
@@ -974,28 +1073,28 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             for item in payment_dist
         ]
 
-    def _get_recent_activity(self, company, Store, Sale, Customer, StockMovement):
+    def _get_recent_activity(self, company, stores, Sale, Customer, StockMovement):
         """Get recent activity across all modules from tenant schema."""
         try:
-            stores = Store.objects.filter(is_active=True)
-
-            # Recent sales
+            # Recent sales with optimized queries
             recent_sales = list(Sale.objects.filter(
                 store__in=stores,
-                status__in=['COMPLETED', 'PAID']
+                status__in=self.COMPLETED_SALE_STATUSES
             ).select_related(
                 'store', 'customer', 'created_by'
-            ).order_by('-created_at')[:5])
+            ).order_by('-created_at')[:self.RECENT_ITEMS_LIMIT])
 
             # Recent customers
-            recent_customers = list(Customer.objects.order_by('-created_at')[:5])
+            recent_customers = list(Customer.objects.select_related(
+                'created_by'
+            ).order_by('-created_at')[:self.RECENT_ITEMS_LIMIT])
 
             # Recent stock movements
             recent_stock_movements = list(StockMovement.objects.filter(
                 store__in=stores
             ).select_related(
                 'product', 'store', 'created_by'
-            ).order_by('-created_at')[:5])
+            ).order_by('-created_at')[:self.RECENT_ITEMS_LIMIT])
 
             return {
                 'recent_sales': recent_sales,
@@ -1004,17 +1103,20 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             }
 
         except Exception as e:
-            logger.error(f"Error in _get_recent_activity: {e}", exc_info=True)
+            logger.error(
+                f"Error in _get_recent_activity for company {company.company_id}: {e}",
+                exc_info=True,
+                extra={'company_id': company.company_id}
+            )
             return {
                 'recent_sales': [],
                 'recent_customers': [],
                 'recent_stock_movements': [],
             }
 
-    def _get_alerts_and_warnings(self, company, Store, Stock, Invoice, Sale):
+    def _get_alerts_and_warnings(self, company, stores, Stock, Invoice):
         """Get system alerts and warnings from tenant schema."""
         try:
-            stores = Store.objects.filter(is_active=True)
             alerts = []
 
             # Low stock alerts
@@ -1050,21 +1152,25 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
                     'action_text': 'Restock Now'
                 })
 
-            # Overdue invoices
-            overdue_invoices = Invoice.objects.filter(
-                sale__store__in=stores,
-                sale__payment_status='OVERDUE'
-            ).count()
+            # Overdue invoices - check if payment_status field exists
+            try:
+                overdue_invoices = Invoice.objects.filter(
+                    sale__store__in=stores,
+                    sale__payment_status='OVERDUE'
+                ).count()
 
-            if overdue_invoices > 0:
-                alerts.append({
-                    'type': 'warning',
-                    'icon': 'bi-clock-history',
-                    'title': 'Overdue Invoices',
-                    'message': f'{overdue_invoices} invoices are overdue',
-                    'action_url': '/invoices/',
-                    'action_text': 'View Invoices'
-                })
+                if overdue_invoices > 0:
+                    alerts.append({
+                        'type': 'warning',
+                        'icon': 'bi-clock-history',
+                        'title': 'Overdue Invoices',
+                        'message': f'{overdue_invoices} invoices are overdue',
+                        'action_url': '/invoices/',
+                        'action_text': 'View Invoices'
+                    })
+            except Exception:
+                # payment_status field might not exist
+                pass
 
             return {
                 'alerts': alerts,
@@ -1072,7 +1178,11 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             }
 
         except Exception as e:
-            logger.error(f"Error in _get_alerts_and_warnings: {e}", exc_info=True)
+            logger.error(
+                f"Error in _get_alerts_and_warnings for company {company.company_id}: {e}",
+                exc_info=True,
+                extra={'company_id': company.company_id}
+            )
             return {
                 'alerts': [],
                 'alert_count': 0
@@ -1108,30 +1218,30 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
                 'action_url': '/companies/subscription/renew/',
                 'action_text': 'Renew Subscription',
                 'type': 'info'
-                }
+            }
         return None
 
-        def _get_monthly_registrations_single(self, company):
-            """Get registration data for single company over the past 12 months."""
-            data = []
-            now = timezone.now()
+    def _get_monthly_registrations_single(self, company):
+        """Get registration data for single company over the past 12 months."""
+        data = []
+        now = timezone.now()
 
-            for i in range(12):
-                month_start = (now - relativedelta(months=i)).replace(
-                    day=1, hour=0, minute=0, second=0, microsecond=0
-                )
-                next_month_start = month_start + relativedelta(months=1)
-                month_end = next_month_start - timedelta(seconds=1)
+        for i in range(self.MONTHS_TO_DISPLAY):
+            month_start = (now - relativedelta(months=i)).replace(
+                day=1, hour=0, minute=0, second=0, microsecond=0
+            )
+            next_month_start = month_start + relativedelta(months=1)
+            month_end = next_month_start - timedelta(seconds=1)
 
-                # Check if company was created in this month
-                count = 1 if (company.created_at >= month_start and company.created_at <= month_end) else 0
+            # Check if company was created in this month
+            count = 1 if (company.created_at >= month_start and company.created_at <= month_end) else 0
 
-                data.append({
-                    'month': month_start.strftime('%b %Y'),
-                    'count': count
-                })
+            data.append({
+                'month': month_start.strftime('%b %Y'),
+                'count': count
+            })
 
-            return list(reversed(data))
+        return list(reversed(data))
 
 class CompanyListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """Enhanced company list with proper tenant filtering."""

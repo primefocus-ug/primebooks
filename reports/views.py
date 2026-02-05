@@ -1435,22 +1435,18 @@ def create_schedule(request):
     if request.method == 'POST':
         form = ReportScheduleForm(request.POST, user=request.user)
         if form.is_valid():
-            schedule = form.save(commit=False)
-
-            # ✓ CALCULATE INITIAL next_scheduled
-            schedule.calculate_next_run()
-
-            schedule.save()
+            # Save normally - the model handles next_scheduled calculation
+            schedule = form.save()
 
             logger.info(
                 f"Created schedule {schedule.id}: {schedule.report.name} "
-                f"(next run: {schedule.next_scheduled})"
+                f"(frequency: {schedule.frequency}, next run: {schedule.next_scheduled})"
             )
 
             messages.success(
                 request,
                 f'Report schedule created successfully! '
-                f'Next run: {schedule.next_scheduled.strftime("%Y-%m-%d %H:%M")}'
+                f'Next run: {schedule.next_scheduled.strftime("%Y-%m-%d %H:%M") if schedule.next_scheduled else "Not calculated"}'
             )
             return redirect('reports:schedules')
         else:
@@ -1480,7 +1476,11 @@ def edit_schedule(request, schedule_id):
     if request.method == 'POST':
         form = ReportScheduleForm(request.POST, instance=schedule, user=request.user)
         if form.is_valid():
-            form.save()
+            schedule = form.save()
+
+            # Recalculate next run since schedule was updated
+            schedule.calculate_next_run()
+
             messages.success(request, 'Report schedule updated successfully!')
             return redirect('reports:schedules')
         else:
@@ -1495,7 +1495,6 @@ def edit_schedule(request, schedule_id):
     }
 
     return render(request, 'reports/schedule_form.html', context)
-
 
 @login_required
 @permission_required('reports.delete_reportschedule')

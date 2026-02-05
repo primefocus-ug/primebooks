@@ -24,6 +24,138 @@ from celery import shared_task
 from django_tenants.utils import schema_context
 from .services import sync_commodity_categories
 
+
+@shared_task(bind=True, max_retries=3)
+def bulk_upload_products_task(self, company_id, schema_name, product_ids, task_id):
+    """
+    Background task to upload products to EFRIS
+
+    Args:
+        company_id: Company ID
+        schema_name: Tenant schema name
+        product_ids: List of product IDs to upload
+        task_id: UUID for tracking
+    """
+    from inventory.models import Product
+    from .models import ProductUploadTask
+    from company.models import Company
+    from .services import EnhancedEFRISAPIClient
+
+    try:
+        # Get company
+        company = Company.objects.get(id=company_id)
+
+        with schema_context(schema_name):
+            # Get task record
+            task = ProductUploadTask.objects.get(task_id=task_id)
+            task.status = 'processing'
+            task.save(update_fields=['status'])
+
+            # Get products
+            products = Product.objects.filter(
+                id__in=product_ids,
+                efris_is_uploaded=False
+            )
+
+            total = products.count()
+            processed = 0
+            successful = 0
+            failed = 0
+            errors = []
+
+            # Process in batches
+            with EnhancedEFRISAPIClient(company) as client:
+                batch_size = 10
+
+                for i in range(0, total, batch_size):
+                    batch = products[i:i + batch_size]
+
+                    for product in batch:
+                        try:
+                            result = client.register_product_with_efris(product)
+                            processed += 1
+
+                            if result.get('success'):
+                                successful += 1
+                            else:
+                                failed += 1
+                                errors.append({
+                                    'product_id': product.id,
+                                    'name': product.name,
+                                    'sku': getattr(product, 'sku', 'N/A'),
+                                    'error': result.get('error', 'Unknown error')
+                                })
+
+                            # Update progress
+                            task.processed_count = processed
+                            task.successful_count = successful
+                            task.failed_count = failed
+                            task.error_details = errors
+                            task.save(update_fields=[
+                                'processed_count',
+                                'successful_count',
+                                'failed_count',
+                                'error_details'
+                            ])
+
+                            # Update Celery task progress
+                            self.update_state(
+                                state='PROGRESS',
+                                meta={
+                                    'processed': processed,
+                                    'total': total,
+                                    'percent': int((processed / total) * 100)
+                                }
+                            )
+
+                        except Exception as e:
+                            logger.error(f"Error uploading product {product.id}: {e}")
+                            failed += 1
+                            errors.append({
+                                'product_id': product.id,
+                                'name': product.name,
+                                'error': str(e)
+                            })
+
+                    # Small delay between batches
+                    if i + batch_size < total:
+                        import time
+                        time.sleep(1)
+
+            # Mark as completed
+            task.status = 'completed'
+            task.completed_at = timezone.now()
+            task.processed_count = processed
+            task.successful_count = successful
+            task.failed_count = failed
+            task.error_details = errors
+            task.save()
+
+            logger.info(
+                f"Bulk upload completed: {successful}/{total} successful "
+                f"(Task ID: {task_id})"
+            )
+
+            return {
+                'status': 'completed',
+                'total': total,
+                'successful': successful,
+                'failed': failed
+            }
+
+    except Exception as e:
+        logger.error(f"Bulk upload task failed: {e}", exc_info=True)
+
+        # Mark as failed
+        with schema_context(schema_name):
+            task = ProductUploadTask.objects.get(task_id=task_id)
+            task.status = 'failed'
+            task.error_details = [{'error': str(e)}]
+            task.save()
+
+        raise
+
+
 @shared_task(bind=True, max_retries=3)
 def sync_hs_codes_task(self, company_id, schema_name):
     """Async task to sync HS codes for a specific company"""

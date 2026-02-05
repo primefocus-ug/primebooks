@@ -1,0 +1,223 @@
+<form method="post" id="stockForm" novalidate>
+    {% csrf_token %}
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <h6 class="form-section-header">
+                <i class="fas fa-warehouse"></i> Stock Record Information
+            </h6>
+        </div>
+
+        {% if object %}
+        <!-- Editing existing stock - show read-only fields -->
+        <div class="col-md-6 mb-3">
+            <label class="form-label">Product <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" value="{{ object.product.name }}" disabled>
+            <small class="form-text text-muted">Cannot change product for existing stock</small>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <label class="form-label">Store <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" value="{{ object.store.name }}" disabled>
+            <small class="form-text text-muted">Cannot change store for existing stock</small>
+        </div>
+        {% else %}
+        <!-- Creating new stock - show selectable fields -->
+        <div class="col-md-6 mb-3">
+            <label for="{{ form.product.id_for_label }}" class="form-label">
+                Product <span class="text-danger">*</span>
+            </label>
+            {{ form.product }}
+            <button type="button" class="btn btn-outline-primary btn-sm mt-2" onclick="openProductPopup()">
+                <i class="fas fa-plus me-1"></i>Add Product
+            </button>
+            <small class="form-text text-muted">Select the product for this stock record</small>
+            {% if form.product.errors %}
+                <div class="invalid-feedback d-block">{{ form.product.errors.0 }}</div>
+            {% endif %}
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <label for="{{ form.store.id_for_label }}" class="form-label">
+                Store <span class="text-danger">*</span>
+            </label>
+            {{ form.store }}
+            <small class="form-text text-muted">Select the store location</small>
+            {% if form.store.errors %}
+                <div class="invalid-feedback d-block">{{ form.store.errors.0 }}</div>
+            {% endif %}
+        </div>
+
+        <div class="col-12 mb-3">
+            <div id="duplicateWarning" class="alert alert-warning d-none">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Warning:</strong> A stock record already exists for this combination.
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <h6 class="form-section-header">
+                <i class="fas fa-boxes"></i> Quantity & Levels
+            </h6>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <label for="{{ form.quantity.id_for_label }}" class="form-label">
+                Current Quantity <span class="text-danger">*</span>
+            </label>
+            <div class="input-group">
+                {{ form.quantity }}
+                <span class="input-group-text" id="quantityUnit">Units</span>
+            </div>
+            <small class="form-text text-muted">{{ form.quantity.help_text }}</small>
+            {% if form.quantity.errors %}
+                <div class="invalid-feedback d-block">{{ form.quantity.errors.0 }}</div>
+            {% endif %}
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <label for="{{ form.low_stock_threshold.id_for_label }}" class="form-label">
+                Low Stock Threshold <span class="text-danger">*</span>
+            </label>
+            <div class="input-group">
+                {{ form.low_stock_threshold }}
+                <span class="input-group-text" id="thresholdUnit">Units</span>
+            </div>
+            <small class="form-text text-muted">{{ form.low_stock_threshold.help_text }}</small>
+            {% if form.low_stock_threshold.errors %}
+                <div class="invalid-feedback d-block">{{ form.low_stock_threshold.errors.0 }}</div>
+            {% endif %}
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <label for="{{ form.reorder_quantity.id_for_label }}" class="form-label">
+                Reorder Quantity <span class="text-danger">*</span>
+            </label>
+            <div class="input-group">
+                {{ form.reorder_quantity }}
+                <span class="input-group-text" id="reorderUnit">Units</span>
+            </div>
+            <small class="form-text text-muted">{{ form.reorder_quantity.help_text }}</small>
+            {% if form.reorder_quantity.errors %}
+                <div class="invalid-feedback d-block">{{ form.reorder_quantity.errors.0 }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <h6 class="form-section-header">
+                <i class="fas fa-chart-line"></i> Stock Status
+            </h6>
+        </div>
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label class="form-label text-muted">Status</label>
+                            <div id="stockStatus" class="h5">
+                                <span class="badge bg-secondary">-</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-muted">Stock Level</label>
+                            <div id="stockLevel" class="h5 text-primary">-</div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-muted">Days Until Reorder</label>
+                            <div id="daysUntilReorder" class="h5 text-info">-</div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label text-muted">Stock Value</label>
+                            <div id="stockValue" class="h5 text-success">UGX 0</div>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="progress" style="height: 25px;">
+                            <div id="stockProgressBar"
+                                 class="progress-bar"
+                                 role="progressbar"
+                                 style="width: 0%;"
+                                 aria-valuenow="0"
+                                 aria-valuemin="0"
+                                 aria-valuemax="100">
+                                <span id="stockProgressText">0%</span>
+                            </div>
+                        </div>
+                        <small class="text-muted">Progress towards reorder threshold</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if object %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <h6 class="form-section-header">
+                <i class="fas fa-clipboard-check"></i> Physical Count History
+            </h6>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <label class="form-label">Last Physical Count</label>
+            <input type="text"
+                   class="form-control"
+                   value="{% if object.last_physical_count %}{{ object.last_physical_count|date:'M d, Y H:i' }}{% else %}Never{% endif %}"
+                   disabled>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <label for="{{ form.last_physical_count_quantity.id_for_label }}" class="form-label">
+                Last Count Quantity
+            </label>
+            {{ form.last_physical_count_quantity }}
+        </div>
+
+        {% if stock_metrics.variance %}
+        <div class="col-md-6 mb-3">
+            <label class="form-label">Variance from Last Count</label>
+            <div class="h5 {% if stock_metrics.variance < 0 %}text-danger{% elif stock_metrics.variance > 0 %}text-success{% else %}text-muted{% endif %}">
+                {{ stock_metrics.variance|floatformat:3 }}
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <label class="form-label">Variance Percentage</label>
+            <div class="h5 {% if stock_metrics.variance_percentage < 0 %}text-danger{% elif stock_metrics.variance_percentage > 0 %}text-success{% else %}text-muted{% endif %}">
+                {{ stock_metrics.variance_percentage|floatformat:2 }}%
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="d-flex justify-content-between mt-4">
+        {% if perms.inventory.view_stock %}
+        <a href="{% url 'inventory:stock_list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Stock List
+        </a>
+        {% endif %}
+        <div>
+            {% if object %}
+                {% if perms.inventory.add_stockmovement %}
+                <a href="{% url 'inventory:movement_create' %}?stock={{ object.pk }}" class="btn btn-outline-info">
+                    <i class="fas fa-exchange-alt"></i> Record Movement
+                </a>
+                {% endif %}
+            {% endif %}
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save"></i> {% if object %}Update{% else %}Save{% endif %} Stock
+            </button>
+            {% if not object %}
+            <button type="submit" name="save_and_add_another" class="btn btn-success">
+                <i class="fas fa-plus"></i> Save & Add Another
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</form>

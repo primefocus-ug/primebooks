@@ -310,33 +310,42 @@ class ReportSchedule(models.Model):
         return f"{self.report.name} - {self.get_frequency_display()}"
 
     def save(self, *args, **kwargs):
-        # If this is a new schedule or frequency changed, calculate next run
+        """Override save to calculate next_scheduled for new schedules"""
         is_new = not self.pk
 
-        # Call parent save first to get an ID
+        # Calculate next_scheduled BEFORE saving if it's a new schedule
+        if is_new and not self.next_scheduled:
+            self._calculate_next_run_in_memory()
+
+        # Now save
         super().save(*args, **kwargs)
 
-        # Calculate next scheduled run for new schedules
-        if is_new and not self.next_scheduled:
-            self.calculate_next_run()
-            # Save again with calculated next_scheduled
-            super().save(update_fields=['next_scheduled'])
-
-    def calculate_next_run(self):
-        """Calculate next scheduled run time"""
+    def _calculate_next_run_in_memory(self):
+        """
+        Calculate next scheduled run time WITHOUT saving.
+        Used internally during object creation.
+        """
         from datetime import datetime, timedelta
         now = timezone.now()
 
         if self.frequency == 'HOURLY':
             next_run = now + timedelta(hours=1)
+
         elif self.frequency == 'DAILY':
-            next_run = now + timedelta(days=1)
-            next_run = next_run.replace(
+            # Set to next occurrence of time_of_day
+            next_run = now.replace(
                 hour=self.time_of_day.hour,
                 minute=self.time_of_day.minute,
-                second=0
+                second=0,
+                microsecond=0
             )
+            if next_run <= now:
+                next_run += timedelta(days=1)
+
         elif self.frequency == 'WEEKLY':
+            if self.day_of_week is None:
+                raise ValueError("day_of_week is required for weekly frequency")
+
             days_ahead = self.day_of_week - now.weekday()
             if days_ahead <= 0:
                 days_ahead += 7
@@ -344,28 +353,84 @@ class ReportSchedule(models.Model):
             next_run = next_run.replace(
                 hour=self.time_of_day.hour,
                 minute=self.time_of_day.minute,
-                second=0
+                second=0,
+                microsecond=0
             )
+
         elif self.frequency == 'MONTHLY':
-            if now.day < self.day_of_month:
-                next_run = now.replace(day=self.day_of_month)
-            else:
-                # Next month
-                if now.month == 12:
-                    next_run = now.replace(year=now.year + 1, month=1, day=self.day_of_month)
+            if self.day_of_month is None:
+                raise ValueError("day_of_month is required for monthly frequency")
+
+            try:
+                if now.day < self.day_of_month:
+                    # This month
+                    next_run = now.replace(day=self.day_of_month)
                 else:
-                    next_run = now.replace(month=now.month + 1, day=self.day_of_month)
+                    # Next month
+                    if now.month == 12:
+                        next_run = now.replace(year=now.year + 1, month=1, day=self.day_of_month)
+                    else:
+                        next_run = now.replace(month=now.month + 1, day=self.day_of_month)
+            except ValueError:
+                # Handle invalid day (e.g., day 31 in February)
+                # Move to next valid month
+                next_run = now
+                for _ in range(12):  # Try up to 12 months
+                    try:
+                        if next_run.month == 12:
+                            next_run = next_run.replace(year=next_run.year + 1, month=1, day=self.day_of_month)
+                        else:
+                            next_run = next_run.replace(month=next_run.month + 1, day=self.day_of_month)
+                        break
+                    except ValueError:
+                        continue
+
             next_run = next_run.replace(
                 hour=self.time_of_day.hour,
                 minute=self.time_of_day.minute,
-                second=0
+                second=0,
+                microsecond=0
             )
+
+        elif self.frequency == 'QUARTERLY':
+            # Add 3 months
+            next_run = now + timedelta(days=90)  # Approximate
+            next_run = next_run.replace(
+                hour=self.time_of_day.hour,
+                minute=self.time_of_day.minute,
+                second=0,
+                microsecond=0
+            )
+
+        elif self.frequency == 'YEARLY':
+            # Add 1 year
+            next_run = now.replace(year=now.year + 1)
+            next_run = next_run.replace(
+                hour=self.time_of_day.hour,
+                minute=self.time_of_day.minute,
+                second=0,
+                microsecond=0
+            )
+
         else:
+            # Default: next day
             next_run = now + timedelta(days=1)
 
+        # Set the value but DON'T save
         self.next_scheduled = next_run
-        self.save(update_fields=['next_scheduled'])
-        return next_run
+
+    def calculate_next_run(self):
+        """
+        Calculate and SAVE the next scheduled run time.
+        Use this method when updating an existing schedule.
+        """
+        self._calculate_next_run_in_memory()
+
+        # Only save if object already exists in DB
+        if self.pk:
+            self.save(update_fields=['next_scheduled'])
+
+        return self.next_scheduled
 
 
 class GeneratedReport(models.Model):

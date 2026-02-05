@@ -55,6 +55,10 @@ urlpatterns = [
     # Diagnostic Tools
     path('diagnostic/', ura.diagnostic_tool, name='diagnostic_tool'),
     path('upload-products/', ura.upload_products_to_efris, name='upload_products'),
+
+    # Upload progress tracking
+    path('upload-status/<str:task_id>/', ura.upload_status, name='upload_status'),
+    path('api/upload-status/<str:task_id>/', ura.upload_status_api, name='upload_status_api'),
     path('zreports/', goods.zreport_list, name='zreport_list'),
     path('zreports/<str:report_date_str>/generate/', goods.zreport_generate, name='zreport_generate'),
     path('zreports/upload/', goods.zreport_upload, name='zreport_upload'),

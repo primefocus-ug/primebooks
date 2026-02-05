@@ -604,12 +604,11 @@ class ReportScheduleForm(forms.ModelForm):
         return cleaned_data
 
     def save(self, commit=True):
-        instance = super().save(commit=False)
+        """Save the schedule - next_scheduled is calculated automatically in model.save()"""
+        instance = super().save(commit=commit)
 
-        # Calculate next scheduled run
-        if commit:
-            instance.save()
-            instance.calculate_next_run()
+        # The model's save() method already handles calculating next_scheduled
+        # for new instances, so we don't need to do anything else here
 
         return instance
 

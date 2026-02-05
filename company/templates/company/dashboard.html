@@ -3,11 +3,11 @@
 {% load static %}
 {% load humanize %}
 
-{% block title %}{% trans "Dashboard" %} - {{ company.trading_name|default:company.name }}{% endblock %}
+{% block title %}{% trans "Dashboard" %} - {{ company.trading_name|default:company.name|default:"Company Dashboard" }}{% endblock %}
 
 {% block breadcrumb %}
 {{ block.super }}
-<li class="breadcrumb-item active">{% trans "Dashboard" %}</li>
+<li class="breadcrumb-item active" aria-current="page">{% trans "Dashboard" %}</li>
 {% endblock %}
 
 {% block extra_css %}
@@ -110,14 +110,6 @@
         to { transform: rotate(360deg); }
     }
 
-    .debug-info {
-        background: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        padding: 15px;
-        margin-bottom: 20px;
-    }
-
     @media (max-width: 768px) {
         .stat-number {
             font-size: 1.5rem;
@@ -136,7 +128,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="h3 mb-1">
-            <i class="bi bi-speedometer2 text-primary me-2"></i>
+            <i class="bi bi-speedometer2 text-primary me-2" aria-hidden="true"></i>
             {% if company %}
                 {{ company.trading_name|default:company.name }} {% trans 'Dashboard' %}
             {% else %}
@@ -158,45 +150,38 @@
         </div>
         {% endif %}
 
-        <button class="btn btn-outline-primary" onclick="refreshDashboard()" id="refreshBtn">
-            <i class="bi bi-arrow-clockwise"></i> {% trans 'Refresh'%}
+        <button class="btn btn-outline-primary"
+                onclick="refreshDashboard()"
+                id="refreshBtn"
+                aria-label="{% trans 'Refresh dashboard data' %}">
+            <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+            <span>{% trans 'Refresh'%}</span>
         </button>
 
         <div class="dropdown">
-            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                <i class="bi bi-calendar3"></i> {% trans 'Period' %}
+            <button class="btn btn-outline-secondary dropdown-toggle"
+                    type="button"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                    aria-label="{% trans 'Select time period' %}">
+                <i class="bi bi-calendar3" aria-hidden="true"></i> {% trans 'Period' %}
             </button>
             <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="#" onclick="changePeriod('today')">{% trans 'Today' %}</a></li>
-                <li><a class="dropdown-item" href="#" onclick="changePeriod('week')">{% trans 'Last 7 days' %}</a></li>
-                <li><a class="dropdown-item active" href="#" onclick="changePeriod('month')">{% trans 'Last 30 days' %}</a></li>
-                <li><a class="dropdown-item" href="#" onclick="changePeriod('quarter')">{% trans 'Last 90 days' %}</a></li>
-                <li><a class="dropdown-item" href="#" onclick="changePeriod('year')">{% trans 'Last year' %}</a></li>
+                <li><a class="dropdown-item" href="#" onclick="changePeriod('today'); return false;">{% trans 'Today' %}</a></li>
+                <li><a class="dropdown-item" href="#" onclick="changePeriod('week'); return false;">{% trans 'Last 7 days' %}</a></li>
+                <li><a class="dropdown-item active" href="#" onclick="changePeriod('month'); return false;">{% trans 'Last 30 days' %}</a></li>
+                <li><a class="dropdown-item" href="#" onclick="changePeriod('quarter'); return false;">{% trans 'Last 90 days' %}</a></li>
+                <li><a class="dropdown-item" href="#" onclick="changePeriod('year'); return false;">{% trans 'Last year' %}</a></li>
             </ul>
         </div>
     </div>
 </div>
 
-<!-- DEBUG INFO (Remove in production) -->
-{% if debug %}
-<div class="debug-info">
-    <h6>Debug Information:</h6>
-    <ul class="mb-0 small">
-        <li>Company: {{ company.company_id|default:"None" }}</li>
-        <li>Schema: {{ company.schema_name|default:"None" }}</li>
-        <li>Sales Today: {{ sales_today_total|default:"0" }}</li>
-        <li>Total Customers: {{ total_customers|default:"0" }}</li>
-        <li>Total Products: {{ total_products|default:"0" }}</li>
-        <li>Dashboard Error: {{ dashboard_error|default:"None" }}</li>
-    </ul>
-</div>
-{% endif %}
-
 <!-- Subscription/System Alerts -->
 {% if subscription_warning %}
 <div class="alert alert-{{ subscription_warning.type }} alert-dismissible fade show" role="alert">
     <div class="d-flex align-items-center">
-        <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+        <i class="bi bi-exclamation-triangle-fill me-2 fs-4" aria-hidden="true"></i>
         <div class="flex-grow-1">
             <strong>{{ subscription_warning.title }}</strong>
             <p class="mb-0">{{ subscription_warning.message }}</p>
@@ -207,7 +192,7 @@
             {% endif %}
         </div>
     </div>
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="{% trans 'Close' %}"></button>
 </div>
 {% endif %}
 
@@ -215,13 +200,13 @@
 {% if dashboard_error %}
 <div class="alert alert-danger alert-dismissible fade show" role="alert">
     <div class="d-flex align-items-center">
-        <i class="bi bi-exclamation-octagon-fill me-2 fs-4"></i>
+        <i class="bi bi-exclamation-octagon-fill me-2 fs-4" aria-hidden="true"></i>
         <div class="flex-grow-1">
             <strong>{% trans 'Dashboard Error' %}</strong>
             <p class="mb-0">{{ dashboard_error }}</p>
         </div>
     </div>
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="{% trans 'Close' %}"></button>
 </div>
 {% endif %}
 
@@ -231,7 +216,7 @@
     {% for alert in alerts %}
     <div class="alert alert-{{ alert.type }} alert-dismissible fade show" role="alert">
         <div class="d-flex align-items-center">
-            <i class="{{ alert.icon }} me-2"></i>
+            <i class="{{ alert.icon }} me-2" aria-hidden="true"></i>
             <div class="flex-grow-1">
                 <strong>{{ alert.title }}</strong> - {{ alert.message }}
                 {% if alert.action_url %}
@@ -241,7 +226,7 @@
                 {% endif %}
             </div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="{% trans 'Close' %}"></button>
     </div>
     {% endfor %}
 </div>
@@ -259,14 +244,18 @@
                 <div class="d-flex align-items-center">
                     <div class="flex-grow-1">
                         <div class="stat-icon mb-2">
-                            <i class="bi bi-cash-coin"></i>
+                            <i class="bi bi-cash-coin" aria-hidden="true"></i>
                         </div>
-                        <h2 class="stat-number mb-1">{{ company.preferred_currency }} {{ sales_today_total|default:0|floatformat:0|intcomma }}</h2>
+                        <h2 class="stat-number mb-1">
+                            {{ company.preferred_currency|default:"" }} {{ sales_today_total|default:0|floatformat:0|intcomma }}
+                        </h2>
                         <p class="stat-label mb-0">{% trans 'Sales Today' %}</p>
-                        <small class="text-light opacity-75">{{ sales_today_count|default:0 }} {% trans 'transactions' %}</small>
+                        <small class="text-light opacity-75">
+                            {{ sales_today_count|default:0 }} {% trans 'transactions' %}
+                        </small>
                     </div>
                     <div class="stat-trend">
-                        <i class="bi bi-arrow-up-right"></i>
+                        <i class="bi bi-arrow-up-right" aria-hidden="true"></i>
                     </div>
                 </div>
             </div>
@@ -280,12 +269,14 @@
                 <div class="d-flex align-items-center">
                     <div class="flex-grow-1">
                         <div class="stat-icon mb-2">
-                            <i class="bi bi-graph-up-arrow"></i>
+                            <i class="bi bi-graph-up-arrow" aria-hidden="true"></i>
                         </div>
-                        <h2 class="stat-number mb-1">{{ company.preferred_currency }} {{ sales_month_total|default:0|floatformat:0|intcomma }}</h2>
+                        <h2 class="stat-number mb-1">
+                            {{ company.preferred_currency|default:"" }} {{ sales_month_total|default:0|floatformat:0|intcomma }}
+                        </h2>
                         <p class="stat-label mb-0">{% trans 'Monthly Revenue' %}</p>
                         <small class="text-light opacity-75">
-                            <i class="bi bi-{% if revenue_growth > 0 %}arrow-up{% else %}arrow-down{% endif %}"></i>
+                            <i class="bi bi-{% if revenue_growth > 0 %}arrow-up{% else %}arrow-down{% endif %}" aria-hidden="true"></i>
                             {{ revenue_growth|default:0 }}% {% trans 'vs last month' %}
                         </small>
                     </div>
@@ -301,11 +292,13 @@
                 <div class="d-flex align-items-center">
                     <div class="flex-grow-1">
                         <div class="stat-icon mb-2">
-                            <i class="bi bi-people"></i>
+                            <i class="bi bi-people" aria-hidden="true"></i>
                         </div>
                         <h2 class="stat-number mb-1">{{ total_customers|default:0|intcomma }}</h2>
                         <p class="stat-label mb-0">{% trans 'Total Customers' %}</p>
-                        <small class="text-light opacity-75">{{ new_customers_month|default:0 }} {% trans 'new this month' %}</small>
+                        <small class="text-light opacity-75">
+                            {{ new_customers_month|default:0 }} {% trans 'new this month' %}
+                        </small>
                     </div>
                 </div>
             </div>
@@ -319,9 +312,11 @@
                 <div class="d-flex align-items-center">
                     <div class="flex-grow-1">
                         <div class="stat-icon mb-2">
-                            <i class="bi bi-box-seam"></i>
+                            <i class="bi bi-box-seam" aria-hidden="true"></i>
                         </div>
-                        <h2 class="stat-number mb-1">{{ company.preferred_currency }} {{ total_stock_value|default:0|floatformat:0|intcomma }}</h2>
+                        <h2 class="stat-number mb-1">
+                            {{ company.preferred_currency|default:"" }} {{ total_stock_value|default:0|floatformat:0|intcomma }}
+                        </h2>
                         <p class="stat-label mb-0">{% trans 'Inventory Value' %}</p>
                         <small class="opacity-75">{{ total_products|default:0 }} {% trans 'products' %}</small>
                     </div>
@@ -337,7 +332,7 @@
         <div class="card metric-card border-0 shadow-sm h-100">
             <div class="card-body text-center">
                 <div class="text-primary mb-2">
-                    <i class="bi bi-receipt fs-2"></i>
+                    <i class="bi bi-receipt fs-2" aria-hidden="true"></i>
                 </div>
                 <h4 class="mb-1">{{ sales_month_count|default:0|intcomma }}</h4>
                 <p class="text-muted mb-0 small">{% trans 'Transactions (30d)' %}</p>
@@ -349,9 +344,11 @@
         <div class="card metric-card border-0 shadow-sm h-100">
             <div class="card-body text-center">
                 <div class="text-success mb-2">
-                    <i class="bi bi-cash-stack fs-2"></i>
+                    <i class="bi bi-cash-stack fs-2" aria-hidden="true"></i>
                 </div>
-                <h4 class="mb-1">{{ company.preferred_currency }} {{ avg_transaction_value|default:0|floatformat:0|intcomma }}</h4>
+                <h4 class="mb-1">
+                    {{ company.preferred_currency|default:"" }} {{ avg_transaction_value|default:0|floatformat:0|intcomma }}
+                </h4>
                 <p class="text-muted mb-0 small">{% trans 'Avg Transaction' %}</p>
             </div>
         </div>
@@ -361,7 +358,7 @@
         <div class="card metric-card border-0 shadow-sm h-100">
             <div class="card-body text-center">
                 <div class="text-info mb-2">
-                    <i class="bi bi-file-earmark-text fs-2"></i>
+                    <i class="bi bi-file-earmark-text fs-2" aria-hidden="true"></i>
                 </div>
                 <h4 class="mb-1">{{ total_invoices|default:0|intcomma }}</h4>
                 <p class="text-muted mb-0 small">{% trans 'Total Invoices' %}</p>
@@ -373,7 +370,7 @@
         <div class="card metric-card border-0 shadow-sm h-100">
             <div class="card-body text-center">
                 <div class="text-warning mb-2">
-                    <i class="bi bi-clock-history fs-2"></i>
+                    <i class="bi bi-clock-history fs-2" aria-hidden="true"></i>
                 </div>
                 <h4 class="mb-1">{{ overdue_invoices|default:0|intcomma }}</h4>
                 <p class="text-muted mb-0 small">{% trans 'Overdue' %}</p>
@@ -385,7 +382,7 @@
         <div class="card metric-card border-0 shadow-sm h-100">
             <div class="card-body text-center">
                 <div class="text-danger mb-2">
-                    <i class="bi bi-exclamation-triangle fs-2"></i>
+                    <i class="bi bi-exclamation-triangle fs-2" aria-hidden="true"></i>
                 </div>
                 <h4 class="mb-1">{{ low_stock_items|default:0|intcomma }}</h4>
                 <p class="text-muted mb-0 small">{% trans 'Low Stock' %}</p>
@@ -397,7 +394,7 @@
         <div class="card metric-card border-0 shadow-sm h-100">
             <div class="card-body text-center">
                 <div class="text-secondary mb-2">
-                    <i class="bi bi-diagram-3 fs-2"></i>
+                    <i class="bi bi-diagram-3 fs-2" aria-hidden="true"></i>
                 </div>
                 <h4 class="mb-1">{{ total_branches|default:0|intcomma }}</h4>
                 <p class="text-muted mb-0 small">{% trans 'Branches' %}</p>
@@ -414,10 +411,10 @@
             <div class="card-header bg-transparent border-0 pb-0">
                 <div class="d-flex justify-content-between align-items-center">
                     <h5 class="card-title mb-0">
-                        <i class="bi bi-graph-up text-primary me-2"></i>
+                        <i class="bi bi-graph-up text-primary me-2" aria-hidden="true"></i>
                         {% trans 'Revenue & Sales Trend' %}
                     </h5>
-                    <div class="btn-group btn-group-sm" role="group">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="{% trans 'Select chart period' %}">
                         <input type="radio" class="btn-check" name="revenuePeriod" id="revenue7d" value="7">
                         <label class="btn btn-outline-primary" for="revenue7d">7D</label>
 
@@ -430,7 +427,7 @@
                 </div>
             </div>
             <div class="card-body">
-                <canvas id="revenueChart" height="300"></canvas>
+                <canvas id="revenueChart" height="300" role="img" aria-label="{% trans 'Revenue trend chart' %}"></canvas>
             </div>
         </div>
     </div>
@@ -440,12 +437,12 @@
         <div class="card chart-card border-0 shadow-sm h-100">
             <div class="card-header bg-transparent border-0 pb-0">
                 <h5 class="card-title mb-0">
-                    <i class="bi bi-shop text-primary me-2"></i>
+                    <i class="bi bi-shop text-primary me-2" aria-hidden="true"></i>
                     {% trans 'Sales by Branch' %}
                 </h5>
             </div>
             <div class="card-body">
-                <canvas id="storeChart" height="300"></canvas>
+                <canvas id="storeChart" height="300" role="img" aria-label="{% trans 'Sales by branch chart' %}"></canvas>
             </div>
         </div>
     </div>
@@ -458,12 +455,12 @@
         <div class="card chart-card border-0 shadow-sm h-100">
             <div class="card-header bg-transparent border-0 pb-0">
                 <h5 class="card-title mb-0">
-                    <i class="bi bi-star text-primary me-2"></i>
+                    <i class="bi bi-star text-primary me-2" aria-hidden="true"></i>
                     {% trans 'Top Selling Products' %}
                 </h5>
             </div>
             <div class="card-body">
-                <canvas id="topProductsChart" height="250"></canvas>
+                <canvas id="topProductsChart" height="250" role="img" aria-label="{% trans 'Top products chart' %}"></canvas>
             </div>
         </div>
     </div>
@@ -473,12 +470,12 @@
         <div class="card chart-card border-0 shadow-sm h-100">
             <div class="card-header bg-transparent border-0 pb-0">
                 <h5 class="card-title mb-0">
-                    <i class="bi bi-credit-card text-primary me-2"></i>
+                    <i class="bi bi-credit-card text-primary me-2" aria-hidden="true"></i>
                     {% trans 'Payment Methods Distribution' %}
                 </h5>
             </div>
             <div class="card-body">
-                <canvas id="paymentChart" height="250"></canvas>
+                <canvas id="paymentChart" height="250" role="img" aria-label="{% trans 'Payment methods chart' %}"></canvas>
             </div>
         </div>
     </div>
@@ -491,43 +488,68 @@
         <div class="card activity-card border-0 shadow-sm h-100">
             <div class="card-header bg-transparent border-0">
                 <ul class="nav nav-tabs card-header-tabs" role="tablist">
-                    <li class="nav-item">
-                        <a class="nav-link active" data-bs-toggle="tab" href="#recentSales">
-                            <i class="bi bi-receipt me-1"></i>{% trans 'Recent Sales' %}
-                        </a>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active"
+                                id="recent-sales-tab"
+                                data-bs-toggle="tab"
+                                data-bs-target="#recentSales"
+                                type="button"
+                                role="tab"
+                                aria-controls="recentSales"
+                                aria-selected="true">
+                            <i class="bi bi-receipt me-1" aria-hidden="true"></i>{% trans 'Recent Sales' %}
+                        </button>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" data-bs-toggle="tab" href="#recentCustomers">
-                            <i class="bi bi-people me-1"></i>{% trans 'New Customers' %}
-                        </a>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link"
+                                id="recent-customers-tab"
+                                data-bs-toggle="tab"
+                                data-bs-target="#recentCustomers"
+                                type="button"
+                                role="tab"
+                                aria-controls="recentCustomers"
+                                aria-selected="false">
+                            <i class="bi bi-people me-1" aria-hidden="true"></i>{% trans 'New Customers' %}
+                        </button>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" data-bs-toggle="tab" href="#stockMovements">
-                            <i class="bi bi-arrow-left-right me-1"></i>{% trans 'Stock Movements' %}
-                        </a>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link"
+                                id="stock-movements-tab"
+                                data-bs-toggle="tab"
+                                data-bs-target="#stockMovements"
+                                type="button"
+                                role="tab"
+                                aria-controls="stockMovements"
+                                aria-selected="false">
+                            <i class="bi bi-arrow-left-right me-1" aria-hidden="true"></i>{% trans 'Stock Movements' %}
+                        </button>
                     </li>
                 </ul>
             </div>
             <div class="card-body p-0">
                 <div class="tab-content">
                     <!-- Recent Sales Tab -->
-                    <div class="tab-pane fade show active" id="recentSales">
+                    <div class="tab-pane fade show active"
+                         id="recentSales"
+                         role="tabpanel"
+                         aria-labelledby="recent-sales-tab"
+                         tabindex="0">
                         <div class="table-responsive">
                             <table class="table table-hover mb-0">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>{% trans 'Date' %}</th>
-                                        <th>{% trans 'Document' %}</th>
-                                        <th>{% trans 'Customer' %}</th>
-                                        <th>{% trans 'Amount' %}</th>
-                                        <th>{% trans 'Status' %}</th>
+                                        <th scope="col">{% trans 'Date' %}</th>
+                                        <th scope="col">{% trans 'Document' %}</th>
+                                        <th scope="col">{% trans 'Customer' %}</th>
+                                        <th scope="col">{% trans 'Amount' %}</th>
+                                        <th scope="col">{% trans 'Status' %}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% if recent_sales %}
                                         {% for sale in recent_sales %}
                                         <tr>
-                                            <td><small>{{ sale.created_at|date:"M d, H:i" }}</small></td>
+                                            <td><small><time datetime="{{ sale.created_at|date:'c' }}">{{ sale.created_at|date:"M d, H:i" }}</time></small></td>
                                             <td>
                                                 <span class="badge bg-info">{{ sale.document_type }}</span>
                                                 <small class="text-muted">{{ sale.document_number }}</small>
@@ -539,7 +561,9 @@
                                                     <span class="text-muted">{% trans 'Walk-in' %}</span>
                                                 {% endif %}
                                             </td>
-                                            <td><strong>{{ company.preferred_currency }} {{ sale.total_amount|floatformat:0|intcomma }}</strong></td>
+                                            <td>
+                                                <strong>{{ company.preferred_currency|default:"" }} {{ sale.total_amount|floatformat:0|intcomma }}</strong>
+                                            </td>
                                             <td>
                                                 <span class="badge bg-success">{{ sale.status }}</span>
                                             </td>
@@ -548,7 +572,7 @@
                                     {% else %}
                                         <tr>
                                             <td colspan="5" class="text-center text-muted py-4">
-                                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                                <i class="bi bi-inbox fs-1 d-block mb-2" aria-hidden="true"></i>
                                                 {% trans 'No recent sales' %}
                                             </td>
                                         </tr>
@@ -559,15 +583,19 @@
                     </div>
 
                     <!-- Recent Customers Tab -->
-                    <div class="tab-pane fade" id="recentCustomers">
+                    <div class="tab-pane fade"
+                         id="recentCustomers"
+                         role="tabpanel"
+                         aria-labelledby="recent-customers-tab"
+                         tabindex="0">
                         <div class="table-responsive">
                             <table class="table table-hover mb-0">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>{% trans 'Name' %}</th>
-                                        <th>{% trans 'Type' %}</th>
-                                        <th>{% trans 'Phone' %}</th>
-                                        <th>{% trans 'Joined' %}</th>
+                                        <th scope="col">{% trans 'Name' %}</th>
+                                        <th scope="col">{% trans 'Type' %}</th>
+                                        <th scope="col">{% trans 'Phone' %}</th>
+                                        <th scope="col">{% trans 'Joined' %}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -576,7 +604,7 @@
                                         <tr>
                                             <td>
                                                 <div class="d-flex align-items-center">
-                                                    <div class="customer-avatar me-2">
+                                                    <div class="customer-avatar me-2" aria-hidden="true">
                                                         {{ customer.name|first|upper }}
                                                     </div>
                                                     {{ customer.name|truncatechars:30 }}
@@ -584,13 +612,13 @@
                                             </td>
                                             <td><span class="badge bg-secondary">{{ customer.customer_type }}</span></td>
                                             <td>{{ customer.phone|default:"-" }}</td>
-                                            <td><small>{{ customer.created_at|date:"M d, Y" }}</small></td>
+                                            <td><small><time datetime="{{ customer.created_at|date:'c' }}">{{ customer.created_at|date:"M d, Y" }}</time></small></td>
                                         </tr>
                                         {% endfor %}
                                     {% else %}
                                         <tr>
                                             <td colspan="4" class="text-center text-muted py-4">
-                                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                                <i class="bi bi-inbox fs-1 d-block mb-2" aria-hidden="true"></i>
                                                 {% trans 'No recent customers' %}
                                             </td>
                                         </tr>
@@ -601,23 +629,27 @@
                     </div>
 
                     <!-- Stock Movements Tab -->
-                    <div class="tab-pane fade" id="stockMovements">
+                    <div class="tab-pane fade"
+                         id="stockMovements"
+                         role="tabpanel"
+                         aria-labelledby="stock-movements-tab"
+                         tabindex="0">
                         <div class="table-responsive">
                             <table class="table table-hover mb-0">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>{% trans 'Time' %}</th>
-                                        <th>{% trans 'Product' %}</th>
-                                        <th>{% trans 'Type' %}</th>
-                                        <th>{% trans 'Quantity' %}</th>
-                                        <th>{% trans 'Store' %}</th>
+                                        <th scope="col">{% trans 'Time' %}</th>
+                                        <th scope="col">{% trans 'Product' %}</th>
+                                        <th scope="col">{% trans 'Type' %}</th>
+                                        <th scope="col">{% trans 'Quantity' %}</th>
+                                        <th scope="col">{% trans 'Store' %}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% if recent_stock_movements %}
                                         {% for movement in recent_stock_movements %}
                                         <tr>
-                                            <td><small>{{ movement.created_at|date:"H:i" }}</small></td>
+                                            <td><small><time datetime="{{ movement.created_at|date:'c' }}">{{ movement.created_at|date:"H:i" }}</time></small></td>
                                             <td>{{ movement.product.name|truncatechars:30 }}</td>
                                             <td>
                                                 <span class="badge {% if movement.movement_type == 'IN' %}bg-success{% else %}bg-warning{% endif %}">
@@ -631,7 +663,7 @@
                                     {% else %}
                                         <tr>
                                             <td colspan="5" class="text-center text-muted py-4">
-                                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                                <i class="bi bi-inbox fs-1 d-block mb-2" aria-hidden="true"></i>
                                                 {% trans 'No recent movements' %}
                                             </td>
                                         </tr>
@@ -650,23 +682,23 @@
         <div class="card actions-card border-0 shadow-sm h-100">
             <div class="card-header bg-transparent border-0">
                 <h5 class="card-title mb-0">
-                    <i class="bi bi-lightning text-primary me-2"></i>
+                    <i class="bi bi-lightning text-primary me-2" aria-hidden="true"></i>
                     {% trans 'Quick Actions' %}
                 </h5>
             </div>
             <div class="card-body">
                 <div class="d-grid gap-3">
                     <a href="{% url 'sales:create_sale' %}" class="btn btn-primary">
-                        <i class="bi bi-plus-circle me-2"></i>{% trans 'New Sale' %}
+                        <i class="bi bi-plus-circle me-2" aria-hidden="true"></i>{% trans 'New Sale' %}
                     </a>
                     <a href="{% url 'customers:create' %}" class="btn btn-outline-primary">
-                        <i class="bi bi-person-plus me-2"></i>{% trans 'Add Customer' %}
+                        <i class="bi bi-person-plus me-2" aria-hidden="true"></i>{% trans 'Add Customer' %}
                     </a>
                     <a href="{% url 'inventory:product_create' %}" class="btn btn-outline-success">
-                        <i class="bi bi-box-seam me-2"></i>{% trans 'Add Product' %}
+                        <i class="bi bi-box-seam me-2" aria-hidden="true"></i>{% trans 'Add Product' %}
                     </a>
                     <a href="{% url 'sales:create_sale' %}" class="btn btn-outline-info">
-                        <i class="bi bi-file-earmark-text me-2"></i>{% trans 'Create Invoice' %}
+                        <i class="bi bi-file-earmark-text me-2" aria-hidden="true"></i>{% trans 'Create Invoice' %}
                     </a>
                 </div>
 
@@ -678,72 +710,78 @@
                 <div class="mb-3">
                     <div class="d-flex justify-content-between mb-1">
                         <small>{% trans 'Invoice Collection Rate' %}</small>
-                        <small class="text-muted">{{collection_rate|default:0 }}%</small>
-</div>
-<div class="progress" style="height: 6px;">
-<div class="progress-bar bg-success" role="progressbar" style="width: {{ collection_rate|default:0 }}%"></div>
-</div>
-</div>
-            <!-- Customer Retention -->
-            <div class="mb-3">
-                <div class="d-flex justify-content-between mb-1">
-                    <small>{% trans 'Customer Retention' %}</small>
-                    <small class="text-muted">{{ customer_retention_rate|default:0 }}%</small>
+                        <small class="text-muted">{{ collection_rate|default:0 }}%</small>
+                    </div>
+                    <div class="progress" style="height: 6px;" role="progressbar" aria-valuenow="{{ collection_rate|default:0 }}" aria-valuemin="0" aria-valuemax="100" aria-label="{% trans 'Invoice collection rate' %}">
+                        <div class="progress-bar bg-success" style="width: {{ collection_rate|default:0 }}%"></div>
+                    </div>
                 </div>
-                <div class="progress" style="height: 6px;">
-                    <div class="progress-bar bg-info" role="progressbar" style="width: {{ customer_retention_rate|default:0 }}%"></div>
-                </div>
-            </div>
 
-            <!-- Stock Health -->
-            <div class="mb-3">
-                <div class="d-flex justify-content-between mb-1">
-                    <small>{% trans 'Stock Health' %}</small>
-                    {% if total_products > 0 %}
-                        {% widthratio total_products low_stock_items 1 as stock_health_calc %}
-                        {% with stock_health=stock_health_calc|default:100 %}
-                            <small class="text-muted">{{ stock_health }}%</small>
-                        {% endwith %}
-                    {% else %}
-                        <small class="text-muted">100%</small>
-                    {% endif %}
+                <!-- Customer Retention -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small>{% trans 'Customer Retention' %}</small>
+                        <small class="text-muted">{{ customer_retention_rate|default:0 }}%</small>
+                    </div>
+                    <div class="progress" style="height: 6px;" role="progressbar" aria-valuenow="{{ customer_retention_rate|default:0 }}" aria-valuemin="0" aria-valuemax="100" aria-label="{% trans 'Customer retention rate' %}">
+                        <div class="progress-bar bg-info" style="width: {{ customer_retention_rate|default:0 }}%"></div>
+                    </div>
                 </div>
-                <div class="progress" style="height: 6px;">
-                    {% if total_products > 0 %}
-                        {% widthratio total_products low_stock_items 1 as stock_health_calc %}
-                        {% with stock_health=stock_health_calc|default:100 %}
-                            <div class="progress-bar bg-warning" role="progressbar" style="width: {{ stock_health }}%"></div>
-                        {% endwith %}
-                    {% else %}
-                        <div class="progress-bar bg-success" role="progressbar" style="width: 100%"></div>
-                    {% endif %}
+
+                <!-- Stock Health -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small>{% trans 'Stock Health' %}</small>
+                        {% if total_products > 0 and low_stock_items > 0 %}
+                            {% widthratio low_stock_items total_products 100 as low_stock_percent %}
+                            {% with stock_health=100|add:low_stock_percent|add:"-100" %}
+                                <small class="text-muted">{{ stock_health|default:100 }}%</small>
+                            {% endwith %}
+                        {% else %}
+                            <small class="text-muted">100%</small>
+                        {% endif %}
+                    </div>
+                    <div class="progress" style="height: 6px;" role="progressbar" aria-label="{% trans 'Stock health percentage' %}">
+                        {% if total_products > 0 and low_stock_items > 0 %}
+                            {% widthratio low_stock_items total_products 100 as low_stock_percent %}
+                            {% with stock_health=100|add:low_stock_percent|add:"-100" %}
+                                <div class="progress-bar {% if stock_health > 70 %}bg-success{% elif stock_health > 40 %}bg-warning{% else %}bg-danger{% endif %}"
+                                     style="width: {{ stock_health|default:100 }}%"
+                                     aria-valuenow="{{ stock_health|default:100 }}"
+                                     aria-valuemin="0"
+                                     aria-valuemax="100"></div>
+                            {% endwith %}
+                        {% else %}
+                            <div class="progress-bar bg-success" style="width: 100%" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100"></div>
+                        {% endif %}
+                    </div>
                 </div>
-            </div>
 
-            <hr class="my-4">
+                <hr class="my-4">
 
-            <div class="d-grid">
-                <a href="#" class="btn btn-outline-secondary">
-                    <i class="bi bi-file-earmark-bar-graph me-2"></i>{% trans 'View Full Reports' %}
-                </a>
+                <div class="d-grid">
+                    <a href="#" class="btn btn-outline-secondary">
+                        <i class="bi bi-file-earmark-bar-graph me-2" aria-hidden="true"></i>{% trans 'View Full Reports' %}
+                    </a>
+                </div>
             </div>
         </div>
     </div>
-</div>
 </div>
 {% else %}
 <!-- No Company Assigned -->
 <div class="row">
     <div class="col-12">
-        <div class="alert alert-warning">
+        <div class="alert alert-warning" role="alert">
             <h4 class="alert-heading">{% trans 'No Company Assigned' %}</h4>
             <p>{% trans 'You are not assigned to any company. Please contact your administrator.' %}</p>
         </div>
     </div>
 </div>
 {% endif %}
+
 <!-- Loading Overlay -->
-<div id="loadingOverlay" class="loading-overlay" style="display: none;">
+<div id="loadingOverlay" class="loading-overlay" style="display: none;" role="status" aria-live="polite">
     <div class="loading-spinner">
         <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
             <span class="visually-hidden">{% trans 'Loading...' %}</span>
@@ -752,267 +790,339 @@
     </div>
 </div>
 {% endblock %}
+
 {% block extra_js %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('Dashboard loaded');
-    console.log('Company:', '{{ company.company_id|default:"None" }}');
-    console.log('Sales Today:', '{{ sales_today_total|default:0 }}');
+'use strict';
 
-    initializeCharts();
-    setupEventListeners();
-});
+(function() {
+    // Dashboard configuration
+    const CURRENCY = '{{ company.preferred_currency|default:"" }}';
 
-let revenueChart, storeChart, topProductsChart, paymentChart;
+    // Chart instances
+    let charts = {
+        revenue: null,
+        store: null,
+        products: null,
+        payment: null
+    };
 
-function initializeCharts() {
-    // Revenue Trend Chart
-    const revenueCtx = document.getElementById('revenueChart');
-    if (revenueCtx) {
+    /**
+     * Initialize dashboard on page load
+     */
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeCharts();
+        setupEventListeners();
+    });
+
+    /**
+     * Initialize all charts
+     */
+    function initializeCharts() {
+        initRevenueChart();
+        initStoreChart();
+        initTopProductsChart();
+        initPaymentChart();
+    }
+
+    /**
+     * Initialize revenue trend chart
+     */
+    function initRevenueChart() {
+        const ctx = document.getElementById('revenueChart');
+        if (!ctx) return;
+
         try {
-            const dailySales = {{ daily_sales_trend|safe|default:"[]" }};
-            console.log('Daily Sales Data:', dailySales);
+            const dailySales = {{ daily_sales_trend_json|default:"[]" }};
 
-            if (dailySales && dailySales.length > 0) {
-                revenueChart = new Chart(revenueCtx, {
-                    type: 'line',
-                    data: {
-                        labels: dailySales.map(item => new Date(item.date).toLocaleDateString('en-US', {month: 'short', day: 'numeric'})),
-                        datasets: [{
-                            label: '{% trans "Revenue" %}',
-                            data: dailySales.map(item => item.revenue),
-                            borderColor: '#007bff',
-                            backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                            borderWidth: 3,
-                            fill: true,
-                            tension: 0.4,
-                            pointBackgroundColor: '#007bff',
-                            pointBorderColor: '#ffffff',
-                            pointBorderWidth: 2,
-                            pointRadius: 4,
-                            pointHoverRadius: 6
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: false
-                            },
-                            tooltip: {
-                                mode: 'index',
-                                intersect: false,
-                                callbacks: {
-                                    label: function(context) {
-                                        return '{{ company.preferred_currency }} ' + context.parsed.y.toLocaleString();
-                                    }
+            if (!dailySales || dailySales.length === 0) {
+                showChartPlaceholder(ctx, '{% trans "No sales data available" %}');
+                return;
+            }
+
+            charts.revenue = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dailySales.map(item => {
+                        const date = new Date(item.date);
+                        return date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+                    }),
+                    datasets: [{
+                        label: '{% trans "Revenue" %}',
+                        data: dailySales.map(item => item.revenue),
+                        borderColor: '#007bff',
+                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#007bff',
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return CURRENCY + ' ' + context.parsed.y.toLocaleString();
                                 }
                             }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    callback: function(value) {
-                                        return '{{ company.preferred_currency }} ' + value.toLocaleString();
-                                    }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return CURRENCY + ' ' + value.toLocaleString();
                                 }
                             }
                         }
                     }
-                });
-            } else {
-                revenueCtx.parentElement.innerHTML = '<p class="text-center text-muted py-5">No sales data available</p>';
-            }
+                }
+            });
         } catch (error) {
             console.error('Error creating revenue chart:', error);
+            showChartPlaceholder(ctx, '{% trans "Error loading chart" %}');
         }
     }
 
-    // Store Distribution Chart
-    const storeCtx = document.getElementById('storeChart');
-    if (storeCtx) {
-        try {
-            const salesByStore = {{ sales_by_store|safe|default:"[]" }};
-            console.log('Sales by Store:', salesByStore);
+    /**
+     * Initialize store distribution chart
+     */
+    function initStoreChart() {
+        const ctx = document.getElementById('storeChart');
+        if (!ctx) return;
 
-            if (salesByStore && salesByStore.length > 0) {
-                storeChart = new Chart(storeCtx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: salesByStore.map(item => item.store_name),
-                        datasets: [{
-                            data: salesByStore.map(item => item.revenue),
-                            backgroundColor: [
-                                '#007bff', '#28a745', '#ffc107', '#17a2b8', '#dc3545',
-                                '#6f42c1', '#fd7e14', '#20c997', '#e83e8c', '#6c757d'
-                            ],
-                            borderWidth: 0
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                position: 'bottom'
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        return context.label + ': {{ company.preferred_currency }} ' + context.parsed.toLocaleString();
-                                    }
+        try {
+            const salesByStore = {{ sales_by_store_json|default:"[]" }};
+
+            if (!salesByStore || salesByStore.length === 0) {
+                showChartPlaceholder(ctx, '{% trans "No store data available" %}');
+                return;
+            }
+
+            charts.store = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: salesByStore.map(item => item.store_name),
+                    datasets: [{
+                        data: salesByStore.map(item => item.revenue),
+                        backgroundColor: [
+                            '#007bff', '#28a745', '#ffc107', '#17a2b8', '#dc3545',
+                            '#6f42c1', '#fd7e14', '#20c997', '#e83e8c', '#6c757d'
+                        ],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': ' + CURRENCY + ' ' + context.parsed.toLocaleString();
                                 }
                             }
                         }
                     }
-                });
-            } else {
-                storeCtx.parentElement.innerHTML = '<p class="text-center text-muted py-5">No store data available</p>';
-            }
+                }
+            });
         } catch (error) {
             console.error('Error creating store chart:', error);
+            showChartPlaceholder(ctx, '{% trans "Error loading chart" %}');
         }
     }
 
-    // Top Products Chart
-    const productsCtx = document.getElementById('topProductsChart');
-    if (productsCtx) {
-        try {
-            const topProducts = {{ top_products|safe|default:"[]" }};
-            console.log('Top Products:', topProducts);
+    /**
+     * Initialize top products chart
+     */
+    function initTopProductsChart() {
+        const ctx = document.getElementById('topProductsChart');
+        if (!ctx) return;
 
-            if (topProducts && topProducts.length > 0) {
-                topProductsChart = new Chart(productsCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: topProducts.map(item => item.name),
-                        datasets: [{
-                            label: '{% trans "Revenue" %}',
-                            data: topProducts.map(item => item.revenue),
-                            backgroundColor: '#28a745',
-                            borderRadius: 4
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        indexAxis: 'y',
-                        plugins: {
-                            legend: {
-                                display: false
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        return '{{ company.preferred_currency }} ' + context.parsed.x.toLocaleString();
-                                    }
+        try {
+            const topProducts = {{ top_products_json|default:"[]" }};
+
+            if (!topProducts || topProducts.length === 0) {
+                showChartPlaceholder(ctx, '{% trans "No product data available" %}');
+                return;
+            }
+
+            charts.products = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: topProducts.map(item => item.name),
+                    datasets: [{
+                        label: '{% trans "Revenue" %}',
+                        data: topProducts.map(item => item.revenue),
+                        backgroundColor: '#28a745',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return CURRENCY + ' ' + context.parsed.x.toLocaleString();
                                 }
                             }
-                        },
-                        scales: {
-                            x: {
-                                beginAtZero: true,
-                                ticks: {
-                                    callback: function(value) {
-                                        return '{{ company.preferred_currency }} ' + value.toLocaleString();
-                                    }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return CURRENCY + ' ' + value.toLocaleString();
                                 }
                             }
                         }
                     }
-                });
-            } else {
-                productsCtx.parentElement.innerHTML = '<p class="text-center text-muted py-5">No product data available</p>';
-            }
+                }
+            });
         } catch (error) {
             console.error('Error creating products chart:', error);
+            showChartPlaceholder(ctx, '{% trans "Error loading chart" %}');
         }
     }
 
-    // Payment Methods Chart
-    const paymentCtx = document.getElementById('paymentChart');
-    if (paymentCtx) {
-        try {
-            const paymentDist = {{ payment_distribution|safe|default:"[]" }};
-            console.log('Payment Distribution:', paymentDist);
+    /**
+     * Initialize payment methods chart
+     */
+    function initPaymentChart() {
+        const ctx = document.getElementById('paymentChart');
+        if (!ctx) return;
 
-            if (paymentDist && paymentDist.length > 0) {
-                paymentChart = new Chart(paymentCtx, {
-                    type: 'pie',
-                    data: {
-                        labels: paymentDist.map(item => item.method),
-                        datasets: [{
-                            data: paymentDist.map(item => item.total),
-                            backgroundColor: ['#007bff', '#28a745', '#ffc107', '#17a2b8', '#dc3545'],
-                            borderWidth: 0
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                position: 'bottom'
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        return context.label + ': {{ company.preferred_currency }} ' + context.parsed.toLocaleString();
-                                    }
+        try {
+            const paymentDist = {{ payment_distribution_json|default:"[]" }};
+
+            if (!paymentDist || paymentDist.length === 0) {
+                showChartPlaceholder(ctx, '{% trans "No payment data available" %}');
+                return;
+            }
+
+            charts.payment = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: paymentDist.map(item => item.method),
+                    datasets: [{
+                        data: paymentDist.map(item => item.total),
+                        backgroundColor: ['#007bff', '#28a745', '#ffc107', '#17a2b8', '#dc3545'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': ' + CURRENCY + ' ' + context.parsed.toLocaleString();
                                 }
                             }
                         }
                     }
-                });
-            } else {
-                paymentCtx.parentElement.innerHTML = '<p class="text-center text-muted py-5">No payment data available</p>';
-            }
+                }
+            });
         } catch (error) {
             console.error('Error creating payment chart:', error);
+            showChartPlaceholder(ctx, '{% trans "Error loading chart" %}');
         }
     }
-}
 
-function setupEventListeners() {
-    document.querySelectorAll('input[name="revenuePeriod"]').forEach(radio => {
-        radio.addEventListener('change', function() {
-            updateRevenuePeriod(this.value);
+    /**
+     * Show placeholder message when chart has no data
+     */
+    function showChartPlaceholder(canvas, message) {
+        const parent = canvas.parentElement;
+        parent.innerHTML = '<p class="text-center text-muted py-5">' + message + '</p>';
+    }
+
+    /**
+     * Setup event listeners
+     */
+    function setupEventListeners() {
+        // Revenue period selector
+        document.querySelectorAll('input[name="revenuePeriod"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                updateRevenuePeriod(this.value);
+            });
         });
-    });
-}
+    }
 
-function refreshDashboard() {
-    const refreshBtn = document.getElementById('refreshBtn');
-    const loadingOverlay = document.getElementById('loadingOverlay');
+    /**
+     * Refresh dashboard data
+     */
+    window.refreshDashboard = function() {
+        const refreshBtn = document.getElementById('refreshBtn');
+        const loadingOverlay = document.getElementById('loadingOverlay');
 
-    refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> {% trans "Refreshing..." %}';
-    refreshBtn.disabled = true;
-    loadingOverlay.style.display = 'flex';
+        if (refreshBtn) {
+            refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise spin" aria-hidden="true"></i> <span>{% trans "Refreshing..." %}</span>';
+            refreshBtn.disabled = true;
+        }
 
-    setTimeout(() => {
-        location.reload();
-    }, 1000);
-}
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'flex';
+        }
 
-function changePeriod(period) {
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    loadingOverlay.style.display = 'flex';
+        // Add refresh parameter to bypass cache
+        const url = new URL(window.location.href);
+        url.searchParams.set('refresh', '1');
+        window.location.href = url.toString();
+    };
 
-    // In production, make AJAX call to update dashboard data
-    window.location.href = `?period=${period}`;
-}
+    /**
+     * Change dashboard period
+     */
+    window.changePeriod = function(period) {
+        const loadingOverlay = document.getElementById('loadingOverlay');
 
-function updateRevenuePeriod(days) {
-    console.log('Updating revenue chart for', days, 'days');
-    // In production, fetch new data via AJAX
-}
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'flex';
+        }
 
-window.Dashboard = {
-    refresh: refreshDashboard,
-    changePeriod: changePeriod
-};
+        const url = new URL(window.location.href);
+        url.searchParams.set('period', period);
+        window.location.href = url.toString();
+    };
+
+    /**
+     * Update revenue chart period (for AJAX implementation)
+     */
+    function updateRevenuePeriod(days) {
+        console.log('Update revenue chart for', days, 'days');
+        // TODO: Implement AJAX call to fetch new data
+        // For now, just log the action
+    }
+
+})();
 </script>
 {% endblock %}

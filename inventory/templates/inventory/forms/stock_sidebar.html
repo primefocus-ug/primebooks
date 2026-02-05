@@ -1,0 +1,145 @@
+{% if object %}
+<div class="card shadow mb-4">
+    <div class="card-header">
+        <h6 class="card-title mb-0">
+            <i class="fas fa-info-circle text-primary"></i> Product Details
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="mb-2">
+            <strong>Name:</strong> {{ object.product.name }}
+        </div>
+        <div class="mb-2">
+            <strong>SKU:</strong> {{ object.product.sku }}
+        </div>
+        <div class="mb-2">
+            <strong>Category:</strong> {{ object.product.category.name }}
+        </div>
+        <div class="mb-2">
+            <strong>Unit:</strong> {{ object.product.unit_of_measure }}
+        </div>
+        <div class="mb-2">
+            <strong>Cost Price:</strong> UGX {{ object.product.cost_price|floatformat:2 }}
+        </div>
+        <div class="mb-2">
+            <strong>Selling Price:</strong> UGX {{ object.product.selling_price|floatformat:2 }}
+        </div>
+    </div>
+</div>
+
+<div class="card shadow mb-4">
+    <div class="card-header">
+        <h6 class="card-title mb-0">
+            <i class="fas fa-history text-info"></i> Recent Movements
+        </h6>
+    </div>
+    <div class="card-body">
+        {% if recent_movements %}
+        <div class="list-group list-group-flush">
+            {% for movement in recent_movements|slice:":5" %}
+            <div class="list-group-item px-0">
+                <div class="d-flex justify-content-between">
+                    <small class="text-muted">{{ movement.created_at|date:"M d, Y" }}</small>
+                    <small class="badge bg-{% if movement.movement_type == 'IN' %}success{% elif movement.movement_type == 'OUT' %}danger{% else %}info{% endif %}">
+                        {{ movement.get_movement_type_display }}
+                    </small>
+                </div>
+                <div>
+                    <strong>{{ movement.quantity|floatformat:3 }}</strong> {{ object.product.unit_of_measure }}
+                </div>
+                {% if movement.reference %}
+                <small class="text-muted">{{ movement.reference|truncatewords:5 }}</small>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% if perms.inventory.view_stockmovement %}
+        <a href="{% url 'inventory:movement_list' %}?stock={{ object.pk }}" class="btn btn-sm btn-outline-primary w-100 mt-2">
+            View All Movements
+        </a>
+        {% endif %}
+        {% else %}
+        <p class="text-muted mb-0">No movements recorded yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+{% if object.efris_sync_required %}
+<div class="card shadow mb-4 border-warning">
+    <div class="card-header bg-warning">
+        <h6 class="card-title mb-0">
+            <i class="fas fa-sync-alt"></i> EFRIS Sync Required
+        </h6>
+    </div>
+    <div class="card-body">
+        <p class="mb-2">This stock record has pending changes that need to be synced with EFRIS.</p>
+        <div class="mb-2">
+            <strong>Last Sync:</strong>
+            {% if object.last_efris_sync %}
+                {{ object.last_efris_sync|date:"M d, Y H:i" }}
+            {% else %}
+                Never synced
+            {% endif %}
+        </div>
+        <button class="btn btn-warning btn-sm w-100" onclick="syncToEFRIS({{ object.pk }})">
+            <i class="fas fa-sync"></i> Sync Now
+        </button>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+<div class="card shadow mb-4">
+    <div class="card-header">
+        <h6 class="card-title mb-0">
+            <i class="fas fa-question-circle text-info"></i> Stock Management Tips
+        </h6>
+    </div>
+    <div class="card-body">
+        <ul class="list-unstyled">
+            <li class="mb-3">
+                <h6 class="fw-bold"><i class="fas fa-box me-2"></i>Quantity</h6>
+                <p class="small text-muted">Track current available stock at this location.</p>
+            </li>
+            <li class="mb-3">
+                <h6 class="fw-bold"><i class="fas fa-exclamation-triangle me-2 text-warning"></i>Low Stock Threshold</h6>
+                <p class="small text-muted">Get alerts when stock falls below this level.</p>
+            </li>
+            <li class="mb-3">
+                <h6 class="fw-bold"><i class="fas fa-shopping-cart me-2"></i>Reorder Quantity</h6>
+                <p class="small text-muted">Suggested amount to order when restocking.</p>
+            </li>
+            <li class="mb-3">
+                <h6 class="fw-bold"><i class="fas fa-clipboard-check me-2"></i>Physical Counts</h6>
+                <p class="small text-muted">Regular counts help maintain accuracy.</p>
+            </li>
+        </ul>
+    </div>
+</div>
+
+<div class="card shadow">
+    <div class="card-header">
+        <h6 class="card-title mb-0">
+            <i class="fas fa-tools text-primary"></i> Quick Actions
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="d-grid gap-2">
+            {% if perms.inventory.view_stock %}
+            <a href="{% url 'inventory:stock_list' %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-list"></i> View All Stock
+            </a>
+            {% endif %}
+            {% if object %}
+                {% if perms.inventory.add_stockmovement %}
+                <a href="{% url 'inventory:movement_create' %}?stock={{ object.pk }}" class="btn btn-outline-success btn-sm">
+                    <i class="fas fa-plus"></i> Add Movement
+                </a>
+                {% endif %}
+                <button class="btn btn-outline-info btn-sm" onclick="recordPhysicalCount({{ object.pk }})">
+                    <i class="fas fa-clipboard-check"></i> Physical Count
+                </button>
+            {% endif %}
+        </div>
+    </div>
+</div>
