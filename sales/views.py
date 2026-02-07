@@ -1019,7 +1019,7 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         context['stats'] = {
             'total_sales': queryset.count(),
             'total_amount': queryset.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'avg_amount': credit_sales.aggregate(Avg('total_amount'))['total_amount__avg'] or 0,
+            'total_credit_amount': credit_sales.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
             'fiscalized_count': queryset.filter(is_fiscalized=True).count(),
             'receipt_count': queryset.filter(document_type='RECEIPT').count(),
             'invoice_count': queryset.filter(document_type='INVOICE').count(),
