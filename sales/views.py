@@ -53,6 +53,198 @@ def get_user_company(user):
     return getattr(user, 'company', None)
 
 
+def handle_export(request, action):
+    """Handle export requests"""
+    try:
+        export_format = action.replace('export_', '')
+
+        # Get selected sales or all filtered sales
+        selected_sales_json = request.POST.get('selected_sales')
+
+        if selected_sales_json:
+            try:
+                selected_ids = json.loads(selected_sales_json)
+                sales = Sale.objects.filter(id__in=selected_ids)
+            except json.JSONDecodeError:
+                sales = get_filtered_sales(request)
+        else:
+            sales = get_filtered_sales(request)
+
+        # Apply user's store access filter
+        accessible_stores = get_user_accessible_stores(request.user)
+        sales = sales.filter(store__in=accessible_stores)
+
+        # Call the appropriate export function
+        if export_format == 'csv':
+            return export_sales_csv(sales)
+        elif export_format == 'excel':
+            return export_sales_excel(sales)
+        elif export_format == 'pdf':
+            return export_sales_pdf(sales)
+        else:
+            messages.error(request, 'Invalid export format')
+            return redirect('sales:sales_list')
+
+    except Exception as e:
+        logger.error(f"Export error: {e}", exc_info=True)
+        messages.error(request, f'Export failed: {str(e)}')
+        return redirect('sales:sales_list')
+
+
+def get_filtered_sales(request):
+    """Get sales based on current filters"""
+    accessible_stores = get_user_accessible_stores(request.user)
+    queryset = Sale.objects.filter(store__in=accessible_stores)
+
+    # Apply filters from GET parameters
+    search = request.GET.get('search') or request.POST.get('search')
+    if search:
+        queryset = queryset.filter(
+            Q(document_number__icontains=search) |
+            Q(transaction_id__icontains=search) |
+            Q(customer__name__icontains=search) |
+            Q(customer__phone__icontains=search)
+        )
+
+    store = request.GET.get('store') or request.POST.get('store')
+    if store:
+        queryset = queryset.filter(store_id=store)
+
+    transaction_type = request.GET.get('transaction_type') or request.POST.get('transaction_type')
+    if transaction_type:
+        queryset = queryset.filter(transaction_type=transaction_type)
+
+    payment_method = request.GET.get('payment_method') or request.POST.get('payment_method')
+    if payment_method:
+        queryset = queryset.filter(payment_method=payment_method)
+
+    date_from = request.GET.get('date_from') or request.POST.get('date_from')
+    if date_from:
+        queryset = queryset.filter(created_at__date__gte=date_from)
+
+    date_to = request.GET.get('date_to') or request.POST.get('date_to')
+    if date_to:
+        queryset = queryset.filter(created_at__date__lte=date_to)
+
+    return queryset.select_related('store', 'customer', 'created_by').order_by('-created_at')
+
+
+def export_sales_csv(sales):
+    """Export sales to CSV"""
+    response = HttpResponse(content_type='text/csv')
+    response[
+        'Content-Disposition'] = f'attachment; filename="sales_export_{timezone.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        'Document Number', 'Date', 'Time', 'Customer', 'Store',
+        'Payment Method', 'Subtotal', 'Tax', 'Discount', 'Total',
+        'Status', 'Fiscalized'
+    ])
+
+    for sale in sales:
+        writer.writerow([
+            sale.document_number,
+            sale.created_at.strftime('%Y-%m-%d'),
+            sale.created_at.strftime('%H:%M:%S'),
+            sale.customer.name if sale.customer else 'Walk-in',
+            sale.store.name,
+            sale.get_payment_method_display(),
+            float(sale.subtotal),
+            float(sale.tax_amount),
+            float(sale.discount_amount),
+            float(sale.total_amount),
+            sale.get_status_display(),
+            'Yes' if sale.is_fiscalized else 'No'
+        ])
+
+    return response
+
+
+def export_sales_excel(sales):
+    """Export sales to Excel"""
+    output = BytesIO()
+    workbook = xlsxwriter.Workbook(output)
+    worksheet = workbook.add_worksheet('Sales Export')
+
+    # Define formats
+    header_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#366092',
+        'color': 'white',
+        'border': 1
+    })
+
+    currency_format = workbook.add_format({'num_format': '#,##0.00'})
+    date_format = workbook.add_format({'num_format': 'yyyy-mm-dd'})
+    time_format = workbook.add_format({'num_format': 'hh:mm:ss'})
+
+    # Headers
+    headers = [
+        'Document Number', 'Date', 'Time', 'Customer', 'Store',
+        'Payment Method', 'Subtotal', 'Tax', 'Discount', 'Total',
+        'Status', 'Fiscalized'
+    ]
+
+    for col, header in enumerate(headers):
+        worksheet.write(0, col, header, header_format)
+
+    # Data
+    for row, sale in enumerate(sales, 1):
+        worksheet.write(row, 0, sale.document_number)
+        worksheet.write(row, 1, sale.created_at.strftime('%Y-%m-%d'), date_format)
+        worksheet.write(row, 2, sale.created_at.strftime('%H:%M:%S'), time_format)
+        worksheet.write(row, 3, sale.customer.name if sale.customer else 'Walk-in')
+        worksheet.write(row, 4, sale.store.name)
+        worksheet.write(row, 5, sale.get_payment_method_display())
+        worksheet.write(row, 6, float(sale.subtotal), currency_format)
+        worksheet.write(row, 7, float(sale.tax_amount), currency_format)
+        worksheet.write(row, 8, float(sale.discount_amount), currency_format)
+        worksheet.write(row, 9, float(sale.total_amount), currency_format)
+        worksheet.write(row, 10, sale.get_status_display())
+        worksheet.write(row, 11, 'Yes' if sale.is_fiscalized else 'No')
+
+    # Auto-fit columns
+    worksheet.set_column('A:L', 15)
+
+    workbook.close()
+    output.seek(0)
+
+    response = HttpResponse(
+        output.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response[
+        'Content-Disposition'] = f'attachment; filename="sales_export_{timezone.now().strftime("%Y%m%d_%H%M%S")}.xlsx"'
+
+    return response
+
+
+def export_sales_pdf(sales):
+    """Export sales to PDF"""
+    from django.template.loader import get_template
+    from xhtml2pdf import pisa
+
+    template = get_template('sales/sales_export_pdf.html')
+    context = {
+        'sales': sales,
+        'export_date': timezone.now(),
+        'total_sales': sales.count(),
+        'total_amount': sales.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    }
+
+    html = template.render(context)
+    response = HttpResponse(content_type='application/pdf')
+    response[
+        'Content-Disposition'] = f'attachment; filename="sales_export_{timezone.now().strftime("%Y%m%d_%H%M%S")}.pdf"'
+
+    pisa_status = pisa.CreatePDF(html, dest=response)
+
+    if pisa_status.err:
+        return HttpResponse('PDF generation error', status=500)
+
+    return response
+
 @login_required
 @require_POST
 def create_customer_ajax(request):
@@ -437,6 +629,267 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     paginate_by = 25
     permission_required = 'sales.view_sale'
 
+    def post(self, request, *args, **kwargs):
+        """Handle POST requests for exports and bulk actions"""
+        action = request.POST.get('action', '')
+
+        if action.startswith('export_'):
+            return self.handle_export(request, action)
+        else:
+            # Handle other bulk actions
+            return bulk_actions(request)
+
+    def handle_export(self, request, action):
+        """Handle export requests"""
+        try:
+            export_format = action.replace('export_', '')
+
+            # Get selected sales or all filtered sales
+            selected_sales_json = request.POST.get('selected_sales')
+
+            if selected_sales_json:
+                try:
+                    selected_ids = json.loads(selected_sales_json)
+                    sales = Sale.objects.filter(id__in=selected_ids)
+                except json.JSONDecodeError:
+                    sales = self.get_export_queryset(request)
+            else:
+                sales = self.get_export_queryset(request)
+
+            # Apply user's store access filter
+            accessible_stores = get_user_accessible_stores(request.user)
+            sales = sales.filter(store__in=accessible_stores).select_related(
+                'store', 'customer', 'created_by'
+            ).prefetch_related('items', 'payments').order_by('-created_at')
+
+            # Call the appropriate export function
+            if export_format == 'csv':
+                return self.export_to_csv(sales)
+            elif export_format == 'excel':
+                return self.export_to_excel(sales)
+            elif export_format == 'pdf':
+                return self.export_to_pdf(sales)
+            else:
+                messages.error(request, 'Invalid export format')
+                return redirect('sales:sales_list')
+
+        except Exception as e:
+            logger.error(f"Export error: {e}", exc_info=True)
+            messages.error(request, f'Export failed: {str(e)}')
+            return redirect('sales:sales_list')
+
+    def get_export_queryset(self, request):
+        """Get sales based on current filters from POST data"""
+        accessible_stores = get_user_accessible_stores(request.user)
+        queryset = Sale.objects.filter(store__in=accessible_stores)
+
+        # Apply filters from POST parameters (same as GET)
+        search = request.POST.get('search', '')
+        if search:
+            queryset = queryset.filter(
+                Q(document_number__icontains=search) |
+                Q(transaction_id__icontains=search) |
+                Q(customer__name__icontains=search) |
+                Q(customer__phone__icontains=search) |
+                Q(efris_invoice_number__icontains=search)
+            )
+
+        store = request.POST.get('store')
+        if store:
+            queryset = queryset.filter(store_id=store)
+
+        transaction_type = request.POST.get('transaction_type')
+        if transaction_type:
+            queryset = queryset.filter(transaction_type=transaction_type)
+
+        payment_method = request.POST.get('payment_method')
+        if payment_method:
+            queryset = queryset.filter(payment_method=payment_method)
+
+        document_type = request.POST.get('document_type')
+        if document_type:
+            queryset = queryset.filter(document_type=document_type)
+
+        date_from = request.POST.get('date_from')
+        if date_from:
+            try:
+                queryset = queryset.filter(created_at__date__gte=date_from)
+            except:
+                pass
+
+        date_to = request.POST.get('date_to')
+        if date_to:
+            try:
+                queryset = queryset.filter(created_at__date__lte=date_to)
+            except:
+                pass
+
+        min_amount = request.POST.get('min_amount')
+        if min_amount:
+            try:
+                queryset = queryset.filter(total_amount__gte=Decimal(min_amount))
+            except:
+                pass
+
+        max_amount = request.POST.get('max_amount')
+        if max_amount:
+            try:
+                queryset = queryset.filter(total_amount__lte=Decimal(max_amount))
+            except:
+                pass
+
+        is_fiscalized = request.POST.get('is_fiscalized')
+        if is_fiscalized:
+            queryset = queryset.filter(is_fiscalized=is_fiscalized == '1')
+
+        payment_status = request.POST.get('payment_status')
+        if payment_status:
+            queryset = queryset.filter(payment_status=payment_status)
+
+        status = request.POST.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+
+        return queryset
+
+    def export_to_csv(self, sales):
+        """Export sales to CSV"""
+        response = HttpResponse(content_type='text/csv')
+        response[
+            'Content-Disposition'] = f'attachment; filename="sales_export_{timezone.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow([
+            'Document Number', 'Document Type', 'Date', 'Time', 'Customer', 'Phone',
+            'Store', 'Payment Method', 'Subtotal', 'Tax', 'Discount', 'Total',
+            'Payment Status', 'Status', 'Fiscalized', 'EFRIS Invoice'
+        ])
+
+        for sale in sales:
+            writer.writerow([
+                sale.document_number or '',
+                sale.get_document_type_display(),
+                sale.created_at.strftime('%Y-%m-%d'),
+                sale.created_at.strftime('%H:%M:%S'),
+                sale.customer.name if sale.customer else 'Walk-in',
+                sale.customer.phone if sale.customer else '',
+                sale.store.name,
+                sale.get_payment_method_display(),
+                float(sale.subtotal),
+                float(sale.tax_amount),
+                float(sale.discount_amount),
+                float(sale.total_amount),
+                sale.get_payment_status_display(),
+                sale.get_status_display(),
+                'Yes' if sale.is_fiscalized else 'No',
+                sale.efris_invoice_number or ''
+            ])
+
+        return response
+
+    def export_to_excel(self, sales):
+        """Export sales to Excel"""
+        output = BytesIO()
+        workbook = xlsxwriter.Workbook(output, {'in_memory': True})
+        worksheet = workbook.add_worksheet('Sales Export')
+
+        # Define formats
+        header_format = workbook.add_format({
+            'bold': True,
+            'bg_color': '#366092',
+            'color': 'white',
+            'border': 1,
+            'align': 'center',
+            'valign': 'vcenter'
+        })
+
+        currency_format = workbook.add_format({'num_format': '#,##0.00'})
+        date_format = workbook.add_format({'num_format': 'yyyy-mm-dd'})
+        time_format = workbook.add_format({'num_format': 'hh:mm:ss'})
+
+        # Headers
+        headers = [
+            'Document Number', 'Document Type', 'Date', 'Time', 'Customer', 'Phone',
+            'Store', 'Payment Method', 'Subtotal', 'Tax', 'Discount', 'Total',
+            'Payment Status', 'Status', 'Fiscalized', 'EFRIS Invoice'
+        ]
+
+        for col, header in enumerate(headers):
+            worksheet.write(0, col, header, header_format)
+
+        # Data
+        for row, sale in enumerate(sales, 1):
+            worksheet.write(row, 0, sale.document_number or '')
+            worksheet.write(row, 1, sale.get_document_type_display())
+            worksheet.write(row, 2, sale.created_at.strftime('%Y-%m-%d'), date_format)
+            worksheet.write(row, 3, sale.created_at.strftime('%H:%M:%S'), time_format)
+            worksheet.write(row, 4, sale.customer.name if sale.customer else 'Walk-in')
+            worksheet.write(row, 5, sale.customer.phone if sale.customer else '')
+            worksheet.write(row, 6, sale.store.name)
+            worksheet.write(row, 7, sale.get_payment_method_display())
+            worksheet.write(row, 8, float(sale.subtotal), currency_format)
+            worksheet.write(row, 9, float(sale.tax_amount), currency_format)
+            worksheet.write(row, 10, float(sale.discount_amount), currency_format)
+            worksheet.write(row, 11, float(sale.total_amount), currency_format)
+            worksheet.write(row, 12, sale.get_payment_status_display())
+            worksheet.write(row, 13, sale.get_status_display())
+            worksheet.write(row, 14, 'Yes' if sale.is_fiscalized else 'No')
+            worksheet.write(row, 15, sale.efris_invoice_number or '')
+
+        # Auto-fit columns
+        worksheet.set_column('A:P', 15)
+        worksheet.set_column('E:E', 25)  # Customer name wider
+
+        workbook.close()
+        output.seek(0)
+
+        response = HttpResponse(
+            output.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response[
+            'Content-Disposition'] = f'attachment; filename="sales_export_{timezone.now().strftime("%Y%m%d_%H%M%S")}.xlsx"'
+
+        return response
+
+    def export_to_pdf(self, sales):
+        """Export sales to PDF"""
+        try:
+            from xhtml2pdf import pisa
+        except ImportError:
+            messages.error(self.request, 'PDF export requires xhtml2pdf package. Please contact administrator.')
+            return redirect('sales:sales_list')
+
+        # Calculate totals
+        total_amount = sales.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+        total_tax = sales.aggregate(Sum('tax_amount'))['tax_amount__sum'] or 0
+        total_discount = sales.aggregate(Sum('discount_amount'))['discount_amount__sum'] or 0
+
+        context = {
+            'sales': sales[:100],  # Limit to first 100 for PDF
+            'export_date': timezone.now(),
+            'total_sales': sales.count(),
+            'total_amount': total_amount,
+            'total_tax': total_tax,
+            'total_discount': total_discount,
+            'user': self.request.user,
+        }
+
+        template = get_template('sales/sales_export_pdf.html')
+        html = template.render(context)
+
+        response = HttpResponse(content_type='application/pdf')
+        response[
+            'Content-Disposition'] = f'attachment; filename="sales_export_{timezone.now().strftime("%Y%m%d_%H%M%S")}.pdf"'
+
+        pisa_status = pisa.CreatePDF(html, dest=response)
+
+        if pisa_status.err:
+            messages.error(self.request, 'Error generating PDF')
+            return redirect('sales:sales_list')
+
+        return response
+
     def get_queryset(self):
         # Get accessible stores for this user
         accessible_stores = get_user_accessible_stores(self.request.user)
@@ -554,6 +1007,12 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         # Add accessible stores to context for template display
         context['accessible_stores'] = accessible_stores
 
+        # Add EFRIS enabled flag
+        context['efris_enabled'] = any(
+            store.effective_efris_config.get('enabled', False)
+            for store in accessible_stores
+        )
+
         # Add summary statistics
         queryset = self.get_queryset()
         credit_sales = queryset.filter(document_type='INVOICE', payment_method='CREDIT')
@@ -665,7 +1124,6 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         context['top_credit_customers'] = top_credit_customers
 
         return context
-
 
 class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     """Enhanced sale detail view with comprehensive information, EFRIS integration, and credit details"""
