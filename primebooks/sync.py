@@ -1,4 +1,4 @@
-# primebooks/sync.py - COMPLETE BIDIRECTIONAL SYNC
+# primebooks/sync.py - COMPLETE BIDIRECTIONAL SYNC WITH ENHANCED LOGGING
 """
 Complete bidirectional sync system
 ✅ Downloads data from server
@@ -7,6 +7,7 @@ Complete bidirectional sync system
 ✅ Automatic sync scheduling
 ✅ Manual sync on demand
 ✅ Signal suppression during sync
+✅ ENHANCED ERROR LOGGING
 """
 import requests
 import logging
@@ -19,6 +20,7 @@ from contextlib import contextmanager
 from django.db.models.signals import post_save, pre_save, post_delete
 from django.core.exceptions import ValidationError
 import json
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -130,24 +132,37 @@ class SyncManager:
     ✅ Download from server
     ✅ Upload to server
     ✅ Conflict resolution
+    ✅ Enhanced error logging
     """
 
     def __init__(self, tenant_id, schema_name, auth_token=None):
         self.tenant_id = tenant_id
         self.schema_name = schema_name
+
+        # ✅ Store the passed token FIRST, then try to get from other sources
+        self._passed_token = auth_token
         self.auth_token = auth_token or self._get_auth_token()
+
         self.last_sync_file = settings.DESKTOP_DATA_DIR / f'.last_sync_{tenant_id}'
         self.sync_models = get_sync_order()
 
         # ✅ Smart server URL detection
         self.server_url = self._get_server_url()
 
-        logger.info(f"SyncManager initialized:")
+        logger.info("=" * 70)
+        logger.info("SYNC MANAGER INITIALIZED")
         logger.info(f"  Tenant: {tenant_id}")
         logger.info(f"  Schema: {schema_name}")
         logger.info(f"  Subdomain: {schema_name}")
         logger.info(f"  Server: {self.server_url}")
+        logger.info(f"  Auth Token: {'Present (' + self.auth_token[:20] + '...)' if self.auth_token else '❌ MISSING!'}")
         logger.info(f"  Models to sync: {len(self.sync_models)}")
+        logger.info("=" * 70)
+
+        # ✅ Validate token
+        if not self.auth_token:
+            logger.error("❌ CRITICAL: No auth token available for sync!")
+            logger.error("   Sync will fail without authentication!")
 
     def _get_server_url(self):
         """
@@ -156,25 +171,46 @@ class SyncManager:
         ✅ DEBUG=False → subdomain.primebooks.sale
         """
         if hasattr(settings, 'SYNC_SERVER_URL'):
-            return settings.SYNC_SERVER_URL
+            url = settings.SYNC_SERVER_URL
+            logger.info(f"  Using configured SYNC_SERVER_URL: {url}")
+            return url
 
         # Auto-detect based on DEBUG setting
         if settings.DEBUG:
             # Development: subdomain.localhost:8000
-            return f"http://{self.schema_name}.localhost:8000"
+            url = f"http://{self.schema_name}.localhost:8000"
+            logger.info(f"  DEBUG mode detected, using: {url}")
+            return url
         else:
             # Production: subdomain.primebooks.sale
-            return f"https://{self.schema_name}.primebooks.sale"
+            url = f"https://{self.schema_name}.primebooks.sale"
+            logger.info(f"  Production mode detected, using: {url}")
+            return url
 
     def is_online(self):
         """Check if server is reachable"""
         try:
+            if not self.auth_token:
+                logger.error("❌ Cannot check online status - no auth token")
+                return False
+
+            logger.info(f"🌐 Checking server connectivity: {self.server_url}")
             response = requests.get(
                 f"{self.server_url}/api/health/",
+                headers={'Authorization': f'Bearer {self.auth_token}'},
                 timeout=5
             )
-            return response.status_code == 200
-        except:
+            is_reachable = response.status_code == 200
+            logger.info(f"  Server {'✅ reachable' if is_reachable else '❌ unreachable'} (HTTP {response.status_code})")
+            return is_reachable
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"  ❌ Connection error: {e}")
+            return False
+        except requests.exceptions.Timeout:
+            logger.warning(f"  ❌ Timeout after 5 seconds")
+            return False
+        except Exception as e:
+            logger.warning(f"  ❌ Unexpected error: {e}")
             return False
 
     # ========================================================================
@@ -184,33 +220,42 @@ class SyncManager:
     def download_all_data(self, progress_callback=None):
         """Download ALL data from server (first sync)"""
         try:
-            logger.info(f"🔄 Downloading all data from {self.server_url}")
+            logger.info("=" * 70)
+            logger.info(f"DOWNLOADING ALL DATA FROM SERVER")
+            logger.info(f"  URL: {self.server_url}/api/desktop/sync/bulk-download/")
+            logger.info("=" * 70)
 
             if progress_callback:
                 progress_callback("Connecting to server...", 5)
 
             url = f"{self.server_url}/api/desktop/sync/bulk-download/"
 
+            logger.info(f"  Making request...")
             response = requests.get(
                 url,
                 headers={'Authorization': f'Bearer {self.auth_token}'},
                 timeout=300
             )
 
+            logger.info(f"  Response: HTTP {response.status_code}")
+
             if response.status_code != 200:
+                error_text = response.text[:500] if response.text else "No response body"
                 logger.error(f"❌ Download failed: HTTP {response.status_code}")
+                logger.error(f"  Response: {error_text}")
                 return False
 
             data = response.json()
 
             if not data.get('success'):
-                logger.error(f"❌ Download failed: {data.get('error')}")
+                error_msg = data.get('error', 'Unknown error')
+                logger.error(f"❌ Download failed: {error_msg}")
                 return False
 
             all_data = data.get('data', {})
             total_records = data.get('total_records', 0)
 
-            logger.info(f"📥 Downloaded {total_records} records")
+            logger.info(f"✅ Downloaded {total_records} records across {len(all_data)} models")
 
             if progress_callback:
                 progress_callback(f"Downloaded {total_records} records...", 30)
@@ -219,35 +264,80 @@ class SyncManager:
                 success = self.apply_bulk_data(all_data, progress_callback)
 
                 if success:
-                    self.set_last_sync_time()
+                    # ✅ Do NOT set last_sync_time here - caller (full_sync) will do it
                     if progress_callback:
                         progress_callback("Download complete!", 100)
+                    logger.info("=" * 70)
+                    logger.info("✅ DOWNLOAD COMPLETE")
+                    logger.info("=" * 70)
                     return True
+                else:
+                    return False
 
             return False
 
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"❌ Connection error: {e}")
+            logger.error(f"  Could not connect to: {self.server_url}")
+            return False
+        except requests.exceptions.Timeout:
+            logger.error(f"❌ Request timeout (>300s)")
+            return False
         except Exception as e:
             logger.error(f"❌ Download error: {e}", exc_info=True)
             return False
+
+    def check_pending_changes(self):
+        """
+        ✅ NEW: Check what changes are pending without actually syncing
+        Useful for debugging
+        """
+        last_sync = self.get_last_sync_time()
+
+        logger.info("=" * 70)
+        logger.info("CHECKING PENDING CHANGES")
+        logger.info(f"  Last sync: {last_sync}")
+        logger.info("=" * 70)
+
+        if not last_sync:
+            logger.info("  No last sync - full sync needed")
+            return
+
+        changes = self.collect_local_changes(last_sync)
+
+        if not changes:
+            logger.info("  ✅ No pending changes")
+        else:
+            for model_name, records in changes.items():
+                logger.info(f"  📝 {model_name}: {len(records)} pending changes")
+
+        logger.info("=" * 70)
 
     def download_changes(self, progress_callback=None):
         """
         Download only CHANGED data since last sync
         ✅ Efficient incremental sync
+        ✅ Does NOT update last_sync_time (full_sync does that)
         """
         try:
             last_sync = self.get_last_sync_time()
 
             if not last_sync:
                 # No last sync - do full download
+                logger.info("No last sync time found - doing full download")
                 return self.download_all_data(progress_callback)
 
-            logger.info(f"🔄 Downloading changes since {last_sync}")
+            logger.info("=" * 70)
+            logger.info(f"DOWNLOADING CHANGES SINCE {last_sync}")
+            logger.info("=" * 70)
 
             if progress_callback:
                 progress_callback("Checking for changes...", 10)
 
             url = f"{self.server_url}/api/desktop/sync/changes/"
+
+            logger.info(f"  URL: {url}")
+            logger.info(f"  Since: {last_sync.isoformat()}")
 
             response = requests.get(
                 url,
@@ -256,28 +346,44 @@ class SyncManager:
                 timeout=60
             )
 
+            logger.info(f"  Response: HTTP {response.status_code}")
+
             if response.status_code != 200:
+                error_text = response.text[:500] if response.text else "No response body"
                 logger.error(f"❌ Download failed: HTTP {response.status_code}")
+                logger.error(f"  Response: {error_text}")
                 return False
 
             data = response.json()
             changes = data.get('data', {})
             total_changed = sum(len(records) for records in changes.values())
 
-            logger.info(f"📥 Downloaded {total_changed} changed records")
+            if total_changed == 0:
+                logger.info("✅ No server changes to download")
+                return True  # Success - nothing to do
+
+            logger.info(f"✅ Downloaded {total_changed} changed records")
 
             if changes:
                 success = self.apply_bulk_data(changes, progress_callback)
                 if success:
-                    self.set_last_sync_time()
+                    # ✅ Do NOT update last_sync_time here - full_sync will do it
+                    logger.info("✅ Server changes applied successfully")
                     return True
+                else:
+                    logger.error("❌ Failed to apply server changes")
+                    return False
             else:
                 logger.info("No changes to download")
                 return True
 
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"❌ Connection error: {e}")
+            return False
         except Exception as e:
             logger.error(f"❌ Download error: {e}", exc_info=True)
             return False
+
 
     # ========================================================================
     # UPLOAD TO SERVER
@@ -287,11 +393,14 @@ class SyncManager:
         """
         Upload local changes to server
         ✅ Syncs offline sales, products, stock movements
+        ✅ Does NOT update last_sync_time (full_sync does that)
         """
         try:
             last_sync = self.get_last_sync_time()
 
-            logger.info(f"🔄 Uploading changes since {last_sync}")
+            logger.info("=" * 70)
+            logger.info(f"UPLOADING CHANGES SINCE {last_sync}")
+            logger.info("=" * 70)
 
             if progress_callback:
                 progress_callback("Collecting local changes...", 10)
@@ -300,16 +409,18 @@ class SyncManager:
             changes = self.collect_local_changes(last_sync)
 
             if not changes:
-                logger.info("No local changes to upload")
-                return True
+                logger.info("✅ No local changes to upload")
+                return True  # Success - nothing to do
 
             total_changed = sum(len(records) for records in changes.values())
-            logger.info(f"📤 Uploading {total_changed} changed records")
+            logger.info(f"📤 Uploading {total_changed} changed records across {len(changes)} models")
 
             if progress_callback:
                 progress_callback(f"Uploading {total_changed} records...", 30)
 
             url = f"{self.server_url}/api/desktop/sync/upload/"
+
+            logger.info(f"  URL: {url}")
 
             response = requests.post(
                 url,
@@ -323,29 +434,40 @@ class SyncManager:
                 timeout=120
             )
 
+            logger.info(f"  Response: HTTP {response.status_code}")
+
             if response.status_code != 200:
+                error_text = response.text[:500] if response.text else "No response body"
                 logger.error(f"❌ Upload failed: HTTP {response.status_code}")
+                logger.error(f"  Response: {error_text}")
                 return False
 
             result = response.json()
 
             if result.get('success'):
                 logger.info(f"✅ Upload successful")
+                # ✅ Do NOT update last_sync_time here - full_sync will do it
                 if progress_callback:
                     progress_callback("Upload complete!", 60)
                 return True
             else:
-                logger.error(f"❌ Upload failed: {result.get('error')}")
+                error_msg = result.get('error', 'Unknown error')
+                logger.error(f"❌ Upload failed: {error_msg}")
                 return False
 
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"❌ Connection error: {e}")
+            return False
         except Exception as e:
             logger.error(f"❌ Upload error: {e}", exc_info=True)
             return False
+
 
     def collect_local_changes(self, since):
         """
         Collect records that changed locally since last sync
         ✅ Finds new sales, products, stock changes
+        ✅ Uses timezone-aware datetime comparisons
         """
         changes = {}
 
@@ -361,6 +483,10 @@ class SyncManager:
 
                     # Filter by modification time
                     if since:
+                        # ✅ Ensure since is timezone-aware
+                        if since.tzinfo is None:
+                            since = timezone.make_aware(since)
+
                         if hasattr(model, 'modified_at'):
                             queryset = queryset.filter(modified_at__gte=since)
                         elif hasattr(model, 'updated_at'):
@@ -568,45 +694,69 @@ class SyncManager:
         Perform complete bidirectional sync
         ✅ Upload local changes
         ✅ Download server changes
+        ✅ Only syncs NEW changes after first sync
         """
         try:
+            logger.info("=" * 70)
+            logger.info("FULL SYNC STARTING")
+            logger.info(f"  First sync: {is_first_sync}")
+            logger.info("=" * 70)
+
             if is_first_sync:
                 logger.info(f"🔄 First sync - downloading all data")
 
                 if not self.is_online():
                     logger.warning("⚠️  Server not reachable")
-                    self.set_last_sync_time()
+                    self.set_last_sync_time()  # Set time even if offline
                     return True
 
-                return self.download_all_data(progress_callback)
+                # Download all data
+                success = self.download_all_data(progress_callback)
+
+                if success:
+                    # ✅ Set last sync time AFTER successful download
+                    self.set_last_sync_time()
+                    logger.info("✅ First sync complete - timestamp saved")
+
+                return success
 
             else:
-                # ✅ BIDIRECTIONAL SYNC
+                # ✅ BIDIRECTIONAL SYNC - Get last sync time BEFORE starting
+                last_sync = self.get_last_sync_time()
+
                 logger.info(f"🔄 Bidirectional sync starting")
+                logger.info(f"  Last successful sync: {last_sync}")
 
                 if not self.is_online():
                     logger.warning("⚠️  Server not reachable - staying offline")
                     return False
 
-                # Step 1: Upload local changes
+                # Step 1: Upload local changes (changes since last_sync)
                 if progress_callback:
                     progress_callback("Uploading local changes...", 10)
 
                 upload_success = self.upload_changes(progress_callback)
 
-                # Step 2: Download server changes
+                # Step 2: Download server changes (changes since last_sync)
                 if progress_callback:
                     progress_callback("Downloading server changes...", 50)
 
                 download_success = self.download_changes(progress_callback)
 
                 if upload_success and download_success:
-                    logger.info("✅ Bidirectional sync complete")
+                    # ✅ IMPORTANT: Update last_sync_time ONLY after BOTH operations succeed
+                    self.set_last_sync_time()
+
+                    logger.info("=" * 70)
+                    logger.info("✅ BIDIRECTIONAL SYNC COMPLETE")
+                    logger.info(f"  New sync timestamp: {self.get_last_sync_time()}")
+                    logger.info("=" * 70)
+
                     if progress_callback:
                         progress_callback("Sync complete!", 100)
                     return True
                 else:
-                    logger.warning("⚠️  Sync completed with errors")
+                    logger.warning("⚠️  Sync completed with errors - timestamp NOT updated")
                     return False
 
         except Exception as e:
@@ -621,14 +771,15 @@ class SyncManager:
         """
         Check if automatic sync should run
         ✅ Runs once per day
+        ✅ Uses timezone-aware datetime
         """
         last_sync = self.get_last_sync_time()
 
         if not last_sync:
             return True
 
-        # Sync once per day
-        time_since_sync = datetime.now() - last_sync
+        # ✅ Use timezone.now() instead of datetime.now()
+        time_since_sync = timezone.now() - last_sync
         return time_since_sync > timedelta(days=1)
 
     # ========================================================================
@@ -636,23 +787,72 @@ class SyncManager:
     # ========================================================================
 
     def get_last_sync_time(self):
-        """Get last sync timestamp"""
+        """Get last sync timestamp with timezone awareness"""
         if self.last_sync_file.exists():
             try:
-                return datetime.fromisoformat(self.last_sync_file.read_text())
-            except:
+                timestamp_str = self.last_sync_file.read_text()
+                # Parse the timestamp
+                dt = datetime.fromisoformat(timestamp_str)
+
+                # Make it timezone-aware if it isn't already
+                if dt.tzinfo is None:
+                    dt = timezone.make_aware(dt)
+
+                return dt
+            except Exception as e:
+                logger.warning(f"Could not parse last sync time: {e}")
                 return None
         return None
 
     def set_last_sync_time(self, timestamp=None):
-        """Save last sync timestamp"""
+        """Save last sync timestamp with timezone awareness"""
         if timestamp is None:
-            timestamp = datetime.now()
+            timestamp = timezone.now()  # Use timezone-aware now
+        elif timestamp.tzinfo is None:
+            # Make timezone-aware if naive
+            timestamp = timezone.make_aware(timestamp)
+
         self.last_sync_file.write_text(timestamp.isoformat())
+        logger.info(f"✅ Last sync time updated: {timestamp.isoformat()}")
 
     def _get_auth_token(self):
-        """Get auth token"""
-        return getattr(settings, 'SYNC_AUTH_TOKEN', '')
+        """
+        Get auth token from multiple sources with fallback and auto-refresh
+        ✅ NEW: Attempts to refresh expired tokens
+        """
+        # 1. Try from parameter (passed during init)
+        if self._passed_token:
+            logger.info(f"✅ Using auth token from init parameter")
+            return self._passed_token
+
+        # 2. Try from settings
+        token = getattr(settings, 'SYNC_AUTH_TOKEN', None)
+        if token:
+            logger.info(f"✅ Using auth token from settings.SYNC_AUTH_TOKEN")
+            return token
+
+        # 3. Try loading from auth manager with refresh
+        try:
+            from primebooks.auth import DesktopAuthManager
+            auth_manager = DesktopAuthManager()
+
+            # ✅ Try to get valid token (will refresh if needed)
+            token = auth_manager.get_valid_token()
+            if token:
+                logger.info(f"✅ Using refreshed auth token from DesktopAuthManager")
+                return token
+
+        except Exception as e:
+            logger.warning(f"⚠️  Could not load/refresh auth token: {e}")
+
+        # 4. No token found
+        logger.error("❌ No SYNC_AUTH_TOKEN found anywhere!")
+        logger.error("   Checked:")
+        logger.error("   1. Init parameter")
+        logger.error("   2. settings.SYNC_AUTH_TOKEN")
+        logger.error("   3. DesktopAuthManager (with refresh)")
+
+        return None
 
 
 # ============================================================================

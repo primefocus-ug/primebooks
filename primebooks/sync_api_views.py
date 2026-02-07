@@ -3,6 +3,8 @@
 Server-side API endpoints for desktop sync
 ✅ Provides data download endpoints
 ✅ Handles bulk data export for offline use
+✅ Handles incremental sync (changes only)
+✅ Handles upload of local changes
 """
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -12,11 +14,11 @@ from django.apps import apps
 from django.core import serializers
 from django_tenants.utils import schema_context
 from primebooks.authentication import TenantAwareJWTAuthentication
+from datetime import datetime
 import logging
 import json
 
 logger = logging.getLogger(__name__)
-
 
 # Model configuration for sync
 SYNC_MODEL_CONFIG = {
@@ -117,6 +119,201 @@ class BulkDataDownloadView(APIView):
                 'success': False,
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ChangesDownloadView(APIView):
+    """
+    Download only changed data since last sync
+    ✅ Efficient incremental sync
+    """
+    authentication_classes = [TenantAwareJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            # Get parameters
+            since = request.query_params.get('since')
+            if not since:
+                return Response(
+                    {'error': 'Missing "since" parameter'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Parse datetime
+            try:
+                since_datetime = datetime.fromisoformat(since)
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid datetime format. Use ISO format.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Get schema from token
+            token = request.auth
+            schema_name = token.get('schema_name')
+
+            if not schema_name:
+                return Response(
+                    {'error': 'No schema_name in token'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            logger.info(f"📥 Changes download request for schema: {schema_name} since {since}")
+
+            changes = {}
+            total_changed = 0
+
+            with schema_context(schema_name):
+                for model_name in SYNC_MODEL_CONFIG.keys():
+                    try:
+                        model = apps.get_model(model_name)
+                        config = SYNC_MODEL_CONFIG.get(model_name, {})
+                        exclude_fields = config.get('exclude_fields', [])
+
+                        # Build queryset
+                        queryset = model.objects.all()
+
+                        # Filter by modification time
+                        if hasattr(model, 'modified_at'):
+                            queryset = queryset.filter(modified_at__gte=since_datetime)
+                        elif hasattr(model, 'updated_at'):
+                            queryset = queryset.filter(updated_at__gte=since_datetime)
+                        elif hasattr(model, 'created_at'):
+                            queryset = queryset.filter(created_at__gte=since_datetime)
+                        else:
+                            # No timestamp field - skip
+                            continue
+
+                        if queryset.exists():
+                            # Serialize
+                            data = serializers.serialize('json', queryset)
+                            records = json.loads(data)
+
+                            # Remove excluded fields
+                            if exclude_fields:
+                                for record in records:
+                                    for field in exclude_fields:
+                                        record['fields'].pop(field, None)
+
+                            changes[model_name] = records
+                            total_changed += len(records)
+                            logger.info(f"  Found {len(records)} changed {model_name} records")
+
+                    except LookupError:
+                        logger.warning(f"  Model not found: {model_name}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"  Error processing {model_name}: {e}")
+                        continue
+
+            logger.info(f"✅ Returning {total_changed} changed records across {len(changes)} models")
+
+            return Response({
+                'success': True,
+                'data': changes,
+                'total_records': total_changed,
+                'since': since
+            })
+
+        except Exception as e:
+            logger.error(f"❌ Changes download error: {e}", exc_info=True)
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class UploadChangesView(APIView):
+    """
+    Upload local changes from desktop to server
+    ✅ Handles create/update with conflict resolution
+    """
+    authentication_classes = [TenantAwareJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # Get data from request
+            changes = request.data.get('changes', {})
+            tenant_id = request.data.get('tenant_id')
+            schema_name = request.data.get('schema_name')
+            last_sync = request.data.get('last_sync')
+
+            # Verify schema from token matches request
+            token = request.auth
+            token_schema = token.get('schema_name')
+
+            if token_schema != schema_name:
+                return Response(
+                    {'success': False, 'error': 'Schema mismatch'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            logger.info(f"📤 Upload request for schema: {schema_name}")
+            logger.info(f"  Changes: {len(changes)} models")
+            logger.info(f"  Last sync: {last_sync}")
+
+            if not changes:
+                return Response({
+                    'success': True,
+                    'message': 'No changes to upload'
+                })
+
+            # Import sync functionality
+            from primebooks.sync import SyncManager
+
+            # Apply changes to server database
+            total_created = 0
+            total_updated = 0
+            errors = []
+
+            with schema_context(schema_name):
+                for model_name, records in changes.items():
+                    try:
+                        # Use SyncManager's apply_model_data method
+                        # Note: We need the actual token string, not the JWT object
+                        # The token is already validated by authentication_classes
+                        sync_manager = SyncManager(
+                            tenant_id=tenant_id,
+                            schema_name=schema_name,
+                            auth_token=request.META.get('HTTP_AUTHORIZATION', '').replace('Bearer ', '')
+                        )
+
+                        created, updated = sync_manager.apply_model_data(model_name, records)
+                        total_created += created
+                        total_updated += updated
+
+                        logger.info(f"  ✅ {model_name}: {created} created, {updated} updated")
+
+                    except Exception as e:
+                        error_msg = f"Error processing {model_name}: {str(e)}"
+                        logger.error(f"  ❌ {error_msg}")
+                        errors.append(error_msg)
+
+            if errors:
+                logger.warning(f"⚠️  Upload completed with {len(errors)} errors")
+                return Response({
+                    'success': True,
+                    'message': f'Upload completed with errors',
+                    'created': total_created,
+                    'updated': total_updated,
+                    'errors': errors
+                }, status=status.HTTP_207_MULTI_STATUS)
+            else:
+                logger.info(f"✅ Upload complete: {total_created} created, {total_updated} updated")
+                return Response({
+                    'success': True,
+                    'message': 'Upload successful',
+                    'created': total_created,
+                    'updated': total_updated
+                })
+
+        except Exception as e:
+            logger.error(f"❌ Upload error: {e}", exc_info=True)
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class ModelDataDownloadView(APIView):

@@ -3,22 +3,50 @@ from datetime import timedelta
 from django.utils.translation import gettext_lazy as _
 import os
 import sys
+
 try:
     from celery.schedules import crontab
+
     CELERY_AVAILABLE = True
 except ImportError:
     CELERY_AVAILABLE = False
     crontab = None
 
-# Load environment variables
-from dotenv import load_dotenv
-
 # Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load .env file - MUST happen before any other imports or logic
+# Load environment variables
+from dotenv import load_dotenv
+
 env_path = BASE_DIR / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
+
+
+# =============================================================================
+# PRODUCTION DETECTION
+# =============================================================================
+
+def is_compiled():
+    """
+    Detect if running as compiled executable (PyInstaller or Nuitka)
+
+    Returns:
+        bool: True if compiled, False if running as Python script
+    """
+    # Method 1: PyInstaller sets sys.frozen
+    if getattr(sys, 'frozen', False):
+        return True
+
+    # Method 2: Nuitka sets __compiled__
+    if '__compiled__' in globals():
+        return True
+
+    # Method 3: Check if _MEIPASS exists (PyInstaller temp folder)
+    if hasattr(sys, '_MEIPASS'):
+        return True
+
+    return False
+
 
 # =============================================================================
 # DEPLOYMENT MODE DETECTION
@@ -26,8 +54,41 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 # Detect deployment mode
 IS_DESKTOP = os.getenv('DESKTOP_MODE', 'False').lower() == 'true'
-DEBUG_VALUE = os.getenv('DEBUG', 'True')
-DEBUG = DEBUG_VALUE.strip().lower() in ('true', '1', 'yes', 'on')
+IS_COMPILED = is_compiled()
+
+# Debug mode logic:
+# - If compiled (exe) → Production (DEBUG=False)
+# - If not compiled (python script) → Use environment variable
+if IS_COMPILED:
+    DEBUG = False  # Always production when compiled
+    IS_PRODUCTION = True
+else:
+    # Running as python script - use environment variable
+    DEBUG_VALUE = os.getenv('DEBUG', 'True')
+    DEBUG = DEBUG_VALUE.strip().lower() in ('true', '1', 'yes', 'on')
+    IS_PRODUCTION = False
+
+# Base domain for sync
+if IS_COMPILED:
+    # Production - compiled executable
+    BASE_DOMAIN = 'primebooks.sale'
+    PROTOCOL = 'https'
+else:
+    # Development - python script
+    BASE_DOMAIN = os.getenv('BASE_DOMAIN', 'localhost:8000')
+    PROTOCOL = 'http'
+
+# Log the mode for debugging
+print("=" * 60)
+print(f"🔍 Environment Detection")
+print("=" * 60)
+print(f"Is Compiled: {IS_COMPILED}")
+print(f"Is Desktop: {IS_DESKTOP}")
+print(f"Is Production: {IS_PRODUCTION}")
+print(f"DEBUG: {DEBUG}")
+print(f"Base Domain: {BASE_DOMAIN}")
+print(f"Protocol: {PROTOCOL}")
+print("=" * 60)
 
 if IS_DESKTOP:
     # Prevent Celery-related imports in desktop mode
@@ -39,6 +100,7 @@ if IS_DESKTOP:
     sys.modules['celery.schedules'] = MagicMock()
     sys.modules['celery.result'] = MagicMock()
     sys.modules['kombu'] = MagicMock()
+
 
 # Helper function for desktop data directory
 def get_desktop_data_dir():
@@ -56,6 +118,7 @@ def get_desktop_data_dir():
     # Create directory if it doesn't exist
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
+
 
 # Desktop data directory
 DESKTOP_DATA_DIR = get_desktop_data_dir()
@@ -94,23 +157,31 @@ if IS_DESKTOP:
     print("=" * 50)
     print("💻 RUNNING IN DESKTOP MODE (PostgreSQL)")
     print(f"📁 Data Directory: {DESKTOP_DATA_DIR}")
+    if IS_COMPILED:
+        print("🚀 Desktop Production Mode (Compiled)")
+    else:
+        print("🔧 Desktop Development Mode (Python Script)")
     print("=" * 50)
 
     # Secret key - generate unique per installation
     SECRET_KEY_FILE = DESKTOP_DATA_DIR / '.secret_key'
     if not SECRET_KEY_FILE.exists():
         from django.core.management.utils import get_random_secret_key
+
         SECRET_KEY_FILE.write_text(get_random_secret_key())
     SECRET_KEY = SECRET_KEY_FILE.read_text().strip()
 
     ALLOWED_HOSTS = ['*']
-    PUBLIC_ADMIN_URL = 'http://localhost:8000'
+
+    if IS_COMPILED:
+        PUBLIC_ADMIN_URL = f'{PROTOCOL}://{BASE_DOMAIN}'
+    else:
+        PUBLIC_ADMIN_URL = 'http://localhost:8000'
 
     # ✅ PostgreSQL Database (embedded instance)
-    # This will be updated by postgres_manager after initialization
     DATABASES = {
         'default': {
-            'ENGINE': 'django_tenants.postgresql_backend',  # ✅ CRITICAL - Use django-tenants backend
+            'ENGINE': 'django_tenants.postgresql_backend',
             'NAME': 'primebooks',
             'USER': 'primebooks_user',
             'PASSWORD': '',
@@ -142,44 +213,70 @@ if IS_DESKTOP:
     SUPPORT_EMAIL = 'support@localhost'
 
     # Site
-    FRONTEND_URL = 'http://localhost:8000'
-    SITE_NAME = 'Prime Books Desktop'
-    BASE_DOMAIN = 'localhost'
-    USE_SSL = False
+    if IS_COMPILED:
+        FRONTEND_URL = f'{PROTOCOL}://{BASE_DOMAIN}'
+        SITE_NAME = 'Prime Books'
+    else:
+        FRONTEND_URL = 'http://localhost:8000'
+        SITE_NAME = 'Prime Books Desktop'
 
+    USE_SSL = IS_COMPILED  # Use SSL in production (compiled)
 
     # CORS
     CORS_ALLOW_ALL_ORIGINS = True
 
-    # Security - Relaxed for desktop
-    SECURE_BROWSER_XSS_FILTER = False
-    SECURE_CONTENT_TYPE_NOSNIFF = False
-    X_FRAME_OPTIONS = 'SAMEORIGIN'
-    SECURE_HSTS_SECONDS = 0
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
-    SECURE_HSTS_PRELOAD = False
-    SESSION_COOKIE_SECURE = False
-    CSRF_COOKIE_SECURE = False
-    CSRF_COOKIE_SAMESITE = 'Lax'
-    SECURE_SSL_REDIRECT = False
-    SECURE_PROXY_SSL_HEADER = None
+    # Security - Production desktop gets stricter settings
+    if IS_COMPILED:
+        SECURE_BROWSER_XSS_FILTER = True
+        SECURE_CONTENT_TYPE_NOSNIFF = True
+        X_FRAME_OPTIONS = 'DENY'
+        SECURE_HSTS_SECONDS = 0  # Desktop doesn't need HSTS
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+        SECURE_HSTS_PRELOAD = False
+        SESSION_COOKIE_SECURE = False  # Desktop runs on localhost
+        CSRF_COOKIE_SECURE = False
+        CSRF_COOKIE_SAMESITE = 'Lax'
+        SECURE_SSL_REDIRECT = False
+        SECURE_PROXY_SSL_HEADER = None
+        SESSION_COOKIE_AGE = 86400  # 1 day
+        print(f"   Security: Production desktop mode")
+    else:
+        # Development desktop - relaxed security
+        SECURE_BROWSER_XSS_FILTER = False
+        SECURE_CONTENT_TYPE_NOSNIFF = False
+        X_FRAME_OPTIONS = 'SAMEORIGIN'
+        SECURE_HSTS_SECONDS = 0
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+        SECURE_HSTS_PRELOAD = False
+        SESSION_COOKIE_SECURE = False
+        CSRF_COOKIE_SECURE = False
+        CSRF_COOKIE_SAMESITE = 'Lax'
+        SECURE_SSL_REDIRECT = False
+        SECURE_PROXY_SSL_HEADER = None
+        SESSION_COOKIE_AGE = 86400
+        print(f"   Security: Development desktop mode")
+
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
     # Static files
     STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
-
-    # Sessions
-    SESSION_COOKIE_AGE = 86400  # 1 day
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = 'Lax'
-    SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Use DB instead of cache
 
     # Cache - Use dummy cache for desktop
     CACHE_BACKEND = 'django.core.cache.backends.dummy.DummyCache'
     CACHE_OPTIONS = {}
 
     # Logging
-    LOG_LEVEL = 'DEBUG'
-    CONSOLE_LOG_LEVEL = 'INFO'
+    if IS_COMPILED:
+        LOG_LEVEL = 'ERROR'
+        CONSOLE_LOG_LEVEL = 'ERROR'
+        print(f"   Logging: ERROR level only")
+    else:
+        LOG_LEVEL = 'DEBUG'
+        CONSOLE_LOG_LEVEL = 'INFO'
+        print(f"   Logging: DEBUG level")
+
     FILE_LOG_FORMATTER = 'simple'
     MAX_LOG_BYTES = 5 * 1024 * 1024
     LOG_BACKUP_COUNT = 3
@@ -193,6 +290,20 @@ if IS_DESKTOP:
 
     # ✅ Database routing - django-tenants ONLY
     DATABASE_ROUTERS = ['django_tenants.routers.TenantSyncRouter']
+
+    # Sync configuration - auto-detect based on compilation
+    if IS_COMPILED:
+        # Production desktop - sync will use: https://{tenant}.primebooks.sale
+        print(f"   Sync: https://{{tenant}}.{BASE_DOMAIN}")
+    else:
+        # Development desktop - sync will use: http://{tenant}.localhost:8000
+        print(f"   Sync: http://{{tenant}}.{BASE_DOMAIN}")
+
+    # Update server for version checks
+    if IS_COMPILED:
+        UPDATE_SERVER_URL = f'{PROTOCOL}://{BASE_DOMAIN}/api/version/latest/'
+    else:
+        UPDATE_SERVER_URL = 'http://localhost:8000/api/version/latest/'
 
 elif DEBUG:
     # =========================================================================
@@ -234,7 +345,6 @@ elif DEBUG:
     # Site
     FRONTEND_URL = 'http://localhost:8000'
     SITE_NAME = 'Prime Books'
-    BASE_DOMAIN = os.getenv('BASE_DOMAIN', default='localhost')
     USE_SSL = os.getenv('USE_SSL', 'False').lower() in ('true', '1', 'yes')
 
     # CORS
@@ -345,7 +455,6 @@ else:
     # Site
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://primebooks.sale')
     SITE_NAME = os.getenv('SITE_NAME', 'Prime Books')
-    BASE_DOMAIN = os.getenv('BASE_DOMAIN', 'primebooks.sale')
     USE_SSL = os.getenv('USE_SSL', 'True').lower() in ('true', '1', 'yes')
 
     # CORS
@@ -419,20 +528,20 @@ else:
     # Database routing
     DATABASE_ROUTERS = ['django_tenants.routers.TenantSyncRouter']
 
+# =============================================================================
+# SYNC CONFIGURATION
+# =============================================================================
+
 if IS_DESKTOP:
     # ✅ Desktop mode: Don't set SYNC_SERVER_URL
     # Let SyncManager auto-detect based on schema/subdomain:
-    #   - DEBUG=True  → http://{schema}.localhost:8000
-    #   - DEBUG=False → https://{schema}.primebooks.sale
+    #   - Compiled (production)  → https://{schema}.primebooks.sale
+    #   - Not compiled (dev)     → http://{schema}.localhost:8000
 
     # Don't set SYNC_SERVER_URL - auto-detection will handle it
     SYNC_AUTH_TOKEN = ''  # Set after login
 
-    # Update server (for version updates)
-    if DEBUG:
-        UPDATE_SERVER_URL = 'http://localhost:8000'  # Update server doesn't need subdomain
-    else:
-        UPDATE_SERVER_URL = 'https://primebooks.sale'
+    # Update server (for version updates) - already set above in desktop section
 
 else:
     # ✅ Web mode: Traditional server URLs
@@ -580,6 +689,7 @@ MIDDLEWARE += [
     'accounts.middleware.RefreshPermissionsMiddleware',
     'stores.middleware.StoreAccessMiddleware',
 ]
+
 # Crispy Forms
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
@@ -684,34 +794,6 @@ if not IS_DESKTOP and REDIS_URL:
                 'task': 'company.tasks.check_company_access_status',
                 'schedule': crontab(minute=0, hour='*/6'),
             },
-            'check-trial-expirations': {
-                'task': 'company.tasks.check_trial_expirations',
-                'schedule': crontab(hour=1, minute=0),
-            },
-            'check-subscription-expirations': {
-                'task': 'company.tasks.check_subscription_expirations',
-                'schedule': crontab(hour=1, minute=30),
-            },
-            'generate-daily-performance-report': {
-                'task': 'company.tasks.generate_daily_reports',
-                'schedule': crontab(hour=6, minute=0),
-            },
-            'analytics-update': {
-                'task': 'company.tasks.send_periodic_analytics_update',
-                'schedule': ANALYTICS_UPDATE_INTERVAL,
-            },
-            'efris-daily-maintenance': {
-                'task': 'efris.tasks.daily_efris_maintenance',
-                'schedule': crontab(hour=2, minute=0),
-            },
-            'efris-process-sync-queue': {
-                'task': 'efris.tasks.process_efris_sync_queue',
-                'schedule': 300.0,
-            },
-            'process-scheduled-reports': {
-                'task': 'reports.tasks.process_scheduled_reports',
-                'schedule': crontab(minute='*/5'),
-            },
         }
     else:
         CELERY_BEAT_SCHEDULE = {}
@@ -769,7 +851,6 @@ else:
         'accounts.backends.RoleBasedAuthBackend',
         'django.contrib.auth.backends.ModelBackend',
     ]
-
 
 VERSION_MAJOR = 1
 VERSION_MINOR = 0
@@ -862,13 +943,37 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': REST_FRAMEWORK_THROTTLE_RATES,
 }
 
-# JWT Settings
+
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': True,
+    'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': False,
+
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+    'JWK_URL': None,
+    'LEEWAY': 0,
+
     'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
+
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',
+
+    'JTI_CLAIM': 'jti',
+
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -16,9 +16,19 @@ from accounts.models import CustomUser
 from django_tenants.utils import schema_context
 from primebooks.authentication import TenantAwareJWTAuthentication
 import logging
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
+
+@csrf_exempt
+def health_check(request):
+    """Simple health check endpoint for desktop sync"""
+    return JsonResponse({
+        'status': 'ok',
+        'service': 'primebooks'
+    })
 
 class DesktopLoginView(APIView):
     """

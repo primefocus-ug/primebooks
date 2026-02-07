@@ -13,7 +13,7 @@ function showDraftPreview(draftIndex) {
         return;
     }
 
-    const modalHTML = createDraftPreviewModalHTML(draft);
+    const modalHTML = createDraftPreviewModalHTML(draft, draftIndex);
 
     const existingModal = document.getElementById('draftPreviewModal');
     if (existingModal) {
@@ -44,7 +44,7 @@ function showDraftPreview(draftIndex) {
 /**
  * Create draft preview modal HTML
  */
-function createDraftPreviewModalHTML(draft) {
+function createDraftPreviewModalHTML(draft,draftIndex) {
     const draftDate = new Date(draft.updatedAt || draft.createdAt);
     const formattedDate = draftDate.toLocaleDateString();
     const formattedTime = draftDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -218,17 +218,45 @@ function generateDraftPreviewReceipt(draft, format = 'a4') {
                 font-size: 11px;
             }
 
-            /* Watermark */
             .draft-watermark-container {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                pointer-events: none;
-                z-index: 1;
-                overflow: hidden;
-            }
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    overflow: hidden;
+}
+
+/* ADD THIS - Hide watermark when printing */
+@media print {
+    .draft-watermark-container {
+        display: none !important;
+        page-break-before: avoid !important;
+        page-break-after: avoid !important;
+        page-break-inside: avoid !important;
+    }
+    
+    .draft-receipt-container {
+        page-break-before: auto !important;
+        page-break-after: auto !important;
+        page-break-inside: avoid !important;
+    }
+}
+
+.draft-watermark-text {
+    position: absolute;
+    font-size: 120px;
+    font-weight: 900;
+    color: rgba(124, 58, 237, 0.08);
+    transform: rotate(-45deg);
+    white-space: nowrap;
+    letter-spacing: 20px;
+    text-transform: uppercase;
+    user-select: none;
+    pointer-events: none;
+}
 
             .draft-watermark-text {
                 position: absolute;
@@ -242,24 +270,20 @@ function generateDraftPreviewReceipt(draft, format = 'a4') {
                 user-select: none;
             }
 
-            .draft-watermark-text:nth-child(1) {
-                top: 20%;
-                left: 50%;
-                transform: translateX(-50%) rotate(-45deg);
+            .draft-watermark-text {
+                position: absolute;
+                font-size: 120px;
+                font-weight: 900;
+                color: rgba(124, 58, 237, 0.08);
+                transform: rotate(-45deg);
+                white-space: nowrap;
+                letter-spacing: 20px;
+                text-transform: uppercase;
+                user-select: none;
+                pointer-events: none; /* IMPORTANT: Prevents interaction */
             }
-
-            .draft-watermark-text:nth-child(2) {
-                top: 50%;
-                left: 50%;
-                transform: translateX(-50%) rotate(-45deg);
-            }
-
-            .draft-watermark-text:nth-child(3) {
-                top: 80%;
-                left: 50%;
-                transform: translateX(-50%) rotate(-45deg);
-            }
-
+            
+           
             .format-thermal .draft-watermark-text {
                 font-size: 60px;
                 letter-spacing: 10px;
@@ -723,9 +747,7 @@ function generateDraftPreviewReceipt(draft, format = 'a4') {
 
         <div class="draft-receipt-container format-${format}" id="draftReceiptContainer">
             <div class="draft-watermark-container">
-                <div class="draft-watermark-text">PREVIEW</div>
-                <div class="draft-watermark-text">PREVIEW</div>
-                <div class="draft-watermark-text">PREVIEW</div>
+                <div class="draft-watermark-text" style="top: 30%; left: 50%; transform: translateX(-50%) rotate(-45deg);">DRAFT</div>
             </div>
 
             <div class="draft-receipt-header">
@@ -862,10 +884,24 @@ function generateDraftPreviewReceipt(draft, format = 'a4') {
 }
 
 /**
- * Print draft preview
+ * Print draft preview - CLEANEST VERSION
  */
 function printDraftPreview() {
+    const watermarks = document.querySelectorAll('.draft-watermark-container');
+    const noticeBox = document.querySelector('.draft-notice');
+
+    // Temporarily hide elements that shouldn't print
+    watermarks.forEach(w => w.style.display = 'none');
+    if (noticeBox) noticeBox.style.display = 'none';
+
+    // Print
     window.print();
+
+    // Restore after print dialog
+    setTimeout(() => {
+        watermarks.forEach(w => w.style.display = '');
+        if (noticeBox) noticeBox.style.display = '';
+    }, 500);
 }
 
 /**
@@ -978,10 +1014,72 @@ function displayDraftsListEnhanced() {
         `;
     }).join('');
 }
+/**
+ * Print draft by index
+ */
+function printDraftByIndex(draftIndex) {
+    const draft = SaleState.drafts[draftIndex];
+    if (!draft) {
+        showError('Draft not found');
+        return;
+    }
 
+    // Create a temporary container for printing
+    const printWindow = window.open('', '_blank');
+    const receiptHTML = generateDraftPreviewReceipt(draft, 'a4');
+
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Print Draft - ${escapeHtml(draft.name)}</title>
+            <style>
+                @media print {
+                    @page {
+                        margin: 0;
+                        size: A4;
+                    }
+                    body {
+                        margin: 0;
+                        padding: 0;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            ${receiptHTML}
+        </body>
+        </html>
+    `);
+
+    printWindow.document.close();
+
+    // Wait for content to load, then print
+    printWindow.onload = function() {
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+    };
+}
+
+/**
+ * Email draft by index
+ */
+function emailDraftByIndex(draftIndex) {
+    const draft = SaleState.drafts[draftIndex];
+    if (!draft) {
+        showError('Draft not found');
+        return;
+    }
+
+    // TODO: Implement email functionality
+    showToast('Email feature coming soon', 'info');
+}
 // Export functions
 window.showDraftPreview = showDraftPreview;
 window.printDraftPreview = printDraftPreview;
+window.printDraftByIndex = printDraftByIndex;  // ← ADD THIS
+window.emailDraftByIndex = emailDraftByIndex;
 
 // Override displayDraftsList
 if (typeof displayDraftsList !== 'undefined') {

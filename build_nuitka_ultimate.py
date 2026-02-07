@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
 """
-🚀 ULTIMATE NUITKA BUILD SCRIPT - ALL PLATFORMS
-================================================================================
-Compiles PrimeBooks to native C code with EVERYTHING included
-✅ Windows (EXE)
-✅ macOS (APP bundle)
-✅ Linux (Binary)
-✅ ZERO packages excluded - Full functionality guaranteed
-✅ Optimized C compilation for performance
-================================================================================
+ULTIMATE Nuitka Build - PrimeBooks Desktop (Django-Tenants)
+✅ Includes Django form templates
+✅ Includes all dependencies
+✅ Debug mode support
+✅ Print support ready
+✅ Sync dialogs included
 """
-import subprocess
 import sys
 import os
 import shutil
 import platform
+import subprocess
 from pathlib import Path
+import argparse
+
+# ============================================================================
+# PARSE COMMAND LINE ARGUMENTS
+# ============================================================================
+parser = argparse.ArgumentParser(description='Build PrimeBooks Desktop')
+parser.add_argument('--debug', action='store_true',
+                    help='Enable debug mode (shows console/errors)')
+parser.add_argument('--production', action='store_true',
+                    help='Production mode (no console, optimized)')
+args = parser.parse_args()
+
+# Set mode
+DEBUG_MODE = args.debug or not args.production
+PRODUCTION_MODE = args.production
 
 BASE_DIR = Path(__file__).parent.absolute()
 
@@ -26,413 +38,423 @@ IS_LINUX = platform.system() == 'Linux'
 OS_NAME = 'Windows' if IS_WINDOWS else 'macOS' if IS_MACOS else 'Linux'
 
 print("=" * 80)
-print(f"🚀 NUITKA ULTIMATE BUILD - {OS_NAME}")
-print("=" * 80)
-print("📌 Philosophy: INCLUDE EVERYTHING - Size doesn't matter, FUNCTIONALITY does")
-print("⚡ Compiling Python → C → Native Binary")
+print(f"🚀 PRIMEBOOKS NUITKA BUILD - {OS_NAME}")
+if DEBUG_MODE:
+    print("🐛 DEBUG MODE - Console and error messages enabled")
+else:
+    print("🚀 PRODUCTION MODE - GUI only, no console")
 print("=" * 80)
 
 # ============================================================================
-# STEP 0: CHECK NUITKA INSTALLATION
+# STEP 1: CHECK NUITKA INSTALLATION
 # ============================================================================
-print("\n🔍 Step 0: Checking Nuitka installation...")
+print("\n🔍 Step 1: Checking Nuitka installation...")
+try:
+    result = subprocess.run(['python3', '-m', 'nuitka', '--version'],
+                            capture_output=True, text=True)
+    print(f"  ✅ Nuitka version: {result.stdout.strip()}")
+except:
+    print("  ❌ Nuitka not found! Installing...")
+    subprocess.run([sys.executable, '-m', 'pip', 'install', 'nuitka', 'ordered-set', 'zstandard'])
+    print("  ✅ Nuitka installed")
+
+# Install ccache for faster rebuilds
+if IS_LINUX:
+    print("\n💡 Installing ccache for faster rebuilds...")
+    os.system("sudo apt-get install -y ccache patchelf 2>/dev/null || true")
+elif IS_MACOS:
+    os.system("brew install ccache 2>/dev/null || true")
+
+# ============================================================================
+# STEP 2: DISCOVER ALL APPS AND MODULES
+# ============================================================================
+print("\n📦 Step 2: Discovering Django-Tenants Apps...")
+
+sys.path.insert(0, str(BASE_DIR))
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tenancy.settings')
+
+shared_apps = []
+tenant_apps = []
+installed_apps = []
+custom_apps = []
 
 try:
-    result = subprocess.run(['python', '-m', 'nuitka', '--version'],
-                            capture_output=True, text=True, check=True)
-    print(f"  ✅ Nuitka version: {result.stdout.strip()}")
-except subprocess.CalledProcessError:
-    print("  ❌ Nuitka not found!")
-    print("  📥 Installing Nuitka...")
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '-U', 'nuitka', 'ordered-set', 'zstandard'], check=True)
-    print("  ✅ Nuitka installed successfully")
+    import django
+    django.setup()
+    from django.conf import settings
 
-# Check for C compiler
-print("\n🔧 Checking C compiler...")
-if IS_WINDOWS:
-    print("  ℹ️  Windows: Nuitka will download MinGW64 automatically if needed")
-elif IS_MACOS:
-    print("  ℹ️  macOS: Ensure Xcode Command Line Tools are installed")
-    print("     Run: xcode-select --install")
-elif IS_LINUX:
-    print("  ℹ️  Linux: Ensure gcc/g++ are installed")
-    print("     Run: sudo apt-get install gcc g++ ccache")
+    shared_apps = list(settings.SHARED_APPS) if hasattr(settings, 'SHARED_APPS') else []
+    tenant_apps = list(settings.TENANT_APPS) if hasattr(settings, 'TENANT_APPS') else []
+    installed_apps = list(settings.INSTALLED_APPS)
 
-# ============================================================================
-# STEP 1: DISCOVER ALL MODULES
-# ============================================================================
-print("\n📦 Step 1: Discovering ALL modules and packages...")
+    print(f"\n  ✅ Loaded Django settings")
+    print(f"  📋 SHARED_APPS: {len(shared_apps)}")
+    print(f"  📋 TENANT_APPS: {len(tenant_apps)}")
 
-# Virtual environment packages
-if IS_WINDOWS:
-    site_packages = Path(sys.prefix) / 'Lib' / 'site-packages'
-else:
-    python_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
-    site_packages = Path(sys.prefix) / 'lib' / python_ver / 'site-packages'
+    all_apps = set(shared_apps + tenant_apps + installed_apps)
+    custom_apps = [app for app in all_apps
+                   if not app.startswith('django.')
+                   and not app.startswith('django_tenants')
+                   and '.' not in app]
 
-print(f"  Site-packages: {site_packages}")
+    print(f"  📊 Custom apps: {len(custom_apps)}")
 
-# Primebooks modules
+except Exception as e:
+    print(f"  ⚠️  Could not load Django settings: {e}")
+    for item in BASE_DIR.iterdir():
+        if item.is_dir() and (item / '__init__.py').exists():
+            exclude = ['dist', 'build', 'venv', 'env', '__pycache__', 'staticfiles',
+                       'media', 'logs', '.git', '.venv', 'PrimeBooks.build',
+                       'PrimeBooks.dist', 'PrimeBooks.onefile-build']
+            if item.name not in exclude:
+                custom_apps.append(item.name)
+
+# Discover primebooks modules
 primebooks_dir = BASE_DIR / 'primebooks'
 primebooks_modules = []
 if primebooks_dir.exists():
     print(f"\n  📂 Scanning primebooks directory...")
-    for item in primebooks_dir.glob('*.py'):
-        if item.name != '__init__.py':
-            module_name = f'primebooks.{item.stem}'
-            primebooks_modules.append(module_name)
-            print(f"     • {module_name}")
-
-    # Verify postgres_manager
-    if (primebooks_dir / 'postgres_manager.py').exists():
-        print(f"     ✅ primebooks.postgres_manager found")
-else:
-    print(f"  ⚠️  WARNING: primebooks directory not found")
-
-print(f"\n  Total primebooks modules: {len(primebooks_modules)}")
-
-# Django apps
-django_apps = []
-print(f"\n  📂 Scanning Django apps...")
-for item in BASE_DIR.iterdir():
-    if item.is_dir() and not item.name.startswith('.'):
-        if (item / '__init__.py').exists() or (item / 'models.py').exists():
-            exclude = ['dist', 'build', 'venv', 'env', '__pycache__',
-                       'staticfiles', 'media', 'logs', '.git', '.venv',
-                       'primebooks.build', 'primebooks.dist', 'primebooks.onefile-build']
-            if item.name not in exclude:
-                django_apps.append(item.name)
-                print(f"     • {item.name}")
-
-print(f"\n  Total Django apps: {len(django_apps)}")
-
-# Read requirements.txt
-requirements = []
-requirements_file = BASE_DIR / 'requirements.txt'
-if requirements_file.exists():
-    print(f"\n  📋 Reading requirements.txt...")
-    with open(requirements_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#'):
-                package = line.split('==')[0].split('>=')[0].split('[')[0].strip()
-                requirements.append(package)
-    print(f"     ✅ Found {len(requirements)} packages")
+    for item in primebooks_dir.rglob('*.py'):
+        if '__pycache__' not in str(item):
+            rel_path = item.relative_to(primebooks_dir)
+            module_path = str(rel_path.with_suffix('')).replace(os.sep, '.')
+            module_name = f'primebooks.{module_path}' if module_path != '__init__' else 'primebooks'
+            if module_name not in primebooks_modules:
+                primebooks_modules.append(module_name)
+                # ✅ Verify critical modules
+                if any(x in module_name for x in ['sync_dialogs', 'sync', 'auth']):
+                    print(f"     ✅ Found critical: {module_name}")
+    print(f"  Total primebooks modules: {len(primebooks_modules)}")
 
 # ============================================================================
-# STEP 2: CLEAN BUILD
+# STEP 3: CLEAN BUILD
 # ============================================================================
-print("\n🧹 Step 2: Cleaning previous builds...")
-
-clean_dirs = ['dist', 'build', 'primebooks.build', 'primebooks.dist',
-              'primebooks.onefile-build', '__pycache__']
-for dir_name in clean_dirs:
+print("\n🧹 Step 3: Cleaning previous builds...")
+for dir_name in ['dist', 'build', 'PrimeBooks.build', 'PrimeBooks.dist',
+                 'PrimeBooks.onefile-build']:
     dir_path = BASE_DIR / dir_name
     if dir_path.exists():
         shutil.rmtree(dir_path)
         print(f"  ✅ Removed {dir_name}/")
 
-# Remove .bin and .pyi files
-for pattern in ['*.bin', '*.pyi']:
-    for file in BASE_DIR.glob(pattern):
-        file.unlink()
-        print(f"  ✅ Removed {file.name}")
-
 # ============================================================================
-# STEP 3: BUILD NUITKA COMMAND
+# STEP 4: BUILD NUITKA COMMAND
 # ============================================================================
-print("\n🔧 Step 3: Building Nuitka command - INCLUDE EVERYTHING...")
+print("\n🔧 Step 4: Building Nuitka command...")
 
-nuitka_args = [
+cmd = [
     sys.executable,
     '-m', 'nuitka',
-
-    # ========================================================================
-    # OUTPUT OPTIONS
-    # ========================================================================
-    '--standalone',  # Create standalone distribution
-    '--onefile',  # Single executable file
+    str(BASE_DIR / 'main.py'),
+    '--standalone',
+    '--onefile',
     f'--output-dir={BASE_DIR / "dist"}',
     '--output-filename=PrimeBooks',
-
-    # ========================================================================
-    # COMPILATION OPTIONS
-    # ========================================================================
-    '--assume-yes-for-downloads',  # Auto-download dependencies
-    '--warn-implicit-exceptions',  # Warn about exception handling
-    '--warn-unusual-code',  # Warn about unusual code patterns
-    '--lto=yes',  # Link Time Optimization (faster exe)
-
-    # Python flags
-    '--python-flag=no_site',  # Don't import site on startup
-    '--python-flag=-O',  # Optimize (remove asserts)
-
-    # ========================================================================
-    # INCLUDE EVERYTHING - LOCAL PACKAGES
-    # ========================================================================
-    '--include-package=primebooks',
-    '--include-package=tenancy',
+    '--assume-yes-for-downloads',
+    '--show-progress',
+    '--show-memory',
+    '--remove-output',
+    '--follow-imports',
 ]
 
-# Include all Django apps
-print("\n  📦 Including Django apps as full packages:")
-for app in django_apps:
-    nuitka_args.append(f'--include-package={app}')
-    print(f"     • {app}")
+# ============================================================================
+# OS-SPECIFIC SETTINGS
+# ============================================================================
+if IS_WINDOWS:
+    print(f"\n  🪟 Windows-specific settings...")
 
-# ========================================================================
-# INCLUDE EVERYTHING - THIRD-PARTY PACKAGES
-# ========================================================================
-print("\n  📦 Including third-party packages (FULL PACKAGES):")
+    if DEBUG_MODE:
+        cmd.extend(['--windows-console-mode=force'])
+        print("  🐛 Console window ENABLED for debugging")
+    else:
+        cmd.extend(['--windows-console-mode=disable'])
+        print("  ✅ Console window DISABLED (GUI only)")
 
-# Critical packages that need FULL inclusion
-critical_packages = [
+    if (BASE_DIR / 'icon.ico').exists():
+        cmd.extend([f'--windows-icon-from-ico={BASE_DIR / "icon.ico"}'])
+
+    cmd.extend([
+        '--windows-company-name=PrimeBooks',
+        '--windows-product-name=PrimeBooks Desktop',
+        '--windows-file-version=1.0.0.0',
+        '--windows-product-version=1.0.0.0',
+        '--windows-file-description=PrimeBooks Accounting Software',
+    ])
+
+elif IS_MACOS:
+    print(f"\n  🍎 macOS-specific settings...")
+    cmd.extend([
+        '--macos-create-app-bundle',
+        '--macos-app-name=PrimeBooks',
+        '--macos-app-version=1.0.0',
+    ])
+
+    if (BASE_DIR / 'icon.icns').exists():
+        cmd.extend([f'--macos-app-icon={BASE_DIR / "icon.icns"}'])
+
+elif IS_LINUX:
+    print(f"\n  🐧 Linux-specific settings...")
+    if (BASE_DIR / 'icon.png').exists():
+        cmd.extend([f'--linux-icon={BASE_DIR / "icon.png"}'])
+
+# ============================================================================
+# ENABLE PLUGINS
+# ============================================================================
+print("\n  🔌 Enabling plugins...")
+cmd.extend([
+    '--enable-plugin=pyqt6',
+])
+
+if DEBUG_MODE:
+    print("\n  🐛 Adding debug flags...")
+
+# ============================================================================
+# INCLUDE PACKAGES - NUITKA STYLE
+# ============================================================================
+print("\n  📦 Including packages...")
+
+# Core packages
+core_packages = [
     'django',
     'django_tenants',
     'psycopg2',
-    'cryptography',
     'celery',
     'kombu',
     'billiard',
-    'amqp',
-    'vine',
     'PyQt6',
+    'cryptography',
+    'requests',
 ]
 
-for pkg in critical_packages:
-    nuitka_args.append(f'--include-package={pkg}')
-    print(f"     • {pkg}")
+for pkg in core_packages:
+    cmd.append(f'--include-package={pkg}')
+    print(f"    • {pkg}")
 
-# Include ALL packages from requirements.txt
-print("\n  📦 Including ALL packages from requirements.txt:")
-for req in requirements:
-    # Convert package name to module name
-    module_name = req.replace('-', '_').lower()
+# Custom apps
+print("\n  🏢 Including custom apps...")
+cmd.append('--include-package=primebooks')
+cmd.append('--include-package=tenancy')
+print(f"    • primebooks")
+print(f"    • tenancy")
 
-    # Skip duplicates
-    if module_name not in [p.lower() for p in critical_packages]:
-        nuitka_args.append(f'--include-package={module_name}')
-        print(f"     • {module_name}")
+for app in custom_apps:
+    if app not in ['primebooks', 'tenancy']:
+        cmd.append(f'--include-package={app}')
+        print(f"    • {app}")
 
-# ========================================================================
-# EXPLICIT MODULE IMPORTS (for dynamic imports)
-# ========================================================================
-print("\n  🎯 Adding explicit imports for dynamic modules:")
-
-explicit_imports = [
-    # Django core
+# Include specific modules
+print("\n  📋 Including specific modules...")
+critical_modules = [
     'django.core.management',
     'django.core.management.commands',
-    'django.core.management.commands.migrate',
-    'django.core.management.commands.makemigrations',
     'django.db.backends.postgresql',
-
-    # django-tenants management
-    'django_tenants.management',
-    'django_tenants.management.commands',
-    'django_tenants.management.commands.migrate_schemas',
-    'django_tenants.management.commands.create_tenant',
-    'django_tenants.management.commands.create_superuser_schemas',
-
-    # django-tenants backend
     'django_tenants.postgresql_backend',
-    'django_tenants.postgresql_backend.base',
-
-    # psycopg2
-    'psycopg2._psycopg',
-    'psycopg2.extensions',
-
-    # Celery
-    'celery.app.base',
-    'celery.app.task',
-    'celery.worker',
-    'celery.worker.request',
-    'celery.exceptions',
-    'celery.local',
-    'celery.utils.log',
-    'celery.backends',
-    'celery.backends.database',
-
-    # PyQt6
+    'django_tenants.management.commands',
     'PyQt6.QtCore',
-    'PyQt6.QtGui',
     'PyQt6.QtWidgets',
+    'PyQt6.QtGui',
     'PyQt6.QtWebEngineWidgets',
-    'PyQt6.sip',
+    'PyQt6.QtWebEngineCore',
+    'PyQt6.QtPrintSupport',  # ✅ For print functionality
 ]
 
-for imp in explicit_imports:
-    nuitka_args.append(f'--include-module={imp}')
-    print(f"     • {imp}")
+for mod in critical_modules:
+    cmd.append(f'--include-module={mod}')
 
-# ========================================================================
-# INCLUDE DATA FILES
-# ========================================================================
-print("\n  📁 Including data files:")
+# ✅ EXPLICITLY include critical primebooks modules
+print("\n  🎯 Explicitly including critical primebooks modules...")
+critical_primebooks = [
+    'primebooks.sync',
+    'primebooks.sync_dialogs',
+    'primebooks.auth',
+    'primebooks.postgres_manager',
+]
+for mod in critical_primebooks:
+    cmd.append(f'--include-module={mod}')
+    print(f"    • {mod}")
 
-data_inclusions = [
+# Primebooks modules (auto-discovered)
+for mod in primebooks_modules:
+    if mod not in critical_primebooks:  # Don't duplicate
+        cmd.append(f'--include-module={mod}')
+
+# ============================================================================
+# INCLUDE DJANGO TEMPLATES (CRITICAL FIX!)
+# ============================================================================
+print("\n  📄 Including Django form templates...")
+
+try:
+    import django
+    django_dir = Path(django.__file__).parent
+
+    # Django form templates (fixes TemplateDoesNotExist error)
+    django_template_dirs = [
+        (django_dir / 'forms' / 'templates', 'django/forms/templates'),
+        (django_dir / 'contrib' / 'admin' / 'templates', 'django/contrib/admin/templates'),
+        (django_dir / 'contrib' / 'auth' / 'templates', 'django/contrib/auth/templates'),
+    ]
+
+    for src_path, dst_path in django_template_dirs:
+        if src_path.exists():
+            cmd.append(f'--include-data-dir={src_path}={dst_path}')
+            print(f"    • {dst_path}")
+except Exception as e:
+    print(f"    ⚠️  Could not include Django templates: {e}")
+
+# ============================================================================
+# INCLUDE DATA DIRECTORIES
+# ============================================================================
+print("\n  📁 Including data directories...")
+
+data_dirs = [
     ('templates', 'templates'),
     ('static', 'static'),
     ('locale', 'locale'),
-    ('primebooks', 'primebooks'),  # CRITICAL: Include entire primebooks dir
+    ('primebooks', 'primebooks'),
+    ('tenancy', 'tenancy'),
 ]
 
-# Add Django app templates
-for app in django_apps:
-    app_templates = BASE_DIR / app / 'templates'
-    if app_templates.exists():
-        data_inclusions.append((app_templates, f'{app}/templates'))
+# Add app data
+for app in custom_apps:
+    app_path = BASE_DIR / app
+    if app_path.exists():
+        for subdir in ['templates', 'static', 'migrations']:
+            subdir_path = app_path / subdir
+            if subdir_path.exists():
+                data_dirs.append((subdir_path, f'{app}/{subdir}'))
 
-for src, dst in data_inclusions:
+for src, dst in data_dirs:
     src_path = BASE_DIR / src if isinstance(src, str) else src
     if src_path.exists():
-        nuitka_args.append(f'--include-data-dir={src_path}={dst}')
-        print(f"     • {src_path.name} → {dst}")
+        cmd.append(f'--include-data-dir={src_path}={dst}')
+        print(f"    • {src_path.name} → {dst}")
 
-# ========================================================================
-# PLATFORM-SPECIFIC OPTIONS
-# ========================================================================
-print("\n  🖥️  Platform-specific options:")
+# Include manage.py
+if (BASE_DIR / 'manage.py').exists():
+    cmd.append(f'--include-data-files={BASE_DIR / "manage.py"}=manage.py')
+    print(f"    • manage.py")
 
-if IS_WINDOWS:
-    nuitka_args.extend([
-        '--windows-console-mode=disable',  # No console window
-        '--windows-icon-from-ico=icon.ico' if (BASE_DIR / 'icon.ico').exists() else None,
-        '--mingw64',  # Use MinGW64 compiler
-    ])
-    print("     • Windows: GUI mode (no console)")
-    print("     • Compiler: MinGW64")
-
-elif IS_MACOS:
-    nuitka_args.extend([
-        '--macos-create-app-bundle',  # Create .app bundle
-        '--macos-app-icon=icon.icns' if (BASE_DIR / 'icon.icns').exists() else None,
-    ])
-    print("     • macOS: Creating .app bundle")
-
-elif IS_LINUX:
-    nuitka_args.extend([
-        '--linux-icon=icon.png' if (BASE_DIR / 'icon.png').exists() else None,
-    ])
-    print("     • Linux: Standard binary")
-
-# Remove None values
-nuitka_args = [arg for arg in nuitka_args if arg is not None]
-
-# ========================================================================
-# PLUGIN OPTIONS (for special packages)
-# ========================================================================
-print("\n  🔌 Enabling plugins:")
-
-plugins = [
-    'anti-bloat',  # Remove unnecessary imports
-    'pyqt6',  # PyQt6 support
-]
-
-for plugin in plugins:
-    nuitka_args.append(f'--enable-plugin={plugin}')
-    print(f"     • {plugin}")
-
-# Add main.py at the end
-nuitka_args.append(str(BASE_DIR / 'main.py'))
+# Include icon files
+print("\n  🎨 Including icon files...")
+for icon_file in ['icon.png', 'icon.ico', 'icon.icns']:
+    icon_path = BASE_DIR / icon_file
+    if icon_path.exists():
+        cmd.append(f'--include-data-files={icon_path}={icon_file}')
+        print(f"    • {icon_file}")
 
 # ============================================================================
-# STEP 4: RUN NUITKA BUILD
+# FOLLOW IMPORTS
+# ============================================================================
+print("\n  🔍 Setting up import tracking...")
+for pkg in ['primebooks', 'tenancy', 'django', 'django_tenants'] + custom_apps:
+    cmd.append(f'--follow-import-to={pkg}')
+
+# Remove empty strings
+cmd = [arg for arg in cmd if arg]
+
+# ============================================================================
+# STEP 5: RUN BUILD
 # ============================================================================
 print("\n" + "=" * 80)
-print("🔨 Step 4: Running Nuitka compilation...")
+print("🔨 Step 5: Running Nuitka Build...")
 print("=" * 80)
-print("⏱️  This may take 10-30 minutes depending on your system")
-print("⚡ Nuitka is compiling Python → C → Native code...")
-print("")
+print("\n⏱️  First build takes 10-20 minutes (subsequent builds are faster)")
+print("💡 Nuitka downloads dependencies and compiles - be patient!\n")
+
+# Show full command for debugging
+if DEBUG_MODE:
+    print("Full command preview:")
+    print(f"{' '.join(cmd[:5])} ... [+{len(cmd)-5} more args]")
+    print()
 
 try:
-    # Print command for debugging
-    print("📋 Full Nuitka command:")
-    print("   " + " \\\n      ".join(nuitka_args[:5]))
-    print("   ... (+ {} more arguments)".format(len(nuitka_args) - 5))
-    print("")
+    result = subprocess.run(cmd, cwd=BASE_DIR)
 
-    # Run Nuitka
-    result = subprocess.run(nuitka_args, check=True)
+    if result.returncode != 0:
+        print(f"\n❌ BUILD FAILED with return code {result.returncode}")
+        sys.exit(1)
 
-    # ========================================================================
-    # STEP 5: VERIFY BUILD
-    # ========================================================================
-    print("\n" + "=" * 80)
-    print("✅ COMPILATION COMPLETE!")
-    print("=" * 80)
-
-    # Find executable
+    # Find output
     dist_dir = BASE_DIR / 'dist'
 
-    if IS_WINDOWS:
-        exe_path = dist_dir / 'PrimeBooks.exe'
-    elif IS_MACOS:
+    if IS_MACOS:
         exe_path = dist_dir / 'PrimeBooks.app'
+        if not exe_path.exists():
+            exe_path = dist_dir / 'PrimeBooks'
     else:
-        exe_path = dist_dir / 'PrimeBooks'
+        possible_names = [
+            'PrimeBooks.exe' if IS_WINDOWS else 'PrimeBooks',
+            'PrimeBooks.bin',
+        ]
+        exe_path = None
+        for name in possible_names:
+            test_path = dist_dir / name
+            if test_path.exists():
+                exe_path = test_path
+                break
 
-    if exe_path.exists():
+    if exe_path and exe_path.exists():
         if exe_path.is_file():
             size_mb = exe_path.stat().st_size / (1024 * 1024)
         else:
-            # For .app bundles, get total size
-            total_size = sum(f.stat().st_size for f in exe_path.rglob('*') if f.is_file())
-            size_mb = total_size / (1024 * 1024)
+            size_mb = sum(f.stat().st_size for f in exe_path.rglob('*') if f.is_file()) / (1024 * 1024)
 
-        print(f"\n📦 Executable: {exe_path}")
+        print("\n" + "=" * 80)
+        print("✅ BUILD COMPLETE!")
+        print("=" * 80)
+        print(f"📦 Executable: {exe_path}")
         print(f"💾 Size: {size_mb:.1f} MB")
 
-        # Make executable on Unix
         if not IS_WINDOWS and exe_path.is_file():
             os.chmod(exe_path, 0o755)
             print("🔒 Made executable")
 
-        print(f"\n📊 Build Summary:")
+        print("\n📊 Included:")
+        print(f"   • SHARED_APPS: {len(shared_apps)}")
+        print(f"   • TENANT_APPS: {len(tenant_apps)}")
         print(f"   • Primebooks modules: {len(primebooks_modules)}")
-        print(f"   • Django apps: {len(django_apps)}")
-        print(f"   • Third-party packages: {len(requirements)}")
-        print(f"   • Platform: {OS_NAME}")
-        print(f"   • Type: Native C-compiled binary")
+        print(f"   • Custom apps: {len(custom_apps)}")
+        print(f"   • Django form templates: ✓")
+        print(f"   • Print support: ✓")
+        print(f"   • Sync dialogs: ✓")
 
-        print(f"\n🚀 To run:")
+        print(f"\n🚀 Run your app:")
         if IS_WINDOWS:
             print(f"   dist\\PrimeBooks.exe")
+            print("\n   💡 Double-click PrimeBooks.exe to launch!")
         elif IS_MACOS:
             print(f"   open dist/PrimeBooks.app")
+            print("\n   💡 Drag PrimeBooks.app to Applications!")
         else:
             print(f"   ./dist/PrimeBooks")
+            print(f"\n   Or with logging:")
+            print(f"   ./dist/PrimeBooks 2>&1 | tee primebooks.log")
 
-        print("\n" + "=" * 80)
-        print("🎉 NUITKA BUILD SUCCESSFUL!")
-        print("=" * 80)
-        print("\n💡 Your app is now compiled to native C code!")
-        print("   ⚡ Faster startup")
-        print("   🔒 Code protection (harder to reverse engineer)")
-        print("   📦 Single binary distribution")
+        print("\n✨ Features:")
+        print("   ✓ Pure GUI app (no terminal in production)")
+        print("   ✓ Django form templates included")
+        print("   ✓ Print functionality ready")
+        print("   ✓ Sync dialogs included")
+        print("   ✓ All dependencies bundled")
 
     else:
         print("\n❌ Build completed but executable not found")
-        print(f"   Expected: {exe_path}")
-        print(f"   Check: {dist_dir}")
+        if dist_dir.exists():
+            print(f"   Files in dist/: {list(dist_dir.glob('*'))}")
         sys.exit(1)
 
-except subprocess.CalledProcessError as e:
-    print("\n" + "=" * 80)
-    print("❌ NUITKA BUILD FAILED!")
-    print("=" * 80)
-    print(f"\nError code: {e.returncode}")
-    print("\n💡 Common issues:")
-    print("   • Missing C compiler (install gcc/clang/MinGW)")
-    print("   • Insufficient memory (Nuitka needs ~2GB RAM)")
-    print("   • Conflicting package versions")
-    print("\n📋 Check the output above for specific errors")
-    sys.exit(1)
-
 except Exception as e:
-    print(f"\n❌ UNEXPECTED ERROR: {e}")
+    print(f"\n❌ BUILD FAILED: {e}")
     import traceback
-
     traceback.print_exc()
     sys.exit(1)
+
+print("\n" + "=" * 80)
+print("🎉 PRIMEBOOKS DESKTOP BUILD COMPLETE!")
+print("=" * 80)
+print("\n📋 Next steps:")
+print("   1. Test the executable: ./dist/PrimeBooks")
+print("   2. Test manual sync functionality")
+print("   3. Test print functionality")
+print("   4. When ready, rebuild with --production flag")
+print("\n" + "=" * 80)

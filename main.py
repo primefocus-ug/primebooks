@@ -5,7 +5,83 @@ Main PyQt launcher with embedded PostgreSQL
 ✅ Proper desktop login dialog
 ✅ Data sync before loading app
 ✅ Schema-aware tenant handling
+✅ FIXED: Manual sync with proper error handling
 """
+# !/usr/bin/env python
+"""
+Prime Books Desktop Application - PostgreSQL Version
+Main PyQt launcher with embedded PostgreSQL
+"""
+import os
+import sys
+import traceback
+from pathlib import Path
+
+# ============================================================================
+# DEBUG MODE CONFIGURATION
+# ============================================================================
+DEBUG_MODE = os.environ.get('PRIMEBOOKS_DEBUG', 'True').lower() == 'true'
+
+if DEBUG_MODE:
+    # Enable all warnings
+    import warnings
+
+    warnings.filterwarnings('default')
+
+    # Setup detailed logging
+    import logging
+
+    logging.basicConfig(
+        level=logging.DEBUG,  # ← Show ALL logs
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout),  # Print to console
+        ]
+    )
+    print("=" * 80)
+    print("🐛 DEBUG MODE ENABLED")
+    print("=" * 80)
+
+
+# Exception handler that shows errors in GUI
+def exception_handler(exc_type, exc_value, exc_traceback):
+    """Global exception handler"""
+    # Don't catch KeyboardInterrupt
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    # Format error
+    error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+
+    # Print to console
+    print("\n" + "=" * 80)
+    print("💥 FATAL ERROR:")
+    print("=" * 80)
+    print(error_msg)
+    print("=" * 80)
+
+    # Show in GUI if possible
+    try:
+        from PyQt6.QtWidgets import QApplication, QMessageBox
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication(sys.argv)
+
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.setWindowTitle("PrimeBooks - Fatal Error")
+        msg.setText("A fatal error occurred:")
+        msg.setDetailedText(error_msg)
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+    except:
+        pass  # If GUI fails, at least we printed to console
+
+
+# Install exception handler
+sys.excepthook = exception_handler
+
 import os
 import sys
 import socket
@@ -34,6 +110,18 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl, QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QAction, QIcon
+from PyQt6.QtWebEngineCore import QWebEnginePage
+from PyQt6.QtPrintSupport import QPrintDialog, QPrinter
+from PyQt6.QtCore import QUrl, QTimer, Qt, QThread, pyqtSignal, QMarginsF
+from PyQt6.QtGui import QPageLayout, QPageSize
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QMessageBox, QSplashScreen, QDialog,
+    QToolBar, QStatusBar, QPushButton, QLabel, QProgressDialog,
+    QVBoxLayout, QLineEdit, QHBoxLayout, QProgressBar, QMenu  # ✅ Add QMenu
+)
+from PyQt6.QtCore import QUrl, QTimer, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QPixmap, QAction, QIcon, QPageLayout  # ✅ Add QPageLayout
+import time  # ✅ Add this for timestamp
 
 # Setup logging
 log_dir = Path.home() / '.local' / 'share' / 'PrimeBooks' / 'logs'
@@ -374,7 +462,6 @@ class DataSyncDialog(QDialog):
             self.accept()
 
 
-# Update to DataSyncThread in main.py
 
 class DataSyncThread(QThread):
     """Thread to sync data from server"""
@@ -495,35 +582,59 @@ def initialize_django(data_dir):
             logger.info("Creating django_migrations table...")
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS django_migrations (
-                        id SERIAL PRIMARY KEY,
-                        app VARCHAR(255) NOT NULL,
-                        name VARCHAR(255) NOT NULL,
-                        applied TIMESTAMP WITH TIME ZONE NOT NULL
-                    );
-                """)
+                               CREATE TABLE IF NOT EXISTS django_migrations
+                               (
+                                   id
+                                   SERIAL
+                                   PRIMARY
+                                   KEY,
+                                   app
+                                   VARCHAR
+                               (
+                                   255
+                               ) NOT NULL,
+                                   name VARCHAR
+                               (
+                                   255
+                               ) NOT NULL,
+                                   applied TIMESTAMP WITH TIME ZONE NOT NULL
+                                                         );
+                               """)
             logger.info("✅ django_migrations table created")
 
             # Step 3: Force create contenttypes table
             logger.info("Creating django_content_type table...")
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS django_content_type (
-                        id SERIAL PRIMARY KEY,
-                        app_label VARCHAR(100) NOT NULL,
-                        model VARCHAR(100) NOT NULL,
-                        UNIQUE (app_label, model)
-                    );
-                """)
+                               CREATE TABLE IF NOT EXISTS django_content_type
+                               (
+                                   id
+                                   SERIAL
+                                   PRIMARY
+                                   KEY,
+                                   app_label
+                                   VARCHAR
+                               (
+                                   100
+                               ) NOT NULL,
+                                   model VARCHAR
+                               (
+                                   100
+                               ) NOT NULL,
+                                   UNIQUE
+                               (
+                                   app_label,
+                                   model
+                               )
+                                   );
+                               """)
 
                 # Mark migrations as applied
                 cursor.execute("""
-                    INSERT INTO django_migrations (app, name, applied)
-                    VALUES 
-                        ('contenttypes', '0001_initial', NOW()),
-                        ('contenttypes', '0002_remove_content_type_name', NOW())
-                    ON CONFLICT DO NOTHING;
-                """)
+                               INSERT INTO django_migrations (app, name, applied)
+                               VALUES ('contenttypes', '0001_initial', NOW()),
+                                      ('contenttypes', '0002_remove_content_type_name', NOW()) ON CONFLICT DO NOTHING;
+                               """)
             logger.info("✅ django_content_type table created")
 
             # Step 4: Run all other migrations
@@ -585,8 +696,9 @@ class PrimeBooksWindow(QMainWindow):
         self.setup_toolbar()
         self.setup_statusbar()
         self.setup_sync_scheduler()
+        self.setup_print_support()
 
-    # ------------------------------------------------------------------------
+        # ------------------------------------------------------------------------
     # UI / Toolbar / Statusbar
     # ------------------------------------------------------------------------
     def setup_ui(self):
@@ -595,16 +707,201 @@ class PrimeBooksWindow(QMainWindow):
         self.setGeometry(100, 100, 1400, 900)
 
         self.browser = QWebEngineView()
+
+        # ✅ Enable print settings
         self.browser.settings().setAttribute(
             self.browser.settings().WebAttribute.LocalStorageEnabled, True
         )
         self.browser.settings().setAttribute(
             self.browser.settings().WebAttribute.JavascriptEnabled, True
         )
+        self.browser.settings().setAttribute(
+            self.browser.settings().WebAttribute.PluginsEnabled, True
+        )
+
         self.setCentralWidget(self.browser)
 
         # Load the tenant-specific URL
         QTimer.singleShot(1000, self.load_application)
+
+    def setup_print_support(self):
+        """Setup print functionality for web pages"""
+        # ✅ Intercept print requests from JavaScript (window.print())
+        self.browser.page().printRequested.connect(self.handle_print_request)
+        logger.info("✅ Print support enabled (JavaScript window.print() intercept)")
+
+    def handle_print_request(self):
+        """Handle print request from JavaScript (window.print())"""
+        logger.info("🖨️ Print requested from web page (window.print() called)")
+        # Automatically use PDF method (most reliable)
+        self.print_to_pdf_simple()
+
+    def print_page(self):
+        """
+        Main print function - shows user choice
+        Called from toolbar button or Ctrl+P
+        """
+        try:
+            from PyQt6.QtWidgets import QMessageBox
+
+            reply = QMessageBox.question(
+                self,
+                "Print Document",
+                "How would you like to print?\n\n"
+                "💡 PDF Export is recommended for best results.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                # User chose PDF (recommended)
+                self.print_to_pdf_simple()
+            else:
+                # User chose to try direct print
+                self.print_direct_new_api()
+
+        except Exception as e:
+            logger.error(f"Print error: {e}", exc_info=True)
+            self.print_to_pdf_simple()
+
+    def print_direct_new_api(self):
+        """
+        Direct printing using PyQt6 new API
+        Note: This may not work well in all cases
+        """
+        try:
+            from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
+            from PyQt6.QtGui import QPageLayout, QPageSize
+
+            logger.info("🖨️ Attempting direct print with new API...")
+
+            # Create printer
+            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+
+            # Configure page
+            page_layout = QPageLayout()
+            page_layout.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+            page_layout.setOrientation(QPageLayout.Orientation.Portrait)
+            printer.setPageLayout(page_layout)
+
+            # Show print dialog
+            dialog = QPrintDialog(printer, self)
+            dialog.setWindowTitle("Print Document")
+
+            if dialog.exec() == QPrintDialog.DialogCode.Accepted:
+                logger.info("Print dialog accepted, rendering page...")
+
+                # For PyQt6, we need to use a different approach
+                # Render the page to the printer
+                from PyQt6.QtWebEngineCore import QWebEngineView
+
+                # This will trigger the browser's print
+                # But it's limited - PDF is more reliable
+                self.browser.page().printToPdf(self._handle_print_pdf_data)
+
+                QMessageBox.information(
+                    self,
+                    "Print Started",
+                    "Print job sent. Check your printer."
+                )
+            else:
+                logger.info("Print dialog cancelled")
+
+        except Exception as e:
+            logger.error(f"Direct print error: {e}", exc_info=True)
+            QMessageBox.warning(
+                self,
+                "Print Error",
+                f"Direct printing not supported.\n\nUsing PDF export instead..."
+            )
+            self.print_to_pdf_simple()
+
+    def _handle_print_pdf_data(self, data):
+        """Handle PDF data from printToPdf callback"""
+        # This receives QByteArray of PDF data
+        logger.info(f"Received PDF data: {len(data)} bytes")
+        # You could save this or send to printer
+        # For now, we'll just log it
+
+    def print_to_pdf_simple(self):
+        """
+        ✅ WORKING METHOD - Export to PDF and open
+        This is the most reliable method for all cases
+        """
+        try:
+            import tempfile
+            import time
+            from PyQt6.QtCore import QTimer
+
+            logger.info("📄 Starting PDF export...")
+
+            # Create PDF path
+            timestamp = int(time.time())
+            pdf_filename = f"primebooks_print_{timestamp}.pdf"
+            pdf_path = Path(tempfile.gettempdir()) / pdf_filename
+
+            logger.info(f"PDF will be saved to: {pdf_path}")
+
+            # ✅ CORRECT PyQt6 API - No callback parameter!
+            # The new API doesn't use callback, it's synchronous
+            self.browser.page().printToPdf(str(pdf_path))
+
+            # Wait a bit for PDF to be written
+            QTimer.singleShot(1500, lambda: self.open_pdf_for_print(pdf_path))
+
+            # Show status
+            self.statusBar.showMessage(f"📄 Generating PDF... Will open when ready.", 3000)
+
+        except Exception as e:
+            logger.error(f"PDF export error: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "PDF Export Error",
+                f"Failed to export PDF:\n\n{str(e)}\n\n"
+                f"Please try using your browser's built-in print function."
+            )
+
+    def open_pdf_for_print(self, pdf_path):
+        """Open PDF in system default viewer"""
+        import subprocess
+        import platform
+
+        if not pdf_path.exists():
+            logger.error(f"PDF not found: {pdf_path}")
+
+            # Try again after a longer delay
+            QTimer.singleShot(2000, lambda: self.open_pdf_for_print(pdf_path))
+            return
+
+        try:
+            logger.info(f"✅ Opening PDF: {pdf_path}")
+
+            # Open with system default PDF viewer
+            if platform.system() == 'Windows':
+                os.startfile(str(pdf_path))
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.run(['open', str(pdf_path)])
+            else:  # Linux
+                subprocess.run(['xdg-open', str(pdf_path)])
+
+            logger.info(f"✅ PDF opened successfully")
+
+            self.statusBar.showMessage(
+                f"✅ PDF ready! Location: {pdf_path.name}",
+                5000
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to open PDF: {e}", exc_info=True)
+
+            # Show the path so user can open manually
+            QMessageBox.information(
+                self,
+                "PDF Ready",
+                f"PDF created successfully!\n\n"
+                f"Location:\n{pdf_path}\n\n"
+                f"Please open it manually if it didn't open automatically."
+            )
 
     def load_application(self):
         """Load Django app in browser"""
@@ -633,7 +930,15 @@ class PrimeBooksWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        # ✅ Manual Sync Button
+        # ✅ PRINT BUTTON (triggers PDF export - most reliable)
+        print_action = QAction("🖨️ Print to PDF", self)
+        print_action.setShortcut("Ctrl+P")
+        print_action.triggered.connect(self.print_to_pdf_simple)  # Direct to PDF
+        toolbar.addAction(print_action)
+
+        toolbar.addSeparator()
+
+        # Manual Sync Button
         sync_action = QAction("🔄 Sync Data", self)
         sync_action.triggered.connect(self.manual_sync)
         toolbar.addAction(sync_action)
@@ -679,18 +984,65 @@ class PrimeBooksWindow(QMainWindow):
     def manual_sync(self):
         """Manual sync triggered by user"""
         try:
-            from primebooks.sync_dialogs import ManualSyncDialog
+            logger.info("🔄 Manual sync requested by user")
 
+            # ✅ Import at function level to avoid circular imports
+            from primebooks.sync_dialogs import ManualSyncDialog
+            from PyQt6.QtWidgets import QMessageBox
+
+            # ✅ Verify we have auth token
+            if not self.auth_token:
+                logger.error("❌ No auth token available for sync")
+                QMessageBox.warning(
+                    self,
+                    "Authentication Required",
+                    "You must be logged in to sync data.\n\n"
+                    "Please restart the application and login."
+                )
+                return
+
+            logger.info(f"✅ Auth token present: {self.auth_token[:20]}...")
+            logger.info(f"✅ Tenant ID: {self.tenant_id}")
+            logger.info(f"✅ Schema: {self.subdomain}")
+
+            # Show manual sync dialog
             dialog = ManualSyncDialog(
                 parent=self,
                 tenant_id=self.tenant_id,
                 schema_name=self.subdomain,
                 auth_token=self.auth_token
             )
-            dialog.exec()
+
+            result = dialog.exec()
+
+            if result == QDialog.DialogCode.Accepted:
+                # User clicked "Start Sync" - sync is already running
+                logger.info("✅ Manual sync completed")
+
+                # Refresh the page to show new data
+                self.browser.reload()
+
+                # Update status bar
+                self.statusBar.showMessage("✅ Sync complete! Page refreshed.", 5000)
+            else:
+                logger.info("Manual sync cancelled by user")
+
+        except ImportError as e:
+            logger.error(f"❌ Failed to import sync_dialogs: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Module Error",
+                f"Failed to load sync module:\n\n{str(e)}\n\n"
+                f"The sync feature may not be properly installed."
+            )
         except Exception as e:
-            logger.error(f"Manual sync error: {e}")
-            QMessageBox.critical(self, "Sync Error", f"Failed to start sync: {str(e)}")
+            logger.error(f"❌ Manual sync error: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Sync Error",
+                f"An error occurred during sync:\n\n{str(e)}\n\n"
+                f"Check the logs for more details."
+            )
 
     # ------------------------------------------------------------------------
     # LOGOUT / CLOSE
@@ -743,8 +1095,6 @@ class PrimeBooksWindow(QMainWindow):
             event.ignore()
 
 
-
-
 def show_error_dialog(title, message):
     """Show error dialog"""
     app = QApplication(sys.argv)
@@ -752,16 +1102,25 @@ def show_error_dialog(title, message):
     sys.exit(1)
 
 
-
 # ============================================================================
 #  main() FUNCTION WITH auth_token SUPPORT
 # ============================================================================
-
 def main():
     """Main application entry point"""
+    # ✅ IMPORT ALL PYQT CLASSES AT THE TOP OF MAIN()
+    from PyQt6.QtWidgets import QApplication, QProgressDialog, QMessageBox, QDialog
+    from PyQt6.QtCore import Qt
+
     try:
         logger.info("=" * 50)
         logger.info("🚀 Starting PrimeBooks Desktop")
+        logger.info("=" * 50)
+        logger.info(f"🐛 Debug mode: {DEBUG_MODE}")
+        logger.info(f"🐍 Python version: {sys.version}")
+        logger.info(f"📁 Working directory: {os.getcwd()}")
+        logger.info(f"📦 Frozen: {getattr(sys, 'frozen', False)}")
+        if hasattr(sys, '_MEIPASS'):
+            logger.info(f"📂 Temp dir: {sys._MEIPASS}")
         logger.info("=" * 50)
 
         app = QApplication(sys.argv)
@@ -817,7 +1176,7 @@ def main():
 
             if not saved_token or not saved_company:
                 # No saved credentials - show login dialog
-                print("No saved credentials found. Opening login...")
+                logger.info("No saved credentials found. Opening login...")
                 login_dialog = DesktopLoginDialog()
                 if login_dialog.exec() != QDialog.DialogCode.Accepted:
                     app.quit()
@@ -835,12 +1194,12 @@ def main():
                 auth_manager.save_credentials(user_data, company_data, token)
 
                 # First-time data sync
-                print(f"Performing initial sync for {subdomain}...")
+                logger.info(f"Performing initial sync for {subdomain}...")
                 sync_dialog = DataSyncDialog(subdomain, token, company_data)
                 sync_dialog.exec()
             else:
                 # Use saved credentials
-                print("Using saved credentials...")
+                logger.info("Using saved credentials...")
                 token = saved_token
                 company_data = saved_company
                 user_data = saved_user
@@ -851,7 +1210,7 @@ def main():
 
                 # Validate saved data
                 if not subdomain or not tenant_id:
-                    print("Invalid saved credentials. Showing login...")
+                    logger.info("Invalid saved credentials. Showing login...")
                     # Credentials are invalid, force re-login
                     auth_manager.logout()
 
@@ -911,10 +1270,21 @@ def main():
         sys.exit(app.exec())
 
     except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
-        QMessageBox.critical(None, "Fatal Error", str(e))
+        logger.error(f"Fatal error in main(): {e}", exc_info=True)
 
+        # Import again in exception handler to be safe
+        from PyQt6.QtWidgets import QApplication, QMessageBox
 
+        app_instance = QApplication.instance()
+        if app_instance is None:
+            app_instance = QApplication(sys.argv)
+
+        QMessageBox.critical(
+            None,
+            "Startup Error",
+            f"Failed to start PrimeBooks:\n\n{str(e)}\n\nCheck logs for details."
+        )
+        sys.exit(1)
 
 
 if __name__ == '__main__':

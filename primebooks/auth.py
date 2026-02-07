@@ -1,9 +1,10 @@
-# primebooks/auth.py - FIXED VERSION
+# primebooks/auth.py - WITH TOKEN REFRESH
 """
-Desktop authentication with PROPER tenant migration
+Desktop authentication with PROPER tenant migration and TOKEN REFRESH
 ✅ Runs migrations in tenant schema (pada)
 ✅ Downloads data from server
 ✅ Creates user in tenant schema
+✅ Refreshes expired tokens automatically
 """
 import requests
 import logging
@@ -15,18 +16,20 @@ from django_tenants.utils import schema_context
 import json
 from primebooks.security.encryption import get_encryption_manager
 from pathlib import Path
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 
 class DesktopAuthManager:
-    """Handles authentication and initial company sync"""
+    """Handles authentication and initial company sync with token refresh"""
 
     def __init__(self):
         # Get server URL with fallback
         self.server_url = getattr(settings, 'SYNC_SERVER_URL', None)
         self.base_domain = getattr(settings, 'BASE_DOMAIN', 'localhost')
         self.auth_token_file = settings.DESKTOP_DATA_DIR / '.auth_token'
+        self.refresh_token_file = settings.DESKTOP_DATA_DIR / '.refresh_token'  # ✅ NEW
         self.user_info_file = settings.DESKTOP_DATA_DIR / '.user_info'
         self.company_info_file = settings.DESKTOP_DATA_DIR / '.company_info'
 
@@ -63,25 +66,31 @@ class DesktopAuthManager:
                 return False, {'error': error_detail}
 
             data = response.json()
-            token = data.get('token')
-            self.save_auth_token(token)
+            access_token = data.get('token')
+            refresh_token = data.get('refresh')  # ✅ Get refresh token
+
+            # Save both tokens
+            self.save_auth_token(access_token)
+            if refresh_token:
+                self.save_refresh_token(refresh_token)
 
             user_info = data.get('user', {})
             self.save_user_info(user_info)
 
-            company = self.fetch_company_details(token, subdomain)
+            company = self.fetch_company_details(access_token, subdomain)
             if not company:
                 return False, {'error': 'Could not fetch company details'}
 
             self.save_company_info(company)
 
             # ✅ CRITICAL: Sync company and run tenant migrations
-            synced_company = self.sync_company_from_server(company, token, subdomain)
+            synced_company = self.sync_company_from_server(company, access_token, subdomain)
             if not synced_company:
                 return False, {'error': 'Failed to sync company data'}
 
             return True, {
-                'token': token,
+                'token': access_token,
+                'refresh': refresh_token,
                 'user': user_info,
                 'company': company
             }
@@ -97,6 +106,85 @@ class DesktopAuthManager:
         except Exception as e:
             logger.error(f"Authentication error: {e}", exc_info=True)
             return False, {'error': f"Unexpected error: {str(e)}"}
+
+    def refresh_access_token(self):
+        """
+        ✅ NEW: Refresh expired access token using refresh token
+        Returns: new access token or None
+        """
+        try:
+            refresh_token = self.get_refresh_token()
+            if not refresh_token:
+                logger.error("No refresh token available")
+                return None
+
+            company_info = self.get_company_info()
+            if not company_info:
+                logger.error("No company info available")
+                return None
+
+            subdomain = company_info.get('schema_name') or company_info.get('subdomain')
+            if not subdomain:
+                logger.error("No subdomain in company info")
+                return None
+
+            # Determine if development mode
+            is_development = settings.DEBUG or self.base_domain == 'localhost'
+
+            # Build refresh URL
+            if is_development:
+                refresh_url = f"http://{subdomain}.localhost:8000/api/token/refresh/"
+            else:
+                refresh_url = f"https://{subdomain}.{self.base_domain}/api/token/refresh/"
+
+            logger.info(f"Refreshing token at {refresh_url}")
+
+            response = requests.post(
+                refresh_url,
+                json={'refresh': refresh_token},
+                timeout=10,
+                verify=not is_development
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Token refresh failed: {response.status_code}")
+                return None
+
+            data = response.json()
+            new_access_token = data.get('access')
+
+            if new_access_token:
+                # Save new access token
+                self.save_auth_token(new_access_token)
+                logger.info("✅ Access token refreshed successfully")
+                return new_access_token
+            else:
+                logger.error("No access token in refresh response")
+                return None
+
+        except Exception as e:
+            logger.error(f"Token refresh error: {e}", exc_info=True)
+            return None
+
+    def get_valid_token(self):
+        """
+        ✅ NEW: Get valid access token, refreshing if necessary
+        Returns: valid access token or None
+        """
+        token = self.get_auth_token()
+
+        if not token:
+            logger.warning("No access token found")
+            return None
+
+        # Try to refresh token (always refresh to be safe)
+        new_token = self.refresh_access_token()
+        if new_token:
+            return new_token
+
+        # If refresh failed, return old token (might still work)
+        logger.warning("Token refresh failed, using old token")
+        return token
 
     def fetch_company_details(self, token, subdomain):
         """Fetch company details from server"""
@@ -151,9 +239,7 @@ class DesktopAuthManager:
             logger.info(f"  Schema: {schema_name}")
             logger.info(f"=" * 70)
 
-            # ─────────────────────────────────────────────
-            # 1️⃣ Create/update company in PUBLIC schema
-            # ─────────────────────────────────────────────
+            # Create/update company in PUBLIC schema
             company, created = Company.objects.update_or_create(
                 company_id=company_id,
                 defaults={
@@ -173,10 +259,8 @@ class DesktopAuthManager:
 
             logger.info(f"✅ Company {'created' if created else 'updated'}: {company.name}")
 
-            # ─────────────────────────────────────────────
-            # 2️⃣ Create/update domain
-            # ─────────────────────────────────────────────
-            domain_name = f"{subdomain}.localhost"  # For desktop, use localhost
+            # Create/update domain
+            domain_name = f"{subdomain}.localhost"
             Domain.objects.update_or_create(
                 domain=domain_name,
                 defaults={'tenant': company, 'is_primary': True}
@@ -184,38 +268,27 @@ class DesktopAuthManager:
 
             logger.info(f"✅ Domain configured: {domain_name}")
 
-            # ─────────────────────────────────────────────
-            # 3️⃣ Create PostgreSQL schema
-            # ─────────────────────────────────────────────
+            # Create PostgreSQL schema
             with connection.cursor() as cursor:
                 cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"')
 
             logger.info(f"✅ Schema created: {schema_name}")
 
-            # ─────────────────────────────────────────────
-            # 4️⃣ RUN MIGRATIONS FOR TENANT SCHEMA ✅✅✅
-            # ─────────────────────────────────────────────
+            # Run migrations for tenant schema
             logger.info(f"🔄 Running migrations for tenant schema: {schema_name}")
-            logger.info(f"   This will create all tables in [standard:{schema_name}]")
-
             try:
-                # Run migrations specifically for this tenant
                 call_command(
                     'migrate_schemas',
                     schema_name=schema_name,
                     interactive=False,
-                    verbosity=2  # Show which migrations are running
+                    verbosity=2
                 )
-
                 logger.info(f"✅ Migrations complete for schema: {schema_name}")
-
             except Exception as e:
                 logger.error(f"❌ Migration failed: {e}", exc_info=True)
                 raise
 
-            # ─────────────────────────────────────────────
-            # 5️⃣ Sync authenticated user to tenant schema
-            # ─────────────────────────────────────────────
+            # Sync authenticated user to tenant schema
             authenticated_user_email = self.get_user_info().get('email') if self.get_user_info() else None
 
             if authenticated_user_email:
@@ -288,7 +361,7 @@ class DesktopAuthManager:
 
             logger.info(f"  ✅ Received user data (ID: {user_id})")
 
-            # ✅ Create/update user in TENANT schema
+            # Create/update user in TENANT schema
             user, created = CustomUser.objects.update_or_create(
                 id=user_id,
                 defaults={
@@ -379,6 +452,16 @@ class DesktopAuthManager:
             return token
         return None
 
+    def save_refresh_token(self, token):
+        """✅ NEW: Save refresh token"""
+        self.refresh_token_file.write_text(token)
+
+    def get_refresh_token(self):
+        """✅ NEW: Get saved refresh token"""
+        if self.refresh_token_file.exists():
+            return self.refresh_token_file.read_text().strip()
+        return None
+
     def save_user_info(self, user_info):
         """Save user information"""
         self.user_info_file.write_text(json.dumps(user_info))
@@ -407,6 +490,8 @@ class DesktopAuthManager:
         """Clear authentication"""
         if self.auth_token_file.exists():
             self.auth_token_file.unlink()
+        if self.refresh_token_file.exists():
+            self.refresh_token_file.unlink()
         if self.user_info_file.exists():
             self.user_info_file.unlink()
         if self.company_info_file.exists():
