@@ -264,7 +264,12 @@ class SyncManager:
                 success = self.apply_bulk_data(all_data, progress_callback)
 
                 if success:
-                    # ✅ Do NOT set last_sync_time here - caller (full_sync) will do it
+                    # ✅ CRITICAL: Reset sequences after importing data
+                    if progress_callback:
+                        progress_callback("Resetting database sequences...", 95)
+
+                    self.reset_sequences()
+
                     if progress_callback:
                         progress_callback("Download complete!", 100)
                     logger.info("=" * 70)
@@ -317,7 +322,7 @@ class SyncManager:
         """
         Download only CHANGED data since last sync
         ✅ Efficient incremental sync
-        ✅ Does NOT update last_sync_time (full_sync does that)
+        ✅ Resets sequences after import
         """
         try:
             last_sync = self.get_last_sync_time()
@@ -367,7 +372,12 @@ class SyncManager:
             if changes:
                 success = self.apply_bulk_data(changes, progress_callback)
                 if success:
-                    # ✅ Do NOT update last_sync_time here - full_sync will do it
+                    # ✅ CRITICAL: Reset sequences after importing changes
+                    if progress_callback:
+                        progress_callback("Resetting sequences...", 90)
+
+                    self.reset_sequences()
+
                     logger.info("✅ Server changes applied successfully")
                     return True
                 else:
@@ -392,8 +402,7 @@ class SyncManager:
     def upload_changes(self, progress_callback=None):
         """
         Upload local changes to server
-        ✅ Syncs offline sales, products, stock movements
-        ✅ Does NOT update last_sync_time (full_sync does that)
+        ✅ Replaces negative IDs with server-assigned IDs
         """
         try:
             last_sync = self.get_last_sync_time()
@@ -410,7 +419,7 @@ class SyncManager:
 
             if not changes:
                 logger.info("✅ No local changes to upload")
-                return True  # Success - nothing to do
+                return True
 
             total_changed = sum(len(records) for records in changes.values())
             logger.info(f"📤 Uploading {total_changed} changed records across {len(changes)} models")
@@ -419,8 +428,6 @@ class SyncManager:
                 progress_callback(f"Uploading {total_changed} records...", 30)
 
             url = f"{self.server_url}/api/desktop/sync/upload/"
-
-            logger.info(f"  URL: {url}")
 
             response = requests.post(
                 url,
@@ -434,19 +441,21 @@ class SyncManager:
                 timeout=120
             )
 
-            logger.info(f"  Response: HTTP {response.status_code}")
-
             if response.status_code != 200:
-                error_text = response.text[:500] if response.text else "No response body"
                 logger.error(f"❌ Upload failed: HTTP {response.status_code}")
-                logger.error(f"  Response: {error_text}")
                 return False
 
             result = response.json()
 
             if result.get('success'):
                 logger.info(f"✅ Upload successful")
-                # ✅ Do NOT update last_sync_time here - full_sync will do it
+
+                # ✅ Replace negative IDs with real server IDs
+                id_mappings = result.get('id_mappings', {})
+                if id_mappings:
+                    logger.info(f"🔄 Replacing {len(id_mappings)} model(s) offline IDs...")
+                    self._replace_offline_ids(id_mappings)
+
                 if progress_callback:
                     progress_callback("Upload complete!", 60)
                 return True
@@ -455,19 +464,131 @@ class SyncManager:
                 logger.error(f"❌ Upload failed: {error_msg}")
                 return False
 
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"❌ Connection error: {e}")
-            return False
         except Exception as e:
             logger.error(f"❌ Upload error: {e}", exc_info=True)
             return False
 
+    def _replace_offline_ids(self, id_mappings):
+        """
+        Replace negative offline IDs with real server IDs
+        ✅ Updates both the record and any FKs pointing to it
+
+        Args:
+            id_mappings: Dict of {model_name: {old_id: new_id}}
+        """
+        from django.apps import apps
+        from django_tenants.utils import schema_context
+
+        with schema_context(self.schema_name):
+            # ✅ First pass: Update the records themselves
+            for model_name, mappings in id_mappings.items():
+                try:
+                    model = apps.get_model(model_name)
+
+                    for old_id, new_id in mappings.items():
+                        old_id = int(old_id)
+
+                        try:
+                            # Get record with old negative ID
+                            obj = model.objects.get(pk=old_id)
+
+                            # Get all field values
+                            field_values = {}
+                            for field in model._meta.fields:
+                                if field.name != 'id':  # Skip PK
+                                    field_values[field.name] = getattr(obj, field.name)
+
+                            # Delete old record
+                            obj.delete()
+
+                            # Create new record with server ID
+                            new_obj = model(pk=new_id, **field_values)
+                            new_obj.save()
+
+                            logger.info(f"  ✅ Replaced {model_name} ID: {old_id} → {new_id}")
+
+                        except model.DoesNotExist:
+                            logger.warning(f"  ⚠️  Record {model_name}:{old_id} not found (already synced?)")
+
+                except Exception as e:
+                    logger.error(f"  ❌ Error replacing IDs for {model_name}: {e}")
+
+            # ✅ Second pass: Update ForeignKeys that point to replaced IDs
+            logger.info("🔄 Updating foreign key references...")
+
+            for model_name in SYNC_MODEL_CONFIG.keys():
+                try:
+                    model = apps.get_model(model_name)
+
+                    # Find all ForeignKey fields
+                    for field in model._meta.fields:
+                        if field.many_to_one:  # Is ForeignKey
+                            related_model = field.related_model
+                            related_model_name = f"{related_model._meta.app_label}.{related_model._meta.model_name}"
+
+                            # Check if this FK's target model had ID replacements
+                            if related_model_name in id_mappings:
+                                mappings = id_mappings[related_model_name]
+
+                                # Find records pointing to old IDs
+                                for old_id, new_id in mappings.items():
+                                    old_id = int(old_id)
+
+                                    # Update records pointing to old ID
+                                    updated = model.objects.filter(**{f'{field.name}_id': old_id}).update(
+                                        **{f'{field.name}_id': new_id})
+
+                                    if updated > 0:
+                                        logger.info(
+                                            f"    ✅ Updated {updated} {model_name} FK {field.name}: {old_id} → {new_id}")
+
+                except LookupError:
+                    continue
+                except Exception as e:
+                    logger.error(f"  ❌ Error updating FKs for {model_name}: {e}")
+
+    def reset_sequences(self):
+        """
+        Reset PostgreSQL sequences after sync
+        ✅ Prevents duplicate key errors
+        """
+        from django.db import connection
+        from django_tenants.utils import schema_context
+
+        logger.info("🔄 Resetting database sequences...")
+
+        with schema_context(self.schema_name):
+            with connection.cursor() as cursor:
+                # Get all tables with serial/sequence columns
+                for model_name in SYNC_MODEL_CONFIG.keys():
+                    try:
+                        model = apps.get_model(model_name)
+                        table_name = model._meta.db_table
+                        pk_field = model._meta.pk.name
+
+                        # Get the sequence name
+                        sequence_name = f"{table_name}_{pk_field}_seq"
+
+                        # Get max ID from table
+                        cursor.execute(f'SELECT MAX({pk_field}) FROM "{table_name}"')
+                        result = cursor.fetchone()
+                        max_id = result[0] if result[0] else 0
+
+                        # Reset sequence to max_id + 1
+                        new_val = max_id + 1
+                        cursor.execute(f"SELECT setval('{sequence_name}', {new_val}, false)")
+
+                        logger.info(f"  ✅ Reset {table_name} sequence to {new_val}")
+
+                    except Exception as e:
+                        logger.debug(f"  ⏭️  Skipping {model_name}: {e}")
+
+        logger.info("✅ Sequences reset complete")
 
     def collect_local_changes(self, since):
         """
-        Collect records that changed locally since last sync
-        ✅ Finds new sales, products, stock changes
-        ✅ Uses timezone-aware datetime comparisons
+        Collect records changed LOCALLY (not synced from server)
+        ✅ Excludes records downloaded from server
         """
         changes = {}
 
@@ -483,7 +604,6 @@ class SyncManager:
 
                     # Filter by modification time
                     if since:
-                        # ✅ Ensure since is timezone-aware
                         if since.tzinfo is None:
                             since = timezone.make_aware(since)
 
@@ -492,22 +612,32 @@ class SyncManager:
                         elif hasattr(model, 'updated_at'):
                             queryset = queryset.filter(updated_at__gte=since)
                         elif hasattr(model, 'created_at'):
-                            # Include new records
                             queryset = queryset.filter(created_at__gte=since)
 
                     if queryset.exists():
-                        # Serialize
-                        data = serializers.serialize('json', queryset)
-                        records = json.loads(data)
+                        # ✅ Filter out synced records
+                        local_records = []
 
-                        # Remove excluded fields
-                        if exclude_fields:
-                            for record in records:
-                                for field in exclude_fields:
-                                    record['fields'].pop(field, None)
+                        for obj in queryset:
+                            # Skip if this was downloaded from server
+                            if self._is_synced(model_name, obj.pk):
+                                continue
 
-                        changes[model_name] = records
-                        logger.info(f"  Found {len(records)} changed {model_name} records")
+                            local_records.append(obj)
+
+                        if local_records:
+                            # Serialize
+                            data = serializers.serialize('json', local_records)
+                            records = json.loads(data)
+
+                            # Remove excluded fields
+                            if exclude_fields:
+                                for record in records:
+                                    for field in exclude_fields:
+                                        record['fields'].pop(field, None)
+
+                            changes[model_name] = records
+                            logger.info(f"  Found {len(records)} LOCAL changes in {model_name}")
 
                 except LookupError:
                     continue
@@ -515,6 +645,47 @@ class SyncManager:
                     logger.error(f"  Error collecting {model_name}: {e}")
 
         return changes
+
+    def _mark_as_synced(self, model_name, record_ids):
+        """Mark records as synced to prevent re-upload"""
+        if not record_ids:
+            return
+
+        sync_marker_file = settings.DESKTOP_DATA_DIR / f'.synced_{self.tenant_id}.json'
+
+        # Load existing markers
+        if sync_marker_file.exists():
+            try:
+                synced = json.loads(sync_marker_file.read_text())
+            except:
+                synced = {}
+        else:
+            synced = {}
+
+        # Add new synced IDs
+        if model_name not in synced:
+            synced[model_name] = []
+
+        synced[model_name].extend([str(id) for id in record_ids])
+
+        # Remove duplicates
+        synced[model_name] = list(set(synced[model_name]))
+
+        # Save
+        sync_marker_file.write_text(json.dumps(synced))
+
+    def _is_synced(self, model_name, record_id):
+        """Check if record was synced from server"""
+        sync_marker_file = settings.DESKTOP_DATA_DIR / f'.synced_{self.tenant_id}.json'
+
+        if not sync_marker_file.exists():
+            return False
+
+        try:
+            synced = json.loads(sync_marker_file.read_text())
+            return str(record_id) in synced.get(model_name, [])
+        except:
+            return False
 
     # ========================================================================
     # APPLY DATA TO LOCAL DB
@@ -563,8 +734,8 @@ class SyncManager:
 
     def apply_model_data(self, model_name, records):
         """
-        Apply records for a specific model with conflict resolution
-        ✅ Handles ForeignKey, ManyToMany, Decimal, and special primary keys
+        Apply records for a specific model
+        ✅ Marks records as synced to prevent re-upload
         """
         from decimal import Decimal
 
@@ -573,12 +744,15 @@ class SyncManager:
             created_count = 0
             updated_count = 0
 
+            # ✅ Track IDs we've synced
+            synced_ids = []
+
             for record in records:
                 try:
                     obj_id = record['pk']
                     fields = record['fields']
 
-                    # ✅ Separate ManyToMany fields (must be set after save)
+                    # Separate M2M and regular fields
                     m2m_fields = {}
                     processed_fields = {}
 
@@ -586,42 +760,34 @@ class SyncManager:
                         try:
                             field = model._meta.get_field(field_name)
 
-                            # Skip ManyToMany - handle after save
                             if field.many_to_many:
                                 m2m_fields[field_name] = value
                                 continue
 
-                            # Handle ForeignKey
                             if field.many_to_one and value is not None:
                                 related_model = field.related_model
-
                                 try:
                                     related_instance = related_model.objects.get(pk=value)
                                     processed_fields[field_name] = related_instance
                                 except related_model.DoesNotExist:
                                     logger.debug(f"    Skipping {field_name}={value} - not found")
-                                    # Don't include field if related object missing
                                     continue
 
-                            # Handle Decimal fields
                             elif hasattr(field, 'get_internal_type') and field.get_internal_type() == 'DecimalField':
                                 if value is not None and isinstance(value, str):
                                     processed_fields[field_name] = Decimal(value)
                                 else:
                                     processed_fields[field_name] = value
 
-                            # Regular field
                             else:
                                 processed_fields[field_name] = value
 
                         except Exception as e:
-                            # Field doesn't exist or error - skip
                             logger.debug(f"    Skipping field {field_name}: {e}")
                             continue
 
                     # Check if exists
                     try:
-                        # Handle models with custom primary keys (like Company.company_id)
                         pk_field = model._meta.pk.name
                         existing = model.objects.get(**{pk_field: obj_id})
 
@@ -632,26 +798,24 @@ class SyncManager:
                         try:
                             existing.save()
                         except ValidationError as e:
-                            # ✅ Skip EFRIS/business validation errors during sync
                             error_msg = str(e).lower()
                             if 'efris' in error_msg or 'constraint' in error_msg:
                                 logger.debug(f"    Skipping validation error for {obj_id}: {e}")
-                                continue  # Skip this record
-                            raise  # Re-raise other validation errors
+                                continue
+                            raise
 
                         # Handle ManyToMany
                         for field_name, value in m2m_fields.items():
                             if value:
-                                field = getattr(existing, field_name)
-                                field.set(value)
+                                getattr(existing, field_name).set(value)
 
                         updated_count += 1
+                        synced_ids.append(obj_id)
 
                     except model.DoesNotExist:
-                        # Create new - handle custom primary keys
+                        # Create new
                         pk_field = model._meta.pk.name
 
-                        # Use custom PK if different from 'id'
                         if pk_field != 'id':
                             processed_fields[pk_field] = obj_id
                             obj = model(**processed_fields)
@@ -661,23 +825,25 @@ class SyncManager:
                         try:
                             obj.save()
                         except ValidationError as e:
-                            # ✅ Skip EFRIS/business validation errors during sync
                             error_msg = str(e).lower()
                             if 'efris' in error_msg or 'constraint' in error_msg:
                                 logger.debug(f"    Skipping validation error for {obj_id}: {e}")
-                                continue  # Skip this record
-                            raise  # Re-raise other validation errors
+                                continue
+                            raise
 
                         # Handle ManyToMany
                         for field_name, value in m2m_fields.items():
                             if value:
-                                field = getattr(obj, field_name)
-                                field.set(value)
+                                getattr(obj, field_name).set(value)
 
                         created_count += 1
+                        synced_ids.append(obj.pk)
 
                 except Exception as e:
                     logger.error(f"    Error saving record {obj_id}: {e}")
+
+            # ✅ Store synced IDs to exclude from next upload
+            self._mark_as_synced(model_name, synced_ids)
 
             return created_count, updated_count
 

@@ -226,20 +226,20 @@ class ChangesDownloadView(APIView):
 class UploadChangesView(APIView):
     """
     Upload local changes from desktop to server
-    ✅ Handles create/update with conflict resolution
+    ✅ Handles ForeignKey and ManyToMany fields correctly
+    ✅ Returns ID mappings for offline records
     """
     authentication_classes = [TenantAwareJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         try:
-            # Get data from request
+            from decimal import Decimal
+
             changes = request.data.get('changes', {})
             tenant_id = request.data.get('tenant_id')
             schema_name = request.data.get('schema_name')
-            last_sync = request.data.get('last_sync')
 
-            # Verify schema from token matches request
             token = request.auth
             token_schema = token.get('schema_name')
 
@@ -250,8 +250,7 @@ class UploadChangesView(APIView):
                 )
 
             logger.info(f"📤 Upload request for schema: {schema_name}")
-            logger.info(f"  Changes: {len(changes)} models")
-            logger.info(f"  Last sync: {last_sync}")
+            logger.info(f"  Received {len(changes)} model types")
 
             if not changes:
                 return Response({
@@ -259,54 +258,133 @@ class UploadChangesView(APIView):
                     'message': 'No changes to upload'
                 })
 
-            # Import sync functionality
-            from primebooks.sync import SyncManager
-
-            # Apply changes to server database
             total_created = 0
             total_updated = 0
             errors = []
+            id_mappings = {}
 
             with schema_context(schema_name):
                 for model_name, records in changes.items():
                     try:
-                        # Use SyncManager's apply_model_data method
-                        # Note: We need the actual token string, not the JWT object
-                        # The token is already validated by authentication_classes
-                        sync_manager = SyncManager(
-                            tenant_id=tenant_id,
-                            schema_name=schema_name,
-                            auth_token=request.META.get('HTTP_AUTHORIZATION', '').replace('Bearer ', '')
-                        )
+                        model = apps.get_model(model_name)
+                        model_mappings = {}
 
-                        created, updated = sync_manager.apply_model_data(model_name, records)
-                        total_created += created
-                        total_updated += updated
+                        logger.info(f"  Processing {model_name}: {len(records)} records")
 
-                        logger.info(f"  ✅ {model_name}: {created} created, {updated} updated")
+                        for record in records:
+                            try:
+                                obj_id = record['pk']
+                                fields = record['fields']
 
+                                # ✅ Separate ManyToMany and regular fields
+                                m2m_fields = {}
+                                processed_fields = {}
+
+                                for field_name, value in fields.items():
+                                    try:
+                                        field = model._meta.get_field(field_name)
+
+                                        # ✅ Handle ManyToMany - store for later
+                                        if field.many_to_many:
+                                            m2m_fields[field_name] = value
+                                            continue
+
+                                        # Handle ForeignKey
+                                        if field.many_to_one and value is not None:
+                                            related_model = field.related_model
+                                            try:
+                                                related_instance = related_model.objects.get(pk=value)
+                                                processed_fields[field_name] = related_instance
+                                            except related_model.DoesNotExist:
+                                                logger.debug(f"      Skipping {field_name}={value} - not found")
+                                                continue
+
+                                        # Handle Decimal
+                                        elif hasattr(field,
+                                                     'get_internal_type') and field.get_internal_type() == 'DecimalField':
+                                            if value is not None and isinstance(value, str):
+                                                processed_fields[field_name] = Decimal(value)
+                                            else:
+                                                processed_fields[field_name] = value
+
+                                        # Regular field
+                                        else:
+                                            processed_fields[field_name] = value
+
+                                    except Exception as e:
+                                        logger.debug(f"      Skipping field {field_name}: {e}")
+                                        continue
+
+                                # Check if offline record
+                                is_offline = isinstance(obj_id, int) and obj_id < 0
+
+                                if is_offline:
+                                    # Create with server ID
+                                    obj = model(**processed_fields)
+                                    obj.save()
+
+                                    # ✅ Set ManyToMany after save
+                                    for field_name, value in m2m_fields.items():
+                                        if value:
+                                            getattr(obj, field_name).set(value)
+
+                                    model_mappings[str(obj_id)] = obj.pk
+                                    total_created += 1
+                                    logger.info(f"      ✅ Created offline: {obj_id} → {obj.pk}")
+                                else:
+                                    # Update or create
+                                    try:
+                                        obj = model.objects.get(pk=obj_id)
+
+                                        # Update fields
+                                        for field_name, value in processed_fields.items():
+                                            setattr(obj, field_name, value)
+
+                                        obj.save()
+
+                                        # ✅ Update ManyToMany
+                                        for field_name, value in m2m_fields.items():
+                                            if value:
+                                                getattr(obj, field_name).set(value)
+
+                                        total_updated += 1
+                                        logger.debug(f"      ✅ Updated: {obj_id}")
+
+                                    except model.DoesNotExist:
+                                        obj = model(pk=obj_id, **processed_fields)
+                                        obj.save()
+
+                                        # ✅ Set ManyToMany
+                                        for field_name, value in m2m_fields.items():
+                                            if value:
+                                                getattr(obj, field_name).set(value)
+
+                                        total_created += 1
+                                        logger.info(f"      ✅ Created: {obj_id}")
+
+                            except Exception as e:
+                                error_msg = f"{model_name}:{obj_id} - {str(e)}"
+                                logger.error(f"      ❌ {error_msg}")
+                                errors.append(error_msg)
+
+                        if model_mappings:
+                            id_mappings[model_name] = model_mappings
+
+                    except LookupError:
+                        logger.warning(f"  ⚠️  Model not found: {model_name}")
                     except Exception as e:
-                        error_msg = f"Error processing {model_name}: {str(e)}"
-                        logger.error(f"  ❌ {error_msg}")
-                        errors.append(error_msg)
+                        logger.error(f"  ❌ Error processing {model_name}: {e}")
+                        errors.append(f"{model_name}: {str(e)}")
 
-            if errors:
-                logger.warning(f"⚠️  Upload completed with {len(errors)} errors")
-                return Response({
-                    'success': True,
-                    'message': f'Upload completed with errors',
-                    'created': total_created,
-                    'updated': total_updated,
-                    'errors': errors
-                }, status=status.HTTP_207_MULTI_STATUS)
-            else:
-                logger.info(f"✅ Upload complete: {total_created} created, {total_updated} updated")
-                return Response({
-                    'success': True,
-                    'message': 'Upload successful',
-                    'created': total_created,
-                    'updated': total_updated
-                })
+            logger.info(f"✅ Upload complete: {total_created} created, {total_updated} updated, {len(errors)} errors")
+
+            return Response({
+                'success': True,
+                'created': total_created,
+                'updated': total_updated,
+                'id_mappings': id_mappings,
+                'errors': errors[:10] if errors else []
+            })
 
         except Exception as e:
             logger.error(f"❌ Upload error: {e}", exc_info=True)
@@ -314,6 +392,7 @@ class UploadChangesView(APIView):
                 {'success': False, 'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
 
 
 class ModelDataDownloadView(APIView):
