@@ -65,46 +65,246 @@ def suppress_signals():
 # ============================================================================
 
 SYNC_MODEL_CONFIG = {
-    # Core - SubscriptionPlan only (Company lives in public schema)
-    'company.SubscriptionPlan': {'dependencies': []},
+    # ============================================================================
+    # TIER 1: NO DEPENDENCIES - Core Reference Data
+    # ============================================================================
+    'company.SubscriptionPlan': {
+        'dependencies': [],
+    },
+    'company.EFRISCommodityCategory': {
+        'dependencies': [],
+    },
+    'errors.ErrorSummary': {
+        'dependencies': [],
+    },
 
-    # ✅ Auth - Django groups (needed by Role)
-    'auth.Group': {'dependencies': []},
+    # ============================================================================
+    # TIER 2: COMPANY - Depends only on SubscriptionPlan
+    # ============================================================================
+    'company.Company': {
+        'dependencies': ['company.SubscriptionPlan'],
+        'exclude_fields': ['efris_certificate_data', 'verification_token', 'smtp_password'],
+    },
 
-    'accounts.Role': {'dependencies': ['auth.Group']},
+    # ============================================================================
+    # TIER 3: AUTH - Depends on Company
+    # ============================================================================
+    'auth.Group': {
+        'dependencies': [],
+        'exclude_fields': ['permissions'],  # Don't sync Django permissions
+    },
+    'accounts.Role': {
+        'dependencies': ['auth.Group'],  # Removed company.Company - roles are tenant-specific
+    },
+
+    # ============================================================================
+    # TIER 4: USERS - Depends on Role
+    # ============================================================================
     'accounts.CustomUser': {
         'dependencies': ['accounts.Role'],
-        'exclude_fields': ['password', 'backup_codes'],  # Users already have passwords
+        'exclude_fields': ['password', 'backup_codes', 'failed_login_attempts'],
     },
 
-    # Stores
+    # ============================================================================
+    # TIER 5: COMPANY SETTINGS - Depends on Company
+    # ============================================================================
+    'company.TenantEmailSettings': {
+        'dependencies': [],
+        'exclude_fields': ['smtp_password'],
+    },
+    'company.TenantInvoiceSettings': {
+        'dependencies': [],
+        'exclude_fields': ['efris_private_key'],
+    },
+    'company.Domain': {
+        'dependencies': [],
+    },
+    'company.CompanyRelationship': {
+        'dependencies': [],
+    },
+    'company.CrossCompanyTransaction': {
+        'dependencies': [],
+    },
+
+    # ============================================================================
+    # TIER 6: INVENTORY CATEGORIES - No user dependency
+    # ============================================================================
+    'inventory.Category': {
+        'dependencies': [],
+    },
+    'inventory.Supplier': {
+        'dependencies': [],
+    },
+
+    # ============================================================================
+    # TIER 7: STORES - Depends on CustomUser (for staff M2M)
+    # ============================================================================
     'stores.Store': {
-        'dependencies': [],  # Company is in public schema
-        'exclude_fields': ['logo'],
+        'dependencies': ['accounts.CustomUser'],
+        'exclude_fields': ['logo', 'store_efris_private_key', 'store_efris_public_certificate',
+                           'store_efris_key_password'],
     },
-    'stores.StoreAccess': {'dependencies': ['stores.Store', 'accounts.CustomUser']},
+    'stores.StoreAccess': {
+        'dependencies': ['stores.Store', 'accounts.CustomUser'],
+    },
+    'stores.StoreOperatingHours': {
+        'dependencies': ['stores.Store'],
+    },
+    'branches.Branch': {
+        'dependencies': [],
+    },
 
-    # Inventory
-    'inventory.Category': {'dependencies': []},  # Company in public schema
-    'inventory.Supplier': {'dependencies': []},
+    # ============================================================================
+    # TIER 8: PRODUCTS - Depends on Category and Supplier
+    # ============================================================================
     'inventory.Product': {
         'dependencies': ['inventory.Category', 'inventory.Supplier'],
         'exclude_fields': ['image'],
     },
-    'inventory.Stock': {'dependencies': ['inventory.Product', 'stores.Store']},
-    'inventory.StockMovement': {'dependencies': ['inventory.Product', 'stores.Store']},
 
-    # Customers
-    'customers.Customer': {'dependencies': ['stores.Store', 'accounts.CustomUser']},
+    # ============================================================================
+    # TIER 9: STOCK - Depends on Product and Store
+    # ============================================================================
+    'inventory.Stock': {
+        'dependencies': ['inventory.Product', 'stores.Store'],
+    },
+    'inventory.StockMovement': {
+        'dependencies': ['inventory.Product', 'stores.Store'],
+        # created_by is optional - can be NULL during sync
+    },
 
-    # Sales
-    'sales.Sale': {'dependencies': ['customers.Customer', 'stores.Store', 'accounts.CustomUser']},
-    'sales.SaleItem': {'dependencies': ['sales.Sale', 'inventory.Product']},
-    'sales.Payment': {'dependencies': ['sales.Sale']},
+    # ============================================================================
+    # TIER 10: CUSTOMERS - Depends on Store and User
+    # ============================================================================
+    'customers.Customer': {
+        'dependencies': ['stores.Store', 'accounts.CustomUser'],
+        'exclude_fields': ['efris_sync_error'],
+    },
+    'customers.CustomerGroup': {
+        'dependencies': ['customers.Customer'],
+    },
+    'customers.CustomerNote': {
+        'dependencies': ['customers.Customer', 'accounts.CustomUser'],
+    },
+    'customers.EFRISCustomerSync': {
+        'dependencies': ['customers.Customer'],
+    },
 
-    # ✅ Invoice is auto-created by Sale.post_save signal - don't sync!
-    # 'invoices.Invoice': {'dependencies': ['sales.Sale', 'stores.Store']},
+    # ============================================================================
+    # TIER 11: SALES - Depends on Customer, Store, User
+    # ============================================================================
+    'sales.Sale': {
+        'dependencies': ['customers.Customer', 'stores.Store', 'accounts.CustomUser'],
+    },
+    'sales.SaleItem': {
+        'dependencies': ['sales.Sale', 'inventory.Product'],
+    },
+    'sales.Payment': {
+        'dependencies': ['sales.Sale'],
+    },
+
+    # ============================================================================
+    # TIER 12: INVOICES - Depends on Sales (auto-created from sales)
+    # ============================================================================
+    'invoices.Invoice': {
+        'dependencies': ['sales.Sale', 'customers.Customer', 'stores.Store'],
+    },
+    'invoices.InvoiceItem': {
+        'dependencies': ['invoices.Invoice', 'inventory.Product'],
+    },
+
+    # ============================================================================
+    # TIER 13: EXPENSES - Depends on Store and User
+    # ============================================================================
+    'expenses.Expense': {
+        'dependencies': ['stores.Store', 'accounts.CustomUser'],
+    },
+
+    # ============================================================================
+    # TIER 14: EFRIS CONFIGURATION - Depends on Company and Stores
+    # ============================================================================
+    'efris.EFRISConfiguration': {
+        'dependencies': [],
+        'exclude_fields': ['private_key', 'public_certificate', 'key_password', 'symmetric_key',
+                           'client_private_key', 'client_private_key_encrypted', 'key_table',
+                           'server_public_key'],
+    },
+    'efris.EFRISDigitalKey': {
+        'dependencies': ['accounts.CustomUser'],
+        'exclude_fields': ['private_key', 'public_certificate', 'key_password'],
+    },
+    'efris.EFRISDeviceInfo': {
+        'dependencies': ['stores.Store'],
+    },
+    'efris.EFRISIntegrationSettings': {
+        'dependencies': [],
+    },
+    'efris.EFRISCommodityCategorry': {
+        'dependencies': [],
+    },
+
+    # ============================================================================
+    # TIER 15: EFRIS LOGS - Depends on Invoices and Products
+    # ============================================================================
+    'efris.EFRISSystemDictionary': {
+        'dependencies': [],
+    },
+    'efris.EFRISExceptionLog': {
+        'dependencies': [],
+    },
+    'efris.EFRISAPILog': {
+        'dependencies': ['invoices.Invoice', 'inventory.Product', 'accounts.CustomUser'],
+    },
+    'efris.EFRISSyncQueue': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'efris.EFRISFiscalizationBatch': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'efris.FiscalizationAudit': {
+        'dependencies': ['invoices.Invoice', 'accounts.CustomUser'],
+    },
+    'efris.EFRISOperationMetrics': {
+        'dependencies': [],
+    },
+    'efris.EFRISNotification': {
+        'dependencies': ['invoices.Invoice', 'efris.FiscalizationAudit', 'accounts.CustomUser'],
+    },
+    'efris.EFRISErrorPattern': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+
+    # ============================================================================
+    # TIER 16: CUSTOMER TRANSACTIONS - Depends on Sales and Payments
+    # ============================================================================
+    'customers.CustomerCreditStatement': {
+        'dependencies': ['customers.Customer', 'sales.Sale', 'sales.Payment', 'accounts.CustomUser'],
+    },
+
+    # ============================================================================
+    # TIER 17: AUDIT & HISTORY - Depends on everything
+    # ============================================================================
+    'accounts.RoleHistory': {
+        'dependencies': ['accounts.Role', 'accounts.CustomUser'],
+    },
+    'accounts.UserSignature': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'accounts.AuditLog': {
+        'dependencies': ['accounts.CustomUser', 'stores.Store'],
+    },
+    'accounts.LoginHistory': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'accounts.DataExportLog': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'errors.ErrorLog': {
+        'dependencies': ['accounts.CustomUser'],
+    },
 }
+
+
 
 
 def get_sync_order():
@@ -735,16 +935,17 @@ class SyncManager:
     def apply_model_data(self, model_name, records):
         """
         Apply records for a specific model
-        ✅ Marks records as synced to prevent re-upload
+        ✅ Properly converts ForeignKey IDs to instances
+        ✅ Handles ManyToMany fields
+        ✅ Skips validation errors gracefully
         """
         from decimal import Decimal
+        from django.core.exceptions import ValidationError
 
         try:
             model = apps.get_model(model_name)
             created_count = 0
             updated_count = 0
-
-            # ✅ Track IDs we've synced
             synced_ids = []
 
             for record in records:
@@ -752,7 +953,7 @@ class SyncManager:
                     obj_id = record['pk']
                     fields = record['fields']
 
-                    # Separate M2M and regular fields
+                    # ✅ Process fields - separate M2M from regular fields
                     m2m_fields = {}
                     processed_fields = {}
 
@@ -760,25 +961,34 @@ class SyncManager:
                         try:
                             field = model._meta.get_field(field_name)
 
+                            # ✅ ManyToMany - handle after save
                             if field.many_to_many:
                                 m2m_fields[field_name] = value
                                 continue
 
+                            # ✅ ForeignKey - CONVERT ID TO INSTANCE
                             if field.many_to_one and value is not None:
                                 related_model = field.related_model
+
                                 try:
+                                    # Get the actual instance
                                     related_instance = related_model.objects.get(pk=value)
                                     processed_fields[field_name] = related_instance
+                                    logger.debug(f"    ✓ FK {field_name}: {value} → {related_instance}")
                                 except related_model.DoesNotExist:
+                                    # Related record doesn't exist - skip this field
                                     logger.debug(f"    Skipping {field_name}={value} - not found")
+                                    # Don't add to processed_fields
                                     continue
 
+                            # ✅ Decimal fields
                             elif hasattr(field, 'get_internal_type') and field.get_internal_type() == 'DecimalField':
                                 if value is not None and isinstance(value, str):
                                     processed_fields[field_name] = Decimal(value)
                                 else:
                                     processed_fields[field_name] = value
 
+                            # Regular field
                             else:
                                 processed_fields[field_name] = value
 
@@ -786,12 +996,12 @@ class SyncManager:
                             logger.debug(f"    Skipping field {field_name}: {e}")
                             continue
 
-                    # Check if exists
+                    # Try to get existing record
                     try:
                         pk_field = model._meta.pk.name
                         existing = model.objects.get(**{pk_field: obj_id})
 
-                        # Update
+                        # Update existing
                         for field, value in processed_fields.items():
                             setattr(existing, field, value)
 
@@ -799,21 +1009,28 @@ class SyncManager:
                             existing.save()
                         except ValidationError as e:
                             error_msg = str(e).lower()
-                            if 'efris' in error_msg or 'constraint' in error_msg:
+                            # Skip common validation errors during sync
+                            if any(skip in error_msg for skip in
+                                   ['efris', 'constraint', 'password', 'either product or service']):
                                 logger.debug(f"    Skipping validation error for {obj_id}: {e}")
                                 continue
                             raise
 
-                        # Handle ManyToMany
+                        # ✅ Handle ManyToMany after save
                         for field_name, value in m2m_fields.items():
                             if value:
-                                getattr(existing, field_name).set(value)
+                                try:
+                                    field_obj = getattr(existing, field_name)
+                                    field_obj.set(value)
+                                except Exception as e:
+                                    logger.debug(f"    M2M error for {field_name}: {e}")
 
                         updated_count += 1
                         synced_ids.append(obj_id)
+                        logger.debug(f"    ✓ Updated: {obj_id}")
 
                     except model.DoesNotExist:
-                        # Create new
+                        # Create new record
                         pk_field = model._meta.pk.name
 
                         if pk_field != 'id':
@@ -826,29 +1043,40 @@ class SyncManager:
                             obj.save()
                         except ValidationError as e:
                             error_msg = str(e).lower()
-                            if 'efris' in error_msg or 'constraint' in error_msg:
+                            # Skip common validation errors during sync
+                            if any(skip in error_msg for skip in
+                                   ['efris', 'constraint', 'password', 'either product or service']):
                                 logger.debug(f"    Skipping validation error for {obj_id}: {e}")
                                 continue
                             raise
 
-                        # Handle ManyToMany
+                        # ✅ Handle ManyToMany after save
                         for field_name, value in m2m_fields.items():
                             if value:
-                                getattr(obj, field_name).set(value)
+                                try:
+                                    field_obj = getattr(obj, field_name)
+                                    field_obj.set(value)
+                                except Exception as e:
+                                    logger.debug(f"    M2M error for {field_name}: {e}")
 
                         created_count += 1
                         synced_ids.append(obj.pk)
+                        logger.debug(f"    ✓ Created: {obj_id}")
 
                 except Exception as e:
                     logger.error(f"    Error saving record {obj_id}: {e}")
 
-            # ✅ Store synced IDs to exclude from next upload
-            self._mark_as_synced(model_name, synced_ids)
+            # Mark as synced
+            if synced_ids:
+                self._mark_as_synced(model_name, synced_ids)
 
             return created_count, updated_count
 
         except LookupError:
             logger.warning(f"  Model not found: {model_name}")
+            return 0, 0
+        except Exception as e:
+            logger.error(f"  Fatal error in apply_model_data for {model_name}: {e}")
             return 0, 0
 
     # ========================================================================

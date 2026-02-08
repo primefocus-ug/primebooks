@@ -190,7 +190,7 @@ class DesktopLoginDialog(QDialog):
         layout.addWidget(subdomain_label)
 
         self.subdomain_input = QLineEdit()
-        self.subdomain_input.setPlaceholderText("e.g., pada")
+        self.subdomain_input.setPlaceholderText("e.g. test   (if url is test.primebooks.sale)")
         self.subdomain_input.setStyleSheet("""
             QLineEdit {
                 padding: 8px;
@@ -211,7 +211,7 @@ class DesktopLoginDialog(QDialog):
         layout.addWidget(email_label)
 
         self.email_input = QLineEdit()
-        self.email_input.setPlaceholderText("admin@company.com")
+        self.email_input.setPlaceholderText("nashvybzesdeveloper@gmail.com")
         self.email_input.setStyleSheet(self.subdomain_input.styleSheet())
         layout.addWidget(self.email_input)
         layout.addSpacing(10)
@@ -1236,10 +1236,12 @@ def main():
             refs['token'] = token
 
             # ------------------------------------------------------------------
-            # Start Django server
+            # Start Django server and WAIT for it to be ready
             # ------------------------------------------------------------------
             port = find_free_port()
             refs['port'] = port
+
+            logger.info(f"Starting Django server on port {port}...")
 
             django_thread = threading.Thread(
                 target=run_django_server,
@@ -1247,6 +1249,61 @@ def main():
                 daemon=True
             )
             django_thread.start()
+
+            # ✅ WAIT FOR SERVER TO BE READY
+            import socket
+            import time
+
+            max_wait = 30  # seconds
+            start_time = time.time()
+            server_ready = False
+
+            progress_dialog = QProgressDialog("Starting server...", None, 0, 0)
+            progress_dialog.setWindowTitle("PrimeBooks - Starting Server")
+            progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+            progress_dialog.show()
+
+            logger.info(f"⏳ Waiting for server to start on port {port}...")
+
+            while time.time() - start_time < max_wait:
+                try:
+                    # Try to connect
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1)
+                    result = sock.connect_ex(('127.0.0.1', port))
+                    sock.close()
+
+                    if result == 0:
+                        # Server is accepting connections
+                        logger.info(f"✅ Server is ready on port {port}")
+                        server_ready = True
+                        break
+                except:
+                    pass
+
+                # Update progress
+                elapsed = int(time.time() - start_time)
+                progress_dialog.setLabelText(f"Starting server... ({elapsed}s)")
+                app.processEvents()
+                time.sleep(0.5)
+
+            progress_dialog.close()
+
+            if not server_ready:
+                logger.error("❌ Server failed to start within 30 seconds")
+                QMessageBox.critical(
+                    None,
+                    "Server Error",
+                    "Django server failed to start. Please check the logs."
+                )
+                app.quit()
+                return
+
+            # ✅ Additional delay to ensure routes are registered
+            logger.info("⏳ Waiting for routes to register...")
+            time.sleep(2)
+
+            logger.info("✅ Django server ready!")
 
             # ------------------------------------------------------------------
             # Show main window
