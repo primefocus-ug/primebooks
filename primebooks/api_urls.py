@@ -12,10 +12,12 @@ from .api_views import (
     DesktopLoginView,
     DesktopUserSyncView,
     DesktopCompanyDetailsView,
-    health_check
+    health_check,subscription_status
 )
 
 urlpatterns = [
+    path('desktop/subscription/status/', subscription_status, name='subscription_status'),
+
     # =========================================================================
     # AUTHENTICATION ENDPOINTS
     # =========================================================================

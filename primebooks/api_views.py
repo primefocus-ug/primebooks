@@ -20,6 +20,59 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from company.models import Company
+from django.utils import timezone
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def subscription_status(request):
+    """
+    Return subscription status for desktop app
+    ✅ Real-time subscription check
+    ✅ Returns detailed status
+    """
+
+    company_id = request.GET.get('company_id')
+
+    try:
+        company = Company.objects.get(company_id=company_id)
+
+        # Calculate days until expiry
+        today = timezone.now().date()
+
+        if company.is_trial:
+            if company.trial_ends_at:
+                days_remaining = (company.trial_ends_at - today).days
+            else:
+                days_remaining = 999
+        else:
+            if company.subscription_ends_at:
+                days_remaining = (company.subscription_ends_at - today).days
+            else:
+                days_remaining = 999
+
+        return Response({
+            'company_id': company.company_id,
+            'is_active': company.has_active_access,
+            'status': company.status,  # ACTIVE, TRIAL, EXPIRED, SUSPENDED
+            'is_trial': company.is_trial,
+            'plan': {
+                'name': company.plan.name if company.plan else 'FREE',
+                'max_users': company.plan.max_users if company.plan else 5,
+            },
+            'trial_ends_at': company.trial_ends_at.isoformat() if company.trial_ends_at else None,
+            'subscription_ends_at': company.subscription_ends_at.isoformat() if company.subscription_ends_at else None,
+            'grace_period_ends_at': company.grace_period_ends_at.isoformat() if company.grace_period_ends_at else None,
+            'days_remaining': days_remaining,
+        })
+
+    except Company.DoesNotExist:
+        return Response({'error': 'Company not found'}, status=404)
+
 
 
 @csrf_exempt

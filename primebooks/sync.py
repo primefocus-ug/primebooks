@@ -66,69 +66,189 @@ def suppress_signals():
 
 SYNC_MODEL_CONFIG = {
     # ============================================================================
-    # TIER 1: NO DEPENDENCIES - Core Reference Data
+    # TIER 1: NO DEPENDENCIES - Core Reference Data & Django Built-ins
     # ============================================================================
+
+    # Django Built-in Models
+    'contenttypes.ContentType': {
+        'dependencies': [],
+    },
+
+    # Company Reference Data
     'company.SubscriptionPlan': {
         'dependencies': [],
     },
     'company.EFRISCommodityCategory': {
         'dependencies': [],
     },
+    'company.EFRISHsCode': {
+        'dependencies': [],
+    },
+
+    # Error Tracking
     'errors.ErrorSummary': {
         'dependencies': [],
     },
 
-    # ============================================================================
-    # TIER 2: COMPANY - Depends only on SubscriptionPlan
-    # ============================================================================
-    'company.Company': {
-        'dependencies': ['company.SubscriptionPlan'],
-        'exclude_fields': ['efris_certificate_data', 'verification_token', 'smtp_password'],
+    # PrimeBooks Core
+    'primebooks.AppVersion': {
+        'dependencies': [],
+    },
+    'primebooks.MaintenanceWindow': {
+        'dependencies': [],
+    },
+    'primebooks.UpdateLog': {
+        'dependencies': [],
+    },
+    'primebooks.ErrorReport': {
+        'dependencies': [],
+    },
+
+    # Celery Beat Schedules (no dependencies)
+    'django_celery_beat.IntervalSchedule': {
+        'dependencies': [],
+    },
+    'django_celery_beat.CrontabSchedule': {
+        'dependencies': [],
+    },
+    'django_celery_beat.SolarSchedule': {
+        'dependencies': [],
+    },
+    'django_celery_beat.ClockedSchedule': {
+        'dependencies': [],
+    },
+
+    # Public Apps - Reference Data
+    'public_blog.BlogCategory': {
+        'dependencies': [],
+    },
+    'public_support.FAQ': {
+        'dependencies': [],
+    },
+    'public_seo.RobotsTxt': {
+        'dependencies': [],
+    },
+    'public_seo.Sitemap': {
+        'dependencies': [],
+    },
+    'public_seo.Redirect': {
+        'dependencies': [],
     },
 
     # ============================================================================
-    # TIER 3: AUTH - Depends on Company
+    # TIER 2: COMPANY & PUBLIC USER - Depends only on SubscriptionPlan
     # ============================================================================
+
+    'company.Company': {
+        'dependencies': ['company.SubscriptionPlan'],
+        'exclude_fields': [
+            'efris_certificate_data',
+            'verification_token',
+            'smtp_password',
+        ],
+    },
+
+    # Public User Management
+    'public_accounts.PublicUser': {
+        'dependencies': [],
+        'exclude_fields': ['password', 'backup_codes'],
+    },
+    'public_accounts.PasswordResetToken': {
+        'dependencies': ['public_accounts.PublicUser'],
+    },
+    'public_accounts.PublicUserActivity': {
+        'dependencies': ['public_accounts.PublicUser'],
+    },
+
+    # Public Admin
+    'public_admin.PublicStaffUser': {
+        'dependencies': ['public_accounts.PublicUser'],
+    },
+
+    # Public Router
+    'public_router.SubdomainReservation': {
+        'dependencies': [],
+    },
+    'public_router.PublicNewsletterSubscriber': {
+        'dependencies': [],
+    },
+    'public_router.TenantSignupRequest': {
+        'dependencies': ['company.Company'],
+    },
+    'public_router.TenantApprovalWorkflow': {
+        'dependencies': ['public_router.TenantSignupRequest'],
+    },
+    'public_router.TenantNotificationLog': {
+        'dependencies': ['company.Company'],
+    },
+
+    # ============================================================================
+    # TIER 3: AUTH & ROLES - Depends on Company
+    # ============================================================================
+
+    'auth.Permission': {
+        'dependencies': ['contenttypes.ContentType'],
+    },
     'auth.Group': {
         'dependencies': [],
         'exclude_fields': ['permissions'],  # Don't sync Django permissions
     },
     'accounts.Role': {
-        'dependencies': ['auth.Group'],  # Removed company.Company - roles are tenant-specific
+        'dependencies': ['auth.Group'],
+    },
+
+    # Taggit
+    'taggit.Tag': {
+        'dependencies': [],
     },
 
     # ============================================================================
     # TIER 4: USERS - Depends on Role
     # ============================================================================
+
     'accounts.CustomUser': {
         'dependencies': ['accounts.Role'],
-        'exclude_fields': ['password', 'backup_codes', 'failed_login_attempts'],
+        'exclude_fields': [
+            'password',
+            'backup_codes',
+            'failed_login_attempts',
+        ],
+    },
+
+    # OTP for 2FA
+    'django_otp.Device': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'otp_totp.TOTPDevice': {
+        'dependencies': ['accounts.CustomUser'],
     },
 
     # ============================================================================
-    # TIER 5: COMPANY SETTINGS - Depends on Company
+    # TIER 5: COMPANY SETTINGS & DOMAINS - Depends on Company
     # ============================================================================
+
     'company.TenantEmailSettings': {
-        'dependencies': [],
+        'dependencies': ['company.Company'],
         'exclude_fields': ['smtp_password'],
     },
     'company.TenantInvoiceSettings': {
-        'dependencies': [],
+        'dependencies': ['company.Company'],
         'exclude_fields': ['efris_private_key'],
     },
     'company.Domain': {
-        'dependencies': [],
+        'dependencies': ['company.Company'],
     },
     'company.CompanyRelationship': {
-        'dependencies': [],
+        'dependencies': ['company.Company'],
     },
     'company.CrossCompanyTransaction': {
-        'dependencies': [],
+        'dependencies': ['company.Company'],
     },
 
     # ============================================================================
-    # TIER 6: INVENTORY CATEGORIES - No user dependency
+    # TIER 6: INVENTORY CATEGORIES & SUPPLIERS - No user dependency
     # ============================================================================
+
     'inventory.Category': {
         'dependencies': [],
     },
@@ -137,12 +257,21 @@ SYNC_MODEL_CONFIG = {
     },
 
     # ============================================================================
-    # TIER 7: STORES - Depends on CustomUser (for staff M2M)
+    # TIER 7: BRANCHES & STORES - Depends on CustomUser (for staff M2M)
     # ============================================================================
+
+    'branches.CompanyBranch': {
+        'dependencies': [],
+    },
+
     'stores.Store': {
         'dependencies': ['accounts.CustomUser'],
-        'exclude_fields': ['logo', 'store_efris_private_key', 'store_efris_public_certificate',
-                           'store_efris_key_password'],
+        'exclude_fields': [
+            'logo',
+            'store_efris_private_key',
+            'store_efris_public_certificate',
+            'store_efris_key_password',
+        ],
     },
     'stores.StoreAccess': {
         'dependencies': ['stores.Store', 'accounts.CustomUser'],
@@ -150,32 +279,72 @@ SYNC_MODEL_CONFIG = {
     'stores.StoreOperatingHours': {
         'dependencies': ['stores.Store'],
     },
-    'branches.Branch': {
-        'dependencies': [],
+    'stores.StoreDevice': {
+        'dependencies': ['stores.Store'],
+    },
+    'stores.DeviceFingerprint': {
+        'dependencies': ['stores.StoreDevice'],
+    },
+    'stores.UserDeviceSession': {
+        'dependencies': ['accounts.CustomUser', 'stores.StoreDevice'],
+    },
+    'stores.DeviceOperatorLog': {
+        'dependencies': ['stores.StoreDevice', 'accounts.CustomUser'],
+    },
+    'stores.SecurityAlert': {
+        'dependencies': ['stores.Store'],
     },
 
     # ============================================================================
-    # TIER 8: PRODUCTS - Depends on Category and Supplier
+    # TIER 8: PRODUCTS & SERVICES - Depends on Category and Supplier
     # ============================================================================
+
     'inventory.Product': {
         'dependencies': ['inventory.Category', 'inventory.Supplier'],
         'exclude_fields': ['image'],
+    },
+    'inventory.Service': {
+        'dependencies': ['inventory.Category'],
+    },
+
+    # Tagged Items (for products)
+    'taggit.TaggedItem': {
+        'dependencies': ['taggit.Tag', 'contenttypes.ContentType'],
     },
 
     # ============================================================================
     # TIER 9: STOCK - Depends on Product and Store
     # ============================================================================
+
     'inventory.Stock': {
         'dependencies': ['inventory.Product', 'stores.Store'],
+    },
+    'inventory.StockStore': {
+        'dependencies': ['inventory.Stock', 'stores.Store'],
     },
     'inventory.StockMovement': {
         'dependencies': ['inventory.Product', 'stores.Store'],
         # created_by is optional - can be NULL during sync
     },
+    'inventory.StockTransfer': {
+        'dependencies': ['inventory.Product', 'stores.Store'],
+    },
+
+    # Import tracking
+    'inventory.ImportSession': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'inventory.ImportLog': {
+        'dependencies': ['inventory.ImportSession'],
+    },
+    'inventory.ImportResult': {
+        'dependencies': ['inventory.ImportSession'],
+    },
 
     # ============================================================================
     # TIER 10: CUSTOMERS - Depends on Store and User
     # ============================================================================
+
     'customers.Customer': {
         'dependencies': ['stores.Store', 'accounts.CustomUser'],
         'exclude_fields': ['efris_sync_error'],
@@ -191,8 +360,16 @@ SYNC_MODEL_CONFIG = {
     },
 
     # ============================================================================
-    # TIER 11: SALES - Depends on Customer, Store, User
+    # TIER 11: SALES & CARTS - Depends on Customer, Store, User
     # ============================================================================
+
+    'sales.Cart': {
+        'dependencies': ['customers.Customer', 'stores.Store', 'accounts.CustomUser'],
+    },
+    'sales.CartItem': {
+        'dependencies': ['sales.Cart', 'inventory.Product'],
+    },
+
     'sales.Sale': {
         'dependencies': ['customers.Customer', 'stores.Store', 'accounts.CustomUser'],
     },
@@ -202,50 +379,90 @@ SYNC_MODEL_CONFIG = {
     'sales.Payment': {
         'dependencies': ['sales.Sale'],
     },
+    'sales.Receipt': {
+        'dependencies': ['sales.Sale'],
+    },
+    'sales.PaymentReminder': {
+        'dependencies': ['sales.Sale'],
+    },
 
     # ============================================================================
     # TIER 12: INVOICES - Depends on Sales (auto-created from sales)
     # ============================================================================
+
+    'invoices.InvoiceTemplate': {
+        'dependencies': [],
+    },
+
     'invoices.Invoice': {
         'dependencies': ['sales.Sale', 'customers.Customer', 'stores.Store'],
     },
-    'invoices.InvoiceItem': {
-        'dependencies': ['invoices.Invoice', 'inventory.Product'],
+    'invoices.InvoicePayment': {
+        'dependencies': ['invoices.Invoice'],
+    },
+    'invoices.PaymentAllocation': {
+        'dependencies': ['invoices.Invoice', 'invoices.InvoicePayment'],
+    },
+    'invoices.PaymentSchedule': {
+        'dependencies': ['invoices.Invoice'],
+    },
+    'invoices.PaymentReminder': {
+        'dependencies': ['invoices.Invoice'],
+    },
+    'invoices.FiscalizationAudit': {
+        'dependencies': ['invoices.Invoice', 'accounts.CustomUser'],
     },
 
     # ============================================================================
-    # TIER 13: EXPENSES - Depends on Store and User
+    # TIER 13: EXPENSES & BUDGETS - Depends on Store and User
     # ============================================================================
+
     'expenses.Expense': {
+        'dependencies': ['stores.Store', 'accounts.CustomUser'],
+    },
+    'expenses.Budget': {
         'dependencies': ['stores.Store', 'accounts.CustomUser'],
     },
 
     # ============================================================================
     # TIER 14: EFRIS CONFIGURATION - Depends on Company and Stores
     # ============================================================================
+
     'efris.EFRISConfiguration': {
-        'dependencies': [],
-        'exclude_fields': ['private_key', 'public_certificate', 'key_password', 'symmetric_key',
-                           'client_private_key', 'client_private_key_encrypted', 'key_table',
-                           'server_public_key'],
+        'dependencies': ['company.Company'],
+        'exclude_fields': [
+            'private_key',
+            'public_certificate',
+            'key_password',
+            'symmetric_key',
+            'client_private_key',
+            'client_private_key_encrypted',
+            'key_table',
+            'server_public_key',
+        ],
     },
     'efris.EFRISDigitalKey': {
         'dependencies': ['accounts.CustomUser'],
-        'exclude_fields': ['private_key', 'public_certificate', 'key_password'],
+        'exclude_fields': [
+            'private_key',
+            'public_certificate',
+            'key_password',
+        ],
     },
     'efris.EFRISDeviceInfo': {
         'dependencies': ['stores.Store'],
     },
     'efris.EFRISIntegrationSettings': {
-        'dependencies': [],
+        'dependencies': ['company.Company'],
     },
     'efris.EFRISCommodityCategorry': {
         'dependencies': [],
     },
 
     # ============================================================================
-    # TIER 15: EFRIS LOGS - Depends on Invoices and Products
+    # TIER 15: EFRIS LOGS & SYNC - Depends on Invoices and Products
     # ============================================================================
+
     'efris.EFRISSystemDictionary': {
         'dependencies': [],
     },
@@ -261,14 +478,14 @@ SYNC_MODEL_CONFIG = {
     'efris.EFRISFiscalizationBatch': {
         'dependencies': ['accounts.CustomUser'],
     },
-    'efris.FiscalizationAudit': {
-        'dependencies': ['invoices.Invoice', 'accounts.CustomUser'],
+    'efris.ProductUploadTask': {
+        'dependencies': ['inventory.Product'],
     },
     'efris.EFRISOperationMetrics': {
         'dependencies': [],
     },
     'efris.EFRISNotification': {
-        'dependencies': ['invoices.Invoice', 'efris.FiscalizationAudit', 'accounts.CustomUser'],
+        'dependencies': ['invoices.Invoice', 'invoices.FiscalizationAudit', 'accounts.CustomUser'],
     },
     'efris.EFRISErrorPattern': {
         'dependencies': ['accounts.CustomUser'],
@@ -277,13 +494,208 @@ SYNC_MODEL_CONFIG = {
     # ============================================================================
     # TIER 16: CUSTOMER TRANSACTIONS - Depends on Sales and Payments
     # ============================================================================
+
     'customers.CustomerCreditStatement': {
         'dependencies': ['customers.Customer', 'sales.Sale', 'sales.Payment', 'accounts.CustomUser'],
     },
 
     # ============================================================================
-    # TIER 17: AUDIT & HISTORY - Depends on everything
+    # TIER 17: NOTIFICATIONS - Depends on Users
     # ============================================================================
+
+    'notifications.NotificationCategory': {
+        'dependencies': [],
+    },
+    'notifications.NotificationTemplate': {
+        'dependencies': ['notifications.NotificationCategory'],
+    },
+    'notifications.NotificationRule': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'notifications.NotificationPreference': {
+        'dependencies': ['accounts.CustomUser', 'notifications.NotificationCategory'],
+    },
+    'notifications.Announcement': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'notifications.Notification': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'notifications.NotificationBatch': {
+        'dependencies': [],
+    },
+    'notifications.NotificationLog': {
+        'dependencies': ['notifications.Notification'],
+    },
+
+    # ============================================================================
+    # TIER 18: MESSAGING - Depends on Users
+    # ============================================================================
+
+    'messaging.Conversation': {
+        'dependencies': [],
+    },
+    'messaging.ConversationParticipant': {
+        'dependencies': ['messaging.Conversation', 'accounts.CustomUser'],
+    },
+    'messaging.Message': {
+        'dependencies': ['messaging.Conversation', 'accounts.CustomUser'],
+    },
+    'messaging.MessageAttachment': {
+        'dependencies': ['messaging.Message'],
+    },
+    'messaging.MessageReaction': {
+        'dependencies': ['messaging.Message', 'accounts.CustomUser'],
+    },
+    'messaging.MessageReadReceipt': {
+        'dependencies': ['messaging.Message', 'accounts.CustomUser'],
+    },
+    'messaging.MessageSearchIndex': {
+        'dependencies': ['messaging.Message'],
+    },
+    'messaging.MessageAuditLog': {
+        'dependencies': ['messaging.Message'],
+    },
+    'messaging.TypingIndicator': {
+        'dependencies': ['messaging.Conversation', 'accounts.CustomUser'],
+    },
+    'messaging.SystemAnnouncement': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'messaging.AnnouncementRead': {
+        'dependencies': ['messaging.SystemAnnouncement', 'accounts.CustomUser'],
+    },
+    'messaging.EncryptionKeyManager': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'messaging.MessagingStatistics': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'messaging.LegalAccessRequest': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'messaging.LegalAccessLog': {
+        'dependencies': ['messaging.LegalAccessRequest'],
+    },
+
+    # ============================================================================
+    # TIER 19: REPORTS - Depends on various entities
+    # ============================================================================
+
+    'reports.EFRISReportTemplate': {
+        'dependencies': [],
+    },
+    'reports.SavedReport': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'reports.GeneratedReport': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'reports.ReportSchedule': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'reports.ReportAccessLog': {
+        'dependencies': ['reports.GeneratedReport', 'accounts.CustomUser'],
+    },
+    'reports.ReportComparison': {
+        'dependencies': ['reports.GeneratedReport'],
+    },
+
+    # ============================================================================
+    # TIER 20: CELERY RESULTS - Task execution tracking
+    # ============================================================================
+
+    'django_celery_beat.PeriodicTasks': {
+        'dependencies': [],
+    },
+    'django_celery_beat.PeriodicTask': {
+        'dependencies': [
+            'django_celery_beat.IntervalSchedule',
+            'django_celery_beat.CrontabSchedule',
+            'django_celery_beat.SolarSchedule',
+            'django_celery_beat.ClockedSchedule',
+        ],
+    },
+
+    'django_celery_results.TaskResult': {
+        'dependencies': [],
+    },
+    'django_celery_results.GroupResult': {
+        'dependencies': [],
+    },
+    'django_celery_results.ChordCounter': {
+        'dependencies': ['django_celery_results.GroupResult'],
+    },
+
+    # ============================================================================
+    # TIER 21: PUBLIC ANALYTICS - Visitor tracking
+    # ============================================================================
+
+    'public_analytics.VisitorSession': {
+        'dependencies': [],
+    },
+    'public_analytics.PageView': {
+        'dependencies': ['public_analytics.VisitorSession'],
+    },
+    'public_analytics.Event': {
+        'dependencies': ['public_analytics.VisitorSession'],
+    },
+    'public_analytics.Conversion': {
+        'dependencies': ['public_analytics.VisitorSession'],
+    },
+    'public_analytics.DailyStats': {
+        'dependencies': [],
+    },
+
+    # ============================================================================
+    # TIER 22: PUBLIC BLOG - Content management
+    # ============================================================================
+
+    'public_blog.BlogPost': {
+        'dependencies': ['public_blog.BlogCategory', 'public_accounts.PublicUser'],
+    },
+    'public_blog.BlogComment': {
+        'dependencies': ['public_blog.BlogPost', 'public_accounts.PublicUser'],
+    },
+    'public_blog.Newsletter': {
+        'dependencies': [],
+    },
+
+    # ============================================================================
+    # TIER 23: PUBLIC SEO - Search optimization
+    # ============================================================================
+
+    'public_seo.SEOPage': {
+        'dependencies': [],
+    },
+    'public_seo.KeywordTracking': {
+        'dependencies': ['public_seo.SEOPage'],
+    },
+    'public_seo.KeywordRankingHistory': {
+        'dependencies': ['public_seo.KeywordTracking'],
+    },
+    'public_seo.SEOAudit': {
+        'dependencies': ['public_seo.SEOPage'],
+    },
+
+    # ============================================================================
+    # TIER 24: PUBLIC SUPPORT - Customer support
+    # ============================================================================
+
+    'public_support.ContactRequest': {
+        'dependencies': [],
+    },
+    'public_support.SupportTicket': {
+        'dependencies': ['public_accounts.PublicUser'],
+    },
+    'public_support.TicketReply': {
+        'dependencies': ['public_support.SupportTicket', 'public_accounts.PublicUser'],
+    },
+
+    # ============================================================================
+    # TIER 25: AUDIT & HISTORY - Depends on everything (last tier)
+    # ============================================================================
+
     'accounts.RoleHistory': {
         'dependencies': ['accounts.Role', 'accounts.CustomUser'],
     },
@@ -305,25 +717,153 @@ SYNC_MODEL_CONFIG = {
 }
 
 
-
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
 def get_sync_order():
-    """Get models in dependency order"""
-    ordered = []
-    remaining = set(SYNC_MODEL_CONFIG.keys())
+    """
+    Returns models in the correct order for synchronization based on dependencies.
 
-    while remaining:
-        ready = [m for m in remaining
-                 if all(dep in ordered for dep in SYNC_MODEL_CONFIG[m].get('dependencies', []))]
+    Returns:
+        list: Ordered list of model names (e.g., ['company.SubscriptionPlan', ...])
+    """
+    from collections import deque, defaultdict
 
-        if not ready:
-            ordered.extend(remaining)
-            break
+    # Build dependency graph
+    graph = defaultdict(list)
+    in_degree = defaultdict(int)
 
-        ordered.extend(ready)
-        remaining -= set(ready)
+    # Initialize all models
+    for model in SYNC_MODEL_CONFIG:
+        if model not in in_degree:
+            in_degree[model] = 0
 
-    return ordered
+    # Build edges
+    for model, config in SYNC_MODEL_CONFIG.items():
+        for dependency in config.get('dependencies', []):
+            graph[dependency].append(model)
+            in_degree[model] += 1
+
+    # Topological sort using Kahn's algorithm
+    queue = deque([model for model in SYNC_MODEL_CONFIG if in_degree[model] == 0])
+    result = []
+
+    while queue:
+        model = queue.popleft()
+        result.append(model)
+
+        for dependent in graph[model]:
+            in_degree[dependent] -= 1
+            if in_degree[dependent] == 0:
+                queue.append(dependent)
+
+    # Check for circular dependencies
+    if len(result) != len(SYNC_MODEL_CONFIG):
+        missing = set(SYNC_MODEL_CONFIG.keys()) - set(result)
+        raise ValueError(f"Circular dependency detected! Missing models: {missing}")
+
+    return result
+
+
+def get_model_config(model_name):
+    """
+    Get configuration for a specific model.
+
+    Args:
+        model_name (str): Model name in format 'app.Model'
+
+    Returns:
+        dict: Model configuration with dependencies and exclude_fields
+    """
+    return SYNC_MODEL_CONFIG.get(model_name, {'dependencies': [], 'exclude_fields': []})
+
+
+def validate_dependencies():
+    """
+    Validate that all dependencies exist in the configuration.
+
+    Raises:
+        ValueError: If a dependency references a non-existent model
+    """
+    errors = []
+
+    for model, config in SYNC_MODEL_CONFIG.items():
+        for dependency in config.get('dependencies', []):
+            if dependency not in SYNC_MODEL_CONFIG:
+                errors.append(f"Model '{model}' depends on '{dependency}' which is not in config")
+
+    if errors:
+        raise ValueError("Dependency validation failed:\n" + "\n".join(errors))
+
+    return True
+
+
+# ============================================================================
+# STATISTICS
+# ============================================================================
+
+def get_statistics():
+    """
+    Get statistics about the sync configuration.
+
+    Returns:
+        dict: Statistics including model counts, tier distribution, etc.
+    """
+    from collections import defaultdict
+
+    stats = {
+        'total_models': len(SYNC_MODEL_CONFIG),
+        'models_with_dependencies': sum(1 for c in SYNC_MODEL_CONFIG.values() if c.get('dependencies')),
+        'models_with_exclusions': sum(1 for c in SYNC_MODEL_CONFIG.values() if c.get('exclude_fields')),
+        'total_dependencies': sum(len(c.get('dependencies', [])) for c in SYNC_MODEL_CONFIG.values()),
+        'total_excluded_fields': sum(len(c.get('exclude_fields', [])) for c in SYNC_MODEL_CONFIG.values()),
+    }
+
+    # Group by app
+    app_counts = defaultdict(int)
+    for model in SYNC_MODEL_CONFIG:
+        app = model.split('.')[0]
+        app_counts[app] += 1
+
+    stats['apps'] = dict(app_counts)
+    stats['total_apps'] = len(app_counts)
+
+    return stats
+
+
+if __name__ == '__main__':
+    # Run validation
+    print("Validating SYNC_MODEL_CONFIG...")
+    validate_dependencies()
+    print("✅ All dependencies valid!")
+
+    # Print statistics
+    print("\n" + "=" * 60)
+    print("SYNC MODEL CONFIGURATION STATISTICS")
+    print("=" * 60)
+    stats = get_statistics()
+    print(f"Total Models: {stats['total_models']}")
+    print(f"Total Apps: {stats['total_apps']}")
+    print(f"Models with Dependencies: {stats['models_with_dependencies']}")
+    print(f"Models with Field Exclusions: {stats['models_with_exclusions']}")
+    print(f"Total Dependencies: {stats['total_dependencies']}")
+    print(f"Total Excluded Fields: {stats['total_excluded_fields']}")
+
+    print("\n" + "=" * 60)
+    print("MODELS PER APP")
+    print("=" * 60)
+    for app, count in sorted(stats['apps'].items()):
+        print(f"{app:30s}: {count:3d} models")
+
+    print("\n" + "=" * 60)
+    print("SYNC ORDER (first 10 models)")
+    print("=" * 60)
+    sync_order = get_sync_order()
+    for i, model in enumerate(sync_order[:10], 1):
+        deps = SYNC_MODEL_CONFIG[model].get('dependencies', [])
+        print(f"{i:3d}. {model:40s} (deps: {len(deps)})")
+    print(f"... and {len(sync_order) - 10} more models")
 
 
 class SyncManager:
@@ -339,30 +879,28 @@ class SyncManager:
         self.tenant_id = tenant_id
         self.schema_name = schema_name
 
-        # ✅ Store the passed token FIRST, then try to get from other sources
+        # ✅ Get valid token (may refresh if expired)
         self._passed_token = auth_token
-        self.auth_token = auth_token or self._get_auth_token()
+        self.auth_token = self._get_valid_auth_token(auth_token)
 
         self.last_sync_file = settings.DESKTOP_DATA_DIR / f'.last_sync_{tenant_id}'
+
+        from sync_model_config import get_sync_order
         self.sync_models = get_sync_order()
 
-        # ✅ Smart server URL detection
         self.server_url = self._get_server_url()
 
         logger.info("=" * 70)
         logger.info("SYNC MANAGER INITIALIZED")
         logger.info(f"  Tenant: {tenant_id}")
         logger.info(f"  Schema: {schema_name}")
-        logger.info(f"  Subdomain: {schema_name}")
         logger.info(f"  Server: {self.server_url}")
         logger.info(f"  Auth Token: {'Present (' + self.auth_token[:20] + '...)' if self.auth_token else '❌ MISSING!'}")
         logger.info(f"  Models to sync: {len(self.sync_models)}")
         logger.info("=" * 70)
 
-        # ✅ Validate token
         if not self.auth_token:
-            logger.error("❌ CRITICAL: No auth token available for sync!")
-            logger.error("   Sync will fail without authentication!")
+            logger.error("❌ CRITICAL: No auth token available!")
 
     def _get_server_url(self):
         """
@@ -413,15 +951,148 @@ class SyncManager:
             logger.warning(f"  ❌ Unexpected error: {e}")
             return False
 
+    def _get_valid_auth_token(self, provided_token=None):
+        """
+        ✅ NEW: Get valid auth token with automatic refresh
+
+        Args:
+            provided_token: Token passed during init (optional)
+
+        Returns:
+            Valid auth token or None
+        """
+        # 1. Use provided token
+        if provided_token:
+            logger.info("✅ Using provided auth token")
+            return provided_token
+
+        # 2. Try settings
+        token = getattr(settings, 'SYNC_AUTH_TOKEN', None)
+        if token:
+            logger.info("✅ Using token from settings.SYNC_AUTH_TOKEN")
+            return token
+
+        # 3. Get from auth manager with auto-refresh
+        try:
+            from primebooks.auth import DesktopAuthManager
+            auth_manager = DesktopAuthManager()
+
+            # This will auto-refresh if expired
+            token = auth_manager.get_valid_token()
+            if token:
+                logger.info("✅ Got valid token from DesktopAuthManager (may have refreshed)")
+                return token
+        except Exception as e:
+            logger.warning(f"⚠️ Could not get token from auth manager: {e}")
+
+        logger.error("❌ No auth token found anywhere!")
+        return None
+
+    def _make_request(self, url, method='GET', data=None, params=None, retry_on_401=True):
+        """
+        ✅ NEW: Make HTTP request with automatic token refresh on 401
+
+        Args:
+            url: Request URL
+            method: HTTP method ('GET' or 'POST')
+            data: Request body data (for POST)
+            params: Query parameters (for GET)
+            retry_on_401: Whether to retry with refreshed token on 401
+
+        Returns:
+            requests.Response or None
+        """
+        import requests
+
+        headers = {
+            'Authorization': f'Bearer {self.auth_token}',
+            'Content-Type': 'application/json',
+        }
+
+        logger.debug(f"🌐 {method} {url}")
+
+        try:
+            # Make initial request
+            if method == 'GET':
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    params=params,
+                    timeout=300
+                )
+            elif method == 'POST':
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=data,
+                    timeout=300
+                )
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+
+            # ✅ Check for 401 Unauthorized (expired token)
+            if response.status_code == 401 and retry_on_401:
+                logger.warning("⚠️ Got 401 Unauthorized - attempting token refresh...")
+
+                # Try to refresh token
+                from primebooks.auth import DesktopAuthManager
+                auth_manager = DesktopAuthManager()
+                new_token = auth_manager.refresh_access_token()
+
+                if new_token and new_token != self.auth_token:
+                    logger.info("✅ Token refreshed, retrying request...")
+
+                    # Update our token
+                    self.auth_token = new_token
+                    headers['Authorization'] = f'Bearer {new_token}'
+
+                    # Retry request with new token
+                    if method == 'GET':
+                        response = requests.get(
+                            url,
+                            headers=headers,
+                            params=params,
+                            timeout=300
+                        )
+                    elif method == 'POST':
+                        response = requests.post(
+                            url,
+                            headers=headers,
+                            json=data,
+                            timeout=300
+                        )
+
+                    if response.status_code != 401:
+                        logger.info("✅ Retry with refreshed token succeeded!")
+                    else:
+                        logger.error("❌ Still getting 401 after token refresh")
+                        logger.error(f"   Response: {response.text[:200]}")
+                else:
+                    logger.error("❌ Failed to get new token for retry")
+
+            return response
+
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"❌ Connection error: {e}")
+            return None
+        except requests.exceptions.Timeout:
+            logger.error(f"❌ Request timeout")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Request error: {e}", exc_info=True)
+            return None
+
     # ========================================================================
     # DOWNLOAD FROM SERVER
     # ========================================================================
 
     def download_all_data(self, progress_callback=None):
-        """Download ALL data from server (first sync)"""
+        """
+        ✅ UPDATED: Download ALL data with automatic token refresh
+        """
         try:
             logger.info("=" * 70)
-            logger.info(f"DOWNLOADING ALL DATA FROM SERVER")
+            logger.info("DOWNLOADING ALL DATA")
             logger.info(f"  URL: {self.server_url}/api/desktop/sync/bulk-download/")
             logger.info("=" * 70)
 
@@ -430,17 +1101,15 @@ class SyncManager:
 
             url = f"{self.server_url}/api/desktop/sync/bulk-download/"
 
-            logger.info(f"  Making request...")
-            response = requests.get(
-                url,
-                headers={'Authorization': f'Bearer {self.auth_token}'},
-                timeout=300
-            )
+            # ✅ Use _make_request (auto-refreshes on 401)
+            response = self._make_request(url, method='GET')
 
-            logger.info(f"  Response: HTTP {response.status_code}")
+            if not response:
+                logger.error("❌ Request failed")
+                return False
 
             if response.status_code != 200:
-                error_text = response.text[:500] if response.text else "No response body"
+                error_text = response.text[:500] if response.text else "No response"
                 logger.error(f"❌ Download failed: HTTP {response.status_code}")
                 logger.error(f"  Response: {error_text}")
                 return False
@@ -455,7 +1124,7 @@ class SyncManager:
             all_data = data.get('data', {})
             total_records = data.get('total_records', 0)
 
-            logger.info(f"✅ Downloaded {total_records} records across {len(all_data)} models")
+            logger.info(f"✅ Downloaded {total_records} records")
 
             if progress_callback:
                 progress_callback(f"Downloaded {total_records} records...", 30)
@@ -464,30 +1133,19 @@ class SyncManager:
                 success = self.apply_bulk_data(all_data, progress_callback)
 
                 if success:
-                    # ✅ CRITICAL: Reset sequences after importing data
                     if progress_callback:
-                        progress_callback("Resetting database sequences...", 95)
+                        progress_callback("Resetting sequences...", 95)
 
                     self.reset_sequences()
 
                     if progress_callback:
-                        progress_callback("Download complete!", 100)
-                    logger.info("=" * 70)
+                        progress_callback("Complete!", 100)
+
                     logger.info("✅ DOWNLOAD COMPLETE")
-                    logger.info("=" * 70)
                     return True
-                else:
-                    return False
 
             return False
 
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"❌ Connection error: {e}")
-            logger.error(f"  Could not connect to: {self.server_url}")
-            return False
-        except requests.exceptions.Timeout:
-            logger.error(f"❌ Request timeout (>300s)")
-            return False
         except Exception as e:
             logger.error(f"❌ Download error: {e}", exc_info=True)
             return False
@@ -520,16 +1178,13 @@ class SyncManager:
 
     def download_changes(self, progress_callback=None):
         """
-        Download only CHANGED data since last sync
-        ✅ Efficient incremental sync
-        ✅ Resets sequences after import
+        ✅ UPDATED: Download changes with automatic token refresh
         """
         try:
             last_sync = self.get_last_sync_time()
 
             if not last_sync:
-                # No last sync - do full download
-                logger.info("No last sync time found - doing full download")
+                logger.info("No last sync - doing full download")
                 return self.download_all_data(progress_callback)
 
             logger.info("=" * 70)
@@ -540,21 +1195,20 @@ class SyncManager:
                 progress_callback("Checking for changes...", 10)
 
             url = f"{self.server_url}/api/desktop/sync/changes/"
+            params = {'since': last_sync.isoformat()}
 
             logger.info(f"  URL: {url}")
             logger.info(f"  Since: {last_sync.isoformat()}")
 
-            response = requests.get(
-                url,
-                params={'since': last_sync.isoformat()},
-                headers={'Authorization': f'Bearer {self.auth_token}'},
-                timeout=60
-            )
+            # ✅ Use _make_request (auto-refreshes on 401)
+            response = self._make_request(url, method='GET', params=params)
 
-            logger.info(f"  Response: HTTP {response.status_code}")
+            if not response:
+                logger.error("❌ Request failed")
+                return False
 
             if response.status_code != 200:
-                error_text = response.text[:500] if response.text else "No response body"
+                error_text = response.text[:500] if response.text else "No response"
                 logger.error(f"❌ Download failed: HTTP {response.status_code}")
                 logger.error(f"  Response: {error_text}")
                 return False
@@ -564,32 +1218,23 @@ class SyncManager:
             total_changed = sum(len(records) for records in changes.values())
 
             if total_changed == 0:
-                logger.info("✅ No server changes to download")
-                return True  # Success - nothing to do
+                logger.info("✅ No server changes")
+                return True
 
             logger.info(f"✅ Downloaded {total_changed} changed records")
 
             if changes:
                 success = self.apply_bulk_data(changes, progress_callback)
                 if success:
-                    # ✅ CRITICAL: Reset sequences after importing changes
                     if progress_callback:
                         progress_callback("Resetting sequences...", 90)
 
                     self.reset_sequences()
-
-                    logger.info("✅ Server changes applied successfully")
+                    logger.info("✅ Changes applied")
                     return True
-                else:
-                    logger.error("❌ Failed to apply server changes")
-                    return False
-            else:
-                logger.info("No changes to download")
-                return True
 
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"❌ Connection error: {e}")
             return False
+
         except Exception as e:
             logger.error(f"❌ Download error: {e}", exc_info=True)
             return False
