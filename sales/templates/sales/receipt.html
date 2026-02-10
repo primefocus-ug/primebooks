@@ -1036,18 +1036,26 @@
                 <span class="receipt-total-label">Net Amount:</span>
                 <span class="receipt-total-value">{{ sale.subtotal|money }} {{ sale.currency }}</span>
             </div>
-            {% if sale.tax_amount > 0 %}
-            {% if efris_and_vat_enabled %}
-            <div class="receipt-total-row">
-                <span class="receipt-total-label">Tax Amount :</span>
-                <span class="receipt-total-value">{{ sale.tax_amount|money }} {{ sale.currency }}</span>
-            </div>
+
+            {# Tax Amount Row - Show based on EFRIS status #}
+            {% if efris_enabled %}
+                {# For EFRIS-enabled companies, ALWAYS show tax row #}
+                <div class="receipt-total-row">
+                    <span class="receipt-total-label">Tax Amount:</span>
+                    {% if efris_and_vat_enabled and sale.tax_amount > 0 %}
+                        <span class="receipt-total-value">{{ sale.tax_amount|money }} {{ sale.currency }}</span>
+                    {% else %}
+                        <span class="receipt-total-value">0.00 {{ sale.currency }}</span>
+                    {% endif %}
+                </div>
             {% else %}
-            <div class="receipt-total-row">
-                <span class="receipt-total-label">Tax Amount :</span>
-                <span class="receipt-total-value">0</span>
-            </div>
-            {% endif %}
+                {# For non-EFRIS companies, only show if there's actual tax #}
+                {% if sale.tax_amount > 0 %}
+                <div class="receipt-total-row">
+                    <span class="receipt-total-label">Tax Amount:</span>
+                    <span class="receipt-total-value">{{ sale.tax_amount|money }} {{ sale.currency }}</span>
+                </div>
+                {% endif %}
             {% endif %}
 
             {% if sale.discount_amount > 0 %}

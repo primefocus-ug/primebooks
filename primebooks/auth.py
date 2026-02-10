@@ -421,23 +421,72 @@ class DesktopAuthManager:
 
     def get_valid_token(self):
         """
-        ✅ Get valid access token, refreshing if necessary
+        ✅ IMPROVED: Get valid access token with better error handling
         Returns: valid access token or None
         """
+        import jwt
+        from datetime import datetime, timezone
+
         token = self.get_auth_token()
 
         if not token:
-            logger.warning("No access token found")
+            logger.warning("No access token found - user needs to re-login")
             return None
 
-        # Try to refresh token (always refresh to be safe)
+        # Check if token is expired (without validating signature)
+        try:
+            # Decode without verification to check expiration
+            decoded = jwt.decode(token, options={"verify_signature": False})
+            exp = decoded.get('exp')
+
+            if exp:
+                exp_datetime = datetime.fromtimestamp(exp, tz=timezone.utc)
+                now = datetime.now(timezone.utc)
+
+                # If token expires in less than 5 minutes, refresh it
+                if exp_datetime <= now:
+                    logger.info("Access token expired, attempting refresh...")
+                    new_token = self.refresh_access_token()
+                    if new_token:
+                        return new_token
+                    else:
+                        logger.error("Token refresh failed - user needs to re-login")
+                        return None
+                else:
+                    logger.debug(f"Access token valid until {exp_datetime}")
+                    return token
+        except jwt.DecodeError:
+            logger.warning("Could not decode access token")
+            # Try to refresh anyway
+            new_token = self.refresh_access_token()
+            if new_token:
+                return new_token
+        except Exception as e:
+            logger.error(f"Token validation error: {e}")
+
+        # If all else fails, try to refresh
+        logger.info("Attempting token refresh as fallback...")
         new_token = self.refresh_access_token()
         if new_token:
             return new_token
 
-        # If refresh failed, return old token (might still work)
-        logger.warning("Token refresh failed, using old token")
-        return token
+        # No valid token available
+        logger.error("❌ No valid token available - user must re-login")
+        return None
+
+    def require_authentication(self):
+        """
+        ✅ NEW: Check if user is authenticated with valid token
+        Returns: (is_authenticated: bool, error_message: str)
+        """
+        if not self.is_authenticated():
+            return False, "Not logged in"
+
+        token = self.get_valid_token()
+        if not token:
+            return False, "Session expired - please login again"
+
+        return True, None
 
     def fetch_company_details(self, token, subdomain):
         """Fetch company details from server"""

@@ -1,6 +1,8 @@
 from django.contrib import admin
 from django.contrib.admin import SimpleListFilter
-from .models import EFRISCommodityCategory
+from .models import EFRISCommodityCategory, EFRISHsCode
+
+admin.site.register(EFRISHsCode)
 
 
 class CategoryTypeFilter(SimpleListFilter):
@@ -13,7 +15,6 @@ class CategoryTypeFilter(SimpleListFilter):
             ('102', 'Product'),
             ('101', 'Service'),
         ]
-
     def queryset(self, request, queryset):
         if self.value() == '101':
             return queryset.filter(service_mark='101')

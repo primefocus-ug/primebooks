@@ -1967,8 +1967,8 @@ def process_sale_creation(request, company):
         # Background processing for receipts
         if sale.document_type == 'RECEIPT':
             try:
-                from .tasks import process_receipt_background
-                process_receipt_background.delay(sale.id)
+                from .tasks import process_receipt_async
+                process_receipt_async.delay(sale.id)
             except Exception as e:
                 logger.warning(f"Background receipt processing failed for sale {sale.id}: {e}")
 
@@ -5156,6 +5156,23 @@ def print_receipt(request, sale_id):
         receipt.last_printed_by = request.user
         receipt.save()
 
+    # Check EFRIS and VAT status
+    efris_enabled = False
+    vat_enabled = False
+
+    if hasattr(request, 'tenant'):
+        efris_enabled = getattr(request.tenant, 'efris_enabled', False)
+        vat_enabled = getattr(request.tenant, 'is_vat_enabled', False)
+    elif hasattr(request, 'user') and request.user.is_authenticated:
+        if hasattr(request.user, 'company'):
+            efris_enabled = getattr(request.user.company, 'efris_enabled', False)
+            vat_enabled = getattr(request.user.company, 'is_vat_enabled', False)
+        elif hasattr(request.user, 'stores') and request.user.stores.exists():
+            store = request.user.stores.first()
+            if store and hasattr(store, 'company'):
+                efris_enabled = getattr(store.company, 'efris_enabled', False)
+                vat_enabled = getattr(store.company, 'is_vat_enabled', False)
+
     # Prepare context for template
     context = {
         'sale': sale,
@@ -5165,6 +5182,8 @@ def print_receipt(request, sale_id):
         'qr_data': qr_data,  # Pass for debugging/display
         'total_paid': sale.total_amount,  # Assuming full payment for receipt
         'balance_due': 0,  # Assuming receipt is for completed sales
+        'efris_and_vat_enabled': efris_enabled and vat_enabled,
+        'efris_enabled': efris_enabled,
     }
 
     # Add store details
@@ -5205,6 +5224,7 @@ def print_receipt(request, sale_id):
             logger.warning(f"Failed to generate EFRIS URL: {str(e)}")
 
     return render(request, 'sales/receipt.html', context)
+
 
 @login_required
 @permission_required("sales.add_sale", raise_exception=True)

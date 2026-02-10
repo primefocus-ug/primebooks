@@ -8677,20 +8677,24 @@ class EnhancedEFRISAPIClient:
 
             logger.info(
                 f"Approving credit note application (T113) - "
-                f"Ref: {reference_no}, Status: {approve_status}"
+                f"Ref: {reference_no}, Status: {approve_status}, TaskId: {task_id}"
             )
+            logger.debug(f"T113 Request Content: {content}")
 
             # Make encrypted request (response not encrypted)
             request_data = self._build_request("T113", content, encrypt=True)
             response = self._make_http_request(request_data)
 
             if response.status_code != 200:
+                logger.error(f"T113 HTTP Error: {response.status_code} - {response.text}")
                 return {
                     "success": False,
-                    "error": f"HTTP {response.status_code}"
+                    "error": f"HTTP {response.status_code}: {response.text}"
                 }
 
             response_data = response.json()
+            logger.debug(f"T113 Response: {response_data}")
+
             return_info = response_data.get('returnStateInfo', {})
             return_code = return_info.get('returnCode', '99')
 
@@ -8700,15 +8704,18 @@ class EnhancedEFRISAPIClient:
                     "success": True,
                     "message": "Application approved successfully",
                     "reference_no": reference_no,
-                    "status": "Approved" if approve_status == '101' else "Rejected"
+                    "status": "Approved" if approve_status == '101' else "Rejected",
+                    "response_data": response_data  # Include full response for debugging
                 }
             else:
                 error_message = return_info.get('returnMessage', 'Approval failed')
                 logger.error(f"T113 failed: {return_code} - {error_message}")
+                logger.error(f"Full response: {response_data}")
                 return {
                     "success": False,
                     "error": error_message,
-                    "error_code": return_code
+                    "error_code": return_code,
+                    "response_data": response_data
                 }
 
         except Exception as e:
@@ -8717,6 +8724,7 @@ class EnhancedEFRISAPIClient:
                 "success": False,
                 "error": str(e)
             }
+
 
     def t114_cancel_credit_debit_note(
             self,
@@ -8854,6 +8862,9 @@ class EnhancedEFRISAPIClient:
             # Make encrypted request
             response = self._make_request("T118", content, encrypt=True)
 
+            # Log the raw response for debugging
+            logger.debug(f"T118 Raw Response: {response}")
+
             # Extract structured data
             result = {
                 "success": True,
@@ -8880,6 +8891,123 @@ class EnhancedEFRISAPIClient:
                 "success": False,
                 "error": str(e),
                 "application_id": application_id
+            }
+
+    # ADD THIS NEW METHOD for better error handling
+    def t111_query_credit_note_applications(
+            self,
+            approve_status: Optional[str] = None,
+            invoice_apply_category_code: Optional[str] = None,
+            start_date: Optional[str] = None,
+            end_date: Optional[str] = None,
+            query_type: str = "1",
+            page_no: int = 1,
+            page_size: int = 20,
+            reference_no: Optional[str] = None  # ADD THIS for searching by ref no
+    ) -> Dict[str, Any]:
+        """
+        T111 - Query Credit/Debit Note Applications
+        Get list of credit/debit note applications with optional filters
+
+        Args:
+            approve_status: Filter by approval status (101=Pending, 102=Approved, etc.)
+            invoice_apply_category_code: Filter by category (101=Credit, 102=Debit, etc.)
+            start_date: Filter by start date (YYYY-MM-DD)
+            end_date: Filter by end date (YYYY-MM-DD)
+            query_type: Query type (1=My applications, 2=To-do list, 3=Approval completed)
+            page_no: Page number (default: 1)
+            page_size: Items per page (default: 20)
+            reference_no: Optional reference number to search for specific application
+
+        Returns:
+            Dict with applications list and pagination info
+        """
+        try:
+            # Ensure authentication
+            auth_result = self.ensure_authenticated()
+            if not auth_result.get("success"):
+                return {
+                    "success": False,
+                    "error": f"Authentication failed: {auth_result.get('error')}"
+                }
+
+            # Build request content
+            content = {
+                "queryType": query_type,
+                "pageNo": str(page_no),
+                "pageSize": str(page_size)
+            }
+
+            # Add optional filters
+            if approve_status:
+                content["approveStatus"] = approve_status
+            if invoice_apply_category_code:
+                content["invoiceApplyCategoryCode"] = invoice_apply_category_code
+            if start_date:
+                content["applicationStartDate"] = start_date
+            if end_date:
+                content["applicationEndDate"] = end_date
+            if reference_no:  # ADD THIS
+                content["referenceNo"] = reference_no
+
+            logger.info(
+                f"Querying credit note applications (T111) - "
+                f"QueryType: {query_type}, Page: {page_no}, Status: {approve_status}"
+            )
+            logger.debug(f"T111 Request Content: {content}")
+
+            # Make encrypted request
+            response = self._make_request("T111", content, encrypt=True)
+
+            # Extract applications
+            applications = response.get("invoiceApplyList", [])
+            total_size = int(response.get("records", 0))
+            page_count = (total_size + page_size - 1) // page_size
+
+            # Calculate page range for pagination UI
+            page_range = []
+            if page_count <= 7:
+                page_range = list(range(1, page_count + 1))
+            else:
+                if page_no <= 4:
+                    page_range = list(range(1, 8))
+                elif page_no >= page_count - 3:
+                    page_range = list(range(page_count - 6, page_count + 1))
+                else:
+                    page_range = list(range(page_no - 3, page_no + 4))
+
+            result = {
+                "success": True,
+                "applications": applications,
+                "pagination": {
+                    "page_no": page_no,
+                    "page_size": page_size,
+                    "page_count": page_count,
+                    "total_size": total_size,
+                    "page_range": page_range
+                }
+            }
+
+            logger.info(
+                f"T111 query successful - "
+                f"Found {len(applications)} applications "
+                f"(Page {page_no} of {page_count})"
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"T111 query failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "applications": [],
+                "pagination": {
+                    "page_no": 1,
+                    "page_size": page_size,
+                    "page_count": 0,
+                    "total_size": 0
+                }
             }
 
     def t120_void_credit_debit_note_application(

@@ -885,7 +885,6 @@ class SyncManager:
 
         self.last_sync_file = settings.DESKTOP_DATA_DIR / f'.last_sync_{tenant_id}'
 
-        from sync_model_config import get_sync_order
         self.sync_models = get_sync_order()
 
         self.server_url = self._get_server_url()
@@ -1243,11 +1242,87 @@ class SyncManager:
     # ========================================================================
     # UPLOAD TO SERVER
     # ========================================================================
+    def fix_sequences_after_upload(self):
+        """
+        Fix PostgreSQL sequences after uploading data
+        ✅ Prevents "duplicate key" errors
+        ✅ Automatically runs after upload
+
+        Add this method to SyncManager class
+        """
+        from django.db import connection
+        from django.apps import apps
+
+        logger.info("🔧 Fixing sequences after upload...")
+
+        models_to_fix = [
+            'sales.Sale',
+            'sales.SaleItem',
+            'sales.Payment',
+            'customers.Customer',
+            'inventory.Product',
+            'inventory.Stock',
+            'inventory.StockMovement',
+            'inventory.Category',
+            'inventory.Supplier',
+            'stores.Store',
+            'accounts.CustomUser',
+            'invoices.Invoice',
+            'invoices.InvoiceItem',
+        ]
+
+        fixed_count = 0
+
+        try:
+            with connection.cursor() as cursor:
+                for model_name in models_to_fix:
+                    try:
+                        model = apps.get_model(model_name)
+                        table_name = model._meta.db_table
+
+                        # Get sequence name
+                        cursor.execute(f"""
+                            SELECT pg_get_serial_sequence('{self.schema_name}.{table_name}', 'id')
+                        """)
+
+                        result = cursor.fetchone()
+                        if not result or not result[0]:
+                            continue
+
+                        sequence_name = result[0].split('.')[-1]
+
+                        # Get max ID
+                        cursor.execute(f"""
+                            SELECT COALESCE(MAX(id), 0) FROM {self.schema_name}.{table_name}
+                        """)
+
+                        max_id = cursor.fetchone()[0]
+                        new_value = max_id + 1
+
+                        # Fix sequence
+                        cursor.execute(f"""
+                            SELECT setval('{self.schema_name}.{sequence_name}', {new_value}, false)
+                        """)
+
+                        logger.debug(f"  ✅ Fixed {table_name}: {new_value}")
+                        fixed_count += 1
+
+                    except Exception as e:
+                        logger.debug(f"  Skipped {model_name}: {e}")
+
+            if fixed_count > 0:
+                logger.info(f"✅ Fixed {fixed_count} sequences")
+
+        except Exception as e:
+            logger.error(f"Error fixing sequences: {e}")
 
     def upload_changes(self, progress_callback=None):
         """
         Upload local changes to server
-        ✅ Replaces negative IDs with server-assigned IDs
+
+        ✅ Uploads offline changes
+        ✅ Replaces negative IDs with server IDs
+        ✅ Fixes PostgreSQL sequences AFTER successful upload
         """
         try:
             last_sync = self.get_last_sync_time()
@@ -1267,7 +1342,10 @@ class SyncManager:
                 return True
 
             total_changed = sum(len(records) for records in changes.values())
-            logger.info(f"📤 Uploading {total_changed} changed records across {len(changes)} models")
+            logger.info(
+                f"📤 Uploading {total_changed} changed records "
+                f"across {len(changes)} model(s)"
+            )
 
             if progress_callback:
                 progress_callback(f"Uploading {total_changed} records...", 30)
@@ -1277,13 +1355,13 @@ class SyncManager:
             response = requests.post(
                 url,
                 json={
-                    'tenant_id': self.tenant_id,
-                    'schema_name': self.schema_name,
-                    'changes': changes,
-                    'last_sync': last_sync.isoformat() if last_sync else None
+                    "tenant_id": self.tenant_id,
+                    "schema_name": self.schema_name,
+                    "changes": changes,
+                    "last_sync": last_sync.isoformat() if last_sync else None,
                 },
-                headers={'Authorization': f'Bearer {self.auth_token}'},
-                timeout=120
+                headers={"Authorization": f"Bearer {self.auth_token}"},
+                timeout=120,
             )
 
             if response.status_code != 200:
@@ -1292,25 +1370,42 @@ class SyncManager:
 
             result = response.json()
 
-            if result.get('success'):
-                logger.info(f"✅ Upload successful")
-
-                # ✅ Replace negative IDs with real server IDs
-                id_mappings = result.get('id_mappings', {})
-                if id_mappings:
-                    logger.info(f"🔄 Replacing {len(id_mappings)} model(s) offline IDs...")
-                    self._replace_offline_ids(id_mappings)
-
-                if progress_callback:
-                    progress_callback("Upload complete!", 60)
-                return True
-            else:
-                error_msg = result.get('error', 'Unknown error')
+            if not result.get("success"):
+                error_msg = result.get("error", "Unknown error")
                 logger.error(f"❌ Upload failed: {error_msg}")
                 return False
 
+            # ==========================================================
+            # ✅ SUCCESS PATH
+            # ==========================================================
+
+            logger.info("✅ Upload successful")
+
+            # 🔄 Replace offline (negative) IDs with server IDs
+            id_mappings = result.get("id_mappings", {})
+            if id_mappings:
+                logger.info(f"🔄 Replacing offline IDs for {len(id_mappings)} model(s)")
+                self._replace_offline_ids(id_mappings)
+
+            # ✅ FIX SEQUENCES AFTER UPLOAD
+            try:
+                logger.info("🔧 Fixing database sequences after upload...")
+                self.fix_sequences_after_upload()
+                logger.info("✅ Sequences fixed successfully")
+            except Exception as seq_err:
+                # ⚠️ Non-fatal, but logged
+                logger.warning(
+                    f"⚠️ Sequence fix failed (safe to retry later): {seq_err}",
+                    exc_info=True,
+                )
+
+            if progress_callback:
+                progress_callback("Upload complete!", 60)
+
+            return True
+
         except Exception as e:
-            logger.error(f"❌ Upload error: {e}", exc_info=True)
+            logger.error("❌ Upload error", exc_info=True)
             return False
 
     def _replace_offline_ids(self, id_mappings):
@@ -1736,6 +1831,15 @@ class SyncManager:
         ✅ Only syncs NEW changes after first sync
         """
         try:
+            from primebooks.auth import DesktopAuthManager
+            auth_manager = DesktopAuthManager()
+
+            is_authed, error_msg = auth_manager.require_authentication()
+            if not is_authed:
+                logger.error(f"❌ Authentication required: {error_msg}")
+                if progress_callback:
+                    progress_callback(f"Error: {error_msg}", 0)
+                return False
             logger.info("=" * 70)
             logger.info("FULL SYNC STARTING")
             logger.info(f"  First sync: {is_first_sync}")

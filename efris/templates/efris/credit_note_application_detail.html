@@ -112,60 +112,59 @@
 {% block efris_content %}
 <div class="container-fluid">
     <!-- Header Section -->
-    <!-- Header Section -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h4 class="mb-0">
-            <i class="fas fa-file-invoice text-primary me-2"></i>
-            Credit Note Application: {{ application_id }}
-            {% if t111_status and t111_status != application.approve_status %}
-                <small class="text-warning ms-2">
-                    <i class="fas fa-exclamation-triangle"></i> Status mismatch detected
-                </small>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-0">
+                <i class="fas fa-file-invoice text-primary me-2"></i>
+                Credit Note Application: {{ application_id }}
+                {% if t111_status and t111_status != application.approve_status %}
+                    <small class="text-warning ms-2">
+                        <i class="fas fa-exclamation-triangle"></i> Status mismatch detected
+                    </small>
+                {% endif %}
+            </h4>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'efris:dashboard' %}">EFRIS</a>
+                    </li>
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'efris:credit_note_applications' %}">Credit Notes</a>
+                    </li>
+                    <li class="breadcrumb-item active" aria-current="page">Application Detail</li>
+                </ol>
+            </nav>
+        </div>
+
+        <div>
+            {% if application.approve_status == '101' or application.approve_status == '1' %}
+                <span class="badge status-badge status-101">PENDING</span>
+            {% elif application.approve_status == '102' or application.approve_status == '2' %}
+                <span class="badge status-badge status-102">APPROVED</span>
+            {% elif application.approve_status == '103' or application.approve_status == '3' %}
+                <span class="badge status-badge status-103">REJECTED</span>
+            {% elif application.approve_status == '104' or application.approve_status == '4' %}
+                <span class="badge status-badge status-104">CANCELLED</span>
+            {% elif application.approve_status == '105' %}
+                <span class="badge status-badge status-105">PROCESSED</span>
+            {% else %}
+                <span class="badge bg-secondary status-badge">{{ application.approve_status|default:"UNKNOWN" }}</span>
             {% endif %}
-        </h4>
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb mb-0">
-                <li class="breadcrumb-item">
-                    <a href="{% url 'efris:dashboard' %}">EFRIS</a>
-                </li>
-                <li class="breadcrumb-item">
-                    <a href="{% url 'efris:credit_note_applications' %}">Credit Notes</a>
-                </li>
-                <li class="breadcrumb-item active" aria-current="page">Application Detail</li>
-            </ol>
-        </nav>
+        </div>
     </div>
 
-    <div>
-        {% if application.approve_status == '101' or application.approve_status == '1' %}
-            <span class="badge status-badge status-101">PENDING</span>
-        {% elif application.approve_status == '102' or application.approve_status == '2' %}
-            <span class="badge status-badge status-102">APPROVED</span>
-        {% elif application.approve_status == '103' or application.approve_status == '3' %}
-            <span class="badge status-badge status-103">REJECTED</span>
-        {% elif application.approve_status == '104' or application.approve_status == '4' %}
-            <span class="badge status-badge status-104">CANCELLED</span>
-        {% elif application.approve_status == '105' %}
-            <span class="badge status-badge status-105">PROCESSED</span>
-        {% else %}
-            <span class="badge bg-secondary status-badge">{{ application.approve_status|default:"UNKNOWN" }}</span>
-        {% endif %}
+    <!-- Status Mismatch Warning -->
+    {% if t111_status and t111_status != application.approve_status %}
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Status Mismatch Detected:</strong>
+        <ul class="mb-0 mt-2">
+            <li>T112 Detail API Status: <strong>{{ application.status }}</strong> ({{ application.approve_status }})</li>
+            <li>T111 List API Status: <strong>{{ t111_status }}</strong></li>
+        </ul>
+        <small class="text-muted">This might indicate a timing issue or API caching. The T112 detail API is usually more accurate.</small>
     </div>
-</div>
-
-<!-- Status Mismatch Warning -->
-{% if t111_status and t111_status != application.approve_status %}
-<div class="alert alert-warning">
-    <i class="fas fa-exclamation-triangle me-2"></i>
-    <strong>Status Mismatch Detected:</strong>
-    <ul class="mb-0 mt-2">
-        <li>T112 Detail API Status: <strong>{{ application.status }}</strong> ({{ application.approve_status }})</li>
-        <li>T111 List API Status: <strong>{{ t111_status }}</strong></li>
-    </ul>
-    <small class="text-muted">This might indicate a timing issue or API caching. The T112 detail API is usually more accurate.</small>
-</div>
-{% endif %}
+    {% endif %}
 
     <!-- Alert Messages -->
     {% if messages %}
@@ -624,7 +623,6 @@
                     <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-outline-secondary">
                         <i class="fas fa-arrow-left me-2"></i> Back to Applications
                     </a>
-
                 </div>
 
                 <div class="d-flex gap-2">
@@ -639,11 +637,10 @@
                             </button>
                         </form>
 
-                        <a href="{% url 'efris:approve_credit_note' application_id %}"
-                           class="btn btn-success"
-                           onclick="return confirm('Approve this credit note application?')">
+                        <button class="btn btn-success"
+                                onclick="showApprovalModal('{{ application_id }}', '{{ application.credit_note_no|default:application_id }}', '{{ application.task_id|default:"" }}')">
                             <i class="fas fa-check me-2"></i> Approve
-                        </a>
+                        </button>
 
                         <a href="{% url 'efris:cancel_credit_debit_note' %}"
                            class="btn btn-danger"
@@ -682,39 +679,423 @@
         Company: {{ company.name }}
     </div>
 </div>
+
+<!-- Approval Modal (SINGLE VERSION - FIXED) -->
+<div class="modal fade" id="approvalModal" tabindex="-1" aria-labelledby="approvalModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="approvalForm">
+                {% csrf_token %}
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="approvalModalLabel">
+                        <i class="fas fa-check-circle me-2"></i>Approve/Reject Application
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="reference_no" id="modal_reference_no">
+                    <input type="hidden" name="task_id" id="modal_task_id">
+                    <input type="hidden" name="application_id" id="modal_application_id">
+
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Note:</strong> This action will submit the decision to URA EFRIS system.
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Application Details:</label>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <p class="mb-1"><strong>Reference No:</strong> <span id="display_reference_no" class="fw-bold"></span></p>
+                                <p class="mb-0"><strong>Application ID:</strong> <span id="display_application_id" class="text-muted"></span></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="modal_approve_status" class="form-label">Decision *</label>
+                        <select class="form-select" name="approve_status" id="modal_approve_status" required>
+                            <option value="">Select decision</option>
+                            <!-- T113 API codes: 101 = Approve, 103 = Reject -->
+                            <option value="101">Approve (Submit to URA)</option>
+                            <option value="103">Reject (Submit to URA)</option>
+                        </select>
+                        <small class="form-text text-muted">
+                            Note: T113 approval API uses codes 101 (Approve) and 103 (Reject).
+                        </small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="modal_remark" class="form-label">Remarks * (max 1024 characters)</label>
+                        <textarea class="form-control" name="remark" id="modal_remark"
+                                  rows="4" required maxlength="1024"
+                                  placeholder="Enter detailed approval or rejection remarks..."></textarea>
+                        <div class="d-flex justify-content-between mt-1">
+                            <small class="form-text text-muted">
+                                Required for approval/rejection
+                            </small>
+                            <small class="form-text text-muted">
+                                <span id="remarkCharCount">0</span> / 1024 characters
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-2"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="submitApprovalBtn">
+                        <i class="fas fa-paper-plane me-2"></i> Submit Decision
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// Initialize tooltips
+// =============================================================================
+// DIAGNOSTIC VERSION - Debug Modal Form Submission
+// =============================================================================
+
+function showApprovalModal(appId, referenceNo, taskId) {
+    console.log('=== showApprovalModal called ===');
+    console.log('appId:', appId);
+    console.log('referenceNo:', referenceNo);
+    console.log('taskId:', taskId);
+    console.log('taskId type:', typeof taskId);
+    console.log('taskId is empty?', !taskId || taskId === '' || taskId === 'None');
+
+    const modal = new bootstrap.Modal(document.getElementById('approvalModal'));
+    const form = document.getElementById('approvalForm');
+
+    // Set hidden inputs - with extra validation
+    const appIdField = document.getElementById('modal_application_id');
+    const refNoField = document.getElementById('modal_reference_no');
+    const taskIdField = document.getElementById('modal_task_id');
+
+    console.log('=== Setting form fields ===');
+
+    if (appIdField) {
+        appIdField.value = appId;
+        console.log('Set application_id:', appIdField.value);
+    } else {
+        console.error('❌ modal_application_id field not found!');
+    }
+
+    if (refNoField) {
+        refNoField.value = referenceNo || appId;
+        console.log('Set reference_no:', refNoField.value);
+    } else {
+        console.error('❌ modal_reference_no field not found!');
+    }
+
+    if (taskIdField) {
+        // CRITICAL: Check if taskId is actually valid
+        if (!taskId || taskId === '' || taskId === 'None' || taskId === 'null') {
+            console.warn('⚠️ WARNING: taskId is empty or invalid:', taskId);
+            console.warn('This will cause "Missing required fields" error!');
+
+            // Show warning to user
+            alert(
+                'WARNING: This application is missing a Task ID.\n\n' +
+                'This usually means the application was not properly created in EFRIS.\n' +
+                'You may need to cancel and recreate the application.\n\n' +
+                'Technical details:\n' +
+                '- Application ID: ' + appId + '\n' +
+                '- Reference No: ' + (referenceNo || 'N/A') + '\n' +
+                '- Task ID: ' + (taskId || 'MISSING')
+            );
+        }
+
+        taskIdField.value = taskId || '';
+        console.log('Set task_id:', taskIdField.value);
+    } else {
+        console.error('❌ modal_task_id field not found!');
+    }
+
+    // Set display values
+    const displayRefNo = document.getElementById('display_reference_no');
+    const displayAppId = document.getElementById('display_application_id');
+
+    if (displayRefNo) {
+        displayRefNo.textContent = referenceNo || appId;
+    }
+    if (displayAppId) {
+        displayAppId.textContent = appId;
+    }
+
+    // Set form action with proper URL structure
+    const currentPath = window.location.pathname;
+    const hasLangPrefix = currentPath.startsWith('/en/') || currentPath.startsWith('/fr/');
+
+    if (hasLangPrefix) {
+        const langPrefix = currentPath.split('/')[1];
+        form.action = `/${langPrefix}/efris/credit-notes/approve/${appId}/`;
+    } else {
+        form.action = `/efris/credit-notes/approve/${appId}/`;
+    }
+
+    console.log('Form action set to:', form.action);
+
+    // Reset form
+    form.reset();
+
+    // Re-set hidden fields after reset (because reset clears them)
+    if (appIdField) appIdField.value = appId;
+    if (refNoField) refNoField.value = referenceNo || appId;
+    if (taskIdField) taskIdField.value = taskId || '';
+
+    document.getElementById('remarkCharCount').textContent = '0';
+
+    // Show modal
+    modal.show();
+
+    console.log('=== Modal shown ===');
+}
+
+// Character count for remarks field
 document.addEventListener('DOMContentLoaded', function() {
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
+    console.log('=== DOM Content Loaded ===');
+
+    const remarkField = document.getElementById('modal_remark');
+    const charCount = document.getElementById('remarkCharCount');
+
+    if (remarkField && charCount) {
+        remarkField.addEventListener('input', function() {
+            charCount.textContent = remarkField.value.length;
+
+            if (remarkField.value.length > 1000) {
+                charCount.classList.add('text-warning');
+            } else {
+                charCount.classList.remove('text-warning');
+            }
+
+            if (remarkField.value.length >= 1024) {
+                charCount.classList.add('text-danger');
+                charCount.classList.remove('text-warning');
+            }
+        });
+    }
+
+    // AJAX form submission with detailed logging
+    const approvalForm = document.getElementById('approvalForm');
+    const submitBtn = document.getElementById('submitApprovalBtn');
+
+    if (approvalForm && submitBtn) {
+        approvalForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            console.log('=== Form Submission Started ===');
+
+            // Validate form
+            if (!approvalForm.checkValidity()) {
+                console.error('❌ Form validation failed');
+                approvalForm.reportValidity();
+                return;
+            }
+
+            // Get form data
+            const formData = new FormData(approvalForm);
+
+            // Log all form data
+            console.log('=== Form Data Being Submitted ===');
+            for (const [key, value] of formData.entries()) {
+                console.log(`  ${key}: "${value}" (length: ${value.length})`);
+
+                // Highlight empty or problematic values
+                if (!value || value === '' || value === 'None' || value === 'null') {
+                    console.error(`  ❌ WARNING: ${key} is empty or invalid!`);
+                }
+            }
+
+            // Validate all required fields manually
+            const requiredFields = {
+                'reference_no': formData.get('reference_no'),
+                'approve_status': formData.get('approve_status'),
+                'task_id': formData.get('task_id'),
+                'remark': formData.get('remark'),
+                'application_id': formData.get('application_id')
+            };
+
+            console.log('=== Required Fields Validation ===');
+            const missingFields = [];
+
+            for (const [field, value] of Object.entries(requiredFields)) {
+                const isEmpty = !value || value.trim() === '';
+                console.log(`${field}: ${isEmpty ? '❌ MISSING' : '✅ OK'} (value: "${value}")`);
+
+                if (isEmpty) {
+                    missingFields.push(field);
+                }
+            }
+
+            if (missingFields.length > 0) {
+                console.error('❌ VALIDATION FAILED - Missing fields:', missingFields);
+                alert(
+                    'ERROR: Cannot submit form. Missing required fields:\n\n' +
+                    missingFields.join('\n') +
+                    '\n\nPlease check the browser console for details.'
+                );
+                return;
+            }
+
+            console.log('✅ All required fields present');
+
+            // Disable button and show loading state
+            submitBtn.disabled = true;
+            const originalBtnText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Submitting...';
+
+            // Get CSRF token
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            console.log('=== Sending AJAX Request ===');
+            console.log('URL:', approvalForm.action);
+            console.log('Method: POST');
+
+            // Submit via AJAX
+            fetch(approvalForm.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            })
+            .then(response => {
+                console.log('=== Response Received ===');
+                console.log('Status:', response.status);
+                console.log('OK:', response.ok);
+
+                const contentType = response.headers.get('content-type');
+                console.log('Content-Type:', contentType);
+
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json().then(data => ({
+                        ok: response.ok,
+                        status: response.status,
+                        data: data
+                    }));
+                } else {
+                    return response.text().then(text => {
+                        console.warn('⚠️ Non-JSON response received');
+                        console.log('Response text (first 500 chars):', text.substring(0, 500));
+                        return {
+                            ok: response.ok,
+                            status: response.status,
+                            data: {
+                                error: 'Unexpected response format',
+                                html_snippet: text.substring(0, 200)
+                            }
+                        };
+                    });
+                }
+            })
+            .then(result => {
+                console.log('=== Processing Response ===');
+                console.log('Result:', result);
+
+                if (result.ok && result.data.success) {
+                    console.log('✅ SUCCESS:', result.data.message);
+                    showSuccess(result.data.message || 'Application processed successfully');
+
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('approvalModal'));
+                    if (modal) {
+                        modal.hide();
+                    }
+
+                    setTimeout(() => {
+                        if (result.data.redirect_url) {
+                            window.location.href = result.data.redirect_url;
+                        } else {
+                            window.location.reload();
+                        }
+                    }, 1500);
+                } else {
+                    console.error('❌ ERROR:', result.data);
+
+                    const errorMsg = result.data.error || 'Unknown error occurred';
+
+                    // Show detailed error information
+                    let detailsHtml = '';
+                    if (result.data.missing_fields) {
+                        detailsHtml += '<br><strong>Missing fields:</strong><br>' +
+                                      result.data.missing_fields.join(', ');
+                    }
+                    if (result.data.error_code) {
+                        detailsHtml += '<br><strong>Error code:</strong> ' + result.data.error_code;
+                    }
+
+                    showError(errorMsg + detailsHtml);
+
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnText;
+                }
+            })
+            .catch(error => {
+                console.error('❌ NETWORK ERROR:', error);
+                showError('Network error: ' + error.message);
+
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnText;
+            });
+        });
+    } else {
+        console.error('❌ Form or submit button not found!');
+        if (!approvalForm) console.error('  - approvalForm element missing');
+        if (!submitBtn) console.error('  - submitApprovalBtn element missing');
+    }
 });
 
-// Auto-refresh notification for pending applications (every 60 seconds)
-{% if application.approve_status == '101' %}
-setTimeout(() => {
-    const notification = document.createElement('div');
-    notification.className = 'alert alert-info alert-dismissible fade show position-fixed top-0 end-0 m-3';
-    notification.style.zIndex = '1060';
-    notification.innerHTML = `
-        <i class="fas fa-clock me-2"></i>
-        Application status is pending.
-        <a href="#" onclick="location.reload(); return false;" class="alert-link">Refresh now</a> to check for updates.
-        <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
-    `;
-    document.body.appendChild(notification);
+// Helper functions
+function showSuccess(message) {
+    showAlert(message, 'success');
+}
 
-    // Auto-remove after 10 seconds
-    setTimeout(() => {
-        if (notification.parentElement) {
-            notification.remove();
-        }
-    }, 10000);
-}, 60000);
-{% endif %}
+function showError(message) {
+    showAlert(message, 'danger');
+}
+
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.role = 'alert';
+    alertDiv.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+
+    const container = document.querySelector('.container-fluid');
+    if (container) {
+        container.insertBefore(alertDiv, container.firstChild);
+
+        setTimeout(() => {
+            alertDiv.remove();
+        }, 5000);
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+}
+
+// Add debug button to check current modal state
+function debugModalState() {
+    console.log('=== Current Modal State ===');
+    console.log('application_id:', document.getElementById('modal_application_id')?.value);
+    console.log('reference_no:', document.getElementById('modal_reference_no')?.value);
+    console.log('task_id:', document.getElementById('modal_task_id')?.value);
+    console.log('approve_status:', document.getElementById('modal_approve_status')?.value);
+    console.log('remark:', document.getElementById('modal_remark')?.value?.substring(0, 50) + '...');
+}
+
+// Make debug function available globally
+window.debugModalState = debugModalState;
+
+console.log('=== Approval Modal Script Loaded ===');
+console.log('To debug modal state, type: debugModalState()');
 </script>
 {% endblock %}

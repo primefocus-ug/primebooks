@@ -25,6 +25,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from company.models import Company
 from django.utils import timezone
+from . models import AppVersions
 
 
 @api_view(['GET'])
@@ -32,11 +33,15 @@ from django.utils import timezone
 def subscription_status(request):
     """
     Return subscription status for desktop app
-    ✅ Real-time subscription check
-    ✅ Returns detailed status
-    """
+    ✅ Validates subscription in real-time
+    ✅ Returns detailed status for caching
 
+    Usage: GET /api/desktop/subscription/status/?company_id=<id>
+    """
     company_id = request.GET.get('company_id')
+
+    if not company_id:
+        return Response({'error': 'company_id required'}, status=400)
 
     try:
         company = Company.objects.get(company_id=company_id)
@@ -63,6 +68,7 @@ def subscription_status(request):
             'plan': {
                 'name': company.plan.name if company.plan else 'FREE',
                 'max_users': company.plan.max_users if company.plan else 5,
+                'max_branches': company.plan.max_branches if company.plan else 1,
             },
             'trial_ends_at': company.trial_ends_at.isoformat() if company.trial_ends_at else None,
             'subscription_ends_at': company.subscription_ends_at.isoformat() if company.subscription_ends_at else None,
@@ -74,6 +80,50 @@ def subscription_status(request):
         return Response({'error': 'Company not found'}, status=404)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def check_updates(request):
+    current_version = request.GET.get('current_version', '0.0.0')
+
+    # Get latest active version
+    latest_version = AppVersions.objects.filter(is_active=True).first()
+
+    if not latest_version:
+        return Response({'update_available': False})
+
+    def parse_version(v):
+        return tuple(map(int, v.split('.')))
+
+    current = parse_version(current_version)
+    latest = latest_version.version_tuple
+
+    if latest > current:
+        # Determine download URL based on platform
+        import platform
+        system = request.META.get('HTTP_USER_AGENT', '').lower()
+
+        if 'windows' in system:
+            download_url = latest_version.windows_url
+        elif 'mac' in system or 'darwin' in system:
+            download_url = latest_version.mac_url
+        else:
+            download_url = latest_version.linux_url
+
+        return Response({
+            'update_available': True,
+            'latest_version': latest_version.version,
+            'current_version': current_version,
+            'download_url': download_url,
+            'file_size_mb': latest_version.file_size_mb,
+            'release_notes': latest_version.release_notes,
+            'is_critical': latest_version.is_critical,
+        })
+    else:
+        return Response({
+            'update_available': False,
+            'latest_version': latest_version.version,
+            'current_version': current_version,
+        })
 
 @csrf_exempt
 def health_check(request):

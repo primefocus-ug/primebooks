@@ -251,3 +251,36 @@ class MaintenanceWindow(models.Model):
     def __str__(self):
         return f"{self.title} - {self.start_time.strftime('%Y-%m-%d %H:%M')}"
 
+
+class AppVersions(models.Model):
+
+    version = models.CharField(max_length=20, unique=True)
+    release_date = models.DateField(auto_now_add=True)
+
+    # Download URLs (platform-specific)
+    windows_url = models.URLField(blank=True)
+    mac_url = models.URLField(blank=True)
+    linux_url = models.URLField(blank=True)
+
+    file_size_mb = models.IntegerField(default=0)
+    release_notes = models.TextField(blank=True)
+
+    # Flags
+    is_active = models.BooleanField(default=True)
+    is_critical = models.BooleanField(
+        default=False,
+        help_text="If true, users must update immediately"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-version']
+
+    def __str__(self):
+        return f"v{self.version}"
+
+    @property
+    def version_tuple(self):
+        return tuple(map(int, self.version.split('.')))
+

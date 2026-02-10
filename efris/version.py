@@ -704,6 +704,43 @@ def normal_invoices_view(request):
 # ============================================================================
 
 
+class CreditNoteStatus:
+    """Status codes used in T111/T112 Query APIs"""
+    PENDING = '101'
+    APPROVED = '102'
+    REJECTED = '103'
+    CANCELLED = '104'
+    PROCESSED = '105'
+
+    STATUS_DISPLAY = {
+        '101': 'Pending/Submitted',
+        '102': 'Approved',
+        '103': 'Rejected',
+        '104': 'Voided/Cancelled',
+        '105': 'Processed',
+    }
+
+    @classmethod
+    def get_display(cls, status_code):
+        return cls.STATUS_DISPLAY.get(status_code, f'Unknown ({status_code})')
+
+    @classmethod
+    def can_approve(cls, status_code):
+        """Check if application can be approved/rejected"""
+        return status_code == cls.PENDING
+
+
+class ApprovalAction:
+    """Action codes used in T113 Approval API"""
+    APPROVE = '101'  # This means "APPROVE" in T113
+    REJECT = '103'  # This means "REJECT" in T113
+
+    ACTION_DISPLAY = {
+        '101': 'Approved',
+        '103': 'Rejected',
+    }
+
+
 @login_required
 def credit_note_applications_view(request):
     """
@@ -718,7 +755,8 @@ def credit_note_applications_view(request):
 
     context = {
         'page_title': 'Credit/Debit Note Applications',
-        'company': company
+        'company': company,
+        'status_class': CreditNoteStatus,  # Pass the class to template
     }
 
     try:
@@ -728,7 +766,7 @@ def credit_note_applications_view(request):
         category_code = request.GET.get('category_code')
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
-        query_type = request.GET.get('query_type', '1')  # Default to "My applications"
+        query_type = request.GET.get('query_type', '1')
 
         # Validate query_type
         if query_type not in ['1', '2', '3']:
@@ -748,21 +786,12 @@ def credit_note_applications_view(request):
         if result.get('success'):
             applications = result.get('applications', [])
 
-            # Map status codes to descriptions based on ACTUAL API behavior
-            status_codes = {
-                '101': 'Pending/Submitted',  # From actual API behavior
-                '102': 'Approved',  # From actual API behavior and logs
-                '103': 'Rejected',
-                '104': 'Voided/Cancelled',
-                '105': 'Processed',
-            }
-
             # Map reason codes to descriptions
             reason_codes = {
-                '101': 'Sales Return',
-                '102': 'Sales Allowance/Discount',
-                '103': 'Price Adjustment',
-                '104': 'Goods/Service Not Received',
+                '101': 'Return of products due to expiry or damage',
+                '102': 'Cancellation of the purchase',
+                '103': 'Invoice amount wrongly stated',
+                '104': 'Partial or complete waive off',
                 '105': 'Others',
             }
 
@@ -770,11 +799,8 @@ def credit_note_applications_view(request):
                 # Handle both camelCase and snake_case field names
                 app_status = app.get('approveStatus') or app.get('approve_status')
                 app['approve_status'] = app_status
-
-                if app_status in status_codes:
-                    app['status_display'] = status_codes[app_status]
-                else:
-                    app['status_display'] = f"Unknown ({app_status})"
+                app['status_display'] = CreditNoteStatus.get_display(app_status)
+                app['can_approve'] = CreditNoteStatus.can_approve(app_status)
 
                 # Map reason code
                 reason_code = app.get('invoiceApplyCategoryCode') or app.get('invoice_apply_category_code')
@@ -793,14 +819,14 @@ def credit_note_applications_view(request):
                 'query_type': query_type
             }
 
-            # Add status options for filter - based on ACTUAL API
+            # Status options for filter
             context['status_options'] = [
                 ('', 'All Status'),
-                ('101', 'Pending/Submitted'),
-                ('102', 'Approved'),
-                ('103', 'Rejected'),
-                ('104', 'Voided/Cancelled'),
-                ('105', 'Processed'),
+                (CreditNoteStatus.PENDING, CreditNoteStatus.STATUS_DISPLAY[CreditNoteStatus.PENDING]),
+                (CreditNoteStatus.APPROVED, CreditNoteStatus.STATUS_DISPLAY[CreditNoteStatus.APPROVED]),
+                (CreditNoteStatus.REJECTED, CreditNoteStatus.STATUS_DISPLAY[CreditNoteStatus.REJECTED]),
+                (CreditNoteStatus.CANCELLED, CreditNoteStatus.STATUS_DISPLAY[CreditNoteStatus.CANCELLED]),
+                (CreditNoteStatus.PROCESSED, CreditNoteStatus.STATUS_DISPLAY[CreditNoteStatus.PROCESSED]),
             ]
 
         else:
@@ -831,133 +857,121 @@ def credit_note_application_detail_view(request, application_id):
         # Get basic application info (T112)
         basic_result = client.t112_query_credit_note_application_detail(application_id)
 
-        # Also get from T111 for comparison
-        list_result = client.t111_query_credit_note_applications(
-            query_type="1",
-            page_size=1,
-            reference_no=application_id  # Try searching by application_id
-        )
-
-        # Debug: Log both responses
-        logger.info(f"T112 Response status: {basic_result.get('application_detail', {}).get('approveStatusCode')}")
-        logger.info(f"T111 Response: {list_result}")
-
-        if basic_result.get('success'):
-            application_data = basic_result.get('application_detail', {})
-
-            # Extract basic information from the actual API response
-            basic_info = {
-                'application_id': application_data.get('id') or application_id,
-                'original_invoice_no': application_data.get('oriInvoiceNo') or
-                                       application_data.get('toinvoiceNo'),
-                'credit_note_no': application_data.get('referenceNo'),
-                'application_date': application_data.get('applicationTime'),
-                'status': application_data.get('approveStatusCode'),
-                'approve_status': application_data.get('approveStatusCode'),
-                'currency': application_data.get('currency') or 'UGX',
-                'reason_code': application_data.get('invoiceApplyCategoryCode'),
-                'reason': application_data.get('remarks'),
-                'contact_name': application_data.get('contactName'),
-                'contact_mobile': application_data.get('mobilePhone'),
-                'contact_email': application_data.get('contactEmail'),
-                'remarks': application_data.get('remarks'),
-                'gross_amount': float(application_data.get('totalAmount') or 0),
-                'net_amount': 0,
-                'tax_amount': 0,
-                'applicant_tin': application_data.get('tin'),
-                'applicant_name': application_data.get('legalName'),
-                'buyer_tin': application_data.get('buyerTin'),
-                'buyer_name': application_data.get('buyerLegalName'),
-                'buyer_email': application_data.get('buyerEmailAddress'),
-                'buyer_mobile': application_data.get('buyerMobilePhone'),
-                'approve_remarks': application_data.get('approveRemarks'),
-                'issued_date': application_data.get('issuedDate'),
-                'task_id': application_data.get('taskId'),
-                'address': application_data.get('address'),
-            }
-
-            # Process detail result
-            goods_details = []
-            tax_details = []
-            payment_methods = []
-            summary = {}
-
-            detail_result = client.t118_query_credit_debit_note_detail(application_id)
-            if detail_result.get('success'):
-                # Goods details
-                goods_details = detail_result.get('goods_details', [])
-
-                # Tax details
-                tax_details = detail_result.get('tax_details', [])
-
-                # Payment methods
-                payment_methods = detail_result.get('payment_methods', [])
-
-                # Summary from detail
-                detail_summary = detail_result.get('summary', {})
-                summary = {
-                    'gross_amount': float(detail_summary.get('grossAmount') or 0),
-                    'net_amount': float(detail_summary.get('netAmount') or 0),
-                    'tax_amount': float(detail_summary.get('taxAmount') or 0),
-                    'previous_gross_amount': float(detail_summary.get('previousGrossAmount') or 0),
-                    'previous_net_amount': float(detail_summary.get('previousNetAmount') or 0),
-                    'previous_tax_amount': float(detail_summary.get('previousTaxAmount') or 0),
-                    'remarks': detail_summary.get('remarks'),
-                    'item_count': len(goods_details),
-                }
-
-                # Update basic info with amounts from detail
-                basic_info['net_amount'] = summary['net_amount']
-                basic_info['tax_amount'] = summary['tax_amount']
-
-            # Map reason code to description
-            reason_codes = {
-                '101': 'Sales Return',
-                '102': 'Sales Allowance/Discount',
-                '103': 'Price Adjustment',
-                '104': 'Goods/Service Not Received',
-                '105': 'Others',
-            }
-            if basic_info['reason_code'] in reason_codes:
-                basic_info['reason_description'] = reason_codes[basic_info['reason_code']]
-
-            # Map approve status code to description
-            status_codes = {
-                '101': 'Pending',
-                '102': 'Approved',
-                '103': 'Rejected',
-                '104': 'Cancelled',
-                '105': 'Processed',
-            }
-            if basic_info['approve_status'] in status_codes:
-                basic_info['status'] = status_codes[basic_info['approve_status']]
-
-            # Add T111 comparison data for debugging
-            t111_status = None
-            if list_result.get('success'):
-                applications = list_result.get('applications', [])
-                if applications:
-                    t111_status = applications[0].get('approve_status')
-                    logger.info(f"T111 status: {t111_status}")
-
-            context = {
-                'page_title': f'Credit Note Application {application_id}',
-                'application': basic_info,
-                'goods_details': goods_details,
-                'tax_details': tax_details,
-                'summary': summary,
-                'payment_methods': payment_methods,
-                'application_id': application_id,
-                'company': company,
-                'debug': request.GET.get('debug', False),
-                't111_status': t111_status,  # For debugging
-            }
-
-            return render(request, 'efris/credit_note_application_detail.html', context)
-        else:
+        if not basic_result.get('success'):
             error = basic_result.get('error') or "Unknown error"
             messages.error(request, f"Failed to load application: {error}")
             return redirect('efris:credit_note_applications')
+
+        application_data = basic_result.get('application_detail', {})
+
+        # Extract basic information
+        basic_info = {
+            'application_id': application_data.get('id') or application_id,
+            'original_invoice_no': application_data.get('oriInvoiceNo') or
+                                   application_data.get('toinvoiceNo'),
+            'credit_note_no': application_data.get('referenceNo'),
+            'application_date': application_data.get('applicationTime'),
+            'status': application_data.get('approveStatusCode'),
+            'approve_status': application_data.get('approveStatusCode'),
+            'currency': application_data.get('currency') or 'UGX',
+            'reason_code': application_data.get('invoiceApplyCategoryCode'),
+            'reason': application_data.get('remarks'),
+            'contact_name': application_data.get('contactName'),
+            'contact_mobile': application_data.get('mobilePhone'),
+            'contact_email': application_data.get('contactEmail'),
+            'remarks': application_data.get('remarks'),
+            'gross_amount': float(application_data.get('totalAmount') or 0),
+            'net_amount': 0,
+            'tax_amount': 0,
+            'applicant_tin': application_data.get('tin'),
+            'applicant_name': application_data.get('legalName'),
+            'buyer_tin': application_data.get('buyerTin'),
+            'buyer_name': application_data.get('buyerLegalName'),
+            'buyer_email': application_data.get('buyerEmailAddress'),
+            'buyer_mobile': application_data.get('buyerMobilePhone'),
+            'approve_remarks': application_data.get('approveRemarks'),
+            'issued_date': application_data.get('issuedDate'),
+            'task_id': application_data.get('taskId'),
+            'address': application_data.get('address'),
+        }
+
+        # Add status display and approval eligibility
+        basic_info['status_display'] = CreditNoteStatus.get_display(basic_info['approve_status'])
+        basic_info['can_approve'] = CreditNoteStatus.can_approve(basic_info['approve_status'])
+
+        # Validate if application can be approved
+        validation_errors = []
+
+        if basic_info['can_approve']:
+            if not basic_info['task_id']:
+                validation_errors.append("Task ID is missing - cannot approve")
+
+            if not basic_info['original_invoice_no']:
+                validation_errors.append("Original invoice number is missing")
+
+            if basic_info['gross_amount'] >= 0:
+                validation_errors.append("Credit note amount must be negative")
+
+        basic_info['validation_errors'] = validation_errors
+
+        # Process detail result
+        goods_details = []
+        tax_details = []
+        payment_methods = []
+        summary = {}
+
+        detail_result = client.t118_query_credit_debit_note_detail(application_id)
+        if detail_result.get('success'):
+            goods_details = detail_result.get('goods_details', [])
+            tax_details = detail_result.get('tax_details', [])
+            payment_methods = detail_result.get('payment_methods', [])
+
+            detail_summary = detail_result.get('summary', {})
+            summary = {
+                'gross_amount': float(detail_summary.get('grossAmount') or 0),
+                'net_amount': float(detail_summary.get('netAmount') or 0),
+                'tax_amount': float(detail_summary.get('taxAmount') or 0),
+                'previous_gross_amount': float(detail_summary.get('previousGrossAmount') or 0),
+                'previous_net_amount': float(detail_summary.get('previousNetAmount') or 0),
+                'previous_tax_amount': float(detail_summary.get('previousTaxAmount') or 0),
+                'remarks': detail_summary.get('remarks'),
+                'item_count': len(goods_details),
+            }
+
+            # Update basic info with amounts from detail
+            basic_info['net_amount'] = summary['net_amount']
+            basic_info['tax_amount'] = summary['tax_amount']
+
+            # Additional validation based on detail data
+            if basic_info['can_approve'] and summary.get('gross_amount', 0) >= 0:
+                validation_errors.append("Summary gross amount must be negative for credit note")
+
+        # Map reason code to description
+        reason_codes = {
+            '101': 'Return of products due to expiry or damage',
+            '102': 'Cancellation of the purchase',
+            '103': 'Invoice amount wrongly stated',
+            '104': 'Partial or complete waive off',
+            '105': 'Others',
+        }
+        if basic_info['reason_code'] in reason_codes:
+            basic_info['reason_description'] = reason_codes[basic_info['reason_code']]
+
+        context = {
+            'page_title': f'Credit Note Application {application_id}',
+            'application': basic_info,
+            'goods_details': goods_details,
+            'tax_details': tax_details,
+            'summary': summary,
+            'payment_methods': payment_methods,
+            'application_id': application_id,
+            'company': company,
+            'debug': request.GET.get('debug', False),
+            'status_class': CreditNoteStatus,
+            'approval_class': ApprovalAction,
+        }
+
+        return render(request, 'efris/credit_note_application_detail.html', context)
 
     except Exception as e:
         logger.error(f"Application detail failed: {e}", exc_info=True)
@@ -965,11 +979,15 @@ def credit_note_application_detail_view(request, application_id):
         return redirect('efris:credit_note_applications')
 
 
+import json
+
+
 @login_required
 @require_http_methods(["POST"])
 def approve_credit_note_application(request, application_id):
     """
     T113 - Approve/Reject Credit Note Application
+    FIXED VERSION with better error handling
     """
     company = request.tenant
 
@@ -977,59 +995,217 @@ def approve_credit_note_application(request, application_id):
         return JsonResponse({
             'success': False,
             'error': 'EFRIS is not enabled for your company'
-        })
+        }, status=403)
 
     try:
-        reference_no = request.POST.get('reference_no')
-        approve_status = request.POST.get('approve_status')  # 101=Approved, 103=Rejected
-        task_id = request.POST.get('task_id')
-        remark = request.POST.get('remark')
+        # Parse request data - handle both JSON and form data
+        if request.content_type == 'application/json':
+            try:
+                data = json.loads(request.body)
+            except json.JSONDecodeError:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Invalid JSON data'
+                }, status=400)
+        else:
+            data = request.POST
 
-        if not all([reference_no, approve_status, task_id, remark]):
+        # Extract and validate fields
+        reference_no = data.get('reference_no', '').strip()
+        approve_action = data.get('approve_status', '').strip()
+        task_id = data.get('task_id', '').strip()
+        remark = data.get('remark', '').strip()
+        app_id = data.get('application_id', '').strip()
+
+        # Debug logging
+        logger.info(f"Approval request data: reference_no={reference_no}, "
+                    f"approve_status={approve_action}, task_id={task_id}, "
+                    f"application_id={app_id}, remark_length={len(remark)}")
+
+        # Detailed field validation with specific error messages
+        missing_fields = []
+        if not reference_no:
+            missing_fields.append('reference_no')
+        if not approve_action:
+            missing_fields.append('approve_status')
+        if not task_id:
+            missing_fields.append('task_id')
+        if not remark:
+            missing_fields.append('remark')
+
+        if missing_fields:
+            error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+            logger.error(f"Validation failed: {error_msg}")
+            logger.error(f"Received data: {dict(data)}")
             return JsonResponse({
                 'success': False,
-                'error': 'Missing required fields'
-            })
+                'error': error_msg,
+                'missing_fields': missing_fields,
+                'received_data': {
+                    'reference_no': bool(reference_no),
+                    'approve_status': bool(approve_action),
+                    'task_id': bool(task_id),
+                    'remark': bool(remark)
+                }
+            }, status=400)
 
+        # Validate action code
+        if approve_action not in [ApprovalAction.APPROVE, ApprovalAction.REJECT]:
+            return JsonResponse({
+                'success': False,
+                'error': f'Invalid approval action code: {approve_action}. Must be 101 (Approve) or 103 (Reject)'
+            }, status=400)
+
+        # Validate remark length
+        if len(remark) > 1024:
+            return JsonResponse({
+                'success': False,
+                'error': f'Remark too long ({len(remark)} characters). Maximum is 1024 characters'
+            }, status=400)
+
+        # Verify current application status
         client = EnhancedEFRISAPIClient(company)
+        status_check = client.t112_query_credit_note_application_detail(application_id)
+
+        if not status_check.get('success'):
+            return JsonResponse({
+                'success': False,
+                'error': f"Failed to verify application status: {status_check.get('error')}"
+            }, status=400)
+
+        current_status = status_check.get('application_detail', {}).get('approveStatusCode')
+
+        if not CreditNoteStatus.can_approve(current_status):
+            return JsonResponse({
+                'success': False,
+                'error': f'Application cannot be approved. Current status: {CreditNoteStatus.get_display(current_status)}'
+            }, status=400)
+
+        # Proceed with approval
+        logger.info(f"Calling T113 API with: reference_no={reference_no}, "
+                    f"approve_status={approve_action}, task_id={task_id}")
+
         result = client.t113_approve_credit_note_application(
             reference_no=reference_no,
-            approve_status=approve_status,
+            approve_status=approve_action,
             task_id=task_id,
             remark=remark
         )
 
+        # Create audit log
+        action_display = ApprovalAction.ACTION_DISPLAY.get(approve_action, 'Processed')
+
         if result.get('success'):
-            # Log the approval
+            # Success audit
             FiscalizationAudit.objects.create(
                 company=company,
                 user=request.user,
-                action='APPROVE_CREDIT_NOTE',
+                action=f'CREDIT_NOTE_{action_display.upper()}',
                 efris_return_code='00',
-                efris_return_message=f"Application {reference_no} {result.get('status')}",
+                efris_return_message=f"Application {reference_no} {action_display}",
                 request_data={
                     'reference_no': reference_no,
-                    'approve_status': approve_status
-                }
+                    'approve_action': approve_action,
+                    'task_id': task_id,
+                    'application_id': application_id
+                },
+                response_data=result.get('data', {})
             )
+
+            logger.info(f"✅ Credit note application {reference_no} {action_display} successfully")
 
             return JsonResponse({
                 'success': True,
-                'message': result.get('message'),
-                'status': result.get('status')
-            })
-        else:
-            return JsonResponse({
-                'success': False,
-                'error': result.get('error')
+                'message': result.get('message', f'Application {action_display} successfully'),
+                'status': action_display,
+                'redirect_url': f'/efris/credit-notes/applications/{application_id}/'
             })
 
+        else:
+            # Failure audit
+            error_msg = result.get('error', 'Unknown error occurred')
+            return_code = result.get('return_code', 'ERROR')
+
+            FiscalizationAudit.objects.create(
+                company=company,
+                user=request.user,
+                action='CREDIT_NOTE_APPROVAL_FAILED',
+                efris_return_code=return_code,
+                efris_return_message=error_msg,
+                request_data={
+                    'reference_no': reference_no,
+                    'approve_action': approve_action,
+                    'task_id': task_id,
+                    'application_id': application_id
+                },
+                response_data=result.get('data', {})
+            )
+
+            logger.error(f"❌ Credit note approval failed: {error_msg} (code: {return_code})")
+
+            return JsonResponse({
+                'success': False,
+                'error': error_msg,
+                'error_code': return_code
+            }, status=400)
+
     except Exception as e:
-        logger.error(f"Approval failed: {e}", exc_info=True)
+        logger.error(f"Approval system error: {e}", exc_info=True)
+
+        # Error audit
+        try:
+            FiscalizationAudit.objects.create(
+                company=company,
+                user=request.user,
+                action='CREDIT_NOTE_APPROVAL_ERROR',
+                efris_return_code='SYSTEM_ERROR',
+                efris_return_message=str(e),
+                request_data={
+                    'application_id': application_id,
+                    'error': str(e)
+                }
+            )
+        except:
+            pass  # Don't fail if audit logging fails
+
         return JsonResponse({
             'success': False,
-            'error': str(e)
-        })
+            'error': f'System error: {str(e)}'
+        }, status=500)
+
+
+@login_required
+def refresh_application_status(request, application_id):
+    """
+    Refresh the status of a credit note application
+    Useful when waiting for URA to process an approval
+    """
+    company = request.tenant
+
+    if not company.efris_enabled:
+        messages.error(request, "EFRIS is not enabled for your company")
+        return redirect('efris:credit_note_applications')
+
+    try:
+        client = EnhancedEFRISAPIClient(company)
+        result = client.t112_query_credit_note_application_detail(application_id)
+
+        if result.get('success'):
+            current_status = result.get('application_detail', {}).get('approveStatusCode')
+            status_display = CreditNoteStatus.get_display(current_status)
+
+            messages.success(
+                request,
+                f"Status refreshed: {status_display}"
+            )
+        else:
+            messages.error(request, f"Failed to refresh status: {result.get('error')}")
+
+    except Exception as e:
+        logger.error(f"Status refresh failed: {e}", exc_info=True)
+        messages.error(request, f"Error refreshing status: {str(e)}")
+
+    return redirect('efris:credit_note_application_detail', application_id=application_id)
 
 
 @login_required

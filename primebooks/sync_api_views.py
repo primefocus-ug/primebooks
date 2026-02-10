@@ -8,6 +8,7 @@ Server-side API endpoints for desktop sync
 ✅ FIXED: Proper ForeignKey handling (instances not IDs)
 ✅ FIXED: Schema locking throughout entire operation
 ✅ FIXED: Skips public schema models in tenant sync
+✅ FIXED: ID sequence handling - server generates IDs, not desktop
 """
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -279,10 +280,135 @@ class UploadChangesView(APIView):
     ✅ FIXED: Handles ManyToMany fields correctly
     ✅ FIXED: Schema locked for entire operation
     ✅ FIXED: Skips public schema models
+    ✅ FIXED: Server generates IDs, desktop IDs are mapped
     ✅ Returns ID mappings for offline records
     """
     authentication_classes = [TenantAwareJWTAuthentication]
     permission_classes = [IsAuthenticated]
+
+    def _get_unique_lookup_fields(self, model):
+        """
+        Get unique fields for finding existing records without using ID.
+        This prevents duplicate records and allows proper updates.
+        """
+        model_name = model._meta.model_name
+        app_label = model._meta.app_label
+        full_name = f"{app_label}.{model.__name__}"
+
+        # Define unique field combinations for each model
+        unique_lookups = {
+            # Auth models
+            'customuser': ['username'],
+            'role': ['name'],
+
+            # Stores
+            'store': ['name'],  # Or company + name if multi-tenant
+            'storeaccess': ['user', 'store'],
+
+            # Inventory
+            'category': ['name'],
+            'supplier': ['name'],
+            'product': ['sku'],  # SKU should be unique
+            'stock': ['product', 'store'],
+            'stockmovement': ['movement_number'],
+
+            # Customers
+            'customer': ['phone'],  # Phone should be unique
+
+            # Sales
+            'sale': ['receipt_number'],  # Receipt number should be unique
+            'saleitem': ['sale', 'product'],  # Composite key
+            'payment': ['sale', 'payment_method', 'created_at'],  # Composite key
+        }
+
+        return unique_lookups.get(model_name, [])
+
+    def _build_unique_lookup(self, model, fields):
+        """
+        Build a unique lookup dict from fields based on model's unique constraints.
+        Returns dict of {field: value} for unique lookup, or None if not possible.
+        """
+        unique_fields = self._get_unique_lookup_fields(model)
+
+        if not unique_fields:
+            return None
+
+        lookup = {}
+        for field_name in unique_fields:
+            if field_name in fields:
+                lookup[field_name] = fields[field_name]
+            else:
+                # Can't build complete unique lookup
+                return None
+
+        return lookup
+
+    def _fix_sequences(self, schema_name):
+        """
+        Fix PostgreSQL sequences after upload
+        ✅ Schema-safe
+        ✅ Table-existence aware
+        ✅ AutoField & BigAutoField compatible
+        """
+        from django.db import connection
+        from django.apps import apps
+
+        MODELS_TO_FIX = [
+            'sales.Sale',
+            'sales.SaleItem',
+            'sales.Payment',
+            'customers.Customer',
+            'inventory.Product',
+            'inventory.Stock',
+            'inventory.StockMovement',
+            'notifications.Notification',  # Added this!
+        ]
+
+        with connection.cursor() as cursor:
+            for model_path in MODELS_TO_FIX:
+                try:
+                    model = apps.get_model(model_path)
+                    table = model._meta.db_table
+                    pk = model._meta.pk
+
+                    # Only integer PKs use sequences
+                    if pk.get_internal_type() not in ('AutoField', 'BigAutoField'):
+                        continue
+
+                    # ✅ Check table exists in schema
+                    cursor.execute(
+                        "SELECT to_regclass(%s)",
+                        [f"{schema_name}.{table}"]
+                    )
+                    if cursor.fetchone()[0] is None:
+                        continue
+
+                    # ✅ Get sequence name safely
+                    cursor.execute(
+                        "SELECT pg_get_serial_sequence(%s, %s)",
+                        [f"{schema_name}.{table}", pk.column]
+                    )
+                    seq = cursor.fetchone()[0]
+                    if not seq:
+                        continue
+
+                    # ✅ Reset sequence to MAX(pk)+1
+                    cursor.execute(
+                        f"""
+                        SELECT setval(
+                            %s,
+                            COALESCE((SELECT MAX({pk.column}) FROM {schema_name}.{table}), 0) + 1,
+                            false
+                        )
+                        """,
+                        [seq]
+                    )
+
+                    logger.debug(f"✔ Sequence fixed: {schema_name}.{table}")
+
+                except Exception as e:
+                    # Non-fatal, safe to skip
+                    logger.debug(f"⏭️  Sequence skipped for {model_path}: {e}")
 
     def post(self, request):
         try:
@@ -344,8 +470,12 @@ class UploadChangesView(APIView):
 
                         for record in records:
                             try:
-                                obj_id = record['pk']
+                                desktop_id = record['pk']  # Desktop's ID
                                 fields = record['fields']
+
+                                # ✅ CRITICAL: Do NOT include desktop ID in fields
+                                # Let server database generate its own IDs
+                                fields.pop('id', None)
 
                                 # ✅ Separate ManyToMany and regular fields
                                 m2m_fields = {}
@@ -397,9 +527,6 @@ class UploadChangesView(APIView):
                                         logger.debug(f"      Skipping field {field_name}: {e}")
                                         continue
 
-                                # Check if offline record
-                                is_offline = isinstance(obj_id, int) and obj_id < 0
-
                                 # ✅ Check if we have required fields
                                 if skipped_fields:
                                     # Check if any skipped field is required (not nullable)
@@ -414,27 +541,59 @@ class UploadChangesView(APIView):
 
                                     if required_skipped:
                                         logger.warning(
-                                            f"      ⚠️  Skipping {obj_id} - missing required fields: {required_skipped}")
+                                            f"      ⚠️  Skipping {desktop_id} - missing required fields: {required_skipped}")
                                         continue
+
+                                # ✅ Check if offline record (negative ID)
+                                is_offline = isinstance(desktop_id, int) and desktop_id < 0
 
                                 try:
                                     if is_offline:
-                                        # Create with server ID
-                                        obj = model(**processed_fields)
-                                        obj.save()
+                                        # ✅ Offline record - create new with server-generated ID
+                                        # First check if it already exists using unique fields
+                                        unique_lookup = self._build_unique_lookup(model, processed_fields)
+
+                                        if unique_lookup:
+                                            # Try to find existing record
+                                            try:
+                                                obj = model.objects.get(**unique_lookup)
+                                                # Update existing
+                                                for field_name, value in processed_fields.items():
+                                                    setattr(obj, field_name, value)
+                                                obj.save()
+
+                                                # Map desktop ID to server ID
+                                                model_mappings[str(desktop_id)] = obj.pk
+                                                total_updated += 1
+                                                logger.info(
+                                                    f"      ✅ Updated existing offline: {desktop_id} → {obj.pk}")
+                                            except model.DoesNotExist:
+                                                # Create new - server generates ID
+                                                obj = model(**processed_fields)
+                                                obj.save()
+
+                                                # Map desktop ID to server ID
+                                                model_mappings[str(desktop_id)] = obj.pk
+                                                total_created += 1
+                                                logger.info(f"      ✅ Created offline: {desktop_id} → {obj.pk}")
+                                        else:
+                                            # No unique lookup - just create
+                                            obj = model(**processed_fields)
+                                            obj.save()
+
+                                            model_mappings[str(desktop_id)] = obj.pk
+                                            total_created += 1
+                                            logger.info(f"      ✅ Created offline: {desktop_id} → {obj.pk}")
 
                                         # ✅ Set ManyToMany after save
                                         for field_name, value in m2m_fields.items():
                                             if value:
                                                 getattr(obj, field_name).set(value)
 
-                                        model_mappings[str(obj_id)] = obj.pk
-                                        total_created += 1
-                                        logger.info(f"      ✅ Created offline: {obj_id} → {obj.pk}")
                                     else:
-                                        # Update or create
+                                        # ✅ Online record - update existing or create with same ID
                                         try:
-                                            obj = model.objects.get(pk=obj_id)
+                                            obj = model.objects.get(pk=desktop_id)
 
                                             # Update fields
                                             for field_name, value in processed_fields.items():
@@ -448,10 +607,12 @@ class UploadChangesView(APIView):
                                                     getattr(obj, field_name).set(value)
 
                                             total_updated += 1
-                                            logger.debug(f"      ✅ Updated: {obj_id}")
+                                            logger.debug(f"      ✅ Updated: {desktop_id}")
 
                                         except model.DoesNotExist:
-                                            obj = model(pk=obj_id, **processed_fields)
+                                            # Record doesn't exist - create with desktop ID
+                                            # (This preserves IDs for synced records)
+                                            obj = model(pk=desktop_id, **processed_fields)
                                             obj.save()
 
                                             # ✅ Set ManyToMany
@@ -460,7 +621,7 @@ class UploadChangesView(APIView):
                                                     getattr(obj, field_name).set(value)
 
                                             total_created += 1
-                                            logger.info(f"      ✅ Created: {obj_id}")
+                                            logger.info(f"      ✅ Created: {desktop_id}")
 
                                 except ValidationError as e:
                                     # Handle validation errors gracefully
@@ -469,13 +630,13 @@ class UploadChangesView(APIView):
 
                                     # Skip records with known validation issues
                                     if any(x in error_str.lower() for x in ['choice', 'constraint', 'efris']):
-                                        logger.debug(f"      ⚠️  Validation error for {obj_id}: {error_dict}")
+                                        logger.debug(f"      ⚠️  Validation error for {desktop_id}: {error_dict}")
                                         continue
 
                                     raise
 
                             except Exception as e:
-                                error_msg = f"{model_name}:{obj_id} - {str(e)}"
+                                error_msg = f"{model_name}:{desktop_id} - {str(e)}"
                                 logger.error(f"      ❌ {error_msg}")
                                 errors.append(error_msg)
 
@@ -490,6 +651,11 @@ class UploadChangesView(APIView):
 
                 logger.info(
                     f"✅ Upload complete: {total_created} created, {total_updated} updated, {total_skipped} skipped, {len(errors)} errors")
+
+                # ✅ FIX SEQUENCES AFTER ANY DATA CHANGES
+                if total_created > 0 or total_updated > 0:
+                    logger.info("🔧 Fixing PostgreSQL sequences after upload")
+                    self._fix_sequences(schema_name)
 
                 return Response({
                     'success': True,

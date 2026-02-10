@@ -92,6 +92,8 @@ from PyQt6.QtWidgets import (
     QToolBar, QStatusBar, QPushButton, QLabel, QProgressDialog,
     QVBoxLayout, QLineEdit, QHBoxLayout, QProgressBar, QMenu
 )
+from primebooks.login_dialogs import UserSwitchDialog, InitialLoginDialog
+from primebooks.update_manager import UpdateManager
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl, QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QAction, QIcon, QPageLayout
@@ -801,12 +803,14 @@ class PrimeBooksWindow(QMainWindow):
         self.auth_token = auth_token
         self.browser = None
         self.sync_scheduler = None
+        self.update_manager = None
 
         self.setup_ui()
         self.setup_toolbar()
         self.setup_statusbar()
         self.setup_sync_scheduler()
         self.setup_print_support()
+        self.setup_update_manager()
 
     def setup_ui(self):
         """Setup the main window UI"""
@@ -833,6 +837,63 @@ class PrimeBooksWindow(QMainWindow):
         """Setup print functionality for web pages"""
         self.browser.page().printRequested.connect(self.handle_print_request)
         logger.info("✅ Print support enabled (JavaScript window.print() intercept)")
+
+    def setup_update_manager(self):
+        """Initialize auto-update manager"""
+        try:
+            server_url = f"http://{self.subdomain}.localhost:8000" if settings.DEBUG else f"https://{self.subdomain}.primebooks.sale"
+
+            self.update_manager = UpdateManager(
+                main_window=self,
+                server_url=server_url,
+                auth_token=self.auth_token
+            )
+            logger.info("✅ Update manager started")
+        except Exception as e:
+            logger.error(f"Failed to start update manager: {e}")
+
+    # ========================================================================
+    # ✅ NEW: USER SWITCHING
+    # ========================================================================
+
+    def switch_user(self):
+        """Switch to different user without restarting app"""
+        logger.info("🔄 User switch requested")
+
+        try:
+            # Show user switch dialog
+            dialog = UserSwitchDialog(
+                company_schema=self.subdomain,
+                company_id=self.tenant_id,
+                parent=self
+            )
+
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                # User successfully authenticated
+                new_user_email = dialog.user_data['email']
+
+                logger.info(f"✅ User switched: {self.current_user_email} → {new_user_email}")
+
+                self.current_user_email = new_user_email
+
+                # Update status bar
+                self.status_label.setText(f"● {self.subdomain} - {new_user_email}")
+
+                # Reload the page to show new user's session
+                self.browser.reload()
+
+                # Show success message
+                self.statusBar.showMessage(f"✅ Logged in as {new_user_email}", 3000)
+            else:
+                logger.info("User switch cancelled")
+
+        except Exception as e:
+            logger.error(f"User switch error: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Switch User Error",
+                f"Failed to switch user:\n\n{str(e)}"
+            )
 
     def handle_print_request(self):
         """Handle print request from JavaScript (window.print())"""
@@ -980,11 +1041,12 @@ class PrimeBooksWindow(QMainWindow):
         self.browser.setUrl(QUrl(url))
 
     def setup_toolbar(self):
-        """Setup application toolbar with navigation & sync"""
+        """Setup application toolbar with navigation, sync, and user switching"""
         toolbar = QToolBar("Main Toolbar")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
+        # Navigation
         back_action = QAction("◄ Back", self)
         back_action.triggered.connect(self.browser.back)
         toolbar.addAction(back_action)
@@ -999,6 +1061,7 @@ class PrimeBooksWindow(QMainWindow):
 
         toolbar.addSeparator()
 
+        # Print
         print_action = QAction("🖨️ Print to PDF", self)
         print_action.setShortcut("Ctrl+P")
         print_action.triggered.connect(self.print_to_pdf_simple)
@@ -1006,18 +1069,28 @@ class PrimeBooksWindow(QMainWindow):
 
         toolbar.addSeparator()
 
+        # Manual Sync
         sync_action = QAction("🔄 Sync Data", self)
         sync_action.triggered.connect(self.manual_sync)
         toolbar.addAction(sync_action)
 
         toolbar.addSeparator()
 
+        # ✅ NEW: Switch User Button
+        switch_user_action = QAction("👥 Switch User", self)
+        switch_user_action.triggered.connect(self.switch_user)
+        toolbar.addAction(switch_user_action)
+
+        toolbar.addSeparator()
+
+        # Status label (show current user)
         self.status_label = QLabel(f"● {self.subdomain}")
         self.status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
         toolbar.addWidget(self.status_label)
 
         toolbar.addSeparator()
 
+        # Logout
         logout_action = QAction("🚪 Logout", self)
         logout_action.triggered.connect(self.logout)
         toolbar.addAction(logout_action)
@@ -1099,26 +1172,52 @@ class PrimeBooksWindow(QMainWindow):
             )
 
     def logout(self):
-        """Logout and clear credentials"""
-        reply = QMessageBox.question(
-            self,
-            "Logout",
-            "Logout and clear local data?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            if self.sync_scheduler:
-                self.sync_scheduler.stop()
+        """Logout with option to switch user or quit"""
+        # Create custom message box
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Logout")
+        msg.setText("What would you like to do?")
+        msg.setIcon(QMessageBox.Icon.Question)
 
-            from primebooks.auth import DesktopAuthManager
-            DesktopAuthManager().logout()
+        # Add buttons
+        switch_btn = msg.addButton("Switch User", QMessageBox.ButtonRole.AcceptRole)
+        quit_btn = msg.addButton("Quit App", QMessageBox.ButtonRole.RejectRole)
+        cancel_btn = msg.addButton("Cancel", QMessageBox.ButtonRole.ActionRole)
 
-            QMessageBox.information(
+        msg.exec()
+
+        clicked_button = msg.clickedButton()
+
+        if clicked_button == switch_btn:
+            # Switch user
+            self.switch_user()
+
+        elif clicked_button == quit_btn:
+            # Quit app
+            reply = QMessageBox.question(
                 self,
-                "Logged Out",
-                "Please restart the application to login again."
+                'Quit',
+                'Are you sure you want to quit PrimeBooks?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
-            self.close()
+
+            if reply == QMessageBox.StandardButton.Yes:
+                # Stop services
+                if self.sync_scheduler:
+                    self.sync_scheduler.stop()
+                if self.update_manager:
+                    self.update_manager.stop()
+
+                # Stop PostgreSQL
+                try:
+                    from primebooks.postgres_manager import EmbeddedPostgresManager
+                    from django.conf import settings
+                    pg_manager = EmbeddedPostgresManager(settings.DESKTOP_DATA_DIR)
+                    pg_manager.stop()
+                except:
+                    pass
+
+                self.close()
 
     def closeEvent(self, event):
         """Handle window close"""
@@ -1130,8 +1229,13 @@ class PrimeBooksWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
+            # Stop services
             if self.sync_scheduler:
                 self.sync_scheduler.stop()
+            if self.update_manager:  # ✅ NEW
+                self.update_manager.stop()
+
+            # Stop PostgreSQL
             try:
                 from primebooks.postgres_manager import EmbeddedPostgresManager
                 from django.conf import settings
@@ -1139,6 +1243,7 @@ class PrimeBooksWindow(QMainWindow):
                 pg_manager.stop()
             except:
                 pass
+
             event.accept()
         else:
             event.ignore()
