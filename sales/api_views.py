@@ -40,85 +40,57 @@ def search_hs_codes(request):
     Query params:
         - q: search query (searches code and description)
         - limit: number of results (default: 20, max: 50)
-        - leaf_only: if 'true', only return leaf nodes (default: true)
+        - leaf_only: if 'true', only return leaf nodes (default: false to include all)
     """
     query = request.GET.get('q', '').strip()
     limit = min(int(request.GET.get('limit', 20)), 50)
-    leaf_only = request.GET.get('leaf_only', 'true').lower() == 'true'
+    # Default to False so all codes are returned unless explicitly set
+    leaf_only = request.GET.get('leaf_only', 'false').lower() == 'true'
 
-    # FIXED: get_current_tenant() doesn't take arguments
-    # It automatically gets tenant from connection/thread-local
     company = get_current_tenant()
-
     if not company:
-        return JsonResponse({
-            'success': False,
-            'error': 'No company context found'
-        }, status=400)
+        return JsonResponse({'success': False, 'error': 'No company context found'}, status=400)
 
     try:
-        # Use tenant_context_safe to ensure we're in the right schema/database
         with tenant_context_safe(company):
-            # Base queryset
             qs = EFRISHsCode.objects.all()
 
-            # Filter to leaf nodes only (these are the ones that can be used)
+            # Only filter if leaf_only is True
             if leaf_only:
                 qs = qs.filter(is_leaf=True)
 
-            # Apply search filter
+            # Apply search
             if query:
-                # Search in both code and description
-                qs = qs.filter(
-                    Q(hs_code__icontains=query) |
-                    Q(description__icontains=query)
-                )
-
-                # Prioritize exact code matches
-                # Note: Django ORM doesn't support .desc() on Q objects directly
-                # So we'll use a more compatible approach
+                qs = qs.filter(Q(hs_code__icontains=query) | Q(description__icontains=query))
                 qs = qs.order_by('hs_code')
 
-                # Split into exact matches and partial matches for better ordering
+                # Prioritize exact matches
                 exact_matches = list(qs.filter(hs_code__iexact=query))
                 starts_with = list(qs.filter(hs_code__istartswith=query).exclude(hs_code__iexact=query))
-                contains = list(qs.exclude(
-                    Q(hs_code__iexact=query) | Q(hs_code__istartswith=query)
-                ))
+                contains = list(qs.exclude(Q(hs_code__iexact=query) | Q(hs_code__istartswith=query)))
 
-                # Combine and limit
-                all_results = exact_matches + starts_with + contains
-                hs_codes = all_results[:limit]
+                hs_codes = (exact_matches + starts_with + contains)[:limit]
             else:
                 hs_codes = list(qs.order_by('hs_code')[:limit])
 
-            # Format response
             results = [
                 {
                     'hs_code': code.hs_code,
                     'description': code.description,
                     'is_leaf': code.is_leaf,
                     'parent_code': code.parent_code,
-                    # For display in dropdown
                     'display': f"{code.hs_code} - {code.description[:60]}{'...' if len(code.description) > 60 else ''}"
                 }
                 for code in hs_codes
             ]
 
-            return JsonResponse({
-                'success': True,
-                'results': results,
-                'total': len(results),
-                'query': query
-            })
+            return JsonResponse({'success': True, 'results': results, 'total': len(results), 'query': query})
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=500)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 
 
 @login_required
