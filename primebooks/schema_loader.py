@@ -196,6 +196,8 @@ def create_tenant_schema(schema_name, sql_file_path):
             logger.info(f"✅ Executed {executed} statements ({skipped} skipped)")
 
         logger.info(f"✅ Tenant schema created successfully: {schema_name}")
+        logger.info(f"🔄 Resetting sequences in {schema_name}...")
+        reset_sequences(schema_name)
         return True
 
     except Exception as e:
@@ -319,47 +321,60 @@ def get_schema_tables(schema_name):
 def reset_sequences(schema_name):
     """
     Reset PostgreSQL sequences after data sync
-    ✅ Prevents duplicate key errors when creating new records
-
-    Args:
-        schema_name: Schema to reset sequences in
-
-    Returns:
-        bool: True if successful
+    ✅ Prevents duplicate key errors
+    ✅ Works with any table that has an ID column
     """
     logger.info(f"🔄 Resetting sequences in schema: {schema_name}")
 
     try:
-        with schema_context(schema_name):
-            with connection.cursor() as cursor:
-                # Get all tables in schema
-                cursor.execute("""
-                               SELECT table_name
-                               FROM information_schema.tables
-                               WHERE table_schema = %s
-                                 AND table_type = 'BASE TABLE';
-                               """, [schema_name])
+        with connection.cursor() as cursor:
+            # Set search path to schema
+            cursor.execute(f'SET search_path TO "{schema_name}", public;')
 
-                tables = [row[0] for row in cursor.fetchall()]
+            # Get all tables in schema
+            cursor.execute("""
+                           SELECT table_name
+                           FROM information_schema.tables
+                           WHERE table_schema = %s
+                             AND table_type = 'BASE TABLE'
+                           ORDER BY table_name;
+                           """, [schema_name])
 
-                reset_count = 0
+            tables = [row[0] for row in cursor.fetchall()]
+            reset_count = 0
+            skipped_count = 0
 
-                for table in tables:
-                    # Check if table has an 'id' column with a sequence
-                    try:
-                        cursor.execute(f"""
-                            SELECT setval(
-                                pg_get_serial_sequence('{schema_name}.{table}', 'id'),
-                                COALESCE(MAX(id), 1)
-                            ) FROM "{schema_name}".{table};
-                        """)
+            for table in tables:
+                try:
+                    # Try to get sequence name for 'id' column
+                    cursor.execute("""
+                        SELECT pg_get_serial_sequence(%s, 'id');
+                    """, [f'{schema_name}.{table}'])
+
+                    result = cursor.fetchone()
+                    sequence_name = result[0] if result else None
+
+                    if sequence_name:
+                        # Get max ID from table
+                        cursor.execute(f'SELECT MAX(id) FROM "{schema_name}"."{table}";')
+                        max_id_result = cursor.fetchone()
+                        max_id = max_id_result[0] if max_id_result[0] else 0
+
+                        # Reset sequence to max_id + 1
+                        new_value = max_id + 1
+                        cursor.execute(f"SELECT setval('{sequence_name}', %s, false);", [new_value])
+
+                        logger.debug(f"  ✓ {table}: sequence → {new_value}")
                         reset_count += 1
-                    except Exception:
-                        # Table doesn't have an id sequence, skip
-                        pass
+                    else:
+                        skipped_count += 1
 
-                logger.info(f"✅ Reset {reset_count} sequences in {len(tables)} tables")
-                return True
+                except Exception as e:
+                    logger.debug(f"  Skipped {table}: {str(e)[:50]}")
+                    skipped_count += 1
+
+            logger.info(f"✅ Reset {reset_count} sequences ({skipped_count} tables skipped)")
+            return True
 
     except Exception as e:
         logger.error(f"❌ Failed to reset sequences: {e}", exc_info=True)

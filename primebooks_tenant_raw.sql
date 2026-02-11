@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict rONqgSzbbCijZ07YLN3NNXMzoA76lRpJHGDfrNwAUegMsn2iUvExSipSYgO82sV
+\restrict dPkUMZwRIJ2cfBQXnRcU8ZcjETPngCwcFB31n1Y59khpSyOKmZ85ftGAFe6dwB8
 
 -- Dumped from database version 16.11 (Ubuntu 16.11-1.pgdg24.04+1)
 -- Dumped by pg_dump version 18.1 (Ubuntu 18.1-1.pgdg24.04+2)
@@ -4985,6 +4985,10 @@ COPY template.auth_permission (id, name, content_type_id, codename) FROM stdin;
 642	Can change tagged item	165	change_taggeditem
 643	Can delete tagged item	165	delete_taggeditem
 644	Can view tagged item	165	view_taggeditem
+645	Can add app versions	175	add_appversions
+646	Can change app versions	175	change_appversions
+647	Can delete app versions	175	delete_appversions
+648	Can view app versions	175	view_appversions
 \.
 
 
@@ -5197,6 +5201,7 @@ COPY template.django_migrations (id, app, name, applied) FROM stdin;
 138	sales	0017_sale_delivery_terms_code_sale_invoice_industry_code_and_more	2026-02-09 07:59:53.511456+03
 139	sales	0018_alter_cart_document_type_alter_sale_document_type	2026-02-09 07:59:53.765694+03
 140	sessions	0001_initial	2026-02-09 07:59:53.774357+03
+141	primebooks	0002_appversions	2026-02-10 10:43:45.066974+03
 \.
 
 
@@ -6032,7 +6037,7 @@ SELECT pg_catalog.setval('template.auth_group_permissions_id_seq', 1, false);
 -- Name: auth_permission_id_seq; Type: SEQUENCE SET; Schema: template; Owner: -
 --
 
-SELECT pg_catalog.setval('template.auth_permission_id_seq', 644, true);
+SELECT pg_catalog.setval('template.auth_permission_id_seq', 648, true);
 
 
 --
@@ -6095,7 +6100,7 @@ SELECT pg_catalog.setval('template.django_admin_log_id_seq', 1, false);
 -- Name: django_migrations_id_seq; Type: SEQUENCE SET; Schema: template; Owner: -
 --
 
-SELECT pg_catalog.setval('template.django_migrations_id_seq', 140, true);
+SELECT pg_catalog.setval('template.django_migrations_id_seq', 141, true);
 
 
 --
@@ -13378,5 +13383,5 @@ ALTER TABLE ONLY template.taggit_taggeditem
 -- PostgreSQL database dump complete
 --
 
-\unrestrict rONqgSzbbCijZ07YLN3NNXMzoA76lRpJHGDfrNwAUegMsn2iUvExSipSYgO82sV
+\unrestrict dPkUMZwRIJ2cfBQXnRcU8ZcjETPngCwcFB31n1Y59khpSyOKmZ85ftGAFe6dwB8
 

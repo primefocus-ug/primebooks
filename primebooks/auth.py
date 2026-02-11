@@ -113,13 +113,11 @@ class DesktopAuthManager:
     def sync_company_from_server(self, company_data, token, subdomain):
         """
         Download and sync company with PostgreSQL multi-tenancy
-        ✅ NEW: Uses SQL dump for schema creation (FAST!)
-        ✅ NEW: Runs migrations for Django-specific tables (django_session, etc.)
-        ✅ NEW: Validates subscription
-        ✅ Creates tenant schema in 2-3 seconds vs 30-60 seconds
+        ✅ Uses SQL dump for schema creation (FAST!)
+        ✅ CRITICAL: Resets sequences after schema creation
         """
         from django.utils.text import slugify
-        from primebooks.schema_loader import create_tenant_schema, verify_schema, check_schema_exists
+        from primebooks.schema_loader import create_tenant_schema, verify_schema, check_schema_exists, reset_sequences
         from primebooks.subscription import SubscriptionManager
         from django.core.management import call_command
 
@@ -140,8 +138,7 @@ class DesktopAuthManager:
             logger.info(f"  Schema: {schema_name}")
             logger.info(f"=" * 70)
 
-            # ✅ STEP 1: Create/update company in PUBLIC schema
-            # Use is_initial_sync=True to skip subscription check during creation
+            # Step 1: Create/update company in PUBLIC schema
             company, created = Company.objects.update_or_create(
                 company_id=company_id,
                 defaults={
@@ -163,13 +160,12 @@ class DesktopAuthManager:
                 }
             )
 
-            # ✅ CRITICAL: Save with is_initial_sync=True to skip subscription check
             if created:
                 company.save(is_initial_sync=True)
 
             logger.info(f"✅ Company {'created' if created else 'updated'}: {company.name}")
 
-            # ✅ STEP 2: Create/update domain
+            # Step 2: Create/update domain
             domain_name = f"{subdomain}.localhost"
             Domain.objects.update_or_create(
                 domain=domain_name,
@@ -178,37 +174,37 @@ class DesktopAuthManager:
 
             logger.info(f"✅ Domain configured: {domain_name}")
 
-            # ✅ STEP 3: Check if schema already exists
+            # Step 3: Check if schema exists
             schema_exists = check_schema_exists(schema_name)
 
             if schema_exists:
                 logger.info(f"✅ Schema already exists: {schema_name}")
 
-                # Even if schema exists, ensure Django tables are present
-                logger.info(f"🔄 Verifying Django tables in existing schema...")
+                # ✅ CRITICAL: Even if schema exists, reset sequences!
+                logger.info(f"🔄 Resetting sequences in existing schema...")
+                reset_sequences(schema_name)
+                logger.info(f"✅ Sequences reset")
+
+                # Verify Django tables
+                logger.info(f"🔄 Verifying Django tables...")
                 try:
                     with schema_context(schema_name):
                         call_command('migrate', '--noinput', verbosity=0)
-                    logger.info(f"✅ Django tables verified/created")
+                    logger.info(f"✅ Django tables verified")
                 except Exception as e:
-                    logger.warning(f"⚠️ Migration check completed with warnings: {e}")
+                    logger.warning(f"⚠️ Migration check: {e}")
             else:
-                # ✅ STEP 4: Create tenant schema from SQL template (FAST!)
-                logger.info(f"🚀 Creating schema from SQL dump (2-3 seconds)...")
+                # Step 4: Create tenant schema from SQL template
+                logger.info(f"🚀 Creating schema from SQL dump...")
 
                 # Get SQL file path
                 if getattr(sys, 'frozen', False):
-                    # Running as bundled app (PyInstaller)
                     tenant_sql = Path(sys._MEIPASS) / 'primebooks_tenant.sql'
                 else:
-                    # Running in development
                     tenant_sql = Path(__file__).parent.parent / 'primebooks_tenant.sql'
 
                 if not tenant_sql.exists():
-                    raise FileNotFoundError(
-                        f"Tenant SQL not found: {tenant_sql}\n"
-                        f"Make sure primebooks_tenant.sql is in the project root."
-                    )
+                    raise FileNotFoundError(f"Tenant SQL not found: {tenant_sql}")
 
                 logger.info(f"  Using SQL file: {tenant_sql}")
 
@@ -218,40 +214,38 @@ class DesktopAuthManager:
                 if not success:
                     raise Exception("Failed to create tenant schema from SQL")
 
-                # Verify schema was created correctly
+                # Verify schema
                 verify_schema(schema_name)
 
-                logger.info(f"✅ Tenant schema created and verified: {schema_name} (2-3 seconds!)")
+                logger.info(f"✅ Tenant schema created: {schema_name}")
 
-                # ✅ STEP 4.5: Run migrations to ensure all Django tables exist
-                # This creates django_session and any other Django-specific tables
-                # that may not be in the SQL dump
-                logger.info(f"🔄 Running migrations for Django-specific tables...")
+                # ✅ CRITICAL: Reset sequences after creating schema!
+                logger.info(f"🔄 Resetting sequences in new schema...")
+                reset_sequences(schema_name)
+                logger.info(f"✅ Sequences reset")
+
+                # Run migrations for Django-specific tables
+                logger.info(f"🔄 Running migrations for Django tables...")
                 try:
                     with schema_context(schema_name):
-                        # Run migrations silently - creates django_session, etc.
                         call_command('migrate', '--noinput', verbosity=0)
+                    logger.info(f"✅ Migrations completed")
+                except Exception as e:
+                    logger.warning(f"⚠️ Migration completed with warnings: {e}")
 
-                    logger.info(f"✅ Migrations completed - all Django tables present")
-                except Exception as migration_error:
-                    logger.warning(f"⚠️ Migration completed with warnings: {migration_error}")
-                    # Don't fail - SQL dump has most tables, this just ensures Django-specific ones exist
-
-            # ✅ STEP 5: Validate subscription and cache for offline use
+            # Step 5: Validate subscription
             logger.info(f"🔒 Validating subscription...")
+            from primebooks.subscription import SubscriptionManager
             subscription_manager = SubscriptionManager(company_id, schema_name)
 
-            # Force online check to get fresh subscription data
             is_valid, message, days, status = subscription_manager.validate_subscription(force_online=True)
 
             if not is_valid:
-                logger.warning(f"⚠️  Subscription issue: {message}")
-                # Don't block initial sync, but warn user
-                # They can still complete sync, but won't be able to use app
+                logger.warning(f"⚠️ Subscription issue: {message}")
             else:
                 logger.info(f"✅ Subscription valid: {message}")
 
-            # ✅ STEP 6: Sync authenticated user to tenant schema
+            # Step 6: Sync authenticated user to tenant schema
             authenticated_user_email = self.get_user_info().get('email') if self.get_user_info() else None
 
             if authenticated_user_email:
@@ -264,7 +258,7 @@ class DesktopAuthManager:
                         company_id
                     )
             else:
-                logger.warning("⚠️  No authenticated user email found")
+                logger.warning("⚠️ No authenticated user email found")
 
             logger.info(f"=" * 70)
             logger.info(f"✅ COMPANY SYNC COMPLETE: {company.name}")

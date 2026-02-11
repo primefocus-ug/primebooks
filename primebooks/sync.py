@@ -1132,16 +1132,23 @@ class SyncManager:
                 success = self.apply_bulk_data(all_data, progress_callback)
 
                 if success:
+                    # ✅ CRITICAL: Reset sequences after applying data
                     if progress_callback:
-                        progress_callback("Resetting sequences...", 95)
+                        progress_callback("Resetting database sequences...", 95)
 
-                    self.reset_sequences()
+                    logger.info("🔄 Resetting sequences after sync...")
+                    from primebooks.schema_loader import reset_sequences
+                    reset_sequences(self.schema_name)
 
                     if progress_callback:
-                        progress_callback("Complete!", 100)
+                        progress_callback("Download complete!", 100)
 
+                    logger.info("=" * 70)
                     logger.info("✅ DOWNLOAD COMPLETE")
+                    logger.info("=" * 70)
                     return True
+                else:
+                    return False
 
             return False
 
@@ -1177,7 +1184,9 @@ class SyncManager:
 
     def download_changes(self, progress_callback=None):
         """
-        ✅ UPDATED: Download changes with automatic token refresh
+        Download changes from server
+        ✅ Auto-refreshes token on 401
+        ✅ Resets sequences after applying data
         """
         try:
             last_sync = self.get_last_sync_time()
@@ -1213,30 +1222,194 @@ class SyncManager:
                 return False
 
             data = response.json()
+
+            if not data.get('success', True):
+                error_msg = data.get('error', 'Unknown error')
+                logger.error(f"❌ Server error: {error_msg}")
+                return False
+
             changes = data.get('data', {})
             total_changed = sum(len(records) for records in changes.values())
 
             if total_changed == 0:
-                logger.info("✅ No server changes")
+                logger.info("✅ No server changes to download")
+
+                # Update last sync time even if no changes
+                self.update_last_sync_time()
+
                 return True
 
-            logger.info(f"✅ Downloaded {total_changed} changed records")
+            logger.info(f"✅ Downloaded {total_changed} changed records across {len(changes)} models")
+
+            if progress_callback:
+                progress_callback(f"Applying {total_changed} changes...", 30)
 
             if changes:
                 success = self.apply_bulk_data(changes, progress_callback)
+
                 if success:
+                    # ✅ CRITICAL: Reset sequences after applying data
                     if progress_callback:
                         progress_callback("Resetting sequences...", 90)
 
+                    logger.info("🔄 Resetting sequences after download...")
                     self.reset_sequences()
-                    logger.info("✅ Changes applied")
+                    logger.info("✅ Sequences reset")
+
+                    # Update last sync time
+                    self.update_last_sync_time()
+
+                    if progress_callback:
+                        progress_callback("Changes applied!", 100)
+
+                    logger.info("✅ Changes applied successfully")
                     return True
+                else:
+                    logger.error("❌ Failed to apply changes")
+                    return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Download changes error: {e}", exc_info=True)
+            return False
+
+    def download_all_data(self, progress_callback=None):
+        """
+        Download ALL data from server (first sync)
+        ✅ Auto-refreshes token on 401
+        ✅ Resets sequences after applying data
+        """
+        try:
+            logger.info("=" * 70)
+            logger.info(f"DOWNLOADING ALL DATA FROM SERVER")
+            logger.info("=" * 70)
+
+            if progress_callback:
+                progress_callback("Connecting to server...", 5)
+
+            url = f"{self.server_url}/api/desktop/sync/bulk-download/"
+
+            logger.info(f"  URL: {url}")
+
+            # ✅ Use _make_request (auto-refreshes on 401)
+            response = self._make_request(url, method='GET')
+
+            if not response:
+                logger.error("❌ Request failed")
+                return False
+
+            logger.info(f"  Response: HTTP {response.status_code}")
+
+            if response.status_code != 200:
+                error_text = response.text[:500] if response.text else "No response body"
+                logger.error(f"❌ Download failed: HTTP {response.status_code}")
+                logger.error(f"  Response: {error_text}")
+                return False
+
+            data = response.json()
+
+            if not data.get('success'):
+                error_msg = data.get('error', 'Unknown error')
+                logger.error(f"❌ Download failed: {error_msg}")
+                return False
+
+            all_data = data.get('data', {})
+            total_records = data.get('total_records', 0)
+
+            logger.info(f"✅ Downloaded {total_records} records across {len(all_data)} models")
+
+            if progress_callback:
+                progress_callback(f"Downloaded {total_records} records...", 30)
+
+            if all_data:
+                success = self.apply_bulk_data(all_data, progress_callback)
+
+                if success:
+                    # ✅ CRITICAL: Reset sequences after applying data
+                    if progress_callback:
+                        progress_callback("Resetting database sequences...", 95)
+
+                    logger.info("🔄 Resetting sequences after full download...")
+                    self.reset_sequences()
+                    logger.info("✅ Sequences reset")
+
+                    # Update last sync time
+                    self.update_last_sync_time()
+
+                    if progress_callback:
+                        progress_callback("Download complete!", 100)
+
+                    logger.info("=" * 70)
+                    logger.info("✅ DOWNLOAD COMPLETE")
+                    logger.info("=" * 70)
+                    return True
+                else:
+                    logger.error("❌ Failed to apply data")
+                    return False
 
             return False
 
         except Exception as e:
             logger.error(f"❌ Download error: {e}", exc_info=True)
             return False
+
+    def reset_sequences(self):
+        """
+        Reset PostgreSQL sequences after sync
+        ✅ Prevents duplicate key errors
+        """
+        from django.db import connection
+        from django_tenants.utils import schema_context
+
+        logger.info(f"🔄 Resetting sequences in schema: {self.schema_name}")
+
+        try:
+            with schema_context(self.schema_name):
+                with connection.cursor() as cursor:
+                    # Get all sequences in this schema
+                    cursor.execute("""
+                                   SELECT sequence_name,
+                                          REPLACE(sequence_name, '_id_seq', '') as table_name
+                                   FROM information_schema.sequences
+                                   WHERE sequence_schema = %s
+                                   ORDER BY sequence_name;
+                                   """, [self.schema_name])
+
+                    sequences = cursor.fetchall()
+
+                    if not sequences:
+                        logger.warning(f"⚠️ No sequences found in schema '{self.schema_name}'")
+                        return
+
+                    reset_count = 0
+
+                    for seq_name, table_name in sequences:
+                        try:
+                            # Get max ID
+                            cursor.execute(f"""
+                                SELECT COALESCE(MAX(id), 0) 
+                                FROM "{self.schema_name}"."{table_name}";
+                            """)
+
+                            max_id = cursor.fetchone()[0]
+                            new_value = max_id + 1
+
+                            # Reset sequence
+                            cursor.execute(f"""
+                                SELECT setval('"{self.schema_name}"."{seq_name}"', %s, false);
+                            """, [new_value])
+
+                            logger.debug(f"  ✓ {table_name}: max_id={max_id}, next={new_value}")
+                            reset_count += 1
+
+                        except Exception as e:
+                            logger.debug(f"  ⚠️ Skipped {table_name}: {str(e)[:50]}")
+
+                    logger.info(f"✅ Reset {reset_count} sequences")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to reset sequences: {e}", exc_info=True)
 
 
     # ========================================================================
@@ -1675,8 +1848,9 @@ class SyncManager:
     def apply_model_data(self, model_name, records):
         """
         Apply records for a specific model
-        ✅ Properly converts ForeignKey IDs to instances
+        ✅ Converts ForeignKey IDs to instances
         ✅ Handles ManyToMany fields
+        ✅ Updates existing records based on unique fields
         ✅ Skips validation errors gracefully
         """
         from decimal import Decimal
@@ -1693,7 +1867,7 @@ class SyncManager:
                     obj_id = record['pk']
                     fields = record['fields']
 
-                    # ✅ Process fields - separate M2M from regular fields
+                    # ✅ Separate M2M from regular fields
                     m2m_fields = {}
                     processed_fields = {}
 
@@ -1718,7 +1892,7 @@ class SyncManager:
                                 except related_model.DoesNotExist:
                                     # Related record doesn't exist - skip this field
                                     logger.debug(f"    Skipping {field_name}={value} - not found")
-                                    # Don't add to processed_fields
+                                    # Don't add to processed_fields - field will be null or use default
                                     continue
 
                             # ✅ Decimal fields
@@ -1736,22 +1910,42 @@ class SyncManager:
                             logger.debug(f"    Skipping field {field_name}: {e}")
                             continue
 
-                    # Try to get existing record
-                    try:
-                        pk_field = model._meta.pk.name
-                        existing = model.objects.get(**{pk_field: obj_id})
+                    # ✅ Try to find existing record by unique fields first
+                    existing_obj = None
 
-                        # Update existing
+                    # For models with unique constraints, try to find by them
+                    unique_lookups = self._get_unique_lookups(model, processed_fields)
+
+                    if unique_lookups:
+                        try:
+                            existing_obj = model.objects.get(**unique_lookups)
+                            logger.debug(f"    Found existing by unique fields: {unique_lookups}")
+                        except model.DoesNotExist:
+                            pass
+                        except model.MultipleObjectsReturned:
+                            logger.warning(f"    Multiple objects found for {unique_lookups}, using first")
+                            existing_obj = model.objects.filter(**unique_lookups).first()
+
+                    # If not found by unique fields, try by PK
+                    if not existing_obj:
+                        try:
+                            pk_field = model._meta.pk.name
+                            existing_obj = model.objects.get(**{pk_field: obj_id})
+                        except model.DoesNotExist:
+                            pass
+
+                    if existing_obj:
+                        # ✅ Update existing record
                         for field, value in processed_fields.items():
-                            setattr(existing, field, value)
+                            setattr(existing_obj, field, value)
 
                         try:
-                            existing.save()
+                            existing_obj.save()
                         except ValidationError as e:
                             error_msg = str(e).lower()
                             # Skip common validation errors during sync
                             if any(skip in error_msg for skip in
-                                   ['efris', 'constraint', 'password', 'either product or service']):
+                                   ['efris', 'constraint', 'password', 'either product or service', 'choice']):
                                 logger.debug(f"    Skipping validation error for {obj_id}: {e}")
                                 continue
                             raise
@@ -1760,17 +1954,17 @@ class SyncManager:
                         for field_name, value in m2m_fields.items():
                             if value:
                                 try:
-                                    field_obj = getattr(existing, field_name)
+                                    field_obj = getattr(existing_obj, field_name)
                                     field_obj.set(value)
                                 except Exception as e:
                                     logger.debug(f"    M2M error for {field_name}: {e}")
 
                         updated_count += 1
-                        synced_ids.append(obj_id)
+                        synced_ids.append(existing_obj.pk)
                         logger.debug(f"    ✓ Updated: {obj_id}")
 
-                    except model.DoesNotExist:
-                        # Create new record
+                    else:
+                        # ✅ Create new record
                         pk_field = model._meta.pk.name
 
                         if pk_field != 'id':
@@ -1785,7 +1979,7 @@ class SyncManager:
                             error_msg = str(e).lower()
                             # Skip common validation errors during sync
                             if any(skip in error_msg for skip in
-                                   ['efris', 'constraint', 'password', 'either product or service']):
+                                   ['efris', 'constraint', 'password', 'either product or service', 'choice']):
                                 logger.debug(f"    Skipping validation error for {obj_id}: {e}")
                                 continue
                             raise
@@ -1810,14 +2004,65 @@ class SyncManager:
             if synced_ids:
                 self._mark_as_synced(model_name, synced_ids)
 
+            logger.info(f"  ✅ {model_name}: {created_count} created, {updated_count} updated")
             return created_count, updated_count
 
         except LookupError:
-            logger.warning(f"  Model not found: {model_name}")
+            logger.warning(f"  ⚠️  Model not found: {model_name}")
             return 0, 0
         except Exception as e:
-            logger.error(f"  Fatal error in apply_model_data for {model_name}: {e}")
+            logger.error(f"  ❌ Fatal error in apply_model_data for {model_name}: {e}")
             return 0, 0
+
+    def _get_unique_lookups(self, model, fields):
+        """
+        Get unique lookup fields for finding existing records
+        Returns dict of {field: value} or None
+        """
+        model_name = model._meta.model_name
+
+        # Define unique field combinations
+        unique_field_map = {
+            # Auth
+            'group': ['name'],
+            'role': ['name'],
+            'customuser': ['username'],
+
+            # Inventory
+            'category': ['name'],
+            'supplier': ['name'],
+            'product': ['sku'],
+
+            # Customers
+            'customer': ['phone'],
+
+            # Sales
+            'sale': ['receipt_number'],
+
+            # Add more as needed
+        }
+
+        unique_fields = unique_field_map.get(model_name, [])
+
+        if not unique_fields:
+            return None
+
+        # Build lookup dict
+        lookup = {}
+        for field_name in unique_fields:
+            if field_name in fields:
+                value = fields[field_name]
+
+                # For FK fields, we already converted to instance
+                if hasattr(value, 'pk'):
+                    lookup[field_name] = value
+                else:
+                    lookup[field_name] = value
+            else:
+                # Missing required unique field
+                return None
+
+        return lookup if lookup else None
 
     # ========================================================================
     # FULL SYNC
@@ -1929,23 +2174,49 @@ class SyncManager:
     # HELPERS
     # ========================================================================
 
+    def update_last_sync_time(self):
+        """
+        Update last sync timestamp
+        ✅ Saves current time as last successful sync
+        """
+        from datetime import datetime, timezone
+
+        try:
+            sync_file = settings.DESKTOP_DATA_DIR / f'.last_sync_{self.tenant_id}.txt'
+            current_time = datetime.now(timezone.utc)
+
+            sync_file.write_text(current_time.isoformat())
+
+            logger.info(f"✅ Last sync time updated: {current_time.isoformat()}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Failed to update last sync time: {e}")
+            return False
+
     def get_last_sync_time(self):
-        """Get last sync timestamp with timezone awareness"""
-        if self.last_sync_file.exists():
-            try:
-                timestamp_str = self.last_sync_file.read_text()
-                # Parse the timestamp
-                dt = datetime.fromisoformat(timestamp_str)
+        """
+        Get timestamp of last successful sync
+        Returns: datetime object or None
+        """
+        from datetime import datetime
 
-                # Make it timezone-aware if it isn't already
-                if dt.tzinfo is None:
-                    dt = timezone.make_aware(dt)
+        try:
+            sync_file = settings.DESKTOP_DATA_DIR / f'.last_sync_{self.tenant_id}.txt'
 
-                return dt
-            except Exception as e:
-                logger.warning(f"Could not parse last sync time: {e}")
+            if not sync_file.exists():
+                logger.debug("No previous sync timestamp found")
                 return None
-        return None
+
+            timestamp_str = sync_file.read_text().strip()
+            last_sync = datetime.fromisoformat(timestamp_str)
+
+            logger.debug(f"Last sync: {last_sync.isoformat()}")
+            return last_sync
+
+        except Exception as e:
+            logger.warning(f"Could not read last sync time: {e}")
+            return None
 
     def set_last_sync_time(self, timestamp=None):
         """Save last sync timestamp with timezone awareness"""

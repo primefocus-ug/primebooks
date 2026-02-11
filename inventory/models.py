@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from .managers import ProductCategoryManager, ServiceCategoryManager
 from .efris import EFRISProductMixin
+from primebooks.mixins import OfflineIDMixin
 import logging
 
 logger=logging.getLogger(__name__)
