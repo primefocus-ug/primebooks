@@ -360,11 +360,11 @@ def reset_sequences(schema_name):
                         max_id_result = cursor.fetchone()
                         max_id = max_id_result[0] if max_id_result[0] else 0
 
-                        # Reset sequence to max_id + 1
-                        new_value = max_id + 1
-                        cursor.execute(f"SELECT setval('{sequence_name}', %s, false);", [new_value])
+                        # ✅ FIX: Use 'true' to indicate value has been called
+                        # This ensures next value is max_id + 1
+                        cursor.execute(f"SELECT setval('{sequence_name}', %s, true);", [max_id])
 
-                        logger.debug(f"  ✓ {table}: sequence → {new_value}")
+                        logger.debug(f"  ✓ {table}: sequence → {max_id} (next: {max_id + 1})")
                         reset_count += 1
                     else:
                         skipped_count += 1

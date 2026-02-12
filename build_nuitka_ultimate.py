@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-ULTIMATE Nuitka Build - PrimeBooks Desktop (Django-Tenants)
+ULTIMATE Nuitka Build - PrimeBooks Desktop (Django-Tenants + SQL Dump)
+✅ Includes SQL dump files
 ✅ Includes Django form templates
-✅ Includes all dependencies
-✅ Debug mode support
-✅ Print support ready
-✅ Sync dialogs included
+✅ Schema-safe sync
+✅ All dependencies
 """
 import sys
 import os
@@ -46,6 +45,38 @@ else:
 print("=" * 80)
 
 # ============================================================================
+# STEP 0: CHECK SQL DUMP FILES EXIST
+# ============================================================================
+print("\n🗄️  Step 0: Checking SQL dump files...")
+
+sql_files_required = [
+    'primebooks_tenant.sql',  # Tenant schema template
+    # 'primebooks_public.sql',  # Optional: public schema template
+]
+
+missing_files = []
+for sql_file in sql_files_required:
+    sql_path = BASE_DIR / sql_file
+    if not sql_path.exists():
+        missing_files.append(sql_file)
+    else:
+        size_kb = sql_path.stat().st_size / 1024
+        print(f"  ✅ Found {sql_file} ({size_kb:.1f} KB)")
+
+if missing_files:
+    print(f"\n  ⚠️  WARNING: Missing SQL dump files:")
+    for f in missing_files:
+        print(f"     • {f}")
+    print("\n  💡 Generate SQL dumps with:")
+    print("     python manage.py dumpdata_schema --schema=template")
+    print("\n  The build will continue, but schema creation will fail at runtime!")
+
+    response = input("\n  Continue anyway? (y/N): ")
+    if response.lower() != 'y':
+        print("  Build cancelled.")
+        sys.exit(0)
+
+# ============================================================================
 # STEP 1: CHECK NUITKA INSTALLATION
 # ============================================================================
 print("\n🔍 Step 1: Checking Nuitka installation...")
@@ -80,6 +111,7 @@ custom_apps = []
 
 try:
     import django
+
     django.setup()
     from django.conf import settings
 
@@ -122,7 +154,7 @@ if primebooks_dir.exists():
             if module_name not in primebooks_modules:
                 primebooks_modules.append(module_name)
                 # ✅ Verify critical modules
-                if any(x in module_name for x in ['sync_dialogs', 'sync', 'auth']):
+                if any(x in module_name for x in ['sync_dialogs', 'sync', 'auth', 'schema_loader']):
                     print(f"     ✅ Found critical: {module_name}")
     print(f"  Total primebooks modules: {len(primebooks_modules)}")
 
@@ -205,15 +237,11 @@ cmd.extend([
     '--enable-plugin=pyqt6',
 ])
 
-if DEBUG_MODE:
-    print("\n  🐛 Adding debug flags...")
-
 # ============================================================================
-# INCLUDE PACKAGES - NUITKA STYLE
+# INCLUDE PACKAGES
 # ============================================================================
 print("\n  📦 Including packages...")
 
-# Core packages
 core_packages = [
     'django',
     'django_tenants',
@@ -255,7 +283,7 @@ critical_modules = [
     'PyQt6.QtGui',
     'PyQt6.QtWebEngineWidgets',
     'PyQt6.QtWebEngineCore',
-    'PyQt6.QtPrintSupport',  # ✅ For print functionality
+    'PyQt6.QtPrintSupport',
 ]
 
 for mod in critical_modules:
@@ -268,6 +296,8 @@ critical_primebooks = [
     'primebooks.sync_dialogs',
     'primebooks.auth',
     'primebooks.postgres_manager',
+    'primebooks.schema_loader',  # ✅ NEW - for SQL dump loading
+    'primebooks.signals',  # ✅ NEW - for sequence reset
 ]
 for mod in critical_primebooks:
     cmd.append(f'--include-module={mod}')
@@ -275,19 +305,19 @@ for mod in critical_primebooks:
 
 # Primebooks modules (auto-discovered)
 for mod in primebooks_modules:
-    if mod not in critical_primebooks:  # Don't duplicate
+    if mod not in critical_primebooks:
         cmd.append(f'--include-module={mod}')
 
 # ============================================================================
-# INCLUDE DJANGO TEMPLATES (CRITICAL FIX!)
+# INCLUDE DJANGO TEMPLATES
 # ============================================================================
 print("\n  📄 Including Django form templates...")
 
 try:
     import django
+
     django_dir = Path(django.__file__).parent
 
-    # Django form templates (fixes TemplateDoesNotExist error)
     django_template_dirs = [
         (django_dir / 'forms' / 'templates', 'django/forms/templates'),
         (django_dir / 'contrib' / 'admin' / 'templates', 'django/contrib/admin/templates'),
@@ -300,6 +330,19 @@ try:
             print(f"    • {dst_path}")
 except Exception as e:
     print(f"    ⚠️  Could not include Django templates: {e}")
+
+# ============================================================================
+# ✅ INCLUDE SQL DUMP FILES (CRITICAL!)
+# ============================================================================
+print("\n  🗄️  Including SQL dump files...")
+
+for sql_file in sql_files_required:
+    sql_path = BASE_DIR / sql_file
+    if sql_path.exists():
+        cmd.append(f'--include-data-files={sql_path}={sql_file}')
+        print(f"    ✅ {sql_file}")
+    else:
+        print(f"    ⚠️  Missing: {sql_file}")
 
 # ============================================================================
 # INCLUDE DATA DIRECTORIES
@@ -361,12 +404,6 @@ print("=" * 80)
 print("\n⏱️  First build takes 10-20 minutes (subsequent builds are faster)")
 print("💡 Nuitka downloads dependencies and compiles - be patient!\n")
 
-# Show full command for debugging
-if DEBUG_MODE:
-    print("Full command preview:")
-    print(f"{' '.join(cmd[:5])} ... [+{len(cmd)-5} more args]")
-    print()
-
 try:
     result = subprocess.run(cmd, cwd=BASE_DIR)
 
@@ -415,46 +452,36 @@ try:
         print(f"   • Primebooks modules: {len(primebooks_modules)}")
         print(f"   • Custom apps: {len(custom_apps)}")
         print(f"   • Django form templates: ✓")
+        print(f"   • SQL dumps: ✓")
+        print(f"   • Schema loader: ✓")
+        print(f"   • Sequence reset: ✓")
         print(f"   • Print support: ✓")
-        print(f"   • Sync dialogs: ✓")
 
         print(f"\n🚀 Run your app:")
         if IS_WINDOWS:
             print(f"   dist\\PrimeBooks.exe")
-            print("\n   💡 Double-click PrimeBooks.exe to launch!")
         elif IS_MACOS:
             print(f"   open dist/PrimeBooks.app")
-            print("\n   💡 Drag PrimeBooks.app to Applications!")
         else:
             print(f"   ./dist/PrimeBooks")
-            print(f"\n   Or with logging:")
-            print(f"   ./dist/PrimeBooks 2>&1 | tee primebooks.log")
 
         print("\n✨ Features:")
-        print("   ✓ Pure GUI app (no terminal in production)")
-        print("   ✓ Django form templates included")
-        print("   ✓ Print functionality ready")
-        print("   ✓ Sync dialogs included")
+        print("   ✓ Fast schema creation (SQL dump)")
+        print("   ✓ Auto sequence reset")
+        print("   ✓ Schema-safe sync")
         print("   ✓ All dependencies bundled")
 
     else:
         print("\n❌ Build completed but executable not found")
-        if dist_dir.exists():
-            print(f"   Files in dist/: {list(dist_dir.glob('*'))}")
         sys.exit(1)
 
 except Exception as e:
     print(f"\n❌ BUILD FAILED: {e}")
     import traceback
+
     traceback.print_exc()
     sys.exit(1)
 
 print("\n" + "=" * 80)
 print("🎉 PRIMEBOOKS DESKTOP BUILD COMPLETE!")
 print("=" * 80)
-print("\n📋 Next steps:")
-print("   1. Test the executable: ./dist/PrimeBooks")
-print("   2. Test manual sync functionality")
-print("   3. Test print functionality")
-print("   4. When ready, rebuild with --production flag")
-print("\n" + "=" * 80)

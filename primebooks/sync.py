@@ -69,6 +69,10 @@ SYNC_MODEL_CONFIG = {
     # TIER 1: NO DEPENDENCIES - Core Reference Data & Django Built-ins
     # ============================================================================
 
+    # ============================================================================
+    'contenttypes.ContentType': {
+        'dependencies': [],
+    },
 
     # Company Reference Data
     'company.SubscriptionPlan': {
@@ -80,7 +84,6 @@ SYNC_MODEL_CONFIG = {
     'company.EFRISHsCode': {
         'dependencies': [],
     },
-
     # Error Tracking
     'errors.ErrorSummary': {
         'dependencies': [],

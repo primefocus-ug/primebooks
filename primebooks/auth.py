@@ -113,13 +113,14 @@ class DesktopAuthManager:
     def sync_company_from_server(self, company_data, token, subdomain):
         """
         Download and sync company with PostgreSQL multi-tenancy
-        ✅ Uses SQL dump for schema creation (FAST!)
-        ✅ CRITICAL: Resets sequences after schema creation
+        ✅ FIXED: Properly handles public schema for Company
+        ✅ Uses SQL dump for fast tenant creation
         """
         from django.utils.text import slugify
         from primebooks.schema_loader import create_tenant_schema, verify_schema, check_schema_exists, reset_sequences
         from primebooks.subscription import SubscriptionManager
         from django.core.management import call_command
+        from django.db import connection
 
         try:
             company_id = company_data.get("company_id")
@@ -128,15 +129,15 @@ class DesktopAuthManager:
                 return None
 
             schema_name = subdomain
-            slug = company_data.get("slug") or slugify(
-                company_data.get("trading_name") or company_data.get("name")
-            )[:50]
 
             logger.info(f"=" * 70)
             logger.info(f"SYNCING COMPANY: {company_data.get('name')}")
-            logger.info(f"  Company ID: {company_id}")
-            logger.info(f"  Schema: {schema_name}")
             logger.info(f"=" * 70)
+
+            # ✅ CRITICAL: Switch to PUBLIC schema for Company operations
+            logger.info(f"🔄 Switching to PUBLIC schema for Company operations...")
+            connection.set_schema('public')
+            logger.info(f"   Current schema: {connection.schema_name}")
 
             # Step 1: Create/update company in PUBLIC schema
             company, created = Company.objects.update_or_create(
@@ -151,7 +152,7 @@ class DesktopAuthManager:
                     'tin': company_data.get('tin', ''),
                     'nin': company_data.get('nin', ''),
                     'brn': company_data.get('brn', ''),
-                    'slug': slug,
+                    'slug': slugify(company_data.get('trading_name') or company_data.get('name'))[:50],
                     'is_trial': company_data.get('is_trial', False),
                     'status': company_data.get('status', 'ACTIVE'),
                     'trial_ends_at': company_data.get('trial_ends_at'),
@@ -163,33 +164,37 @@ class DesktopAuthManager:
             if created:
                 company.save(is_initial_sync=True)
 
-            logger.info(f"✅ Company {'created' if created else 'updated'}: {company.name}")
+            logger.info(f"✅ Company {'created' if created else 'updated'} in PUBLIC schema: {company.name}")
 
-            # Step 2: Create/update domain
+            # Step 2: Create/update domain in PUBLIC schema
             domain_name = f"{subdomain}.localhost"
             Domain.objects.update_or_create(
                 domain=domain_name,
                 defaults={'tenant': company, 'is_primary': True}
             )
 
-            logger.info(f"✅ Domain configured: {domain_name}")
+            logger.info(f"✅ Domain configured in PUBLIC schema: {domain_name}")
 
-            # Step 3: Check if schema exists
+            # ✅ Step 3: NOW switch to TENANT schema for tenant operations
+            logger.info(f"🔄 Switching to TENANT schema: {schema_name}")
+
+            # Check if schema exists
             schema_exists = check_schema_exists(schema_name)
 
             if schema_exists:
                 logger.info(f"✅ Schema already exists: {schema_name}")
 
-                # ✅ CRITICAL: Even if schema exists, reset sequences!
+                # Switch to tenant schema
+                connection.set_schema(schema_name)
+                logger.info(f"   Current schema: {connection.schema_name}")
+
+                # Reset sequences
                 logger.info(f"🔄 Resetting sequences in existing schema...")
                 reset_sequences(schema_name)
-                logger.info(f"✅ Sequences reset")
 
                 # Verify Django tables
-                logger.info(f"🔄 Verifying Django tables...")
                 try:
-                    with schema_context(schema_name):
-                        call_command('migrate', '--noinput', verbosity=0)
+                    call_command('migrate', '--noinput', verbosity=0)
                     logger.info(f"✅ Django tables verified")
                 except Exception as e:
                     logger.warning(f"⚠️ Migration check: {e}")
@@ -219,23 +224,23 @@ class DesktopAuthManager:
 
                 logger.info(f"✅ Tenant schema created: {schema_name}")
 
-                # ✅ CRITICAL: Reset sequences after creating schema!
+                # ✅ NOW switch to tenant schema
+                connection.set_schema(schema_name)
+                logger.info(f"   Current schema: {connection.schema_name}")
+
+                # Reset sequences
                 logger.info(f"🔄 Resetting sequences in new schema...")
                 reset_sequences(schema_name)
-                logger.info(f"✅ Sequences reset")
 
                 # Run migrations for Django-specific tables
-                logger.info(f"🔄 Running migrations for Django tables...")
                 try:
-                    with schema_context(schema_name):
-                        call_command('migrate', '--noinput', verbosity=0)
+                    call_command('migrate', '--noinput', verbosity=0)
                     logger.info(f"✅ Migrations completed")
                 except Exception as e:
                     logger.warning(f"⚠️ Migration completed with warnings: {e}")
 
-            # Step 5: Validate subscription
+            # ✅ Step 5: Validate subscription (still in tenant schema)
             logger.info(f"🔒 Validating subscription...")
-            from primebooks.subscription import SubscriptionManager
             subscription_manager = SubscriptionManager(company_id, schema_name)
 
             is_valid, message, days, status = subscription_manager.validate_subscription(force_online=True)
@@ -250,32 +255,28 @@ class DesktopAuthManager:
 
             if authenticated_user_email:
                 logger.info(f"🔄 Syncing user to tenant schema: {authenticated_user_email}")
-                with schema_context(schema_name):
-                    self.sync_user_to_tenant(
-                        authenticated_user_email,
-                        subdomain,
-                        token,
-                        company_id
-                    )
+                # User sync happens in tenant schema (already set)
+                self.sync_user_to_tenant(
+                    authenticated_user_email,
+                    subdomain,
+                    token,
+                    company_id
+                )
             else:
                 logger.warning("⚠️ No authenticated user email found")
 
             logger.info(f"=" * 70)
             logger.info(f"✅ COMPANY SYNC COMPLETE: {company.name}")
+            logger.info(f"   Final schema: {connection.schema_name}")
             logger.info(f"=" * 70)
 
             return company
 
-        except FileNotFoundError as e:
-            logger.error("=" * 70)
-            logger.error("❌ SQL FILE NOT FOUND")
-            logger.error(f"Error: {e}")
-            logger.error("=" * 70)
-            return None
         except Exception as e:
             logger.error("=" * 70)
             logger.error("❌ CRITICAL ERROR syncing company")
             logger.error(f"Error: {e}", exc_info=True)
+            logger.error(f"Schema at error: {connection.schema_name}")
             logger.error("=" * 70)
             return None
 
