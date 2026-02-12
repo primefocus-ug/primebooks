@@ -39,6 +39,7 @@
         padding: 0.35rem 0.85rem;
     }
 
+    /* FIX: Updated status colors - 101=Approved, 102=Pending */
     .status-pending { background-color: #fff3cd; color: #856404; border-color: #ffeaa7; }
     .status-approved { background-color: #d1ecf1; color: #0c5460; border-color: #bee5eb; }
     .status-rejected { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
@@ -75,10 +76,11 @@
         </div>
 
         <div>
+            {# FIX: Correct status codes - 101=Approved, 102=Pending, 103=Rejected, 104=Voided #}
             {% if application.approveStatus == '101' %}
-                <span class="badge status-badge status-pending">PENDING/SUBMITTED</span>
-            {% elif application.approveStatus == '102' %}
                 <span class="badge status-badge status-approved">APPROVED</span>
+            {% elif application.approveStatus == '102' %}
+                <span class="badge status-badge status-pending">SUBMITTED/PENDING</span>
             {% elif application.approveStatus == '103' %}
                 <span class="badge status-badge status-rejected">REJECTED</span>
             {% elif application.approveStatus == '104' %}
@@ -230,26 +232,27 @@
                 </div>
 
                 <div class="col-md-4">
-                    <div class="card border-primary">
-                        <div class="card-body text-center">
-                            <h6 class="text-muted mb-2">Difference</h6>
-                            <h4 class="mb-0">
-                                {% if application.grossAmount and application.oriGrossAmount %}
-                                    {% with diff=application.grossAmount|add:application.oriGrossAmount %}
-                                        {% if diff < 0 %}
-                                            <span class="negative-amount">{{ diff|floatformat:2|intcomma }}</span>
-                                        {% else %}
-                                            {{ diff|floatformat:2|intcomma }}
-                                        {% endif %}
-                                    {% endwith %}
-                                {% else %}
-                                    <span class="text-muted">N/A</span>
-                                {% endif %}
-                            </h4>
-                            <small class="text-muted">Credit Amount</small>
-                        </div>
-                    </div>
-                </div>
+    <div class="card border-primary">
+        <div class="card-body text-center">
+            <h6 class="text-muted mb-2">Difference</h6>
+            <h4 class="mb-0">
+                {% if application.grossAmount and application.oriGrossAmount %}
+                    {% widthratio application.oriGrossAmount 1 1 as ori_amount %}
+                    {% widthratio application.grossAmount 1 1 as gross_amount %}
+                    {% widthratio ori_amount 1 1 as diff_calc %}
+                    {% if application.grossAmount < 0 %}
+                        <span class="negative-amount">{{ application.grossAmount|floatformat:2|intcomma }}</span>
+                    {% else %}
+                        {{ application.grossAmount|floatformat:2|intcomma }}
+                    {% endif %}
+                {% else %}
+                    <span class="text-muted">N/A</span>
+                {% endif %}
+            </h4>
+            <small class="text-muted">Credit Amount</small>
+        </div>
+    </div>
+</div>
             </div>
         </div>
     </div>
@@ -334,14 +337,23 @@
                         </button>
                     </form>
 
-                    <!-- Void Button for Pending applications -->
-                    {% if application.approveStatus == '101' %}
-                    <a href="{% url 'efris:void_credit_note_application' %}"
-                       class="btn btn-danger"
-                       onclick="return confirm('Are you sure you want to void this application? This action cannot be undone.')">
-                        <i class="fas fa-ban me-2"></i> Void Application
-                    </a>
-                    {% endif %}
+                    {# FIX: Only show void button for status 102 (Pending), not 101 #}
+                   {% if application.approveStatus == '102' %}
+                    <form method="POST"
+                          action="{% url 'efris:void_credit_note_application' %}"
+                          style="display: inline;"
+                          id="voidForm">
+                        {% csrf_token %}
+
+                        {# business_key is typically the application ID #}
+                        <input type="hidden" name="business_key" value="{{ application.id }}">
+                        <input type="hidden" name="reference_no" value="{{ application.referenceNo }}">
+
+                        <button type="button" class="btn btn-danger" onclick="submitVoidForm()">
+                            <i class="fas fa-ban me-2"></i> Void Application
+                        </button>
+                    </form>
+                       {%  endif %}
 
                     <!-- Print Button -->
                     <button type="button" class="btn btn-primary" onclick="window.print()">
@@ -385,6 +397,36 @@
 
 {% block extra_js %}
 <script>
+function submitVoidForm() {
+    if (!confirm('Are you sure you want to void this application? This action cannot be undone.')) {
+        return;
+    }
+
+    const form = document.getElementById('voidForm');
+    const formData = new FormData(form);
+
+    fetch(form.action, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Application voided successfully!');
+            window.location.href = "{% url 'efris:credit_note_applications' %}";
+        } else {
+            alert('Error: ' + data.error);
+            console.error('Full error:', data);
+        }
+    })
+    .catch(error => {
+        alert('Request failed: ' + error.message);
+        console.error('Error:', error);
+    });
+}
 // Initialize tooltips
 document.addEventListener('DOMContentLoaded', function() {
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -393,8 +435,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// Auto-refresh for pending applications
-{% if application.approveStatus == '101' %}
+{# FIX: Auto-refresh for status 102 (Pending), not 101 #}
+{% if application.approveStatus == '102' %}
 setTimeout(function() {
     if (confirm('Application is still pending. Would you like to refresh the status?')) {
         const form = document.createElement('form');

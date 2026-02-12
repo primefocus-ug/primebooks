@@ -133,8 +133,8 @@ def credit_note_application(request):
 @require_http_methods(["POST"])
 def api_get_invoice_for_credit_note(request):
     """
-    AJAX endpoint to fetch invoice details for credit note from local database
-    (T186 is disabled by URA - using local data instead)
+    AJAX endpoint to fetch invoice details for credit note
+    FIXED: Query EFRIS directly via T108 instead of local database
     """
     company = request.tenant
 
@@ -148,179 +148,73 @@ def api_get_invoice_for_credit_note(request):
                 'error': 'Invoice number is required'
             }, status=400)
 
-        # Import models
-        from invoices.models import Invoice
-        from sales.models import Sale
+        logger.info(f"Fetching invoice {invoice_no} from EFRIS for credit note")
 
-        # Try to find invoice by fiscal document number
-        invoice = Invoice.objects.filter(
-            fiscal_document_number=invoice_no
-        ).select_related('sale', 'store').first()
+        # ✅ QUERY EFRIS DIRECTLY USING T108
+        with EnhancedEFRISAPIClient(company) as client:
+            result = client.t108_query_invoice_detail(invoice_no)
 
-        # Verify it belongs to the current company
-        if invoice:
-            invoice_company = None
-            if invoice.sale and hasattr(invoice.sale, 'company'):
-                invoice_company = invoice.sale.company
-            elif invoice.store and hasattr(invoice.store, 'company'):
-                invoice_company = invoice.store.company
-
-            # If invoice doesn't belong to current company, treat as not found
-            if invoice_company and invoice_company != company:
-                invoice = None
-
-            # Check if invoice has EFRIS IDs (required for credit note)
-            if invoice:
-                efris_invoice_id = getattr(invoice, 'efris_invoice_id', '') or ''
-                if not efris_invoice_id:
-                    return JsonResponse({
-                        'success': False,
-                        'error': f'Invoice {invoice_no} has not been uploaded to EFRIS yet. '
-                                 f'Please upload via T109 first before creating a credit note.'
-                    })
-
-        # If not found, try Sale by document_number
-        if not invoice:
-            sale = Sale.objects.filter(
-                document_number=invoice_no,
-                company=company
-            ).select_related('customer').prefetch_related('items__product', 'items__service').first()
-
-            if not sale:
+            if not result.get('success'):
                 return JsonResponse({
                     'success': False,
-                    'error': f'Invoice {invoice_no} not found in local database'
+                    'error': result.get('error', f'Invoice {invoice_no} not found in EFRIS')
                 })
 
-            # Check if sale has EFRIS IDs
-            efris_invoice_id = getattr(sale, 'efris_invoice_id', '') or ''
+            invoice_data = result.get('invoice')
+
+            if not invoice_data:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Invoice {invoice_no} not found in EFRIS'
+                })
+
+            # ✅ Extract data from EFRIS T108 response
+            basic_info = invoice_data.get('basicInformation', {})
+            buyer_details = invoice_data.get('buyerDetails', {})
+            goods_details = invoice_data.get('goodsDetails', [])
+            summary = invoice_data.get('summary', {})
+
+            # ✅ Get EFRIS invoice ID (required for credit note)
+            efris_invoice_id = basic_info.get('invoiceId')
+
             if not efris_invoice_id:
                 return JsonResponse({
                     'success': False,
-                    'error': f'Sale {invoice_no} has not been uploaded to EFRIS yet. '
-                             f'Please upload via T109 first before creating a credit note.'
+                    'error': f'Invoice {invoice_no} is missing EFRIS invoice ID'
                 })
 
-            # Build response from Sale
+            # ✅ Build items list from EFRIS goods details
             items = []
-            for item in sale.items.all():
-                # Determine item details based on product or service
-                if hasattr(item, 'product') and item.product:
-                    item_name = item.product.name
-                    item_code = getattr(item.product, 'sku', '')
-                    unit_of_measure = getattr(item.product, 'unit_of_measure', 'PCS')
-                elif hasattr(item, 'service') and item.service:
-                    item_name = item.service.name
-                    item_code = getattr(item.service, 'code', '')
-                    unit_of_measure = getattr(item.service, 'unit_of_measure', 'PCS')
-                else:
-                    item_name = getattr(item, 'description', 'Unknown Item')
-                    item_code = ''
-                    unit_of_measure = 'PCS'
-
-                qty = float(getattr(item, 'quantity', 0))
-                unit_price = float(getattr(item, 'unit_price', 0))
-                total = qty * unit_price
-
+            for item in goods_details:
                 items.append({
-                    'item': item_name,
-                    'itemCode': item_code,
-                    'qty': qty,
-                    'remainQty': qty,
-                    'unitOfMeasure': unit_of_measure,
-                    'unitPrice': f"{unit_price:.2f}",
-                    'total': f"{total:.2f}",
-                    'remainAmount': f"{total:.2f}",
-                    'taxRate': getattr(item, 'tax_rate', '18%')
+                    'item': item.get('item', ''),
+                    'itemCode': item.get('itemCode', ''),
+                    'qty': float(item.get('qty', 0)),
+                    'remainQty': float(item.get('qty', 0)),  # For partial credits
+                    'unitOfMeasure': item.get('unitOfMeasure', '101'),
+                    'unitPrice': item.get('unitPrice', '0.00'),
+                    'total': item.get('total', '0.00'),
+                    'remainAmount': item.get('total', '0.00'),
+                    'taxRate': item.get('taxRate', '0.18'),
+                    'tax': item.get('tax', '0.00')
                 })
 
+            # ✅ Return structured response
             return JsonResponse({
                 'success': True,
                 'invoice': {
                     'invoiceNo': invoice_no,
                     'efrisInvoiceId': efris_invoice_id,
                     'items': items,
-                    'currency': getattr(sale, 'currency', 'UGX'),
-                    'grossAmount': f"{float(getattr(sale, 'total_amount', 0)):.2f}",
-                    'buyer': sale.customer.name if sale.customer else 'Walk-in Customer'
+                    'currency': basic_info.get('currency', 'UGX'),
+                    'grossAmount': summary.get('grossAmount', '0.00'),
+                    'netAmount': summary.get('netAmount', '0.00'),
+                    'taxAmount': summary.get('taxAmount', '0.00'),
+                    'buyer': buyer_details.get('buyerLegalName', 'Walk-in Customer'),
+                    'buyerTin': buyer_details.get('buyerTin', ''),
+                    'issueDate': basic_info.get('issuedDate', '')
                 }
             })
-
-        # Build response from Invoice
-        items = []
-        efris_invoice_id = getattr(invoice, 'efris_invoice_id', '') or ''
-
-        # Check if invoice has a related sale with items
-        if invoice.sale:
-            sale_items = invoice.sale.items.select_related('product', 'service').all()
-
-            if not sale_items.exists():
-                # If no sale items, return error - we need items to credit
-                return JsonResponse({
-                    'success': False,
-                    'error': f'Invoice {invoice_no} has no line items to credit'
-                })
-
-            # Process sale items
-            for item in sale_items:
-                # Determine item details
-                if hasattr(item, 'product') and item.product:
-                    item_name = item.product.name
-                    item_code = getattr(item.product, 'sku', '')
-                    unit_of_measure = getattr(item.product, 'unit_of_measure', 'PCS')
-                elif hasattr(item, 'service') and item.service:
-                    item_name = item.service.name
-                    item_code = getattr(item.service, 'code', '')
-                    unit_of_measure = getattr(item.service, 'unit_of_measure', 'PCS')
-                else:
-                    item_name = getattr(item, 'description', 'Unknown Item')
-                    item_code = ''
-                    unit_of_measure = 'PCS'
-
-                qty = float(getattr(item, 'quantity', 0))
-                unit_price = float(getattr(item, 'unit_price', 0))
-                total = qty * unit_price
-
-                items.append({
-                    'item': item_name,
-                    'itemCode': item_code,
-                    'qty': qty,
-                    'remainQty': qty,
-                    'unitOfMeasure': unit_of_measure,
-                    'unitPrice': f"{unit_price:.2f}",
-                    'total': f"{total:.2f}",
-                    'remainAmount': f"{total:.2f}",
-                    'taxRate': getattr(item, 'tax_rate', '18%')
-                })
-        else:
-            # No sale associated
-            return JsonResponse({
-                'success': False,
-                'error': f'Invoice {invoice_no} has no associated sale data'
-            })
-
-        # Get buyer details
-        buyer_name = 'Walk-in Customer'
-        currency = 'UGX'
-        gross_amount = 0
-
-        if invoice.sale:
-            if invoice.sale.customer:
-                buyer_name = invoice.sale.customer.name
-            currency = getattr(invoice.sale, 'currency', 'UGX')
-            gross_amount = float(getattr(invoice.sale, 'total_amount', 0))
-
-        return JsonResponse({
-            'success': True,
-            'invoice': {
-                'invoiceNo': invoice_no,
-                'efrisInvoiceId': efris_invoice_id,
-                'items': items,
-                'currency': currency,
-                'grossAmount': f"{gross_amount:.2f}",
-                'buyer': buyer_name
-            }
-        })
 
     except json.JSONDecodeError:
         return JsonResponse({
@@ -328,8 +222,6 @@ def api_get_invoice_for_credit_note(request):
             'error': 'Invalid JSON data'
         }, status=400)
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error fetching invoice for credit note: {e}", exc_info=True)
 
         return JsonResponse({
@@ -357,10 +249,11 @@ def credit_note_application_status(request, reference_no):
                 if applications:
                     application = applications[0]
 
-                    # Add status display based on correct mapping
+                    # FIX: Use correct status mapping per EFRIS T111 documentation
+                    # 101 = Approved, 102 = Submitted/Pending, 103 = Rejected, 104 = Voided
                     status_mapping = {
-                        '101': 'Pending/Submitted',
-                        '102': 'Approved',
+                        '101': 'Approved',
+                        '102': 'Submitted/Pending',
                         '103': 'Rejected',
                         '104': 'Voided/Cancelled',
                         '105': 'Processed',
@@ -371,10 +264,10 @@ def credit_note_application_status(request, reference_no):
 
                     # Add reason description if available
                     reason_codes = {
-                        '101': 'Sales Return',
-                        '102': 'Sales Allowance/Discount',
-                        '103': 'Price Adjustment',
-                        '104': 'Goods/Service Not Received',
+                        '101': 'Return of products due to expiry or damage',
+                        '102': 'Cancellation of the purchase',
+                        '103': 'Invoice amount wrongly stated',
+                        '104': 'Partial or complete waive off',
                         '105': 'Others',
                     }
 

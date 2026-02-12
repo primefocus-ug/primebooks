@@ -748,3 +748,38 @@ class ReportScheduler:
         
         schedule.next_scheduled = next_run
         schedule.save(update_fields=['next_scheduled'])
+
+
+"""
+Report generation utilities
+"""
+import logging
+from pathlib import Path
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
+
+
+def generate_report_sync(report_id, user_id, schema_name, **kwargs):
+    """
+    Generate report synchronously (for desktop mode)
+    ✅ No Celery required
+    """
+    from django_tenants.utils import schema_context
+    from .models import SavedReport
+    from accounts.models import CustomUser
+
+    with schema_context(schema_name):
+        report = SavedReport.objects.get(id=report_id)
+        user = CustomUser.objects.get(id=user_id)
+
+        # Generate report based on type
+        if report.report_template.report_type == 'sales':
+            return generate_sales_report(report, user, **kwargs)
+        elif report.report_template.report_type == 'inventory':
+            return generate_inventory_report(report, user, **kwargs)
+        # Add more report types as needed
+
+        raise ValueError(f"Unknown report type: {report.report_template.report_type}")
+
+

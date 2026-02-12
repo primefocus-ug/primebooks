@@ -6,7 +6,7 @@ from django.core.paginator import Paginator
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 from collections import Counter, defaultdict
-
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.cache import cache
@@ -836,8 +836,6 @@ def inventory_status_report(request):
     return render(request, 'reports/inventory_status.html', context)
 
 
-
-
 @login_required
 @permission_required('reports.add_savedreport')
 def generate_report(request, report_id):
@@ -881,30 +879,73 @@ def generate_report(request, report_id):
             kwargs['confidential'] = confidential
             kwargs['watermark'] = watermark
 
-            # Start async generation with schema_name
-            from .tasks import generate_report_async
-            task = generate_report_async.delay(
-                report.id,
-                request.user.id,
-                schema_name,  # Pass the current tenant's schema name
-                **kwargs
-            )
+            # ✅ Handle Desktop vs Web mode
+            if getattr(settings, 'DESKTOP_MODE', False):
+                # Desktop mode - run synchronously (no Celery)
+                logger.info("Desktop mode - generating report synchronously")
 
-            generated_report.task_id = task.id
-            generated_report.save()
+                generated_report.task_id = None  # ✅ No Celery task
+                generated_report.status = 'PROCESSING'
+                generated_report.save()
 
-            messages.success(
-                request,
-                f'Report generation started. You will be notified when complete.'
-            )
+                try:
+                    # Generate report synchronously
+                    from .utils import generate_report_sync
+                    result = generate_report_sync(
+                        report.id,
+                        request.user.id,
+                        schema_name,
+                        **kwargs
+                    )
 
-            # Return JSON response
-            return JsonResponse({
-                'success': True,
-                'generated_report_id': generated_report.id,
-                'websocket_url': f'/ws/reports/generation/{generated_report.id}/',
-                'redirect_url': reverse('reports:history')
-            })
+                    generated_report.status = 'COMPLETED'
+                    generated_report.file_path = result['file_path']
+                    generated_report.file_size = result['file_size']
+                    generated_report.save()
+
+                    messages.success(request, 'Report generated successfully!')
+
+                    return JsonResponse({
+                        'success': True,
+                        'generated_report_id': generated_report.id,
+                        'download_url': generated_report.file_path,
+                        'redirect_url': reverse('reports:history')
+                    })
+
+                except Exception as e:
+                    logger.error(f"Report generation failed: {e}", exc_info=True)
+                    generated_report.status = 'FAILED'
+                    generated_report.error_message = str(e)
+                    generated_report.save()
+
+                    return JsonResponse({
+                        'success': False,
+                        'error': str(e)
+                    }, status=400)
+            else:
+                # Web mode - use Celery async
+                from .tasks import generate_report_async
+                task = generate_report_async.delay(
+                    report.id,
+                    request.user.id,
+                    schema_name,
+                    **kwargs
+                )
+
+                generated_report.task_id = task.id
+                generated_report.save()
+
+                messages.success(
+                    request,
+                    f'Report generation started. You will be notified when complete.'
+                )
+
+                return JsonResponse({
+                    'success': True,
+                    'generated_report_id': generated_report.id,
+                    'websocket_url': f'/ws/reports/generation/{generated_report.id}/',
+                    'redirect_url': reverse('reports:history')
+                })
 
         except Exception as e:
             logger.error(f"Error starting report generation: {str(e)}", exc_info=True)

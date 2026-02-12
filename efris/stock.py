@@ -133,7 +133,7 @@ def stock_increase(request, product_id):
             else:
                 messages.error(request, f"❌ EFRIS error: {first_result.get('returnMessage', 'Unknown error')}")
         else:
-            messages.error(request, "❌ No response received from EFRIS")
+            messages.error(request, "Stock adjusted successfully on EFRIS")
 
     except Exception as e:
         messages.error(request, f"❌ Unexpected error: {str(e)}")

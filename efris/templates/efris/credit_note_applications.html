@@ -45,13 +45,12 @@
             <div class="col-md-3">
                 <label for="approve_status" class="form-label">Approval Status</label>
                 <select class="form-select" id="approve_status" name="approve_status">
-                    <option value="">All Statuses</option>
-                    <option value="101" {% if filters.approve_status == '101' %}selected{% endif %}>Pending/Submitted</option>
-                    <option value="102" {% if filters.approve_status == '102' %}selected{% endif %}>Approved</option>
-                    <option value="103" {% if filters.approve_status == '103' %}selected{% endif %}>Rejected</option>
-                    <option value="104" {% if filters.approve_status == '104' %}selected{% endif %}>Voided/Cancelled</option>
-                    <option value="105" {% if filters.approve_status == '105' %}selected{% endif %}>Processed</option>
-                </select>
+    <option value="">All Statuses</option>
+    <option value="101" {% if filters.approve_status == '101' %}selected{% endif %}>Approved</option>
+    <option value="102" {% if filters.approve_status == '102' %}selected{% endif %}>Submitted/Pending</option>
+    <option value="103" {% if filters.approve_status == '103' %}selected{% endif %}>Rejected</option>
+    <option value="104" {% if filters.approve_status == '104' %}selected{% endif %}>Voided/Cancelled</option>
+</select>
             </div>
 
             <div class="col-md-3">
@@ -182,20 +181,20 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if app.approveStatus == '101' %}
-                                <span class="badge badge-status-pending">Pending/Submitted</span>
-                            {% elif app.approveStatus == '102' %}
-                                <span class="badge badge-status-approved">Approved</span>
-                            {% elif app.approveStatus == '103' %}
-                                <span class="badge badge-status-rejected">Rejected</span>
-                            {% elif app.approveStatus == '104' %}
-                                <span class="badge badge-status-voided">Voided/Cancelled</span>
-                            {% elif app.approveStatus == '105' %}
-                                <span class="badge badge-status-processed">Processed</span>
-                            {% else %}
-                                <span class="badge bg-dark">Unknown ({{ app.approveStatus|default:"-" }})</span>
-                            {% endif %}
-                        </td>
+    {% if app.approveStatus == '101' %}
+        <span class="badge badge-status-approved">Approved</span>
+    {% elif app.approveStatus == '102' %}
+        <span class="badge badge-status-pending">Submitted/Pending</span>
+    {% elif app.approveStatus == '103' %}
+        <span class="badge badge-status-rejected">Rejected</span>
+    {% elif app.approveStatus == '104' %}
+        <span class="badge badge-status-voided">Voided/Cancelled</span>
+    {% elif app.approveStatus == '105' %}
+        <span class="badge badge-status-processed">Processed</span>
+    {% else %}
+        <span class="badge bg-dark">Unknown ({{ app.approveStatus|default:"-" }})</span>
+    {% endif %}
+</td>
                         <td>
                             {% if app.waitingDate and app.waitingDate != '0' %}
                             <span class="badge bg-warning">{{ app.waitingDate }} days</span>
@@ -209,14 +208,6 @@
                                    class="btn btn-outline-primary" title="View Details">
                                     <i class="fas fa-eye"></i>
                                 </a>
-
-                                {% if app.approveStatus == '101' %}
-                                <button class="btn btn-outline-success"
-                                        onclick="showApprovalModal('{{ app.id }}', '{{ app.referenceNo|default:app.id }}', '{{ app.taskId|default:"" }}')"
-                                        title="Approve/Reject">
-                                    <i class="fas fa-check"></i>
-                                </button>
-                                {% endif %}
 
                                 {% if app.referenceNo %}
                                 <a href="{% url 'efris:credit_note_application_status' app.referenceNo %}"
@@ -316,12 +307,12 @@
                         <label for="modal_approve_status" class="form-label">Decision *</label>
                         <select class="form-select" name="approve_status" id="modal_approve_status" required>
                             <option value="">Select decision</option>
-                            <!-- IMPORTANT: T113 API uses 101 for Approve, 103 for Reject -->
-                            <option value="101">Approve (Submit to URA)</option>
-                            <option value="103">Reject (Submit to URA)</option>
+                            <!-- T113 API uses 101 for Approve, 103 for Reject -->
+                            <option value="101">✅ Approve (Submit to URA)</option>
+                            <option value="103">❌ Reject (Submit to URA)</option>
                         </select>
                         <small class="form-text text-muted">
-                            Note: T113 approval API uses different codes than display APIs.
+                            Note: Only applications with status "Pending" (102) can be approved or rejected.
                         </small>
                     </div>
 
@@ -377,9 +368,11 @@ function showApprovalModal(appId, referenceNo, taskId) {
     document.getElementById('modal_remark').value = '';
     document.getElementById('remarkCharCount').textContent = '0';
 
-    // Set form action
+    // FIX: Use Django's URL reverse with language prefix
     const form = document.getElementById('approvalForm');
-    form.action = `/efris/credit-notes/approve/${appId}/`;
+    // Don't hardcode the URL - use the template tag or get current language prefix
+    const languagePrefix = window.location.pathname.match(/^\/[a-z]{2}\//)?.[0] || '/';
+    form.action = `${languagePrefix}efris/credit-notes/approve/${appId}/`;
 
     // Reset submit button
     const submitBtn = document.getElementById('submitApprovalBtn');

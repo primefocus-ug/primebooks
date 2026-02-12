@@ -311,14 +311,71 @@ def handle_company_status_change(sender, instance, **kwargs):
 # REAL-TIME WEBSOCKET SIGNALS
 # ============================================================================
 
+@receiver(post_save, sender=Stock)
+def inventory_updated_handler(sender, instance, created, **kwargs):
+    """Handle inventory updates - send low stock alerts"""
+    # ✅ Skip in desktop mode
+    if getattr(settings, 'DESKTOP_MODE', False):
+        return
+
+    try:
+        # Check if item is low stock or out of stock
+        if instance.quantity <= instance.low_stock_threshold:
+            company = instance.store.company
+            alert_type = 'out_of_stock' if instance.quantity == 0 else 'low_stock'
+
+            # ✅ Check channel layer exists
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+
+            channel_layer = get_channel_layer()
+
+            if not channel_layer:
+                logger.debug("Channel layer not available, skipping WebSocket")
+                return
+
+            async_to_sync(channel_layer.group_send)(
+                f'company_dashboard_{company.company_id}',
+                {
+                    'type': 'alert_notification',
+                    'alert_type': alert_type,
+                    'message': f"{instance.product.name if hasattr(instance, 'product') else 'Product'} is {'out of stock' if instance.quantity == 0 else 'running low'} at {instance.store.name}",
+                    'data': {
+                        'store_name': instance.store.name,
+                        'quantity': float(instance.quantity),
+                        'threshold': float(instance.low_stock_threshold)
+                    }
+                }
+            )
+
+    except ImportError:
+        logger.debug("Channels not installed, skipping WebSocket")
+    except Exception as e:
+        logger.debug(f"WebSocket update failed: {e}")
+
+
 @receiver(post_save, sender=Sale)
 def sale_created_handler(sender, instance, created, **kwargs):
     """Handle new sale creation - send real-time updates"""
     if not created:
         return
 
+    # ✅ Skip in desktop mode
+    if getattr(settings, 'DESKTOP_MODE', False):
+        return
+
     try:
         company = instance.store.company
+
+        # ✅ Check channel layer exists
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+
+        channel_layer = get_channel_layer()
+
+        if not channel_layer:
+            logger.debug("Channel layer not available, skipping WebSocket")
+            return
 
         # Send update to company dashboard
         async_to_sync(channel_layer.group_send)(
@@ -350,35 +407,10 @@ def sale_created_handler(sender, instance, created, **kwargs):
             }
         )
 
+    except ImportError:
+        logger.debug("Channels not installed, skipping WebSocket")
     except Exception as e:
-        logger.error(f"Error sending sale update: {e}", exc_info=True)
-
-
-@receiver(post_save, sender=Stock)
-def inventory_updated_handler(sender, instance, created, **kwargs):
-    """Handle inventory updates - send low stock alerts"""
-    try:
-        # Check if item is low stock or out of stock
-        if instance.quantity <= instance.low_stock_threshold:
-            company = instance.store.company
-            alert_type = 'out_of_stock' if instance.quantity == 0 else 'low_stock'
-
-            async_to_sync(channel_layer.group_send)(
-                f'company_dashboard_{company.company_id}',
-                {
-                    'type': 'alert_notification',
-                    'alert_type': alert_type,
-                    'message': f"{instance.product.name if hasattr(instance, 'product') else 'Product'} is {'out of stock' if instance.quantity == 0 else 'running low'} at {instance.store.name}",
-                    'data': {
-                        'store_name': instance.store.name,
-                        'quantity': float(instance.quantity),
-                        'threshold': float(instance.low_stock_threshold)
-                    }
-                }
-            )
-
-    except Exception as e:
-        logger.error(f"Error sending inventory alert: {e}", exc_info=True)
+        logger.debug(f"WebSocket update failed: {e}")
 
 
 @receiver(post_save, sender=DeviceOperatorLog)

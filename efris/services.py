@@ -2137,7 +2137,7 @@ class EFRISDataTransformer:
                     logger.warning(f"Tax compliance issue: {error}")
 
             # Build sections using Sale data
-            seller_details = self._build_seller_details()
+            seller_details = self._build_seller_details(document_number=sale.document_number)
             basic_info = self._build_basic_info_from_sale(sale, invoice)
             buyer_details = self._build_buyer_details_from_sale(sale)
             goods_details = self._build_goods_details_from_sale(sale)
@@ -2826,11 +2826,11 @@ class EFRISDataTransformer:
             "buyerAddress": getattr(customer, 'address', '') or ""
         }
 
-    def _build_seller_details(self) -> Dict[str, Any]:
+    def _build_seller_details(self,document_number=None) -> Dict[str, Any]:
         """Build seller details from company information"""
         timestamp = int(time.time() * 1000)
         random_suffix = get_random_string(4, allowed_chars='0123456789')
-        reference_no = f"REF{timestamp}{random_suffix}"
+        reference_no = document_number or f"REF{timestamp}{random_suffix}"
 
         return {
             "tin": self.company.tin,
@@ -7594,6 +7594,8 @@ class EnhancedEFRISAPIClient:
                 qty = float(goods.get('qty', 0))
                 total = float(goods.get('total', 0))
                 tax = float(goods.get('tax', 0))
+                tax_rate = str(goods.get('taxRate', '')).strip()
+                is_exempt = tax_rate == '-'
 
                 if qty >= 0:
                     return {
@@ -7607,24 +7609,37 @@ class EnhancedEFRISAPIClient:
                         "error": f"Goods item {idx + 1}: Total must be negative"
                     }
 
-                if tax >= 0:
+                # ✅ Exempt items (taxRate="-") are allowed to have tax=0
+                # Non-exempt items must have negative tax
+                if not is_exempt and tax >= 0:
                     return {
                         "success": False,
                         "error": f"Goods item {idx + 1}: Tax must be negative"
                     }
 
-            # Validate tax details (must have negative amounts)
+                # Validate tax details
             tax_details = credit_note_data.get('taxDetails', [])
             for idx, tax_detail in enumerate(tax_details):
                 net_amount = float(tax_detail.get('netAmount', 0))
                 tax_amount = float(tax_detail.get('taxAmount', 0))
                 gross_amount = float(tax_detail.get('grossAmount', 0))
+                tax_rate = str(tax_detail.get('taxRate', '')).strip()
+                is_exempt = tax_rate == '-'
 
-                if net_amount > 0 or tax_amount > 0 or gross_amount > 0:
+                if net_amount > 0 or gross_amount > 0:
                     return {
                         "success": False,
                         "error": f"Tax detail {idx + 1}: Amounts must be negative or zero"
                     }
+
+                # ✅ Exempt items are allowed to have taxAmount=0
+                if not is_exempt and tax_amount > 0:
+                    return {
+                        "success": False,
+                        "error": f"Tax detail {idx + 1}: Tax amount must be negative or zero"
+                    }
+
+
 
             # Validate summary (gross amount must be negative)
             summary = credit_note_data.get('summary', {})
@@ -7772,165 +7787,316 @@ class EnhancedEFRISAPIClient:
             contact_email: Optional[str],
             remarks: Optional[str]
     ) -> Dict[str, Any]:
-        """Build credit note from T108 invoice data"""
+        """
+        Build credit note from T108 invoice data
+        FIXED: Handle exempt tax rate '-' from EFRIS
+        FIXED: Exempt items use "0" not "-0.00" for tax
+        FIXED: Only send exciseTax as negative if it has a real non-zero value
+        """
         from datetime import datetime
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+        import json
 
-        # Extract basic information
-        basic_info = invoice_data.get('basicInformation', {})
+        # ✅ LOCAL HELPER FUNCTION
+        def clean_numeric_value(value, default=0):
+            """Clean and convert value to Decimal"""
+            if value is None or value == '' or str(value).strip() == '-':
+                return Decimal(str(default))
+            try:
+                str_value = str(value).strip()
+                str_value = str_value.replace('%', '')
+                str_value = str_value.replace(',', '')
+                if not str_value or str_value == '-':
+                    return Decimal(str(default))
+                return Decimal(str_value)
+            except (ValueError, InvalidOperation):
+                logger.warning(f"Could not convert '{value}' to Decimal, using default {default}")
+                return Decimal(str(default))
 
-        # Extract EFRIS IDs from basicInformation section
-        ori_invoice_id = basic_info.get('invoiceId')
-        ori_invoice_no = basic_info.get('invoiceNo')
+        # ✅ Check if tax rate is exempt ("-")
+        def is_exempt_rate(tax_rate_value):
+            """Check if tax rate is exempt (EFRIS uses '-' for exempt items)"""
+            return str(tax_rate_value).strip() == '-'
 
-        if not ori_invoice_id or not ori_invoice_no:
-            raise Exception(
-                f"Invoice data missing required IDs: "
-                f"invoiceId={ori_invoice_id}, invoiceNo={ori_invoice_no}"
-            )
+        # ✅ Format negative values - only for items with actual non-zero tax
+        def format_negative(value):
+            """Ensure value is formatted as negative string (even for zero)"""
+            if value is None or value == '':
+                return "-0.00"
+            try:
+                decimal_value = Decimal(str(value))
+                if decimal_value == 0:
+                    return "-0.00"
+                elif decimal_value > 0:
+                    return str(-abs(decimal_value))
+                else:
+                    return f"{decimal_value:.2f}"
+            except:
+                return "-0.00"
 
-        logger.info(
-            f"Building credit note for Invoice ID: {ori_invoice_id}, "
-            f"FDN: {ori_invoice_no}"
-        )
+        # ✅ Format tax for exempt items - exempt tax is always plain "0"
+        def format_tax(value, exempt=False):
+            """
+            Format tax value:
+            - Exempt items: always return "0" (EFRIS does not accept -0.00 for exempt)
+            - Non-exempt items: return negative value including -0.00
+            """
+            if exempt:
+                return "0"
+            return format_negative(value)
 
-        # Build credit note structure
-        credit_note_data = {
-            "oriInvoiceId": ori_invoice_id,
-            "oriInvoiceNo": ori_invoice_no,
-            "reasonCode": reason_code,
-            "applicationTime": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "invoiceApplyCategoryCode": "101",  # Credit Note
-            "currency": basic_info.get('currency', 'UGX'),
-            "contactName": contact_name or "",
-            "contactMobileNum": contact_mobile or "",
-            "contactEmail": contact_email or "",
-            "source": "103",  # WebService API
-            "remarks": remarks or f"Credit note for {ori_invoice_no}",
-            "sellersReferenceNo": "",
-        }
+        # ✅ Format excise tax - only negative if it has a real non-zero value
+        def format_excise_tax(raw_value):
+            """
+            Format excise tax:
+            - Empty/None: return empty string (don't send the field)
+            - Zero: return "0" (don't negate zero excise tax)
+            - Non-zero: return negative value
+            """
+            if raw_value is None or raw_value == '':
+                return ''
+            cleaned = clean_numeric_value(raw_value, 0)
+            if cleaned == Decimal('0'):
+                return "0"  # ✅ Plain zero, not -0.00
+            return str(-abs(cleaned))  # ✅ Real negative for actual excise tax
 
-        if reason:
-            credit_note_data["reason"] = reason
+        try:
+            basic_info = invoice_data.get('basicInformation', {})
+            ori_invoice_id = basic_info.get('invoiceId')
+            ori_invoice_no = basic_info.get('invoiceNo')
 
-        # Build goods details from invoice items
-        goods_details = []
-        invoice_items = invoice_data.get('goodsDetails', [])
-
-        if not invoice_items:
-            raise Exception(f"Invoice {ori_invoice_no} has no line items")
-
-        if credit_items:
-            # Partial credit note
-            for credit_item in credit_items:
-                # Find matching item in invoice
-                matching_item = next(
-                    (item for item in invoice_items
-                     if item.get('item') == credit_item.get('item')),
-                    None
+            if not ori_invoice_id or not ori_invoice_no:
+                raise Exception(
+                    f"Invoice data missing required IDs: "
+                    f"invoiceId={ori_invoice_id}, invoiceNo={ori_invoice_no}"
                 )
 
-                if not matching_item:
-                    raise Exception(
-                        f"Item '{credit_item.get('item')}' not found in invoice"
+            logger.info(
+                f"Building credit note for Invoice ID: {ori_invoice_id}, "
+                f"FDN: {ori_invoice_no}"
+            )
+
+            credit_note_data = {
+                "oriInvoiceId": ori_invoice_id,
+                "oriInvoiceNo": ori_invoice_no,
+                "reasonCode": reason_code,
+                "applicationTime": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                "invoiceApplyCategoryCode": "101",
+                "currency": basic_info.get('currency', 'UGX'),
+                "contactName": contact_name or "",
+                "contactMobileNum": contact_mobile or "",
+                "contactEmail": contact_email or "",
+                "source": "103",
+                "remarks": remarks or f"Credit note for {ori_invoice_no}",
+                "sellersReferenceNo": "",
+            }
+
+            if reason:
+                credit_note_data["reason"] = reason[:1024]
+
+            goods_details = []
+            invoice_items = invoice_data.get('goodsDetails', [])
+
+            if not invoice_items:
+                raise Exception(f"Invoice {ori_invoice_no} has no line items")
+
+            if credit_items:
+                # Partial credit note
+                for credit_item in credit_items:
+                    matching_item = next(
+                        (item for item in invoice_items
+                         if item.get('item') == credit_item.get('item')),
+                        None
                     )
 
-                # Get original values from invoice
-                orig_qty = Decimal(str(matching_item.get('qty', 0)))
-                orig_unit_price = Decimal(str(matching_item.get('unitPrice', 0)))
-                orig_tax_rate = Decimal(str(matching_item.get('taxRate', 0)))
+                    if not matching_item:
+                        raise Exception(
+                            f"Item '{credit_item.get('item')}' not found in invoice"
+                        )
 
-                # Credit quantity (negative)
-                credit_qty = Decimal(str(credit_item.get('qty', 0)))
-                if credit_qty > 0:
-                    credit_qty = -credit_qty
+                    orig_qty = clean_numeric_value(matching_item.get('qty', 0))
+                    orig_unit_price = clean_numeric_value(matching_item.get('unitPrice', 0))
+                    raw_tax_rate = matching_item.get('taxRate', '0')
+                    exempt = is_exempt_rate(raw_tax_rate)
+                    orig_tax_rate = clean_numeric_value(raw_tax_rate, 0)
 
-                # Calculate total and tax using Decimal for precision
-                total = (credit_qty * orig_unit_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                tax = (total * orig_tax_rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    credit_qty = clean_numeric_value(credit_item.get('qty', 0))
+                    if credit_qty > 0:
+                        credit_qty = -credit_qty
 
-                goods_details.append({
-                    "item": matching_item.get('item'),
-                    "itemCode": matching_item.get('itemCode', ''),
-                    "qty": str(credit_qty),
-                    "unitOfMeasure": matching_item.get('unitOfMeasure', 'PCS'),
-                    "unitPrice": str(orig_unit_price),
-                    "total": str(total),
-                    "taxRate": str(orig_tax_rate),
-                    "tax": str(tax),
-                    "orderNumber": matching_item.get('orderNumber', '1'),
-                    "deemedFlag": matching_item.get('deemedFlag', '2'),
-                    "exciseFlag": matching_item.get('exciseFlag', '2'),
-                    "goodsCategoryId": matching_item.get('goodsCategoryId', ''),
-                    "goodsCategoryName": matching_item.get('goodsCategoryName', ''),
-                })
-        else:
-            # Full credit note - negate all items EXACTLY as they appear in original
-            for item in invoice_items:
-                # ✅ Use EXACT values from original invoice, just negate them
-                orig_qty = Decimal(str(item.get('qty', 0)))
-                orig_unit_price = Decimal(str(item.get('unitPrice', 0)))
-                orig_total = Decimal(str(item.get('total', 0)))
-                orig_tax = Decimal(str(item.get('tax', 0)))
-                orig_tax_rate = Decimal(str(item.get('taxRate', 0)))
+                    if abs(credit_qty) > abs(orig_qty):
+                        raise Exception(
+                            f"Credit qty {abs(credit_qty)} exceeds original {abs(orig_qty)} "
+                            f"for '{matching_item.get('item')}'"
+                        )
 
-                # Negate the values
-                credit_qty = -orig_qty
-                credit_total = -orig_total
-                credit_tax = -orig_tax
+                    total = (credit_qty * orig_unit_price).quantize(
+                        Decimal('0.01'), rounding=ROUND_HALF_UP
+                    )
 
-                goods_details.append({
-                    "item": item.get('item'),
-                    "itemCode": item.get('itemCode', ''),
-                    "qty": str(credit_qty),
-                    "unitOfMeasure": item.get('unitOfMeasure', 'PCS'),
-                    "unitPrice": str(orig_unit_price),
-                    "total": str(credit_total),
-                    "taxRate": str(orig_tax_rate),
-                    "tax": str(credit_tax),
-                    "orderNumber": item.get('orderNumber', '1'),
-                    "deemedFlag": item.get('deemedFlag', '2'),
-                    "exciseFlag": item.get('exciseFlag', '2'),
-                    "goodsCategoryId": item.get('goodsCategoryId', ''),
-                    "goodsCategoryName": item.get('goodsCategoryName', ''),
-                })
+                    # ✅ Exempt items always have tax = 0
+                    if exempt:
+                        tax = Decimal('0')
+                    else:
+                        if orig_tax_rate > Decimal('1'):
+                            tax_rate_decimal = orig_tax_rate / Decimal('100')
+                        else:
+                            tax_rate_decimal = orig_tax_rate
+                        tax = (total * tax_rate_decimal).quantize(
+                            Decimal('0.01'), rounding=ROUND_HALF_UP
+                        )
 
-        credit_note_data["goodsDetails"] = goods_details
+                    logger.info(
+                        f"Partial credit item '{matching_item.get('item')}': "
+                        f"exempt={exempt}, taxRate={raw_tax_rate}, "
+                        f"tax={tax}, formatted={format_tax(tax, exempt)}"
+                    )
 
-        # Build tax details
-        tax_details = self._build_tax_details_from_goods(goods_details)
-        credit_note_data["taxDetails"] = tax_details
+                    goods_details.append({
+                        "item": matching_item.get('item'),
+                        "itemCode": matching_item.get('itemCode', ''),
+                        "qty": str(credit_qty),
+                        "unitOfMeasure": matching_item.get('unitOfMeasure', '101'),
+                        "unitPrice": str(orig_unit_price),
+                        "total": str(total),
+                        "taxRate": raw_tax_rate,
+                        "tax": format_tax(tax, exempt),   # ✅ "0" for exempt, "-X.XX" for taxable
+                        "orderNumber": matching_item.get('orderNumber', '1'),
+                        "deemedFlag": matching_item.get('deemedFlag', '2'),
+                        "exciseFlag": matching_item.get('exciseFlag', '2'),
+                        "categoryId": matching_item.get('categoryId', ''),
+                        "categoryName": matching_item.get('categoryName', ''),
+                        "goodsCategoryId": matching_item.get('goodsCategoryId', ''),
+                        "goodsCategoryName": matching_item.get('goodsCategoryName', ''),
+                        "exciseRate": matching_item.get('exciseRate', ''),
+                        "exciseRule": matching_item.get('exciseRule', ''),
+                        "exciseTax": format_excise_tax(matching_item.get('exciseTax')),  # ✅ "0" not "-0.00"
+                        "vatApplicableFlag": matching_item.get('vatApplicableFlag', '1'),
+                    })
+            else:
+                # Full credit note - negate all items
+                for item in invoice_items:
+                    orig_qty = clean_numeric_value(item.get('qty', 0))
+                    orig_unit_price = clean_numeric_value(item.get('unitPrice', 0))
+                    orig_total = clean_numeric_value(item.get('total', 0))
+                    orig_tax = clean_numeric_value(item.get('tax', 0))
+                    raw_tax_rate = item.get('taxRate', '0')
+                    exempt = is_exempt_rate(raw_tax_rate)
+                    orig_tax_rate = clean_numeric_value(raw_tax_rate, 0)
 
-        # Build summary
-        summary = self._build_summary_from_tax_details_dict(tax_details, len(goods_details))
-        credit_note_data["summary"] = summary
+                    # ✅ Only recalculate tax for non-exempt items with missing tax
+                    if not exempt and orig_tax == Decimal('0') and orig_total != Decimal('0'):
+                        if orig_tax_rate > Decimal('1'):
+                            tax_rate_decimal = orig_tax_rate / Decimal('100')
+                        else:
+                            tax_rate_decimal = orig_tax_rate
 
-        # Payment way
-        credit_note_data["payWay"] = [{
-            "paymentMode": "102",  # Cash
-            "paymentAmount": str(abs(Decimal(summary['grossAmount']))),
-            "orderNumber": "a"
-        }]
+                        orig_tax = (orig_total * tax_rate_decimal).quantize(
+                            Decimal('0.01'), rounding=ROUND_HALF_UP
+                        )
+                        logger.info(
+                            f"Calculated missing tax for {item.get('item')}: "
+                            f"total={orig_total}, rate={orig_tax_rate}, tax={orig_tax}"
+                        )
 
-        # Buyer details from invoice
-        buyer_details = invoice_data.get('buyerDetails', {})
-        credit_note_data["buyerDetails"] = {
-            "buyerTin": buyer_details.get('buyerTin', ''),
-            "buyerType": buyer_details.get('buyerType', '1'),
-            "buyerLegalName": buyer_details.get('buyerLegalName', 'Walk-in Customer'),
-        }
+                    credit_qty = -abs(orig_qty)
+                    credit_total = -abs(orig_total)
+                    credit_tax = -abs(orig_tax)  # 0 for exempt items
 
-        # Basic information
-        credit_note_data["basicInformation"] = {
-            "operator": basic_info.get('operator', 'System'),
-            "invoiceKind": basic_info.get('invoiceKind', '1'),
-            "invoiceIndustryCode": basic_info.get('invoiceIndustryCode', '101'),
-        }
+                    logger.info(
+                        f"Full credit item '{item.get('item')}': "
+                        f"exempt={exempt}, taxRate={raw_tax_rate}, "
+                        f"credit_tax={credit_tax}, formatted={format_tax(credit_tax, exempt)}"
+                    )
 
-        return {
-            "success": True,
-            "credit_note_data": credit_note_data
-        }
+                    goods_details.append({
+                        "item": item.get('item'),
+                        "itemCode": item.get('itemCode', ''),
+                        "qty": str(credit_qty),
+                        "unitOfMeasure": item.get('unitOfMeasure', '101'),
+                        "unitPrice": str(orig_unit_price),
+                        "total": str(credit_total),
+                        "taxRate": raw_tax_rate,
+                        "tax": format_tax(credit_tax, exempt),   # ✅ "0" for exempt, "-X.XX" for taxable
+                        "orderNumber": item.get('orderNumber', '1'),
+                        "deemedFlag": item.get('deemedFlag', '2'),
+                        "exciseFlag": item.get('exciseFlag', '2'),
+                        "categoryId": item.get('categoryId', ''),
+                        "categoryName": item.get('categoryName', ''),
+                        "goodsCategoryId": item.get('goodsCategoryId', ''),
+                        "goodsCategoryName": item.get('goodsCategoryName', ''),
+                        "exciseRate": item.get('exciseRate', ''),
+                        "exciseRule": item.get('exciseRule', ''),
+                        "exciseTax": format_excise_tax(item.get('exciseTax')),  # ✅ "0" not "-0.00"
+                        "pack": item.get('pack', ''),
+                        "stick": item.get('stick', ''),
+                        "exciseUnit": item.get('exciseUnit', ''),
+                        "exciseCurrency": item.get('exciseCurrency', ''),
+                        "exciseRateName": item.get('exciseRateName', ''),
+                        "vatApplicableFlag": item.get('vatApplicableFlag', '1'),
+                    })
+
+            credit_note_data["goodsDetails"] = goods_details
+
+            logger.info(f"Goods details tax values: {[g['tax'] for g in goods_details]}")
+
+            tax_details = self._build_tax_details_from_goods(goods_details)
+            credit_note_data["taxDetails"] = tax_details
+
+            logger.info(f"Tax details after build: {json.dumps(tax_details, indent=2)}")
+
+            summary = self._build_summary_from_tax_details_dict(tax_details, len(goods_details))
+            credit_note_data["summary"] = summary
+
+            logger.info(f"Summary after build: {json.dumps(summary, indent=2)}")
+
+            credit_note_data["payWay"] = [{
+                "paymentMode": "102",
+                "paymentAmount": str(abs(Decimal(summary['grossAmount']))),
+                "orderNumber": "a"
+            }]
+
+            buyer_details = invoice_data.get('buyerDetails', {})
+            credit_note_data["buyerDetails"] = {
+                "buyerTin": buyer_details.get('buyerTin', ''),
+                "buyerNinBrn": buyer_details.get('buyerNinBrn', ''),
+                "buyerPassportNum": buyer_details.get('buyerPassportNum', ''),
+                "buyerLegalName": buyer_details.get('buyerLegalName', 'Walk-in Customer'),
+                "buyerBusinessName": buyer_details.get('buyerBusinessName', ''),
+                "buyerAddress": buyer_details.get('buyerAddress', ''),
+                "buyerEmail": buyer_details.get('buyerEmail', ''),
+                "buyerMobilePhone": buyer_details.get('buyerMobilePhone', ''),
+                "buyerLinePhone": buyer_details.get('buyerLinePhone', ''),
+                "buyerPlaceOfBusi": buyer_details.get('buyerPlaceOfBusi', ''),
+                "buyerType": buyer_details.get('buyerType', '1'),
+                "buyerCitizenship": buyer_details.get('buyerCitizenship', ''),
+                "buyerSector": buyer_details.get('buyerSector', ''),
+                "buyerReferenceNo": buyer_details.get('buyerReferenceNo', ''),
+            }
+
+            credit_note_data["basicInformation"] = {
+                "operator": basic_info.get('operator', 'System'),
+                "invoiceKind": basic_info.get('invoiceKind', '1'),
+                "invoiceIndustryCode": basic_info.get('invoiceIndustryCode', '101'),
+            }
+
+            import_services = invoice_data.get('importServicesSeller')
+            if import_services:
+                credit_note_data["importServicesSeller"] = import_services
+
+            logger.info(f"Complete credit note payload: {json.dumps(credit_note_data, indent=2)}")
+
+            return {
+                "success": True,
+                "credit_note_data": credit_note_data
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to build credit note: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
     def _build_credit_note_from_invoice_model(
             self,
@@ -8357,72 +8523,138 @@ class EnhancedEFRISAPIClient:
         return credit_note_data
 
     def _build_tax_details_from_goods(self, goods_details: List[Dict]) -> List[Dict]:
-        """Build tax details from goods details"""
+        """
+        Build tax details from goods details
+        FIXED: Preserve negative tax amounts for credit notes
+        FIXED: Handle exempt tax rate '-' from EFRIS
+        FIXED: Exempt items use "0" not "-0.00" for taxAmount
+        """
         from decimal import Decimal
+        from collections import defaultdict
 
-        tax_groups = {}
+        def is_exempt_rate(tax_rate_value):
+            return str(tax_rate_value).strip() == '-'
 
-        for goods in goods_details:
-            tax_rate = str(goods.get('taxRate', '0'))
+        def safe_decimal(value, default='0'):
+            if value is None or value == '':
+                return Decimal(default)
+            try:
+                return Decimal(str(value))
+            except:
+                return Decimal(default)
 
-            if tax_rate not in tax_groups:
-                tax_groups[tax_rate] = {
-                    'rate': tax_rate,
-                    'net_amount': Decimal('0'),
-                    'tax_amount': Decimal('0')
-                }
+        # Group by tax rate
+        tax_groups = defaultdict(lambda: {
+            'netAmount': Decimal('0'),
+            'taxAmount': Decimal('0'),
+            'grossAmount': Decimal('0'),
+            'taxRate': None,
+            'taxRateName': None,
+            'isExempt': False
+        })
 
-            total = Decimal(str(goods.get('total', '0')))
-            tax = Decimal(str(goods.get('tax', '0')))
+        for item in goods_details:
+            raw_tax_rate = str(item.get('taxRate', '0'))
+            exempt = is_exempt_rate(raw_tax_rate)
 
-            tax_groups[tax_rate]['net_amount'] += (total - tax)
-            tax_groups[tax_rate]['tax_amount'] += tax
+            total = safe_decimal(item.get('total', '0'))
+            tax = safe_decimal(item.get('tax', '0'))  # safe handles "0", "-0.00", "-18.00" etc
+            net = total - tax
+
+            tax_groups[raw_tax_rate]['netAmount'] += net
+            tax_groups[raw_tax_rate]['taxAmount'] += tax
+            tax_groups[raw_tax_rate]['grossAmount'] += total
+            tax_groups[raw_tax_rate]['taxRate'] = raw_tax_rate
+            tax_groups[raw_tax_rate]['isExempt'] = exempt
+
+            if not tax_groups[raw_tax_rate]['taxRateName']:
+                if exempt:
+                    tax_groups[raw_tax_rate]['taxRateName'] = "Exempt (-)"
+                else:
+                    try:
+                        rate_float = float(raw_tax_rate)
+                        # Normalize: if stored as decimal (0.18) convert to percent (18)
+                        display_rate = rate_float * 100 if rate_float <= 1 else rate_float
+                        tax_groups[raw_tax_rate]['taxRateName'] = f"Rate ({display_rate:.0f}%)"
+                    except:
+                        tax_groups[raw_tax_rate]['taxRateName'] = f"Rate ({raw_tax_rate}%)"
 
         tax_details = []
-        for rate_key, amounts in tax_groups.items():
-            net = amounts['net_amount']
-            tax = amounts['tax_amount']
-            gross = net + tax
+        for tax_rate, data in sorted(tax_groups.items()):
+            is_credit_note = data['netAmount'] < 0 or data['grossAmount'] < 0
+            exempt = data['isExempt']
 
-            # Determine tax category code
-            rate_decimal = Decimal(rate_key)
-            if rate_decimal == Decimal('0.18'):
-                tax_code = "01"  # Standard 18%
-            elif rate_decimal == Decimal('0'):
-                tax_code = "02"  # Zero rated
+            if exempt:
+                # ✅ Exempt items: tax is always plain "0" - EFRIS rejects "-0.00" for exempt
+                tax_amount_str = "0"
+            elif is_credit_note and data['taxAmount'] == 0:
+                # ✅ Zero-rated non-exempt credit note items: use "-0.00"
+                tax_amount_str = "-0.00"
             else:
-                tax_code = "01"
+                tax_amount_str = f"{data['taxAmount']:.2f}"
 
             tax_details.append({
-                "netAmount": str(net),
-                "taxRate": rate_key,
-                "taxAmount": str(tax),
-                "grossAmount": str(gross),
-                "taxRateName": f"Rate ({Decimal(rate_key) * 100}%)"
+                'netAmount': f"{data['netAmount']:.2f}",
+                'taxRate': data['taxRate'],          # ✅ Preserves "-" for exempt
+                'taxAmount': tax_amount_str,
+                'grossAmount': f"{data['grossAmount']:.2f}",
+                'taxRateName': data['taxRateName']
             })
 
         return tax_details
 
     def _build_summary_from_tax_details_dict(self, tax_details: List[Dict], item_count: int) -> Dict:
-        """Build summary from tax details"""
+        """
+        Build summary from tax details
+        FIXED: Preserve negative tax amounts for credit notes
+        FIXED: Handle exempt items - use "0" not "-0.00" when all items are exempt
+        """
         from decimal import Decimal
 
         total_net = Decimal('0')
         total_tax = Decimal('0')
         total_gross = Decimal('0')
 
+        # ✅ Track if ALL items are exempt
+        all_exempt = all(
+            str(td.get('taxRate', '')).strip() == '-'
+            for td in tax_details
+        )
+
+        # ✅ Track if ANY items are exempt (mixed invoice)
+        any_exempt = any(
+            str(td.get('taxRate', '')).strip() == '-'
+            for td in tax_details
+        )
+
         for tax_detail in tax_details:
-            total_net += Decimal(tax_detail['netAmount'])
-            total_tax += Decimal(tax_detail['taxAmount'])
-            total_gross += Decimal(tax_detail['grossAmount'])
+            total_net += Decimal(str(tax_detail.get('netAmount', '0')))
+            total_gross += Decimal(str(tax_detail.get('grossAmount', '0')))
+
+            # ✅ Only sum taxAmount for non-exempt items
+            tax_rate = str(tax_detail.get('taxRate', '')).strip()
+            if tax_rate != '-':
+                total_tax += Decimal(str(tax_detail.get('taxAmount', '0')))
+            # exempt items contribute 0 to total tax - don't add them
+
+        is_credit_note = total_net < 0 or total_gross < 0
+
+        if all_exempt:
+            # ✅ All items exempt: tax is plain "0"
+            tax_amount_str = "0"
+        elif is_credit_note and total_tax == 0:
+            # ✅ Zero-rated non-exempt credit note: use "-0.00"
+            tax_amount_str = "-0.00"
+        else:
+            tax_amount_str = f"{total_tax:.2f}"
 
         return {
-            "netAmount": f"{total_net:.2f}",
-            "taxAmount": f"{total_tax:.2f}",
-            "grossAmount": f"{total_gross:.2f}",
-            "itemCount": str(item_count),
-            "modeCode": "1",
-            "qrCode": ""
+            'netAmount': f"{total_net:.2f}",
+            'taxAmount': tax_amount_str,
+            'grossAmount': f"{total_gross:.2f}",
+            'itemCount': str(item_count),
+            'modeCode': '1',
+            'qrCode': ''
         }
 
     def _get_numeric_tax_rate(self, tax_rate_value) -> float:
@@ -8435,150 +8667,7 @@ class EnhancedEFRISAPIClient:
         except (ValueError, TypeError):
             return 18.0
 
-    def t111_query_credit_note_applications(
-            self,
-            ori_invoice_no: Optional[str] = None,
-            invoice_no: Optional[str] = None,
-            reference_no: Optional[str] = None,
-            approve_status: Optional[str] = None,
-            invoice_apply_category_code: Optional[str] = None,
-            start_date: Optional[str] = None,
-            end_date: Optional[str] = None,
-            page_no: int = 1,
-            page_size: int = 10,
-            query_type: str = "1",  # REQUIRED: 1=My applications, 2=To approve, 3=Approved by me
-            credit_note_type: str = "1",  # Optional: 1=Credit Note, 2=Credit Note Without FDN
-            branch_name: Optional[str] = None,
-            seller_tin_or_nin: Optional[str] = None,
-            seller_legal_or_business_name: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        T111 - Query Credit/Debit Note Applications
-        Query credit note application list, debit note application list,
-        and cancel debit note application list
 
-        FIXED: Added required queryType parameter with proper validation
-
-        Args:
-            ori_invoice_no: Original invoice number
-            invoice_no: Credit/debit note invoice number
-            reference_no: Reference number
-            approve_status: Approval status
-                - 101: Approved
-                - 102: Submitted (Pending)
-                - 103: Rejected
-                - 104: Voided
-                Can send multiple values separated by comma: "101,102"
-            invoice_apply_category_code: Application category
-                - 101: credit note
-                - 103: cancellation of debit note
-                Can send multiple values separated by comma: "101,103"
-            start_date: Start date (yyyy-MM-dd)
-            end_date: End date (yyyy-MM-dd)
-            page_no: Page number
-            page_size: Records per page (max 100)
-            query_type: REQUIRED Query type:
-                - "1": Current user's application list
-                - "2": Query negative votes applied by others (approver's to-do)
-                - "3": Current user approval completed
-            credit_note_type: Credit note type (default "1")
-                - "1": Credit Note
-                - "2": Credit Note Without FDN
-            branch_name: Branch name (for agent inquiry)
-            seller_tin_or_nin: Seller TIN/NIN (for agent inquiry)
-            seller_legal_or_business_name: Seller name (for agent inquiry)
-
-        Returns:
-            Dict with paginated application results
-        """
-        try:
-            # Ensure authentication
-            auth_result = self.ensure_authenticated()
-            if not auth_result.get("success"):
-                return {
-                    "success": False,
-                    "error": f"Authentication failed: {auth_result.get('error')}",
-                    "applications": []
-                }
-
-            # Validate query_type
-            if query_type not in ["1", "2", "3"]:
-                return {
-                    "success": False,
-                    "error": f"Invalid query_type: {query_type}. Must be '1', '2', or '3'",
-                    "applications": []
-                }
-
-            # Validate page size
-            if page_size > 100:
-                return {
-                    "success": False,
-                    "error": "Page size cannot exceed 100",
-                    "applications": []
-                }
-
-            # Build request content - REQUIRED FIELDS FIRST
-            content = {
-                "pageNo": str(page_no),
-                "pageSize": str(page_size),
-                "queryType": str(query_type)  # REQUIRED!
-            }
-
-            # Add optional filters
-            optional_fields = {
-                "referenceNo": reference_no,
-                "oriInvoiceNo": ori_invoice_no,
-                "invoiceNo": invoice_no,
-                "approveStatus": approve_status,
-                "invoiceApplyCategoryCode": invoice_apply_category_code,
-                "startDate": start_date,
-                "endDate": end_date,
-                "creditNoteType": credit_note_type,
-                "branchName": branch_name,
-                "sellerTinOrNin": seller_tin_or_nin,
-                "sellerLegalOrBusinessName": seller_legal_or_business_name
-            }
-
-            # Only add non-empty values
-            for key, value in optional_fields.items():
-                if value is not None and str(value).strip():
-                    content[key] = str(value)
-
-            logger.info(
-                f"Querying credit/debit note applications (T111) - "
-                f"queryType={query_type}, page {page_no}",
-                extra={'filters': content}
-            )
-
-            # Make encrypted request
-            response = self._make_request("T111", content, encrypt=True)
-
-            # Extract results
-            records = response.get("records", [])
-            pagination = response.get("page", {})
-
-            logger.info(f"T111 query successful: {len(records)} applications returned")
-
-            return {
-                "success": True,
-                "applications": records,
-                "pagination": {
-                    "page_no": int(pagination.get('pageNo', page_no)),
-                    "page_size": int(pagination.get('pageSize', page_size)),
-                    "total_size": int(pagination.get('totalSize', 0)),
-                    "page_count": int(pagination.get('pageCount', 0))
-                },
-                "query_type": query_type,
-                "raw_data": response
-            }
-
-        except Exception as e:
-            logger.error(f"T111 query failed: {e}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e),
-                "applications": []
-            }
 
     def t112_query_credit_note_application_detail(self, application_id: str) -> Dict[str, Any]:
         """
@@ -8633,31 +8722,17 @@ class EnhancedEFRISAPIClient:
     ) -> Dict[str, Any]:
         """
         T113 - Credit/Debit Note Application Approval
-        Approve or reject a credit/debit note application
-
-        Args:
-            reference_no: Reference number from application
-            approve_status: Approval status (101=Approved, 103=Rejected)
-            task_id: Task ID from application
-            remark: Approval remarks (required, max 1024 chars)
-
-        Returns:
-            Dict with approval result
         """
         try:
-            # Validate approve_status
+            # Validate all required fields
+            if not reference_no:
+                return {"success": False, "error": "referenceNo is required"}
+            if not task_id:
+                return {"success": False, "error": "taskId is required"}
             if approve_status not in ['101', '103']:
-                return {
-                    "success": False,
-                    "error": "Approve status must be 101 (Approved) or 103 (Rejected)"
-                }
-
-            # Validate remark
+                return {"success": False, "error": "approveStatus must be 101 or 103"}
             if not remark or len(remark) > 1024:
-                return {
-                    "success": False,
-                    "error": "Remark is required and must not exceed 1024 characters"
-                }
+                return {"success": False, "error": "remark is required (max 1024 chars)"}
 
             # Ensure authentication
             auth_result = self.ensure_authenticated()
@@ -8675,14 +8750,23 @@ class EnhancedEFRISAPIClient:
                 "remark": remark
             }
 
-            logger.info(
-                f"Approving credit note application (T113) - "
-                f"Ref: {reference_no}, Status: {approve_status}, TaskId: {task_id}"
-            )
-            logger.debug(f"T113 Request Content: {content}")
+            # CRITICAL DEBUG: Log the exact values being sent
+            logger.info("=" * 80)
+            logger.info("T113 REQUEST DEBUG")
+            logger.info("=" * 80)
+            logger.info(f"referenceNo: '{reference_no}' (type: {type(reference_no)}, len: {len(reference_no)})")
+            logger.info(f"approveStatus: '{approve_status}' (type: {type(approve_status)})")
+            logger.info(f"taskId: '{task_id}' (type: {type(task_id)}, len: {len(task_id)})")
+            logger.info(f"remark: '{remark}' (type: {type(remark)}, len: {len(remark)})")
+            logger.info(f"Full content: {json.dumps(content, indent=2)}")
+            logger.info("=" * 80)
 
-            # Make encrypted request (response not encrypted)
+            # Make encrypted request
             request_data = self._build_request("T113", content, encrypt=True)
+
+            # Log the request before encryption (if possible)
+            logger.debug(f"Request data before sending: {json.dumps(request_data, indent=2, default=str)}")
+
             response = self._make_http_request(request_data)
 
             if response.status_code != 200:
@@ -8695,31 +8779,32 @@ class EnhancedEFRISAPIClient:
             response_data = response.json()
             logger.debug(f"T113 Response: {response_data}")
 
+            # Check return code
             return_info = response_data.get('returnStateInfo', {})
             return_code = return_info.get('returnCode', '99')
+            return_message = return_info.get('returnMessage', 'Unknown error')
 
             if return_code == '00':
-                logger.info(f"T113 approval successful for reference: {reference_no}")
+                action = "Approved" if approve_status == '101' else "Rejected"
+                logger.info(f"✅ T113 SUCCESS - Application {action}: {reference_no}")
                 return {
                     "success": True,
-                    "message": "Application approved successfully",
+                    "message": f"Application {action.lower()} successfully",
                     "reference_no": reference_no,
-                    "status": "Approved" if approve_status == '101' else "Rejected",
-                    "response_data": response_data  # Include full response for debugging
+                    "status": action,
+                    "return_code": return_code
                 }
             else:
-                error_message = return_info.get('returnMessage', 'Approval failed')
-                logger.error(f"T113 failed: {return_code} - {error_message}")
-                logger.error(f"Full response: {response_data}")
+                logger.error(f"❌ T113 FAILED - Code: {return_code}, Message: {return_message}")
+                logger.error(f"Full T113 response: {json.dumps(response_data, indent=2)}")
                 return {
                     "success": False,
-                    "error": error_message,
-                    "error_code": return_code,
-                    "response_data": response_data
+                    "error": return_message,
+                    "error_code": return_code
                 }
 
         except Exception as e:
-            logger.error(f"T113 approval failed: {e}", exc_info=True)
+            logger.error(f"T113 exception: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e)
@@ -8903,24 +8988,11 @@ class EnhancedEFRISAPIClient:
             query_type: str = "1",
             page_no: int = 1,
             page_size: int = 20,
-            reference_no: Optional[str] = None  # ADD THIS for searching by ref no
+            reference_no: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         T111 - Query Credit/Debit Note Applications
-        Get list of credit/debit note applications with optional filters
-
-        Args:
-            approve_status: Filter by approval status (101=Pending, 102=Approved, etc.)
-            invoice_apply_category_code: Filter by category (101=Credit, 102=Debit, etc.)
-            start_date: Filter by start date (YYYY-MM-DD)
-            end_date: Filter by end date (YYYY-MM-DD)
-            query_type: Query type (1=My applications, 2=To-do list, 3=Approval completed)
-            page_no: Page number (default: 1)
-            page_size: Items per page (default: 20)
-            reference_no: Optional reference number to search for specific application
-
-        Returns:
-            Dict with applications list and pagination info
+        FIXED: Correct response parsing for records vs invoiceApplyList
         """
         try:
             # Ensure authentication
@@ -8947,7 +9019,7 @@ class EnhancedEFRISAPIClient:
                 content["applicationStartDate"] = start_date
             if end_date:
                 content["applicationEndDate"] = end_date
-            if reference_no:  # ADD THIS
+            if reference_no:
                 content["referenceNo"] = reference_no
 
             logger.info(
@@ -8959,29 +9031,50 @@ class EnhancedEFRISAPIClient:
             # Make encrypted request
             response = self._make_request("T111", content, encrypt=True)
 
-            # Extract applications
-            applications = response.get("invoiceApplyList", [])
-            total_size = int(response.get("records", 0))
-            page_count = (total_size + page_size - 1) // page_size
+            # ✅ FIX: Handle the response structure correctly
+            # The response has:
+            # - "records": [list of applications]  OR  "invoiceApplyList": [list]
+            # - "page": {pagination object}
+
+            # Extract applications - try both field names
+            applications = response.get("records", [])
+            if not applications or not isinstance(applications, list):
+                applications = response.get("invoiceApplyList", [])
+
+            # ✅ FIX: Get pagination from the 'page' object
+            pagination_obj = response.get("page", {})
+
+            if pagination_obj:
+                # Standard pagination structure
+                total_size = int(pagination_obj.get("totalSize", 0))
+                page_count = int(pagination_obj.get("pageCount", 0))
+                current_page = int(pagination_obj.get("pageNo", page_no))
+                current_page_size = int(pagination_obj.get("pageSize", page_size))
+            else:
+                # Fallback: calculate from applications
+                total_size = len(applications)
+                page_count = 1
+                current_page = page_no
+                current_page_size = page_size
 
             # Calculate page range for pagination UI
             page_range = []
             if page_count <= 7:
                 page_range = list(range(1, page_count + 1))
             else:
-                if page_no <= 4:
+                if current_page <= 4:
                     page_range = list(range(1, 8))
-                elif page_no >= page_count - 3:
+                elif current_page >= page_count - 3:
                     page_range = list(range(page_count - 6, page_count + 1))
                 else:
-                    page_range = list(range(page_no - 3, page_no + 4))
+                    page_range = list(range(current_page - 3, current_page + 4))
 
             result = {
                 "success": True,
                 "applications": applications,
                 "pagination": {
-                    "page_no": page_no,
-                    "page_size": page_size,
+                    "page_no": current_page,
+                    "page_size": current_page_size,
                     "page_count": page_count,
                     "total_size": total_size,
                     "page_range": page_range
@@ -8991,13 +9084,19 @@ class EnhancedEFRISAPIClient:
             logger.info(
                 f"T111 query successful - "
                 f"Found {len(applications)} applications "
-                f"(Page {page_no} of {page_count})"
+                f"(Page {current_page} of {page_count}, Total: {total_size})"
             )
+
+            # ✅ DEBUG: Log the raw response structure to help understand it
+            logger.debug(f"T111 Response structure: {list(response.keys())}")
+            if "page" in response:
+                logger.debug(f"T111 Pagination object: {response['page']}")
 
             return result
 
         except Exception as e:
             logger.error(f"T111 query failed: {e}", exc_info=True)
+            logger.error(f"T111 Response that caused error: {response if 'response' in locals() else 'N/A'}")
             return {
                 "success": False,
                 "error": str(e),
@@ -9006,7 +9105,8 @@ class EnhancedEFRISAPIClient:
                     "page_no": 1,
                     "page_size": page_size,
                     "page_count": 0,
-                    "total_size": 0
+                    "total_size": 0,
+                    "page_range": []
                 }
             }
 
@@ -9728,10 +9828,12 @@ class EnhancedEFRISAPIClient:
                 }
 
             logger.info(f"T108 query successful for invoice {invoice_no}")
+            logger.info(
+                f"Original invoice items from T108: {json.dumps(response.get('goodsDetails', []), indent=2)}")  # ✅ Fixed: response not invoice_data
 
             return {
                 "success": True,
-                "invoice": response,  # ✅ Changed from invoice_data to invoice
+                "invoice": response,
                 "invoice_no": invoice_no
             }
 

@@ -10,10 +10,102 @@ from cryptography import x509
 import base64
 import hashlib
 import logging
-
+from company.models import Company
+from django.conf import settings
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
+
+class CreditNoteApplication(models.Model):
+    """
+    Track credit note applications submitted to EFRIS
+    """
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name='credit_note_applications'
+    )
+
+    original_invoice_no = models.CharField(
+        max_length=50,
+        help_text="Original invoice FDN"
+    )
+
+    original_invoice_id = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Original invoice EFRIS ID"
+    )
+
+    reference_no = models.CharField(
+        max_length=50,
+        unique=True,
+        help_text="EFRIS credit note reference number"
+    )
+
+    reason_code = models.CharField(
+        max_length=3,
+        help_text="Credit note reason code (101-105)"
+    )
+
+    reason = models.TextField(
+        blank=True,
+        help_text="Detailed reason if code is 105"
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='PENDING'
+    )
+
+    application_data = models.JSONField(
+        default=dict,
+        help_text="Complete T110 request data"
+    )
+
+    response_data = models.JSONField(
+        default=dict,
+        help_text="EFRIS response data"
+    )
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='credit_notes_created'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['company', 'status']),
+            models.Index(fields=['original_invoice_no']),
+            models.Index(fields=['reference_no']),
+        ]
+
+    def __str__(self):
+        return f"Credit Note {self.reference_no} for {self.original_invoice_no}"
+
+    def get_status_display_badge(self):
+        """Return Bootstrap badge class for status"""
+        badges = {
+            'PENDING': 'warning',
+            'APPROVED': 'success',
+            'REJECTED': 'danger',
+            'CANCELLED': 'secondary',
+        }
+        return badges.get(self.status, 'secondary')
 
 class EFRISConfiguration(models.Model):
     """Global EFRIS configuration for the company"""

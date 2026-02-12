@@ -69,10 +69,6 @@ SYNC_MODEL_CONFIG = {
     # TIER 1: NO DEPENDENCIES - Core Reference Data & Django Built-ins
     # ============================================================================
 
-    # Django Built-in Models
-    'contenttypes.ContentType': {
-        'dependencies': [],
-    },
 
     # Company Reference Data
     'company.SubscriptionPlan': {
@@ -1085,76 +1081,7 @@ class SyncManager:
     # DOWNLOAD FROM SERVER
     # ========================================================================
 
-    def download_all_data(self, progress_callback=None):
-        """
-        ✅ UPDATED: Download ALL data with automatic token refresh
-        """
-        try:
-            logger.info("=" * 70)
-            logger.info("DOWNLOADING ALL DATA")
-            logger.info(f"  URL: {self.server_url}/api/desktop/sync/bulk-download/")
-            logger.info("=" * 70)
 
-            if progress_callback:
-                progress_callback("Connecting to server...", 5)
-
-            url = f"{self.server_url}/api/desktop/sync/bulk-download/"
-
-            # ✅ Use _make_request (auto-refreshes on 401)
-            response = self._make_request(url, method='GET')
-
-            if not response:
-                logger.error("❌ Request failed")
-                return False
-
-            if response.status_code != 200:
-                error_text = response.text[:500] if response.text else "No response"
-                logger.error(f"❌ Download failed: HTTP {response.status_code}")
-                logger.error(f"  Response: {error_text}")
-                return False
-
-            data = response.json()
-
-            if not data.get('success'):
-                error_msg = data.get('error', 'Unknown error')
-                logger.error(f"❌ Download failed: {error_msg}")
-                return False
-
-            all_data = data.get('data', {})
-            total_records = data.get('total_records', 0)
-
-            logger.info(f"✅ Downloaded {total_records} records")
-
-            if progress_callback:
-                progress_callback(f"Downloaded {total_records} records...", 30)
-
-            if all_data:
-                success = self.apply_bulk_data(all_data, progress_callback)
-
-                if success:
-                    # ✅ CRITICAL: Reset sequences after applying data
-                    if progress_callback:
-                        progress_callback("Resetting database sequences...", 95)
-
-                    logger.info("🔄 Resetting sequences after sync...")
-                    from primebooks.schema_loader import reset_sequences
-                    reset_sequences(self.schema_name)
-
-                    if progress_callback:
-                        progress_callback("Download complete!", 100)
-
-                    logger.info("=" * 70)
-                    logger.info("✅ DOWNLOAD COMPLETE")
-                    logger.info("=" * 70)
-                    return True
-                else:
-                    return False
-
-            return False
-
-        except Exception as e:
-            logger.error(f"❌ Download error: {e}", exc_info=True)
-            return False
 
     def check_pending_changes(self):
         """
@@ -1187,6 +1114,7 @@ class SyncManager:
         Download changes from server
         ✅ Auto-refreshes token on 401
         ✅ Resets sequences after applying data
+        ✅ Proper success/failure handling
         """
         try:
             last_sync = self.get_last_sync_time()
@@ -1237,6 +1165,9 @@ class SyncManager:
                 # Update last sync time even if no changes
                 self.update_last_sync_time()
 
+                if progress_callback:
+                    progress_callback("No changes to download", 100)
+
                 return True
 
             logger.info(f"✅ Downloaded {total_changed} changed records across {len(changes)} models")
@@ -1244,31 +1175,29 @@ class SyncManager:
             if progress_callback:
                 progress_callback(f"Applying {total_changed} changes...", 30)
 
-            if changes:
-                success = self.apply_bulk_data(changes, progress_callback)
+            # Apply changes
+            success = self.apply_bulk_data(changes, progress_callback)
 
-                if success:
-                    # ✅ CRITICAL: Reset sequences after applying data
-                    if progress_callback:
-                        progress_callback("Resetting sequences...", 90)
+            if success:
+                # ✅ Reset sequences after applying data
+                if progress_callback:
+                    progress_callback("Resetting sequences...", 90)
 
-                    logger.info("🔄 Resetting sequences after download...")
-                    self.reset_sequences()
-                    logger.info("✅ Sequences reset")
+                logger.info("🔄 Resetting sequences after download...")
+                self.reset_sequences()
+                logger.info("✅ Sequences reset")
 
-                    # Update last sync time
-                    self.update_last_sync_time()
+                # Update last sync time
+                self.update_last_sync_time()
 
-                    if progress_callback:
-                        progress_callback("Changes applied!", 100)
+                if progress_callback:
+                    progress_callback("Changes applied!", 100)
 
-                    logger.info("✅ Changes applied successfully")
-                    return True
-                else:
-                    logger.error("❌ Failed to apply changes")
-                    return False
-
-            return True
+                logger.info("✅ Changes applied successfully")
+                return True  # ✅ Return True here - don't fall through
+            else:
+                logger.error("❌ Failed to apply changes")
+                return False
 
         except Exception as e:
             logger.error(f"❌ Download changes error: {e}", exc_info=True)
@@ -1493,6 +1422,7 @@ class SyncManager:
         """
         Upload local changes to server
 
+        ✅ FIXED: Now uses _make_request for automatic token refresh
         ✅ Uploads offline changes
         ✅ Replaces negative IDs with server IDs
         ✅ Fixes PostgreSQL sequences AFTER successful upload
@@ -1525,20 +1455,29 @@ class SyncManager:
 
             url = f"{self.server_url}/api/desktop/sync/upload/"
 
-            response = requests.post(
+            # Prepare upload data
+            upload_data = {
+                "tenant_id": self.tenant_id,
+                "schema_name": self.schema_name,
+                "changes": changes,
+                "last_sync": last_sync.isoformat() if last_sync else None,
+            }
+
+            # ✅ FIXED: Use _make_request instead of requests.post directly
+            response = self._make_request(
                 url,
-                json={
-                    "tenant_id": self.tenant_id,
-                    "schema_name": self.schema_name,
-                    "changes": changes,
-                    "last_sync": last_sync.isoformat() if last_sync else None,
-                },
-                headers={"Authorization": f"Bearer {self.auth_token}"},
-                timeout=120,
+                method='POST',
+                data=upload_data
             )
 
+            if not response:
+                logger.error("❌ Upload request failed (no response)")
+                return False
+
             if response.status_code != 200:
+                error_text = response.text[:500] if response.text else "No response"
                 logger.error(f"❌ Upload failed: HTTP {response.status_code}")
+                logger.error(f"  Response: {error_text}")
                 return False
 
             result = response.json()
@@ -2074,17 +2013,20 @@ class SyncManager:
         ✅ Upload local changes
         ✅ Download server changes
         ✅ Only syncs NEW changes after first sync
+        ✅ Proper error handling
         """
         try:
             from primebooks.auth import DesktopAuthManager
             auth_manager = DesktopAuthManager()
 
+            # Check authentication
             is_authed, error_msg = auth_manager.require_authentication()
             if not is_authed:
                 logger.error(f"❌ Authentication required: {error_msg}")
                 if progress_callback:
                     progress_callback(f"Error: {error_msg}", 0)
                 return False
+
             logger.info("=" * 70)
             logger.info("FULL SYNC STARTING")
             logger.info(f"  First sync: {is_first_sync}")
@@ -2095,21 +2037,21 @@ class SyncManager:
 
                 if not self.is_online():
                     logger.warning("⚠️  Server not reachable")
-                    self.set_last_sync_time()  # Set time even if offline
+                    self.update_last_sync_time()  # Set time even if offline
                     return True
 
                 # Download all data
                 success = self.download_all_data(progress_callback)
 
                 if success:
-                    # ✅ Set last sync time AFTER successful download
-                    self.set_last_sync_time()
-                    logger.info("✅ First sync complete - timestamp saved")
-
-                return success
+                    logger.info("✅ First sync complete")
+                    return True
+                else:
+                    logger.error("❌ First sync failed")
+                    return False
 
             else:
-                # ✅ BIDIRECTIONAL SYNC - Get last sync time BEFORE starting
+                # ✅ BIDIRECTIONAL SYNC
                 last_sync = self.get_last_sync_time()
 
                 logger.info(f"🔄 Bidirectional sync starting")
@@ -2119,36 +2061,39 @@ class SyncManager:
                     logger.warning("⚠️  Server not reachable - staying offline")
                     return False
 
-                # Step 1: Upload local changes (changes since last_sync)
+                # Step 1: Upload local changes
                 if progress_callback:
                     progress_callback("Uploading local changes...", 10)
 
                 upload_success = self.upload_changes(progress_callback)
 
-                # Step 2: Download server changes (changes since last_sync)
+                if not upload_success:
+                    logger.warning("⚠️  Upload had issues, continuing with download...")
+
+                # Step 2: Download server changes
                 if progress_callback:
                     progress_callback("Downloading server changes...", 50)
 
                 download_success = self.download_changes(progress_callback)
 
-                if upload_success and download_success:
-                    # ✅ IMPORTANT: Update last_sync_time ONLY after BOTH operations succeed
-                    self.set_last_sync_time()
-
+                if download_success:
                     logger.info("=" * 70)
-                    logger.info("✅ BIDIRECTIONAL SYNC COMPLETE")
-                    logger.info(f"  New sync timestamp: {self.get_last_sync_time()}")
+                    logger.info("✅ SYNC COMPLETE")
+                    logger.info(f"  Timestamp: {self.get_last_sync_time()}")
                     logger.info("=" * 70)
 
                     if progress_callback:
                         progress_callback("Sync complete!", 100)
-                    return True
+
+                    return True  # ✅ Return True - sync succeeded
                 else:
-                    logger.warning("⚠️  Sync completed with errors - timestamp NOT updated")
+                    logger.error("❌ Download failed - sync incomplete")
                     return False
 
         except Exception as e:
             logger.error(f"❌ Sync error: {e}", exc_info=True)
+            if progress_callback:
+                progress_callback(f"Error: {str(e)}", 0)
             return False
 
     # ========================================================================

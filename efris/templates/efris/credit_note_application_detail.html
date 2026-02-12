@@ -11,179 +11,122 @@
         margin-bottom: 1.5rem;
         box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
     }
-
     .detail-card-header {
         background: #f8f9fa;
         border-bottom: 1px solid #dee2e6;
         padding: 1rem 1.5rem;
         border-radius: 0.5rem 0.5rem 0 0;
     }
-
     .detail-card-body {
         padding: 1.5rem;
     }
-
     .status-badge {
         font-size: 0.8rem;
         padding: 0.25rem 0.75rem;
     }
-
     .info-grid {
         display: grid;
         grid-template-columns: 180px 1fr;
         gap: 0.75rem;
         align-items: start;
     }
-
     @media (max-width: 768px) {
-        .info-grid {
-            grid-template-columns: 1fr;
-            gap: 0.25rem;
-        }
+        .info-grid { grid-template-columns: 1fr; gap: 0.25rem; }
     }
-
-    .info-label {
-        font-weight: 600;
-        color: #495057;
-    }
-
-    .info-value {
-        color: #212529;
-        word-break: break-word;
-    }
-
+    .info-label { font-weight: 600; color: #495057; }
+    .info-value { color: #212529; word-break: break-word; }
     .goods-table th {
         background-color: #f8f9fa;
         border-top: 2px solid #dee2e6;
         font-weight: 600;
     }
-
-    .amount-cell {
-        text-align: right;
-        font-family: 'Courier New', monospace;
-    }
-
-    .negative-amount {
-        color: #dc3545;
-        font-weight: 600;
-    }
-
-    .positive-amount {
-        color: #28a745;
-        font-weight: 600;
-    }
-
-    .tax-breakdown {
-        background: #f8f9fa;
-        border-radius: 0.25rem;
-        padding: 1rem;
-    }
-
-    .action-buttons .btn {
-        min-width: 120px;
-    }
-
-    .status-101 { background-color: #fff3cd; color: #856404; border-color: #ffeaa7; }
-    .status-102 { background-color: #d1ecf1; color: #0c5460; border-color: #bee5eb; }
-    .status-103 { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
-    .status-104 { background-color: #6c757d; color: white; border-color: #545b62; }
-    .status-105 { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
-
-    .data-missing {
-        color: #6c757d;
-        font-style: italic;
-    }
-
+    .amount-cell { text-align: right; font-family: 'Courier New', monospace; }
+    .negative-amount { color: #dc3545; font-weight: 600; }
+    .positive-amount { color: #28a745; font-weight: 600; }
+    .tax-breakdown { background: #f8f9fa; border-radius: 0.25rem; padding: 1rem; }
+    .action-buttons .btn { min-width: 120px; }
+    .data-missing { color: #6c757d; font-style: italic; }
     .comparison-grid {
         display: grid;
         grid-template-columns: 1fr auto 1fr;
         gap: 1rem;
         align-items: center;
     }
+    .comparison-arrow { font-size: 1.5rem; color: #6c757d; text-align: center; }
 
-    .comparison-arrow {
-        font-size: 1.5rem;
-        color: #6c757d;
-        text-align: center;
-    }
+    /* ✅ CORRECTED STATUS COLORS:
+       101 = Approved   → green
+       102 = Submitted  → yellow (pending)
+       103 = Rejected   → red
+       104 = Voided     → grey  */
+    .status-101 { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
+    .status-102 { background-color: #fff3cd; color: #856404; border-color: #ffeaa7; }
+    .status-103 { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+    .status-104 { background-color: #6c757d; color: white; border-color: #545b62; }
 </style>
 {% endblock %}
 
 {% block efris_content %}
 <div class="container-fluid">
-    <!-- Header Section -->
+    <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h4 class="mb-0">
                 <i class="fas fa-file-invoice text-primary me-2"></i>
                 Credit Note Application: {{ application_id }}
-                {% if t111_status and t111_status != application.approve_status %}
-                    <small class="text-warning ms-2">
-                        <i class="fas fa-exclamation-triangle"></i> Status mismatch detected
-                    </small>
-                {% endif %}
             </h4>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item">
-                        <a href="{% url 'efris:dashboard' %}">EFRIS</a>
-                    </li>
-                    <li class="breadcrumb-item">
-                        <a href="{% url 'efris:credit_note_applications' %}">Credit Notes</a>
-                    </li>
-                    <li class="breadcrumb-item active" aria-current="page">Application Detail</li>
+                    <li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'efris:credit_note_applications' %}">Credit Notes</a></li>
+                    <li class="breadcrumb-item active">Application Detail</li>
                 </ol>
             </nav>
         </div>
-
         <div>
-            {% if application.approve_status == '101' or application.approve_status == '1' %}
-                <span class="badge status-badge status-101">PENDING</span>
-            {% elif application.approve_status == '102' or application.approve_status == '2' %}
-                <span class="badge status-badge status-102">APPROVED</span>
-            {% elif application.approve_status == '103' or application.approve_status == '3' %}
+            {# ✅ CORRECTED: 101=Approved, 102=Submitted/Pending, 103=Rejected, 104=Voided #}
+            {% if application.approve_status == '101' %}
+                <span class="badge status-badge status-101">APPROVED</span>
+            {% elif application.approve_status == '102' %}
+                <span class="badge status-badge status-102">PENDING APPROVAL</span>
+            {% elif application.approve_status == '103' %}
                 <span class="badge status-badge status-103">REJECTED</span>
-            {% elif application.approve_status == '104' or application.approve_status == '4' %}
-                <span class="badge status-badge status-104">CANCELLED</span>
-            {% elif application.approve_status == '105' %}
-                <span class="badge status-badge status-105">PROCESSED</span>
+            {% elif application.approve_status == '104' %}
+                <span class="badge status-badge status-104">VOIDED</span>
             {% else %}
                 <span class="badge bg-secondary status-badge">{{ application.approve_status|default:"UNKNOWN" }}</span>
             {% endif %}
         </div>
     </div>
 
-    <!-- Status Mismatch Warning -->
-    {% if t111_status and t111_status != application.approve_status %}
-    <div class="alert alert-warning">
-        <i class="fas fa-exclamation-triangle me-2"></i>
-        <strong>Status Mismatch Detected:</strong>
-        <ul class="mb-0 mt-2">
-            <li>T112 Detail API Status: <strong>{{ application.status }}</strong> ({{ application.approve_status }})</li>
-            <li>T111 List API Status: <strong>{{ t111_status }}</strong></li>
-        </ul>
-        <small class="text-muted">This might indicate a timing issue or API caching. The T112 detail API is usually more accurate.</small>
-    </div>
-    {% endif %}
-
     <!-- Alert Messages -->
     {% if messages %}
         {% for message in messages %}
             <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                <i class="fas fa-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' or message.tags == 'danger' %}exclamation-circle{% else %}info-circle{% endif %} me-2"></i>
+                <i class="fas fa-{% if message.tags == 'success' %}check-circle{% else %}exclamation-circle{% endif %} me-2"></i>
                 {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         {% endfor %}
     {% endif %}
 
-    <!-- Basic Information Card -->
+    <!-- Validation Errors -->
+    {% if application.validation_errors %}
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Validation Issues:</strong>
+        <ul class="mb-0 mt-1">
+            {% for error in application.validation_errors %}
+                <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Application Information -->
     <div class="detail-card">
         <div class="detail-card-header">
-            <h5 class="mb-0">
-                <i class="fas fa-info-circle text-primary me-2"></i>
-                Application Information
-            </h5>
+            <h5 class="mb-0"><i class="fas fa-info-circle text-primary me-2"></i>Application Information</h5>
         </div>
         <div class="detail-card-body">
             <div class="row">
@@ -214,13 +157,7 @@
                     </div>
                     <div class="info-grid mb-3">
                         <span class="info-label">Application Date:</span>
-                        <span class="info-value">
-                            {% if application.application_date %}
-                                {{ application.application_date }}
-                            {% else %}
-                                <span class="data-missing">Date not available</span>
-                            {% endif %}
-                        </span>
+                        <span class="info-value">{{ application.application_date|default:"N/A" }}</span>
                     </div>
                     <div class="info-grid mb-3">
                         <span class="info-label">Issued Date:</span>
@@ -228,33 +165,30 @@
                             {% if application.issued_date %}
                                 {{ application.issued_date }}
                             {% else %}
-                                <span class="data-missing">Date not available</span>
+                                <span class="data-missing">Not yet issued</span>
                             {% endif %}
                         </span>
                     </div>
                     <div class="info-grid mb-3">
                         <span class="info-label">Task ID:</span>
-                        <span class="info-value font-monospace">
-                            {{ application.task_id|default:"N/A" }}
-                        </span>
+                        <span class="info-value font-monospace">{{ application.task_id|default:"N/A" }}</span>
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="info-grid mb-3">
                         <span class="info-label">Status:</span>
                         <span class="info-value">
+                            {# ✅ CORRECTED STATUS DISPLAY #}
                             {% if application.approve_status == '101' %}
-                                <span class="badge status-101">Pending Approval</span>
+                                <span class="badge bg-success">Approved</span>
                             {% elif application.approve_status == '102' %}
-                                <span class="badge status-102">Approved</span>
+                                <span class="badge bg-warning text-dark">Pending Approval</span>
                             {% elif application.approve_status == '103' %}
-                                <span class="badge status-103">Rejected</span>
+                                <span class="badge bg-danger">Rejected</span>
                             {% elif application.approve_status == '104' %}
-                                <span class="badge status-104">Cancelled</span>
-                            {% elif application.approve_status == '105' %}
-                                <span class="badge status-105">Processed</span>
+                                <span class="badge bg-secondary">Voided</span>
                             {% else %}
-                                <span class="badge bg-secondary">{{ application.status|default:"Status unknown" }}</span>
+                                <span class="badge bg-secondary">{{ application.status|default:"Unknown" }}</span>
                             {% endif %}
                         </span>
                     </div>
@@ -283,45 +217,29 @@
                     <div class="info-grid mb-3">
                         <span class="info-label">Reason:</span>
                         <span class="info-value">
-                            <strong>{{ application.reason_code }}</strong> - {{ application.reason_description }}
+                            <strong>{{ application.reason_code }}</strong> - {{ application.reason_description|default:"N/A" }}
                         </span>
                     </div>
                 </div>
             </div>
-
             {% if application.approve_remarks %}
-                <div class="mt-3">
-                    <span class="info-label">Approval Remarks:</span>
-                    <div class="info-value mt-1 p-3 bg-light rounded border">
-                        <i class="fas fa-comment-alt text-muted me-2"></i>
-                        {{ application.approve_remarks }}
-                    </div>
+            <div class="mt-3">
+                <span class="info-label">Approval Remarks:</span>
+                <div class="info-value mt-1 p-3 bg-light rounded border">
+                    <i class="fas fa-comment-alt text-muted me-2"></i>{{ application.approve_remarks }}
                 </div>
-            {% endif %}
-
-            {% if application.address %}
-                <div class="mt-3">
-                    <span class="info-label">Address:</span>
-                    <div class="info-value mt-1">
-                        {{ application.address }}
-                    </div>
-                </div>
+            </div>
             {% endif %}
         </div>
     </div>
 
-    <!-- Financial Summary Card -->
+    <!-- Financial Summary -->
     <div class="detail-card">
         <div class="detail-card-header">
-            <h5 class="mb-0">
-                <i class="fas fa-chart-bar text-primary me-2"></i>
-                Financial Summary - Credit Note vs Original Invoice
-            </h5>
+            <h5 class="mb-0"><i class="fas fa-chart-bar text-primary me-2"></i>Financial Summary</h5>
         </div>
         <div class="detail-card-body">
-            <!-- Comparison View -->
             <div class="comparison-grid mb-4">
-                <!-- Original Invoice -->
                 <div class="card">
                     <div class="card-header bg-light">
                         <h6 class="mb-0"><i class="fas fa-file-invoice me-2"></i>Original Invoice</h6>
@@ -341,13 +259,7 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- Arrow -->
-                <div class="comparison-arrow">
-                    <i class="fas fa-arrow-right"></i>
-                </div>
-
-                <!-- Credit Note -->
+                <div class="comparison-arrow"><i class="fas fa-arrow-right"></i></div>
                 <div class="card border-primary">
                     <div class="card-header bg-primary text-white">
                         <h6 class="mb-0"><i class="fas fa-undo me-2"></i>Credit Note</h6>
@@ -371,23 +283,15 @@
 
             <!-- Tax Breakdown -->
             <div class="tax-breakdown">
-                <h6 class="mb-3">
-                    <i class="fas fa-percentage me-2"></i>Tax Breakdown
-                </h6>
+                <h6 class="mb-3"><i class="fas fa-percentage me-2"></i>Tax Breakdown</h6>
                 {% if tax_details %}
                     {% for tax in tax_details %}
                     <div class="d-flex justify-content-between mb-2">
                         <span>
-                            {% if tax.taxCategory %}
-                                {{ tax.taxCategory }}
-                            {% elif tax.taxCategoryCode %}
-                                Tax Category {{ tax.taxCategoryCode }}
-                            {% else %}
-                                Tax {{ forloop.counter }}
-                            {% endif %}
-                            {% if tax.taxRate %}
-                                <small>({{ tax.taxRate|floatformat:2 }}%)</small>
-                            {% endif %}
+                            {% if tax.taxCategory %}{{ tax.taxCategory }}
+                            {% elif tax.taxCategoryCode %}Tax Category {{ tax.taxCategoryCode }}
+                            {% else %}Tax {{ forloop.counter }}{% endif %}
+                            {% if tax.taxRate %}<small>({{ tax.taxRate }})</small>{% endif %}
                         </span>
                         <span class="fw-bold">
                             {% with tax_amount=tax.taxAmount|default:0 %}
@@ -401,21 +305,17 @@
                     </div>
                     {% endfor %}
                 {% else %}
-                    <div class="text-center py-3">
-                        <i class="fas fa-info-circle text-muted me-2"></i>
-                        <span class="data-missing">No tax details available</span>
-                    </div>
+                    <p class="data-missing text-center"><i class="fas fa-info-circle me-1"></i>No tax details available</p>
                 {% endif %}
             </div>
         </div>
     </div>
 
-    <!-- Goods Details Card -->
+    <!-- Goods Details -->
     <div class="detail-card">
         <div class="detail-card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">
-                <i class="fas fa-boxes text-primary me-2"></i>
-                Goods & Services Details
+                <i class="fas fa-boxes text-primary me-2"></i>Goods & Services Details
                 <span class="badge bg-secondary ms-2">{{ goods_details|length }} item(s)</span>
             </h5>
         </div>
@@ -426,12 +326,12 @@
                     <thead>
                         <tr>
                             <th>#</th>
-                            <th>Item Description</th>
+                            <th>Item</th>
                             <th>Category</th>
                             <th class="text-end">Qty</th>
                             <th class="text-end">Unit Price</th>
                             <th class="text-end">Tax Rate</th>
-                            <th class="text-end">Tax Amount</th>
+                            <th class="text-end">Tax</th>
                             <th class="text-end">Total</th>
                         </tr>
                     </thead>
@@ -440,38 +340,24 @@
                         <tr>
                             <td>{{ forloop.counter }}</td>
                             <td>
-                                <div>
-                                    <strong>{{ item.itemName|default:"Unnamed Item" }}</strong><br>
-                                    <small class="text-muted">Code: {{ item.itemCode|default:"N/A" }}</small>
-                                </div>
+                                <strong>{{ item.itemName|default:"Unnamed Item" }}</strong><br>
+                                <small class="text-muted">{{ item.itemCode|default:"N/A" }}</small>
                             </td>
-                            <td>
-                                <small>{{ item.goodsCategoryName|default:"N/A" }}</small>
-                            </td>
+                            <td><small>{{ item.goodsCategoryName|default:"N/A" }}</small></td>
                             <td class="amount-cell">
                                 {% with qty=item.qty|default:0 %}
                                 {% if qty < 0 %}
                                     <span class="negative-amount">{{ qty|floatformat:2 }}</span>
-                                {% else %}
-                                    {{ qty|floatformat:2 }}
-                                {% endif %}
+                                {% else %}{{ qty|floatformat:2 }}{% endif %}
                                 {% endwith %}
                             </td>
-                            <td class="amount-cell">
-                                {{ item.unitPrice|default:0|floatformat:2|intcomma }}
-                            </td>
-                            <td class="amount-cell">
-                                {% with rate=item.taxRate|default:0 %}
-                                {{ rate|floatformat:2 }}%
-                                {% endwith %}
-                            </td>
+                            <td class="amount-cell">{{ item.unitPrice|default:0|floatformat:2|intcomma }}</td>
+                            <td class="amount-cell">{{ item.taxRate|default:"-" }}</td>
                             <td class="amount-cell">
                                 {% with tax=item.tax|default:0 %}
                                 {% if tax < 0 %}
                                     <span class="negative-amount">{{ tax|floatformat:2|intcomma }}</span>
-                                {% else %}
-                                    {{ tax|floatformat:2|intcomma }}
-                                {% endif %}
+                                {% else %}{{ tax|floatformat:2|intcomma }}{% endif %}
                                 {% endwith %}
                             </td>
                             <td class="amount-cell">
@@ -492,16 +378,12 @@
                             <td class="amount-cell fw-bold">
                                 {% if summary.tax_amount < 0 %}
                                     <span class="negative-amount">{{ summary.tax_amount|floatformat:2|intcomma }}</span>
-                                {% else %}
-                                    {{ summary.tax_amount|floatformat:2|intcomma }}
-                                {% endif %}
+                                {% else %}{{ summary.tax_amount|floatformat:2|intcomma }}{% endif %}
                             </td>
                             <td class="amount-cell fw-bold">
                                 {% if summary.gross_amount < 0 %}
                                     <span class="negative-amount">{{ summary.gross_amount|floatformat:2|intcomma }}</span>
-                                {% else %}
-                                    {{ summary.gross_amount|floatformat:2|intcomma }}
-                                {% endif %}
+                                {% else %}{{ summary.gross_amount|floatformat:2|intcomma }}{% endif %}
                             </td>
                         </tr>
                     </tfoot>
@@ -511,7 +393,6 @@
             <div class="text-center py-5">
                 <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
                 <h5 class="text-muted">No Goods Details Available</h5>
-                <p class="text-muted">This application doesn't contain any goods or services details.</p>
             </div>
             {% endif %}
         </div>
@@ -521,10 +402,7 @@
     {% if payment_methods %}
     <div class="detail-card">
         <div class="detail-card-header">
-            <h5 class="mb-0">
-                <i class="fas fa-credit-card text-primary me-2"></i>
-                Payment Information
-            </h5>
+            <h5 class="mb-0"><i class="fas fa-credit-card text-primary me-2"></i>Payment Information</h5>
         </div>
         <div class="detail-card-body">
             <div class="row">
@@ -532,35 +410,19 @@
                 <div class="col-md-4 mb-3">
                     <div class="card border">
                         <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <h6 class="card-title mb-0">
-                                    {% if payment.paymentMode == '101' %}
-                                        <i class="fas fa-money-bill-wave me-2"></i>Cash
-                                    {% elif payment.paymentMode == '102' %}
-                                        <i class="fas fa-credit-card me-2"></i>Credit Card
-                                    {% elif payment.paymentMode == '103' %}
-                                        <i class="fas fa-university me-2"></i>Bank Transfer
-                                    {% elif payment.paymentMode == '104' %}
-                                        <i class="fas fa-mobile-alt me-2"></i>Mobile Money
-                                    {% else %}
-                                        <i class="fas fa-wallet me-2"></i>Payment {{ payment.paymentMode }}
-                                    {% endif %}
-                                </h6>
-                                <span class="badge bg-light text-dark">
-                                    {{ forloop.counter }}
-                                </span>
-                            </div>
-                            <div class="mb-2">
-                                <small class="text-muted d-block">Amount:</small>
-                                <div class="h5 fw-bold">
-                                    {% with amount=payment.paymentAmount|default:0 %}
-                                    {% if amount < 0 %}
-                                        <span class="negative-amount">{{ amount|floatformat:2|intcomma }}</span>
-                                    {% else %}
-                                        {{ amount|floatformat:2|intcomma }}
-                                    {% endif %}
-                                    {% endwith %}
-                                </div>
+                            <h6 class="card-title">
+                                {% if payment.paymentMode == '101' %}<i class="fas fa-money-bill-wave me-2"></i>Cash
+                                {% elif payment.paymentMode == '102' %}<i class="fas fa-credit-card me-2"></i>Credit Card
+                                {% elif payment.paymentMode == '103' %}<i class="fas fa-university me-2"></i>Bank Transfer
+                                {% elif payment.paymentMode == '104' %}<i class="fas fa-mobile-alt me-2"></i>Mobile Money
+                                {% else %}<i class="fas fa-wallet me-2"></i>Payment {{ payment.paymentMode }}{% endif %}
+                            </h6>
+                            <div class="h5 fw-bold">
+                                {% with amount=payment.paymentAmount|default:0 %}
+                                {% if amount < 0 %}
+                                    <span class="negative-amount">{{ amount|floatformat:2|intcomma }}</span>
+                                {% else %}{{ amount|floatformat:2|intcomma }}{% endif %}
+                                {% endwith %}
                             </div>
                         </div>
                     </div>
@@ -574,17 +436,12 @@
     <!-- Additional Information -->
     <div class="detail-card">
         <div class="detail-card-header">
-            <h5 class="mb-0">
-                <i class="fas fa-sticky-note text-primary me-2"></i>
-                Additional Information
-            </h5>
+            <h5 class="mb-0"><i class="fas fa-sticky-note text-primary me-2"></i>Additional Information</h5>
         </div>
         <div class="detail-card-body">
             <div class="row">
                 <div class="col-md-6">
-                    <h6 class="border-bottom pb-2 mb-3">
-                        <i class="fas fa-user me-2"></i>Contact Information
-                    </h6>
+                    <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-user me-2"></i>Contact Information</h6>
                     <div class="info-grid mb-2">
                         <span class="info-label">Name:</span>
                         <span class="info-value">{{ application.contact_name|default:"Not specified" }}</span>
@@ -598,11 +455,8 @@
                         <span class="info-value">{{ application.contact_email|default:"Not specified" }}</span>
                     </div>
                 </div>
-
                 <div class="col-md-6">
-                    <h6 class="border-bottom pb-2 mb-3">
-                        <i class="fas fa-comment me-2"></i>Remarks
-                    </h6>
+                    <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-comment me-2"></i>Remarks</h6>
                     <div class="bg-light rounded p-3 border">
                         {% if application.remarks %}
                             {{ application.remarks|linebreaks }}
@@ -621,56 +475,47 @@
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-arrow-left me-2"></i> Back to Applications
+                        <i class="fas fa-arrow-left me-2"></i>Back to Applications
                     </a>
                 </div>
-
                 <div class="d-flex gap-2">
-                    {% if application.approve_status == '101' %} {# Pending #}
+                    {# ✅ Show Approve/Cancel ONLY when status is 102 (Submitted/Pending) #}
+                    {% if application.approve_status == '102' %}
                         <form method="POST" action="{% url 'efris:credit_note_application_detail' application_id %}"
                               style="display: inline;"
                               onsubmit="return confirm('Refresh application status?')">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="refresh_status">
                             <button type="submit" class="btn btn-warning">
-                                <i class="fas fa-sync-alt me-2"></i> Refresh Status
+                                <i class="fas fa-sync-alt me-2"></i>Refresh Status
                             </button>
                         </form>
-
                         <button class="btn btn-success"
                                 onclick="showApprovalModal('{{ application_id }}', '{{ application.credit_note_no|default:application_id }}', '{{ application.task_id|default:"" }}')">
-                            <i class="fas fa-check me-2"></i> Approve
+                            <i class="fas fa-check me-2"></i>Approve
                         </button>
-
-                        <a href="{% url 'efris:cancel_credit_debit_note' %}"
-                           class="btn btn-danger"
+                        <a href="{% url 'efris:cancel_credit_debit_note' %}" class="btn btn-danger"
                            onclick="return confirm('Cancel this application? This action cannot be undone.')">
-                            <i class="fas fa-times me-2"></i> Cancel
+                            <i class="fas fa-times me-2"></i>Cancel
                         </a>
                     {% endif %}
 
-                    {% if application.credit_note_no %}
+                    {# ✅ Show download ONLY when approved (101) and has credit note number #}
+                    {% if application.approve_status == '101' and application.credit_note_no %}
                         <a href="#" class="btn btn-success" onclick="alert('Download feature coming soon!')">
-                            <i class="fas fa-download me-2"></i> Download
+                            <i class="fas fa-download me-2"></i>Download
                         </a>
                     {% endif %}
 
                     <button type="button" class="btn btn-primary" onclick="window.print()">
-                        <i class="fas fa-print me-2"></i> Print
+                        <i class="fas fa-print me-2"></i>Print
                     </button>
-
-                    <!-- Debug button -->
-                    {% if debug %}
-                    <a href="?debug=true" class="btn btn-info">
-                        <i class="fas fa-bug me-2"></i> Debug
-                    </a>
-                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- System Information -->
+    <!-- Footer info -->
     <div class="text-center text-muted small mt-3">
         <i class="fas fa-info-circle me-1"></i>
         Application ID: {{ application_id }} |
@@ -680,7 +525,7 @@
     </div>
 </div>
 
-<!-- Approval Modal (SINGLE VERSION - FIXED) -->
+<!-- Approval Modal -->
 <div class="modal fade" id="approvalModal" tabindex="-1" aria-labelledby="approvalModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -690,7 +535,7 @@
                     <h5 class="modal-title" id="approvalModalLabel">
                         <i class="fas fa-check-circle me-2"></i>Approve/Reject Application
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" name="reference_no" id="modal_reference_no">
@@ -699,7 +544,7 @@
 
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle me-2"></i>
-                        <strong>Note:</strong> This action will submit the decision to URA EFRIS system.
+                        This action will submit the decision to URA EFRIS system.
                     </div>
 
                     <div class="mb-3">
@@ -716,36 +561,27 @@
                         <label for="modal_approve_status" class="form-label">Decision *</label>
                         <select class="form-select" name="approve_status" id="modal_approve_status" required>
                             <option value="">Select decision</option>
-                            <!-- T113 API codes: 101 = Approve, 103 = Reject -->
-                            <option value="101">Approve (Submit to URA)</option>
-                            <option value="103">Reject (Submit to URA)</option>
+                            <option value="101">Approve</option>
+                            <option value="103">Reject</option>
                         </select>
-                        <small class="form-text text-muted">
-                            Note: T113 approval API uses codes 101 (Approve) and 103 (Reject).
-                        </small>
                     </div>
 
                     <div class="mb-3">
                         <label for="modal_remark" class="form-label">Remarks * (max 1024 characters)</label>
                         <textarea class="form-control" name="remark" id="modal_remark"
                                   rows="4" required maxlength="1024"
-                                  placeholder="Enter detailed approval or rejection remarks..."></textarea>
-                        <div class="d-flex justify-content-between mt-1">
-                            <small class="form-text text-muted">
-                                Required for approval/rejection
-                            </small>
-                            <small class="form-text text-muted">
-                                <span id="remarkCharCount">0</span> / 1024 characters
-                            </small>
+                                  placeholder="Enter approval or rejection remarks..."></textarea>
+                        <div class="d-flex justify-content-end mt-1">
+                            <small class="text-muted"><span id="remarkCharCount">0</span> / 1024</small>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-2"></i> Cancel
+                        <i class="fas fa-times me-2"></i>Cancel
                     </button>
                     <button type="submit" class="btn btn-primary" id="submitApprovalBtn">
-                        <i class="fas fa-paper-plane me-2"></i> Submit Decision
+                        <i class="fas fa-paper-plane me-2"></i>Submit Decision
                     </button>
                 </div>
             </form>
@@ -756,207 +592,64 @@
 
 {% block extra_js %}
 <script>
-// =============================================================================
-// DIAGNOSTIC VERSION - Debug Modal Form Submission
-// =============================================================================
-
 function showApprovalModal(appId, referenceNo, taskId) {
-    console.log('=== showApprovalModal called ===');
-    console.log('appId:', appId);
-    console.log('referenceNo:', referenceNo);
-    console.log('taskId:', taskId);
-    console.log('taskId type:', typeof taskId);
-    console.log('taskId is empty?', !taskId || taskId === '' || taskId === 'None');
-
     const modal = new bootstrap.Modal(document.getElementById('approvalModal'));
     const form = document.getElementById('approvalForm');
 
-    // Set hidden inputs - with extra validation
-    const appIdField = document.getElementById('modal_application_id');
-    const refNoField = document.getElementById('modal_reference_no');
-    const taskIdField = document.getElementById('modal_task_id');
+    document.getElementById('modal_application_id').value = appId;
+    document.getElementById('modal_reference_no').value = referenceNo || appId;
+    document.getElementById('modal_task_id').value = taskId || '';
+    document.getElementById('display_reference_no').textContent = referenceNo || appId;
+    document.getElementById('display_application_id').textContent = appId;
 
-    console.log('=== Setting form fields ===');
-
-    if (appIdField) {
-        appIdField.value = appId;
-        console.log('Set application_id:', appIdField.value);
-    } else {
-        console.error('❌ modal_application_id field not found!');
+    if (!taskId || taskId === '' || taskId === 'None') {
+        alert('WARNING: This application is missing a Task ID and may not be approvable.');
     }
 
-    if (refNoField) {
-        refNoField.value = referenceNo || appId;
-        console.log('Set reference_no:', refNoField.value);
-    } else {
-        console.error('❌ modal_reference_no field not found!');
-    }
-
-    if (taskIdField) {
-        // CRITICAL: Check if taskId is actually valid
-        if (!taskId || taskId === '' || taskId === 'None' || taskId === 'null') {
-            console.warn('⚠️ WARNING: taskId is empty or invalid:', taskId);
-            console.warn('This will cause "Missing required fields" error!');
-
-            // Show warning to user
-            alert(
-                'WARNING: This application is missing a Task ID.\n\n' +
-                'This usually means the application was not properly created in EFRIS.\n' +
-                'You may need to cancel and recreate the application.\n\n' +
-                'Technical details:\n' +
-                '- Application ID: ' + appId + '\n' +
-                '- Reference No: ' + (referenceNo || 'N/A') + '\n' +
-                '- Task ID: ' + (taskId || 'MISSING')
-            );
-        }
-
-        taskIdField.value = taskId || '';
-        console.log('Set task_id:', taskIdField.value);
-    } else {
-        console.error('❌ modal_task_id field not found!');
-    }
-
-    // Set display values
-    const displayRefNo = document.getElementById('display_reference_no');
-    const displayAppId = document.getElementById('display_application_id');
-
-    if (displayRefNo) {
-        displayRefNo.textContent = referenceNo || appId;
-    }
-    if (displayAppId) {
-        displayAppId.textContent = appId;
-    }
-
-    // Set form action with proper URL structure
     const currentPath = window.location.pathname;
-    const hasLangPrefix = currentPath.startsWith('/en/') || currentPath.startsWith('/fr/');
+    const langPrefix = currentPath.startsWith('/en/') ? 'en' : null;
+    form.action = langPrefix
+        ? `/${langPrefix}/efris/credit-notes/approve/${appId}/`
+        : `/efris/credit-notes/approve/${appId}/`;
 
-    if (hasLangPrefix) {
-        const langPrefix = currentPath.split('/')[1];
-        form.action = `/${langPrefix}/efris/credit-notes/approve/${appId}/`;
-    } else {
-        form.action = `/efris/credit-notes/approve/${appId}/`;
-    }
-
-    console.log('Form action set to:', form.action);
-
-    // Reset form
     form.reset();
-
-    // Re-set hidden fields after reset (because reset clears them)
-    if (appIdField) appIdField.value = appId;
-    if (refNoField) refNoField.value = referenceNo || appId;
-    if (taskIdField) taskIdField.value = taskId || '';
-
+    document.getElementById('modal_application_id').value = appId;
+    document.getElementById('modal_reference_no').value = referenceNo || appId;
+    document.getElementById('modal_task_id').value = taskId || '';
     document.getElementById('remarkCharCount').textContent = '0';
 
-    // Show modal
     modal.show();
-
-    console.log('=== Modal shown ===');
 }
 
-// Character count for remarks field
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('=== DOM Content Loaded ===');
-
+document.addEventListener('DOMContentLoaded', function () {
     const remarkField = document.getElementById('modal_remark');
     const charCount = document.getElementById('remarkCharCount');
 
     if (remarkField && charCount) {
-        remarkField.addEventListener('input', function() {
+        remarkField.addEventListener('input', function () {
             charCount.textContent = remarkField.value.length;
-
-            if (remarkField.value.length > 1000) {
-                charCount.classList.add('text-warning');
-            } else {
-                charCount.classList.remove('text-warning');
-            }
-
-            if (remarkField.value.length >= 1024) {
-                charCount.classList.add('text-danger');
-                charCount.classList.remove('text-warning');
-            }
         });
     }
 
-    // AJAX form submission with detailed logging
     const approvalForm = document.getElementById('approvalForm');
     const submitBtn = document.getElementById('submitApprovalBtn');
 
     if (approvalForm && submitBtn) {
-        approvalForm.addEventListener('submit', function(e) {
+        approvalForm.addEventListener('submit', function (e) {
             e.preventDefault();
 
-            console.log('=== Form Submission Started ===');
-
-            // Validate form
             if (!approvalForm.checkValidity()) {
-                console.error('❌ Form validation failed');
                 approvalForm.reportValidity();
                 return;
             }
 
-            // Get form data
-            const formData = new FormData(approvalForm);
-
-            // Log all form data
-            console.log('=== Form Data Being Submitted ===');
-            for (const [key, value] of formData.entries()) {
-                console.log(`  ${key}: "${value}" (length: ${value.length})`);
-
-                // Highlight empty or problematic values
-                if (!value || value === '' || value === 'None' || value === 'null') {
-                    console.error(`  ❌ WARNING: ${key} is empty or invalid!`);
-                }
-            }
-
-            // Validate all required fields manually
-            const requiredFields = {
-                'reference_no': formData.get('reference_no'),
-                'approve_status': formData.get('approve_status'),
-                'task_id': formData.get('task_id'),
-                'remark': formData.get('remark'),
-                'application_id': formData.get('application_id')
-            };
-
-            console.log('=== Required Fields Validation ===');
-            const missingFields = [];
-
-            for (const [field, value] of Object.entries(requiredFields)) {
-                const isEmpty = !value || value.trim() === '';
-                console.log(`${field}: ${isEmpty ? '❌ MISSING' : '✅ OK'} (value: "${value}")`);
-
-                if (isEmpty) {
-                    missingFields.push(field);
-                }
-            }
-
-            if (missingFields.length > 0) {
-                console.error('❌ VALIDATION FAILED - Missing fields:', missingFields);
-                alert(
-                    'ERROR: Cannot submit form. Missing required fields:\n\n' +
-                    missingFields.join('\n') +
-                    '\n\nPlease check the browser console for details.'
-                );
-                return;
-            }
-
-            console.log('✅ All required fields present');
-
-            // Disable button and show loading state
             submitBtn.disabled = true;
-            const originalBtnText = submitBtn.innerHTML;
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Submitting...';
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Submitting...';
 
-            // Get CSRF token
+            const formData = new FormData(approvalForm);
             const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
-            console.log('=== Sending AJAX Request ===');
-            console.log('URL:', approvalForm.action);
-            console.log('Method: POST');
-
-            // Submit via AJAX
             fetch(approvalForm.action, {
                 method: 'POST',
                 body: formData,
@@ -967,135 +660,51 @@ document.addEventListener('DOMContentLoaded', function() {
                 credentials: 'same-origin'
             })
             .then(response => {
-                console.log('=== Response Received ===');
-                console.log('Status:', response.status);
-                console.log('OK:', response.ok);
-
                 const contentType = response.headers.get('content-type');
-                console.log('Content-Type:', contentType);
-
                 if (contentType && contentType.includes('application/json')) {
-                    return response.json().then(data => ({
-                        ok: response.ok,
-                        status: response.status,
-                        data: data
-                    }));
-                } else {
-                    return response.text().then(text => {
-                        console.warn('⚠️ Non-JSON response received');
-                        console.log('Response text (first 500 chars):', text.substring(0, 500));
-                        return {
-                            ok: response.ok,
-                            status: response.status,
-                            data: {
-                                error: 'Unexpected response format',
-                                html_snippet: text.substring(0, 200)
-                            }
-                        };
-                    });
+                    return response.json().then(data => ({ ok: response.ok, data }));
                 }
+                return response.text().then(text => ({
+                    ok: false,
+                    data: { error: 'Unexpected response format' }
+                }));
             })
             .then(result => {
-                console.log('=== Processing Response ===');
-                console.log('Result:', result);
-
                 if (result.ok && result.data.success) {
-                    console.log('✅ SUCCESS:', result.data.message);
-                    showSuccess(result.data.message || 'Application processed successfully');
-
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('approvalModal'));
-                    if (modal) {
-                        modal.hide();
-                    }
-
+                    showAlert(result.data.message || 'Application processed successfully', 'success');
+                    bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
                     setTimeout(() => {
-                        if (result.data.redirect_url) {
-                            window.location.href = result.data.redirect_url;
-                        } else {
-                            window.location.reload();
-                        }
+                        window.location.href = result.data.redirect_url || window.location.href;
                     }, 1500);
                 } else {
-                    console.error('❌ ERROR:', result.data);
-
-                    const errorMsg = result.data.error || 'Unknown error occurred';
-
-                    // Show detailed error information
-                    let detailsHtml = '';
-                    if (result.data.missing_fields) {
-                        detailsHtml += '<br><strong>Missing fields:</strong><br>' +
-                                      result.data.missing_fields.join(', ');
-                    }
-                    if (result.data.error_code) {
-                        detailsHtml += '<br><strong>Error code:</strong> ' + result.data.error_code;
-                    }
-
-                    showError(errorMsg + detailsHtml);
-
+                    showAlert(result.data.error || 'Unknown error occurred', 'danger');
                     submitBtn.disabled = false;
-                    submitBtn.innerHTML = originalBtnText;
+                    submitBtn.innerHTML = originalText;
                 }
             })
             .catch(error => {
-                console.error('❌ NETWORK ERROR:', error);
-                showError('Network error: ' + error.message);
-
+                showAlert('Network error: ' + error.message, 'danger');
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = originalBtnText;
+                submitBtn.innerHTML = originalText;
             });
         });
-    } else {
-        console.error('❌ Form or submit button not found!');
-        if (!approvalForm) console.error('  - approvalForm element missing');
-        if (!submitBtn) console.error('  - submitApprovalBtn element missing');
     }
 });
-
-// Helper functions
-function showSuccess(message) {
-    showAlert(message, 'success');
-}
-
-function showError(message) {
-    showAlert(message, 'danger');
-}
 
 function showAlert(message, type) {
     const alertDiv = document.createElement('div');
     alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-    alertDiv.role = 'alert';
     alertDiv.innerHTML = `
         <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i>
         ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
-
     const container = document.querySelector('.container-fluid');
     if (container) {
         container.insertBefore(alertDiv, container.firstChild);
-
-        setTimeout(() => {
-            alertDiv.remove();
-        }, 5000);
-
+        setTimeout(() => alertDiv.remove(), 5000);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 }
-
-// Add debug button to check current modal state
-function debugModalState() {
-    console.log('=== Current Modal State ===');
-    console.log('application_id:', document.getElementById('modal_application_id')?.value);
-    console.log('reference_no:', document.getElementById('modal_reference_no')?.value);
-    console.log('task_id:', document.getElementById('modal_task_id')?.value);
-    console.log('approve_status:', document.getElementById('modal_approve_status')?.value);
-    console.log('remark:', document.getElementById('modal_remark')?.value?.substring(0, 50) + '...');
-}
-
-// Make debug function available globally
-window.debugModalState = debugModalState;
-
-console.log('=== Approval Modal Script Loaded ===');
-console.log('To debug modal state, type: debugModalState()');
 </script>
 {% endblock %}

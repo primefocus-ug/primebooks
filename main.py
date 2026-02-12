@@ -92,6 +92,7 @@ from PyQt6.QtWidgets import (
     QToolBar, QStatusBar, QPushButton, QLabel, QProgressDialog,
     QVBoxLayout, QLineEdit, QHBoxLayout, QProgressBar, QMenu
 )
+from PyQt6.QtWebEngineCore import QWebEnginePage
 from primebooks.login_dialogs import UserSwitchDialog, InitialLoginDialog
 from primebooks.update_manager import UpdateManager
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -788,6 +789,46 @@ def run_django_server(port):
         logger.error(f"Django server error: {e}", exc_info=True)
 
 
+class CustomWebEnginePage(QWebEnginePage):
+    """Custom page to handle print links"""
+
+    def __init__(self, parent_window, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parent_window = parent_window
+
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+        """
+        Intercept navigation requests to handle print links
+        """
+        url_string = url.toString()
+
+        # Check if this is a print receipt URL
+        if '/print-receipt/' in url_string or '/print_receipt/' in url_string:
+            logger.info(f"🖨️ Print request intercepted: {url_string}")
+
+            # Extract sale ID from URL
+            # URL format: /sales/123/print-receipt/
+            try:
+                parts = url_string.split('/')
+                sale_id_index = parts.index('sales') + 1 if 'sales' in parts else -1
+
+                if sale_id_index > 0 and sale_id_index < len(parts):
+                    sale_id = parts[sale_id_index]
+                    logger.info(f"📄 Triggering PDF export for sale #{sale_id}")
+
+                    # Trigger PDF export instead of navigation
+                    self.parent_window.print_to_pdf_simple()
+
+                    # Prevent navigation
+                    return False
+
+            except Exception as e:
+                logger.error(f"Error parsing print URL: {e}")
+
+        # Allow all other navigation
+        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+
 # ============================================================================
 # MAIN WINDOW (Keeping your existing implementation)
 # ============================================================================
@@ -829,9 +870,137 @@ class PrimeBooksWindow(QMainWindow):
             self.browser.settings().WebAttribute.PluginsEnabled, True
         )
 
+        # ✅ NEW: Connect load handler for print interception
+        self.browser.loadFinished.connect(self.on_page_loaded)
+
         self.setCentralWidget(self.browser)
 
         QTimer.singleShot(1000, self.load_application)
+
+    def on_page_loaded(self, success):
+        """Inject print handler when page loads"""
+        if success:
+            logger.info("📄 Page loaded successfully")
+
+            # Wait a bit for DOM to be ready
+            QTimer.singleShot(500, self.inject_print_handler)
+
+    def inject_print_handler(self):
+        """Inject JavaScript to intercept print links"""
+        js_code = """
+        (function() {
+            if (window.__printHandlerInstalled) return;
+
+            document.addEventListener('click', function(e) {
+                const link = e.target.closest('a');
+                if (!link) return;
+
+                const href = link.getAttribute('href') || '';
+
+                if (href.includes('print-receipt') || href.includes('print_receipt')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    console.log('📄 Print request:', href);
+
+                    // Call Python handler via window.pywebchannel if available
+                    // Otherwise, post message
+                    if (window.printHandler) {
+                        window.printHandler.handlePrint(href);
+                    } else {
+                        // Fallback: navigate to receipt page
+                        window.__navigatingToPrint = true;
+                        window.location.href = href;
+                    }
+
+                    return false;
+                }
+            }, true);
+
+            window.__printHandlerInstalled = true;
+        })();
+        """
+
+        self.browser.page().runJavaScript(js_code)
+
+    def handle_print_request(self, receipt_url):
+        """
+        Handle print request by:
+        1. Creating hidden browser
+        2. Loading receipt
+        3. Printing
+        4. Closing hidden browser
+        """
+        logger.info(f"🖨️ Handling print request: {receipt_url}")
+
+        # Create hidden browser for receipt
+        self.print_browser = QWebEngineView()
+        self.print_browser.hide()
+
+        # Connect load handler
+        def on_receipt_loaded(success):
+            if success:
+                logger.info("✅ Receipt loaded, printing...")
+
+                # Wait a bit for rendering
+                QTimer.singleShot(1000, lambda: self.print_receipt_in_hidden_browser())
+
+        self.print_browser.loadFinished.connect(on_receipt_loaded)
+
+        # Load receipt URL
+        full_url = f"http://{self.subdomain}.localhost:{self.port}{receipt_url}"
+        self.print_browser.setUrl(QUrl(full_url))
+
+    def print_receipt_in_hidden_browser(self):
+        """Print from hidden browser"""
+        logger.info("🖨️ Printing from hidden browser...")
+
+        import tempfile
+        from pathlib import Path
+
+        timestamp = int(time.time())
+        pdf_path = Path(tempfile.gettempdir()) / f"receipt_{timestamp}.pdf"
+
+        # Print to PDF
+        self.print_browser.page().printToPdf(str(pdf_path))
+
+        # Wait, then open PDF
+        QTimer.singleShot(2000, lambda: self.open_receipt_pdf(pdf_path))
+
+        # Clean up hidden browser
+        QTimer.singleShot(3000, lambda: self.cleanup_print_browser())
+
+    def open_receipt_pdf(self, pdf_path):
+        """Open the printed receipt PDF"""
+        import subprocess
+        import platform
+
+        if not pdf_path.exists():
+            logger.warning(f"PDF not ready yet: {pdf_path}")
+            # Try again
+            QTimer.singleShot(1000, lambda: self.open_receipt_pdf(pdf_path))
+            return
+
+        logger.info(f"📄 Opening receipt: {pdf_path}")
+
+        try:
+            if platform.system() == 'Windows':
+                os.startfile(str(pdf_path))
+            elif platform.system() == 'Darwin':
+                subprocess.run(['open', str(pdf_path)])
+            else:
+                subprocess.run(['xdg-open', str(pdf_path)])
+
+            self.statusBar.showMessage(f"✅ Receipt opened: {pdf_path.name}", 5000)
+        except Exception as e:
+            logger.error(f"Failed to open PDF: {e}")
+
+    def cleanup_print_browser(self):
+        """Clean up hidden browser"""
+        if hasattr(self, 'print_browser'):
+            self.print_browser.deleteLater()
+            delattr(self, 'print_browser')
+            logger.info("🗑️ Print browser cleaned up")
 
     def setup_print_support(self):
         """Setup print functionality for web pages"""
