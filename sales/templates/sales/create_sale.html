@@ -4323,98 +4323,88 @@ async function fetchAndSelectCustomerById(customerId) {
         window.history.replaceState({}, '', url);
     }
 }
-
+function normaliseCreditInfo(raw) {
+    function toBool(v)  { return v === true || v === 1 || v === '1' || v === 'true'; }
+    function toFloat(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+    return {
+        allowCredit:     toBool(raw.allow_credit),
+        creditLimit:     toFloat(raw.credit_limit),
+        creditBalance:   toFloat(raw.credit_balance),
+        creditAvailable: toFloat(raw.credit_available),
+        creditStatus:    (raw.credit_status || 'GOOD').toUpperCase(),
+        hasOverdue:      toBool(raw.has_overdue),
+        overdue_amount:  toFloat(raw.overdue_amount),
+    };
+}
 function selectCustomer(customer) {
-    console.log('👤 Selecting customer:', customer);
+    console.log('👤 Selecting customer:', customer.name);
     SaleState.selectedCustomer = customer;
 
-    const customerId = document.getElementById('customerId');
-    const customerName = document.getElementById('customerName');
-    const customerDetails = document.getElementById('customerDetails');
-    const customerTin = document.getElementById('customerTin');
-    const customerDisplay = document.getElementById('customerDisplay');
-    const customerDropdown = document.getElementById('customerDropdown');
-    const customerAvatar = document.getElementById('customerAvatar');
-    const customerTinBadge = document.getElementById('customerTinBadge');
+    const customerIdEl   = document.getElementById('customerId');
+    const customerNameEl = document.getElementById('customerName');
+    const customerDetailsEl = document.getElementById('customerDetails');
+    const customerTinEl  = document.getElementById('customerTin');
+    const customerDisplayEl = document.getElementById('customerDisplay');
+    const customerDropdownEl= document.getElementById('customerDropdown');
+    const customerAvatarEl  = document.getElementById('customerAvatar');
+    const customerTinBadgeEl= document.getElementById('customerTinBadge');
 
-    if (customerId) customerId.value = customer.id;
-    if (customerTin) customerTin.value = customer.tin || '';
+    if (customerIdEl)   customerIdEl.value  = customer.id;
+    if (customerTinEl)  customerTinEl.value  = customer.tin || '';
 
-    if (customerName) {
-        customerName.textContent = customer.name;
-    }
+    if (customerNameEl) customerNameEl.textContent = customer.name;
 
-    if (customerDetails) {
-        customerDetails.innerHTML = `
+    if (customerDetailsEl) {
+        customerDetailsEl.innerHTML = `
             <small class="text-muted">
                 ${customer.phone || ''}
                 ${customer.email ? ' • ' + customer.email : ''}
-                ${customer.tin ? ' • TIN: ' + customer.tin : ''}
-            </small>
-        `;
+                ${customer.tin   ? ' • TIN: ' + customer.tin : ''}
+            </small>`;
     }
 
-    if (customerDisplay) {
-        customerDisplay.style.display = 'flex';
-    }
+    if (customerDisplayEl)  customerDisplayEl.style.display  = 'flex';
+    if (customerDropdownEl) customerDropdownEl.classList.remove('show');
+    if (customerAvatarEl)   customerAvatarEl.textContent     = customer.name.charAt(0).toUpperCase();
 
-    if (customerDropdown) {
-        customerDropdown.classList.remove('show');
-    }
-
-    if (customerAvatar) {
-        customerAvatar.textContent = customer.name.charAt(0).toUpperCase();
-    }
-
-    if (customerTinBadge) {
+    if (customerTinBadgeEl) {
         if (customer.tin) {
-            customerTinBadge.textContent = `TIN: ${customer.tin}`;
-            customerTinBadge.style.display = 'inline-block';
+            customerTinBadgeEl.textContent    = `TIN: ${customer.tin}`;
+            customerTinBadgeEl.style.display  = 'inline-block';
         } else {
-            customerTinBadge.style.display = 'none';
+            customerTinBadgeEl.style.display  = 'none';
         }
     }
 
-    if (customer.credit_info) {
-        const allowCredit = customer.credit_info.allow_credit === true ||
-                           customer.credit_info.allow_credit === 'true' ||
-                           customer.credit_info.allow_credit === 1;
+    // ── CREDIT INFO — FIXED ──────────────────────────────────────
+    // Serializer returns credit fields at top level (not nested).
+    // Map has_overdue_invoices → has_overdue for consistent internal use.
+    const rawCredit = {
+        allow_credit:     customer.allow_credit,
+        credit_limit:     customer.credit_limit,
+        credit_balance:   customer.credit_balance,
+        credit_available: customer.credit_available,
+        credit_status:    customer.credit_status,
+        has_overdue:      customer.has_overdue_invoices,
+        overdue_amount:   customer.overdue_amount,
+    };
 
-        const hasOverdue = customer.credit_info.has_overdue === true ||
-                          customer.credit_info.has_overdue === 'true' ||
-                          customer.credit_info.has_overdue === 1;
-
-        currentCustomerCredit = {
-            allowCredit: allowCredit,
-            creditLimit: parseFloat(customer.credit_info.credit_limit) || 0,
-            creditBalance: parseFloat(customer.credit_info.credit_balance) || 0,
-            creditAvailable: parseFloat(customer.credit_info.credit_available) || 0,
-            creditStatus: customer.credit_info.credit_status || 'NONE',
-            hasOverdue: hasOverdue,
-            overdue_amount: parseFloat(customer.credit_info.overdue_amount || 0)
-        };
-
-        displayCustomerCreditInfo(customer.credit_info);
+    if (rawCredit.allow_credit !== undefined && rawCredit.allow_credit !== null) {
+        currentCustomerCredit = normaliseCreditInfo(rawCredit);
+        displayCustomerCreditInfo(rawCredit);
     } else {
         currentCustomerCredit = {
-            allowCredit: false,
-            creditLimit: 0,
-            creditBalance: 0,
-            creditAvailable: 0,
-            creditStatus: 'NONE',
-            hasOverdue: false
+            allowCredit: false, creditLimit: 0, creditBalance: 0,
+            creditAvailable: 0, creditStatus: 'NONE',
+            hasOverdue: false, overdue_amount: 0,
         };
-
         const creditInfoDiv = document.getElementById('customerCreditInfo');
-        if (creditInfoDiv) {
-            creditInfoDiv.style.display = 'none';
-        }
+        if (creditInfoDiv) creditInfoDiv.style.display = 'none';
     }
+    // ── END CREDIT INFO ──────────────────────────────────────────
 
     const notesSection = document.getElementById('customerNotesSection');
-    if (notesSection) {
-        notesSection.style.display = 'block';
-    }
+    if (notesSection) notesSection.style.display = 'block';
 
     updateCreditAdjustmentVisibility();
     addToRecentCustomers(customer);
@@ -4472,124 +4462,101 @@ function removeCustomer() {
 // ============================================
 
 function displayCustomerCreditInfo(creditInfo) {
-    const creditInfoDiv = document.getElementById('customerCreditInfo');
-    const creditWarningsDiv = document.getElementById('creditWarnings');
+    const creditInfoDiv  = document.getElementById('customerCreditInfo');
+    const creditWarnings = document.getElementById('creditWarnings');
 
-    if (!creditInfo.allow_credit) {
+    function toBool(v)  { return v === true || v === 1 || v === '1' || v === 'true'; }
+    function toFloat(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+    const allowCredit = toBool(creditInfo.allow_credit);
+
+    if (!allowCredit) {
         if (creditInfoDiv) creditInfoDiv.style.display = 'none';
         return;
     }
 
-    if (creditInfoDiv) {
-        creditInfoDiv.style.display = 'block';
-    }
+    if (creditInfoDiv) creditInfoDiv.style.display = 'block';
 
-    const creditLimit = document.getElementById('creditLimit');
-    const creditBalance = document.getElementById('creditBalance');
-    const creditAvailable = document.getElementById('creditAvailable');
+    const limitEl     = document.getElementById('creditLimit');
+    const balanceEl   = document.getElementById('creditBalance');
+    const availableEl = document.getElementById('creditAvailable');
     const statusBadge = document.getElementById('creditStatusBadge');
 
-    if (creditLimit) creditLimit.textContent = formatCurrency(creditInfo.credit_limit);
-    if (creditBalance) creditBalance.textContent = formatCurrency(creditInfo.credit_balance);
-    if (creditAvailable) creditAvailable.textContent = formatCurrency(creditInfo.credit_available);
+    if (limitEl)     limitEl.textContent     = formatCurrency(toFloat(creditInfo.credit_limit));
+    if (balanceEl)   balanceEl.textContent   = formatCurrency(toFloat(creditInfo.credit_balance));
+    if (availableEl) availableEl.textContent = formatCurrency(toFloat(creditInfo.credit_available));
 
     if (statusBadge) {
-        statusBadge.textContent = creditInfo.credit_status;
-        statusBadge.className = 'badge ';
-
-        switch(creditInfo.credit_status) {
-            case 'GOOD':
-                statusBadge.classList.add('bg-success');
-                break;
-            case 'WARNING':
-                statusBadge.classList.add('bg-warning');
-                break;
-            case 'SUSPENDED':
-            case 'BLOCKED':
-                statusBadge.classList.add('bg-danger');
-                break;
-            default:
-                statusBadge.classList.add('bg-secondary');
-        }
+        const status = (creditInfo.credit_status || 'GOOD').toUpperCase();
+        statusBadge.textContent = status;
+        statusBadge.className   = 'badge';
+        const colorMap = { 'GOOD': 'bg-success', 'WARNING': 'bg-warning text-dark', 'SUSPENDED': 'bg-danger', 'BLOCKED': 'bg-danger' };
+        statusBadge.classList.add(colorMap[status] || 'bg-secondary');
     }
 
-    if (creditWarningsDiv) {
-        creditWarningsDiv.innerHTML = '';
+    if (creditWarnings) {
+        creditWarnings.innerHTML = '';
+        const hasOverdue  = toBool(creditInfo.has_overdue);
+        const overdueAmt  = toFloat(creditInfo.overdue_amount);
+        const status      = (creditInfo.credit_status || '').toUpperCase();
 
-        if (creditInfo.has_overdue) {
-            creditWarningsDiv.innerHTML += `
+        if (hasOverdue) {
+            creditWarnings.innerHTML += `
                 <div class="credit-error">
                     <i class="bi bi-exclamation-triangle me-2"></i>
-                    <strong>Overdue Payments:</strong> UGX ${parseFloat(creditInfo.overdue_amount).toLocaleString()}
-                </div>
-            `;
+                    <strong>Overdue Payments:</strong> ${formatCurrency(overdueAmt)}
+                </div>`;
         }
-
-        if (creditInfo.credit_status === 'WARNING') {
-            creditWarningsDiv.innerHTML += `
+        if (status === 'WARNING') {
+            creditWarnings.innerHTML += `
                 <div class="credit-warning">
                     <i class="bi bi-exclamation-circle me-2"></i>
                     <strong>Warning:</strong> Approaching credit limit
-                </div>
-            `;
+                </div>`;
         }
-
-        if (creditInfo.credit_status === 'SUSPENDED' || creditInfo.credit_status === 'BLOCKED') {
-            creditWarningsDiv.innerHTML += `
+        if (status === 'SUSPENDED' || status === 'BLOCKED') {
+            creditWarnings.innerHTML += `
                 <div class="credit-error">
                     <i class="bi bi-x-circle me-2"></i>
-                    <strong>Credit ${creditInfo.credit_status}</strong>
-                </div>
-            `;
+                    <strong>Credit ${status}</strong>
+                </div>`;
         }
     }
 }
 
 function updateCreditAdjustmentVisibility() {
     const creditAdjustSection = document.getElementById('creditAdjustmentSection');
-    const customerId = document.getElementById('customerId')?.value;
-
+    const customerId          = document.getElementById('customerId')?.value;
     if (creditAdjustSection) {
         creditAdjustSection.style.display = customerId ? 'block' : 'none';
-
-        if (customerId && SaleState.selectedCustomer) {
-            updateCreditAdjustmentModal(SaleState.selectedCustomer);
-        }
+        if (customerId && SaleState.selectedCustomer) updateCreditAdjustmentModal(SaleState.selectedCustomer);
     }
 }
 
 function updateCreditAdjustmentModal(customer) {
-    const customerName = document.getElementById('creditAdjustCustomerName');
-    const currentLimit = document.getElementById('creditAdjustCurrentLimit');
-    const currentBalance = document.getElementById('creditAdjustCurrentBalance');
-    const availableCredit = document.getElementById('creditAdjustAvailable');
-
-    if (customerName) customerName.textContent = customer.name;
-    if (currentLimit) currentLimit.textContent = formatCurrency(currentCustomerCredit.creditLimit);
-    if (currentBalance) currentBalance.textContent = formatCurrency(currentCustomerCredit.creditBalance);
-    if (availableCredit) availableCredit.textContent = formatCurrency(currentCustomerCredit.creditAvailable);
+    const customerNameEl  = document.getElementById('creditAdjustCustomerName');
+    const currentLimitEl  = document.getElementById('creditAdjustCurrentLimit');
+    const currentBalanceEl= document.getElementById('creditAdjustCurrentBalance');
+    const availableEl     = document.getElementById('creditAdjustAvailable');
+    if (customerNameEl)   customerNameEl.textContent   = customer.name;
+    if (currentLimitEl)   currentLimitEl.textContent   = formatCurrency(currentCustomerCredit.creditLimit);
+    if (currentBalanceEl) currentBalanceEl.textContent = formatCurrency(currentCustomerCredit.creditBalance);
+    if (availableEl)      availableEl.textContent      = formatCurrency(currentCustomerCredit.creditAvailable);
 }
 
 async function submitCreditAdjustment() {
     const customerId = document.getElementById('customerId')?.value;
-    if (!customerId) {
-        showError('No customer selected');
-        return;
-    }
+    if (!customerId) { showError('No customer selected'); return; }
 
     const adjustmentType = document.getElementById('creditAdjustmentType')?.value;
-    const amount = parseFloat(document.getElementById('creditAdjustmentAmount')?.value) || 0;
-    const reason = document.getElementById('creditAdjustmentReason')?.value?.trim();
+    const amount         = parseFloat(document.getElementById('creditAdjustmentAmount')?.value) || 0;
+    const reason         = document.getElementById('creditAdjustmentReason')?.value?.trim();
 
-    if (!adjustmentType || amount <= 0 || !reason) {
-        showError('Please fill all fields');
-        return;
-    }
+    if (!adjustmentType || amount <= 0 || !reason) { showError('Please fill all fields'); return; }
 
-    const btnText = document.getElementById('creditAdjustBtnText');
+    const btnText    = document.getElementById('creditAdjustBtnText');
     const btnLoading = document.getElementById('creditAdjustBtnLoading');
-
-    if (btnText) btnText.style.display = 'none';
+    if (btnText)    btnText.style.display    = 'none';
     if (btnLoading) btnLoading.style.display = 'inline-block';
 
     try {
@@ -4599,33 +4566,39 @@ async function submitCreditAdjustment() {
         formData.append('reason', reason);
 
         const response = await fetch(`/en/customers/api/customers/${customerId}/adjust-credit/`, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'),
-                'X-Requested-With': 'XMLHttpRequest'
-            },
+            method: 'POST', body: formData,
+            headers: { 'X-CSRFToken': getCookie('csrftoken'), 'X-Requested-With': 'XMLHttpRequest' },
             credentials: 'same-origin'
         });
 
         const data = await response.json();
 
         if (data.success && data.customer_credit) {
-            currentCustomerCredit = {
-                allowCredit: data.customer_credit.allow_credit === true,
-                creditLimit: parseFloat(data.customer_credit.credit_limit),
-                creditBalance: parseFloat(data.customer_credit.credit_balance),
-                creditAvailable: parseFloat(data.customer_credit.credit_available),
-                creditStatus: data.customer_credit.credit_status,
-                hasOverdue: data.customer_credit.has_overdue === true
-            };
+            // adjust-credit view returns the nested customer_credit object directly
+            const cc = data.customer_credit;
+            currentCustomerCredit = normaliseCreditInfo({
+                allow_credit:     cc.allow_credit,
+                credit_limit:     cc.credit_limit,
+                credit_balance:   cc.credit_balance,
+                credit_available: cc.credit_available,
+                credit_status:    cc.credit_status,
+                has_overdue:      cc.has_overdue,
+                overdue_amount:   cc.overdue_amount || 0,
+            });
 
-            displayCustomerCreditInfo(data.customer_credit);
+            displayCustomerCreditInfo({
+                allow_credit:     cc.allow_credit,
+                credit_limit:     cc.credit_limit,
+                credit_balance:   cc.credit_balance,
+                credit_available: cc.credit_available,
+                credit_status:    cc.credit_status,
+                has_overdue:      cc.has_overdue,
+                overdue_amount:   cc.overdue_amount || 0,
+            });
+
             updateCreditAdjustmentModal(SaleState.selectedCustomer);
-
             const modal = bootstrap.Modal.getInstance(document.getElementById('creditAdjustmentModal'));
             if (modal) modal.hide();
-
             document.getElementById('creditAdjustmentForm')?.reset();
             showToast('Credit adjusted successfully', 'success');
             validatePaymentMethod();
@@ -4636,7 +4609,7 @@ async function submitCreditAdjustment() {
         console.error('❌ Credit adjustment error:', error);
         showError(`Failed: ${error.message}`);
     } finally {
-        if (btnText) btnText.style.display = 'inline-block';
+        if (btnText)    btnText.style.display    = 'inline-block';
         if (btnLoading) btnLoading.style.display = 'none';
     }
 }
