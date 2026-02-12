@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-ULTIMATE Nuitka Build - PrimeBooks Desktop (Django-Tenants + SQL Dump)
-✅ Includes SQL dump files
-✅ Includes Django form templates
-✅ Schema-safe sync
-✅ All dependencies
+PRODUCTION Nuitka Build - PrimeBooks Desktop (NO CONSOLE)
+✅ GUI-only mode (no terminal window)
+✅ All console output redirected to log files
+✅ End users never see terminal
 """
 import sys
 import os
@@ -19,14 +18,12 @@ import argparse
 # ============================================================================
 parser = argparse.ArgumentParser(description='Build PrimeBooks Desktop')
 parser.add_argument('--debug', action='store_true',
-                    help='Enable debug mode (shows console/errors)')
-parser.add_argument('--production', action='store_true',
-                    help='Production mode (no console, optimized)')
+                    help='Enable debug mode (shows console/errors) - FOR DEVELOPERS ONLY')
 args = parser.parse_args()
 
-# Set mode
-DEBUG_MODE = args.debug or not args.production
-PRODUCTION_MODE = args.production
+# Set mode - Default to PRODUCTION (no console) unless explicitly debug
+DEBUG_MODE = args.debug
+PRODUCTION_MODE = not args.debug
 
 BASE_DIR = Path(__file__).parent.absolute()
 
@@ -39,9 +36,9 @@ OS_NAME = 'Windows' if IS_WINDOWS else 'macOS' if IS_MACOS else 'Linux'
 print("=" * 80)
 print(f"🚀 PRIMEBOOKS NUITKA BUILD - {OS_NAME}")
 if DEBUG_MODE:
-    print("🐛 DEBUG MODE - Console and error messages enabled")
+    print("🐛 DEBUG MODE - Console visible (DEVELOPER BUILD)")
 else:
-    print("🚀 PRODUCTION MODE - GUI only, no console")
+    print("✨ PRODUCTION MODE - GUI only, NO CONSOLE (END USER BUILD)")
 print("=" * 80)
 
 # ============================================================================
@@ -190,17 +187,18 @@ cmd = [
 ]
 
 # ============================================================================
-# OS-SPECIFIC SETTINGS
+# OS-SPECIFIC SETTINGS - FORCE NO CONSOLE IN PRODUCTION
 # ============================================================================
 if IS_WINDOWS:
     print(f"\n  🪟 Windows-specific settings...")
 
     if DEBUG_MODE:
         cmd.extend(['--windows-console-mode=force'])
-        print("  🐛 Console window ENABLED for debugging")
+        print("  🐛 Console window ENABLED (developer mode)")
     else:
+        # ✅ CRITICAL: Disable console for end users
         cmd.extend(['--windows-console-mode=disable'])
-        print("  ✅ Console window DISABLED (GUI only)")
+        print("  ✅ Console window DISABLED (GUI only for end users)")
 
     if (BASE_DIR / 'icon.ico').exists():
         cmd.extend([f'--windows-icon-from-ico={BASE_DIR / "icon.ico"}'])
@@ -296,8 +294,8 @@ critical_primebooks = [
     'primebooks.sync_dialogs',
     'primebooks.auth',
     'primebooks.postgres_manager',
-    'primebooks.schema_loader',  # ✅ NEW - for SQL dump loading
-    'primebooks.signals',  # ✅ NEW - for sequence reset
+    'primebooks.schema_loader',
+    'primebooks.signals',
 ]
 for mod in critical_primebooks:
     cmd.append(f'--include-module={mod}')
@@ -404,6 +402,13 @@ print("=" * 80)
 print("\n⏱️  First build takes 10-20 minutes (subsequent builds are faster)")
 print("💡 Nuitka downloads dependencies and compiles - be patient!\n")
 
+if not DEBUG_MODE:
+    print("✨ Building PRODUCTION version:")
+    print("   • NO console window")
+    print("   • GUI only")
+    print("   • Logs saved to files")
+    print("")
+
 try:
     result = subprocess.run(cmd, cwd=BASE_DIR)
 
@@ -446,16 +451,19 @@ try:
             os.chmod(exe_path, 0o755)
             print("🔒 Made executable")
 
-        print("\n📊 Included:")
+        print("\n📊 Build Configuration:")
+        if DEBUG_MODE:
+            print("   🐛 DEBUG MODE - Console visible")
+        else:
+            print("   ✨ PRODUCTION MODE - No console, GUI only")
+
+        print(f"\n📊 Included:")
         print(f"   • SHARED_APPS: {len(shared_apps)}")
         print(f"   • TENANT_APPS: {len(tenant_apps)}")
         print(f"   • Primebooks modules: {len(primebooks_modules)}")
         print(f"   • Custom apps: {len(custom_apps)}")
         print(f"   • Django form templates: ✓")
         print(f"   • SQL dumps: ✓")
-        print(f"   • Schema loader: ✓")
-        print(f"   • Sequence reset: ✓")
-        print(f"   • Print support: ✓")
 
         print(f"\n🚀 Run your app:")
         if IS_WINDOWS:
@@ -465,11 +473,12 @@ try:
         else:
             print(f"   ./dist/PrimeBooks")
 
-        print("\n✨ Features:")
-        print("   ✓ Fast schema creation (SQL dump)")
-        print("   ✓ Auto sequence reset")
-        print("   ✓ Schema-safe sync")
-        print("   ✓ All dependencies bundled")
+        if not DEBUG_MODE:
+            print("\n✨ End User Features:")
+            print("   ✓ NO console window")
+            print("   ✓ Clean GUI experience")
+            print("   ✓ Logs in: %LOCALAPPDATA%\\PrimeBooks\\logs (Windows)")
+            print("   ✓ Logs in: ~/.local/share/PrimeBooks/logs (Linux/Mac)")
 
     else:
         print("\n❌ Build completed but executable not found")

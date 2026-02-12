@@ -2,10 +2,10 @@
 """
 Prime Books Desktop Application - PostgreSQL Version
 Main PyQt launcher with embedded PostgreSQL
+✅ Enhanced GUI Splash Screen with animations
 ✅ SQL Dump initialization (FAST!)
-✅ Proper desktop login dialog
-✅ Data sync before loading app
-✅ Schema-aware tenant handling
+✅ Professional startup experience with retry capability
+✅ Better error handling and health monitoring
 """
 import os
 import sys
@@ -17,47 +17,43 @@ from pathlib import Path
 # ============================================================================
 DEBUG_MODE = os.environ.get('PRIMEBOOKS_DEBUG', 'False').lower() == 'true'
 
-if DEBUG_MODE:
-    # Enable all warnings
+if not DEBUG_MODE:
+    # Suppress console output in production
+    import io
+
+    sys.stdout = io.StringIO()
+    sys.stderr = io.StringIO()
+else:
+    # Debug mode - show everything
     import warnings
 
     warnings.filterwarnings('default')
 
-    # Setup detailed logging
-    import logging
+# ============================================================================
+# LOGGING SETUP (to file, not console!)
+# ============================================================================
+import logging
+from datetime import datetime
 
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-        ]
-    )
+log_dir = Path.home() / '.local' / 'share' / 'PrimeBooks' / 'logs'
+log_dir.mkdir(parents=True, exist_ok=True)
+
+handlers = [
+    logging.FileHandler(log_dir / f'primebooks_{datetime.now().strftime("%Y%m%d")}.log')
+]
+
+if DEBUG_MODE:
+    handlers.append(logging.StreamHandler(sys.stdout))
     print("=" * 80)
     print("🐛 DEBUG MODE ENABLED")
     print("=" * 80)
-else:
-    # ✅ PRODUCTION MODE: Redirect all output to log files
-    import logging
-    from pathlib import Path
-    from datetime import datetime
 
-    # Create log directory
-    log_dir = Path.home() / '.local' / 'share' / 'PrimeBooks' / 'logs'
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Setup file-only logging (no console output)
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_dir / f'primebooks_{datetime.now().strftime("%Y%m%d")}.log')
-        ]
-    )
-
-    # Redirect stdout and stderr to log file (suppress all console output)
-    sys.stdout = open(log_dir / f'stdout_{datetime.now().strftime("%Y%m%d")}.log', 'a')
-    sys.stderr = open(log_dir / f'stderr_{datetime.now().strftime("%Y%m%d")}.log', 'a')
+logging.basicConfig(
+    level=logging.DEBUG if DEBUG_MODE else logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=handlers
+)
+logger = logging.getLogger(__name__)
 
 
 # Exception handler that shows errors in GUI
@@ -69,11 +65,14 @@ def exception_handler(exc_type, exc_value, exc_traceback):
 
     error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
 
-    print("\n" + "=" * 80)
-    print("💥 FATAL ERROR:")
-    print("=" * 80)
-    print(error_msg)
-    print("=" * 80)
+    logger.critical(f"FATAL ERROR: {error_msg}")
+
+    if DEBUG_MODE:
+        print("\n" + "=" * 80)
+        print("💥 FATAL ERROR:")
+        print("=" * 80)
+        print(error_msg)
+        print("=" * 80)
 
     try:
         from PyQt6.QtWidgets import QApplication, QMessageBox
@@ -96,8 +95,7 @@ sys.excepthook = exception_handler
 
 import socket
 import threading
-import logging
-from datetime import datetime
+import time
 
 # Set desktop mode BEFORE any Django imports
 os.environ['DESKTOP_MODE'] = 'True'
@@ -110,32 +108,15 @@ sys.path.insert(0, str(BASE_DIR))
 
 # PyQt imports
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QMessageBox, QSplashScreen, QDialog,
+    QApplication, QMainWindow, QMessageBox, QDialog,
     QToolBar, QStatusBar, QPushButton, QLabel, QProgressDialog,
-    QVBoxLayout, QLineEdit, QHBoxLayout, QProgressBar, QMenu
+    QVBoxLayout, QLineEdit, QHBoxLayout, QProgressBar, QMenu, QWidget
 )
 from PyQt6.QtWebEngineCore import QWebEnginePage
-from primebooks.login_dialogs import UserSwitchDialog, InitialLoginDialog
-from primebooks.update_manager import UpdateManager
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtCore import QUrl, QTimer, Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QPixmap, QAction, QIcon, QPageLayout
+from PyQt6.QtCore import QUrl, QTimer, Qt, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve
+from PyQt6.QtGui import QPixmap, QAction, QIcon, QPageLayout, QFont
 from PyQt6.QtPrintSupport import QPrintDialog, QPrinter
-import time
-
-# Setup logging
-log_dir = Path.home() / '.local' / 'share' / 'PrimeBooks' / 'logs'
-log_dir.mkdir(parents=True, exist_ok=True)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(log_dir / f'primebooks_{datetime.now().strftime("%Y%m%d")}.log')
-    ]
-)
-logger = logging.getLogger(__name__)
 
 
 def find_free_port():
@@ -148,30 +129,513 @@ def find_free_port():
 
 
 # ============================================================================
+# ✅ ENHANCED INITIALIZATION THREAD
+# ============================================================================
+
+class EnhancedInitializationThread(QThread):
+    """Background thread for initialization with detailed progress"""
+    progress = pyqtSignal(str, int, str)  # (message, percentage, detail)
+    finished = pyqtSignal(bool, str)  # (success, error_message)
+    health_check = pyqtSignal(str, bool)  # (component, healthy)
+
+    def __init__(self, data_dir):
+        super().__init__()
+        self.data_dir = data_dir
+        self.should_stop = False
+
+    def run(self):
+        """Run initialization with comprehensive checks - CORRECTED ORDER"""
+        try:
+            # Step 1: System requirements (5%)
+            self.progress.emit("Checking system requirements...", 5, "Validating environment")
+            if not self.check_system_requirements():
+                self.finished.emit(False, "System requirements not met")
+                return
+
+            # Step 2: PostgreSQL initialization (15%)
+            self.progress.emit("Starting database engine...", 15, "Initializing PostgreSQL")
+            if not self.init_postgresql():
+                self.finished.emit(False, "Failed to initialize PostgreSQL")
+                return
+
+            # Step 3: Django initialization (35%) - MOVED UP!
+            self.progress.emit("Loading application framework...", 35, "Initializing Django")
+            if not self.init_django():
+                self.finished.emit(False, "Failed to initialize Django")
+                return
+
+            # Step 4: Database health check (50%) - MOVED DOWN!
+            self.progress.emit("Verifying database connection...", 50, "Running health checks")
+            if not self.check_database_health():
+                self.finished.emit(False, "Database health check failed")
+                return
+
+            # Step 5: Schema setup (65%)
+            self.progress.emit("Configuring database schema...", 65, "Setting up tables")
+            if not self.ensure_database_schema():
+                self.finished.emit(False, "Failed to setup database schema")
+                return
+
+            # Step 6: Run migrations (80%)
+            self.progress.emit("Applying database migrations...", 80, "Updating schema")
+            if not self.run_migrations():
+                self.finished.emit(False, "Failed to run migrations")
+                return
+
+            # Step 7: Final health checks (90%)
+            self.progress.emit("Running final checks...", 90, "Verifying system integrity")
+            if not self.final_health_checks():
+                self.finished.emit(False, "Final health checks failed")
+                return
+
+            # Step 8: Complete (100%)
+            self.progress.emit("Startup complete!", 100, "Ready to use")
+            time.sleep(0.3)
+            self.finished.emit(True, "")
+
+        except Exception as e:
+            logger.error(f"Initialization error: {e}", exc_info=True)
+            self.finished.emit(False, str(e))
+
+    def check_system_requirements(self):
+        """Check system requirements"""
+        try:
+            if not self.data_dir.exists():
+                self.data_dir.mkdir(parents=True, exist_ok=True)
+
+            test_file = self.data_dir / '.write_test'
+            test_file.touch()
+            test_file.unlink()
+
+            self.health_check.emit("File System", True)
+            return True
+        except Exception as e:
+            logger.error(f"System requirements check failed: {e}")
+            self.health_check.emit("File System", False)
+            return False
+
+    def init_postgresql(self):
+        """Initialize PostgreSQL with retry logic"""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                from primebooks.postgres_manager import EmbeddedPostgresManager
+                from django.conf import settings
+
+                pg_manager = EmbeddedPostgresManager(self.data_dir)
+
+                if not pg_manager.setup(progress_callback=lambda msg: None):
+                    if attempt < max_retries - 1:
+                        self.progress.emit(
+                            f"Retrying database initialization... ({attempt + 1}/{max_retries})",
+                            20,
+                            "Connection attempt failed"
+                        )
+                        time.sleep(2)
+                        continue
+                    return False
+
+                settings.DATABASES['default'].update(pg_manager.get_connection_params())
+
+                self.health_check.emit("PostgreSQL", True)
+                return True
+
+            except Exception as e:
+                logger.error(f"PostgreSQL init error (attempt {attempt + 1}): {e}")
+                if attempt >= max_retries - 1:
+                    self.health_check.emit("PostgreSQL", False)
+                    return False
+                time.sleep(2)
+
+        return False
+
+    def check_database_health(self):
+        """Verify database connection"""
+        try:
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1;")
+                result = cursor.fetchone()
+                if result and result[0] == 1:
+                    self.health_check.emit("Database Connection", True)
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            self.health_check.emit("Database Connection", False)
+            return False
+
+    def init_django(self):
+        """Initialize Django"""
+        try:
+            import django
+            django.setup()
+            logger.info("✅ Django initialized")
+            self.health_check.emit("Django", True)
+            return True
+        except Exception as e:
+            logger.error(f"Django init error: {e}")
+            self.health_check.emit("Django", False)
+            return False
+
+    def ensure_database_schema(self):
+        """Ensure database schema exists"""
+        try:
+            first_run = not (self.data_dir / '.initialized').exists()
+
+            if first_run:
+                logger.info("First run - setting up database...")
+
+                # Try loading from SQL dump first
+                public_sql_path = BASE_DIR / 'primebooks_public.sql'
+
+                if public_sql_path.exists():
+                    logger.info("📄 Loading schema from SQL dump...")
+                    if load_schema_from_sql(public_sql_path):
+                        logger.info("✅ Schema loaded from SQL dump!")
+
+                        # Create marker file to indicate schema was loaded from SQL
+                        (self.data_dir / '.schema_from_sql').touch()
+
+                        # Create session table
+                        self.create_session_table()
+                    else:
+                        logger.warning("Failed to load from SQL, falling back to migrations")
+                        return False
+                else:
+                    logger.info("No SQL dump found")
+                    return False
+
+            self.health_check.emit("Database Schema", True)
+            return True
+
+        except Exception as e:
+            logger.error(f"Schema setup error: {e}", exc_info=True)
+            self.health_check.emit("Database Schema", False)
+            return False
+
+    def create_session_table(self):
+        """Create Django session table"""
+        try:
+            from django.db import connection
+
+            with connection.cursor() as cursor:
+                cursor.execute("SET search_path TO public;")
+
+                cursor.execute("""
+                               CREATE TABLE IF NOT EXISTS django_session
+                               (
+                                   session_key
+                                   varchar
+                               (
+                                   40
+                               ) NOT NULL PRIMARY KEY,
+                                   session_data text NOT NULL,
+                                   expire_date timestamp with time zone NOT NULL
+                                                             );
+                               """)
+
+                cursor.execute("""
+                               CREATE INDEX IF NOT EXISTS django_session_expire_date_idx
+                                   ON django_session (expire_date);
+                               """)
+
+            logger.info("✅ django_session table ready")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not create session table: {e}")
+
+    def run_migrations(self):
+        """Run database migrations (silent)"""
+        try:
+            from django.core.management import call_command
+            from django.db import connection
+
+            first_run = not (self.data_dir / '.initialized').exists()
+
+            if first_run:
+                # Check if schema was loaded from SQL dump
+                schema_from_sql = (self.data_dir / '.schema_from_sql').exists()
+
+                if schema_from_sql:
+                    # Schema already exists from SQL dump - just mark migrations as applied
+                    logger.info("Schema loaded from SQL - marking migrations as applied...")
+                    call_command('migrate_schemas',
+                                 schema_name='public',
+                                 interactive=False,
+                                 verbosity=0,
+                                 fake=True)  # Don't actually run, just mark as applied
+                else:
+                    # No SQL dump - run migrations normally
+                    logger.info("Running migrations...")
+                    call_command('migrate_schemas',
+                                 schema_name='public',
+                                 interactive=False,
+                                 verbosity=0)
+
+                (self.data_dir / '.initialized').touch()
+                logger.info("✅ Migrations completed")
+
+            self.health_check.emit("Migrations", True)
+            return True
+
+        except Exception as e:
+            logger.error(f"Migration error: {e}")
+            self.health_check.emit("Migrations", False)
+            return False
+
+    def final_health_checks(self):
+        """Run final health checks"""
+        try:
+            from django.db import connection
+
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT version();")
+                version = cursor.fetchone()
+                logger.info(f"PostgreSQL version: {version[0]}")
+
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                               SELECT COUNT(*)
+                               FROM information_schema.tables
+                               WHERE table_schema = 'public';
+                               """)
+                table_count = cursor.fetchone()[0]
+                logger.info(f"Tables in public schema: {table_count}")
+
+            self.health_check.emit("System Health", True)
+            return True
+
+        except Exception as e:
+            logger.error(f"Final health check failed: {e}")
+            self.health_check.emit("System Health", False)
+            return False
+
+    def stop(self):
+        """Stop initialization"""
+        self.should_stop = True
+
+
+# ============================================================================
+# ✅ ENHANCED SPLASH SCREEN
+# ============================================================================
+
+class EnhancedSplashScreen(QWidget):
+    """Modern, animated splash screen with health monitoring"""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setFixedSize(600, 450)
+        self.health_status = {}
+
+        # Center on screen
+        screen = QApplication.primaryScreen().geometry()
+        self.move(
+            (screen.width() - self.width()) // 2,
+            (screen.height() - self.height()) // 2
+        )
+
+        self.setup_ui()
+        self.setup_animations()
+
+    def setup_ui(self):
+        """Setup UI elements"""
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(50, 50, 50, 50)
+        main_layout.setSpacing(25)
+
+        # Gradient background
+        self.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #667eea, stop:1 #764ba2);
+                border-radius: 15px;
+            }
+        """)
+
+        # Title
+        title = QLabel("PrimeBooks")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_font = QFont("Segoe UI", 42, QFont.Weight.Bold)
+        title.setFont(title_font)
+        title.setStyleSheet("""
+            color: white;
+            background: transparent;
+        """)
+        main_layout.addWidget(title)
+
+        # Subtitle
+        subtitle = QLabel("Desktop Edition")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle_font = QFont("Segoe UI", 16)
+        subtitle.setFont(subtitle_font)
+        subtitle.setStyleSheet("color: rgba(255, 255, 255, 0.9); background: transparent;")
+        main_layout.addWidget(subtitle)
+
+        main_layout.addSpacing(20)
+
+        # Status label
+        self.status_label = QLabel("Initializing...")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status_font = QFont("Segoe UI", 14, QFont.Weight.Medium)
+        self.status_label.setFont(status_font)
+        self.status_label.setStyleSheet("color: white; background: transparent;")
+        main_layout.addWidget(self.status_label)
+
+        # Detail label
+        self.detail_label = QLabel("")
+        self.detail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        detail_font = QFont("Segoe UI", 11)
+        self.detail_label.setFont(detail_font)
+        self.detail_label.setStyleSheet("color: rgba(255, 255, 255, 0.7); background: transparent;")
+        main_layout.addWidget(self.detail_label)
+
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(10)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                background-color: rgba(255, 255, 255, 0.2);
+                border-radius: 5px;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4facfe, stop:1 #00f2fe);
+                border-radius: 5px;
+            }
+        """)
+        main_layout.addWidget(self.progress_bar)
+
+        # Percentage label
+        self.percent_label = QLabel("0%")
+        self.percent_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        percent_font = QFont("Segoe UI", 12)
+        self.percent_label.setFont(percent_font)
+        self.percent_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background: transparent;")
+        main_layout.addWidget(self.percent_label)
+
+        # Health status container
+        self.health_container = QWidget()
+        self.health_container.setStyleSheet("background: transparent;")
+        health_layout = QVBoxLayout()
+        health_layout.setSpacing(5)
+        self.health_container.setLayout(health_layout)
+        self.health_container.hide()
+        main_layout.addWidget(self.health_container)
+
+        main_layout.addStretch()
+
+        # Footer
+        footer_layout = QHBoxLayout()
+        footer_layout.setSpacing(20)
+
+        version = QLabel("v1.0.0")
+        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_font = QFont("Segoe UI", 10)
+        version.setFont(version_font)
+        version.setStyleSheet("color: rgba(255, 255, 255, 0.6); background: transparent;")
+        footer_layout.addWidget(version)
+
+        # Retry button
+        self.retry_button = QPushButton("Retry")
+        self.retry_button.setFixedSize(80, 30)
+        self.retry_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 0.2);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 5px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.3);
+            }
+        """)
+        self.retry_button.hide()
+        footer_layout.addWidget(self.retry_button)
+
+        main_layout.addLayout(footer_layout)
+
+        self.setLayout(main_layout)
+
+    def setup_animations(self):
+        """Setup smooth animations"""
+        self.progress_animation = QPropertyAnimation(self.progress_bar, b"value")
+        self.progress_animation.setDuration(300)
+        self.progress_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+
+    def update_progress(self, message, percentage, detail=""):
+        """Update progress with animation"""
+        self.progress_animation.setEndValue(percentage)
+        self.progress_animation.start()
+
+        self.status_label.setText(message)
+        self.detail_label.setText(detail)
+        self.percent_label.setText(f"{percentage}%")
+
+        QApplication.processEvents()
+
+    def add_health_status(self, component, healthy):
+        """Add or update health status indicator"""
+        if component not in self.health_status:
+            status_widget = QWidget()
+            status_widget.setStyleSheet("background: transparent;")
+            status_layout = QHBoxLayout()
+            status_layout.setContentsMargins(0, 0, 0, 0)
+
+            icon = QLabel("●")
+            icon_font = QFont("Segoe UI", 12)
+            icon.setFont(icon_font)
+            icon.setFixedWidth(20)
+
+            label = QLabel(component)
+            label_font = QFont("Segoe UI", 10)
+            label.setFont(label_font)
+            label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background: transparent;")
+
+            status_layout.addWidget(icon)
+            status_layout.addWidget(label)
+            status_layout.addStretch()
+
+            status_widget.setLayout(status_layout)
+            self.health_container.layout().addWidget(status_widget)
+
+            self.health_status[component] = (icon, label)
+            self.health_container.show()
+
+        icon, label = self.health_status[component]
+        if healthy:
+            icon.setStyleSheet("color: #2ecc71; background: transparent;")
+        else:
+            icon.setStyleSheet("color: #e74c3c; background: transparent;")
+
+    def show_error(self, message):
+        """Show error state"""
+        self.status_label.setText("Startup Failed")
+        self.status_label.setStyleSheet("color: #e74c3c; background: transparent; font-weight: bold;")
+        self.detail_label.setText(message)
+        self.retry_button.show()
+
+
+# ============================================================================
 # SQL SCHEMA LOADER
 # ============================================================================
 
 def load_schema_from_sql(sql_file_path, schema_name=None):
-    """
-    Load database schema from SQL dump file
-
-    Args:
-        sql_file_path: Path to SQL file
-        schema_name: If provided, replaces 'template' with this name
-
-    Returns:
-        bool: True if successful
-    """
+    """Load database schema from SQL dump file"""
     from django.db import connection
 
     logger.info(f"📄 Loading schema from: {sql_file_path}")
 
     try:
-        # Read SQL file
         with open(sql_file_path, 'r', encoding='utf-8') as f:
             sql_content = f.read()
 
-        # If schema_name provided, replace 'template' references
         if schema_name:
             logger.info(f"Replacing 'template' with '{schema_name}' in SQL")
             sql_content = sql_content.replace('CREATE SCHEMA template;', f'CREATE SCHEMA {schema_name};')
@@ -179,43 +643,20 @@ def load_schema_from_sql(sql_file_path, schema_name=None):
             sql_content = sql_content.replace("'template'", f"'{schema_name}'")
             sql_content = sql_content.replace('SET search_path TO template;', f'SET search_path TO {schema_name};')
 
-        # Clean the SQL content - remove problematic commands
         lines = sql_content.split('\n')
         cleaned_lines = []
 
         for line in lines:
             stripped = line.strip()
-
-            # Skip empty lines
-            if not stripped:
+            if not stripped or stripped.startswith('--') or stripped.startswith('\\'):
                 continue
-
-            # Skip comments
-            if stripped.startswith('--'):
+            if stripped.upper().startswith('SET ') or 'pg_catalog.set_config' in stripped:
                 continue
-
-            # Skip psql commands (backslash commands)
-            if stripped.startswith('\\'):
-                logger.debug(f"Skipping psql command: {stripped[:50]}...")
-                continue
-
-            # Skip SET statements (session-specific)
-            if stripped.upper().startswith('SET '):
-                continue
-
-            # Skip SELECT pg_catalog.set_config
-            if 'pg_catalog.set_config' in stripped:
-                continue
-
             cleaned_lines.append(line)
 
         cleaned_sql = '\n'.join(cleaned_lines)
 
-        # Execute SQL statement by statement
         with connection.cursor() as cursor:
-            logger.info("Executing SQL statements...")
-
-            # Split by semicolon (statement separator)
             statements = []
             current_statement = []
 
@@ -225,7 +666,6 @@ def load_schema_from_sql(sql_file_path, schema_name=None):
                     statements.append('\n'.join(current_statement))
                     current_statement = []
 
-            # Execute each statement
             executed = 0
             skipped = 0
 
@@ -238,8 +678,7 @@ def load_schema_from_sql(sql_file_path, schema_name=None):
                     cursor.execute(statement)
                     executed += 1
                 except Exception as e:
-                    # Log but continue with other statements
-                    logger.warning(f"Skipped statement (error: {str(e)[:50]}): {statement[:100]}...")
+                    logger.warning(f"Skipped statement: {statement[:100]}...")
                     skipped += 1
 
             logger.info(f"✅ Executed {executed} statements ({skipped} skipped)")
@@ -253,20 +692,10 @@ def load_schema_from_sql(sql_file_path, schema_name=None):
 
 
 def verify_schema_tables(schema_name, required_tables=None):
-    """
-    Verify that required tables exist in schema
-
-    Args:
-        schema_name: Schema to check
-        required_tables: List of table names to verify (None = skip check)
-
-    Returns:
-        bool: True if all tables exist
-    """
+    """Verify that required tables exist in schema"""
     from django.db import connection
 
     if not required_tables:
-        # Just check that schema exists
         with connection.cursor() as cursor:
             cursor.execute("""
                            SELECT schema_name
@@ -282,7 +711,6 @@ def verify_schema_tables(schema_name, required_tables=None):
                 logger.error(f"❌ Schema '{schema_name}' does not exist")
                 return False
 
-    # Check specific tables
     with connection.cursor() as cursor:
         cursor.execute(f"SET search_path TO {schema_name};")
 
@@ -366,7 +794,7 @@ class DesktopLoginDialog(QDialog):
         layout.addWidget(email_label)
 
         self.email_input = QLineEdit()
-        self.email_input.setPlaceholderText("nashvybzesdeveloper@gmail.com")
+        self.email_input.setPlaceholderText("your@email.com")
         self.email_input.setStyleSheet(self.subdomain_input.styleSheet())
         layout.addWidget(self.email_input)
         layout.addSpacing(10)
@@ -658,147 +1086,19 @@ class DataSyncThread(QThread):
 
 
 # ============================================================================
-# POSTGRES INIT THREAD
+# DJANGO SERVER
 # ============================================================================
 
-class PostgresInitThread(QThread):
-    """Thread for initializing PostgreSQL"""
-    progress = pyqtSignal(str)
-    finished = pyqtSignal(bool, str)
-
-    def run(self):
-        """Initialize PostgreSQL in background"""
-        try:
-            from primebooks.postgres_manager import EmbeddedPostgresManager
-            from django.conf import settings
-
-            self.progress.emit("Initializing PostgreSQL...")
-            pg_manager = EmbeddedPostgresManager(settings.DESKTOP_DATA_DIR)
-
-            if not pg_manager.setup(progress_callback=self.progress.emit):
-                self.finished.emit(False, "Failed to setup PostgreSQL")
-                return
-
-            settings.DATABASES['default'].update(pg_manager.get_connection_params())
-
-            self.finished.emit(True, "PostgreSQL ready")
-
-        except Exception as e:
-            logger.error(f"PostgreSQL init error: {e}", exc_info=True)
-            self.finished.emit(False, str(e))
-
-
-def initialize_django(data_dir):
-    """
-    ✅ NEW: Initialize Django using SQL dumps (FAST!)
-    """
-    logger.info("Initializing Django in desktop mode")
-    logger.info(f"Data directory: {data_dir}")
-
-    # Setup Django first
-    import django
-    django.setup()
-    logger.info("✅ Django apps loaded")
-
-    # Check if this is first run
-    first_run = not (data_dir / '.initialized').exists()
-
-    if first_run:
-        logger.info("🚀 First run detected - loading schema from SQL dumps...")
-
-        try:
-            from django.db import connection
-
-            # ============================================================
-            # STEP 1: Load public schema from SQL dump
-            # ============================================================
-            logger.info("📄 Loading public schema from primebooks_public.sql...")
-
-            public_sql_path = BASE_DIR / 'primebooks_public.sql'
-            if not public_sql_path.exists():
-                raise FileNotFoundError(f"Public schema SQL file not found: {public_sql_path}")
-
-            if not load_schema_from_sql(public_sql_path):
-                raise Exception("Failed to load public schema from SQL")
-
-            logger.info("✅ Public schema loaded from SQL (2-3 seconds instead of 60!)")
-
-            # ✅ Ensure django_session table exists in public schema
-            logger.info("🔄 Creating django_session table in public schema...")
-            try:
-                from django.core.management import call_command
-                from django.db import connection
-
-                with connection.cursor() as cursor:
-                    cursor.execute("SET search_path TO public;")
-
-                    # Create django_session table if it doesn't exist
-                    cursor.execute("""
-                                   CREATE TABLE IF NOT EXISTS django_session
-                                   (
-                                       session_key
-                                       varchar
-                                   (
-                                       40
-                                   ) NOT NULL PRIMARY KEY,
-                                       session_data text NOT NULL,
-                                       expire_date timestamp with time zone NOT NULL
-                                                                 );
-                                   """)
-
-                    cursor.execute("""
-                                   CREATE INDEX IF NOT EXISTS django_session_expire_date_idx
-                                       ON django_session (expire_date);
-                                   """)
-
-                logger.info("✅ django_session table ready in public schema")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not create session table: {e}")
-
-            # ============================================================
-            # STEP 2: Verify public schema
-            # ============================================================
-            if not verify_schema_tables('public'):
-                raise Exception("Public schema verification failed")
-
-            # Mark as initialized
-            (data_dir / '.initialized').touch()
-            logger.info("✅ Database initialized successfully using SQL dumps! 🚀")
-
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize from SQL dumps: {e}", exc_info=True)
-            logger.warning("⚠️ Falling back to Django migrations...")
-
-            # Fallback to old method
-            try:
-                from django.core.management import call_command
-
-                # Create basic tables manually
-                with connection.cursor() as cursor:
-                    cursor.execute("CREATE SCHEMA IF NOT EXISTS public;")
-                    cursor.execute("SET search_path TO public;")
-
-                # Run migrations
-                call_command('migrate_schemas',
-                             schema_name='public',
-                             interactive=False,
-                             verbosity=2)
-
-                (data_dir / '.initialized').touch()
-                logger.info("✅ Database initialized using migrations (fallback)")
-
-            except Exception as fallback_error:
-                logger.error(f"❌ Fallback migration also failed: {fallback_error}", exc_info=True)
-                raise
-    else:
-        logger.info("Database already initialized")
-
-    return True
-
-
 def run_django_server(port):
-    """Run Django development server"""
+    """Run Django development server (SILENT!)"""
     try:
+        if not DEBUG_MODE:
+            import io
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            sys.stdout = io.StringIO()
+            sys.stderr = io.StringIO()
+
         from django.core.management import execute_from_command_line
         logger.info(f"Starting Django server on port {port}...")
         execute_from_command_line([
@@ -807,6 +1107,11 @@ def run_django_server(port):
             f'127.0.0.1:{port}',
             '--noreload',
         ])
+
+        if not DEBUG_MODE:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+
     except Exception as e:
         logger.error(f"Django server error: {e}", exc_info=True)
 
@@ -819,17 +1124,12 @@ class CustomWebEnginePage(QWebEnginePage):
         self.parent_window = parent_window
 
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):
-        """
-        Intercept navigation requests to handle print links
-        """
+        """Intercept navigation requests to handle print links"""
         url_string = url.toString()
 
-        # Check if this is a print receipt URL
         if '/print-receipt/' in url_string or '/print_receipt/' in url_string:
             logger.info(f"🖨️ Print request intercepted: {url_string}")
 
-            # Extract sale ID from URL
-            # URL format: /sales/123/print-receipt/
             try:
                 parts = url_string.split('/')
                 sale_id_index = parts.index('sales') + 1 if 'sales' in parts else -1
@@ -838,21 +1138,17 @@ class CustomWebEnginePage(QWebEnginePage):
                     sale_id = parts[sale_id_index]
                     logger.info(f"📄 Triggering PDF export for sale #{sale_id}")
 
-                    # Trigger PDF export instead of navigation
                     self.parent_window.print_to_pdf_simple()
-
-                    # Prevent navigation
                     return False
 
             except Exception as e:
                 logger.error(f"Error parsing print URL: {e}")
 
-        # Allow all other navigation
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
 
 # ============================================================================
-# MAIN WINDOW (Keeping your existing implementation)
+# MAIN WINDOW
 # ============================================================================
 
 class PrimeBooksWindow(QMainWindow):
@@ -867,6 +1163,7 @@ class PrimeBooksWindow(QMainWindow):
         self.browser = None
         self.sync_scheduler = None
         self.update_manager = None
+        self.current_user_email = ""
 
         self.setup_ui()
         self.setup_toolbar()
@@ -892,7 +1189,6 @@ class PrimeBooksWindow(QMainWindow):
             self.browser.settings().WebAttribute.PluginsEnabled, True
         )
 
-        # ✅ NEW: Connect load handler for print interception
         self.browser.loadFinished.connect(self.on_page_loaded)
 
         self.setCentralWidget(self.browser)
@@ -903,8 +1199,6 @@ class PrimeBooksWindow(QMainWindow):
         """Inject print handler when page loads"""
         if success:
             logger.info("📄 Page loaded successfully")
-
-            # Wait a bit for DOM to be ready
             QTimer.singleShot(500, self.inject_print_handler)
 
     def inject_print_handler(self):
@@ -925,12 +1219,9 @@ class PrimeBooksWindow(QMainWindow):
 
                     console.log('📄 Print request:', href);
 
-                    // Call Python handler via window.pywebchannel if available
-                    // Otherwise, post message
                     if (window.printHandler) {
                         window.printHandler.handlePrint(href);
                     } else {
-                        // Fallback: navigate to receipt page
                         window.__navigatingToPrint = true;
                         window.location.href = href;
                     }
@@ -946,30 +1237,19 @@ class PrimeBooksWindow(QMainWindow):
         self.browser.page().runJavaScript(js_code)
 
     def handle_print_request(self, receipt_url):
-        """
-        Handle print request by:
-        1. Creating hidden browser
-        2. Loading receipt
-        3. Printing
-        4. Closing hidden browser
-        """
+        """Handle print request"""
         logger.info(f"🖨️ Handling print request: {receipt_url}")
 
-        # Create hidden browser for receipt
         self.print_browser = QWebEngineView()
         self.print_browser.hide()
 
-        # Connect load handler
         def on_receipt_loaded(success):
             if success:
                 logger.info("✅ Receipt loaded, printing...")
-
-                # Wait a bit for rendering
                 QTimer.singleShot(1000, lambda: self.print_receipt_in_hidden_browser())
 
         self.print_browser.loadFinished.connect(on_receipt_loaded)
 
-        # Load receipt URL
         full_url = f"http://{self.subdomain}.localhost:{self.port}{receipt_url}"
         self.print_browser.setUrl(QUrl(full_url))
 
@@ -983,13 +1263,9 @@ class PrimeBooksWindow(QMainWindow):
         timestamp = int(time.time())
         pdf_path = Path(tempfile.gettempdir()) / f"receipt_{timestamp}.pdf"
 
-        # Print to PDF
         self.print_browser.page().printToPdf(str(pdf_path))
 
-        # Wait, then open PDF
         QTimer.singleShot(2000, lambda: self.open_receipt_pdf(pdf_path))
-
-        # Clean up hidden browser
         QTimer.singleShot(3000, lambda: self.cleanup_print_browser())
 
     def open_receipt_pdf(self, pdf_path):
@@ -999,7 +1275,6 @@ class PrimeBooksWindow(QMainWindow):
 
         if not pdf_path.exists():
             logger.warning(f"PDF not ready yet: {pdf_path}")
-            # Try again
             QTimer.singleShot(1000, lambda: self.open_receipt_pdf(pdf_path))
             return
 
@@ -1027,11 +1302,14 @@ class PrimeBooksWindow(QMainWindow):
     def setup_print_support(self):
         """Setup print functionality for web pages"""
         self.browser.page().printRequested.connect(self.handle_print_request)
-        logger.info("✅ Print support enabled (JavaScript window.print() intercept)")
+        logger.info("✅ Print support enabled")
 
     def setup_update_manager(self):
         """Initialize auto-update manager"""
         try:
+            from primebooks.update_manager import UpdateManager
+            from django.conf import settings
+
             server_url = f"http://{self.subdomain}.localhost:8000" if settings.DEBUG else f"https://{self.subdomain}.primebooks.sale"
 
             self.update_manager = UpdateManager(
@@ -1043,16 +1321,13 @@ class PrimeBooksWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Failed to start update manager: {e}")
 
-    # ========================================================================
-    # ✅ NEW: USER SWITCHING
-    # ========================================================================
-
     def switch_user(self):
         """Switch to different user without restarting app"""
         logger.info("🔄 User switch requested")
 
         try:
-            # Show user switch dialog
+            from primebooks.login_dialogs import UserSwitchDialog
+
             dialog = UserSwitchDialog(
                 company_schema=self.subdomain,
                 company_id=self.tenant_id,
@@ -1060,20 +1335,16 @@ class PrimeBooksWindow(QMainWindow):
             )
 
             if dialog.exec() == QDialog.DialogCode.Accepted:
-                # User successfully authenticated
                 new_user_email = dialog.user_data['email']
 
                 logger.info(f"✅ User switched: {self.current_user_email} → {new_user_email}")
 
                 self.current_user_email = new_user_email
 
-                # Update status bar
                 self.status_label.setText(f"● {self.subdomain} - {new_user_email}")
 
-                # Reload the page to show new user's session
                 self.browser.reload()
 
-                # Show success message
                 self.statusBar.showMessage(f"✅ Logged in as {new_user_email}", 3000)
             else:
                 logger.info("User switch cancelled")
@@ -1086,16 +1357,9 @@ class PrimeBooksWindow(QMainWindow):
                 f"Failed to switch user:\n\n{str(e)}"
             )
 
-    def handle_print_request(self):
-        """Handle print request from JavaScript (window.print())"""
-        logger.info("🖨️ Print requested from web page (window.print() called)")
-        self.print_to_pdf_simple()
-
     def print_page(self):
-        """Main print function - shows user choice"""
+        """Main print function"""
         try:
-            from PyQt6.QtWidgets import QMessageBox
-
             reply = QMessageBox.question(
                 self,
                 "Print Document",
@@ -1161,8 +1425,7 @@ class PrimeBooksWindow(QMainWindow):
         """Export to PDF and open"""
         try:
             import tempfile
-            import time
-            from PyQt6.QtCore import QTimer
+            from pathlib import Path
 
             logger.info("📄 Starting PDF export...")
 
@@ -1183,8 +1446,7 @@ class PrimeBooksWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "PDF Export Error",
-                f"Failed to export PDF:\n\n{str(e)}\n\n"
-                f"Please try using your browser's built-in print function."
+                f"Failed to export PDF:\n\n{str(e)}"
             )
 
     def open_pdf_for_print(self, pdf_path):
@@ -1221,8 +1483,7 @@ class PrimeBooksWindow(QMainWindow):
                 self,
                 "PDF Ready",
                 f"PDF created successfully!\n\n"
-                f"Location:\n{pdf_path}\n\n"
-                f"Please open it manually if it didn't open automatically."
+                f"Location:\n{pdf_path}"
             )
 
     def load_application(self):
@@ -1232,7 +1493,7 @@ class PrimeBooksWindow(QMainWindow):
         self.browser.setUrl(QUrl(url))
 
     def setup_toolbar(self):
-        """Setup application toolbar with navigation, sync, and user switching"""
+        """Setup application toolbar"""
         toolbar = QToolBar("Main Toolbar")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
@@ -1267,14 +1528,14 @@ class PrimeBooksWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        # ✅ NEW: Switch User Button
+        # Switch User Button
         switch_user_action = QAction("👥 Switch User", self)
         switch_user_action.triggered.connect(self.switch_user)
         toolbar.addAction(switch_user_action)
 
         toolbar.addSeparator()
 
-        # Status label (show current user)
+        # Status label
         self.status_label = QLabel(f"● {self.subdomain}")
         self.status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
         toolbar.addWidget(self.status_label)
@@ -1313,7 +1574,6 @@ class PrimeBooksWindow(QMainWindow):
             logger.info("🔄 Manual sync requested by user")
 
             from primebooks.sync_dialogs import ManualSyncDialog
-            from PyQt6.QtWidgets import QMessageBox
 
             if not self.auth_token:
                 logger.error("❌ No auth token available for sync")
@@ -1350,27 +1610,23 @@ class PrimeBooksWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Module Error",
-                f"Failed to load sync module:\n\n{str(e)}\n\n"
-                f"The sync feature may not be properly installed."
+                f"Failed to load sync module:\n\n{str(e)}"
             )
         except Exception as e:
             logger.error(f"❌ Manual sync error: {e}", exc_info=True)
             QMessageBox.critical(
                 self,
                 "Sync Error",
-                f"An error occurred during sync:\n\n{str(e)}\n\n"
-                f"Check the logs for more details."
+                f"An error occurred during sync:\n\n{str(e)}"
             )
 
     def logout(self):
         """Logout with option to switch user or quit"""
-        # Create custom message box
         msg = QMessageBox(self)
         msg.setWindowTitle("Logout")
         msg.setText("What would you like to do?")
         msg.setIcon(QMessageBox.Icon.Question)
 
-        # Add buttons
         switch_btn = msg.addButton("Switch User", QMessageBox.ButtonRole.AcceptRole)
         quit_btn = msg.addButton("Quit App", QMessageBox.ButtonRole.RejectRole)
         cancel_btn = msg.addButton("Cancel", QMessageBox.ButtonRole.ActionRole)
@@ -1380,11 +1636,9 @@ class PrimeBooksWindow(QMainWindow):
         clicked_button = msg.clickedButton()
 
         if clicked_button == switch_btn:
-            # Switch user
             self.switch_user()
 
         elif clicked_button == quit_btn:
-            # Quit app
             reply = QMessageBox.question(
                 self,
                 'Quit',
@@ -1393,13 +1647,11 @@ class PrimeBooksWindow(QMainWindow):
             )
 
             if reply == QMessageBox.StandardButton.Yes:
-                # Stop services
                 if self.sync_scheduler:
                     self.sync_scheduler.stop()
                 if self.update_manager:
                     self.update_manager.stop()
 
-                # Stop PostgreSQL
                 try:
                     from primebooks.postgres_manager import EmbeddedPostgresManager
                     from django.conf import settings
@@ -1420,13 +1672,11 @@ class PrimeBooksWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            # Stop services
             if self.sync_scheduler:
                 self.sync_scheduler.stop()
-            if self.update_manager:  # ✅ NEW
+            if self.update_manager:
                 self.update_manager.stop()
 
-            # Stop PostgreSQL
             try:
                 from primebooks.postgres_manager import EmbeddedPostgresManager
                 from django.conf import settings
@@ -1440,18 +1690,12 @@ class PrimeBooksWindow(QMainWindow):
             event.ignore()
 
 
-def show_error_dialog(title, message):
-    """Show error dialog"""
-    app = QApplication(sys.argv)
-    QMessageBox.critical(None, title, message)
-    sys.exit(1)
-
+# ============================================================================
+# ✅ MAIN FUNCTION WITH ENHANCED SPLASH
+# ============================================================================
 
 def main():
-    """Main application entry point"""
-    from PyQt6.QtWidgets import QApplication, QProgressDialog, QMessageBox, QDialog
-    from PyQt6.QtCore import Qt
-
+    """Main application entry point with enhanced GUI splash screen"""
     try:
         logger.info("=" * 50)
         logger.info("🚀 Starting PrimeBooks Desktop")
@@ -1470,49 +1714,136 @@ def main():
         from django.conf import settings
         data_dir = settings.DESKTOP_DATA_DIR
 
-        refs = {
+        # State container
+        state = {
+            'splash': None,
+            'init_thread': None,
             'window': None,
             'subdomain': None,
-            'port': None,
             'tenant_id': None,
             'token': None,
+            'port': None,
         }
 
-        # PostgreSQL Init
-        progress = QProgressDialog("Initializing PostgreSQL...", None, 0, 0)
-        progress.setWindowTitle("PrimeBooks - Startup")
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.show()
+        # ✅ SHOW ENHANCED SPLASH SCREEN
+        state['splash'] = EnhancedSplashScreen()
+        state['splash'].show()
+        app.processEvents()
 
-        def on_postgres_progress(message):
-            progress.setLabelText(message)
-            app.processEvents()
+        # ✅ CREATE INITIALIZATION THREAD
+        state['init_thread'] = EnhancedInitializationThread(data_dir)
 
-        def on_postgres_finished(success, message):
-            progress.close()
+        def on_progress(message, percentage, detail):
+            if state['splash']:
+                state['splash'].update_progress(message, percentage, detail)
 
+        def on_health_check(component, healthy):
+            if state['splash']:
+                state['splash'].add_health_status(component, healthy)
+
+        def on_retry_clicked():
+            """Handle retry button click"""
+            # Reset UI
+            state['splash'].retry_button.hide()
+            state['splash'].status_label.setStyleSheet("color: white; background: transparent;")
+            state['splash'].progress_bar.setValue(0)
+            state['splash'].percent_label.setText("0%")
+
+            # Clear health status
+            for widget_tuple in state['splash'].health_status.values():
+                for widget in widget_tuple:
+                    widget.setParent(None)
+            state['splash'].health_status.clear()
+
+            # Restart initialization
+            state['init_thread'] = EnhancedInitializationThread(data_dir)
+            state['init_thread'].progress.connect(on_progress)
+            state['init_thread'].health_check.connect(on_health_check)
+            state['init_thread'].finished.connect(on_finished)
+            state['init_thread'].start()
+
+        def on_finished(success, error):
             if not success:
-                QMessageBox.critical(None, "PostgreSQL Error", message)
+                if state['splash']:
+                    state['splash'].show_error(error)
+                    state['splash'].retry_button.clicked.connect(on_retry_clicked)
                 return
 
-            # Django Init
-            try:
-                if not initialize_django(data_dir):
-                    QMessageBox.critical(None, "Init Error", "Failed to initialize database")
-                    return
-            except Exception as e:
-                QMessageBox.critical(None, "Init Error", str(e))
+            # Close splash after a moment
+            if state['splash']:
+                QTimer.singleShot(800, lambda: state['splash'].close())
+
+            # Continue with authentication
+            QTimer.singleShot(900, lambda: continue_startup(app, data_dir, state))
+
+        # Connect signals
+        state['init_thread'].progress.connect(on_progress)
+        state['init_thread'].health_check.connect(on_health_check)
+        state['init_thread'].finished.connect(on_finished)
+        state['init_thread'].start()
+
+        return app.exec()
+
+    except Exception as e:
+        logger.error(f"Fatal error: {e}", exc_info=True)
+
+        try:
+            QMessageBox.critical(
+                None,
+                "Fatal Error",
+                f"An error occurred:\n\n{str(e)}\n\nCheck logs at:\n{log_dir}"
+            )
+        except:
+            pass
+
+        return 1
+
+
+def continue_startup(app, data_dir, state):
+    """Continue startup after initialization"""
+    try:
+        # Authentication
+        from primebooks.auth import DesktopAuthManager
+        auth_manager = DesktopAuthManager()
+
+        saved_token, saved_user, saved_company = auth_manager.load_credentials()
+
+        if not saved_token or not saved_company:
+            # Show login dialog
+            login_dialog = DesktopLoginDialog()
+            if login_dialog.exec() != QDialog.DialogCode.Accepted:
+                app.quit()
                 return
 
-            # Authentication
-            from primebooks.auth import DesktopAuthManager
-            auth_manager = DesktopAuthManager()
+            token = login_dialog.auth_token
+            company_data = login_dialog.company_data
+            user_data = login_dialog.user_data
+            subdomain = company_data.get('schema_name') or company_data.get('subdomain')
+            tenant_id = company_data.get('company_id')
 
-            saved_token, saved_user, saved_company = auth_manager.load_credentials()
-            token, company_data, subdomain, tenant_id = None, None, None, None
+            auth_manager.save_credentials(user_data, company_data, token)
 
-            if not saved_token or not saved_company:
-                logger.info("No saved credentials found. Opening login...")
+            # Create tenant schema if needed
+            tenant_sql_path = BASE_DIR / 'primebooks_tenant.sql'
+            if tenant_sql_path.exists():
+                logger.info("📄 Creating tenant schema from SQL dump...")
+                load_schema_from_sql(tenant_sql_path, schema_name=subdomain)
+
+            # First-time sync
+            sync_dialog = DataSyncDialog(subdomain, token, company_data)
+            sync_dialog.exec()
+        else:
+            # Use saved credentials
+            token = saved_token
+            company_data = saved_company
+            user_data = saved_user
+            subdomain = company_data.get('schema_name') or company_data.get('subdomain')
+            tenant_id = company_data.get('company_id')
+
+            if not subdomain or not tenant_id:
+                logger.info("Invalid saved credentials. Showing login...")
+                auth_manager.logout()
+
                 login_dialog = DesktopLoginDialog()
                 if login_dialog.exec() != QDialog.DialogCode.Accepted:
                     app.quit()
@@ -1521,159 +1852,86 @@ def main():
                 token = login_dialog.auth_token
                 company_data = login_dialog.company_data
                 user_data = login_dialog.user_data
-
                 subdomain = company_data.get('schema_name') or company_data.get('subdomain')
                 tenant_id = company_data.get('company_id')
-
                 auth_manager.save_credentials(user_data, company_data, token)
-
-                logger.info(f"Performing initial sync for {subdomain}...")
-
-                # ✅ Create tenant schema from SQL BEFORE syncing data
-                logger.info("📄 Creating tenant schema from SQL dump...")
-                tenant_sql_path = BASE_DIR / 'primebooks_tenant.sql'
-
-                if not tenant_sql_path.exists():
-                    logger.warning(f"⚠️ Tenant SQL not found: {tenant_sql_path}")
-                    logger.warning("⚠️ Tenant will be created during data sync")
-                else:
-                    if load_schema_from_sql(tenant_sql_path, schema_name=subdomain):
-                        logger.info(f"✅ Tenant schema '{subdomain}' created from SQL!")
-                    else:
-                        logger.warning("⚠️ Failed to load tenant schema from SQL")
 
                 sync_dialog = DataSyncDialog(subdomain, token, company_data)
                 sync_dialog.exec()
-            else:
-                logger.info("Using saved credentials...")
-                token = saved_token
-                company_data = saved_company
-                user_data = saved_user
 
-                subdomain = company_data.get('schema_name') or company_data.get('subdomain')
-                tenant_id = company_data.get('company_id')
+        state['subdomain'] = subdomain
+        state['tenant_id'] = tenant_id
+        state['token'] = token
 
-                if not subdomain or not tenant_id:
-                    logger.info("Invalid saved credentials. Showing login...")
-                    auth_manager.logout()
+        # Start Django server
+        port = find_free_port()
+        state['port'] = port
 
-                    login_dialog = DesktopLoginDialog()
-                    if login_dialog.exec() != QDialog.DialogCode.Accepted:
-                        app.quit()
-                        return
+        logger.info(f"Starting Django server on port {port}...")
 
-                    token = login_dialog.auth_token
-                    company_data = login_dialog.company_data
-                    user_data = login_dialog.user_data
-                    subdomain = company_data.get('schema_name') or company_data.get('subdomain')
-                    tenant_id = company_data.get('company_id')
-                    auth_manager.save_credentials(user_data, company_data, token)
+        django_thread = threading.Thread(
+            target=run_django_server,
+            args=(port,),
+            daemon=True
+        )
+        django_thread.start()
 
-                    sync_dialog = DataSyncDialog(subdomain, token, company_data)
-                    sync_dialog.exec()
+        # Wait for server (silent)
+        max_wait = 30
+        start_time = time.time()
 
-            refs['subdomain'] = subdomain
-            refs['tenant_id'] = tenant_id
-            refs['token'] = token
+        progress_dialog = QProgressDialog("Starting server...", None, 0, 0)
+        progress_dialog.setWindowTitle("PrimeBooks - Starting Server")
+        progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        progress_dialog.show()
 
-            # Start Django server and wait for it
-            port = find_free_port()
-            refs['port'] = port
+        logger.info(f"⏳ Waiting for server to start on port {port}...")
 
-            logger.info(f"Starting Django server on port {port}...")
+        while time.time() - start_time < max_wait:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                result = sock.connect_ex(('127.0.0.1', port))
+                sock.close()
 
-            django_thread = threading.Thread(
-                target=run_django_server,
-                args=(port,),
-                daemon=True
-            )
-            django_thread.start()
+                if result == 0:
+                    logger.info(f"✅ Server is ready on port {port}")
+                    break
+            except:
+                pass
 
-            # Wait for server
-            import socket
-            import time
+            elapsed = int(time.time() - start_time)
+            progress_dialog.setLabelText(f"Starting server... ({elapsed}s)")
+            app.processEvents()
+            time.sleep(0.5)
 
-            max_wait = 30
-            start_time = time.time()
-            server_ready = False
+        progress_dialog.close()
 
-            progress_dialog = QProgressDialog("Starting server...", None, 0, 0)
-            progress_dialog.setWindowTitle("PrimeBooks - Starting Server")
-            progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
-            progress_dialog.show()
+        logger.info("⏳ Waiting for routes to register...")
+        time.sleep(2)
 
-            logger.info(f"⏳ Waiting for server to start on port {port}...")
+        logger.info("✅ Django server ready!")
 
-            while time.time() - start_time < max_wait:
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(1)
-                    result = sock.connect_ex(('127.0.0.1', port))
-                    sock.close()
+        # Show main window
+        state['window'] = PrimeBooksWindow(
+            port=port,
+            subdomain=subdomain,
+            tenant_id=tenant_id,
+            auth_token=token
+        )
+        state['window'].show()
 
-                    if result == 0:
-                        logger.info(f"✅ Server is ready on port {port}")
-                        server_ready = True
-                        break
-                except:
-                    pass
-
-                elapsed = int(time.time() - start_time)
-                progress_dialog.setLabelText(f"Starting server... ({elapsed}s)")
-                app.processEvents()
-                time.sleep(0.5)
-
-            progress_dialog.close()
-
-            if not server_ready:
-                logger.error("❌ Server failed to start within 30 seconds")
-                QMessageBox.critical(
-                    None,
-                    "Server Error",
-                    "Django server failed to start. Please check the logs."
-                )
-                app.quit()
-                return
-
-            logger.info("⏳ Waiting for routes to register...")
-            time.sleep(2)
-
-            logger.info("✅ Django server ready!")
-
-            # Show main window
-            refs['window'] = PrimeBooksWindow(
-                port=port,
-                subdomain=subdomain,
-                tenant_id=tenant_id,
-                auth_token=token
-            )
-            refs['window'].show()
-
-            logger.info("✅ Application ready!")
-
-        postgres_thread = PostgresInitThread()
-        postgres_thread.progress.connect(on_postgres_progress)
-        postgres_thread.finished.connect(on_postgres_finished)
-        postgres_thread.start()
-
-        sys.exit(app.exec())
+        logger.info("✅ Application ready!")
 
     except Exception as e:
-        logger.error(f"Fatal error in main(): {e}", exc_info=True)
-
-        from PyQt6.QtWidgets import QApplication, QMessageBox
-
-        app_instance = QApplication.instance()
-        if app_instance is None:
-            app_instance = QApplication(sys.argv)
-
+        logger.error(f"Startup error: {e}", exc_info=True)
         QMessageBox.critical(
             None,
             "Startup Error",
-            f"Failed to start PrimeBooks:\n\n{str(e)}\n\nCheck logs for details."
+            f"Failed to start:\n\n{str(e)}"
         )
-        sys.exit(1)
+        app.quit()
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
