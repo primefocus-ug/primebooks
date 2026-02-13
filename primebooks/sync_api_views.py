@@ -21,50 +21,20 @@ from primebooks.authentication import TenantAwareJWTAuthentication
 from datetime import datetime
 import logging
 import json
+from primebooks.sync import SYNC_MODEL_CONFIG
 
 logger = logging.getLogger(__name__)
 
 # ============================================================================
 # PUBLIC SCHEMA MODELS - These should NOT be synced to tenant schemas
 # ============================================================================
-PUBLIC_SCHEMA_MODELS = {
-    'company.Company',
-    'company.SubscriptionPlan',
-}
+PUBLIC_SCHEMA_MODELS = [
+                'company.Company',
+                'company.SubscriptionPlan',
+                'company.Domain',
+            ]
 
-# Model configuration for sync
-SYNC_MODEL_CONFIG = {
-    # ✅ REMOVED public schema models - they belong in public schema only
-    # 'company.SubscriptionPlan': {'dependencies': []},
-    # 'company.Company': {'dependencies': ['company.SubscriptionPlan']},
 
-    # ✅ Django groups (needed by Role)
-    'auth.Group': {'dependencies': []},
-
-    'accounts.Role': {'dependencies': ['auth.Group']},
-    'accounts.CustomUser': {
-        'dependencies': ['accounts.Role'],
-        'exclude_fields': ['password', 'backup_codes'],
-    },
-    'stores.Store': {
-        'dependencies': [],  # Company is in public schema
-        'exclude_fields': ['logo', 'store_efris_private_key'],
-    },
-    'stores.StoreAccess': {'dependencies': ['stores.Store', 'accounts.CustomUser']},
-    'inventory.Category': {'dependencies': []},
-    'inventory.Supplier': {'dependencies': []},
-    'inventory.Product': {
-        'dependencies': ['inventory.Category', 'inventory.Supplier'],
-        'exclude_fields': ['image'],
-    },
-    'inventory.Stock': {'dependencies': ['inventory.Product', 'stores.Store']},
-    'inventory.StockMovement': {'dependencies': ['inventory.Product', 'stores.Store']},
-    'customers.Customer': {'dependencies': ['stores.Store', 'accounts.CustomUser']},
-    'sales.Sale': {'dependencies': ['customers.Customer', 'stores.Store', 'accounts.CustomUser']},
-    'sales.SaleItem': {'dependencies': ['sales.Sale', 'inventory.Product']},
-    'sales.Payment': {'dependencies': ['sales.Sale']},
-    # ✅ Invoice is auto-created by Sale.post_save - don't sync manually
-}
 
 
 class BulkDataDownloadView(APIView):

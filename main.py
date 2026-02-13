@@ -114,6 +114,7 @@ from PyQt6.QtWidgets import (
     QToolBar, QStatusBar, QPushButton, QLabel, QProgressDialog,
     QVBoxLayout, QLineEdit, QHBoxLayout, QProgressBar, QMenu
 )
+from primebooks.schema_loader import create_tenant_schema, load_public_schema, verify_schema
 from PyQt6.QtWebEngineCore import QWebEnginePage
 from primebooks.login_dialogs import UserSwitchDialog, InitialLoginDialog
 from primebooks.update_manager import UpdateManager
@@ -151,105 +152,6 @@ def find_free_port():
 # SQL SCHEMA LOADER
 # ============================================================================
 
-def load_schema_from_sql(sql_file_path, schema_name=None):
-    """
-    Load database schema from SQL dump file
-
-    Args:
-        sql_file_path: Path to SQL file
-        schema_name: If provided, replaces 'template' with this name
-
-    Returns:
-        bool: True if successful
-    """
-    from django.db import connection
-
-    logger.info(f"📄 Loading schema from: {sql_file_path}")
-
-    try:
-        # Read SQL file
-        with open(sql_file_path, 'r', encoding='utf-8') as f:
-            sql_content = f.read()
-
-        # If schema_name provided, replace 'template' references
-        if schema_name:
-            logger.info(f"Replacing 'template' with '{schema_name}' in SQL")
-            sql_content = sql_content.replace('CREATE SCHEMA template;', f'CREATE SCHEMA {schema_name};')
-            sql_content = sql_content.replace('template.', f'{schema_name}.')
-            sql_content = sql_content.replace("'template'", f"'{schema_name}'")
-            sql_content = sql_content.replace('SET search_path TO template;', f'SET search_path TO {schema_name};')
-
-        # Clean the SQL content - remove problematic commands
-        lines = sql_content.split('\n')
-        cleaned_lines = []
-
-        for line in lines:
-            stripped = line.strip()
-
-            # Skip empty lines
-            if not stripped:
-                continue
-
-            # Skip comments
-            if stripped.startswith('--'):
-                continue
-
-            # Skip psql commands (backslash commands)
-            if stripped.startswith('\\'):
-                logger.debug(f"Skipping psql command: {stripped[:50]}...")
-                continue
-
-            # Skip SET statements (session-specific)
-            if stripped.upper().startswith('SET '):
-                continue
-
-            # Skip SELECT pg_catalog.set_config
-            if 'pg_catalog.set_config' in stripped:
-                continue
-
-            cleaned_lines.append(line)
-
-        cleaned_sql = '\n'.join(cleaned_lines)
-
-        # Execute SQL statement by statement
-        with connection.cursor() as cursor:
-            logger.info("Executing SQL statements...")
-
-            # Split by semicolon (statement separator)
-            statements = []
-            current_statement = []
-
-            for line in cleaned_sql.split('\n'):
-                current_statement.append(line)
-                if line.strip().endswith(';'):
-                    statements.append('\n'.join(current_statement))
-                    current_statement = []
-
-            # Execute each statement
-            executed = 0
-            skipped = 0
-
-            for statement in statements:
-                statement = statement.strip()
-                if not statement:
-                    continue
-
-                try:
-                    cursor.execute(statement)
-                    executed += 1
-                except Exception as e:
-                    # Log but continue with other statements
-                    logger.warning(f"Skipped statement (error: {str(e)[:50]}): {statement[:100]}...")
-                    skipped += 1
-
-            logger.info(f"✅ Executed {executed} statements ({skipped} skipped)")
-
-        logger.info(f"✅ Schema loaded from {sql_file_path}")
-        return True
-
-    except Exception as e:
-        logger.error(f"❌ Failed to load schema from SQL: {e}", exc_info=True)
-        return False
 
 
 def verify_schema_tables(schema_name, required_tables=None):
@@ -712,13 +614,13 @@ def initialize_django(data_dir):
             # ============================================================
             # STEP 1: Load public schema from SQL dump
             # ============================================================
-            logger.info("📄 Loading public schema from primebooks_public.sql...")
+            logger.info("📄 Loading public schema from data_public.sql...")
 
-            public_sql_path = BASE_DIR / 'primebooks_public.sql'
+            public_sql_path = BASE_DIR / 'data_public.sql'
             if not public_sql_path.exists():
                 raise FileNotFoundError(f"Public schema SQL file not found: {public_sql_path}")
 
-            if not load_schema_from_sql(public_sql_path):
+            if not load_public_schema(public_sql_path):
                 raise Exception("Failed to load public schema from SQL")
 
             logger.info("✅ Public schema loaded from SQL (2-3 seconds instead of 60!)")
@@ -1032,6 +934,7 @@ class PrimeBooksWindow(QMainWindow):
     def setup_update_manager(self):
         """Initialize auto-update manager"""
         try:
+            from django.conf import settings
             server_url = f"http://{self.subdomain}.localhost:8000" if settings.DEBUG else f"https://{self.subdomain}.primebooks.sale"
 
             self.update_manager = UpdateManager(
@@ -1531,16 +1434,17 @@ def main():
 
                 # ✅ Create tenant schema from SQL BEFORE syncing data
                 logger.info("📄 Creating tenant schema from SQL dump...")
-                tenant_sql_path = BASE_DIR / 'primebooks_tenant.sql'
+                tenant_sql = BASE_DIR / 'data_tenant.sql'
 
-                if not tenant_sql_path.exists():
-                    logger.warning(f"⚠️ Tenant SQL not found: {tenant_sql_path}")
+                if not tenant_sql.exists():
+                    logger.warning(f"⚠️ Tenant SQL not found: {tenant_sql}")
                     logger.warning("⚠️ Tenant will be created during data sync")
                 else:
-                    if load_schema_from_sql(tenant_sql_path, schema_name=subdomain):
-                        logger.info(f"✅ Tenant schema '{subdomain}' created from SQL!")
-                    else:
+                    # ✅ Load TENANT schema using the correct function
+                    if not create_tenant_schema(subdomain, tenant_sql):
                         logger.warning("⚠️ Failed to load tenant schema from SQL")
+                    else:
+                        logger.info("✅ Tenant schema loaded from SQL dump successfully")
 
                 sync_dialog = DataSyncDialog(subdomain, token, company_data)
                 sync_dialog.exec()

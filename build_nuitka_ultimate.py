@@ -44,11 +44,14 @@ print("=" * 80)
 # ============================================================================
 # STEP 0: CHECK SQL DUMP FILES EXIST
 # ============================================================================
+# ============================================================================
+# STEP 0: CHECK SQL DUMP FILES EXIST
+# ============================================================================
 print("\n🗄️  Step 0: Checking SQL dump files...")
 
 sql_files_required = [
-    'primebooks_tenant.sql',  # Tenant schema template
-    # 'primebooks_public.sql',  # Optional: public schema template
+    'data_tenant.sql',  # ✅ Tenant schema template
+    'data_public.sql',  # ✅ Public schema template (used in main.py line 245)
 ]
 
 missing_files = []
@@ -61,17 +64,17 @@ for sql_file in sql_files_required:
         print(f"  ✅ Found {sql_file} ({size_kb:.1f} KB)")
 
 if missing_files:
-    print(f"\n  ⚠️  WARNING: Missing SQL dump files:")
+    print(f"\n  ❌ ERROR: Missing required SQL dump files:")
     for f in missing_files:
         print(f"     • {f}")
-    print("\n  💡 Generate SQL dumps with:")
-    print("     python manage.py dumpdata_schema --schema=template")
-    print("\n  The build will continue, but schema creation will fail at runtime!")
+    print("\n  💡 These files are REQUIRED for the app to work!")
+    print("     Make sure both data_tenant.sql and data_public.sql exist")
+    print("     in the project root directory.")
 
     response = input("\n  Continue anyway? (y/N): ")
     if response.lower() != 'y':
         print("  Build cancelled.")
-        sys.exit(0)
+        sys.exit(1)
 
 # ============================================================================
 # STEP 1: CHECK NUITKA INSTALLATION

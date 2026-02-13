@@ -14,7 +14,6 @@ from django.conf import settings
 from django.db import connection
 from django.core.management import call_command
 from company.models import Company, Domain
-from django_tenants.utils import schema_context
 import json
 import sys
 from pathlib import Path
@@ -117,7 +116,8 @@ class DesktopAuthManager:
         ✅ Uses SQL dump for fast tenant creation
         """
         from django.utils.text import slugify
-        from primebooks.schema_loader import create_tenant_schema, verify_schema, check_schema_exists, reset_sequences
+        # ✅ UPDATED IMPORT - uses new schema_loader
+        from .schema_loader import create_tenant_schema, verify_schema, check_schema_exists, reset_sequences
         from primebooks.subscription import SubscriptionManager
         from django.core.management import call_command
         from django.db import connection
@@ -204,9 +204,9 @@ class DesktopAuthManager:
 
                 # Get SQL file path
                 if getattr(sys, 'frozen', False):
-                    tenant_sql = Path(sys._MEIPASS) / 'primebooks_tenant.sql'
+                    tenant_sql = Path(sys._MEIPASS) / 'data_tenant.sql'
                 else:
-                    tenant_sql = Path(__file__).parent.parent / 'primebooks_tenant.sql'
+                    tenant_sql = Path(__file__).parent.parent / 'data_tenant.sql'
 
                 if not tenant_sql.exists():
                     raise FileNotFoundError(f"Tenant SQL not found: {tenant_sql}")

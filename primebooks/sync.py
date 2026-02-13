@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from django.db.models.signals import post_save, pre_save, post_delete
 from django.core.exceptions import ValidationError
 import json
+from django.apps import apps
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)

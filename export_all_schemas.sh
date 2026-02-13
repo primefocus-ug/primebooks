@@ -7,7 +7,7 @@
 
 set -e  # Exit on any error
 
-TENANT_SCHEMA="pada"
+TENANT_SCHEMA="template"
 DB_NAME="data"
 
 echo "╔════════════════════════════════════════════════════════════════╗"
