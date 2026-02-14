@@ -84,8 +84,11 @@ class DesktopAuthManager:
             if not company:
                 return False, {'error': 'Could not fetch company details'}
 
+            # ✅ CRITICAL FIX: Override schema_name with subdomain
+            # Server may return different schema_name, but we use subdomain for schema
+            company['schema_name'] = subdomain
             self.save_company_info(company)
-            self.save_subdomain(subdomain)  # ✅ NEW LINE - Save the subdomain!
+            self.save_subdomain(subdomain)
 
             # ✅ CRITICAL: Sync company and create schema from SQL dump
             synced_company = self.sync_company_from_server(company, access_token, subdomain)

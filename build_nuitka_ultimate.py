@@ -299,6 +299,7 @@ critical_primebooks = [
     'primebooks.postgres_manager',
     'primebooks.schema_loader',
     'primebooks.signals',
+    'primebooks.security.licensing',
 ]
 for mod in critical_primebooks:
     cmd.append(f'--include-module={mod}')
