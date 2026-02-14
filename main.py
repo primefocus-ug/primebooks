@@ -1425,7 +1425,8 @@ def main():
                 company_data = login_dialog.company_data
                 user_data = login_dialog.user_data
 
-                subdomain = company_data.get('schema_name') or company_data.get('subdomain')
+                # ✅ FIXED: Get subdomain from auth_manager, not company_data
+                subdomain = auth_manager.get_subdomain()
                 tenant_id = company_data.get('company_id')
 
                 auth_manager.save_credentials(user_data, company_data, token)
@@ -1454,7 +1455,8 @@ def main():
                 company_data = saved_company
                 user_data = saved_user
 
-                subdomain = company_data.get('schema_name') or company_data.get('subdomain')
+                # ✅ FIXED: Get subdomain from auth_manager, not company_data
+                subdomain = auth_manager.get_subdomain()
                 tenant_id = company_data.get('company_id')
 
                 if not subdomain or not tenant_id:
@@ -1469,8 +1471,11 @@ def main():
                     token = login_dialog.auth_token
                     company_data = login_dialog.company_data
                     user_data = login_dialog.user_data
-                    subdomain = company_data.get('schema_name') or company_data.get('subdomain')
+
+                    # ✅ FIXED: Get subdomain from auth_manager, not company_data
+                    subdomain = auth_manager.get_subdomain()
                     tenant_id = company_data.get('company_id')
+
                     auth_manager.save_credentials(user_data, company_data, token)
 
                     sync_dialog = DataSyncDialog(subdomain, token, company_data)

@@ -34,6 +34,7 @@ class DesktopAuthManager:
         self.refresh_token_file = settings.DESKTOP_DATA_DIR / '.refresh_token'
         self.user_info_file = settings.DESKTOP_DATA_DIR / '.user_info'
         self.company_info_file = settings.DESKTOP_DATA_DIR / '.company_info'
+        self.subdomain_file = settings.DESKTOP_DATA_DIR / '.subdomain'
 
         self.encryption = get_encryption_manager(settings.DESKTOP_DATA_DIR)
 
@@ -84,6 +85,7 @@ class DesktopAuthManager:
                 return False, {'error': 'Could not fetch company details'}
 
             self.save_company_info(company)
+            self.save_subdomain(subdomain)  # ✅ NEW LINE - Save the subdomain!
 
             # ✅ CRITICAL: Sync company and create schema from SQL dump
             synced_company = self.sync_company_from_server(company, access_token, subdomain)
@@ -94,7 +96,8 @@ class DesktopAuthManager:
                 'token': access_token,
                 'refresh': refresh_token,
                 'user': user_info,
-                'company': company
+                'company': company,
+                'subdomain': subdomain  # ✅ NEW LINE - Include in result
             }
 
         except requests.exceptions.ConnectionError:
@@ -108,6 +111,19 @@ class DesktopAuthManager:
         except Exception as e:
             logger.error(f"Authentication error: {e}", exc_info=True)
             return False, {'error': f"Unexpected error: {str(e)}"}
+
+    def save_subdomain(self, subdomain):
+        """Save the subdomain the user logged in with"""
+        self.subdomain_file.write_text(subdomain)
+        logger.info(f"✅ Saved subdomain: {subdomain}")
+
+    def get_subdomain(self):
+        """Get the saved subdomain"""
+        if self.subdomain_file.exists():
+            subdomain = self.subdomain_file.read_text().strip()
+            logger.debug(f"Retrieved subdomain: {subdomain}")
+            return subdomain
+        return None
 
     def sync_company_from_server(self, company_data, token, subdomain):
         """
@@ -615,4 +631,6 @@ class DesktopAuthManager:
             self.user_info_file.unlink()
         if self.company_info_file.exists():
             self.company_info_file.unlink()
+        if self.subdomain_file.exists():
+            self.subdomain_file.unlink()  
         settings.SYNC_AUTH_TOKEN = None
