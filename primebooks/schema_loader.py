@@ -5,6 +5,7 @@ Replaces Django migrations for desktop app
 ✅ Improved SQL parsing and error handling
 ✅ Transaction safety with rollback
 ✅ Progress tracking
+✅ FIXED: Removed undefined create_sequences_for_schema() call
 """
 import logging
 from pathlib import Path
@@ -203,10 +204,12 @@ def create_tenant_schema(schema_name, sql_file_path, progress_callback=None):
     Create a new tenant schema from template SQL
     ✅ Fast schema creation (2-3 seconds vs 30-60 seconds)
     ✅ Transaction safety with automatic rollback on error
+    ✅ FIXED: Drops empty schema if it exists before creation
     ✅ Progress tracking
 
     Args:
         schema_name: Name of the tenant schema (e.g., 'pada')
+        sql_file_path: Path to SQL dump file
         progress_callback: Optional function(step, total, message)
 
     Returns:
@@ -223,13 +226,22 @@ def create_tenant_schema(schema_name, sql_file_path, progress_callback=None):
         total_steps = 7
         report_progress(1, total_steps, "Checking if schema exists...")
 
-        # Check if schema already exists
+        # ✅ CRITICAL FIX: Check if schema exists AND has tables
         if check_schema_exists(schema_name):
-            logger.info(f"ℹ️  Schema '{schema_name}' already exists")
-            report_progress(6, total_steps, "Schema exists, resetting sequences...")
-            reset_sequences(schema_name)
-            report_progress(7, total_steps, "Done!")
-            return True
+            tables = get_schema_tables(schema_name)
+            
+            if len(tables) > 0:
+                logger.info(f"ℹ️  Schema '{schema_name}' already exists with {len(tables)} tables")
+                report_progress(6, total_steps, "Schema exists, resetting sequences...")
+                reset_sequences(schema_name)
+                report_progress(7, total_steps, "Done!")
+                return True
+            else:
+                logger.warning(f"⚠️  Schema '{schema_name}' exists but is EMPTY - dropping...")
+                # Drop empty schema
+                with connection.cursor() as cursor:
+                    cursor.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE;')
+                logger.info(f"  ✅ Empty schema dropped, will recreate with tables")
 
         report_progress(2, total_steps, "Reading SQL template...")
 
@@ -251,7 +263,6 @@ def create_tenant_schema(schema_name, sql_file_path, progress_callback=None):
             ('CREATE SCHEMA IF NOT EXISTS template;', f'CREATE SCHEMA IF NOT EXISTS "{schema_name}";'),
             ('SET search_path TO template', f'SET search_path TO "{schema_name}"'),
             ('template.', f'"{schema_name}".'),
-            # Also handle if dump used SCHEMA_NAME_PLACEHOLDER
             ('SCHEMA_NAME_PLACEHOLDER.', f'"{schema_name}".'),
         ]
 
@@ -273,7 +284,7 @@ def create_tenant_schema(schema_name, sql_file_path, progress_callback=None):
 
         # Execute SQL
         with connection.cursor() as cursor:
-            # Create schema
+            # Create schema (fresh, since we dropped empty one)
             cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}";')
             logger.info(f"  ✅ Schema created: {schema_name}")
 
@@ -314,12 +325,13 @@ def create_tenant_schema(schema_name, sql_file_path, progress_callback=None):
 
             if errors:
                 logger.warning(f"  ⚠️  {len(errors)} potential issues during creation:")
-                for err in errors[:5]:  # Show first 5
+                for err in errors[:5]:
                     logger.warning(f"    • {err}")
 
         report_progress(6, total_steps, "Resetting sequences...")
-
-        # Reset sequences
+        
+        # ✅ FIXED: SQL dump already creates sequences, just reset their values
+        # Removed undefined function call: create_sequences_for_schema(schema_name)
         reset_sequences(schema_name)
 
         report_progress(7, total_steps, "Verifying schema...")
@@ -443,7 +455,7 @@ def get_schema_tables(schema_name):
             """, [schema_name])
 
             tables = [row[0] for row in cursor.fetchall()]
-            logger.info(f"📊 Schema '{schema_name}' has {len(tables)} tables")
+            logger.debug(f"📊 Schema '{schema_name}' has {len(tables)} tables")
             return tables
 
     except Exception as e:

@@ -128,15 +128,23 @@ class DesktopAuthManager:
     def sync_company_from_server(self, company_data, token, subdomain):
         """
         Download and sync company with PostgreSQL multi-tenancy
-        ✅ FIXED: Properly handles public schema for Company
+        ✅ FIXED: Ensures migrations run in TENANT schema, not public
         ✅ Uses SQL dump for fast tenant creation
         """
         from django.utils.text import slugify
-        # ✅ UPDATED IMPORT - uses new schema_loader
-        from .schema_loader import create_tenant_schema, verify_schema, check_schema_exists, reset_sequences
+        from .schema_loader import (
+            create_tenant_schema, 
+            verify_schema, 
+            check_schema_exists, 
+            reset_sequences,
+            get_schema_tables
+        )
         from primebooks.subscription import SubscriptionManager
         from django.core.management import call_command
         from django.db import connection
+        from django_tenants.utils import schema_context
+        import sys
+        from pathlib import Path
 
         try:
             company_id = company_data.get("company_id")
@@ -150,12 +158,12 @@ class DesktopAuthManager:
             logger.info(f"SYNCING COMPANY: {company_data.get('name')}")
             logger.info(f"=" * 70)
 
-            # ✅ CRITICAL: Switch to PUBLIC schema for Company operations
+            # ✅ STEP 1: Switch to PUBLIC schema for Company operations
             logger.info(f"🔄 Switching to PUBLIC schema for Company operations...")
             connection.set_schema('public')
             logger.info(f"   Current schema: {connection.schema_name}")
 
-            # Step 1: Create/update company in PUBLIC schema
+            # Create/update company in PUBLIC schema
             company, created = Company.objects.update_or_create(
                 company_id=company_id,
                 defaults={
@@ -182,7 +190,7 @@ class DesktopAuthManager:
 
             logger.info(f"✅ Company {'created' if created else 'updated'} in PUBLIC schema: {company.name}")
 
-            # Step 2: Create/update domain in PUBLIC schema
+            # Create/update domain in PUBLIC schema
             domain_name = f"{subdomain}.localhost"
             Domain.objects.update_or_create(
                 domain=domain_name,
@@ -191,71 +199,77 @@ class DesktopAuthManager:
 
             logger.info(f"✅ Domain configured in PUBLIC schema: {domain_name}")
 
-            # ✅ Step 3: NOW switch to TENANT schema for tenant operations
-            logger.info(f"🔄 Switching to TENANT schema: {schema_name}")
-
-            # Check if schema exists
+            # ✅ STEP 2: Check if tenant schema exists and has tables
+            logger.info(f"🔄 Checking tenant schema: {schema_name}")
+            
             schema_exists = check_schema_exists(schema_name)
+            needs_creation = False
 
             if schema_exists:
-                logger.info(f"✅ Schema already exists: {schema_name}")
-
-                # Switch to tenant schema
-                connection.set_schema(schema_name)
-                logger.info(f"   Current schema: {connection.schema_name}")
-
-                # Reset sequences
-                logger.info(f"🔄 Resetting sequences in existing schema...")
-                reset_sequences(schema_name)
-
-                # Verify Django tables
-                try:
-                    call_command('migrate', '--noinput', verbosity=0)
-                    logger.info(f"✅ Django tables verified")
-                except Exception as e:
-                    logger.warning(f"⚠️ Migration check: {e}")
+                # Check if schema has tables
+                tables = get_schema_tables(schema_name)
+                
+                if len(tables) > 0:
+                    logger.info(f"✅ Schema '{schema_name}' exists with {len(tables)} tables")
+                else:
+                    logger.warning(f"⚠️ Schema '{schema_name}' exists but is EMPTY")
+                    needs_creation = True
             else:
-                # Step 4: Create tenant schema from SQL template
-                logger.info(f"🚀 Creating schema from SQL dump...")
+                logger.info(f"ℹ️  Schema '{schema_name}' does not exist")
+                needs_creation = True
 
+            # ✅ STEP 3: Create tenant schema if needed (from SQL dump OR migrations)
+            if needs_creation:
                 # Get SQL file path
                 if getattr(sys, 'frozen', False):
                     tenant_sql = Path(sys._MEIPASS) / 'data_tenant.sql'
                 else:
                     tenant_sql = Path(__file__).parent.parent / 'data_tenant.sql'
 
-                if not tenant_sql.exists():
-                    raise FileNotFoundError(f"Tenant SQL not found: {tenant_sql}")
+                if tenant_sql.exists():
+                    # ✅ OPTION A: Use SQL dump (FAST - 2-3 seconds)
+                    logger.info(f"🚀 Creating tenant schema from SQL dump...")
+                    logger.info(f"  Using SQL file: {tenant_sql}")
 
-                logger.info(f"  Using SQL file: {tenant_sql}")
+                    success = create_tenant_schema(schema_name, tenant_sql)
 
-                # Create schema from SQL dump
-                success = create_tenant_schema(schema_name, tenant_sql)
+                    if not success:
+                        raise Exception("Failed to create tenant schema from SQL")
 
-                if not success:
-                    raise Exception("Failed to create tenant schema from SQL")
+                    logger.info(f"✅ Tenant schema created with tables from SQL dump")
+                else:
+                    # ✅ OPTION B: Use migrations (SLOW - 30-60 seconds, but works)
+                    logger.warning(f"⚠️ SQL dump not found, using migrations instead...")
+                    logger.warning(f"   This will take 30-60 seconds...")
+                    
+                    # Create empty schema
+                    with connection.cursor() as cursor:
+                        cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}";')
+                    
+                    logger.info(f"✅ Empty schema created: {schema_name}")
+                    
+                    # ✅ CRITICAL: Run migrations INSIDE schema_context
+                    logger.info(f"🔄 Running migrations in schema '{schema_name}'...")
+                    
+                    with schema_context(schema_name):
+                        # Verify we're in the right schema
+                        logger.info(f"   Current schema during migration: {connection.schema_name}")
+                        
+                        # Run migrations
+                        call_command('migrate_schemas', schema_name=schema_name, verbosity=0)
+                    
+                    logger.info(f"✅ Migrations completed in schema: {schema_name}")
 
-                # Verify schema
-                verify_schema(schema_name)
+            # ✅ STEP 4: NOW switch to tenant schema for remaining operations
+            logger.info(f"🔄 Switching to TENANT schema: {schema_name}")
+            connection.set_schema(schema_name)
+            logger.info(f"   Current schema: {connection.schema_name}")
 
-                logger.info(f"✅ Tenant schema created: {schema_name}")
+            # Reset sequences
+            logger.info(f"🔄 Resetting sequences...")
+            reset_sequences(schema_name)
 
-                # ✅ NOW switch to tenant schema
-                connection.set_schema(schema_name)
-                logger.info(f"   Current schema: {connection.schema_name}")
-
-                # Reset sequences
-                logger.info(f"🔄 Resetting sequences in new schema...")
-                reset_sequences(schema_name)
-
-                # Run migrations for Django-specific tables
-                try:
-                    call_command('migrate', '--noinput', verbosity=0)
-                    logger.info(f"✅ Migrations completed")
-                except Exception as e:
-                    logger.warning(f"⚠️ Migration completed with warnings: {e}")
-
-            # ✅ Step 5: Validate subscription (still in tenant schema)
+            # ✅ STEP 5: Validate subscription (in tenant schema)
             logger.info(f"🔒 Validating subscription...")
             subscription_manager = SubscriptionManager(company_id, schema_name)
 
@@ -266,11 +280,15 @@ class DesktopAuthManager:
             else:
                 logger.info(f"✅ Subscription valid: {message}")
 
-            # Step 6: Sync authenticated user to tenant schema
+            # ✅ STEP 6: Sync authenticated user to tenant schema
             authenticated_user_email = self.get_user_info().get('email') if self.get_user_info() else None
 
             if authenticated_user_email:
                 logger.info(f"🔄 Syncing user to tenant schema: {authenticated_user_email}")
+                
+                # ✅ VERIFY we're in tenant schema before syncing user
+                logger.info(f"   Schema before user sync: {connection.schema_name}")
+                
                 # User sync happens in tenant schema (already set)
                 self.sync_user_to_tenant(
                     authenticated_user_email,
@@ -295,6 +313,7 @@ class DesktopAuthManager:
             logger.error(f"Schema at error: {connection.schema_name}")
             logger.error("=" * 70)
             return None
+
 
     def sync_user_to_tenant(self, email, subdomain, token, company_id):
         """
