@@ -64,6 +64,43 @@ def suppress_signals():
 # ============================================================================
 # SYNC MODEL CONFIGURATION
 # ============================================================================
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# MODELS TO EXCLUDE FROM SYNC
+# ============================================================================
+# These models should NEVER be synced - they're auto-generated or schema-specific
+
+EXCLUDED_MODELS = {
+    # Django Internal - Auto-generated from migrations
+    'contenttypes.ContentType',  # ❌ Main culprit - causes duplicate errors
+    'auth.Permission',  # ❌ Auto-generated from models
+    'sessions.Session',  # Local session data only
+    'admin.LogEntry',  # Local admin log only
+
+    # Public Schema - Should stay in public schema only
+    'company.Company',  # Managed in public schema during auth
+    'company.EFRISCommodityCategory'
+    'company.EFRISHsCode'
+    'company.Domain',  # Managed in public schema during auth
+
+    # OTP - Device specific
+    'django_otp.Device',  # Local device only
+    'otp_totp.TOTPDevice',  # Local 2FA device only
+}
+
+
+def should_exclude_model(model_name):
+    """
+    Check if a model should be excluded from sync
+
+    Args:
+        model_name: String like 'contenttypes.ContentType'
+
+    Returns:
+        bool: True if should be excluded
+    """
+    return model_name in EXCLUDED_MODELS
 
 SYNC_MODEL_CONFIG = {
     # ============================================================================
@@ -724,29 +761,41 @@ SYNC_MODEL_CONFIG = {
 def get_sync_order():
     """
     Returns models in the correct order for synchronization based on dependencies.
+    ✅ EXCLUDES models that should never be synced (ContentType, Permission, etc.)
 
     Returns:
         list: Ordered list of model names (e.g., ['company.SubscriptionPlan', ...])
     """
     from collections import deque, defaultdict
 
+    # ✅ FILTER OUT EXCLUDED MODELS FIRST
+    syncable_config = {
+        model: config
+        for model, config in SYNC_MODEL_CONFIG.items()
+        if not should_exclude_model(model)
+    }
+
     # Build dependency graph
     graph = defaultdict(list)
     in_degree = defaultdict(int)
 
     # Initialize all models
-    for model in SYNC_MODEL_CONFIG:
+    for model in syncable_config:
         if model not in in_degree:
             in_degree[model] = 0
 
     # Build edges
-    for model, config in SYNC_MODEL_CONFIG.items():
+    for model, config in syncable_config.items():
         for dependency in config.get('dependencies', []):
+            # ✅ Skip if dependency is excluded
+            if should_exclude_model(dependency):
+                continue
+
             graph[dependency].append(model)
             in_degree[model] += 1
 
     # Topological sort using Kahn's algorithm
-    queue = deque([model for model in SYNC_MODEL_CONFIG if in_degree[model] == 0])
+    queue = deque([model for model in syncable_config if in_degree[model] == 0])
     result = []
 
     while queue:
@@ -759,9 +808,11 @@ def get_sync_order():
                 queue.append(dependent)
 
     # Check for circular dependencies
-    if len(result) != len(SYNC_MODEL_CONFIG):
-        missing = set(SYNC_MODEL_CONFIG.keys()) - set(result)
+    if len(result) != len(syncable_config):
+        missing = set(syncable_config.keys()) - set(result)
         raise ValueError(f"Circular dependency detected! Missing models: {missing}")
+
+    logger.info(f"📊 Sync order calculated: {len(result)} models (excluded {len(EXCLUDED_MODELS)} models)")
 
     return result
 
@@ -1645,11 +1696,17 @@ class SyncManager:
         """
         Collect records changed LOCALLY (not synced from server)
         ✅ Excludes records downloaded from server
+        ✅ Excludes Django internal models (ContentType, Permission)
         """
         changes = {}
 
         with schema_context(self.schema_name):
             for model_name in self.sync_models:
+                # ✅ CRITICAL: Skip excluded models
+                if should_exclude_model(model_name):
+                    logger.debug(f"  ⏭️  Skipping excluded model: {model_name}")
+                    continue
+
                 try:
                     model = apps.get_model(model_name)
                     config = SYNC_MODEL_CONFIG.get(model_name, {})
@@ -1696,6 +1753,7 @@ class SyncManager:
                             logger.info(f"  Found {len(records)} LOCAL changes in {model_name}")
 
                 except LookupError:
+                    logger.debug(f"  Model not found: {model_name}")
                     continue
                 except Exception as e:
                     logger.error(f"  Error collecting {model_name}: {e}")
