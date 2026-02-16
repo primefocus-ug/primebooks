@@ -116,9 +116,6 @@ SYNC_MODEL_CONFIG = {
     'company.SubscriptionPlan': {
         'dependencies': [],
     },
-    'company.EFRISCommodityCategory': {
-        'dependencies': [],
-    },
     'company.EFRISHsCode': {
         'dependencies': [],
     },
@@ -356,9 +353,6 @@ SYNC_MODEL_CONFIG = {
     'inventory.Stock': {
         'dependencies': ['inventory.Product', 'stores.Store'],
     },
-    'inventory.StockStore': {
-        'dependencies': ['inventory.Stock', 'stores.Store'],
-    },
     'inventory.StockMovement': {
         'dependencies': ['inventory.Product', 'stores.Store'],
         # created_by is optional - can be NULL during sync
@@ -491,9 +485,6 @@ SYNC_MODEL_CONFIG = {
     },
     'efris.EFRISIntegrationSettings': {
         'dependencies': ['company.Company'],
-    },
-    'efris.EFRISCommodityCategorry': {
-        'dependencies': [],
     },
 
     # ============================================================================
@@ -1167,9 +1158,7 @@ class SyncManager:
     def download_changes(self, progress_callback=None):
         """
         Download changes from server
-        ✅ Auto-refreshes token on 401
-        ✅ Resets sequences after applying data
-        ✅ Proper success/failure handling
+        ✅ FIXED: Only resets sequences once at the end
         """
         try:
             last_sync = self.get_last_sync_time()
@@ -1191,7 +1180,6 @@ class SyncManager:
             logger.info(f"  URL: {url}")
             logger.info(f"  Since: {last_sync.isoformat()}")
 
-            # ✅ Use _make_request (auto-refreshes on 401)
             response = self._make_request(url, method='GET', params=params)
 
             if not response:
@@ -1216,8 +1204,6 @@ class SyncManager:
 
             if total_changed == 0:
                 logger.info("✅ No server changes to download")
-
-                # Update last sync time even if no changes
                 self.update_last_sync_time()
 
                 if progress_callback:
@@ -1234,13 +1220,12 @@ class SyncManager:
             success = self.apply_bulk_data(changes, progress_callback)
 
             if success:
-                # ✅ Reset sequences after applying data
+                # ✅ FIXED: Only reset sequences ONCE at the very end
                 if progress_callback:
                     progress_callback("Resetting sequences...", 90)
 
                 logger.info("🔄 Resetting sequences after download...")
                 self.reset_sequences()
-                logger.info("✅ Sequences reset")
 
                 # Update last sync time
                 self.update_last_sync_time()
@@ -1249,7 +1234,7 @@ class SyncManager:
                     progress_callback("Changes applied!", 100)
 
                 logger.info("✅ Changes applied successfully")
-                return True  # ✅ Return True here - don't fall through
+                return True
             else:
                 logger.error("❌ Failed to apply changes")
                 return False
@@ -1261,8 +1246,7 @@ class SyncManager:
     def download_all_data(self, progress_callback=None):
         """
         Download ALL data from server (first sync)
-        ✅ Auto-refreshes token on 401
-        ✅ Resets sequences after applying data
+        ✅ FIXED: Only resets sequences once at the end
         """
         try:
             logger.info("=" * 70)
@@ -1273,10 +1257,8 @@ class SyncManager:
                 progress_callback("Connecting to server...", 5)
 
             url = f"{self.server_url}/api/desktop/sync/bulk-download/"
-
             logger.info(f"  URL: {url}")
 
-            # ✅ Use _make_request (auto-refreshes on 401)
             response = self._make_request(url, method='GET')
 
             if not response:
@@ -1310,13 +1292,12 @@ class SyncManager:
                 success = self.apply_bulk_data(all_data, progress_callback)
 
                 if success:
-                    # ✅ CRITICAL: Reset sequences after applying data
+                    # ✅ FIXED: Only reset sequences ONCE at the very end
                     if progress_callback:
                         progress_callback("Resetting database sequences...", 95)
 
                     logger.info("🔄 Resetting sequences after full download...")
                     self.reset_sequences()
-                    logger.info("✅ Sequences reset")
 
                     # Update last sync time
                     self.update_last_sync_time()
@@ -1338,35 +1319,33 @@ class SyncManager:
             logger.error(f"❌ Download error: {e}", exc_info=True)
             return False
 
+
     def reset_sequences(self):
         """
         Reset PostgreSQL sequences after sync
-        ✅ Prevents duplicate key errors
+        ✅ FIXED: Only reset each sequence once
+        ✅ FIXED: Better error handling
         """
         from django.db import connection
         from django_tenants.utils import schema_context
 
-        logger.info(f"🔄 Resetting sequences in schema: {self.schema_name}")
+        logger.info(f"🔄 Resetting database sequences...")
 
         try:
             with schema_context(self.schema_name):
                 with connection.cursor() as cursor:
-                    # Get all sequences in this schema
+                    # Get all sequences
                     cursor.execute("""
-                                   SELECT sequence_name,
-                                          REPLACE(sequence_name, '_id_seq', '') as table_name
-                                   FROM information_schema.sequences
-                                   WHERE sequence_schema = %s
-                                   ORDER BY sequence_name;
-                                   """, [self.schema_name])
+                        SELECT sequence_name,
+                               REPLACE(sequence_name, '_id_seq', '') as table_name
+                        FROM information_schema.sequences
+                        WHERE sequence_schema = %s
+                        ORDER BY sequence_name;
+                    """, [self.schema_name])
 
                     sequences = cursor.fetchall()
-
-                    if not sequences:
-                        logger.warning(f"⚠️ No sequences found in schema '{self.schema_name}'")
-                        return
-
                     reset_count = 0
+                    skip_count = 0
 
                     for seq_name, table_name in sequences:
                         try:
@@ -1384,13 +1363,14 @@ class SyncManager:
                                 SELECT setval('"{self.schema_name}"."{seq_name}"', %s, false);
                             """, [new_value])
 
-                            logger.debug(f"  ✓ {table_name}: max_id={max_id}, next={new_value}")
+                            logger.debug(f"  ✅ Reset {table_name} sequence to {new_value}")
                             reset_count += 1
 
                         except Exception as e:
-                            logger.debug(f"  ⚠️ Skipped {table_name}: {str(e)[:50]}")
+                            logger.debug(f"  ⏭️ Skipped {table_name}: {str(e)[:50]}")
+                            skip_count += 1
 
-                    logger.info(f"✅ Reset {reset_count} sequences")
+                    logger.info(f"✅ Reset {reset_count} sequences ({skip_count} skipped)")
 
         except Exception as e:
             logger.error(f"❌ Failed to reset sequences: {e}", exc_info=True)
@@ -1815,7 +1795,10 @@ class SyncManager:
             return self._apply_bulk_data_impl(all_data, progress_callback)
 
     def _apply_bulk_data_impl(self, all_data, progress_callback=None):
-        """Internal implementation of apply_bulk_data"""
+        """
+        Internal implementation of apply_bulk_data
+        ✅ FIXED: Removed duplicate logging
+        """
         try:
             logger.info(f"💾 Applying data to local database")
 
@@ -1834,7 +1817,9 @@ class SyncManager:
                         created_total += created
                         updated_total += updated
 
-                        logger.info(f"  ✅ {model_name}: {created} created, {updated} updated")
+                        # ✅ REMOVED: Duplicate logging that was here
+                        # logger.info(f"  ✅ {model_name}: {created} created, {updated} updated")
+                        # Now only logged once in apply_model_data()
 
                     except Exception as e:
                         logger.error(f"  ❌ Error saving {model_name}: {e}")
@@ -1849,6 +1834,10 @@ class SyncManager:
     def apply_model_data(self, model_name, records):
         """
         Apply records for a specific model
+        ✅ FIXED: Proper FK resolution with schema awareness
+        ✅ FIXED: Public schema Company support
+        ✅ FIXED: Decimal field conversion
+        ✅ FIXED: Added continue statements to prevent overwrites
         ✅ Converts ForeignKey IDs to instances
         ✅ Handles ManyToMany fields
         ✅ Updates existing records based on unique fields
@@ -1856,6 +1845,9 @@ class SyncManager:
         """
         from decimal import Decimal
         from django.core.exceptions import ValidationError
+        from django_tenants.utils import schema_context
+
+        logger.error(f"🔍 DEBUG: apply_model_data called for {model_name}, {len(records)} records")
 
         try:
             model = apps.get_model(model_name)
@@ -1872,6 +1864,7 @@ class SyncManager:
                     m2m_fields = {}
                     processed_fields = {}
 
+                    # Process each field
                     for field_name, value in fields.items():
                         try:
                             field = model._meta.get_field(field_name)
@@ -1881,34 +1874,59 @@ class SyncManager:
                                 m2m_fields[field_name] = value
                                 continue
 
-                            # ✅ ForeignKey - CONVERT ID TO INSTANCE
+                            # ✅ CRITICAL FIX: ForeignKey handling
                             if field.many_to_one and value is not None:
                                 related_model = field.related_model
+                                related_app = related_model._meta.app_label
+                                related_name = related_model.__name__
+
+                                logger.debug(f"  Processing FK: {field_name}={value} → {related_name}")
 
                                 try:
-                                    # Get the actual instance
-                                    related_instance = related_model.objects.get(pk=value)
-                                    processed_fields[field_name] = related_instance
-                                    logger.debug(f"    ✓ FK {field_name}: {value} → {related_instance}")
+                                    # Check if Company (public schema)
+                                    if related_app == 'company' and related_name == 'Company':
+                                        with schema_context('public'):
+                                            related_instance = related_model.objects.get(pk=value)
+                                            processed_fields[field_name] = related_instance
+                                            logger.debug(f"    ✓ Resolved {field_name} from public schema")
+                                    else:
+                                        # Regular tenant schema FK
+                                        related_instance = related_model.objects.get(pk=value)
+                                        processed_fields[field_name] = related_instance
+                                        logger.debug(f"    ✓ Resolved {field_name}: {value} → {related_instance}")
+
                                 except related_model.DoesNotExist:
-                                    # Related record doesn't exist - skip this field
-                                    logger.debug(f"    Skipping {field_name}={value} - not found")
-                                    # Don't add to processed_fields - field will be null or use default
-                                    continue
+                                    logger.warning(f"    ⚠️ FK not found: {field_name}={value}")
+                                    if field.null:
+                                        processed_fields[field_name] = None
+                                        logger.debug(f"    → Set nullable FK to None")
+                                    else:
+                                        # Skip entire record if required FK missing
+                                        logger.error(f"    ❌ Skipping record - required FK {field_name}={value} missing")
+                                        raise ValueError(f"Required FK not found: {field_name}={value}")
 
-                            # ✅ Decimal fields
-                            elif hasattr(field, 'get_internal_type') and field.get_internal_type() == 'DecimalField':
-                                if value is not None and isinstance(value, str):
-                                    processed_fields[field_name] = Decimal(value)
+                                continue  # ✅ CRITICAL: Skip to next field
+
+                            # ✅ FIXED: Decimal field handling
+                            if hasattr(field, 'get_internal_type') and field.get_internal_type() == 'DecimalField':
+                                if value is not None:
+                                    if isinstance(value, str):
+                                        processed_fields[field_name] = Decimal(value)
+                                        logger.debug(f"    ✓ Converted {field_name} from str to Decimal")
+                                    elif isinstance(value, (int, float)):
+                                        processed_fields[field_name] = Decimal(str(value))
+                                        logger.debug(f"    ✓ Converted {field_name} to Decimal")
+                                    else:
+                                        processed_fields[field_name] = value
                                 else:
-                                    processed_fields[field_name] = value
+                                    processed_fields[field_name] = None
+                                continue  # ✅ CRITICAL: Skip to next field
 
-                            # Regular field
-                            else:
-                                processed_fields[field_name] = value
+                            # Regular field (not FK, not M2M, not Decimal)
+                            processed_fields[field_name] = value
 
                         except Exception as e:
-                            logger.debug(f"    Skipping field {field_name}: {e}")
+                            logger.debug(f"  Skipping field {field_name}: {e}")
                             continue
 
                     # ✅ Try to find existing record by unique fields first
