@@ -809,6 +809,114 @@ class PrimeBooksWindow(QMainWindow):
             # Wait a bit for DOM to be ready
             QTimer.singleShot(500, self.inject_print_handler)
 
+    def background_sync(self):
+        """Start background sync - non-blocking"""
+        try:
+            logger.info("🔄 Starting background sync...")
+
+            # Import the new components
+            from primebooks.background_sync_worker import BackgroundSyncWorker
+            from primebooks.detailed_sync_dialog import DetailedSyncDialog
+
+            # Create non-modal progress dialog
+            self.sync_dialog = DetailedSyncDialog(parent=self)
+
+            # Create background worker
+            self.sync_worker = BackgroundSyncWorker(
+                tenant_id=self.tenant_id,
+                schema_name=self.subdomain,
+                auth_token=self.auth_token,
+                sync_type="full"
+            )
+
+            # Connect all signals
+            self.sync_worker.sync_started.connect(self.sync_dialog.on_sync_started)
+            self.sync_worker.phase_changed.connect(self.sync_dialog.on_phase_changed)
+            self.sync_worker.model_started.connect(self.sync_dialog.on_model_started)
+            self.sync_worker.model_progress.connect(self.sync_dialog.on_model_progress)
+            self.sync_worker.model_completed.connect(self.sync_dialog.on_model_completed)
+            self.sync_worker.overall_progress.connect(self.sync_dialog.on_overall_progress)
+            self.sync_worker.error_occurred.connect(self.sync_dialog.on_error)
+            self.sync_worker.warning_occurred.connect(self.sync_dialog.on_warning)
+            self.sync_worker.sync_completed.connect(self.on_background_sync_completed)
+
+            # Connect cancel button
+            self.sync_dialog.cancel_btn.clicked.connect(self.sync_worker.cancel)
+
+            # Show dialog (non-modal)
+            self.sync_dialog.show()
+
+            # Start worker thread
+            self.sync_worker.start()
+
+            # Update status bar
+            self.statusBar.showMessage("🔄 Background sync in progress...", 3000)
+
+        except Exception as e:
+            logger.error(f"Failed to start background sync: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Sync Error",
+                f"Failed to start background sync:\n\n{str(e)}"
+            )
+
+    def on_background_sync_completed(self, success, summary):
+        """Handle background sync completion"""
+        if success:
+            # Show system notification
+            self.show_system_notification(
+                "Sync Complete",
+                f"✅ Synced successfully!\n"
+                f"Created: {summary.get('created', 0)}, "
+                f"Updated: {summary.get('updated', 0)}"
+            )
+
+            # Refresh the page
+            QTimer.singleShot(2000, self.browser.reload)
+
+            # Update status bar
+            self.statusBar.showMessage(
+                f"✅ Sync complete! Created: {summary.get('created', 0)}, "
+                f"Updated: {summary.get('updated', 0)}",
+                5000
+            )
+        else:
+            # Show error notification
+            error_msg = summary.get('message', 'Unknown error')
+            self.show_system_notification(
+                "Sync Failed",
+                f"❌ Sync failed: {error_msg}",
+                is_error=True
+            )
+
+    def show_system_notification(self, title, message, is_error=False):
+        """Show system tray notification"""
+        try:
+            from PyQt6.QtWidgets import QSystemTrayIcon
+            from PyQt6.QtGui import QIcon
+
+            if QSystemTrayIcon.isSystemTrayAvailable():
+                # Create tray icon if not exists
+                if not hasattr(self, 'tray_icon'):
+                    self.tray_icon = QSystemTrayIcon(self)
+                    # Set icon (you'll need to provide an icon file)
+                    # self.tray_icon.setIcon(QIcon("path/to/icon.png"))
+                    self.tray_icon.show()
+
+                # Show notification
+                icon_type = QSystemTrayIcon.MessageIcon.Critical if is_error else QSystemTrayIcon.MessageIcon.Information
+                self.tray_icon.showMessage(
+                    title,
+                    message,
+                    icon_type,
+                    5000  # 5 seconds
+                )
+            else:
+                # Fallback to message box if system tray not available
+                logger.info(f"Notification: {title} - {message}")
+        except Exception as e:
+            logger.error(f"Failed to show notification: {e}")
+
     def inject_print_handler(self):
         """Inject JavaScript to intercept print links"""
         js_code = """
@@ -1163,9 +1271,8 @@ class PrimeBooksWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        # Manual Sync
-        sync_action = QAction("🔄 Sync Data", self)
-        sync_action.triggered.connect(self.manual_sync)
+        sync_action = QAction("🔄 Sync Data (Background)", self)
+        sync_action.triggered.connect(self.background_sync)  # ← Changed
         toolbar.addAction(sync_action)
 
         toolbar.addSeparator()

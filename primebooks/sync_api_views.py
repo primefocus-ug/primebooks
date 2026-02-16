@@ -312,72 +312,83 @@ class UploadChangesView(APIView):
         return lookup
 
     def _reset_sequences(self, schema_name):
-        """
-        Reset PostgreSQL sequences after upload
-        ✅ Prevents duplicate key errors
-        ✅ Schema-safe
-        ✅ Table-existence aware
-        ✅ FIXED: Uses correct setval syntax
-        """
+        """Reset PostgreSQL sequences after upload."""
         from django.db import connection
 
-        logger.info(f"🔄 Resetting sequences for schema: {schema_name}")
+        logger.info(f"Resetting sequences for schema: {schema_name}")
 
         try:
             with connection.cursor() as cursor:
-                # Get all sequences in this schema
+                # Same reliable discovery query
                 cursor.execute("""
-                               SELECT sequence_name,
-                                      REPLACE(sequence_name, '_id_seq', '') as table_name
-                               FROM information_schema.sequences
-                               WHERE sequence_schema = %s
-                               ORDER BY sequence_name;
-                               """, [schema_name])
+                               SELECT s.sequencename, c.relname, a.attname
+                               FROM pg_sequences s
+                                        JOIN pg_class seq_cls
+                                             ON seq_cls.relname = s.sequencename
+                                                 AND seq_cls.relnamespace = (SELECT oid
+                                                                             FROM pg_namespace
+                                                                             WHERE nspname = %s)
+                                        JOIN pg_depend dep
+                                             ON dep.objid = seq_cls.oid
+                                                 AND dep.classid = 'pg_class'::regclass
+                        AND dep.deptype  = 'a'
+                    JOIN pg_attribute a
+                               ON a.attrelid = dep.refobjid
+                                   AND a.attnum = dep.refobjsubid
+                                   JOIN pg_class c ON c.oid = dep.refobjid
+                               WHERE s.schemaname = %s
+                               ORDER BY s.sequencename;
+                               """, [schema_name, schema_name])
 
-                sequences = cursor.fetchall()
+                rows = cursor.fetchall()
 
-                if not sequences:
-                    logger.warning(f"⚠️ No sequences found in schema '{schema_name}'")
-                    return
+                if not rows:  # fallback
+                    cursor.execute(
+                        "SELECT sequencename FROM pg_sequences "
+                        "WHERE schemaname = %s ORDER BY sequencename;",
+                        [schema_name]
+                    )
+                    rows = []
+                    for (sname,) in cursor.fetchall():
+                        parts = sname.rsplit("_", 2)
+                        if len(parts) == 3 and parts[2] == "seq":
+                            rows.append((sname, parts[0], parts[1]))
+                        else:
+                            rows.append((sname, sname.replace("_id_seq", ""), "id"))
 
-                reset_count = 0
+                reset_count = skipped_count = 0
 
-                for seq_name, table_name in sequences:
+                for seq_name, table_name, col_name in rows:
                     try:
-                        # Check if table exists
                         cursor.execute(
-                            "SELECT to_regclass(%s)",
-                            [f"{schema_name}.{table_name}"]
+                            "SELECT to_regclass(%s)", [f"{schema_name}.{table_name}"]
                         )
                         if cursor.fetchone()[0] is None:
+                            skipped_count += 1
                             continue
 
-                        # Get max ID
-                        cursor.execute(f"""
-                            SELECT COALESCE(MAX(id), 0) 
-                            FROM "{schema_name}"."{table_name}";
-                        """)
+                        cursor.execute(
+                            f'SELECT COALESCE(MAX("{col_name}"), 0) '
+                            f'FROM "{schema_name}"."{table_name}";'
+                        )
+                        max_val = cursor.fetchone()[0]
 
-                        max_id = cursor.fetchone()[0]
-                        new_value = max_id + 1
-
-                        # ✅ CRITICAL FIX: Use 'true' parameter
-                        # This means: "the sequence has been used up to this value"
-                        # Next nextval() will return new_value + 1
-                        cursor.execute(f"""
-                            SELECT setval('"{schema_name}"."{seq_name}"', %s, true);
-                        """, [max_id])
-
-                        logger.debug(f"  ✓ {table_name}: max_id={max_id}, next will be={new_value}")
+                        cursor.execute(
+                            f'SELECT setval(\'"{schema_name}"."{seq_name}"\', '
+                            f'GREATEST(%s, 1), true);',
+                            [max_val]
+                        )
+                        logger.debug(f"  {table_name}.{col_name}: max={max_val}, next={max_val + 1}")
                         reset_count += 1
 
                     except Exception as e:
-                        logger.debug(f"  ⚠️ Skipped {table_name}: {str(e)[:50]}")
+                        logger.warning(f"  Skipped {seq_name}: {str(e)[:120]}")
+                        skipped_count += 1
 
-                logger.info(f"✅ Reset {reset_count} sequences")
+                logger.info(f"Sequences reset: {reset_count} done, {skipped_count} skipped")
 
         except Exception as e:
-            logger.error(f"❌ Failed to reset sequences: {e}", exc_info=True)
+            logger.error(f"_reset_sequences failed: {e}", exc_info=True)
 
     def post(self, request):
         try:

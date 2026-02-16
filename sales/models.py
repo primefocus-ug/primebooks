@@ -876,8 +876,10 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
                 try:
                     from sales.models import Receipt as ReceiptModel
                     if not hasattr(self, 'receipt_detail') or self.receipt_detail is None:
+                        # ✅ FIX: Pass receipt_number to prevent double prefix
                         ReceiptModel.objects.create(
                             sale=self,
+                            receipt_number=self.document_number,  # ← ADD THIS LINE
                             printed_by=self.created_by,
                             receipt_data={
                                 'items': [],
@@ -1932,9 +1934,29 @@ class Receipt(OfflineIDMixin,models.Model):
         return f"Receipt #{self.receipt_number}"
 
     def save(self, *args, **kwargs):
+        """
+        Save receipt with proper number generation
+        ✅ Handles cases where document_number already has prefix
+        ✅ Defensive cleanup of double prefixes
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Auto-generate receipt number
         if not self.receipt_number and self.sale:
-            self.receipt_number = f"RCP-{self.sale.document_number}"
+            # ✅ FIX: Check if document_number already has RCP- prefix
+            if self.sale.document_number.startswith('RCP-'):
+                # Use document_number as-is (already has prefix)
+                self.receipt_number = self.sale.document_number
+            else:
+                # Add RCP- prefix
+                self.receipt_number = f"RCP-{self.sale.document_number}"
+
+        # ✅ DEFENSIVE: Clean up any double prefix that might exist
+        # (in case old data has this issue)
+        if self.receipt_number and self.receipt_number.startswith('RCP-RCP-'):
+            self.receipt_number = self.receipt_number.replace('RCP-RCP-', 'RCP-', 1)
+            logger.warning(f"🔧 Fixed duplicate RCP prefix: {self.receipt_number}")
 
         # Auto-populate store from sale
         if not self.store and self.sale:

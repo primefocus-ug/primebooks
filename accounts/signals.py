@@ -1086,21 +1086,39 @@ def log_model_save(sender, instance, created, **kwargs):
     user = getattr(instance, 'created_by', None) or getattr(instance, 'updated_by', None)
 
     try:
-        AuditLog.objects.create(
-            user=user,
-            action=action if action in dict(AuditLog.ACTION_TYPES) else 'other',
-            action_description=description,
-            content_object=instance,
-            resource_name=str(instance),
-            is_system_action=user is None,
-            company=getattr(instance, 'company', None),
-            metadata={
-                'model': sender.__name__,
-                'created': created
-            }
-        )
+        from django.db import transaction, connection
+
+        # If the outer transaction is already broken, bail out immediately.
+        # Attempting ANY query here would raise TransactionManagementError.
+        if connection.needs_rollback:
+            logger.warning(
+                f"Skipping audit log for {sender.__name__} — "
+                f"outer transaction is already broken"
+            )
+            return
+
+        # Wrap in a savepoint so a failure here (e.g. duplicate PK from a
+        # drifted sequence) rolls back ONLY this insert and never poisons
+        # the caller's atomic block.
+        with transaction.atomic():
+            AuditLog.objects.create(
+                user=user,
+                action=action if action in dict(AuditLog.ACTION_TYPES) else 'other',
+                action_description=description,
+                content_object=instance,
+                resource_name=str(instance),
+                is_system_action=user is None,
+                company=getattr(instance, 'company', None),
+                metadata={
+                    'model': sender.__name__,
+                    'created': created
+                }
+            )
+
     except Exception as e:
-        logger.error(f"Failed to create audit log: {e}")
+        # The savepoint above was rolled back automatically.
+        # The outer transaction is completely unaffected.
+        logger.warning(f"Audit log skipped for {sender.__name__}: {e}")
 
 
 @receiver(post_delete)

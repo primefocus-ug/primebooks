@@ -116,9 +116,6 @@ SYNC_MODEL_CONFIG = {
     'company.SubscriptionPlan': {
         'dependencies': [],
     },
-    'company.EFRISHsCode': {
-        'dependencies': [],
-    },
     # Error Tracking
     'errors.ErrorSummary': {
         'dependencies': [],
@@ -152,23 +149,6 @@ SYNC_MODEL_CONFIG = {
         'dependencies': [],
     },
 
-    # Public Apps - Reference Data
-    'public_blog.BlogCategory': {
-        'dependencies': [],
-    },
-    'public_support.FAQ': {
-        'dependencies': [],
-    },
-    'public_seo.RobotsTxt': {
-        'dependencies': [],
-    },
-    'public_seo.Sitemap': {
-        'dependencies': [],
-    },
-    'public_seo.Redirect': {
-        'dependencies': [],
-    },
-
     # ============================================================================
     # TIER 2: COMPANY & PUBLIC USER - Depends only on SubscriptionPlan
     # ============================================================================
@@ -180,40 +160,6 @@ SYNC_MODEL_CONFIG = {
             'verification_token',
             'smtp_password',
         ],
-    },
-
-    # Public User Management
-    'public_accounts.PublicUser': {
-        'dependencies': [],
-        'exclude_fields': ['password', 'backup_codes'],
-    },
-    'public_accounts.PasswordResetToken': {
-        'dependencies': ['public_accounts.PublicUser'],
-    },
-    'public_accounts.PublicUserActivity': {
-        'dependencies': ['public_accounts.PublicUser'],
-    },
-
-    # Public Admin
-    'public_admin.PublicStaffUser': {
-        'dependencies': ['public_accounts.PublicUser'],
-    },
-
-    # Public Router
-    'public_router.SubdomainReservation': {
-        'dependencies': [],
-    },
-    'public_router.PublicNewsletterSubscriber': {
-        'dependencies': [],
-    },
-    'public_router.TenantSignupRequest': {
-        'dependencies': ['company.Company'],
-    },
-    'public_router.TenantApprovalWorkflow': {
-        'dependencies': ['public_router.TenantSignupRequest'],
-    },
-    'public_router.TenantNotificationLog': {
-        'dependencies': ['company.Company'],
     },
 
     # ============================================================================
@@ -248,11 +194,6 @@ SYNC_MODEL_CONFIG = {
             'failed_login_attempts',
         ],
     },
-
-    # OTP for 2FA
-    'django_otp.Device': {
-        'dependencies': ['accounts.CustomUser'],
-    },
     'otp_totp.TOTPDevice': {
         'dependencies': ['accounts.CustomUser'],
     },
@@ -260,22 +201,7 @@ SYNC_MODEL_CONFIG = {
     # ============================================================================
     # TIER 5: COMPANY SETTINGS & DOMAINS - Depends on Company
     # ============================================================================
-
-    'company.TenantEmailSettings': {
-        'dependencies': ['company.Company'],
-        'exclude_fields': ['smtp_password'],
-    },
-    'company.TenantInvoiceSettings': {
-        'dependencies': ['company.Company'],
-        'exclude_fields': ['efris_private_key'],
-    },
     'company.Domain': {
-        'dependencies': ['company.Company'],
-    },
-    'company.CompanyRelationship': {
-        'dependencies': ['company.Company'],
-    },
-    'company.CrossCompanyTransaction': {
         'dependencies': ['company.Company'],
     },
 
@@ -655,70 +581,6 @@ SYNC_MODEL_CONFIG = {
         'dependencies': ['django_celery_results.GroupResult'],
     },
 
-    # ============================================================================
-    # TIER 21: PUBLIC ANALYTICS - Visitor tracking
-    # ============================================================================
-
-    'public_analytics.VisitorSession': {
-        'dependencies': [],
-    },
-    'public_analytics.PageView': {
-        'dependencies': ['public_analytics.VisitorSession'],
-    },
-    'public_analytics.Event': {
-        'dependencies': ['public_analytics.VisitorSession'],
-    },
-    'public_analytics.Conversion': {
-        'dependencies': ['public_analytics.VisitorSession'],
-    },
-    'public_analytics.DailyStats': {
-        'dependencies': [],
-    },
-
-    # ============================================================================
-    # TIER 22: PUBLIC BLOG - Content management
-    # ============================================================================
-
-    'public_blog.BlogPost': {
-        'dependencies': ['public_blog.BlogCategory', 'public_accounts.PublicUser'],
-    },
-    'public_blog.BlogComment': {
-        'dependencies': ['public_blog.BlogPost', 'public_accounts.PublicUser'],
-    },
-    'public_blog.Newsletter': {
-        'dependencies': [],
-    },
-
-    # ============================================================================
-    # TIER 23: PUBLIC SEO - Search optimization
-    # ============================================================================
-
-    'public_seo.SEOPage': {
-        'dependencies': [],
-    },
-    'public_seo.KeywordTracking': {
-        'dependencies': ['public_seo.SEOPage'],
-    },
-    'public_seo.KeywordRankingHistory': {
-        'dependencies': ['public_seo.KeywordTracking'],
-    },
-    'public_seo.SEOAudit': {
-        'dependencies': ['public_seo.SEOPage'],
-    },
-
-    # ============================================================================
-    # TIER 24: PUBLIC SUPPORT - Customer support
-    # ============================================================================
-
-    'public_support.ContactRequest': {
-        'dependencies': [],
-    },
-    'public_support.SupportTicket': {
-        'dependencies': ['public_accounts.PublicUser'],
-    },
-    'public_support.TicketReply': {
-        'dependencies': ['public_support.SupportTicket', 'public_accounts.PublicUser'],
-    },
 
     # ============================================================================
     # TIER 25: AUDIT & HISTORY - Depends on everything (last tier)
@@ -1158,7 +1020,7 @@ class SyncManager:
     def download_changes(self, progress_callback=None):
         """
         Download changes from server
-        ✅ FIXED: Only resets sequences once at the end
+        ✅ FIXED: Always resets sequences after applying any data
         """
         try:
             last_sync = self.get_last_sync_time()
@@ -1205,10 +1067,8 @@ class SyncManager:
             if total_changed == 0:
                 logger.info("✅ No server changes to download")
                 self.update_last_sync_time()
-
                 if progress_callback:
                     progress_callback("No changes to download", 100)
-
                 return True
 
             logger.info(f"✅ Downloaded {total_changed} changed records across {len(changes)} models")
@@ -1219,20 +1079,15 @@ class SyncManager:
             # Apply changes
             success = self.apply_bulk_data(changes, progress_callback)
 
+            # ✅ ALWAYS reset sequences after applying data, regardless of success/fail
+            # Do this BEFORE updating last_sync_time so a crash here is recoverable
+            logger.info("🔄 Resetting sequences after download...")
+            self.reset_sequences()
+
             if success:
-                # ✅ CRITICAL: Reset sequences AFTER applying data
-                if progress_callback:
-                    progress_callback("Resetting sequences...", 90)
-
-                logger.info("🔄 Resetting sequences after download...")
-                self.reset_sequences()  # ← MUST be here!
-
-                # Update last sync time
                 self.update_last_sync_time()
-
                 if progress_callback:
                     progress_callback("Changes applied!", 100)
-
                 logger.info("✅ Changes applied successfully")
                 return True
             else:
@@ -1319,10 +1174,11 @@ class SyncManager:
 
     def reset_sequences(self):
         """
-        Reset PostgreSQL sequences after sync
-        ✅ FIXED: Prevents duplicate key errors
-        ✅ Resets ALL sequences in schema
-        ✅ Uses correct setval syntax
+        Reset PostgreSQL sequences after sync.
+        ✅ Single definition (duplicate method bug fixed — delete the other one)
+        ✅ Uses pg_sequences — reliable for tenant schemas
+        ✅ Falls back to name-heuristic if join returns nothing
+        ✅ setval(seq, max, true) → next nextval() returns max + 1
         """
         from django.db import connection
         from django_tenants.utils import schema_context
@@ -1332,66 +1188,93 @@ class SyncManager:
         try:
             with schema_context(self.schema_name):
                 with connection.cursor() as cursor:
-                    # Get ALL sequences with their associated tables
+
                     cursor.execute("""
-                                   SELECT seq.relname as sequence_name,
-                                          tab.relname as table_name,
-                                          att.attname as column_name
-                                   FROM pg_class seq
-                                            JOIN pg_namespace ns ON seq.relnamespace = ns.oid
-                                            JOIN pg_depend dep ON seq.oid = dep.objid
-                                            JOIN pg_class tab ON dep.refobjid = tab.oid
-                                            JOIN pg_attribute att ON att.attrelid = tab.oid
-                                       AND att.attnum = dep.refobjsubid
-                                   WHERE seq.relkind = 'S'
-                                     AND ns.nspname = %s
-                                   ORDER BY seq.relname;
-                                   """, [self.schema_name])
+                                   SELECT s.sequencename, c.relname, a.attname
+                                   FROM pg_sequences s
+                                            JOIN pg_class seq_cls
+                                                 ON seq_cls.relname = s.sequencename
+                                                     AND seq_cls.relnamespace = (SELECT oid
+                                                                                 FROM pg_namespace
+                                                                                 WHERE nspname = %s)
+                                            JOIN pg_depend dep
+                                                 ON dep.objid = seq_cls.oid
+                                                     AND dep.classid = 'pg_class'::regclass
+                            AND dep.deptype  = 'a'
+                        JOIN pg_attribute a
+                                   ON a.attrelid = dep.refobjid
+                                       AND a.attnum = dep.refobjsubid
+                                       JOIN pg_class c ON c.oid = dep.refobjid
+                                   WHERE s.schemaname = %s
+                                   ORDER BY s.sequencename;
+                                   """, [self.schema_name, self.schema_name])
 
-                    sequences = cursor.fetchall()
+                    rows = cursor.fetchall()
 
-                    if not sequences:
-                        logger.warning(f"⚠️ No sequences found in schema '{self.schema_name}'")
+                    if not rows:
+                        logger.warning(
+                            f"⚠️ pg_sequences join returned 0 rows for '{self.schema_name}'. "
+                            f"Falling back to name-heuristic."
+                        )
+                        cursor.execute(
+                            "SELECT sequencename FROM pg_sequences WHERE schemaname = %s "
+                            "ORDER BY sequencename;",
+                            [self.schema_name]
+                        )
+                        rows = []
+                        for (sname,) in cursor.fetchall():
+                            parts = sname.rsplit("_", 2)
+                            if len(parts) == 3 and parts[2] == "seq":
+                                rows.append((sname, parts[0], parts[1]))
+                            else:
+                                rows.append((sname, sname.replace("_id_seq", ""), "id"))
+
+                    if not rows:
+                        logger.warning(
+                            f"⚠️ No sequences found at all in '{self.schema_name}'. "
+                            f"Skipping — duplicate key errors may occur!"
+                        )
                         return True
 
-                    logger.info(f"  📊 Found {len(sequences)} sequences to reset")
+                    reset_count = skipped_count = 0
 
-                    reset_count = 0
-                    skipped_count = 0
-
-                    for seq_name, table_name, col_name in sequences:
+                    for seq_name, table_name, col_name in rows:
                         try:
-                            # Get max value from table
-                            cursor.execute(f"""
-                                SELECT COALESCE(MAX("{col_name}"), 0) 
-                                FROM "{self.schema_name}"."{table_name}";
-                            """)
+                            cursor.execute(
+                                "SELECT to_regclass(%s)",
+                                [f"{self.schema_name}.{table_name}"]
+                            )
+                            if cursor.fetchone()[0] is None:
+                                skipped_count += 1
+                                continue
 
+                            cursor.execute(
+                                f'SELECT COALESCE(MAX("{col_name}"), 0) '
+                                f'FROM "{self.schema_name}"."{table_name}";'
+                            )
                             max_val = cursor.fetchone()[0]
-                            next_val = max_val + 1
 
-                            # ✅ CRITICAL: Reset sequence with 'false' parameter
-                            # This means next nextval() will return next_val
-                            cursor.execute(f"""
-                                SELECT setval(
-                                    '"{self.schema_name}"."{seq_name}"', 
-                                    %s, 
-                                    false
-                                );
-                            """, [next_val])
-
-                            logger.debug(f"  ✅ Reset {seq_name} to {next_val} (table max: {max_val})")
+                            cursor.execute(
+                                f'SELECT setval(\'"{self.schema_name}"."{seq_name}"\', '
+                                f'GREATEST(%s, 1), true);',
+                                [max_val]
+                            )
+                            logger.debug(
+                                f"  ✅ {table_name}.{col_name}: max={max_val}, next={max_val + 1}"
+                            )
                             reset_count += 1
 
                         except Exception as e:
-                            logger.debug(f"  ⚠️ Skipped {seq_name}: {str(e)[:80]}")
+                            logger.warning(f"  ⚠️ Skipped {seq_name}: {str(e)[:120]}")
                             skipped_count += 1
 
-                    logger.info(f"✅ Reset {reset_count} sequences ({skipped_count} skipped)")
+                    logger.info(
+                        f"✅ Sequences reset: {reset_count} done, {skipped_count} skipped"
+                    )
                     return True
 
         except Exception as e:
-            logger.error(f"❌ Failed to reset sequences: {e}", exc_info=True)
+            logger.error(f"❌ reset_sequences failed: {e}", exc_info=True)
             return False
 
 
@@ -1400,77 +1283,91 @@ class SyncManager:
     # ========================================================================
     def fix_sequences_after_upload(self):
         """
-        Fix PostgreSQL sequences after uploading data
-        ✅ Prevents "duplicate key" errors
-        ✅ Automatically runs after upload
-
-        Add this method to SyncManager class
+        Fix PostgreSQL sequences after uploading data.
+        ✅ Uses schema_context (was missing before — caused wrong-schema resets)
+        ✅ Covers all sequences, not just a hardcoded model list
         """
         from django.db import connection
-        from django.apps import apps
+        from django_tenants.utils import schema_context
 
         logger.info("🔧 Fixing sequences after upload...")
 
-        models_to_fix = [
-            'sales.Sale',
-            'sales.SaleItem',
-            'sales.Payment',
-            'customers.Customer',
-            'inventory.Product',
-            'inventory.Stock',
-            'inventory.StockMovement',
-            'inventory.Category',
-            'inventory.Supplier',
-            'stores.Store',
-            'accounts.CustomUser',
-            'invoices.Invoice',
-            'invoices.InvoiceItem',
-        ]
-
-        fixed_count = 0
-
         try:
-            with connection.cursor() as cursor:
-                for model_name in models_to_fix:
-                    try:
-                        model = apps.get_model(model_name)
-                        table_name = model._meta.db_table
+            with schema_context(self.schema_name):
+                with connection.cursor() as cursor:
 
-                        # Get sequence name
-                        cursor.execute(f"""
-                            SELECT pg_get_serial_sequence('{self.schema_name}.{table_name}', 'id')
-                        """)
+                    # Discover all sequences via pg_sequences + pg_depend
+                    cursor.execute("""
+                                   SELECT s.sequencename, c.relname, a.attname
+                                   FROM pg_sequences s
+                                            JOIN pg_class seq_cls
+                                                 ON seq_cls.relname = s.sequencename
+                                                     AND seq_cls.relnamespace = (SELECT oid
+                                                                                 FROM pg_namespace
+                                                                                 WHERE nspname = %s)
+                                            JOIN pg_depend dep
+                                                 ON dep.objid = seq_cls.oid
+                                                     AND dep.classid = 'pg_class'::regclass
+                            AND dep.deptype  = 'a'
+                        JOIN pg_attribute a
+                                   ON a.attrelid = dep.refobjid
+                                       AND a.attnum = dep.refobjsubid
+                                       JOIN pg_class c ON c.oid = dep.refobjid
+                                   WHERE s.schemaname = %s
+                                   ORDER BY s.sequencename;
+                                   """, [self.schema_name, self.schema_name])
 
-                        result = cursor.fetchone()
-                        if not result or not result[0]:
-                            continue
+                    rows = cursor.fetchall()
 
-                        sequence_name = result[0].split('.')[-1]
+                    # Fallback: name-heuristic if join returns nothing
+                    if not rows:
+                        logger.warning("⚠️ pg_sequences join returned 0 rows, using name heuristic")
+                        cursor.execute(
+                            "SELECT sequencename FROM pg_sequences WHERE schemaname = %s;",
+                            [self.schema_name]
+                        )
+                        rows = []
+                        for (sname,) in cursor.fetchall():
+                            parts = sname.rsplit("_", 2)
+                            if len(parts) == 3 and parts[2] == "seq":
+                                rows.append((sname, parts[0], parts[1]))
+                            else:
+                                rows.append((sname, sname.replace("_id_seq", ""), "id"))
 
-                        # Get max ID
-                        cursor.execute(f"""
-                            SELECT COALESCE(MAX(id), 0) FROM {self.schema_name}.{table_name}
-                        """)
+                    fixed = skipped = 0
 
-                        max_id = cursor.fetchone()[0]
-                        new_value = max_id + 1
+                    for seq_name, table_name, col_name in rows:
+                        try:
+                            cursor.execute(
+                                "SELECT to_regclass(%s)",
+                                [f"{self.schema_name}.{table_name}"]
+                            )
+                            if cursor.fetchone()[0] is None:
+                                skipped += 1
+                                continue
 
-                        # Fix sequence
-                        cursor.execute(f"""
-                            SELECT setval('{self.schema_name}.{sequence_name}', {new_value}, false)
-                        """)
+                            cursor.execute(
+                                f'SELECT COALESCE(MAX("{col_name}"), 0) '
+                                f'FROM "{self.schema_name}"."{table_name}";'
+                            )
+                            max_val = cursor.fetchone()[0]
 
-                        logger.debug(f"  ✅ Fixed {table_name}: {new_value}")
-                        fixed_count += 1
+                            cursor.execute(
+                                f'SELECT setval(\'"{self.schema_name}"."{seq_name}"\', '
+                                f'GREATEST(%s, 1), true);',
+                                [max_val]
+                            )
+                            logger.debug(f"  ✅ {table_name}.{col_name}: max={max_val}, next={max_val + 1}")
+                            fixed += 1
 
-                    except Exception as e:
-                        logger.debug(f"  Skipped {model_name}: {e}")
+                        except Exception as e:
+                            logger.debug(f"  ⚠️ Skipped {seq_name}: {str(e)[:100]}")
+                            skipped += 1
 
-            if fixed_count > 0:
-                logger.info(f"✅ Fixed {fixed_count} sequences")
+                    logger.info(f"✅ Sequences fixed after upload: {fixed} done, {skipped} skipped")
 
         except Exception as e:
-            logger.error(f"Error fixing sequences: {e}")
+            logger.error(f"❌ fix_sequences_after_upload failed: {e}", exc_info=True)
 
     def upload_changes(self, progress_callback=None):
         """
@@ -1480,6 +1377,8 @@ class SyncManager:
         ✅ Uploads offline changes
         ✅ Replaces negative IDs with server IDs
         ✅ Fixes PostgreSQL sequences AFTER successful upload
+        ✅ FIXED: fix_sequences_after_upload now uses schema_context
+        ✅ FIXED: Sequence fix is no longer silently swallowed
         """
         try:
             last_sync = self.get_last_sync_time()
@@ -1517,7 +1416,7 @@ class SyncManager:
                 "last_sync": last_sync.isoformat() if last_sync else None,
             }
 
-            # ✅ FIXED: Use _make_request instead of requests.post directly
+            # Use _make_request for automatic token refresh
             response = self._make_request(
                 url,
                 method='POST',
@@ -1541,9 +1440,9 @@ class SyncManager:
                 logger.error(f"❌ Upload failed: {error_msg}")
                 return False
 
-            # ==========================================================
+            # =================================================================
             # ✅ SUCCESS PATH
-            # ==========================================================
+            # =================================================================
 
             logger.info("✅ Upload successful")
 
@@ -1553,17 +1452,11 @@ class SyncManager:
                 logger.info(f"🔄 Replacing offline IDs for {len(id_mappings)} model(s)")
                 self._replace_offline_ids(id_mappings)
 
-            # ✅ FIX SEQUENCES AFTER UPLOAD
-            try:
-                logger.info("🔧 Fixing database sequences after upload...")
-                self.fix_sequences_after_upload()
-                logger.info("✅ Sequences fixed successfully")
-            except Exception as seq_err:
-                # ⚠️ Non-fatal, but logged
-                logger.warning(
-                    f"⚠️ Sequence fix failed (safe to retry later): {seq_err}",
-                    exc_info=True,
-                )
+            # ✅ FIX SEQUENCES AFTER UPLOAD (required — not optional)
+            # Server may have assigned new IDs via _replace_offline_ids;
+            # sequences must be updated or the next local insert will collide.
+            logger.info("🔧 Fixing database sequences after upload...")
+            self.fix_sequences_after_upload()
 
             if progress_callback:
                 progress_callback("Upload complete!", 60)
@@ -1653,43 +1546,6 @@ class SyncManager:
                 except Exception as e:
                     logger.error(f"  ❌ Error updating FKs for {model_name}: {e}")
 
-    def reset_sequences(self):
-        """
-        Reset PostgreSQL sequences after sync
-        ✅ Prevents duplicate key errors
-        """
-        from django.db import connection
-        from django_tenants.utils import schema_context
-
-        logger.info("🔄 Resetting database sequences...")
-
-        with schema_context(self.schema_name):
-            with connection.cursor() as cursor:
-                # Get all tables with serial/sequence columns
-                for model_name in SYNC_MODEL_CONFIG.keys():
-                    try:
-                        model = apps.get_model(model_name)
-                        table_name = model._meta.db_table
-                        pk_field = model._meta.pk.name
-
-                        # Get the sequence name
-                        sequence_name = f"{table_name}_{pk_field}_seq"
-
-                        # Get max ID from table
-                        cursor.execute(f'SELECT MAX({pk_field}) FROM "{table_name}"')
-                        result = cursor.fetchone()
-                        max_id = result[0] if result[0] else 0
-
-                        # Reset sequence to max_id + 1
-                        new_val = max_id + 1
-                        cursor.execute(f"SELECT setval('{sequence_name}', {new_val}, false)")
-
-                        logger.info(f"  ✅ Reset {table_name} sequence to {new_val}")
-
-                    except Exception as e:
-                        logger.debug(f"  ⏭️  Skipping {model_name}: {e}")
-
-        logger.info("✅ Sequences reset complete")
 
     def collect_local_changes(self, since):
         """
@@ -1816,7 +1672,9 @@ class SyncManager:
     def _apply_bulk_data_impl(self, all_data, progress_callback=None):
         """
         Internal implementation of apply_bulk_data
-        ✅ FIXED: Removed duplicate logging
+        ✅ FIXED: Each model committed in its own transaction so FK lookups
+                  in subsequent models can see newly written records.
+                  (Fixes: "Cannot assign X: Invoice.sale must be a Sale instance")
         """
         try:
             logger.info(f"💾 Applying data to local database")
@@ -1832,13 +1690,16 @@ class SyncManager:
                             progress = 30 + int((index / total_models) * 60)
                             progress_callback(f"Saving {model_name}...", progress)
 
-                        created, updated = self.apply_model_data(model_name, records)
+                        # ✅ CRITICAL: commit each model in its own transaction so
+                        # records are visible to FK lookups in later models.
+                        # Without this, Invoice can't find Sale even though Sale
+                        # was "created" two iterations earlier in the same transaction.
+                        from django.db import transaction
+                        with transaction.atomic():
+                            created, updated = self.apply_model_data(model_name, records)
+
                         created_total += created
                         updated_total += updated
-
-                        # ✅ REMOVED: Duplicate logging that was here
-                        # logger.info(f"  ✅ {model_name}: {created} created, {updated} updated")
-                        # Now only logged once in apply_model_data()
 
                     except Exception as e:
                         logger.error(f"  ❌ Error saving {model_name}: {e}")
@@ -2113,6 +1974,7 @@ class SyncManager:
         ✅ Download server changes
         ✅ Only syncs NEW changes after first sync
         ✅ Proper error handling
+        ✅ FIXED: Always resets sequences at end of sync as guaranteed safety net
         """
         try:
             from primebooks.auth import DesktopAuthManager
@@ -2136,13 +1998,16 @@ class SyncManager:
 
                 if not self.is_online():
                     logger.warning("⚠️  Server not reachable")
-                    self.update_last_sync_time()  # Set time even if offline
+                    self.update_last_sync_time()
                     return True
 
                 # Download all data
                 success = self.download_all_data(progress_callback)
 
                 if success:
+                    # ✅ Final sequence reset after first sync
+                    logger.info("🔄 Final sequence reset after first sync...")
+                    self.reset_sequences()
                     logger.info("✅ First sync complete")
                     return True
                 else:
@@ -2176,6 +2041,15 @@ class SyncManager:
                 download_success = self.download_changes(progress_callback)
 
                 if download_success:
+                    # ✅ CRITICAL: Always reset sequences at the very end of sync.
+                    # This catches any IDs written by _replace_offline_ids or
+                    # download_changes that weren't covered by earlier resets.
+                    # The signal-based reset fires BEFORE sync completes so it
+                    # captures stale max values — this one fires AFTER everything
+                    # has been written, so it is always correct.
+                    logger.info("🔄 Final sequence reset after full sync...")
+                    self.reset_sequences()
+
                     logger.info("=" * 70)
                     logger.info("✅ SYNC COMPLETE")
                     logger.info(f"  Timestamp: {self.get_last_sync_time()}")
@@ -2184,7 +2058,8 @@ class SyncManager:
                     if progress_callback:
                         progress_callback("Sync complete!", 100)
 
-                    return True  # ✅ Return True - sync succeeded
+                    return True
+
                 else:
                     logger.error("❌ Download failed - sync incomplete")
                     return False
