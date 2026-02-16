@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict IyZK9fb9ANgU2ZpzFr7g5swWZcErqJJvSK98K3sfAW4f92ka5LqFChxFcJiIqVx
+\restrict hZZQpgrQQSR2N4S54Ypo3G7ySWlh5BhbHwhaHrJBQWdzLOorOiv3J4v8Q6nPOaL
 
 -- Dumped from database version 16.11 (Ubuntu 16.11-1.pgdg24.04+1)
 -- Dumped by pg_dump version 18.1 (Ubuntu 18.1-1.pgdg24.04+2)
@@ -2798,12 +2798,12 @@ CREATE TABLE template.inventory_product (
     package_scaled_value_customs numeric(12,8),
     piece_measure_unit character varying(10),
     efris_customs_measure_unit character varying(10) NOT NULL,
-    efris_customs_scaled_value numeric(12,8) NOT NULL,
+    efris_customs_scaled_value numeric(12,8),
     efris_customs_unit_price numeric(12,2),
     efris_has_other_units boolean NOT NULL,
     efris_other_units jsonb,
-    efris_package_scaled_value numeric(12,8) NOT NULL,
-    efris_package_scaled_value_customs numeric(12,8) NOT NULL,
+    efris_package_scaled_value numeric(12,8),
+    efris_package_scaled_value_customs numeric(12,8),
     efris_piece_scaled_value numeric(12,8) NOT NULL,
     efris_service_mark character varying(3) NOT NULL,
     hs_code character varying(50) NOT NULL,
@@ -11999,5 +11999,5 @@ ALTER TABLE ONLY template.taggit_taggeditem
 -- PostgreSQL database dump complete
 --
 
-\unrestrict IyZK9fb9ANgU2ZpzFr7g5swWZcErqJJvSK98K3sfAW4f92ka5LqFChxFcJiIqVx
+\unrestrict hZZQpgrQQSR2N4S54Ypo3G7ySWlh5BhbHwhaHrJBQWdzLOorOiv3J4v8Q6nPOaL
 
