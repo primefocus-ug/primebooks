@@ -15,8 +15,6 @@ class ProductFormHandler {
         this.initializeCalculations();
         this.initializeGenerators();
         this.initializeCategorySync();
-        this.initializeExportFields();
-        this.initializePieceUnitFields();
         this.initializeValidation();
     }
 
@@ -194,75 +192,6 @@ class ProductFormHandler {
         }
     }
 
-    initializeExportFields() {
-        const toggleExportFields = () => {
-            const isExport = $('#id_is_export_product').is(':checked');
-
-            if (isExport) {
-                $('.export-field').addClass('border-info');
-                $('#id_hs_code, #id_efris_customs_measure_unit').attr('required', true);
-
-                if ($('#exportWarning').length === 0) {
-                    const warning = $(`
-                        <div id="exportWarning" class="alert alert-info mt-2" role="alert">
-                            <i class="fas fa-info-circle"></i>
-                            <strong>Export Product:</strong> Ensure HS Code and Customs Measure Unit are filled.
-                        </div>
-                    `);
-                    warning.insertAfter($('#id_is_export_product').closest('.form-check'));
-                }
-            } else {
-                $('.export-field').removeClass('border-info');
-                $('#id_hs_code, #id_efris_customs_measure_unit').removeAttr('required');
-                $('#exportWarning').remove();
-            }
-
-            this.checkExportReadiness();
-        };
-
-        $('#id_is_export_product').on('change', toggleExportFields);
-        $('#id_hs_code, #id_efris_customs_measure_unit').on('change blur', () => {
-            this.checkExportReadiness();
-        });
-
-        // Initialize
-        toggleExportFields();
-    }
-
-    checkExportReadiness() {
-        const hsCode = $('#id_hs_code').val();
-        const customsUnit = $('#id_efris_customs_measure_unit').val();
-        const isExport = $('#id_is_export_product').is(':checked');
-
-        if (isExport && hsCode && customsUnit) {
-            if (!$('#id_is_export_ready').is(':checked')) {
-                $('#id_is_export_ready').prop('checked', true);
-                showSuccessMessage('Product marked as export ready!');
-            }
-        } else if ($('#id_is_export_ready').is(':checked') && isExport) {
-            $('#id_is_export_ready').prop('checked', false);
-        }
-    }
-
-    initializePieceUnitFields() {
-        const togglePieceUnitFields = () => {
-            const isEnabled = $('#id_efris_has_piece_unit').is(':checked');
-
-            if (isEnabled) {
-                $('#pieceUnitFields').slideDown(300);
-                $('#id_efris_piece_measure_unit, #id_efris_piece_unit_price').attr('required', true);
-            } else {
-                $('#pieceUnitFields').slideUp(300);
-                $('#id_efris_piece_measure_unit, #id_efris_piece_unit_price').removeAttr('required');
-            }
-        };
-
-        $('#id_efris_has_piece_unit').on('change', togglePieceUnitFields);
-
-        // Initialize
-        togglePieceUnitFields();
-    }
-
     initializeValidation() {
         this.form.on('submit', (e) => {
             this.validator.clearErrors();
@@ -294,31 +223,6 @@ class ProductFormHandler {
             if (costPrice > sellingPrice) {
                 this.validator.addError('#id_cost_price', 'Cost price cannot exceed selling price');
                 this.validator.addError('#id_selling_price', 'Selling price must be greater than cost price');
-            }
-
-            // Export validations
-            const isExport = $('#id_is_export_product').is(':checked');
-            if (isExport) {
-                if (!$('#id_hs_code').val()) {
-                    this.validator.addError('#id_hs_code', 'HS Code is required for export products');
-                }
-
-                if (!$('#id_efris_customs_measure_unit').val()) {
-                    this.validator.addError('#id_efris_customs_measure_unit', 'Customs measure unit is required for export products');
-                }
-            }
-
-            // Piece unit validations
-            const hasPieceUnit = $('#id_efris_has_piece_unit').is(':checked');
-            if (hasPieceUnit) {
-                if (!$('#id_efris_piece_measure_unit').val()) {
-                    this.validator.addError('#id_efris_piece_measure_unit', 'Piece measure unit is required');
-                }
-
-                const piecePrice = parseFloat($('#id_efris_piece_unit_price').val());
-                if (!piecePrice || piecePrice <= 0) {
-                    this.validator.addError('#id_efris_piece_unit_price', 'Piece unit price must be greater than 0');
-                }
             }
 
             if (!this.validator.isValid()) {

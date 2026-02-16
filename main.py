@@ -1449,6 +1449,20 @@ def main():
 
                 sync_dialog = DataSyncDialog(subdomain, token, company_data)
                 sync_dialog.exec()
+
+                # ✅ NEW: Reset sequences after initial sync (safety net)
+                logger.info("🔄 Resetting sequences on startup (safety net)...")
+                try:
+                    from primebooks.sync import SyncManager
+                    sync_manager = SyncManager(
+                        tenant_id=tenant_id,
+                        schema_name=subdomain,
+                        auth_token=token
+                    )
+                    sync_manager.reset_sequences()
+                    logger.info("✅ Sequences reset on startup")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not reset sequences on startup: {e}")
             else:
                 logger.info("Using saved credentials...")
                 token = saved_token
@@ -1480,6 +1494,20 @@ def main():
 
                     sync_dialog = DataSyncDialog(subdomain, token, company_data)
                     sync_dialog.exec()
+
+                    # ✅ NEW: Reset sequences after initial sync (safety net)
+                    logger.info("🔄 Resetting sequences on startup (safety net)...")
+                    try:
+                        from primebooks.sync import SyncManager
+                        sync_manager = SyncManager(
+                            tenant_id=tenant_id,
+                            schema_name=subdomain,
+                            auth_token=token
+                        )
+                        sync_manager.reset_sequences()
+                        logger.info("✅ Sequences reset on startup")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not reset sequences on startup: {e}")
 
             refs['subdomain'] = subdomain
             refs['tenant_id'] = tenant_id

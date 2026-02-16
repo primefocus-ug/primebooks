@@ -17,17 +17,24 @@ class ModalFormHandler {
     }
 
     init() {
-        // Handle form submission
+        // Footer "Save" button triggers form submit — this is the primary entry point.
+        // The form's own submit event does the actual work.
+        this.getSaveButton().on('click', (e) => {
+            e.preventDefault();
+            this.form.trigger('submit');
+        });
+
+        // Handle form submit (covers both button click and Enter key)
         this.form.on('submit', (e) => {
             e.preventDefault();
             this.submit();
         });
 
-        // Handle Enter key
+        // Enter key inside inputs submits the form
         this.form.find('input, textarea').on('keypress', (e) => {
             if (e.which === 13 && !e.shiftKey && !$(e.target).is('textarea')) {
                 e.preventDefault();
-                this.submit();
+                this.form.trigger('submit');
             }
         });
 
@@ -37,24 +44,31 @@ class ModalFormHandler {
         });
     }
 
+    // Subclasses can override this to return the correct footer button
+    getSaveButton() {
+        return this.modal.find('.btn-primary');
+    }
+
     validate() {
-        this.validator.clearErrors();
-        // Override in subclass
+        // Override in subclass with field-specific rules
         return true;
     }
 
     submit() {
+        this.validator.clearErrors();
+
         if (!this.validate()) {
             this.validator.showErrors();
             return;
         }
 
         const formData = this.getFormData();
-        const $saveBtn = this.modal.find('.btn-primary');
-        const originalText = $saveBtn.html();
+        const $saveBtn = this.getSaveButton();
+        const originalHtml = $saveBtn.html();
 
-        // Show loading state
-        $saveBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+        $saveBtn.prop('disabled', true).html(
+            '<i class="fas fa-spinner fa-spin"></i> Saving...'
+        );
 
         $.ajax({
             url: this.submitUrl,
@@ -64,12 +78,13 @@ class ModalFormHandler {
             success: (response) => this.handleSuccess(response),
             error: (xhr) => this.handleError(xhr),
             complete: () => {
-                $saveBtn.prop('disabled', false).html(originalText);
+                $saveBtn.prop('disabled', false).html(originalHtml);
             }
         });
     }
 
     getFormData() {
+        // Serialize all form fields and inject the CSRF token
         const formData = this.form.serializeArray().reduce((obj, item) => {
             obj[item.name] = item.value;
             return obj;
@@ -81,45 +96,47 @@ class ModalFormHandler {
     handleSuccess(response) {
         if (response.success) {
             const item = response[this.itemType];
+            const label = this.itemType.charAt(0).toUpperCase() + this.itemType.slice(1);
 
-            // Add new option to select
+            // Add the newly created item as a selected option in the main form select
             const newOption = new Option(item.name, item.id, true, true);
             this.select.append(newOption).trigger('change');
 
-            // Hide modal
+            // Close the modal
             const modalInstance = bootstrap.Modal.getInstance(this.modal[0]);
             if (modalInstance) {
                 modalInstance.hide();
             }
 
-            // Reset form
             this.reset();
-
-            // Show success message
-            showSuccessMessage(`${this.itemType.charAt(0).toUpperCase() + this.itemType.slice(1)} "${item.name}" created successfully!`);
+            showSuccessMessage(`${label} "${item.name}" created successfully!`);
         } else {
-            showErrorMessage(response.message || `Failed to create ${this.itemType}`);
+            showErrorMessage(response.message || `Failed to create ${this.itemType}.`);
         }
     }
 
     handleError(xhr) {
-        console.error(`${this.itemType} save error:`, xhr.responseText);
+        console.error(`${this.itemType} save error:`, xhr.status, xhr.responseText);
 
-        let errorMessage = `Error creating ${this.itemType}`;
+        if (xhr.responseJSON) {
+            const json = xhr.responseJSON;
 
-        if (xhr.responseJSON && xhr.responseJSON.message) {
-            errorMessage = xhr.responseJSON.message;
-        } else if (xhr.responseJSON && xhr.responseJSON.errors) {
-            // Handle field-specific errors
-            const errors = xhr.responseJSON.errors;
-            Object.keys(errors).forEach(field => {
-                this.validator.addError(`#${field}`, errors[field].join(', '));
-            });
-            this.validator.showErrors();
-            return;
+            if (json.errors) {
+                // Field-level validation errors returned by the server
+                Object.entries(json.errors).forEach(([field, messages]) => {
+                    this.validator.addError(`#${field}`, messages.join(', '));
+                });
+                this.validator.showErrors();
+                return;
+            }
+
+            if (json.message) {
+                showErrorMessage(json.message);
+                return;
+            }
         }
 
-        showErrorMessage(errorMessage);
+        showErrorMessage(`Error creating ${this.itemType}. Please try again.`);
     }
 
     reset() {
@@ -128,50 +145,76 @@ class ModalFormHandler {
     }
 }
 
-class CategoryModalHandler extends ModalFormHandler {
-    validate() {
-        this.validator.clearErrors();
+// ── Category ─────────────────────────────────────────────────────────────────
 
+class CategoryModalHandler extends ModalFormHandler {
+    init() {
+        super.init();
+
+        // Auto-generate category code from name
+        $('#generateCategoryCodeModal').on('click', () => {
+            const name = $('#categoryName').val().trim();
+            if (!name) {
+                showErrorMessage('Enter a category name first.');
+                return;
+            }
+            const code = name
+                .toUpperCase()
+                .replace(/[^A-Z0-9\s]/g, '')
+                .split(/\s+/)
+                .map(w => w.substring(0, 3))
+                .join('-');
+            $('#categoryCode').val(code);
+        });
+    }
+
+    getSaveButton() {
+        return $('#saveCategoryBtn');
+    }
+
+    validate() {
         const name = $('#categoryName').val().trim();
         const categoryType = $('#categoryType').val();
 
         if (!name) {
-            this.validator.addError('#categoryName', 'Category name is required');
+            this.validator.addError('#categoryName', 'Category name is required.');
         }
-
         if (!categoryType) {
-            this.validator.addError('#categoryType', 'Category type is required');
+            this.validator.addError('#categoryType', 'Category type is required.');
         }
 
         return this.validator.isValid();
     }
 }
 
-class SupplierModalHandler extends ModalFormHandler {
-    validate() {
-        this.validator.clearErrors();
+// ── Supplier ──────────────────────────────────────────────────────────────────
 
+class SupplierModalHandler extends ModalFormHandler {
+    getSaveButton() {
+        return $('#saveSupplierBtn');
+    }
+
+    validate() {
         const name = $('#supplierName').val().trim();
         const phone = $('#supplierPhone').val().trim();
         const email = $('#supplierEmail').val().trim();
 
         if (!name) {
-            this.validator.addError('#supplierName', 'Supplier name is required');
+            this.validator.addError('#supplierName', 'Supplier name is required.');
         }
-
         if (!phone) {
-            this.validator.addError('#supplierPhone', 'Phone number is required');
+            this.validator.addError('#supplierPhone', 'Phone number is required.');
         }
-
         if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            this.validator.addError('#supplierEmail', 'Please enter a valid email address');
+            this.validator.addError('#supplierEmail', 'Please enter a valid email address.');
         }
 
         return this.validator.isValid();
     }
 }
 
-// Initialize modal handlers
+// ── Initializer ───────────────────────────────────────────────────────────────
+
 function initializeModalHandlers(categoryCreateUrl, supplierCreateUrl) {
     new CategoryModalHandler(
         'addCategoryModal',

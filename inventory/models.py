@@ -1199,6 +1199,7 @@ class Product(models.Model, EFRISProductMixin):
         max_digits=12,
         decimal_places=8,
         default=1,
+        blank=True,null=True,
         verbose_name=_("Package Scaled Value"),
         help_text=_("MANDATORY when havePieceUnit=101")
     )
@@ -1252,6 +1253,8 @@ class Product(models.Model, EFRISProductMixin):
         max_digits=12,
         decimal_places=8,
         default=1,
+        null=True,
+        blank=True,
         verbose_name=_("Package Scaled Value (Customs)"),
         help_text=_("Package scaling for customs unit")
     )
@@ -1260,6 +1263,8 @@ class Product(models.Model, EFRISProductMixin):
         max_digits=12,
         decimal_places=8,
         default=1,
+        null=True,
+        blank=True,
         verbose_name=_("Customs Scaled Value"),
         help_text=_("Conversion factor for customs unit")
     )
@@ -1353,24 +1358,43 @@ class Product(models.Model, EFRISProductMixin):
             self.customs_measure_unit
         )
 
+    def _scaled(self, value):
+        """Return value if truthy, otherwise Decimal('1')."""
+        from decimal import Decimal
+        return value if value is not None else Decimal('1')
+
+    # ── clean() ──────────────────────────────────────────────────────────────
     def clean(self):
-        """Validate product data before saving"""
+        """Validate product data before saving."""
         super().clean()
-        
-        # Get EFRIS status - default to False for safety
+
+        # Get EFRIS status — default to False for safety
         efris_enabled = getattr(self, '_efris_enabled', False)
-        
-        # Only validate EFRIS fields if EFRIS is explicitly enabled
+
         if efris_enabled:
             if self.category and not self.category.efris_commodity_category_code:
                 raise ValidationError({
-                    'category': _("Selected category does not have an EFRIS commodity category assigned.")
+                    'category': _(
+                        "Selected category does not have an EFRIS commodity category assigned."
+                    )
                 })
-            
+
             if self.category and not self.category.efris_is_leaf_node:
                 raise ValidationError({
-                    'category': _("Selected category's EFRIS commodity category is not a leaf node.")
+                    'category': _(
+                        "Selected category's EFRIS commodity category is not a leaf node."
+                    )
                 })
+
+        # Ensure scaled values are never stored as None
+        if self.efris_package_scaled_value is None:
+            self.efris_package_scaled_value = 1
+        if self.efris_piece_scaled_value is None:
+            self.efris_piece_scaled_value = 1
+        if self.efris_package_scaled_value_customs is None:
+            self.efris_package_scaled_value_customs = 1
+        if self.efris_customs_scaled_value is None:
+            self.efris_customs_scaled_value = 1
 
 
     @property
@@ -1574,15 +1598,18 @@ class Product(models.Model, EFRISProductMixin):
         self.save(update_fields=['efris_is_uploaded'])
 
     def get_efris_commodity_goods_extend(self):
-        """Get commodityGoodsExtendEntity for export products"""
+        """Get commodityGoodsExtendEntity for export products."""
         if not self.is_export_product:
             return None
 
         return {
             "customsMeasureUnit": self.efris_customs_measure_unit or "",
-            "customsUnitPrice": f"{self.efris_customs_unit_price:.2f}" if self.efris_customs_unit_price else "",
-            "packageScaledValueCustoms": str(self.efris_package_scaled_value_customs or 1),
-            "customsScaledValue": str(self.efris_customs_scaled_value or 1),
+            "customsUnitPrice": (
+                f"{self.efris_customs_unit_price:.2f}"
+                if self.efris_customs_unit_price else ""
+            ),
+            "packageScaledValueCustoms": str(self._scaled(self.efris_package_scaled_value_customs)),
+            "customsScaledValue": str(self._scaled(self.efris_customs_scaled_value)),
         }
 
     def get_efris_other_units(self):
@@ -1605,7 +1632,7 @@ class Product(models.Model, EFRISProductMixin):
         return other_units
 
     def validate_efris_piece_unit_fields(self):
-        """Validate conditional piece unit fields per T130 spec"""
+        """Validate conditional piece unit fields per T130 spec."""
         errors = []
 
         if self.efris_has_piece_unit:
@@ -1614,10 +1641,11 @@ class Product(models.Model, EFRISProductMixin):
                 errors.append("pieceMeasureUnit MANDATORY when havePieceUnit=101")
             if not self.efris_piece_unit_price:
                 errors.append("pieceUnitPrice MANDATORY when havePieceUnit=101")
-            if not self.efris_package_scaled_value:
-                errors.append("packageScaledValue MANDATORY when havePieceUnit=101")
-            if not self.efris_piece_scaled_value:
-                errors.append("pieceScaledValue MANDATORY when havePieceUnit=101")
+            # Scaled values default to 1 — only flag if explicitly set to zero
+            if self._scaled(self.efris_package_scaled_value) <= 0:
+                errors.append("packageScaledValue must be greater than 0 when havePieceUnit=101")
+            if self._scaled(self.efris_piece_scaled_value) <= 0:
+                errors.append("pieceScaledValue must be greater than 0 when havePieceUnit=101")
         else:
             # MUST BE EMPTY when havePieceUnit=102
             if self.efris_piece_measure_unit:
@@ -1704,7 +1732,7 @@ class Product(models.Model, EFRISProductMixin):
 
     def get_efris_data(self):
         """Get product data formatted for EFRIS API."""
-        return {
+        data = {
             'goodsCode': self.efris_goods_code,
             'goodsName': self.efris_goods_name,
             'goodsDescription': self.efris_goods_description,
@@ -1716,8 +1744,28 @@ class Product(models.Model, EFRISProductMixin):
             'exciseDutyRate': float(self.efris_excise_duty_rate),
             'unitOfMeasureCode': self.efris_unit_of_measure_code,
             'unitPrice': float(self.final_price),
-            'currency': 'UGX'
+            'currency': 'UGX',
+            # Scaled values — always 1 if not explicitly set
+            'packageScaledValue': float(self._scaled(self.efris_package_scaled_value)),
+            'pieceScaledValue': float(self._scaled(self.efris_piece_scaled_value)),
         }
+
+        # Include piece unit data if enabled
+        if self.efris_has_piece_unit:
+            data.update({
+                'havePieceUnit': '101',
+                'pieceMeasureUnit': self.efris_piece_measure_unit or '',
+                'pieceUnitPrice': float(self.efris_piece_unit_price or 0),
+            })
+        else:
+            data['havePieceUnit'] = '102'
+
+        # Include export/customs data if applicable
+        extend = self.get_efris_commodity_goods_extend()
+        if extend:
+            data['commodityGoodsExtend'] = extend
+
+        return data
 
 
 class Service(models.Model):

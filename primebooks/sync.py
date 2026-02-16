@@ -34,10 +34,12 @@ logger = logging.getLogger(__name__)
 def suppress_signals():
     """
     Temporarily disable Django signals during sync to avoid:
+    - Notification creation during sync
     - WebSocket errors
-    - Notification spam
-    - Validation errors from incomplete data
+    - Using up sequence IDs
     """
+    from django.db.models.signals import post_save, pre_save, post_delete
+
     # Store original receivers
     saved_receivers = {
         'post_save': post_save.receivers[:],
@@ -60,11 +62,9 @@ def suppress_signals():
         post_delete.receivers = saved_receivers['post_delete']
         logger.debug("🔊 Signals restored")
 
-
 # ============================================================================
 # SYNC MODEL CONFIGURATION
 # ============================================================================
-logger = logging.getLogger(__name__)
 
 # ============================================================================
 # MODELS TO EXCLUDE FROM SYNC
@@ -1220,12 +1220,12 @@ class SyncManager:
             success = self.apply_bulk_data(changes, progress_callback)
 
             if success:
-                # ✅ FIXED: Only reset sequences ONCE at the very end
+                # ✅ CRITICAL: Reset sequences AFTER applying data
                 if progress_callback:
                     progress_callback("Resetting sequences...", 90)
 
                 logger.info("🔄 Resetting sequences after download...")
-                self.reset_sequences()
+                self.reset_sequences()  # ← MUST be here!
 
                 # Update last sync time
                 self.update_last_sync_time()
@@ -1292,12 +1292,12 @@ class SyncManager:
                 success = self.apply_bulk_data(all_data, progress_callback)
 
                 if success:
-                    # ✅ FIXED: Only reset sequences ONCE at the very end
+                    # ✅ CRITICAL: Reset sequences AFTER applying data
                     if progress_callback:
                         progress_callback("Resetting database sequences...", 95)
 
                     logger.info("🔄 Resetting sequences after full download...")
-                    self.reset_sequences()
+                    self.reset_sequences()  # ← MUST be here!
 
                     # Update last sync time
                     self.update_last_sync_time()
@@ -1305,9 +1305,7 @@ class SyncManager:
                     if progress_callback:
                         progress_callback("Download complete!", 100)
 
-                    logger.info("=" * 70)
                     logger.info("✅ DOWNLOAD COMPLETE")
-                    logger.info("=" * 70)
                     return True
                 else:
                     logger.error("❌ Failed to apply data")
@@ -1319,61 +1317,82 @@ class SyncManager:
             logger.error(f"❌ Download error: {e}", exc_info=True)
             return False
 
-
     def reset_sequences(self):
         """
         Reset PostgreSQL sequences after sync
-        ✅ FIXED: Only reset each sequence once
-        ✅ FIXED: Better error handling
+        ✅ FIXED: Prevents duplicate key errors
+        ✅ Resets ALL sequences in schema
+        ✅ Uses correct setval syntax
         """
         from django.db import connection
         from django_tenants.utils import schema_context
 
-        logger.info(f"🔄 Resetting database sequences...")
+        logger.info(f"🔄 Resetting sequences in schema: {self.schema_name}")
 
         try:
             with schema_context(self.schema_name):
                 with connection.cursor() as cursor:
-                    # Get all sequences
+                    # Get ALL sequences with their associated tables
                     cursor.execute("""
-                        SELECT sequence_name,
-                               REPLACE(sequence_name, '_id_seq', '') as table_name
-                        FROM information_schema.sequences
-                        WHERE sequence_schema = %s
-                        ORDER BY sequence_name;
-                    """, [self.schema_name])
+                                   SELECT seq.relname as sequence_name,
+                                          tab.relname as table_name,
+                                          att.attname as column_name
+                                   FROM pg_class seq
+                                            JOIN pg_namespace ns ON seq.relnamespace = ns.oid
+                                            JOIN pg_depend dep ON seq.oid = dep.objid
+                                            JOIN pg_class tab ON dep.refobjid = tab.oid
+                                            JOIN pg_attribute att ON att.attrelid = tab.oid
+                                       AND att.attnum = dep.refobjsubid
+                                   WHERE seq.relkind = 'S'
+                                     AND ns.nspname = %s
+                                   ORDER BY seq.relname;
+                                   """, [self.schema_name])
 
                     sequences = cursor.fetchall()
-                    reset_count = 0
-                    skip_count = 0
 
-                    for seq_name, table_name in sequences:
+                    if not sequences:
+                        logger.warning(f"⚠️ No sequences found in schema '{self.schema_name}'")
+                        return True
+
+                    logger.info(f"  📊 Found {len(sequences)} sequences to reset")
+
+                    reset_count = 0
+                    skipped_count = 0
+
+                    for seq_name, table_name, col_name in sequences:
                         try:
-                            # Get max ID
+                            # Get max value from table
                             cursor.execute(f"""
-                                SELECT COALESCE(MAX(id), 0) 
+                                SELECT COALESCE(MAX("{col_name}"), 0) 
                                 FROM "{self.schema_name}"."{table_name}";
                             """)
 
-                            max_id = cursor.fetchone()[0]
-                            new_value = max_id + 1
+                            max_val = cursor.fetchone()[0]
+                            next_val = max_val + 1
 
-                            # Reset sequence
+                            # ✅ CRITICAL: Reset sequence with 'false' parameter
+                            # This means next nextval() will return next_val
                             cursor.execute(f"""
-                                SELECT setval('"{self.schema_name}"."{seq_name}"', %s, false);
-                            """, [new_value])
+                                SELECT setval(
+                                    '"{self.schema_name}"."{seq_name}"', 
+                                    %s, 
+                                    false
+                                );
+                            """, [next_val])
 
-                            logger.debug(f"  ✅ Reset {table_name} sequence to {new_value}")
+                            logger.debug(f"  ✅ Reset {seq_name} to {next_val} (table max: {max_val})")
                             reset_count += 1
 
                         except Exception as e:
-                            logger.debug(f"  ⏭️ Skipped {table_name}: {str(e)[:50]}")
-                            skip_count += 1
+                            logger.debug(f"  ⚠️ Skipped {seq_name}: {str(e)[:80]}")
+                            skipped_count += 1
 
-                    logger.info(f"✅ Reset {reset_count} sequences ({skip_count} skipped)")
+                    logger.info(f"✅ Reset {reset_count} sequences ({skipped_count} skipped)")
+                    return True
 
         except Exception as e:
             logger.error(f"❌ Failed to reset sequences: {e}", exc_info=True)
+            return False
 
 
     # ========================================================================
@@ -1788,10 +1807,10 @@ class SyncManager:
     def apply_bulk_data(self, all_data, progress_callback=None):
         """
         Apply downloaded data to local database
-        ✅ Handles create/update with conflict resolution
-        ✅ Suppresses signals during import
+        ✅ CRITICAL: Suppresses signals during import
         """
-        with suppress_signals():  # ✅ Suppress signals
+        # ✅ VERIFY THIS IS PRESENT
+        with suppress_signals():  # ← This prevents notifications during sync
             return self._apply_bulk_data_impl(all_data, progress_callback)
 
     def _apply_bulk_data_impl(self, all_data, progress_callback=None):

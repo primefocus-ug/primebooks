@@ -9,6 +9,7 @@ Server-side API endpoints for desktop sync
 ✅ FIXED: Schema locking throughout entire operation
 ✅ FIXED: Skips public schema models in tenant sync
 ✅ FIXED: ID sequence handling - server generates IDs, not desktop
+✅ FIXED: Signal suppression to prevent notification/audit log creation during sync
 """
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -21,7 +22,7 @@ from primebooks.authentication import TenantAwareJWTAuthentication
 from datetime import datetime
 import logging
 import json
-from primebooks.sync import SYNC_MODEL_CONFIG
+from primebooks.sync import SYNC_MODEL_CONFIG, suppress_signals  # ✅ ADDED suppress_signals
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +30,10 @@ logger = logging.getLogger(__name__)
 # PUBLIC SCHEMA MODELS - These should NOT be synced to tenant schemas
 # ============================================================================
 PUBLIC_SCHEMA_MODELS = [
-                'company.Company',
-                'company.SubscriptionPlan',
-                'company.Domain',
-            ]
-
-
+    'company.Company',
+    'company.SubscriptionPlan',
+    'company.Domain',
+]
 
 
 class BulkDataDownloadView(APIView):
@@ -252,6 +251,7 @@ class UploadChangesView(APIView):
     ✅ Skips public schema models
     ✅ Resets sequences after upload
     ✅ Returns ID mappings for offline records
+    ✅ FIXED: Suppresses signals during sync to prevent notifications/audit logs
     """
     authentication_classes = [TenantAwareJWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -317,6 +317,7 @@ class UploadChangesView(APIView):
         ✅ Prevents duplicate key errors
         ✅ Schema-safe
         ✅ Table-existence aware
+        ✅ FIXED: Uses correct setval syntax
         """
         from django.db import connection
 
@@ -360,12 +361,14 @@ class UploadChangesView(APIView):
                         max_id = cursor.fetchone()[0]
                         new_value = max_id + 1
 
-                        # Reset sequence
+                        # ✅ CRITICAL FIX: Use 'true' parameter
+                        # This means: "the sequence has been used up to this value"
+                        # Next nextval() will return new_value + 1
                         cursor.execute(f"""
-                            SELECT setval('"{schema_name}"."{seq_name}"', %s, false);
-                        """, [new_value])
+                            SELECT setval('"{schema_name}"."{seq_name}"', %s, true);
+                        """, [max_id])
 
-                        logger.debug(f"  ✓ {table_name}: max_id={max_id}, next={new_value}")
+                        logger.debug(f"  ✓ {table_name}: max_id={max_id}, next will be={new_value}")
                         reset_count += 1
 
                     except Exception as e:
@@ -417,203 +420,210 @@ class UploadChangesView(APIView):
                 'company.Domain',
             ]
 
-            # ✅ Lock schema for entire operation
-            with schema_context(schema_name):
-                logger.info(f"   Schema locked: {connection.schema_name}")
+            # ✅ CRITICAL FIX: Wrap entire sync operation in suppress_signals
+            with suppress_signals():
+                logger.info("🔇 Signals suppressed - no notifications/audit logs will be created")
 
-                for model_name, records in changes.items():
-                    try:
-                        # ✅ Verify schema hasn't switched
-                        if connection.schema_name != schema_name:
-                            error_msg = f"Schema switched to {connection.schema_name}!"
-                            logger.error(f"❌ {error_msg}")
-                            errors.append(error_msg)
-                            continue
+                # ✅ Lock schema for entire operation
+                with schema_context(schema_name):
+                    logger.info(f"   Schema locked: {connection.schema_name}")
 
-                        # ✅ Skip public schema models
-                        if model_name in PUBLIC_SCHEMA_MODELS:
-                            logger.info(f"  ⏭️  Skipping public schema model: {model_name}")
-                            total_skipped += len(records)
-                            continue
+                    for model_name, records in changes.items():
+                        try:
+                            # ✅ Verify schema hasn't switched
+                            if connection.schema_name != schema_name:
+                                error_msg = f"Schema switched to {connection.schema_name}!"
+                                logger.error(f"❌ {error_msg}")
+                                errors.append(error_msg)
+                                continue
 
-                        model = apps.get_model(model_name)
-                        model_mappings = {}
+                            # ✅ Skip public schema models
+                            if model_name in PUBLIC_SCHEMA_MODELS:
+                                logger.info(f"  ⏭️  Skipping public schema model: {model_name}")
+                                total_skipped += len(records)
+                                continue
 
-                        logger.info(f"  Processing {model_name}: {len(records)} records")
+                            model = apps.get_model(model_name)
+                            model_mappings = {}
 
-                        for record in records:
-                            try:
-                                desktop_id = record['pk']
-                                fields = record['fields']
+                            logger.info(f"  Processing {model_name}: {len(records)} records")
 
-                                # ✅ Remove desktop ID from fields
-                                fields.pop('id', None)
+                            for record in records:
+                                try:
+                                    desktop_id = record['pk']
+                                    fields = record['fields']
 
-                                # ✅ Separate ManyToMany and regular fields
-                                m2m_fields = {}
-                                processed_fields = {}
-                                skipped_fields = []
+                                    # ✅ Remove desktop ID from fields
+                                    fields.pop('id', None)
 
-                                for field_name, value in fields.items():
-                                    try:
-                                        field = model._meta.get_field(field_name)
+                                    # ✅ Separate ManyToMany and regular fields
+                                    m2m_fields = {}
+                                    processed_fields = {}
+                                    skipped_fields = []
 
-                                        # ManyToMany
-                                        if field.many_to_many:
-                                            m2m_fields[field_name] = value
-                                            continue
+                                    for field_name, value in fields.items():
+                                        try:
+                                            field = model._meta.get_field(field_name)
 
-                                        # ✅ ForeignKey - convert ID to instance
-                                        if field.many_to_one and value is not None:
-                                            related_model = field.related_model
-                                            related_table = related_model._meta.db_table
-
-                                            # Skip FKs to public schema
-                                            if related_table in ['company_company', 'company_subscriptionplan']:
-                                                logger.debug(f"      Skipping public FK: {field_name}")
-                                                skipped_fields.append(field_name)
+                                            # ManyToMany
+                                            if field.many_to_many:
+                                                m2m_fields[field_name] = value
                                                 continue
 
-                                            try:
-                                                # Get the instance
-                                                related_instance = related_model.objects.get(pk=value)
-                                                processed_fields[field_name] = related_instance
-                                            except related_model.DoesNotExist:
-                                                logger.debug(f"      Skipping {field_name}={value} - not found")
-                                                skipped_fields.append(field_name)
-                                                continue
+                                            # ✅ ForeignKey - convert ID to instance
+                                            if field.many_to_one and value is not None:
+                                                related_model = field.related_model
+                                                related_table = related_model._meta.db_table
 
-                                        # Decimal
-                                        elif hasattr(field,
-                                                     'get_internal_type') and field.get_internal_type() == 'DecimalField':
-                                            if value is not None and isinstance(value, str):
-                                                processed_fields[field_name] = Decimal(value)
+                                                # Skip FKs to public schema
+                                                if related_table in ['company_company', 'company_subscriptionplan']:
+                                                    logger.debug(f"      Skipping public FK: {field_name}")
+                                                    skipped_fields.append(field_name)
+                                                    continue
+
+                                                try:
+                                                    # Get the instance
+                                                    related_instance = related_model.objects.get(pk=value)
+                                                    processed_fields[field_name] = related_instance
+                                                except related_model.DoesNotExist:
+                                                    logger.debug(f"      Skipping {field_name}={value} - not found")
+                                                    skipped_fields.append(field_name)
+                                                    continue
+
+                                            # Decimal
+                                            elif hasattr(field,
+                                                         'get_internal_type') and field.get_internal_type() == 'DecimalField':
+                                                if value is not None and isinstance(value, str):
+                                                    processed_fields[field_name] = Decimal(value)
+                                                else:
+                                                    processed_fields[field_name] = value
+
+                                            # Regular field
                                             else:
                                                 processed_fields[field_name] = value
 
-                                        # Regular field
-                                        else:
-                                            processed_fields[field_name] = value
+                                        except Exception as e:
+                                            logger.debug(f"      Skipping field {field_name}: {e}")
+                                            continue
 
-                                    except Exception as e:
-                                        logger.debug(f"      Skipping field {field_name}: {e}")
-                                        continue
+                                    # Check if offline record
+                                    is_offline = isinstance(desktop_id, int) and desktop_id < 0
 
-                                # Check if offline record
-                                is_offline = isinstance(desktop_id, int) and desktop_id < 0
+                                    try:
+                                        if is_offline:
+                                            # ✅ Offline record - create with server ID
+                                            unique_lookup = self._build_unique_lookup(model, processed_fields)
 
-                                try:
-                                    if is_offline:
-                                        # ✅ Offline record - create with server ID
-                                        unique_lookup = self._build_unique_lookup(model, processed_fields)
+                                            if unique_lookup:
+                                                try:
+                                                    obj = model.objects.get(**unique_lookup)
+                                                    # Update existing
+                                                    for field_name, value in processed_fields.items():
+                                                        setattr(obj, field_name, value)
+                                                    obj.save()
 
-                                        if unique_lookup:
-                                            try:
-                                                obj = model.objects.get(**unique_lookup)
-                                                # Update existing
-                                                for field_name, value in processed_fields.items():
-                                                    setattr(obj, field_name, value)
-                                                obj.save()
+                                                    model_mappings[str(desktop_id)] = obj.pk
+                                                    total_updated += 1
+                                                    logger.info(f"      ✅ Updated existing: {desktop_id} → {obj.pk}")
+                                                except model.DoesNotExist:
+                                                    # Create new
+                                                    obj = model(**processed_fields)
+                                                    obj.save()
 
-                                                model_mappings[str(desktop_id)] = obj.pk
-                                                total_updated += 1
-                                                logger.info(f"      ✅ Updated existing: {desktop_id} → {obj.pk}")
-                                            except model.DoesNotExist:
-                                                # Create new
+                                                    model_mappings[str(desktop_id)] = obj.pk
+                                                    total_created += 1
+                                                    logger.info(f"      ✅ Created offline: {desktop_id} → {obj.pk}")
+                                            else:
+                                                # No unique lookup - just create
                                                 obj = model(**processed_fields)
                                                 obj.save()
 
                                                 model_mappings[str(desktop_id)] = obj.pk
                                                 total_created += 1
                                                 logger.info(f"      ✅ Created offline: {desktop_id} → {obj.pk}")
-                                        else:
-                                            # No unique lookup - just create
-                                            obj = model(**processed_fields)
-                                            obj.save()
-
-                                            model_mappings[str(desktop_id)] = obj.pk
-                                            total_created += 1
-                                            logger.info(f"      ✅ Created offline: {desktop_id} → {obj.pk}")
-
-                                        # Set ManyToMany
-                                        for field_name, value in m2m_fields.items():
-                                            if value:
-                                                getattr(obj, field_name).set(value)
-
-                                    else:
-                                        # ✅ Online record - update or create with same ID
-                                        try:
-                                            obj = model.objects.get(pk=desktop_id)
-
-                                            # Update
-                                            for field_name, value in processed_fields.items():
-                                                setattr(obj, field_name, value)
-
-                                            obj.save()
-
-                                            # Update ManyToMany
-                                            for field_name, value in m2m_fields.items():
-                                                if value:
-                                                    getattr(obj, field_name).set(value)
-
-                                            total_updated += 1
-                                            logger.debug(f"      ✅ Updated: {desktop_id}")
-
-                                        except model.DoesNotExist:
-                                            # Create with desktop ID
-                                            obj = model(pk=desktop_id, **processed_fields)
-                                            obj.save()
 
                                             # Set ManyToMany
                                             for field_name, value in m2m_fields.items():
                                                 if value:
                                                     getattr(obj, field_name).set(value)
 
-                                            total_created += 1
-                                            logger.info(f"      ✅ Created: {desktop_id}")
+                                        else:
+                                            # ✅ Online record - update or create with same ID
+                                            try:
+                                                obj = model.objects.get(pk=desktop_id)
 
-                                except ValidationError as e:
-                                    error_dict = e.message_dict if hasattr(e, 'message_dict') else {}
-                                    error_str = str(error_dict)
+                                                # Update
+                                                for field_name, value in processed_fields.items():
+                                                    setattr(obj, field_name, value)
 
-                                    # Skip known validation issues
-                                    if any(x in error_str.lower() for x in
-                                           ['choice', 'constraint', 'efris', 'password', 'either product or service']):
-                                        logger.debug(f"      ⚠️  Validation error for {desktop_id}: {error_dict}")
-                                        continue
+                                                obj.save()
 
-                                    raise
+                                                # Update ManyToMany
+                                                for field_name, value in m2m_fields.items():
+                                                    if value:
+                                                        getattr(obj, field_name).set(value)
 
-                            except Exception as e:
-                                error_msg = f"{model_name}:{desktop_id} - {str(e)}"
-                                logger.error(f"      ❌ {error_msg}")
-                                errors.append(error_msg)
+                                                total_updated += 1
+                                                logger.debug(f"      ✅ Updated: {desktop_id}")
 
-                        if model_mappings:
-                            id_mappings[model_name] = model_mappings
+                                            except model.DoesNotExist:
+                                                # Create with desktop ID
+                                                obj = model(pk=desktop_id, **processed_fields)
+                                                obj.save()
 
-                    except LookupError:
-                        logger.warning(f"  ⚠️  Model not found: {model_name}")
-                    except Exception as e:
-                        logger.error(f"  ❌ Error processing {model_name}: {e}")
-                        errors.append(f"{model_name}: {str(e)}")
+                                                # Set ManyToMany
+                                                for field_name, value in m2m_fields.items():
+                                                    if value:
+                                                        getattr(obj, field_name).set(value)
 
-                logger.info(
-                    f"✅ Upload complete: {total_created} created, {total_updated} updated, {total_skipped} skipped")
+                                                total_created += 1
+                                                logger.info(f"      ✅ Created: {desktop_id}")
 
-                # ✅ CRITICAL: Reset sequences after upload
-                if total_created > 0 or total_updated > 0:
-                    logger.info("🔧 Resetting sequences after upload")
-                    self._reset_sequences(schema_name)
+                                    except ValidationError as e:
+                                        error_dict = e.message_dict if hasattr(e, 'message_dict') else {}
+                                        error_str = str(error_dict)
 
-                return Response({
-                    'success': True,
-                    'created': total_created,
-                    'updated': total_updated,
-                    'skipped': total_skipped,
-                    'id_mappings': id_mappings,
-                    'errors': errors[:10] if errors else []
-                })
+                                        # Skip known validation issues
+                                        if any(x in error_str.lower() for x in
+                                               ['choice', 'constraint', 'efris', 'password',
+                                                'either product or service']):
+                                            logger.debug(f"      ⚠️  Validation error for {desktop_id}: {error_dict}")
+                                            continue
+
+                                        raise
+
+                                except Exception as e:
+                                    error_msg = f"{model_name}:{desktop_id} - {str(e)}"
+                                    logger.error(f"      ❌ {error_msg}")
+                                    errors.append(error_msg)
+
+                            if model_mappings:
+                                id_mappings[model_name] = model_mappings
+
+                        except LookupError:
+                            logger.warning(f"  ⚠️  Model not found: {model_name}")
+                        except Exception as e:
+                            logger.error(f"  ❌ Error processing {model_name}: {e}")
+                            errors.append(f"{model_name}: {str(e)}")
+
+                    logger.info(
+                        f"✅ Upload complete: {total_created} created, {total_updated} updated, {total_skipped} skipped")
+
+                    # ✅ CRITICAL: Reset sequences after upload
+                    if total_created > 0 or total_updated > 0:
+                        logger.info("🔧 Resetting sequences after upload")
+                        self._reset_sequences(schema_name)
+
+                logger.info("🔊 Signals restored - normal operation resumed")
+
+            return Response({
+                'success': True,
+                'created': total_created,
+                'updated': total_updated,
+                'skipped': total_skipped,
+                'id_mappings': id_mappings,
+                'errors': errors[:10] if errors else []
+            })
 
         except Exception as e:
             logger.error(f"❌ Upload error: {e}", exc_info=True)

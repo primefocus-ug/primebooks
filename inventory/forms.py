@@ -952,14 +952,14 @@ class ProductForm(VATAwareFormMixin, forms.ModelForm):
             'selling_price', 'cost_price', 'discount_percentage', 'tax_rate',
             'excise_duty_rate', 'unit_of_measure', 'min_stock_level',
             'is_active', 'image', 'efris_auto_sync_enabled', 'efris_excise_duty_code',
-            # ✅ NEW: Export-related fields
-             'hs_code', 'hs_name',
-            # ✅ NEW: EFRIS piece unit fields
+            # Export-related fields
+            'hs_code', 'hs_name',
+            # EFRIS piece unit fields
             'efris_has_piece_unit', 'efris_piece_measure_unit', 'efris_piece_unit_price',
             'efris_package_scaled_value', 'efris_piece_scaled_value',
-            # ✅ NEW: EFRIS other units
+            # EFRIS other units
             'efris_has_other_units',
-            # ✅ NEW: Export/customs fields
+            # Export/customs fields
             'is_export_product', 'efris_customs_measure_unit', 'efris_customs_unit_price',
             'efris_package_scaled_value_customs', 'efris_customs_scaled_value',
         ]
@@ -986,8 +986,6 @@ class ProductForm(VATAwareFormMixin, forms.ModelForm):
             'efris_auto_sync_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input efris-only'}),
             'efris_excise_duty_code': forms.TextInput(
                 attrs={'class': 'form-control efris-only', 'placeholder': 'Enter EFRIS excise duty code'}),
-
-            # ✅ NEW: Export fields widgets
             'hs_code': forms.TextInput(attrs={
                 'class': 'form-control export-field',
                 'placeholder': 'e.g., 8471.30.00',
@@ -998,8 +996,6 @@ class ProductForm(VATAwareFormMixin, forms.ModelForm):
                 'placeholder': 'HS Code description',
                 'maxlength': '1000'
             }),
-
-            # ✅ NEW: EFRIS piece unit widgets
             'efris_has_piece_unit': forms.CheckboxInput(attrs={'class': 'form-check-input efris-only'}),
             'efris_piece_measure_unit': forms.Select(attrs={'class': 'form-select efris-only'}),
             'efris_piece_unit_price': forms.NumberInput(attrs={
@@ -1017,11 +1013,7 @@ class ProductForm(VATAwareFormMixin, forms.ModelForm):
                 'step': '0.00000001',
                 'value': '1'
             }),
-
-            # ✅ NEW: Other units
             'efris_has_other_units': forms.CheckboxInput(attrs={'class': 'form-check-input efris-only'}),
-
-            # ✅ NEW: Export/customs widgets
             'is_export_product': forms.CheckboxInput(attrs={'class': 'form-check-input export-field'}),
             'efris_customs_measure_unit': forms.Select(attrs={'class': 'form-select export-field'}),
             'efris_customs_unit_price': forms.NumberInput(attrs={
@@ -1041,144 +1033,169 @@ class ProductForm(VATAwareFormMixin, forms.ModelForm):
             }),
         }
 
+    # ── Fields that must always default to 1 and never be user-required ──────
+    SCALED_VALUE_FIELDS = [
+        'efris_package_scaled_value',
+        'efris_piece_scaled_value',
+        'efris_package_scaled_value_customs',
+        'efris_customs_scaled_value',
+    ]
+
+    # ── Fields hidden/suppressed when EFRIS is disabled ──────────────────────
+    EFRIS_ONLY_FIELDS = [
+        'efris_auto_sync_enabled',
+        'efris_excise_duty_code',
+        'efris_has_piece_unit',
+        'efris_piece_measure_unit',
+        'efris_piece_unit_price',
+        'efris_package_scaled_value',
+        'efris_piece_scaled_value',
+        'efris_has_other_units',
+        'is_export_product',
+        'efris_customs_measure_unit',
+        'efris_customs_unit_price',
+        'efris_package_scaled_value_customs',
+        'efris_customs_scaled_value',
+        'hs_code',
+        'hs_name',
+    ]
+
     def __init__(self, *args, **kwargs):
         self.efris_enabled = kwargs.pop('efris_enabled', False)
         super().__init__(*args, **kwargs)
 
-        # Set default values for new instances only
+        # ── Scaled value fields: always optional, always default to 1 ────────
+        for field_name in self.SCALED_VALUE_FIELDS:
+            if field_name in self.fields:
+                self.fields[field_name].required = False
+                self.fields[field_name].initial = 1
+
+        # ── New instance defaults ─────────────────────────────────────────────
         if not self.instance.pk:
             self.fields['is_active'].initial = True
             self.fields['efris_auto_sync_enabled'].initial = False
             self.fields['discount_percentage'].initial = 0
             self.fields['excise_duty_rate'].initial = 0
             self.fields['min_stock_level'].initial = 5
-
-            # ✅ NEW: Export field defaults
             self.fields['is_export_product'].initial = False
             self.fields['efris_has_piece_unit'].initial = False
             self.fields['efris_has_other_units'].initial = False
-            self.fields['efris_package_scaled_value'].initial = 1
-            self.fields['efris_piece_scaled_value'].initial = 1
-            self.fields['efris_package_scaled_value_customs'].initial = 1
-            self.fields['efris_customs_scaled_value'].initial = 1
 
-        # ===== EFRIS CONDITIONAL LOGIC =====
+        # ── EFRIS disabled: hide all EFRIS-only fields, mark not required ─────
         if not self.efris_enabled:
-            efris_fields = [
-                'efris_auto_sync_enabled',
-                'efris_excise_duty_code',
-                'efris_has_piece_unit',
-                'efris_piece_measure_unit',
-                'efris_piece_unit_price',
-                'efris_package_scaled_value',
-                'efris_piece_scaled_value',
-                'efris_has_other_units',
-            ]
-
-            for field_name in efris_fields:
+            for field_name in self.EFRIS_ONLY_FIELDS:
                 if field_name in self.fields:
                     self.fields[field_name].widget = forms.HiddenInput()
                     self.fields[field_name].required = False
-                    if 'efris_auto_sync_enabled' in field_name or 'efris_has_' in field_name:
+                    # Boolean fields must default to False when hidden
+                    if field_name in ('efris_auto_sync_enabled', 'efris_has_piece_unit',
+                                      'efris_has_other_units', 'is_export_product'):
                         self.fields[field_name].initial = False
+                    # Scaled value fields default to 1 when hidden
+                    elif field_name in self.SCALED_VALUE_FIELDS:
+                        self.fields[field_name].initial = 1
+
+        # ── EFRIS enabled: add help texts ─────────────────────────────────────
         else:
-            # ✅ NEW: Add help texts for EFRIS fields
             if 'efris_has_piece_unit' in self.fields:
                 self.fields['efris_has_piece_unit'].help_text = (
-                    'Enable if product has alternative piece measurement (e.g., sold by stick but measured in kg)'
+                    'Enable if product has alternative piece measurement '
+                    '(e.g., sold by stick but measured in kg)'
                 )
-
             if 'efris_piece_measure_unit' in self.fields:
                 self.fields['efris_piece_measure_unit'].help_text = (
                     'Alternative unit of measure (MANDATORY when piece unit enabled)'
                 )
 
-
-        self.fields['hs_code'].label = 'HS Code'
-        self.fields['hs_code'].help_text = (
-            'Harmonized System code (MANDATORY for export invoices)'
-        )
-
-        self.fields['hs_name'].label = 'HS Description'
-        self.fields['hs_name'].help_text = (
-            'Description of the HS code'
-        )
-
-        self.fields['efris_customs_measure_unit'].label = 'Customs Measure Unit'
-        self.fields['efris_customs_measure_unit'].help_text = (
-            'Unit of measure for customs/export (e.g., KGM, LTR, NTT)'
-        )
+            self.fields['hs_code'].label = 'HS Code'
+            self.fields['hs_code'].help_text = (
+                'Harmonized System code (MANDATORY for export invoices)'
+            )
+            self.fields['hs_name'].label = 'HS Description'
+            self.fields['hs_name'].help_text = 'Description of the HS code'
+            self.fields['efris_customs_measure_unit'].label = 'Customs Measure Unit'
+            self.fields['efris_customs_measure_unit'].help_text = (
+                'Unit of measure for customs/export (e.g., KGM, LTR, NTT)'
+            )
 
     def clean(self):
         cleaned_data = super().clean()
 
-        # Existing validation...
         category = cleaned_data.get('category')
         efris_auto_sync = cleaned_data.get('efris_auto_sync_enabled')
         cost_price = cleaned_data.get('cost_price')
         selling_price = cleaned_data.get('selling_price')
-        tax_rate = cleaned_data.get('tax_rate')
-
-        # ✅ NEW: Export validation
         is_export_product = cleaned_data.get('is_export_product')
         hs_code = cleaned_data.get('hs_code')
         customs_measure_unit = cleaned_data.get('efris_customs_measure_unit')
-
-        # ✅ NEW: Piece unit validation
         has_piece_unit = cleaned_data.get('efris_has_piece_unit')
         piece_measure_unit = cleaned_data.get('efris_piece_measure_unit')
         piece_unit_price = cleaned_data.get('efris_piece_unit_price')
 
-        # ===== EFRIS VALIDATION =====
-        if self.efris_enabled and efris_auto_sync:
-            if not category:
-                self.add_error('efris_auto_sync_enabled',
-                               'Please select a category before enabling EFRIS auto-sync.')
+        # ── Always ensure scaled values fall back to 1 if blank/None ─────────
+        for field_name in self.SCALED_VALUE_FIELDS:
+            if not cleaned_data.get(field_name):
+                cleaned_data[field_name] = 1
 
-            if category and not getattr(category, 'efris_commodity_category_code', None):
-                self.add_error('efris_auto_sync_enabled',
-                               f"Category '{category.name}' must have an EFRIS commodity category assigned.")
-
-        # ✅ NEW: Export validation
-        if is_export_product:
-            if not hs_code:
-                self.add_error('hs_code',
-                               'HS Code is MANDATORY for export-ready products.')
-
-            if not customs_measure_unit:
-                self.add_error('efris_customs_measure_unit',
-                               'Customs measure unit is MANDATORY for export products.')
-
-        # ✅ NEW: Piece unit validation
-        if has_piece_unit:
-            if not piece_measure_unit:
-                self.add_error('efris_piece_measure_unit',
-                               'Piece measure unit is MANDATORY when piece unit is enabled.')
-
-            if not piece_unit_price or piece_unit_price <= 0:
-                self.add_error('efris_piece_unit_price',
-                               'Piece unit price is MANDATORY when piece unit is enabled.')
-
-        # If EFRIS is disabled, force flags to False
+        # ── EFRIS disabled: force all flags off, clear text fields ────────────
         if not self.efris_enabled:
             cleaned_data['efris_auto_sync_enabled'] = False
             cleaned_data['efris_has_piece_unit'] = False
             cleaned_data['efris_has_other_units'] = False
-            if 'efris_excise_duty_code' in cleaned_data:
-                cleaned_data['efris_excise_duty_code'] = ''
+            cleaned_data['is_export_product'] = False
+            cleaned_data['efris_excise_duty_code'] = ''
+            # Return early — no further EFRIS validation needed
+            self._validate_pricing(cost_price, selling_price)
+            return cleaned_data
 
-        # Validate pricing
+        # ── EFRIS enabled: category sync validation ───────────────────────────
+        if efris_auto_sync:
+            if not category:
+                self.add_error(
+                    'efris_auto_sync_enabled',
+                    'Please select a category before enabling EFRIS auto-sync.'
+                )
+            elif not getattr(category, 'efris_commodity_category_code', None):
+                self.add_error(
+                    'efris_auto_sync_enabled',
+                    f"Category '{category.name}' must have an EFRIS commodity category assigned."
+                )
+
+        # ── Export field validation (only when is_export_product is ticked) ───
+        if is_export_product:
+            if not hs_code:
+                self.add_error('hs_code', 'HS Code is MANDATORY for export-ready products.')
+            if not customs_measure_unit:
+                self.add_error(
+                    'efris_customs_measure_unit',
+                    'Customs measure unit is MANDATORY for export products.'
+                )
+
+        # ── Piece unit validation (only when efris_has_piece_unit is ticked) ──
+        if has_piece_unit:
+            if not piece_measure_unit:
+                self.add_error(
+                    'efris_piece_measure_unit',
+                    'Piece measure unit is MANDATORY when piece unit is enabled.'
+                )
+            if not piece_unit_price or piece_unit_price <= 0:
+                self.add_error(
+                    'efris_piece_unit_price',
+                    'Piece unit price is MANDATORY when piece unit is enabled.'
+                )
+
+        self._validate_pricing(cost_price, selling_price)
+        return cleaned_data
+
+    def _validate_pricing(self, cost_price, selling_price):
+        """Shared pricing validation extracted to avoid duplication."""
         if cost_price is not None and selling_price is not None:
             if cost_price > selling_price:
                 self.add_error('selling_price', 'Selling price cannot be less than cost price.')
-
             if cost_price < 0:
                 self.add_error('cost_price', 'Cost price must be a positive number.')
-
             if selling_price < 0:
                 self.add_error('selling_price', 'Selling price must be a positive number.')
-
-        return cleaned_data
 
     def save(self, commit=True):
         product = super().save(commit=False)
@@ -1188,12 +1205,18 @@ class ProductForm(VATAwareFormMixin, forms.ModelForm):
             product.tax_rate = 'B'
             product.excise_duty_rate = 0
 
+        # Ensure scaled values are never None on the instance
+        for field_name in self.SCALED_VALUE_FIELDS:
+            if getattr(product, field_name, None) is None:
+                setattr(product, field_name, 1)
+
         # Clear EFRIS fields if disabled
         if not self.efris_enabled:
             product.efris_auto_sync_enabled = False
             product.efris_excise_duty_code = ''
             product.efris_has_piece_unit = False
             product.efris_has_other_units = False
+            product.is_export_product = False
 
         if commit:
             product.save()
