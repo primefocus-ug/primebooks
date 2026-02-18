@@ -2917,6 +2917,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const storeId = storeSelect?.value;
   if (storeId) loadItems();
 
+  // ── Wire up product search bar ──
+  const psb = document.getElementById('productSearchBar');
+  if (psb) {
+    psb.addEventListener('input', debounce(() => {
+      SaleState.currentPage = 1;
+      SaleState.searchCache.clear();
+      loadItems();
+    }, 300));
+
+    psb.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        SaleState.currentPage = 1;
+        SaleState.searchCache.clear();
+        loadItems();
+      }
+    });
+  }
+
   // Export invoice checkbox
   document.getElementById('isExportInvoice')?.addEventListener('change', onExportCheckboxChange);
 
@@ -2954,7 +2973,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (storeField) storeField.value = storeSelect.value;
   });
 
-  console.log('✅ POS Ready');
+  console.log('✅ Primebooks Ready');
 });
 
 // ═══════════════════════════════════════════════
@@ -3891,36 +3910,100 @@ async function saveNewCustomer() {
 // ITEMS LOADING
 // ═══════════════════════════════════════════════
 async function loadItems() {
-  const storeId = document.getElementById('storeSelect')?.value;
-  const q = document.getElementById('productSearchBar')?.value||'';
+  const storeSelect = document.getElementById('storeSelect');
+  const productSearchBar = document.getElementById('productSearchBar');
 
+  if (!storeSelect || !productSearchBar) return;
+
+  const storeId = storeSelect.value;
+  const query = productSearchBar.value;
+
+  if (!storeId && SaleState.currentItemType !== 'service') {
+    showProductsEmpty();
+    return;
+  }
+
+  showProductsLoading();
+
+  try {
+    const cacheKey = `${storeId}-${query}-${SaleState.currentItemType}-${SaleState.currentPage}`;
+
+    if (SaleState.searchCache.has(cacheKey)) {
+      const cached = SaleState.searchCache.get(cacheKey);
+      SaleState.items = cached.items;
+      SaleState.totalItems = cached.total;
+      displayItems(cached.items);
+      updatePaginationInfo();
+      if (isExportInvoice()) { updateCartItemExportStatus(); checkCartExportReadiness(); }
+      return;
+    }
+
+    const params = new URLSearchParams({
+      store_id: storeId,
+      q: query || '',
+      item_type: SaleState.currentItemType,
+      page: SaleState.currentPage,
+      limit: SaleState.itemsPerPage,
+      include_export_status: 'true'
+    });
+
+    const response = await fetch(`/sales/search-items/?${params}`);
+    const data = await response.json();
+
+    if (data.items && data.items.length > 0) {
+      SaleState.items = data.items;
+      SaleState.totalItems = data.total || data.items.length;
+
+      SaleState.searchCache.set(cacheKey, {
+        items: data.items,
+        total: SaleState.totalItems,
+        timestamp: Date.now()
+      });
+
+      displayItems(data.items);
+
+      // ── Force grid visible (displayItems alone isn't enough) ──
+      const grid = document.getElementById('productsGrid');
+      const loading = document.getElementById('productsLoading');
+      const empty = document.getElementById('productsEmpty');
+      if (grid) grid.style.display = 'grid';
+      if (loading) loading.style.display = 'none';
+      if (empty) empty.style.display = 'none';
+
+      updatePaginationInfo();
+      if (isExportInvoice()) { updateCartItemExportStatus(); checkCartExportReadiness(); }
+    }else {
+      showProductsEmpty();
+    }
+  } catch (error) {
+    console.error('Error loading items:', error);
+    showProductsEmpty();
+    showError('Failed to load items. Please try again.');
+  }
+}
+
+function showProductsLoading() {
+  document.getElementById('productsGrid')?.style && (document.getElementById('productsGrid').style.display = 'none');
+  document.getElementById('productsEmpty')?.style && (document.getElementById('productsEmpty').style.display = 'none');
+  document.getElementById('productsLoading')?.style && (document.getElementById('productsLoading').style.display = 'flex');
+}
+
+function showProductsEmpty() {
+  document.getElementById('productsLoading')?.style && (document.getElementById('productsLoading').style.display = 'none');
+  document.getElementById('productsGrid')?.style && (document.getElementById('productsGrid').style.display = 'none');
+  document.getElementById('productsEmpty')?.style && (document.getElementById('productsEmpty').style.display = 'flex');
+}
+
+function displayItems(items) {
   const grid = document.getElementById('productsGrid');
   const loading = document.getElementById('productsLoading');
   const empty = document.getElementById('productsEmpty');
 
-  if (grid) grid.style.display='none';
-  if (empty) empty.style.display='none';
-  if (loading) loading.style.display='flex';
-
-  try {
-    const params = new URLSearchParams({ store_id:storeId, q, item_type:SaleState.currentItemType, page:SaleState.currentPage, limit:SaleState.itemsPerPage, include_export_status:'true' });
-    const r = await fetch(`/sales/search-items/?${params}`);
-    const data = await r.json();
-    if (loading) loading.style.display='none';
-
-    if (data.items?.length) {
-      SaleState.items = data.items;
-      SaleState.totalItems = data.total||data.items.length;
-      if (grid) { grid.style.display='grid'; renderProducts(data.items); }
-      updatePaginationInfo();
-      if (isExportInvoice()) { updateCartItemExportStatus(); checkCartExportReadiness(); }
-    } else {
-      if (empty) empty.style.display='flex';
-    }
-  } catch(e) {
-    if (loading) loading.style.display='none';
-    if (empty) empty.style.display='flex';
-    showError('Failed to load items');
+  if (loading) loading.style.display = 'none';
+  if (empty) empty.style.display = 'none';
+  if (grid) {
+    renderProducts(items);
+    grid.style.display = 'grid';  // set AFTER render, not before
   }
 }
 
