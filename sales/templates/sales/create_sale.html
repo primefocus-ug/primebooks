@@ -4465,100 +4465,737 @@ async function confirmSaleFromModal() {
 
   await completeSale();
 }
-async function completeSale() {
-    if (!SaleState.cart.length) {
-        showError('Cart is empty. Add items before completing the sale.');
-        return;
+(function injectErrorStyles() {
+  if (document.getElementById('posErrorStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'posErrorStyles';
+  style.textContent = `
+    /* ── ERROR OVERLAY ── */
+    #posErrorOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity .2s ease;
+      pointer-events: none;
+    }
+    #posErrorOverlay.pe-visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+    .pe-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(10, 14, 20, 0.82);
+      backdrop-filter: blur(6px);
+    }
+    .pe-panel {
+      position: relative;
+      z-index: 1;
+      width: min(520px, calc(100vw - 2rem));
+      max-height: calc(100vh - 3rem);
+      overflow-y: auto;
+      border-radius: 16px;
+      box-shadow: 0 32px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(239,68,68,.2);
+      transform: translateY(20px) scale(.97);
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+      font-family: var(--sans, 'Sora', sans-serif);
+      /* Adapts to light/dark theme */
+      background: var(--card, #1c2333);
+      border: 1px solid rgba(239,68,68,.3);
+    }
+    #posErrorOverlay.pe-visible .pe-panel {
+      transform: translateY(0) scale(1);
     }
 
-    const form = document.getElementById('createSaleForm');
-    if (!form) {
-        showError('Sale form not found.');
-        return;
+    /* ── HEADER ── */
+    .pe-header {
+      display: flex;
+      align-items: flex-start;
+      gap: .875rem;
+      padding: 1.25rem 1.25rem .875rem;
+      border-bottom: 1px solid rgba(239,68,68,.15);
+    }
+    .pe-icon-wrap {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: rgba(239,68,68,.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 1.25rem;
+      color: #ef4444;
+      animation: pe-shake .4s ease .1s both;
+    }
+    @keyframes pe-shake {
+      0%,100% { transform: translateX(0); }
+      20%      { transform: translateX(-4px); }
+      40%      { transform: translateX(4px); }
+      60%      { transform: translateX(-3px); }
+      80%      { transform: translateX(3px); }
+    }
+    .pe-title-group { flex: 1; min-width: 0; }
+    .pe-title {
+      font-size: .95rem;
+      font-weight: 800;
+      color: var(--text, #e2e8f0);
+      margin-bottom: 2px;
+    }
+    .pe-subtitle {
+      font-size: .72rem;
+      color: var(--text-2, #94a3b8);
+    }
+    .pe-close {
+      background: none;
+      border: none;
+      color: var(--muted, #64748b);
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 2px;
+      line-height: 1;
+      flex-shrink: 0;
+      transition: color .15s;
+    }
+    .pe-close:hover { color: #ef4444; }
+
+    /* ── ERROR LIST ── */
+    .pe-body { padding: .875rem 1.25rem; }
+
+    .pe-error-list {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+      margin-bottom: .875rem;
+    }
+    .pe-error-item {
+      display: flex;
+      align-items: flex-start;
+      gap: .625rem;
+      padding: .625rem .875rem;
+      border-radius: 8px;
+      font-size: .82rem;
+      line-height: 1.5;
+      animation: pe-slide-in .2s ease both;
+    }
+    @keyframes pe-slide-in {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .pe-error-item:nth-child(1) { animation-delay: .05s; }
+    .pe-error-item:nth-child(2) { animation-delay: .10s; }
+    .pe-error-item:nth-child(3) { animation-delay: .15s; }
+    .pe-error-item:nth-child(4) { animation-delay: .20s; }
+    .pe-error-item:nth-child(5) { animation-delay: .25s; }
+
+    /* Severity variants */
+    .pe-error-item.sev-error {
+      background: rgba(239,68,68,.1);
+      border: 1px solid rgba(239,68,68,.2);
+      color: var(--text, #e2e8f0);
+    }
+    .pe-error-item.sev-warning {
+      background: rgba(245,158,11,.1);
+      border: 1px solid rgba(245,158,11,.2);
+      color: var(--text, #e2e8f0);
+    }
+    .pe-error-item.sev-info {
+      background: rgba(59,130,246,.1);
+      border: 1px solid rgba(59,130,246,.2);
+      color: var(--text, #e2e8f0);
+    }
+    .pe-error-item.sev-efris {
+      background: rgba(139,92,246,.1);
+      border: 1px solid rgba(139,92,246,.2);
+      color: var(--text, #e2e8f0);
     }
 
-    const completeBtn = document.querySelector('[onclick="completeSale()"], #completeSaleBtn');
-    const originalHTML = completeBtn?.innerHTML || '';
-    if (completeBtn) {
-        completeBtn.disabled = true;
-        completeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+    .pe-item-icon {
+      font-size: .85rem;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .sev-error  .pe-item-icon { color: #ef4444; }
+    .sev-warning .pe-item-icon { color: #f59e0b; }
+    .sev-info   .pe-item-icon { color: #3b82f6; }
+    .sev-efris  .pe-item-icon { color: #8b5cf6; }
+
+    .pe-item-body { flex: 1; min-width: 0; }
+    .pe-item-label {
+      font-size: .65rem;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      opacity: .6;
+      margin-bottom: 2px;
+    }
+    .pe-item-msg { font-weight: 500; word-break: break-word; }
+    .pe-item-detail {
+      font-size: .72rem;
+      opacity: .65;
+      margin-top: 3px;
+      font-family: var(--mono, 'DM Mono', monospace);
     }
 
-    try {
-        const formData = new FormData(form);
+    /* ── EFRIS CODE BADGE ── */
+    .pe-efris-code {
+      display: inline-block;
+      background: rgba(139,92,246,.2);
+      color: #8b5cf6;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: var(--mono, monospace);
+      font-size: .7rem;
+      font-weight: 700;
+      margin-right: .35rem;
+    }
 
-        // Debug: log all form fields before sending
-        console.group('📦 Sale Submission');
-        for (const [key, value] of formData.entries()) {
-            console.log(`  ${key}:`, value);
+    /* ── RAW DETAIL TOGGLE ── */
+    .pe-raw-toggle {
+      background: none;
+      border: none;
+      color: var(--muted, #64748b);
+      font-size: .72rem;
+      cursor: pointer;
+      padding: 0;
+      font-family: var(--sans, sans-serif);
+      display: flex;
+      align-items: center;
+      gap: .25rem;
+      margin-bottom: .625rem;
+      transition: color .15s;
+    }
+    .pe-raw-toggle:hover { color: var(--text-2, #94a3b8); }
+    .pe-raw-box {
+      background: var(--ink-3, #2d3748);
+      border: 1px solid var(--line, #2a3042);
+      border-radius: 8px;
+      padding: .625rem .875rem;
+      font-family: var(--mono, monospace);
+      font-size: .7rem;
+      color: var(--text-2, #94a3b8);
+      max-height: 160px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      display: none;
+      margin-bottom: .875rem;
+    }
+    .pe-raw-box.show { display: block; }
+
+    /* ── FOOTER ── */
+    .pe-footer {
+      display: flex;
+      gap: .625rem;
+      padding: .875rem 1.25rem 1.25rem;
+      border-top: 1px solid rgba(239,68,68,.12);
+    }
+    .pe-btn {
+      flex: 1;
+      padding: .625rem 1rem;
+      border-radius: 8px;
+      font-size: .8rem;
+      font-weight: 700;
+      font-family: var(--sans, sans-serif);
+      cursor: pointer;
+      border: none;
+      transition: all .15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .375rem;
+    }
+    .pe-btn-dismiss {
+      background: rgba(239,68,68,.15);
+      color: #ef4444;
+      border: 1px solid rgba(239,68,68,.25);
+    }
+    .pe-btn-dismiss:hover {
+      background: #ef4444;
+      color: #fff;
+    }
+    .pe-btn-retry {
+      background: var(--accent, #3b82f6);
+      color: #fff;
+    }
+    .pe-btn-retry:hover { filter: brightness(1.1); }
+    .pe-btn-copy {
+      flex: 0;
+      padding: .625rem .875rem;
+      background: var(--lift, #222d40);
+      color: var(--text-2, #94a3b8);
+      border: 1px solid var(--line, #2a3042);
+    }
+    .pe-btn-copy:hover { border-color: var(--accent, #3b82f6); color: var(--accent, #3b82f6); }
+
+    /* ── EFRIS HELP NOTE ── */
+    .pe-efris-note {
+      background: rgba(139,92,246,.08);
+      border: 1px solid rgba(139,92,246,.2);
+      border-radius: 8px;
+      padding: .625rem .875rem;
+      font-size: .75rem;
+      color: var(--text-2, #94a3b8);
+      margin-bottom: .875rem;
+      line-height: 1.5;
+    }
+    .pe-efris-note strong { color: #8b5cf6; }
+
+    /* ── SCROLLBAR ── */
+    .pe-panel::-webkit-scrollbar { width: 4px; }
+    .pe-panel::-webkit-scrollbar-track { background: transparent; }
+    .pe-panel::-webkit-scrollbar-thumb { background: var(--line, #2a3042); border-radius: 99px; }
+
+    /* Light theme overrides */
+    [data-theme="light"] .pe-panel {
+      background: #ffffff;
+      border-color: rgba(239,68,68,.25);
+      box-shadow: 0 32px 80px rgba(0,0,0,.15), 0 0 0 1px rgba(239,68,68,.15);
+    }
+    [data-theme="light"] .pe-raw-box {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+    }
+    [data-theme="light"] .pe-btn-copy {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+      color: #475569;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+
+// ═══════════════════════════════════════════════════════════
+// MAIN ERROR DISPLAY FUNCTION
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * showPosError(options)
+ *
+ * options = {
+ *   title:    string   — headline (default: "Sale Failed")
+ *   errors:   Array    — list of error objects OR plain strings
+ *   rawData:  object   — raw server response (shown in toggle)
+ *   onRetry:  fn       — if provided, shows Retry button
+ *   httpStatus: number — HTTP status code
+ * }
+ *
+ * Error object shape:
+ * { message, detail?, field?, severity: 'error'|'warning'|'info'|'efris', efrisCode? }
+ */
+function showPosError(options = {}) {
+  const {
+    title = 'Sale Failed',
+    subtitle,
+    errors = [],
+    rawData = null,
+    onRetry = null,
+    httpStatus = null,
+  } = options;
+
+  // Remove existing overlay
+  document.getElementById('posErrorOverlay')?.remove();
+
+  // Normalise errors to objects
+  const normErrors = errors.map(e => {
+    if (typeof e === 'string') return { message: e, severity: 'error' };
+    return { severity: 'error', ...e };
+  });
+
+  if (!normErrors.length) {
+    normErrors.push({ message: 'An unknown error occurred.', severity: 'error' });
+  }
+
+  // Detect if any are EFRIS errors
+  const hasEfris = normErrors.some(e => e.severity === 'efris' || e.efrisCode);
+
+  // Build error items HTML
+  const errorItemsHtml = normErrors.map((e, i) => {
+    const sev = e.severity || 'error';
+    const icons = {
+      error:   'bi-x-circle-fill',
+      warning: 'bi-exclamation-triangle-fill',
+      info:    'bi-info-circle-fill',
+      efris:   'bi-shield-exclamation',
+    };
+    const labels = {
+      error:   'Error',
+      warning: 'Warning',
+      info:    'Info',
+      efris:   'EFRIS',
+    };
+    const efrisCodeBadge = e.efrisCode
+      ? `<span class="pe-efris-code">${escSafe(String(e.efrisCode))}</span>`
+      : '';
+    const fieldLabel = e.field
+      ? `<div class="pe-item-label">${escSafe(e.field)}</div>`
+      : `<div class="pe-item-label">${labels[sev]}</div>`;
+    const detail = e.detail
+      ? `<div class="pe-item-detail">${escSafe(e.detail)}</div>`
+      : '';
+    return `
+      <div class="pe-error-item sev-${sev}" style="animation-delay:${0.04 + i * 0.05}s">
+        <i class="bi ${icons[sev]} pe-item-icon"></i>
+        <div class="pe-item-body">
+          ${fieldLabel}
+          <div class="pe-item-msg">${efrisCodeBadge}${escSafe(e.message)}</div>
+          ${detail}
+        </div>
+      </div>`;
+  }).join('');
+
+  // EFRIS help note
+  const efrisNote = hasEfris ? `
+    <div class="pe-efris-note">
+      <strong><i class="bi bi-shield-check me-1"></i>EFRIS Note:</strong>
+      The sale was saved locally but could not be fiscalized.
+      Common causes: item not registered in EFRIS, invalid HS code, or connectivity issue.
+      The system will retry automatically — or you can re-attempt from the sale detail page.
+    </div>` : '';
+
+  // Raw data toggle
+  const rawJson = rawData ? JSON.stringify(rawData, null, 2) : null;
+  const rawSection = rawJson ? `
+    <button class="pe-raw-toggle" onclick="this.nextElementSibling.classList.toggle('show'); this.querySelector('i').className = this.nextElementSibling.classList.contains('show') ? 'bi bi-chevron-up' : 'bi bi-chevron-down'">
+      <i class="bi bi-chevron-down"></i> Show technical details
+    </button>
+    <div class="pe-raw-box">${escSafe(rawJson)}</div>` : '';
+
+  // Status badge
+  const statusBadge = httpStatus
+    ? `<span style="font-family:var(--mono,monospace); font-size:.65rem; background:rgba(239,68,68,.15); color:#ef4444; border-radius:4px; padding:1px 6px; margin-left:.4rem">HTTP ${httpStatus}</span>`
+    : '';
+
+  // Subtitle
+  const subtitleText = subtitle || (httpStatus === 400
+    ? 'Validation failed — check the fields below'
+    : httpStatus === 500
+    ? 'Server error — please try again or contact support'
+    : httpStatus === 403
+    ? 'You don\'t have permission to perform this action'
+    : `${normErrors.length} issue${normErrors.length > 1 ? 's' : ''} prevented the sale from completing`);
+
+  // Retry button
+  const retryBtn = onRetry
+    ? `<button class="pe-btn pe-btn-retry" onclick="posErrorRetry()"><i class="bi bi-arrow-clockwise"></i> Retry</button>`
+    : '';
+
+  // Copy button
+  const copyBtn = rawJson
+    ? `<button class="pe-btn pe-btn-copy" onclick="posErrorCopy()" title="Copy error details"><i class="bi bi-clipboard"></i></button>`
+    : '';
+
+  // Build overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'posErrorOverlay';
+  overlay.innerHTML = `
+    <div class="pe-backdrop" onclick="closePosError()"></div>
+    <div class="pe-panel" role="alertdialog" aria-modal="true" aria-label="Sale error">
+      <div class="pe-header">
+        <div class="pe-icon-wrap"><i class="bi bi-exclamation-octagon-fill"></i></div>
+        <div class="pe-title-group">
+          <div class="pe-title">${escSafe(title)}${statusBadge}</div>
+          <div class="pe-subtitle">${escSafe(subtitleText)}</div>
+        </div>
+        <button class="pe-close" onclick="closePosError()" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="pe-body">
+        <div class="pe-error-list">${errorItemsHtml}</div>
+        ${efrisNote}
+        ${rawSection}
+      </div>
+      <div class="pe-footer">
+        <button class="pe-btn pe-btn-dismiss" onclick="closePosError()">
+          <i class="bi bi-x-circle"></i> Dismiss
+        </button>
+        ${retryBtn}
+        ${copyBtn}
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('pe-visible'));
+
+  // Store retry callback
+  if (onRetry) overlay._retryFn = onRetry;
+
+  // Store raw for copy
+  if (rawJson) overlay._rawJson = rawJson;
+
+  // Keyboard: Escape to close
+  overlay._keyHandler = e => {
+    if (e.key === 'Escape') closePosError();
+  };
+  document.addEventListener('keydown', overlay._keyHandler);
+}
+
+function closePosError() {
+  const overlay = document.getElementById('posErrorOverlay');
+  if (!overlay) return;
+  document.removeEventListener('keydown', overlay._keyHandler);
+  overlay.classList.remove('pe-visible');
+  setTimeout(() => overlay.remove(), 220);
+}
+
+function posErrorRetry() {
+  const overlay = document.getElementById('posErrorOverlay');
+  const fn = overlay?._retryFn;
+  closePosError();
+  if (typeof fn === 'function') setTimeout(fn, 250);
+}
+
+function posErrorCopy() {
+  const overlay = document.getElementById('posErrorOverlay');
+  const raw = overlay?._rawJson;
+  if (!raw) return;
+  navigator.clipboard?.writeText(raw).then(() => {
+    showToast('Error details copied', 'info');
+  }).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = raw;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    showToast('Copied', 'info');
+  });
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// ERROR PARSERS — Convert server responses to error objects
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Parse Django validation errors into normalised error objects.
+ * Handles: string[], {field: [msg]}, {error: string}, EFRIS errors
+ */
+function parseSaleErrors(data, httpStatus) {
+  const errors = [];
+
+  // Already an array of strings
+  if (Array.isArray(data.errors)) {
+    data.errors.forEach(e => {
+      if (typeof e === 'string') {
+        // Detect EFRIS error patterns
+        if (e.includes('EFRIS') || e.includes('T109') || e.includes('fiscali')) {
+          const efrisCode = e.match(/\[(\d+)\]/)?.[1];
+          const itemMatch = e.match(/^([^-]+)-->(.+)$/);
+          errors.push({
+            severity: 'efris',
+            efrisCode,
+            message: itemMatch ? `${itemMatch[2].trim()} (Item: ${itemMatch[1].trim()})` : e,
+            detail: 'This item may not be registered in EFRIS',
+          });
+        } else {
+          errors.push({ message: e, severity: 'error' });
         }
-        console.groupEnd();
+      } else if (typeof e === 'object') {
+        errors.push({ severity: 'error', ...e });
+      }
+    });
+    return errors;
+  }
 
-        const response = await fetch(form.action || window.location.href, {
-            method: 'POST',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRFToken': window.csrfToken || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '',
-            },
-            body: formData,
+  // Django field errors dict: { field_name: ["msg1", "msg2"] }
+  if (data.errors && typeof data.errors === 'object') {
+    for (const [field, msgs] of Object.entries(data.errors)) {
+      const msgList = Array.isArray(msgs) ? msgs : [String(msgs)];
+      msgList.forEach(msg => {
+        errors.push({
+          field: field === '__all__' ? null : field,
+          message: msg,
+          severity: 'error',
         });
-
-        console.log('📡 Response status:', response.status, response.statusText);
-
-        // Try to parse JSON regardless of status code
-        let data;
-        const contentType = response.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-            data = await response.json();
-        } else {
-            // Server returned HTML (e.g. Django error page) — grab raw text
-            const text = await response.text();
-            console.error('❌ Non-JSON response body:', text);
-            showError(`Server error (${response.status}): Response was not JSON. Check console for details.`);
-            return;
-        }
-
-        console.log('📨 Response data:', data);
-
-        if (data.success) {
-            document.querySelectorAll('.modal.show').forEach(m => {
-                const instance = bootstrap.Modal.getInstance(m);
-                if (instance) instance.hide();
-            });
-            setTimeout(() => showSaleSuccessOverlay(data.sale), 200);
-        } else {
-            // Show every error we can find
-            console.error('❌ Sale failed:', data);
-
-            let errorLines = [];
-
-            if (Array.isArray(data.errors)) {
-                errorLines = data.errors;
-            } else if (typeof data.errors === 'object' && data.errors !== null) {
-                // Django form errors: { field: ["msg", ...], ... }
-                for (const [field, msgs] of Object.entries(data.errors)) {
-                    const messages = Array.isArray(msgs) ? msgs : [msgs];
-                    errorLines.push(`${field}: ${messages.join(', ')}`);
-                }
-            } else if (data.error) {
-                errorLines = [data.error];
-            } else {
-                errorLines = [`Unknown error (HTTP ${response.status})`];
-            }
-
-            // Toast each error individually so nothing gets truncated
-            errorLines.forEach(msg => showError(msg));
-        }
-
-    } catch (err) {
-        console.error('💥 Sale submission exception:', err);
-        showError(`Network error: ${err.message}. Check console for details.`);
-    } finally {
-        if (completeBtn) {
-            completeBtn.disabled = false;
-            completeBtn.innerHTML = originalHTML;
-        }
+      });
     }
+    if (errors.length) return errors;
+  }
+
+  // Single error string
+  if (data.error) {
+    errors.push({ message: data.error, severity: 'error' });
+    return errors;
+  }
+
+  // EFRIS-specific returnStateInfo
+  if (data.returnStateInfo) {
+    const code = data.returnStateInfo.returnCode;
+    const msg  = data.returnStateInfo.returnMessage || 'EFRIS error';
+    const itemMatch = msg.match(/^([^-]+)-->(.+)$/);
+    errors.push({
+      severity: 'efris',
+      efrisCode: code,
+      message: itemMatch
+        ? `${itemMatch[2].trim()} — item: "${itemMatch[1].trim()}"`
+        : msg,
+      detail: efrisCodeHelp(code),
+    });
+    return errors;
+  }
+
+  // HTTP-level fallback
+  if (httpStatus === 403) {
+    errors.push({ message: 'You do not have permission to create sales.', severity: 'error' });
+  } else if (httpStatus === 404) {
+    errors.push({ message: 'Sale endpoint not found. Contact support.', severity: 'error' });
+  } else if (httpStatus >= 500) {
+    errors.push({ message: 'Server error. Please try again or contact support.', severity: 'error', detail: `HTTP ${httpStatus}` });
+  } else {
+    errors.push({ message: `Unexpected response (HTTP ${httpStatus})`, severity: 'error' });
+  }
+
+  return errors;
+}
+
+/** Human-readable hints for common EFRIS return codes */
+function efrisCodeHelp(code) {
+  const hints = {
+    '41': 'Item does not exist in EFRIS — register the product in EFRIS item management first.',
+    '42': 'Invalid HS code — verify the commodity code for this product.',
+    '43': 'Customer TIN not found — verify the customer TIN in EFRIS.',
+    '44': 'Invoice already uploaded — this receipt may be a duplicate.',
+    '50': 'Authentication failed — check EFRIS device credentials.',
+    '51': 'AES key expired — system will re-authenticate on next attempt.',
+    '96': 'Service temporarily unavailable — EFRIS system may be down.',
+    '99': 'General EFRIS error — check EFRIS portal for details.',
+  };
+  return hints[String(code)] || null;
+}
+
+
+async function completeSale() {
+  if (!SaleState.cart.length) {
+    showPosError({ title: 'Cart is Empty', errors: [{ message: 'Add at least one item before completing the sale.', severity: 'warning' }] });
+    return;
+  }
+
+  const form = document.getElementById('createSaleForm');
+  if (!form) {
+    showPosError({ title: 'Form Error', errors: [{ message: 'Sale form not found. Please refresh the page.', severity: 'error' }] });
+    return;
+  }
+
+  const completeBtn = document.getElementById('completeSaleBtn');
+  const originalHTML = completeBtn?.innerHTML || '';
+  if (completeBtn) {
+    completeBtn.disabled = true;
+    completeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing…';
+  }
+
+  let responseData = null;
+  let httpStatus   = null;
+
+  try {
+    const formData = new FormData(form);
+
+    // Debug log (remove in production)
+    console.group('📦 Sale Submission');
+    for (const [k, v] of formData.entries()) console.log(`  ${k}:`, v);
+    console.groupEnd();
+
+    const response = await fetch(form.action || window.location.href, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: formData,
+    });
+
+    httpStatus = response.status;
+    console.log('📡 Response status:', httpStatus);
+
+    // Parse response — handle non-JSON gracefully
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      responseData = await response.json();
+    } else {
+      const text = await response.text();
+      console.error('❌ Non-JSON response:', text.slice(0, 500));
+      showPosError({
+        title: 'Server Error',
+        errors: [{
+          message: `Server returned an unexpected response (HTTP ${httpStatus}).`,
+          detail: 'This may be a Django error page. Check server logs.',
+          severity: 'error',
+        }],
+        httpStatus,
+      });
+      return;
+    }
+
+    console.log('📨 Response data:', responseData);
+
+    // ── SUCCESS ──
+    if (responseData.success) {
+      document.querySelectorAll('.modal.show').forEach(m => {
+        bootstrap.Modal.getInstance(m)?.hide();
+      });
+      setTimeout(() => showSaleSuccessOverlay(responseData.sale), 200);
+      return;
+    }
+
+    // ── EFRIS fiscalization warning (sale saved but not fiscalized) ──
+    if (responseData.sale_created && !responseData.success) {
+      // Sale exists but EFRIS failed — show warning, not blocking error
+      const errors = parseSaleErrors(responseData, httpStatus);
+      showPosError({
+        title: 'Sale Saved — EFRIS Pending',
+        subtitle: 'The sale was recorded but could not be fiscalized yet.',
+        errors,
+        rawData: responseData,
+        httpStatus,
+      });
+      // Still show success overlay since sale was created
+      if (responseData.sale) {
+        setTimeout(() => showSaleSuccessOverlay(responseData.sale), 200);
+      }
+      return;
+    }
+
+    // ── VALIDATION / OTHER FAILURE ──
+    const errors = parseSaleErrors(responseData, httpStatus);
+    showPosError({
+      title: httpStatus === 400 ? 'Validation Failed' : 'Sale Failed',
+      errors,
+      rawData: responseData,
+      httpStatus,
+      onRetry: () => completeSale(),
+    });
+
+  } catch (err) {
+    console.error('💥 Sale exception:', err);
+
+    // Network error vs unexpected JS error
+    const isNetwork = err instanceof TypeError && err.message.includes('fetch');
+    showPosError({
+      title: isNetwork ? 'Network Error' : 'Unexpected Error',
+      errors: [{
+        message: isNetwork
+          ? 'Could not reach the server. Check your internet connection.'
+          : `JavaScript error: ${err.message}`,
+        severity: 'error',
+        detail: err.stack?.split('\n')[1]?.trim(),
+      }],
+      httpStatus,
+      onRetry: isNetwork ? () => completeSale() : null,
+    });
+
+  } finally {
+    if (completeBtn) {
+      completeBtn.disabled = false;
+      completeBtn.innerHTML = originalHTML;
+    }
+  }
 }
 
 
