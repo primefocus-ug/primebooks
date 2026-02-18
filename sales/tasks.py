@@ -333,7 +333,6 @@ def create_sale_background(self, form_data, user_id, task_id):
     initial_schema = TenantResolver.get_current_schema()
 
     try:
-        # Get user
         from django.contrib.auth import get_user_model
         from stores.models import Store
         from django.db import transaction
@@ -343,6 +342,7 @@ def create_sale_background(self, form_data, user_id, task_id):
         from .signals import send_receipt_ws_update
         from .views import create_stock_movements
         import json
+
         User = get_user_model()
 
         # Find user's tenant schema
@@ -351,13 +351,10 @@ def create_sale_background(self, form_data, user_id, task_id):
             return {'success': False, 'error': 'User not found'}
 
         with schema_context(user_schema):
-            # Update progress
             update_task_progress(task_id, 20, 'Validating data...')
 
-            # Get company
             company = get_current_tenant_from_user(user)
 
-            # Validate data
             update_task_progress(task_id, 30, 'Validating store and items...')
 
             try:
@@ -370,7 +367,6 @@ def create_sale_background(self, form_data, user_id, task_id):
                 update_task_progress(task_id, 100, 'Error: Invalid store', 'error')
                 return {'success': False, 'error': 'Invalid store'}
 
-            # Validate items
             try:
                 items_data = json.loads(form_data.get('items_data', '[]'))
                 if not items_data:
@@ -380,14 +376,12 @@ def create_sale_background(self, form_data, user_id, task_id):
                 update_task_progress(task_id, 100, 'Error: Invalid items data', 'error')
                 return {'success': False, 'error': 'Invalid items data'}
 
-            # Check if this is an export sale
             is_export_sale = form_data.get('is_export_sale') == 'true'
 
-            # Create sale
             update_task_progress(task_id, 40, 'Creating sale record...')
 
+            # ✅ All DB writes inside atomic block — NO .delay() calls in here
             with transaction.atomic():
-                # Create sale
                 sale = Sale.objects.create(
                     store=store,
                     created_by=user,
@@ -401,19 +395,17 @@ def create_sale_background(self, form_data, user_id, task_id):
                     status='DRAFT',
                 )
 
-                # Add items with export field support
                 update_task_progress(task_id, 50, 'Adding items to sale...')
 
                 for item_data in items_data:
                     try:
                         item_type = item_data.get('item_type', 'PRODUCT')
 
-                        # ✅ Prepare export fields if this is an export sale
                         export_fields = {}
                         if is_export_sale:
                             export_fields = {
-                                'export_total_weight': Decimal(str(item_data.get('export_total_weight', 0))) if item_data.get('export_total_weight') else None,
-                                'export_piece_qty': int(item_data.get('export_piece_qty', 0)) if item_data.get('export_piece_qty') else None,
+                                'export_total_weight': Decimal(str(item_data['export_total_weight'])) if item_data.get('export_total_weight') else None,
+                                'export_piece_qty': int(item_data['export_piece_qty']) if item_data.get('export_piece_qty') else None,
                                 'export_piece_measure_unit': item_data.get('export_piece_measure_unit', ''),
                             }
 
@@ -430,7 +422,7 @@ def create_sale_background(self, form_data, user_id, task_id):
                                 unit_price=Decimal(str(item_data.get('unit_price', 0))),
                                 tax_rate=item_data.get('tax_rate', 'A'),
                                 discount=Decimal(str(item_data.get('discount', 0))),
-                                **export_fields  # ✅ Add export fields
+                                **export_fields
                             )
                         elif item_type == 'SERVICE':
                             service = Service.objects.get(
@@ -445,19 +437,18 @@ def create_sale_background(self, form_data, user_id, task_id):
                                 unit_price=Decimal(str(item_data.get('unit_price', 0))),
                                 tax_rate=item_data.get('tax_rate', 'A'),
                                 discount=Decimal(str(item_data.get('discount', 0))),
-                                **export_fields  # ✅ Add export fields
+                                **export_fields
                             )
                     except (Product.DoesNotExist, Service.DoesNotExist) as e:
                         logger.error(f"Item not found: {e}")
                         continue
 
-                # Update totals
                 update_task_progress(task_id, 70, 'Calculating totals...')
+
                 sale.update_totals()
                 sale.status = 'COMPLETED' if sale.document_type == 'RECEIPT' else 'PENDING_PAYMENT'
                 sale.save()
 
-                # Handle payment
                 if form_data.get('payment_amount'):
                     try:
                         amount = Decimal(form_data['payment_amount'])
@@ -475,44 +466,59 @@ def create_sale_background(self, form_data, user_id, task_id):
                     except Exception as e:
                         logger.error(f"Payment creation failed: {e}")
 
-                # Send WebSocket update
+                # WebSocket update is safe inside atomic — it doesn't query the DB
                 update_task_progress(task_id, 80, 'Sending notifications...')
                 send_receipt_ws_update(sale)
 
-                # Queue background processing
+                # ✅ Capture everything needed BEFORE leaving the atomic block
+                sale_pk = sale.pk
+                sale_document_type = sale.document_type
+                sale_document_number = sale.document_number
+                sale_total_amount = float(sale.total_amount)
+
+                store_config = sale.store.effective_efris_config
+                efris_enabled = store_config.get('enabled', False)
+
+                # ✅ Register on_commit callbacks INSIDE atomic so they fire
+                # only after the transaction successfully commits.
+                # This prevents Celery from picking up a task for a sale
+                # that doesn't exist yet in the DB.
                 update_task_progress(task_id, 90, 'Queueing background tasks...')
 
-                if sale.document_type == 'RECEIPT':
-                    process_receipt_async.delay(sale.pk, user_id)
-                elif sale.document_type == 'INVOICE':
-                    # Create stock movements for invoices
+                if sale_document_type == 'RECEIPT':
+                    transaction.on_commit(
+                        lambda: process_receipt_async.delay(sale_pk, user_id)
+                    )
+                elif sale_document_type == 'INVOICE':
+                    # Stock movements must run synchronously — they write to DB
+                    # and must be inside the atomic block
                     create_stock_movements(sale)
 
-                    # Auto-fiscalization
-                    store_config = sale.store.effective_efris_config
-                    if store_config.get('enabled', False):
-                        fiscalize_invoice_async.delay(sale.pk, user_id)
+                    if efris_enabled:
+                        transaction.on_commit(
+                            lambda: fiscalize_invoice_async.delay(sale_pk, user_id)
+                        )
 
-                # Final update with export sale indicator
-                success_message = f'{sale.get_document_type_display()} #{sale.document_number} created successfully!'
-                if is_export_sale:
-                    success_message += ' [EXPORT INVOICE]'
+            # ✅ Atomic block is now closed and committed before we get here
+            success_message = f'{sale_document_type} #{sale_document_number} created successfully!'
+            if is_export_sale:
+                success_message += ' [EXPORT INVOICE]'
 
-                update_task_progress(
-                    task_id,
-                    100,
-                    success_message,
-                    'completed',
-                    sale_id=sale.pk
-                )
+            update_task_progress(
+                task_id,
+                100,
+                success_message,
+                'completed',
+                sale_id=sale_pk
+            )
 
-                return {
-                    'success': True,
-                    'sale_id': sale.pk,
-                    'document_number': sale.document_number,
-                    'total_amount': float(sale.total_amount),
-                    'is_export_sale': is_export_sale
-                }
+            return {
+                'success': True,
+                'sale_id': sale_pk,
+                'document_number': sale_document_number,
+                'total_amount': sale_total_amount,
+                'is_export_sale': is_export_sale
+            }
 
     except Exception as e:
         logger.error(f"Background sale creation failed: {e}", exc_info=True)
@@ -520,7 +526,6 @@ def create_sale_background(self, form_data, user_id, task_id):
         return {'success': False, 'error': str(e)}
 
     finally:
-        # Restore schema
         if initial_schema and initial_schema != 'public':
             try:
                 connection.set_schema(initial_schema)

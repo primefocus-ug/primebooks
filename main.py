@@ -112,8 +112,14 @@ sys.path.insert(0, str(BASE_DIR))
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QSplashScreen, QDialog,
     QToolBar, QStatusBar, QPushButton, QLabel, QProgressDialog,
-    QVBoxLayout, QLineEdit, QHBoxLayout, QProgressBar, QMenu
+    QVBoxLayout, QLineEdit, QHBoxLayout, QProgressBar, QMenu,QFrame,QWidget
 )
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QProgressBar, QFrame, QWidget, QScrollArea, QSizePolicy
+)
+from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QResizeEvent
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
 from primebooks.schema_loader import create_tenant_schema, load_public_schema, verify_schema
 from PyQt6.QtWebEngineCore import QWebEnginePage
 from primebooks.login_dialogs import UserSwitchDialog, InitialLoginDialog
@@ -212,175 +218,1204 @@ def verify_schema_tables(schema_name, required_tables=None):
 # DESKTOP LOGIN DIALOG
 # ============================================================================
 
-class DesktopLoginDialog(QDialog):
-    """Desktop login dialog - Native Qt window"""
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QProgressBar, QFrame, QWidget, QScrollArea, QSizePolicy
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve, QSize
+from PyQt6.QtGui import QPixmap, QPainter, QIcon, QColor
+import logging
+import os
+from enum import Enum
+from dataclasses import dataclass
+from typing import Optional
 
-    def __init__(self):
+
+
+class Theme(Enum):
+    """Available themes"""
+    LIGHT = "light"
+    DARK = "dark"
+    NORD = "nord"
+    DRACULA = "dracula"
+    SOLARIZED_LIGHT = "solarized_light"
+    SOLARIZED_DARK = "solarized_dark"
+    MONOKAI = "monokai"
+    OCEAN = "ocean"
+    FOREST = "forest"
+    SUNSET = "sunset"
+
+
+@dataclass
+class ThemeColors:
+    """Theme color scheme"""
+    # Background colors
+    bg_primary: str
+    bg_secondary: str
+    bg_input: str
+    bg_input_focus: str
+
+    # Text colors
+    text_primary: str
+    text_secondary: str
+    text_placeholder: str
+    text_on_primary: str
+
+    # Border colors
+    border_default: str
+    border_focus: str
+
+    # Accent colors
+    accent_primary: str
+    accent_secondary: str
+    accent_hover: str
+
+    # Status colors
+    success_bg: str
+    success_text: str
+    error_bg: str
+    error_text: str
+
+    # Progress colors
+    progress_bg: str
+    progress_active: str
+    progress_complete: str
+    progress_error: str
+
+    # Header gradient (if None, uses solid accent_primary)
+    header_gradient_start: Optional[str] = None
+    header_gradient_end: Optional[str] = None
+
+
+class ThemeManager:
+    """Manages theme configurations"""
+
+    THEMES = {
+        Theme.LIGHT: ThemeColors(
+            bg_primary="#ffffff",
+            bg_secondary="#f8f9fa",
+            bg_input="#f7fafc",
+            bg_input_focus="#ffffff",
+            text_primary="#2d3748",
+            text_secondary="#718096",
+            text_placeholder="#a0aec0",
+            text_on_primary="#ffffff",
+            border_default="#e2e8f0",
+            border_focus="#667eea",
+            accent_primary="#667eea",
+            accent_secondary="#764ba2",
+            accent_hover="#5568d3",
+            success_bg="#f0fff4",
+            success_text="#2f855a",
+            error_bg="#fff5f5",
+            error_text="#c53030",
+            progress_bg="#f7fafc",
+            progress_active="#ebf4ff",
+            progress_complete="#f0fff4",
+            progress_error="#fff5f5",
+            header_gradient_start="#667eea",
+            header_gradient_end="#764ba2",
+        ),
+
+        Theme.DARK: ThemeColors(
+            bg_primary="#1a202c",
+            bg_secondary="#2d3748",
+            bg_input="#2d3748",
+            bg_input_focus="#374151",
+            text_primary="#f7fafc",
+            text_secondary="#cbd5e0",
+            text_placeholder="#718096",
+            text_on_primary="#ffffff",
+            border_default="#4a5568",
+            border_focus="#667eea",
+            accent_primary="#667eea",
+            accent_secondary="#764ba2",
+            accent_hover="#7c3aed",
+            success_bg="#065f46",
+            success_text="#d1fae5",
+            error_bg="#7f1d1d",
+            error_text="#fecaca",
+            progress_bg="#374151",
+            progress_active="#1e3a8a",
+            progress_complete="#065f46",
+            progress_error="#7f1d1d",
+            header_gradient_start="#667eea",
+            header_gradient_end="#764ba2",
+        ),
+
+        Theme.NORD: ThemeColors(
+            bg_primary="#2e3440",
+            bg_secondary="#3b4252",
+            bg_input="#3b4252",
+            bg_input_focus="#434c5e",
+            text_primary="#eceff4",
+            text_secondary="#d8dee9",
+            text_placeholder="#616e88",
+            text_on_primary="#eceff4",
+            border_default="#4c566a",
+            border_focus="#88c0d0",
+            accent_primary="#88c0d0",
+            accent_secondary="#81a1c1",
+            accent_hover="#5e81ac",
+            success_bg="#a3be8c",
+            success_text="#2e3440",
+            error_bg="#bf616a",
+            error_text="#eceff4",
+            progress_bg="#434c5e",
+            progress_active="#5e81ac",
+            progress_complete="#a3be8c",
+            progress_error="#bf616a",
+            header_gradient_start="#5e81ac",
+            header_gradient_end="#81a1c1",
+        ),
+
+        Theme.DRACULA: ThemeColors(
+            bg_primary="#282a36",
+            bg_secondary="#44475a",
+            bg_input="#44475a",
+            bg_input_focus="#6272a4",
+            text_primary="#f8f8f2",
+            text_secondary="#f8f8f2",
+            text_placeholder="#6272a4",
+            text_on_primary="#f8f8f2",
+            border_default="#6272a4",
+            border_focus="#bd93f9",
+            accent_primary="#bd93f9",
+            accent_secondary="#ff79c6",
+            accent_hover="#9580ff",
+            success_bg="#50fa7b",
+            success_text="#282a36",
+            error_bg="#ff5555",
+            error_text="#f8f8f2",
+            progress_bg="#44475a",
+            progress_active="#6272a4",
+            progress_complete="#50fa7b",
+            progress_error="#ff5555",
+            header_gradient_start="#bd93f9",
+            header_gradient_end="#ff79c6",
+        ),
+
+        Theme.SOLARIZED_LIGHT: ThemeColors(
+            bg_primary="#fdf6e3",
+            bg_secondary="#eee8d5",
+            bg_input="#eee8d5",
+            bg_input_focus="#93a1a1",
+            text_primary="#657b83",
+            text_secondary="#839496",
+            text_placeholder="#93a1a1",
+            text_on_primary="#fdf6e3",
+            border_default="#93a1a1",
+            border_focus="#268bd2",
+            accent_primary="#268bd2",
+            accent_secondary="#2aa198",
+            accent_hover="#073642",
+            success_bg="#859900",
+            success_text="#fdf6e3",
+            error_bg="#dc322f",
+            error_text="#fdf6e3",
+            progress_bg="#eee8d5",
+            progress_active="#268bd2",
+            progress_complete="#859900",
+            progress_error="#dc322f",
+            header_gradient_start="#268bd2",
+            header_gradient_end="#2aa198",
+        ),
+
+        Theme.SOLARIZED_DARK: ThemeColors(
+            bg_primary="#002b36",
+            bg_secondary="#073642",
+            bg_input="#073642",
+            bg_input_focus="#586e75",
+            text_primary="#839496",
+            text_secondary="#93a1a1",
+            text_placeholder="#586e75",
+            text_on_primary="#fdf6e3",
+            border_default="#586e75",
+            border_focus="#268bd2",
+            accent_primary="#268bd2",
+            accent_secondary="#2aa198",
+            accent_hover="#6c71c4",
+            success_bg="#859900",
+            success_text="#fdf6e3",
+            error_bg="#dc322f",
+            error_text="#fdf6e3",
+            progress_bg="#073642",
+            progress_active="#268bd2",
+            progress_complete="#859900",
+            progress_error="#dc322f",
+            header_gradient_start="#268bd2",
+            header_gradient_end="#2aa198",
+        ),
+
+        Theme.MONOKAI: ThemeColors(
+            bg_primary="#272822",
+            bg_secondary="#3e3d32",
+            bg_input="#3e3d32",
+            bg_input_focus="#49483e",
+            text_primary="#f8f8f2",
+            text_secondary="#f8f8f2",
+            text_placeholder="#75715e",
+            text_on_primary="#f8f8f2",
+            border_default="#75715e",
+            border_focus="#66d9ef",
+            accent_primary="#66d9ef",
+            accent_secondary="#a6e22e",
+            accent_hover="#ae81ff",
+            success_bg="#a6e22e",
+            success_text="#272822",
+            error_bg="#f92672",
+            error_text="#f8f8f2",
+            progress_bg="#3e3d32",
+            progress_active="#66d9ef",
+            progress_complete="#a6e22e",
+            progress_error="#f92672",
+            header_gradient_start="#66d9ef",
+            header_gradient_end="#a6e22e",
+        ),
+
+        Theme.OCEAN: ThemeColors(
+            bg_primary="#0d1117",
+            bg_secondary="#161b22",
+            bg_input="#161b22",
+            bg_input_focus="#21262d",
+            text_primary="#c9d1d9",
+            text_secondary="#8b949e",
+            text_placeholder="#6e7681",
+            text_on_primary="#ffffff",
+            border_default="#30363d",
+            border_focus="#58a6ff",
+            accent_primary="#58a6ff",
+            accent_secondary="#1f6feb",
+            accent_hover="#388bfd",
+            success_bg="#238636",
+            success_text="#c9d1d9",
+            error_bg="#da3633",
+            error_text="#c9d1d9",
+            progress_bg="#161b22",
+            progress_active="#1f6feb",
+            progress_complete="#238636",
+            progress_error="#da3633",
+            header_gradient_start="#1f6feb",
+            header_gradient_end="#58a6ff",
+        ),
+
+        Theme.FOREST: ThemeColors(
+            bg_primary="#1b2b1b",
+            bg_secondary="#2d4a2d",
+            bg_input="#2d4a2d",
+            bg_input_focus="#3d5a3d",
+            text_primary="#e8f5e8",
+            text_secondary="#b8d8b8",
+            text_placeholder="#7a9a7a",
+            text_on_primary="#ffffff",
+            border_default="#4a6a4a",
+            border_focus="#6abf69",
+            accent_primary="#6abf69",
+            accent_secondary="#4a9d48",
+            accent_hover="#8ad989",
+            success_bg="#4a9d48",
+            success_text="#e8f5e8",
+            error_bg="#c44545",
+            error_text="#e8f5e8",
+            progress_bg="#2d4a2d",
+            progress_active="#4a9d48",
+            progress_complete="#6abf69",
+            progress_error="#c44545",
+            header_gradient_start="#4a9d48",
+            header_gradient_end="#6abf69",
+        ),
+
+        Theme.SUNSET: ThemeColors(
+            bg_primary="#2b1b2b",
+            bg_secondary="#3d2d3d",
+            bg_input="#3d2d3d",
+            bg_input_focus="#4d3d4d",
+            text_primary="#f5e8e8",
+            text_secondary="#d8b8b8",
+            text_placeholder="#9a7a7a",
+            text_on_primary="#ffffff",
+            border_default="#6a4a5a",
+            border_focus="#ff6b9d",
+            accent_primary="#ff6b9d",
+            accent_secondary="#c44569",
+            accent_hover="#ff8bb4",
+            success_bg="#69c469",
+            success_text="#2b1b2b",
+            error_bg="#c44545",
+            error_text="#f5e8e8",
+            progress_bg="#3d2d3d",
+            progress_active="#c44569",
+            progress_complete="#69c469",
+            progress_error="#c44545",
+            header_gradient_start="#c44569",
+            header_gradient_end="#ff6b9d",
+        ),
+    }
+
+    @classmethod
+    def get_theme(cls, theme: Theme) -> ThemeColors:
+        """Get theme colors"""
+        return cls.THEMES.get(theme, cls.THEMES[Theme.LIGHT])
+
+
+class ThemedLoginDialog(QDialog):
+    """Fully responsive and themeable login dialog"""
+
+    def __init__(self, logo_path=None, theme=Theme.LIGHT, auto_detect_system_theme=False):
+        """
+        Initialize themed login dialog
+
+        Args:
+            logo_path (str, optional): Path to logo image file
+            theme (Theme): Theme to use (default: Theme.LIGHT)
+            auto_detect_system_theme (bool): Auto-detect dark/light mode from system
+        """
         super().__init__()
-        self.setWindowTitle("PrimeBooks - Desktop Login")
-        self.setFixedWidth(450)
+        self.setWindowTitle("PrimeBooks Desktop - Sign In")
         self.setModal(True)
+
+        self.logo_path = logo_path
+
+        # Theme setup
+        if auto_detect_system_theme:
+            self.current_theme = self._detect_system_theme()
+        else:
+            self.current_theme = theme
+
+        self.theme_colors = ThemeManager.get_theme(self.current_theme)
+
+        # Make dialog resizable
+        self.setMinimumSize(400, 550)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        self.resize_for_screen()
 
         self.auth_token = None
         self.user_data = None
         self.company_data = None
 
         self.setup_ui()
+        self.apply_theme()
+
+        # Set window icon
+        if logo_path and os.path.exists(logo_path):
+            self.setWindowIcon(QIcon(logo_path))
+
+    def _detect_system_theme(self) -> Theme:
+        """Detect system theme (dark/light mode)"""
+        try:
+            from PyQt6.QtGui import QPalette
+            palette = self.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+
+            # If window background is dark, use dark theme
+            if window_color.lightness() < 128:
+                return Theme.DARK
+            else:
+                return Theme.LIGHT
+        except Exception:
+            return Theme.LIGHT
+
+    def set_theme(self, theme: Theme):
+        """Change theme dynamically"""
+        self.current_theme = theme
+        self.theme_colors = ThemeManager.get_theme(theme)
+        self.apply_theme()
+
+    def resize_for_screen(self):
+        """Set appropriate size based on screen dimensions"""
+        screen = self.screen().geometry()
+        screen_width = screen.width()
+        screen_height = screen.height()
+
+        if screen_width < 800 or screen_height < 700:
+            self.resize(min(screen_width - 40, 450), min(screen_height - 40, 600))
+        elif screen_width < 1200:
+            self.resize(500, 650)
+        else:
+            self.resize(550, 700)
 
     def setup_ui(self):
-        layout = QVBoxLayout()
+        # Main layout with scroll area
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # Logo/Title
-        title = QLabel("<h2>PrimeBooks Desktop</h2>")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("color: #2c3e50; margin: 20px 0;")
-        layout.addWidget(title)
+        # Scroll area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        subtitle = QLabel("Login to sync your data")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet("color: #7f8c8d; margin-bottom: 20px;")
-        layout.addWidget(subtitle)
+        # Content widget
+        content_widget = QWidget()
+        scroll_area.setWidget(content_widget)
 
-        # Subdomain input
-        subdomain_label = QLabel("Company Subdomain:")
-        subdomain_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(subdomain_label)
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
 
-        self.subdomain_input = QLineEdit()
-        self.subdomain_input.setPlaceholderText("e.g. test   (if url is test.primebooks.sale)")
-        self.subdomain_input.setStyleSheet("""
-            QLineEdit {
-                padding: 8px;
-                border: 2px solid #bdc3c7;
-                border-radius: 4px;
-                font-size: 14px;
-            }
-            QLineEdit:focus {
-                border: 2px solid #3498db;
-            }
-        """)
-        layout.addWidget(self.subdomain_input)
-        layout.addSpacing(10)
+        # Header
+        self.header = self.create_header()
+        content_layout.addWidget(self.header)
 
-        # Email input
-        email_label = QLabel("Email:")
-        email_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(email_label)
+        # Main content area
+        self.content_area = QWidget()
+        self.content_area.setObjectName("contentArea")
+        self.content_area_layout = QVBoxLayout(self.content_area)
+        self.content_area_layout.setSpacing(0)
 
-        self.email_input = QLineEdit()
-        self.email_input.setPlaceholderText("nashvybzesdeveloper@gmail.com")
-        self.email_input.setStyleSheet(self.subdomain_input.styleSheet())
-        layout.addWidget(self.email_input)
-        layout.addSpacing(10)
+        self.update_content_margins()
 
-        # Password input
-        password_label = QLabel("Password:")
-        password_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(password_label)
+        # Welcome section
+        welcome_container = QWidget()
+        welcome_layout = QVBoxLayout(welcome_container)
+        welcome_layout.setContentsMargins(0, 0, 0, 0)
+        welcome_layout.setSpacing(8)
 
-        self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_input.setPlaceholderText("Enter your password")
-        self.password_input.setStyleSheet(self.subdomain_input.styleSheet())
-        self.password_input.returnPressed.connect(self.handle_login)
-        layout.addWidget(self.password_input)
-        layout.addSpacing(20)
+        self.welcome_label = QLabel("Welcome back!")
+        self.welcome_label.setObjectName("welcomeLabel")
+        self.welcome_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.welcome_label.setWordWrap(True)
+        welcome_layout.addWidget(self.welcome_label)
 
-        # Login button
-        self.login_btn = QPushButton("Login & Sync Data")
-        self.login_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                padding: 12px;
-                border-radius: 4px;
-                font-size: 14px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:disabled {
-                background-color: #bdc3c7;
-            }
-        """)
-        self.login_btn.clicked.connect(self.handle_login)
-        layout.addWidget(self.login_btn)
+        self.subtitle = QLabel("Sign in to access your workspace")
+        self.subtitle.setObjectName("subtitleLabel")
+        self.subtitle.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.subtitle.setWordWrap(True)
+        welcome_layout.addWidget(self.subtitle)
+
+        self.content_area_layout.addWidget(welcome_container)
+        self.content_area_layout.addSpacing(20)
+
+        # Input fields
+        inputs_container = QWidget()
+        inputs_layout = QVBoxLayout(inputs_container)
+        inputs_layout.setContentsMargins(0, 0, 0, 0)
+        inputs_layout.setSpacing(15)
+
+        self.subdomain_input = self.create_input_field(
+            "Company Subdomain",
+            "e.g., test ( if url is 'test.primebooks.sale' )",
+            "🏢"
+        )
+        inputs_layout.addWidget(self.subdomain_input)
+
+        self.subdomain_hint = QLabel("Enter the subdomain from your PrimeBooks URL")
+        self.subdomain_hint.setObjectName("hintLabel")
+        self.subdomain_hint.setWordWrap(True)
+        inputs_layout.addWidget(self.subdomain_hint)
+        inputs_layout.addSpacing(5)
+
+        self.email_input = self.create_input_field(
+            "Email Address",
+            "nashvybzesdeveloper@gmail.com",
+            "✉️"
+        )
+        inputs_layout.addWidget(self.email_input)
+        inputs_layout.addSpacing(5)
+
+        self.password_input = self.create_input_field(
+            "Password",
+            "Enter your password",
+            "🔒",
+            is_password=True
+        )
+        inputs_layout.addWidget(self.password_input)
+
+        self.content_area_layout.addWidget(inputs_container)
+        self.content_area_layout.addSpacing(20)
+
+        # Progress section
+        self.progress_section = self.create_progress_section()
+        self.content_area_layout.addWidget(self.progress_section)
+        self.progress_section.hide()
 
         # Status label
         self.status_label = QLabel("")
+        self.status_label.setObjectName("statusLabel")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("color: #e74c3c; margin-top: 10px;")
-        layout.addWidget(self.status_label)
+        self.status_label.setWordWrap(True)
+        self.content_area_layout.addWidget(self.status_label)
 
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setMaximum(0)
-        self.progress_bar.hide()
-        layout.addWidget(self.progress_bar)
+        self.content_area_layout.addSpacing(10)
 
-        self.setLayout(layout)
+        # Login button
+        self.login_btn = QPushButton("Sign In")
+        self.login_btn.setObjectName("loginButton")
+        self.login_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.login_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.login_btn.clicked.connect(self.handle_login)
+        self.content_area_layout.addWidget(self.login_btn)
+
+        # Footer
+        footer_container = QWidget()
+        footer_layout = QVBoxLayout(footer_container)
+        footer_layout.setContentsMargins(0, 20, 0, 0)
+
+        # Create help label
+        self.help_label = QLabel("Need help? <a href='#'>Contact Support</a>")
+        self.help_label.setObjectName("helpLabel")
+        self.help_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.help_label.setOpenExternalLinks(False)
+        self.help_label.setWordWrap(True)
+        footer_layout.addWidget(self.help_label)
+
+        # WhatsApp support
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+
+        whatsapp_number = "256785"  # Replace with your number
+        default_message = "Hello PrimeBooks Desktop, I need support."
+        whatsapp_url = f"https://wa.me/{whatsapp_number}?text={default_message.replace(' ', '%20')}"
+
+        self.help_label.linkActivated.connect(
+            lambda link: QDesktopServices.openUrl(QUrl(whatsapp_url))
+        )
+
+        self.content_area_layout.addWidget(footer_container)
+        self.content_area_layout.addStretch()
+
+        content_layout.addWidget(self.content_area)
+        main_layout.addWidget(scroll_area)
+        self.setLayout(main_layout)
+
+        self.password_input.input_field.returnPressed.connect(self.handle_login)
+
+    def create_header(self):
+        """Create header with logo"""
+        header = QFrame()
+        header.setObjectName("headerFrame")
+        header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+
+        header_content = QWidget()
+        self.header_content_layout = QVBoxLayout(header_content)
+
+        if self.logo_path and os.path.exists(self.logo_path):
+            self.logo_label = QLabel()
+            self.logo_label.setObjectName("logoImage")
+            self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            self.original_pixmap = QPixmap(self.logo_path)
+            self.update_logo_size()
+
+            self.header_content_layout.addWidget(self.logo_label)
+
+            self.tagline = QLabel("Desktop Application")
+            self.tagline.setObjectName("taglineLabel")
+            self.tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.tagline.setWordWrap(True)
+            self.header_content_layout.addWidget(self.tagline)
+        else:
+            self.logo_label = QLabel("📚 PrimeBooks")
+            self.logo_label.setObjectName("logoLabel")
+            self.logo_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            self.logo_label.setWordWrap(True)
+            self.header_content_layout.addWidget(self.logo_label)
+
+            self.tagline = QLabel("Desktop Application")
+            self.tagline.setObjectName("taglineLabel")
+            self.tagline.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            self.tagline.setWordWrap(True)
+            self.header_content_layout.addWidget(self.tagline)
+
+        header_layout.addWidget(header_content)
+        return header
+
+    def update_logo_size(self):
+        """Update logo size"""
+        if not hasattr(self, 'original_pixmap'):
+            return
+
+        width = self.width()
+
+        if width < 450:
+            logo_width = int(width * 0.5)
+        elif width < 550:
+            logo_width = int(width * 0.45)
+        else:
+            logo_width = int(width * 0.4)
+
+        logo_width = min(logo_width, 250)
+
+        scaled_pixmap = self.original_pixmap.scaled(
+            logo_width,
+            120,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        )
+
+        self.logo_label.setPixmap(scaled_pixmap)
+
+    def create_input_field(self, label_text, placeholder, icon="", is_password=False):
+        """Create input field"""
+        container = QWidget()
+        container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        label = QLabel(label_text)
+        label.setObjectName("inputLabel")
+        label.setWordWrap(True)
+        layout.addWidget(label)
+
+        input_container = QFrame()
+        input_container.setObjectName("inputFrame")
+        input_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        input_layout = QHBoxLayout(input_container)
+        input_layout.setSpacing(10)
+
+        if icon:
+            icon_label = QLabel(icon)
+            icon_label.setObjectName("iconLabel")
+            input_layout.addWidget(icon_label)
+
+        input_field = QLineEdit()
+        input_field.setPlaceholderText(placeholder)
+        input_field.setFrame(False)
+        input_field.setObjectName("inputField")
+        input_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        if is_password:
+            input_field.setEchoMode(QLineEdit.EchoMode.Password)
+
+        input_layout.addWidget(input_field, 1)
+
+        if is_password:
+            toggle_btn = QPushButton("👁️")
+            toggle_btn.setObjectName("togglePasswordBtn")
+            toggle_btn.setFixedSize(30, 30)
+            toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            toggle_btn.clicked.connect(
+                lambda: self.toggle_password_visibility(input_field, toggle_btn)
+            )
+            input_layout.addWidget(toggle_btn)
+
+        layout.addWidget(input_container)
+        container.input_field = input_field
+        return container
+
+    def create_progress_section(self):
+        """Create progress section"""
+        container = QFrame()
+        container.setObjectName("progressFrame")
+        container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout = QVBoxLayout(container)
+        layout.setSpacing(10)
+
+        self.progress_steps = []
+        steps = [
+            ("Connecting", "🔌"),
+            ("Authenticating", "🔐"),
+            ("Syncing Data", "📥"),
+            ("Finalizing", "✨")
+        ]
+
+        for step_text, emoji in steps:
+            step_widget = self.create_progress_step(step_text, emoji)
+            layout.addWidget(step_widget)
+            self.progress_steps.append(step_widget)
+
+        self.overall_progress = QProgressBar()
+        self.overall_progress.setObjectName("overallProgress")
+        self.overall_progress.setTextVisible(False)
+        self.overall_progress.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.overall_progress.setMaximum(100)
+        self.overall_progress.setValue(0)
+        layout.addWidget(self.overall_progress)
+
+        return container
+
+    def create_progress_step(self, text, emoji):
+        """Create progress step"""
+        step = QFrame()
+        step.setObjectName("progressStep")
+        step.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout = QHBoxLayout(step)
+
+        icon = QLabel(emoji)
+        icon.setObjectName("stepIcon")
+        layout.addWidget(icon)
+
+        label = QLabel(text)
+        label.setObjectName("stepLabel")
+        label.setWordWrap(True)
+        label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(label, 1)
+
+        status = QLabel("⏳")
+        status.setObjectName("stepStatus")
+        layout.addWidget(status)
+
+        step.icon = icon
+        step.label = label
+        step.status = status
+        step.text = text
+
+        return step
+
+    def resizeEvent(self, event):
+        """Handle resize"""
+        super().resizeEvent(event)
+
+        width = event.size().width()
+
+        self.update_content_margins()
+        self.update_font_sizes(width)
+        self.update_header_padding(width)
+        self.update_button_size(width)
+
+        if self.logo_path and os.path.exists(self.logo_path):
+            self.update_logo_size()
+
+    def update_content_margins(self):
+        """Update margins"""
+        width = self.width()
+
+        if width < 450:
+            margin = 20
+        elif width < 550:
+            margin = 30
+        else:
+            margin = 40
+
+        self.content_area_layout.setContentsMargins(margin, 30, margin, 30)
+
+    def update_font_sizes(self, width):
+        """Update font sizes"""
+        if width < 450:
+            logo_size = 24
+            welcome_size = 20
+            subtitle_size = 12
+        elif width < 550:
+            logo_size = 28
+            welcome_size = 22
+            subtitle_size = 13
+        else:
+            logo_size = 32
+            welcome_size = 24
+            subtitle_size = 14
+
+        if not (self.logo_path and os.path.exists(self.logo_path)):
+            self.logo_label.setProperty("fontSize", logo_size)
+
+        self.welcome_label.setProperty("fontSize", welcome_size)
+        self.subtitle.setProperty("fontSize", subtitle_size)
+
+        for widget in [self.logo_label, self.welcome_label, self.subtitle]:
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+    def update_header_padding(self, width):
+        """Update header padding"""
+        if width < 450:
+            padding = 20
+            header_height = 140 if (self.logo_path and os.path.exists(self.logo_path)) else 100
+        elif width < 550:
+            padding = 25
+            header_height = 150 if (self.logo_path and os.path.exists(self.logo_path)) else 110
+        else:
+            padding = 30
+            header_height = 160 if (self.logo_path and os.path.exists(self.logo_path)) else 120
+
+        self.header_content_layout.setContentsMargins(padding, padding, padding, padding)
+        self.header.setMinimumHeight(header_height)
+        self.header.setMaximumHeight(header_height)
+
+    def update_button_size(self, width):
+        """Update button size"""
+        if width < 450:
+            button_height = 44
+        elif width < 550:
+            button_height = 48
+        else:
+            button_height = 50
+
+        self.login_btn.setMinimumHeight(button_height)
+        self.login_btn.setMaximumHeight(button_height)
+
+    def toggle_password_visibility(self, input_field, button):
+        """Toggle password visibility"""
+        if input_field.echoMode() == QLineEdit.EchoMode.Password:
+            input_field.setEchoMode(QLineEdit.EchoMode.Normal)
+            button.setText("🙈")
+        else:
+            input_field.setEchoMode(QLineEdit.EchoMode.Password)
+            button.setText("👁️")
 
     def handle_login(self):
-        """Handle login button click"""
-        subdomain = self.subdomain_input.text().strip()
-        email = self.email_input.text().strip()
-        password = self.password_input.text()
+        """Handle login"""
+        subdomain = self.subdomain_input.input_field.text().strip()
+        email = self.email_input.input_field.text().strip()
+        password = self.password_input.input_field.text()
+
+        self.status_label.setText("")
 
         if not subdomain:
             self.show_error("Please enter your company subdomain")
             return
 
         if not email:
-            self.show_error("Please enter your email")
+            self.show_error("Please enter your email address")
+            return
+
+        if '@' not in email:
+            self.show_error("Please enter a valid email address")
             return
 
         if not password:
             self.show_error("Please enter your password")
             return
 
-        self.login_btn.setEnabled(False)
-        self.progress_bar.show()
-        self.status_label.setText("Authenticating...")
-        self.status_label.setStyleSheet("color: #3498db;")
+        self.start_login_ui()
 
-        self.login_thread = LoginThread(subdomain, email, password)
-        self.login_thread.status_update.connect(self.update_status)
+        self.login_thread = EnhancedLoginThread(subdomain, email, password)
+        self.login_thread.status_update.connect(self.update_login_progress)
+        self.login_thread.step_complete.connect(self.mark_step_complete)
         self.login_thread.login_complete.connect(self.on_login_complete)
         self.login_thread.start()
 
-    def update_status(self, message):
-        """Update status message"""
-        self.status_label.setText(message)
+    def start_login_ui(self):
+        """Start login UI"""
+        self.login_btn.setEnabled(False)
+        self.login_btn.setText("Signing in...")
+        self.status_label.setText("")
+
+        self.progress_section.show()
+
+        for step in self.progress_steps:
+            step.status.setText("⏳")
+            step.setProperty("state", "pending")
+            step.style().unpolish(step)
+            step.style().polish(step)
+
+        self.subdomain_input.setEnabled(False)
+        self.email_input.setEnabled(False)
+        self.password_input.setEnabled(False)
+
+    def update_login_progress(self, step_index, message, progress):
+        """Update progress"""
+        if 0 <= step_index < len(self.progress_steps):
+            step = self.progress_steps[step_index]
+            step.status.setText("⏳")
+            step.setProperty("state", "active")
+            step.style().unpolish(step)
+            step.style().polish(step)
+
+        self.overall_progress.setValue(progress)
+
+    def mark_step_complete(self, step_index):
+        """Mark step complete"""
+        if 0 <= step_index < len(self.progress_steps):
+            step = self.progress_steps[step_index]
+            step.status.setText("✅")
+            step.setProperty("state", "complete")
+            step.style().unpolish(step)
+            step.style().polish(step)
 
     def on_login_complete(self, success, message, token, user_data, company_data):
-        """Handle login completion"""
-        self.login_btn.setEnabled(True)
-        self.progress_bar.hide()
-
+        """Handle login complete"""
         if success:
             self.auth_token = token
             self.user_data = user_data
             self.company_data = company_data
 
-            self.status_label.setText("✓ Login successful!")
-            self.status_label.setStyleSheet("color: #27ae60;")
+            for i, step in enumerate(self.progress_steps):
+                QTimer.singleShot(i * 100, lambda s=step: self.mark_step_complete_final(s))
 
-            QTimer.singleShot(500, self.accept)
+            self.overall_progress.setValue(100)
+            self.show_success("Login successful! Loading workspace...")
+
+            QTimer.singleShot(1500, self.accept)
         else:
+            self.reset_login_ui()
             self.show_error(message)
 
+            for step in self.progress_steps:
+                if step.property("state") == "active":
+                    step.status.setText("❌")
+                    step.setProperty("state", "error")
+                    step.style().unpolish(step)
+                    step.style().polish(step)
+
+    def mark_step_complete_final(self, step):
+        """Mark step complete final"""
+        step.status.setText("✅")
+        step.setProperty("state", "complete")
+        step.style().unpolish(step)
+        step.style().polish(step)
+
+    def reset_login_ui(self):
+        """Reset UI"""
+        self.login_btn.setEnabled(True)
+        self.login_btn.setText("Sign In")
+        self.progress_section.hide()
+
+        self.subdomain_input.setEnabled(True)
+        self.email_input.setEnabled(True)
+        self.password_input.setEnabled(True)
+
     def show_error(self, message):
-        """Show error message"""
-        self.status_label.setText(f"✗ {message}")
-        self.status_label.setStyleSheet("color: #e74c3c;")
+        """Show error"""
+        self.status_label.setText(f"⚠️ {message}")
+        self.status_label.setProperty("status", "error")
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)
+
+    def show_success(self, message):
+        """Show success"""
+        self.status_label.setText(f"✓ {message}")
+        self.status_label.setProperty("status", "success")
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)
+
+    def apply_theme(self):
+        """Apply current theme stylesheet"""
+        c = self.theme_colors
+
+        # Build header gradient or solid background
+        if c.header_gradient_start and c.header_gradient_end:
+            header_bg = f"""
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 {c.header_gradient_start}, stop:1 {c.header_gradient_end});
+            """
+        else:
+            header_bg = f"background-color: {c.accent_primary};"
+
+        stylesheet = f"""
+            QDialog {{
+                background-color: {c.bg_secondary};
+            }}
+
+            #headerFrame {{
+                {header_bg}
+                border: none;
+            }}
+
+            #logoLabel {{
+                color: {c.text_on_primary};
+                font-size: 32px;
+                font-weight: bold;
+            }}
+
+            #logoLabel[fontSize="24"] {{ font-size: 24px; }}
+            #logoLabel[fontSize="28"] {{ font-size: 28px; }}
+            #logoLabel[fontSize="32"] {{ font-size: 32px; }}
+
+            #logoImage {{
+                background: transparent;
+                padding: 10px;
+            }}
+
+            #taglineLabel {{
+                color: {c.text_on_primary};
+                font-size: 14px;
+                margin-top: 8px;
+            }}
+
+            #contentArea {{
+                background-color: {c.bg_primary};
+                border-top-left-radius: 20px;
+                border-top-right-radius: 20px;
+                margin-top: -20px;
+            }}
+
+            #welcomeLabel {{
+                font-size: 24px;
+                font-weight: bold;
+                color: {c.text_primary};
+            }}
+
+            #welcomeLabel[fontSize="20"] {{ font-size: 20px; }}
+            #welcomeLabel[fontSize="22"] {{ font-size: 22px; }}
+            #welcomeLabel[fontSize="24"] {{ font-size: 24px; }}
+
+            #subtitleLabel {{
+                font-size: 14px;
+                color: {c.text_secondary};
+            }}
+
+            #subtitleLabel[fontSize="12"] {{ font-size: 12px; }}
+            #subtitleLabel[fontSize="13"] {{ font-size: 13px; }}
+            #subtitleLabel[fontSize="14"] {{ font-size: 14px; }}
+
+            #inputLabel {{
+                font-size: 13px;
+                font-weight: 600;
+                color: {c.text_primary};
+            }}
+
+            #inputFrame {{
+                background-color: {c.bg_input};
+                border: 2px solid {c.border_default};
+                border-radius: 8px;
+                min-height: 44px;
+                padding: 8px 12px;
+            }}
+
+            #inputFrame:focus-within {{
+                border-color: {c.border_focus};
+                background-color: {c.bg_input_focus};
+            }}
+
+            #inputField {{
+                background: transparent;
+                border: none;
+                font-size: 14px;
+                color: {c.text_primary};
+                min-height: 28px;
+            }}
+
+            #inputField::placeholder {{
+                color: {c.text_placeholder};
+            }}
+
+            #iconLabel {{
+                font-size: 18px;
+            }}
+
+            #togglePasswordBtn {{
+                background: transparent;
+                border: none;
+                font-size: 16px;
+                color: {c.text_secondary};
+            }}
+
+            #togglePasswordBtn:hover {{
+                background-color: {c.bg_input};
+                border-radius: 4px;
+            }}
+
+            #loginButton {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {c.accent_primary}, stop:1 {c.accent_secondary});
+                color: {c.text_on_primary};
+                border: none;
+                border-radius: 8px;
+                font-size: 15px;
+                font-weight: 600;
+                padding: 12px 20px;
+                min-height: 44px;
+            }}
+
+            #loginButton:hover {{
+                background: {c.accent_hover};
+            }}
+
+            #loginButton:disabled {{
+                background-color: {c.border_default};
+                color: {c.text_placeholder};
+            }}
+
+            #progressFrame {{
+                background-color: {c.progress_bg};
+                border: 1px solid {c.border_default};
+                border-radius: 8px;
+                padding: 12px;
+            }}
+
+            #progressStep {{
+                background-color: transparent;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 8px;
+            }}
+
+            #progressStep[state="active"] {{
+                background-color: {c.progress_active};
+            }}
+
+            #progressStep[state="complete"] {{
+                background-color: {c.progress_complete};
+            }}
+
+            #progressStep[state="error"] {{
+                background-color: {c.progress_error};
+            }}
+
+            #stepLabel {{
+                font-size: 13px;
+                color: {c.text_primary};
+            }}
+
+            #overallProgress {{
+                border: none;
+                background-color: {c.border_default};
+                border-radius: 3px;
+                min-height: 6px;
+                max-height: 6px;
+            }}
+
+            #overallProgress::chunk {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {c.accent_primary}, stop:1 {c.accent_secondary});
+                border-radius: 3px;
+            }}
+
+            #statusLabel {{
+                font-size: 13px;
+                padding: 10px;
+                border-radius: 6px;
+            }}
+
+            #statusLabel[status="error"] {{
+                color: {c.error_text};
+                background-color: {c.error_bg};
+            }}
+
+            #statusLabel[status="success"] {{
+                color: {c.success_text};
+                background-color: {c.success_bg};
+            }}
+
+            #hintLabel {{
+                font-size: 12px;
+                color: {c.text_secondary};
+            }}
+
+            #helpLabel {{
+                font-size: 12px;
+                color: {c.text_secondary};
+            }}
+
+            #helpLabel a {{
+                color: {c.accent_primary};
+                text-decoration: none;
+            }}
+
+            QScrollArea {{
+                border: none;
+                background-color: transparent;
+            }}
+
+            QScrollBar:vertical {{
+                background-color: {c.bg_input};
+                width: 10px;
+                border-radius: 5px;
+            }}
+
+            QScrollBar::handle:vertical {{
+                background-color: {c.border_default};
+                border-radius: 5px;
+                min-height: 20px;
+            }}
+
+            QScrollBar::handle:vertical:hover {{
+                background-color: {c.text_placeholder};
+            }}
+        """
+
+        self.setStyleSheet(stylesheet)
 
 
-class LoginThread(QThread):
-    """Thread to handle login without blocking UI"""
-    status_update = pyqtSignal(str)
+class EnhancedLoginThread(QThread):
+    """Login thread"""
+    status_update = pyqtSignal(int, str, int)
+    step_complete = pyqtSignal(int)
     login_complete = pyqtSignal(bool, str, object, object, object)
 
     def __init__(self, subdomain, email, password):
@@ -390,37 +1425,50 @@ class LoginThread(QThread):
         self.password = password
 
     def run(self):
-        """Authenticate with server"""
+        """Authenticate"""
         try:
             from primebooks.auth import DesktopAuthManager
 
-            self.status_update.emit("Connecting to server...")
+            self.status_update.emit(0, "Connecting to server...", 10)
+            self.msleep(300)
 
             auth_manager = DesktopAuthManager()
+            self.step_complete.emit(0)
 
-            self.status_update.emit("Authenticating...")
+            self.status_update.emit(1, "Authenticating credentials...", 30)
             success, result = auth_manager.authenticate(
                 subdomain=self.subdomain,
                 email=self.email,
                 password=self.password
             )
 
-            if success:
-                token = result.get('token')
-                user_data = result.get('user')
-                company_data = result.get('company')
-
-                self.status_update.emit("Saving credentials...")
-                auth_manager.save_credentials(user_data, company_data, token)
-
-                self.login_complete.emit(True, "Success", token, user_data, company_data)
-            else:
+            if not success:
                 error_message = result.get('error', 'Authentication failed')
                 self.login_complete.emit(False, error_message, None, None, None)
+                return
+
+            self.step_complete.emit(1)
+
+            self.status_update.emit(2, "Syncing workspace data...", 60)
+            token = result.get('token')
+            user_data = result.get('user')
+            company_data = result.get('company')
+
+            self.msleep(500)
+            self.step_complete.emit(2)
+
+            self.status_update.emit(3, "Finalizing login...", 85)
+            auth_manager.save_credentials(user_data, company_data, token)
+
+            self.msleep(300)
+            self.step_complete.emit(3)
+
+            self.status_update.emit(3, "Complete!", 100)
+            self.login_complete.emit(True, "Success", token, user_data, company_data)
 
         except Exception as e:
             logger.error(f"Login error: {e}", exc_info=True)
-            self.login_complete.emit(False, f"Login error: {str(e)}", None, None, None)
+            self.login_complete.emit(False, f"Connection error: {str(e)}", None, None, None)
 
 
 # ============================================================================
@@ -1523,7 +2571,7 @@ def main():
 
             if not saved_token or not saved_company:
                 logger.info("No saved credentials found. Opening login...")
-                login_dialog = DesktopLoginDialog()
+                login_dialog = ThemedLoginDialog(theme=Theme.DARK)
                 if login_dialog.exec() != QDialog.DialogCode.Accepted:
                     app.quit()
                     return
@@ -1584,7 +2632,7 @@ def main():
                     logger.info("Invalid saved credentials. Showing login...")
                     auth_manager.logout()
 
-                    login_dialog = DesktopLoginDialog()
+                    login_dialog = ThemedLoginDialog(theme=Theme.DARK)
                     if login_dialog.exec() != QDialog.DialogCode.Accepted:
                         app.quit()
                         return

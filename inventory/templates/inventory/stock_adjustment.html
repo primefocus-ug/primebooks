@@ -655,7 +655,8 @@
 {% block extra_js %}
 <script>
 $(document).ready(function() {
-    // Mode Toggle
+
+    // ─── Mode Toggle ─────────────────────────────────────────────────────────
     $('.mode-btn').click(function() {
         $('.mode-btn').removeClass('active');
         $(this).addClass('active');
@@ -664,42 +665,20 @@ $(document).ready(function() {
         if (mode === 'single') {
             $('#singleAdjustmentForm').removeClass('hidden');
             $('#batchAdjustmentForm').addClass('hidden');
-            $('input[name="batch_mode"]').val('off');
         } else {
             $('#singleAdjustmentForm').addClass('hidden');
             $('#batchAdjustmentForm').removeClass('hidden');
-            $('input[name="batch_mode"]').val('on');
         }
     });
 
-    // Stock information lookup
+    // ─── Single: Stock information lookup ────────────────────────────────────
     $('#id_product, #id_store').change(function() {
         updateStockInfo();
     });
 
-    // Quantity preview
+    // ─── Single: Quantity preview ─────────────────────────────────────────────
     $('#id_quantity, #id_movement_type').on('input change', function() {
         updateQuantityPreview();
-    });
-
-    // Product search for batch mode
-    let selectedProducts = new Set();
-
-    $('#productSearch').on('input', function() {
-        const query = $(this).val();
-        if (query.length < 2) {
-            $('#searchResults').addClass('hidden');
-            return;
-        }
-
-        // Simulate search - in production, you'd make an AJAX call
-        searchProducts(query);
-    });
-
-    // Clear selection
-    $('#clearSelection').click(function() {
-        selectedProducts.clear();
-        updateSelectedProductsDisplay();
     });
 
     function updateStockInfo() {
@@ -707,13 +686,21 @@ $(document).ready(function() {
         const storeId = $('#id_store').val();
 
         if (productId && storeId) {
-            // In production, make AJAX call to get stock info
-            // For now, we'll simulate it
-            $('#stockInfoCard').show();
-            // You would replace this with actual AJAX call
-            // fetch(`/api/stock-info/?product=${productId}&store=${storeId}`)
+            fetch(`/api/v1/stock/?product=${productId}&store=${storeId}`)
+                .then(r => r.json())
+                .then(data => {
+                    $('#currentQuantity').text(data.quantity ?? 0);
+                    $('#reorderLevel').text(data.reorder_level ?? 0);
+                    $('#stockStatus').text(data.status ?? '-');
+                    $('#stockInfoCard').show();
+                    updateQuantityPreview();
+                })
+                .catch(() => {
+                    $('#stockInfoCard').hide();
+                });
         } else {
             $('#stockInfoCard').hide();
+            $('#quantityPreview').addClass('hidden');
         }
     }
 
@@ -722,18 +709,23 @@ $(document).ready(function() {
         const quantity = parseFloat($('#id_quantity').val()) || 0;
         const currentQty = parseFloat($('#currentQuantity').text()) || 0;
 
-        if (quantity > 0) {
-            let newQty = currentQty;
-            let changeText = '';
+        if (quantity > 0 && movementType) {
+            const addTypes = ['PURCHASE', 'RETURN', 'ADJUSTMENT_IN'];
+            const removeTypes = ['SALE', 'ADJUSTMENT', 'ADJUSTMENT_OUT', 'WASTAGE'];
+            let newQty;
+            let changeText;
 
-            if (movementType === 'PURCHASE' || movementType === 'RETURN') {
+            if (addTypes.includes(movementType)) {
                 newQty = currentQty + quantity;
                 changeText = `+${quantity}`;
                 $('#quantityPreview').removeClass('negative').removeClass('hidden');
-            } else if (movementType === 'SALE' || movementType === 'ADJUSTMENT') {
+            } else if (removeTypes.includes(movementType)) {
                 newQty = currentQty - quantity;
                 changeText = `-${quantity}`;
                 $('#quantityPreview').addClass('negative').removeClass('hidden');
+            } else {
+                $('#quantityPreview').addClass('hidden');
+                return;
             }
 
             $('#newQuantity').text(newQty.toFixed(2));
@@ -743,80 +735,136 @@ $(document).ready(function() {
         }
     }
 
-    function searchProducts(query) {
-        // Simulate search results - replace with actual AJAX call
-        const mockResults = [
-            {id: 1, name: 'Sample Product 1', sku: 'SKU001'},
-            {id: 2, name: 'Sample Product 2', sku: 'SKU002'},
-            {id: 3, name: 'Sample Product 3', sku: 'SKU003'},
-        ];
+    // ─── Batch: Product search ─────────────────────────────────────────────────
+    // Map of productId → {id, name, sku} so we preserve names after selection.
+    const selectedProducts = new Map();
 
-        const resultsHtml = mockResults.map(product => `
-            <div class="search-result-item" data-product-id="${product.id}">
-                <strong>${product.name}</strong><br>
-                <small class="text-muted">SKU: ${product.sku}</small>
-            </div>
-        `).join('');
+    // FIX: Use event delegation so handlers are never duplicated.
+    $(document).on('click', '.search-result-item', function() {
+        const productId = parseInt($(this).data('product-id'));
+        const productName = $(this).data('product-name');
+        const productSku = $(this).data('product-sku');
 
-        $('#searchResults').html(resultsHtml).removeClass('hidden');
+        if (!selectedProducts.has(productId)) {
+            selectedProducts.set(productId, { id: productId, name: productName, sku: productSku });
+            updateSelectedProductsDisplay();
+        }
 
-        // Handle result selection
-        $('.search-result-item').click(function() {
-            const productId = $(this).data('product-id');
-            const productName = $(this).find('strong').text();
-            const productSku = $(this).find('small').text().replace('SKU: ', '');
+        $('#productSearch').val('');
+        $('#searchResults').addClass('hidden');
+    });
 
-            if (!selectedProducts.has(productId)) {
-                selectedProducts.add(productId);
-                updateSelectedProductsDisplay();
-            }
-
-            $('#productSearch').val('');
+    // FIX: Hide results when clicking outside, but only after a short delay so
+    // the click event on a result item can fire first.
+    $(document).on('click', function(e) {
+        if (!$(e.target).closest('.product-search-container').length) {
             $('#searchResults').addClass('hidden');
-        });
-    }
+        }
+    });
 
-    function updateSelectedProductsDisplay() {
-        const container = $('#selectedProducts');
-        const noProductsMessage = $('#noProductsMessage');
+    let searchTimer;
+    $('#productSearch').on('input', function() {
+        const query = $(this).val().trim();
+        clearTimeout(searchTimer);
 
-        if (selectedProducts.size === 0) {
-            container.html('');
-            noProductsMessage.show();
+        if (query.length < 2) {
+            $('#searchResults').addClass('hidden');
             return;
         }
 
-        noProductsMessage.hide();
+        // Debounce to avoid firing on every keystroke
+        searchTimer = setTimeout(() => searchProducts(query), 300);
+    });
 
-        // In production, you'd fetch actual product details
-        const productsHtml = Array.from(selectedProducts).map(id => `
-            <div class="product-checkbox-card">
-                <input type="checkbox" name="batch_products" value="${id}" checked>
-                <strong>Product ${id}</strong><br>
-                <small class="text-muted">SKU: SKU${id.toString().padStart(3, '0')}</small>
+    function searchProducts(query) {
+        // FIX: Real AJAX call to backend instead of hardcoded mock data.
+        fetch(`/api/v1/products/?search=${encodeURIComponent(query)}`)
+            .then(r => r.json())
+            .then(data => {
+                // API returns either a plain array or a paginated {results: [...]} object
+                const products = Array.isArray(data) ? data : (data.results || []);
+
+                if (products.length === 0) {
+                    $('#searchResults').html(
+                        '<div class="search-result-item text-muted">No products found</div>'
+                    ).removeClass('hidden');
+                    return;
+                }
+
+                const resultsHtml = products.map(product => `
+                    <div class="search-result-item"
+                         data-product-id="${product.id}"
+                         data-product-name="${$('<div>').text(product.name).html()}"
+                         data-product-sku="${$('<div>').text(product.sku).html()}">
+                        <strong>${$('<div>').text(product.name).html()}</strong><br>
+                        <small class="text-muted">SKU: ${$('<div>').text(product.sku).html()}
+                        &nbsp;|&nbsp; Stock: ${product.total_stock ?? 0}</small>
+                    </div>
+                `).join('');
+
+                $('#searchResults').html(resultsHtml).removeClass('hidden');
+            })
+            .catch(() => {
+                $('#searchResults').html(
+                    '<div class="search-result-item text-danger">Search failed. Try again.</div>'
+                ).removeClass('hidden');
+            });
+    }
+
+    // ─── Batch: Remove individual product ─────────────────────────────────────
+    // FIX: Event delegation on the container, not freshly rendered checkboxes.
+    $(document).on('change', '#selectedProducts input[type="checkbox"]', function() {
+        if (!$(this).is(':checked')) {
+            selectedProducts.delete(parseInt($(this).val()));
+            updateSelectedProductsDisplay();
+        }
+    });
+
+    // ─── Batch: Clear all ─────────────────────────────────────────────────────
+    $('#clearSelection').click(function() {
+        selectedProducts.clear();
+        updateSelectedProductsDisplay();
+    });
+
+    function updateSelectedProductsDisplay() {
+        const container = $('#selectedProducts');
+
+        if (selectedProducts.size === 0) {
+            container.html('');
+            $('#noProductsMessage').show();
+            return;
+        }
+
+        $('#noProductsMessage').hide();
+
+        // FIX: Use real product name/sku stored in the Map, not "Product {id}".
+        const productsHtml = Array.from(selectedProducts.values()).map(p => `
+            <div class="product-checkbox-card selected">
+                <input type="checkbox" name="batch_products" value="${p.id}" checked>
+                <strong>${$('<div>').text(p.name).html()}</strong><br>
+                <small class="text-muted">SKU: ${$('<div>').text(p.sku).html()}</small>
             </div>
         `).join('');
 
         container.html(productsHtml);
-
-        // Handle removal
-        $('.product-checkbox-card input').change(function() {
-            if (!$(this).is(':checked')) {
-                const productId = $(this).val();
-                selectedProducts.delete(parseInt(productId));
-                updateSelectedProductsDisplay();
-            }
-        });
     }
 
-    // Form submission enhancements
-    $('form').on('submit', function() {
-        // Add loading state
+    // ─── Form submission ───────────────────────────────────────────────────────
+    $('form').on('submit', function(e) {
+        const isBatch = $(this).attr('id') === 'batchAdjustmentFormElement';
+
+        // FIX: Validate that at least one product is selected in batch mode.
+        if (isBatch && selectedProducts.size === 0) {
+            e.preventDefault();
+            alert('Please select at least one product before submitting.');
+            return;
+        }
+
         const submitBtn = $(this).find('button[type="submit"]');
         submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i>Processing...');
     });
 
-    // Initialize tooltips
+    // ─── Tooltips ─────────────────────────────────────────────────────────────
     $('[data-bs-toggle="tooltip"]').tooltip();
 });
 </script>

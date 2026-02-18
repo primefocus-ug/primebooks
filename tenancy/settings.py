@@ -650,6 +650,7 @@ MIDDLEWARE = [
     # Clickjacking protection
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'primebooks.middleware.sequence_reset.SequenceResetMiddleware',
+    'primebooks.middleware.sequence_guardian.SequenceGuardianMiddleware',
 ]
 
 # ================= DESKTOP MODE SPECIFIC =================

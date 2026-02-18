@@ -1,0 +1,160 @@
+{% extends 'expenses/base.html' %}
+
+{% block title %}Transactions — PrintTrack Pro{% endblock %}
+{% block page_title %}Transactions{% endblock %}
+
+{% block content %}
+
+<!-- Summary Bar -->
+<div class="grid grid-3" style="margin-bottom: 24px;">
+    <div class="stat-card income">
+        <div class="stat-label">Income</div>
+        <div class="stat-amount">{{ currency.symbol }}{{ income_total|floatformat:0 }}</div>
+    </div>
+    <div class="stat-card expense">
+        <div class="stat-label">Expenses</div>
+        <div class="stat-amount">{{ currency.symbol }}{{ expense_total|floatformat:0 }}</div>
+    </div>
+    <div class="stat-card balance">
+        <div class="stat-label">Balance</div>
+        <div class="stat-amount">{{ currency.symbol }}{{ balance|floatformat:0 }}</div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card" style="margin-bottom: 20px; padding: 16px 20px;">
+    <form method="GET" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+        
+        <!-- Type filter -->
+        <div>
+            <div class="form-label">Type</div>
+            <div style="display: flex; gap: 4px;">
+                <a href="?{% if filters.search %}search={{ filters.search }}&{% endif %}period={{ filters.period }}" 
+                   class="btn btn-sm {% if not filters.type %}btn-primary{% else %}btn-ghost{% endif %}">All</a>
+                <a href="?type=income&period={{ filters.period }}" 
+                   class="btn btn-sm {% if filters.type == 'income' %}btn-income{% else %}btn-ghost{% endif %}">Income</a>
+                <a href="?type=expense&period={{ filters.period }}" 
+                   class="btn btn-sm {% if filters.type == 'expense' %}btn-expense{% else %}btn-ghost{% endif %}">Expense</a>
+                <a href="?type=transfer&period={{ filters.period }}" 
+                   class="btn btn-sm btn-ghost">Transfer</a>
+            </div>
+        </div>
+
+        <!-- Period filter -->
+        <div>
+            <div class="form-label">Period</div>
+            <select name="period" class="form-control" style="width: auto;" onchange="this.form.submit()">
+                <option value="today" {% if filters.period == 'today' %}selected{% endif %}>Today</option>
+                <option value="week" {% if filters.period == 'week' %}selected{% endif %}>This Week</option>
+                <option value="month" {% if filters.period == 'month' or not filters.period %}selected{% endif %}>This Month</option>
+                <option value="year" {% if filters.period == 'year' %}selected{% endif %}>This Year</option>
+                <option value="" {% if filters.period == '' %}selected{% endif %}>All Time</option>
+            </select>
+        </div>
+
+        <!-- Search -->
+        <div style="flex: 1; min-width: 200px;">
+            <div class="form-label">Search</div>
+            <input type="text" name="search" class="form-control" 
+                   placeholder="Search transactions..." 
+                   value="{{ filters.search }}">
+        </div>
+
+        <!-- Category -->
+        <div>
+            <div class="form-label">Category</div>
+            <select name="category" class="form-control" style="width: auto;">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}" {% if filters.category == cat.id|stringformat:'s' %}selected{% endif %}>
+                    {{ cat.icon }} {{ cat.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm" style="align-self: flex-end;">Filter</button>
+        <a href="{% url 'transaction_list' %}" class="btn btn-ghost btn-sm" style="align-self: flex-end;">Clear</a>
+    </form>
+</div>
+
+<!-- Transactions -->
+<div class="card">
+    <div class="section-header">
+        <div class="section-title">
+            {{ transactions|length }} transaction{% if transactions|length != 1 %}s{% endif %}
+        </div>
+        <a href="{% url 'transaction_create' %}" class="btn btn-primary btn-sm">+ Add</a>
+    </div>
+
+    {% regroup transactions by date as day_list %}
+    
+    {% for day in day_list %}
+    <!-- Day Group Header -->
+    <div style="padding: 10px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px;">
+                {{ day.grouper|date:"l, M j, Y" }}
+            </div>
+        </div>
+    </div>
+
+    {% for t in day.list %}
+    <div class="tx-row" id="tx-{{ t.id }}">
+        <div class="tx-icon {{ t.transaction_type }}">
+            {% if t.category %}{{ t.category.icon }}{% elif t.transaction_type == 'income' %}💚{% elif t.transaction_type == 'expense' %}❤️{% else %}🔄{% endif %}
+        </div>
+        <div class="tx-info">
+            <div class="tx-desc">{{ t.description }}</div>
+            <div class="tx-meta">
+                {% if t.category %}<span>{{ t.category.name }}</span> · {% endif %}
+                <span>{{ t.get_payment_method_display }}</span>
+                {% if t.notes %} · <span>{{ t.notes|truncatechars:40 }}</span>{% endif %}
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="tx-amount {{ t.transaction_type }}">
+                {% if t.transaction_type == 'income' %}+{% elif t.transaction_type == 'expense' %}-{% endif %}{{ currency.symbol }}{{ t.amount|floatformat:0 }}
+            </div>
+            <div style="display: flex; gap: 4px;">
+                <a href="{% url 'transaction_edit' t.id %}" class="btn btn-ghost btn-sm" style="padding: 5px 8px;">✏️</a>
+                <button onclick="deleteTransaction('{{ t.id }}')" class="btn btn-ghost btn-sm" style="padding: 5px 8px; color: var(--expense);">🗑️</button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    {% empty %}
+    <div style="text-align: center; padding: 60px; color: var(--text-muted);">
+        <div style="font-size: 40px; margin-bottom: 12px;">📭</div>
+        <div style="font-size: 16px; margin-bottom: 8px;">No transactions found</div>
+        <a href="{% url 'transaction_create' %}" class="btn btn-primary">Add Transaction</a>
+    </div>
+    {% endfor %}
+
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function deleteTransaction(id) {
+    if (!confirm('Delete this transaction?')) return;
+    
+    fetch(`/transactions/${id}/delete/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'X-Requested-With': 'XMLHttpRequest',
+        }
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            const row = document.getElementById('tx-' + id);
+            row.style.transition = 'opacity 0.3s, height 0.3s';
+            row.style.opacity = '0';
+            setTimeout(() => row.remove(), 300);
+        }
+    });
+}
+</script>
+{% endblock %}

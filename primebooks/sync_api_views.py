@@ -192,15 +192,15 @@ class ChangesDownloadView(APIView):
                         # Build queryset
                         queryset = model.objects.all()
 
-                        # Filter by modification time
                         if hasattr(model, 'modified_at'):
                             queryset = queryset.filter(modified_at__gte=since_datetime)
                         elif hasattr(model, 'updated_at'):
                             queryset = queryset.filter(updated_at__gte=since_datetime)
+                        elif hasattr(model, 'last_updated'):  # ← Stock uses this
+                            queryset = queryset.filter(last_updated__gte=since_datetime)
                         elif hasattr(model, 'created_at'):
                             queryset = queryset.filter(created_at__gte=since_datetime)
                         else:
-                            # No timestamp field - skip
                             continue
 
                         if queryset.exists():
@@ -251,98 +251,71 @@ class UploadChangesView(APIView):
     ✅ Skips public schema models
     ✅ Resets sequences after upload
     ✅ Returns ID mappings for offline records
-    ✅ FIXED: Suppresses signals during sync to prevent notifications/audit logs
+    ✅ Suppresses signals during sync
+    ✅ Delta-based Stock updates — preserves concurrent online sales
     """
     authentication_classes = [TenantAwareJWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def _get_unique_lookup_fields(self, model):
-        """
-        Get unique fields for finding existing records without using ID.
-        This prevents duplicate records and allows proper updates.
-        """
         model_name = model._meta.model_name
-
-        # Define unique field combinations for each model
         unique_lookups = {
-            # Auth models
             'customuser': ['username'],
             'role': ['name'],
-
-            # Stores
             'store': ['name'],
             'storeaccess': ['user', 'store'],
-
-            # Inventory
             'category': ['name'],
             'supplier': ['name'],
             'product': ['sku'],
             'stock': ['product', 'store'],
             'stockmovement': ['movement_number'],
-
-            # Customers
             'customer': ['phone'],
-
-            # Sales
             'sale': ['receipt_number'],
             'saleitem': ['sale', 'product'],
             'payment': ['sale', 'payment_method', 'created_at'],
         }
-
         return unique_lookups.get(model_name, [])
 
     def _build_unique_lookup(self, model, fields):
-        """
-        Build a unique lookup dict from fields based on model's unique constraints.
-        Returns dict of {field: value} for unique lookup, or None if not possible.
-        """
         unique_fields = self._get_unique_lookup_fields(model)
-
         if not unique_fields:
             return None
-
         lookup = {}
         for field_name in unique_fields:
             if field_name in fields:
                 lookup[field_name] = fields[field_name]
             else:
-                # Can't build complete unique lookup
                 return None
-
         return lookup
 
     def _reset_sequences(self, schema_name):
-        """Reset PostgreSQL sequences after upload."""
         from django.db import connection
-
         logger.info(f"Resetting sequences for schema: {schema_name}")
-
         try:
             with connection.cursor() as cursor:
-                # Same reliable discovery query
                 cursor.execute("""
-                               SELECT s.sequencename, c.relname, a.attname
-                               FROM pg_sequences s
-                                        JOIN pg_class seq_cls
-                                             ON seq_cls.relname = s.sequencename
-                                                 AND seq_cls.relnamespace = (SELECT oid
-                                                                             FROM pg_namespace
-                                                                             WHERE nspname = %s)
-                                        JOIN pg_depend dep
-                                             ON dep.objid = seq_cls.oid
-                                                 AND dep.classid = 'pg_class'::regclass
-                        AND dep.deptype  = 'a'
+                    SELECT s.sequencename, c.relname, a.attname
+                    FROM pg_sequences s
+                    JOIN pg_class seq_cls
+                        ON seq_cls.relname = s.sequencename
+                        AND seq_cls.relnamespace = (
+                            SELECT oid FROM pg_namespace WHERE nspname = %s
+                        )
+                    JOIN pg_depend dep
+                        ON dep.objid = seq_cls.oid
+                        AND dep.classid = 'pg_class'::regclass
+                        AND dep.deptype = 'a'
                     JOIN pg_attribute a
-                               ON a.attrelid = dep.refobjid
-                                   AND a.attnum = dep.refobjsubid
-                                   JOIN pg_class c ON c.oid = dep.refobjid
-                               WHERE s.schemaname = %s
-                               ORDER BY s.sequencename;
-                               """, [schema_name, schema_name])
+                        ON a.attrelid = dep.refobjid
+                        AND a.attnum = dep.refobjsubid
+                    JOIN pg_class c ON c.oid = dep.refobjid
+                    WHERE s.schemaname = %s
+                    ORDER BY s.sequencename;
+                """, [schema_name, schema_name])
 
                 rows = cursor.fetchall()
 
-                if not rows:  # fallback
+                if not rows:
                     cursor.execute(
                         "SELECT sequencename FROM pg_sequences "
                         "WHERE schemaname = %s ORDER BY sequencename;",
@@ -357,30 +330,26 @@ class UploadChangesView(APIView):
                             rows.append((sname, sname.replace("_id_seq", ""), "id"))
 
                 reset_count = skipped_count = 0
-
                 for seq_name, table_name, col_name in rows:
                     try:
                         cursor.execute(
-                            "SELECT to_regclass(%s)", [f"{schema_name}.{table_name}"]
+                            "SELECT to_regclass(%s)",
+                            [f"{schema_name}.{table_name}"]
                         )
                         if cursor.fetchone()[0] is None:
                             skipped_count += 1
                             continue
-
                         cursor.execute(
                             f'SELECT COALESCE(MAX("{col_name}"), 0) '
                             f'FROM "{schema_name}"."{table_name}";'
                         )
                         max_val = cursor.fetchone()[0]
-
                         cursor.execute(
                             f'SELECT setval(\'"{schema_name}"."{seq_name}"\', '
                             f'GREATEST(%s, 1), true);',
                             [max_val]
                         )
-                        logger.debug(f"  {table_name}.{col_name}: max={max_val}, next={max_val + 1}")
                         reset_count += 1
-
                     except Exception as e:
                         logger.warning(f"  Skipped {seq_name}: {str(e)[:120]}")
                         skipped_count += 1
@@ -394,6 +363,7 @@ class UploadChangesView(APIView):
         try:
             from decimal import Decimal
             from django.db import connection
+            from django.db.models import F
             from django.core.exceptions import ValidationError
 
             changes = request.data.get('changes', {})
@@ -424,37 +394,33 @@ class UploadChangesView(APIView):
             errors = []
             id_mappings = {}
 
-            # ✅ PUBLIC SCHEMA MODELS TO SKIP
-            PUBLIC_SCHEMA_MODELS = [
+            UPLOAD_PUBLIC_SCHEMA_MODELS = [
                 'company.Company',
                 'company.SubscriptionPlan',
                 'company.Domain',
             ]
 
-            # ✅ CRITICAL FIX: Wrap entire sync operation in suppress_signals
             with suppress_signals():
-                logger.info("🔇 Signals suppressed - no notifications/audit logs will be created")
+                logger.info("🔇 Signals suppressed")
 
-                # ✅ Lock schema for entire operation
                 with schema_context(schema_name):
                     logger.info(f"   Schema locked: {connection.schema_name}")
 
                     for model_name, records in changes.items():
                         try:
-                            # ✅ Verify schema hasn't switched
                             if connection.schema_name != schema_name:
                                 error_msg = f"Schema switched to {connection.schema_name}!"
                                 logger.error(f"❌ {error_msg}")
                                 errors.append(error_msg)
                                 continue
 
-                            # ✅ Skip public schema models
-                            if model_name in PUBLIC_SCHEMA_MODELS:
+                            if model_name in UPLOAD_PUBLIC_SCHEMA_MODELS:
                                 logger.info(f"  ⏭️  Skipping public schema model: {model_name}")
                                 total_skipped += len(records)
                                 continue
 
                             model = apps.get_model(model_name)
+                            is_stock_model = model._meta.label == 'inventory.Stock'
                             model_mappings = {}
 
                             logger.info(f"  Processing {model_name}: {len(records)} records")
@@ -464,52 +430,55 @@ class UploadChangesView(APIView):
                                     desktop_id = record['pk']
                                     fields = record['fields']
 
-                                    # ✅ Remove desktop ID from fields
+                                    # ✅ Extract Stock delta before any field processing
+                                    quantity_delta = None
+                                    if is_stock_model:
+                                        quantity_delta = fields.pop('_quantity_delta', None)
+
                                     fields.pop('id', None)
 
-                                    # ✅ Separate ManyToMany and regular fields
                                     m2m_fields = {}
                                     processed_fields = {}
-                                    skipped_fields = []
 
                                     for field_name, value in fields.items():
                                         try:
+                                            # ✅ Skip internal sync metadata fields
+                                            if field_name.startswith('_'):
+                                                continue
+
                                             field = model._meta.get_field(field_name)
 
-                                            # ManyToMany
                                             if field.many_to_many:
                                                 m2m_fields[field_name] = value
                                                 continue
 
-                                            # ✅ ForeignKey - convert ID to instance
                                             if field.many_to_one and value is not None:
                                                 related_model = field.related_model
                                                 related_table = related_model._meta.db_table
 
-                                                # Skip FKs to public schema
-                                                if related_table in ['company_company', 'company_subscriptionplan']:
+                                                if related_table in [
+                                                    'company_company',
+                                                    'company_subscriptionplan'
+                                                ]:
                                                     logger.debug(f"      Skipping public FK: {field_name}")
-                                                    skipped_fields.append(field_name)
                                                     continue
 
                                                 try:
-                                                    # Get the instance
                                                     related_instance = related_model.objects.get(pk=value)
                                                     processed_fields[field_name] = related_instance
                                                 except related_model.DoesNotExist:
-                                                    logger.debug(f"      Skipping {field_name}={value} - not found")
-                                                    skipped_fields.append(field_name)
+                                                    logger.debug(
+                                                        f"      Skipping {field_name}={value} - not found"
+                                                    )
                                                     continue
 
-                                            # Decimal
-                                            elif hasattr(field,
-                                                         'get_internal_type') and field.get_internal_type() == 'DecimalField':
+                                            elif (hasattr(field, 'get_internal_type') and
+                                                  field.get_internal_type() == 'DecimalField'):
                                                 if value is not None and isinstance(value, str):
                                                     processed_fields[field_name] = Decimal(value)
                                                 else:
                                                     processed_fields[field_name] = value
 
-                                            # Regular field
                                             else:
                                                 processed_fields[field_name] = value
 
@@ -517,59 +486,111 @@ class UploadChangesView(APIView):
                                             logger.debug(f"      Skipping field {field_name}: {e}")
                                             continue
 
-                                    # Check if offline record
                                     is_offline = isinstance(desktop_id, int) and desktop_id < 0
 
                                     try:
                                         if is_offline:
-                                            # ✅ Offline record - create with server ID
-                                            unique_lookup = self._build_unique_lookup(model, processed_fields)
+                                            # Offline record — create with server ID
+                                            unique_lookup = self._build_unique_lookup(
+                                                model, processed_fields
+                                            )
 
                                             if unique_lookup:
                                                 try:
                                                     obj = model.objects.get(**unique_lookup)
-                                                    # Update existing
-                                                    for field_name, value in processed_fields.items():
-                                                        setattr(obj, field_name, value)
-                                                    obj.save()
+                                                    # ✅ Stock delta on offline record
+                                                    if is_stock_model and quantity_delta is not None:
+                                                        model.objects.filter(pk=obj.pk).update(
+                                                            quantity=F('quantity') + quantity_delta
+                                                        )
+                                                        logger.info(
+                                                            f"      ✅ Stock {obj.pk}: "
+                                                            f"delta {quantity_delta:+.3f} applied"
+                                                        )
+                                                        non_qty_fields = {
+                                                            k: v for k, v in processed_fields.items()
+                                                            if k != 'quantity'
+                                                        }
+                                                        for f, v in non_qty_fields.items():
+                                                            setattr(obj, f, v)
+                                                        if non_qty_fields:
+                                                            obj.save()
+                                                    else:
+                                                        for f, v in processed_fields.items():
+                                                            setattr(obj, f, v)
+                                                        obj.save()
 
                                                     model_mappings[str(desktop_id)] = obj.pk
                                                     total_updated += 1
-                                                    logger.info(f"      ✅ Updated existing: {desktop_id} → {obj.pk}")
+                                                    logger.info(
+                                                        f"      ✅ Updated existing: "
+                                                        f"{desktop_id} → {obj.pk}"
+                                                    )
                                                 except model.DoesNotExist:
-                                                    # Create new
                                                     obj = model(**processed_fields)
                                                     obj.save()
-
                                                     model_mappings[str(desktop_id)] = obj.pk
                                                     total_created += 1
-                                                    logger.info(f"      ✅ Created offline: {desktop_id} → {obj.pk}")
+                                                    logger.info(
+                                                        f"      ✅ Created offline: "
+                                                        f"{desktop_id} → {obj.pk}"
+                                                    )
                                             else:
-                                                # No unique lookup - just create
                                                 obj = model(**processed_fields)
                                                 obj.save()
-
                                                 model_mappings[str(desktop_id)] = obj.pk
                                                 total_created += 1
-                                                logger.info(f"      ✅ Created offline: {desktop_id} → {obj.pk}")
+                                                logger.info(
+                                                    f"      ✅ Created offline: "
+                                                    f"{desktop_id} → {obj.pk}"
+                                                )
 
-                                            # Set ManyToMany
                                             for field_name, value in m2m_fields.items():
                                                 if value:
                                                     getattr(obj, field_name).set(value)
 
                                         else:
-                                            # ✅ Online record - update or create with same ID
+                                            # Online record — update or create with same ID
                                             try:
                                                 obj = model.objects.get(pk=desktop_id)
 
-                                                # Update
-                                                for field_name, value in processed_fields.items():
-                                                    setattr(obj, field_name, value)
+                                                if is_stock_model and quantity_delta is not None:
+                                                    # ✅ Delta-based Stock update
+                                                    # Preserves concurrent online sales
+                                                    if quantity_delta != 0:
+                                                        model.objects.filter(pk=desktop_id).update(
+                                                            quantity=F('quantity') + quantity_delta
+                                                        )
+                                                        logger.info(
+                                                            f"      ✅ Stock {desktop_id}: "
+                                                            f"delta {quantity_delta:+.3f} applied"
+                                                        )
+                                                    # Update non-quantity fields normally
+                                                    non_qty_fields = {
+                                                        k: v for k, v in processed_fields.items()
+                                                        if k != 'quantity'
+                                                    }
+                                                    for f, v in non_qty_fields.items():
+                                                        setattr(obj, f, v)
+                                                    if non_qty_fields:
+                                                        obj.save()
 
-                                                obj.save()
+                                                elif is_stock_model and quantity_delta is None:
+                                                    # No baseline stored (first sync) — overwrite
+                                                    logger.info(
+                                                        f"      ⚠️  Stock {desktop_id}: "
+                                                        f"no delta baseline, overwriting"
+                                                    )
+                                                    for f, v in processed_fields.items():
+                                                        setattr(obj, f, v)
+                                                    obj.save()
 
-                                                # Update ManyToMany
+                                                else:
+                                                    # All other models — normal update
+                                                    for f, v in processed_fields.items():
+                                                        setattr(obj, f, v)
+                                                    obj.save()
+
                                                 for field_name, value in m2m_fields.items():
                                                     if value:
                                                         getattr(obj, field_name).set(value)
@@ -578,11 +599,9 @@ class UploadChangesView(APIView):
                                                 logger.debug(f"      ✅ Updated: {desktop_id}")
 
                                             except model.DoesNotExist:
-                                                # Create with desktop ID
                                                 obj = model(pk=desktop_id, **processed_fields)
                                                 obj.save()
 
-                                                # Set ManyToMany
                                                 for field_name, value in m2m_fields.items():
                                                     if value:
                                                         getattr(obj, field_name).set(value)
@@ -591,16 +610,21 @@ class UploadChangesView(APIView):
                                                 logger.info(f"      ✅ Created: {desktop_id}")
 
                                     except ValidationError as e:
-                                        error_dict = e.message_dict if hasattr(e, 'message_dict') else {}
+                                        error_dict = (
+                                            e.message_dict
+                                            if hasattr(e, 'message_dict')
+                                            else {}
+                                        )
                                         error_str = str(error_dict)
-
-                                        # Skip known validation issues
-                                        if any(x in error_str.lower() for x in
-                                               ['choice', 'constraint', 'efris', 'password',
-                                                'either product or service']):
-                                            logger.debug(f"      ⚠️  Validation error for {desktop_id}: {error_dict}")
+                                        if any(x in error_str.lower() for x in [
+                                            'choice', 'constraint', 'efris',
+                                            'password', 'either product or service'
+                                        ]):
+                                            logger.debug(
+                                                f"      ⚠️  Validation error for "
+                                                f"{desktop_id}: {error_dict}"
+                                            )
                                             continue
-
                                         raise
 
                                 except Exception as e:
@@ -618,14 +642,15 @@ class UploadChangesView(APIView):
                             errors.append(f"{model_name}: {str(e)}")
 
                     logger.info(
-                        f"✅ Upload complete: {total_created} created, {total_updated} updated, {total_skipped} skipped")
+                        f"✅ Upload complete: {total_created} created, "
+                        f"{total_updated} updated, {total_skipped} skipped"
+                    )
 
-                    # ✅ CRITICAL: Reset sequences after upload
                     if total_created > 0 or total_updated > 0:
                         logger.info("🔧 Resetting sequences after upload")
                         self._reset_sequences(schema_name)
 
-                logger.info("🔊 Signals restored - normal operation resumed")
+                logger.info("🔊 Signals restored")
 
             return Response({
                 'success': True,

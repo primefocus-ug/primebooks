@@ -1,0 +1,184 @@
+{% extends 'expenses/base.html' %}
+
+{% block title %}{% if edit_mode %}Edit Transaction{% else %}Add Transaction{% endif %} — PrintTrack Pro{% endblock %}
+{% block page_title %}{% if edit_mode %}Edit Transaction{% else %}Add Transaction{% endif %}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'transaction_list' %}" class="btn btn-ghost btn-sm">← Back</a>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 0 auto;">
+    <div class="card">
+
+        <!-- Transaction Type Selector -->
+        {% if not edit_mode %}
+        <div class="form-group">
+            <div class="type-selector" id="typeSelector">
+                <button type="button" class="type-btn" onclick="setType('income')" id="btn-income">💚 Income</button>
+                <button type="button" class="type-btn" onclick="setType('expense')" id="btn-expense">❤️ Expense</button>
+                <button type="button" class="type-btn" onclick="setType('transfer')" id="btn-transfer">🔄 Transfer</button>
+            </div>
+        </div>
+        {% endif %}
+
+        <form method="POST" enctype="multipart/form-data" id="txForm">
+            {% csrf_token %}
+            <input type="hidden" name="transaction_type" id="transaction_type" 
+                   value="{% if edit_mode %}{{ transaction.transaction_type }}{% else %}{{ default_type }}{% endif %}">
+
+            <!-- Amount - BIG and prominent -->
+            <div class="form-group" style="margin-bottom: 24px;">
+                <label class="form-label">Amount</label>
+                <div style="position: relative;">
+                    <span style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-family: 'DM Mono', monospace; font-size: 14px;">
+                        {{ default_currency.symbol }}
+                    </span>
+                    <input type="number" name="amount" id="amountInput"
+                           class="form-control" 
+                           style="padding-left: 60px; font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; height: 64px;"
+                           value="{% if edit_mode %}{{ transaction.amount|floatformat:0 }}{% endif %}"
+                           placeholder="0" step="1" min="1" required>
+                </div>
+            </div>
+
+            <!-- Description -->
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input type="text" name="description" class="form-control"
+                       value="{% if edit_mode %}{{ transaction.description }}{% endif %}"
+                       placeholder="What was this for?" required>
+            </div>
+
+            <!-- Row: Category + Date -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div class="form-group">
+                    <label class="form-label">Category</label>
+                    <select name="category" class="form-control">
+                        <option value="">— No category —</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}"
+                            {% if edit_mode and transaction.category_id == cat.id %}selected{% endif %}>
+                            {{ cat.icon }} {{ cat.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Date</label>
+                    <input type="date" name="date" class="form-control"
+                           value="{% if edit_mode %}{{ transaction.date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}" required>
+                </div>
+            </div>
+
+            <!-- Row: Payment + Currency -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div class="form-group">
+                    <label class="form-label">Payment Method</label>
+                    <select name="payment_method" class="form-control">
+                        {% for val, label in payment_methods %}
+                        <option value="{{ val }}"
+                            {% if edit_mode and transaction.payment_method == val %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Currency</label>
+                    <select name="currency" class="form-control">
+                        {% for cur in currencies %}
+                        <option value="{{ cur.id }}"
+                            {% if cur.is_default %}selected{% endif %}
+                            {% if edit_mode and transaction.currency_id == cur.id %}selected{% endif %}>
+                            {{ cur.code }} — {{ cur.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <!-- Notes -->
+            <div class="form-group">
+                <label class="form-label">Notes (optional)</label>
+                <textarea name="notes" class="form-control" rows="2" 
+                          placeholder="Any additional notes...">{% if edit_mode %}{{ transaction.notes }}{% endif %}</textarea>
+            </div>
+
+            <!-- Quick Services (only for income) -->
+            {% if services %}
+            <div id="servicesSection" style="display: none;">
+                <div class="divider"></div>
+                <div class="form-label" style="margin-bottom: 10px;">Quick Fill from Services</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    {% for svc in services %}
+                    <button type="button" class="btn btn-ghost btn-sm" 
+                            onclick="fillService('{{ svc.name }}', {{ svc.unit_price }})">
+                        {{ svc.icon }} {{ svc.name }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="divider"></div>
+
+            <!-- Submit -->
+            <div style="display: flex; gap: 10px;">
+                <button type="submit" class="btn btn-primary btn-lg" style="flex: 1;" id="submitBtn">
+                    {% if edit_mode %}✅ Update Transaction{% else %}💾 Save Transaction{% endif %}
+                </button>
+                {% if not edit_mode %}
+                <button type="submit" name="save_and_new" value="1" class="btn btn-ghost btn-lg">
+                    + Add Another
+                </button>
+                {% endif %}
+            </div>
+
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const defaultType = '{{ default_type|default:"expense" }}';
+    
+    function setType(type) {
+        document.getElementById('transaction_type').value = type;
+        
+        // Update button styles
+        ['income', 'expense', 'transfer'].forEach(t => {
+            const btn = document.getElementById('btn-' + t);
+            btn.className = 'type-btn';
+            if (t === type) btn.classList.add('active-' + t);
+        });
+
+        // Update submit button color
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.className = 'btn btn-lg';
+        if (type === 'income') submitBtn.classList.add('btn-income');
+        else if (type === 'expense') submitBtn.classList.add('btn-expense');
+        else submitBtn.classList.add('btn-ghost');
+
+        // Show/hide services
+        const servicesSection = document.getElementById('servicesSection');
+        if (servicesSection) {
+            servicesSection.style.display = type === 'income' ? 'block' : 'none';
+        }
+    }
+
+    function fillService(name, price) {
+        document.querySelector('[name="description"]').value = name;
+        document.getElementById('amountInput').value = price;
+    }
+
+    // Initialize
+    setType(defaultType);
+
+    // Auto-focus amount
+    document.getElementById('amountInput').focus();
+</script>
+{% endblock %}

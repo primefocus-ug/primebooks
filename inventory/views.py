@@ -2868,12 +2868,11 @@ class ProductListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        # Add filter form with current GET parameters
         context['filter_form'] = ProductFilterForm(self.request.GET)
         context['bulk_form'] = BulkActionForm()
-
-        # Add additional context data that might be useful in the template
         context['total_products'] = self.get_queryset().count()
+
+        context['stores'] = Store.objects.filter(is_active=True).order_by('name')
 
         return context
 
@@ -5345,15 +5344,23 @@ class StockAdjustmentView(LoginRequiredMixin, PermissionRequiredMixin, View):
         context['form'] = form
         return render(request, self.template_name, context)
 
+    from decimal import Decimal, InvalidOperation
+
     def _handle_batch_adjustment(self, request):
         """Process batch adjustments for multiple products"""
         try:
             batch_products = request.POST.getlist('batch_products')
             store_id = request.POST.get('store')
             adjustment_type = request.POST.get('adjustment_type')
-            quantity = float(request.POST.get('quantity', 0))
-            reason = request.POST.get('reason', '')
             notes = request.POST.get('notes', '')
+            reason = request.POST.get('reason', '')
+
+            # FIX 1: Parse quantity as Decimal, not float
+            try:
+                quantity = Decimal(request.POST.get('quantity', '0'))
+            except InvalidOperation:
+                messages.error(request, 'Invalid quantity value.')
+                return self._render_with_errors(request)
 
             if not batch_products or not store_id or quantity <= 0:
                 messages.error(request, 'Please select products, store, and enter a valid quantity.')
@@ -5368,50 +5375,51 @@ class StockAdjustmentView(LoginRequiredMixin, PermissionRequiredMixin, View):
             with transaction.atomic():
                 for product in products:
                     try:
-                        # Calculate new quantity based on adjustment type
                         stock, created = Stock.objects.get_or_create(
                             product=product,
                             store=store,
-                            defaults={'quantity': 0}
+                            defaults={'quantity': Decimal('0')}
                         )
 
-                        old_quantity = stock.quantity
-                        new_quantity = self._calculate_new_quantity(
-                            old_quantity, quantity, adjustment_type
-                        )
+                        # FIX 2: Calculate the MOVEMENT delta, not the new absolute quantity.
+                        # StockMovement.save() will apply the delta to stock automatically —
+                        # so we must NOT also manually update stock.quantity here (double-update bug).
+                        if adjustment_type == 'add':
+                            movement_quantity = quantity  # positive delta → stock goes up
+                        elif adjustment_type == 'remove':
+                            # Cap removal at current stock so we never go negative
+                            movement_quantity = -min(quantity, stock.quantity)
+                        elif adjustment_type == 'set':
+                            # Delta needed to reach the target level
+                            movement_quantity = quantity - stock.quantity
+                        else:
+                            raise ValueError(f"Invalid adjustment type: {adjustment_type}")
 
-                        # Create stock movement
+                        # Creating the StockMovement triggers StockMovement.save() which
+                        # applies the delta to Stock.quantity automatically.
                         StockMovement.objects.create(
                             product=product,
                             store=store,
                             movement_type='ADJUSTMENT',
-                            quantity=new_quantity,
+                            quantity=movement_quantity,  # Decimal ✓
                             reference=f'BATCH-{timezone.now().strftime("%Y%m%d%H%M")}',
-                            notes=f'Batch adjustment: {reason}. {notes}',
+                            notes=f'Batch adjustment: {reason}. {notes}'.strip('. '),
                             created_by=request.user
                         )
 
-                        # Update stock
-                        stock.quantity = new_quantity
-                        stock.save()
+                        # FIX 3: Do NOT manually update stock.quantity here.
+                        # StockMovement.save() already did it above.
 
                         success_count += 1
 
                     except Exception as e:
-                        logger.error(f"Batch adjustment error for {product.name}: {str(e)}")
+                        logger.error(f"Batch adjustment error for {product.name}: {str(e)}", exc_info=True)
                         error_count += 1
 
             if success_count > 0:
-                messages.success(
-                    request,
-                    f'Successfully adjusted {success_count} products.'
-                )
-
+                messages.success(request, f'Successfully adjusted {success_count} product(s).')
             if error_count > 0:
-                messages.warning(
-                    request,
-                    f'Failed to adjust {error_count} products. Check logs for details.'
-                )
+                messages.warning(request, f'Failed to adjust {error_count} product(s). Check logs for details.')
 
         except Exception as e:
             logger.error(f"Batch adjustment error: {str(e)}", exc_info=True)
@@ -5420,11 +5428,14 @@ class StockAdjustmentView(LoginRequiredMixin, PermissionRequiredMixin, View):
         return redirect('inventory:stock_adjustment')
 
     def _calculate_new_quantity(self, current_qty, adjustment_qty, adj_type):
-        """Calculate new quantity based on adjustment type"""
+        """Calculate new quantity based on adjustment type.
+        NOTE: This is now only used by single-product adjustments if needed.
+        Batch mode no longer calls this — it computes movement deltas directly.
+        """
         if adj_type == 'add':
             return current_qty + adjustment_qty
         elif adj_type == 'remove':
-            return max(0, current_qty - adjustment_qty)
+            return max(Decimal('0'), current_qty - adjustment_qty)  # FIX: Decimal('0') not int 0
         elif adj_type == 'set':
             return adjustment_qty
         else:

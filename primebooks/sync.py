@@ -265,6 +265,7 @@ SYNC_MODEL_CONFIG = {
     },
     'inventory.Service': {
         'dependencies': ['inventory.Category'],
+        'exclude_fields': ['image'],
     },
 
     # Tagged Items (for products)
@@ -281,7 +282,7 @@ SYNC_MODEL_CONFIG = {
     },
     'inventory.StockMovement': {
         'dependencies': ['inventory.Product', 'stores.Store'],
-        # created_by is optional - can be NULL during sync
+        'exclude_fields': ['created_by'],
     },
     'inventory.StockTransfer': {
         'dependencies': ['inventory.Product', 'stores.Store'],
@@ -1079,20 +1080,23 @@ class SyncManager:
             # Apply changes
             success = self.apply_bulk_data(changes, progress_callback)
 
-            # ✅ ALWAYS reset sequences after applying data, regardless of success/fail
-            # Do this BEFORE updating last_sync_time so a crash here is recoverable
+            if not success:
+                logger.error("❌ Failed to apply changes")
+                return False
+
+            # ✅ CRITICAL: Always reset sequences after applying data
+            # This MUST happen after apply_bulk_data and BEFORE update_last_sync_time
             logger.info("🔄 Resetting sequences after download...")
             self.reset_sequences()
 
-            if success:
-                self.update_last_sync_time()
-                if progress_callback:
-                    progress_callback("Changes applied!", 100)
-                logger.info("✅ Changes applied successfully")
-                return True
-            else:
-                logger.error("❌ Failed to apply changes")
-                return False
+            # Update last sync time AFTER sequence reset
+            self.update_last_sync_time()
+
+            if progress_callback:
+                progress_callback("Changes applied!", 100)
+
+            logger.info("✅ Changes applied successfully")
+            return True
 
         except Exception as e:
             logger.error(f"❌ Download changes error: {e}", exc_info=True)
@@ -1546,18 +1550,18 @@ class SyncManager:
                 except Exception as e:
                     logger.error(f"  ❌ Error updating FKs for {model_name}: {e}")
 
-
     def collect_local_changes(self, since):
         """
         Collect records changed LOCALLY (not synced from server)
-        ✅ Excludes records downloaded from server
+        ✅ Excludes records downloaded from server unless modified after sync
         ✅ Excludes Django internal models (ContentType, Permission)
+        ✅ Handles Stock's last_updated field name
+        ✅ Injects _quantity_delta for Stock so server applies delta not overwrite
         """
         changes = {}
 
         with schema_context(self.schema_name):
             for model_name in self.sync_models:
-                # ✅ CRITICAL: Skip excluded models
                 if should_exclude_model(model_name):
                     logger.debug(f"  ⏭️  Skipping excluded model: {model_name}")
                     continue
@@ -1567,10 +1571,8 @@ class SyncManager:
                     config = SYNC_MODEL_CONFIG.get(model_name, {})
                     exclude_fields = config.get('exclude_fields', [])
 
-                    # Build queryset
                     queryset = model.objects.all()
 
-                    # Filter by modification time
                     if since:
                         if since.tzinfo is None:
                             since = timezone.make_aware(since)
@@ -1579,30 +1581,72 @@ class SyncManager:
                             queryset = queryset.filter(modified_at__gte=since)
                         elif hasattr(model, 'updated_at'):
                             queryset = queryset.filter(updated_at__gte=since)
+                        elif hasattr(model, 'last_updated'):
+                            queryset = queryset.filter(last_updated__gte=since)
                         elif hasattr(model, 'created_at'):
                             queryset = queryset.filter(created_at__gte=since)
 
                     if queryset.exists():
-                        # ✅ Filter out synced records
                         local_records = []
 
                         for obj in queryset:
-                            # Skip if this was downloaded from server
-                            if self._is_synced(model_name, obj.pk):
+                            # Pass obj so _is_synced can compare modification time
+                            if self._is_synced(model_name, obj.pk, obj=obj):
                                 continue
-
                             local_records.append(obj)
 
                         if local_records:
-                            # Serialize
                             data = serializers.serialize('json', local_records)
                             records = json.loads(data)
 
-                            # Remove excluded fields
                             if exclude_fields:
                                 for record in records:
                                     for field in exclude_fields:
                                         record['fields'].pop(field, None)
+
+                            # ✅ For Stock inject quantity delta so server applies
+                            # it atomically instead of blindly overwriting.
+                            # This preserves concurrent online sales that happened
+                            # while the client was offline.
+                            if model_name == 'inventory.Stock':
+                                sync_marker_file = settings.DESKTOP_DATA_DIR / f'.synced_{self.tenant_id}.json'
+                                synced_data = {}
+                                if sync_marker_file.exists():
+                                    try:
+                                        synced_data = json.loads(sync_marker_file.read_text())
+                                    except Exception:
+                                        pass
+
+                                stock_synced = synced_data.get('inventory.Stock', {})
+
+                                for record in records:
+                                    record_id = str(record['pk'])
+                                    entry = stock_synced.get(record_id, {})
+
+                                    # Support both old format (just timestamp string)
+                                    # and new format (dict with synced_at + synced_quantity)
+                                    if isinstance(entry, dict):
+                                        synced_quantity = entry.get('synced_quantity')
+                                    else:
+                                        synced_quantity = None
+
+                                    if synced_quantity is not None:
+                                        current_quantity = float(record['fields'].get('quantity', 0))
+                                        delta = current_quantity - synced_quantity
+                                        record['fields']['_quantity_delta'] = delta
+                                        logger.debug(
+                                            f"    Stock {record_id}: "
+                                            f"synced_qty={synced_quantity}, "
+                                            f"current={current_quantity}, "
+                                            f"delta={delta:+.3f}"
+                                        )
+                                    else:
+                                        # No baseline stored — send absolute value,
+                                        # server will overwrite (safe for first sync)
+                                        record['fields']['_quantity_delta'] = None
+                                        logger.debug(
+                                            f"    Stock {record_id}: no baseline, sending absolute"
+                                        )
 
                             changes[model_name] = records
                             logger.info(f"  Found {len(records)} LOCAL changes in {model_name}")
@@ -1615,14 +1659,13 @@ class SyncManager:
 
         return changes
 
-    def _mark_as_synced(self, model_name, record_ids):
-        """Mark records as synced to prevent re-upload"""
+    def _mark_as_synced(self, model_name, record_ids, objects=None):
+        """Mark records as synced, storing timestamp and Stock quantities"""
         if not record_ids:
             return
 
         sync_marker_file = settings.DESKTOP_DATA_DIR / f'.synced_{self.tenant_id}.json'
 
-        # Load existing markers
         if sync_marker_file.exists():
             try:
                 synced = json.loads(sync_marker_file.read_text())
@@ -1631,20 +1674,35 @@ class SyncManager:
         else:
             synced = {}
 
-        # Add new synced IDs
         if model_name not in synced:
-            synced[model_name] = []
+            synced[model_name] = {}
 
-        synced[model_name].extend([str(id) for id in record_ids])
+        sync_time = timezone.now().isoformat()
 
-        # Remove duplicates
-        synced[model_name] = list(set(synced[model_name]))
+        # Build a quick lookup of objects by pk if provided
+        obj_by_pk = {}
+        if objects:
+            for obj in objects:
+                obj_by_pk[obj.pk] = obj
 
-        # Save
+        for record_id in record_ids:
+            entry = {'synced_at': sync_time}
+
+            # For Stock, also store the quantity at sync time so we can compute deltas later
+            if model_name == 'inventory.Stock' and record_id in obj_by_pk:
+                entry['synced_quantity'] = float(obj_by_pk[record_id].quantity)
+
+            synced[model_name][str(record_id)] = entry
+
         sync_marker_file.write_text(json.dumps(synced))
 
-    def _is_synced(self, model_name, record_id):
-        """Check if record was synced from server"""
+    def _is_synced(self, model_name, record_id, obj=None):
+        """
+        Check if record was synced from server AND not modified since.
+
+        If obj is provided, compares sync time against record's last modification.
+        If modified after sync, returns False (treat as local change to upload).
+        """
         sync_marker_file = settings.DESKTOP_DATA_DIR / f'.synced_{self.tenant_id}.json'
 
         if not sync_marker_file.exists():
@@ -1652,8 +1710,42 @@ class SyncManager:
 
         try:
             synced = json.loads(sync_marker_file.read_text())
-            return str(record_id) in synced.get(model_name, [])
-        except:
+            model_synced = synced.get(model_name, {})
+
+            # Support old format (list) and new format (dict with timestamps)
+            if isinstance(model_synced, list):
+                # Old format — just check presence, no timestamp comparison
+                return str(record_id) in model_synced
+
+            sync_time_str = model_synced.get(str(record_id))
+            if not sync_time_str:
+                return False  # Never synced — is a local record
+
+            # ✅ If we have the object, check if it was modified after the sync
+            if obj is not None:
+                sync_time = datetime.fromisoformat(sync_time_str)
+                if sync_time.tzinfo is None:
+                    sync_time = timezone.make_aware(sync_time)
+
+                # Get the object's last modification time
+                modified_at = None
+                for field_name in ('modified_at', 'updated_at', 'last_updated'):
+                    modified_at = getattr(obj, field_name, None)
+                    if modified_at:
+                        break
+
+                if modified_at:
+                    if modified_at.tzinfo is None:
+                        modified_at = timezone.make_aware(modified_at)
+
+                    if modified_at > sync_time:
+                        # ✅ Modified after sync — this is a local change, upload it
+                        return False
+
+            return True
+
+        except Exception as e:
+            logger.warning(f"Error reading sync markers: {e}")
             return False
 
     # ========================================================================
@@ -1734,6 +1826,7 @@ class SyncManager:
             created_count = 0
             updated_count = 0
             synced_ids = []
+            saved_objects = []
 
             for record in records:
                 try:
@@ -1839,6 +1932,7 @@ class SyncManager:
                             setattr(existing_obj, field, value)
 
                         try:
+                            existing_obj._skip_full_clean = True
                             existing_obj.save()
                         except ValidationError as e:
                             error_msg = str(e).lower()
@@ -1860,6 +1954,7 @@ class SyncManager:
 
                         updated_count += 1
                         synced_ids.append(existing_obj.pk)
+                        saved_objects.append(existing_obj)
                         logger.debug(f"    ✓ Updated: {obj_id}")
 
                     else:
@@ -1873,6 +1968,7 @@ class SyncManager:
                             obj = model(id=obj_id, **processed_fields)
 
                         try:
+                            obj._skip_full_clean = True
                             obj.save()
                         except ValidationError as e:
                             error_msg = str(e).lower()
@@ -1894,14 +1990,15 @@ class SyncManager:
 
                         created_count += 1
                         synced_ids.append(obj.pk)
+                        saved_objects.append(obj)
                         logger.debug(f"    ✓ Created: {obj_id}")
 
                 except Exception as e:
                     logger.error(f"    Error saving record {obj_id}: {e}")
 
-            # Mark as synced
+            # Mark as synced — pass saved_objects so Stock quantities get stored
             if synced_ids:
-                self._mark_as_synced(model_name, synced_ids)
+                self._mark_as_synced(model_name, synced_ids, objects=saved_objects)
 
             logger.info(f"  ✅ {model_name}: {created_count} created, {updated_count} updated")
             return created_count, updated_count
@@ -1931,6 +2028,7 @@ class SyncManager:
             'category': ['name'],
             'supplier': ['name'],
             'product': ['sku'],
+            'stock': ['product', 'store'],
 
             # Customers
             'customer': ['phone'],

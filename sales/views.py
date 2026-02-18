@@ -1902,91 +1902,146 @@ def render_sale_form(request):
         return render(request, 'sales/create_sale.html', context)
 
 
-@transaction.atomic
 def process_sale_creation(request, company):
-    """Process sale creation with full document type and export support"""
+    """
+    Wrapper: runs atomic work, renders response outside transaction.
+    Returns JSON for AJAX requests (X-Requested-With: XMLHttpRequest),
+    falls back to redirect for normal browser POSTs.
+    """
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
     try:
-        # Validate sale-level data
-        sale_data = validate_sale_data(request.POST, request.user, company)
+        sale = _process_sale_atomic(request, company)
 
-        # Validate items — pass is_export_sale so export fields get extracted
-        items_data = validate_items_data(
-            request.POST.get('items_data', '[]'),
-            is_export_sale=sale_data.get('is_export_sale', False)
+        if is_ajax:
+            # Build item list for the success overlay
+            items_summary = []
+            for item in sale.items.all():
+                if item.item_type == 'SERVICE' and item.service:
+                    name = item.service.name
+                elif item.product:
+                    name = item.product.name
+                else:
+                    name = getattr(item, 'item_name', 'Item')
+
+                items_summary.append({
+                    'name': name,
+                    'quantity': str(item.quantity),
+                    'unit_price': str(item.unit_price),
+                    'total': str(item.line_total),
+                    'item_type': item.item_type,
+                })
+
+            return JsonResponse({
+                'success': True,
+                'sale': {
+                    'id': sale.pk,
+                    'document_number': sale.document_number,
+                    'document_type': sale.document_type,
+                    'document_type_display': sale.get_document_type_display(),
+                    'total_amount': str(sale.total_amount),
+                    'subtotal': str(sale.subtotal),
+                    'tax_amount': str(sale.tax_amount),
+                    'discount_amount': str(sale.discount_amount),
+                    'currency': sale.currency,
+                    'payment_method': sale.payment_method,
+                    'payment_method_display': sale.get_payment_method_display(),
+                    'is_fiscalized': sale.is_fiscalized,
+                    'efris_invoice_number': sale.efris_invoice_number or '',
+                    'customer_name': sale.customer.name if sale.customer else 'Walk-in Customer',
+                    'store_name': sale.store.name,
+                    'created_at': sale.created_at.strftime('%d %b %Y %H:%M'),
+                    'item_count': sale.items.count(),
+                    'items': items_summary,
+                    # URLs the overlay buttons need
+                    'detail_url': reverse('sales:sale_detail', kwargs={'pk': sale.pk}),
+                    'print_url': reverse('sales:print_receipt', kwargs={'sale_id': sale.pk}),
+                },
+            })
+
+        # Normal browser POST fallback
+        messages.success(
+            request,
+            f"{sale.get_document_type_display()} #{sale.document_number} created successfully"
         )
-
-        if not items_data:
-            messages.error(request, "At least one item is required")
-            return render_sale_form(request)
-
-        # Pre-validate stock for products (only for receipts/invoices)
-        if sale_data.get('document_type') in ['RECEIPT', 'INVOICE']:
-            stock_errors = validate_stock_availability(sale_data['store'], items_data)
-            if stock_errors:
-                for error in stock_errors:
-                    messages.error(request, error)
-                return render_sale_form(request)
-
-        # ✅ CHANGED: Defer auto-fiscalization — SaleItems don't exist yet,
-        # so validate_export_invoice() inside can_fiscalize() would see an
-        # empty queryset and fail every mandatory-field check.
-        sale_data['_defer_auto_fiscalize'] = True
-
-        # Create sale record
-        sale = create_sale_record(request, sale_data, company)
-
-        # Create sale items (export fields included via items_data)
-        create_sale_items(sale, items_data)
-
-        # Recalculate totals now that all items are saved
-        sale.update_totals()
-
-        # Customer notes / credit limit checks (if any)
-        if sale.customer and hasattr(sale.customer, 'notes'):
-            customer_notes = sale.customer.notes
-            if customer_notes:
-                logger.info(f"Customer notes for sale {sale.id}: {customer_notes}")
-
-        # Handle payment for non-credit sales
-        if sale.payment_method != 'CREDIT' and request.POST.get('payment_amount'):
-            handle_payment(sale, request.POST)
-
-        # ✅ CHANGED: NOW trigger the deferred auto-fiscalization.
-        # All SaleItems are committed, totals are updated, so
-        # validate_export_invoice() will see the real item data.
-        if getattr(sale, '_defer_auto_fiscalize', False):
-            try:
-                store_config = sale.store.effective_efris_config
-                if store_config.get('enabled', False) and store_config.get('is_active', False):
-                    if store_config.get('auto_fiscalize_sales', True):
-                        sale._auto_fiscalize_sale()
-                        logger.info(f"Deferred auto-fiscalization triggered for sale {sale.id}")
-            except Exception as e:
-                logger.error(f"Deferred auto-fiscalization failed for sale {sale.id}: {e}")
-
-        # Background processing for receipts
-        if sale.document_type == 'RECEIPT':
-            try:
-                from .tasks import process_receipt_async
-                process_receipt_async.delay(sale.id)
-            except Exception as e:
-                logger.warning(f"Background receipt processing failed for sale {sale.id}: {e}")
-
-        # Success message and redirect
-        messages.success(request, f"{sale.get_document_type_display()} #{sale.document_number} created successfully")
         return redirect('sales:sale_detail', pk=sale.pk)
 
     except ValidationError as e:
         error_messages = e.message_dict if hasattr(e, 'message_dict') else {'error': e.messages}
-        for field, errors in error_messages.items():
-            for error in errors:
-                messages.error(request, f"{error}")
+        errors = []
+        for field, errs in error_messages.items():
+            for error in errs:
+                errors.append(str(error))
+                if not is_ajax:
+                    messages.error(request, error)
+
+        if is_ajax:
+            return JsonResponse({'success': False, 'errors': errors}, status=400)
+
         return render_sale_form(request)
 
     except Exception as e:
         logger.error(f"Error creating sale: {e}", exc_info=True)
-        messages.error(request, f"Failed to create sale: {str(e)}")
+        error_msg = f"Failed to create sale: {str(e)}"
+
+        if is_ajax:
+            return JsonResponse({'success': False, 'errors': [error_msg]}, status=500)
+
+        messages.error(request, error_msg)
         return render_sale_form(request)
+
+
+@transaction.atomic
+def _process_sale_atomic(request, company):
+    """All DB writes happen here. Returns sale on success, raises on failure."""
+    sale_data = validate_sale_data(request.POST, request.user, company)
+
+    items_data = validate_items_data(
+        request.POST.get('items_data', '[]'),
+        is_export_sale=sale_data.get('is_export_sale', False)
+    )
+
+    if not items_data:
+        raise ValidationError({'items': ['At least one item is required']})
+
+    if sale_data.get('document_type') in ['RECEIPT', 'INVOICE']:
+        stock_errors = validate_stock_availability(sale_data['store'], items_data)
+        if stock_errors:
+            raise ValidationError({'stock': stock_errors})
+
+    sale_data['_defer_auto_fiscalize'] = True
+
+    sale = create_sale_record(request, sale_data, company)
+    create_sale_items(sale, items_data)
+    sale.update_totals()
+
+    if sale.customer and hasattr(sale.customer, 'notes') and sale.customer.notes:
+        logger.info(f"Customer notes for sale {sale.id}: {sale.customer.notes}")
+
+    if sale.payment_method != 'CREDIT' and request.POST.get('payment_amount'):
+        handle_payment(sale, request.POST)
+
+    if getattr(sale, '_defer_auto_fiscalize', False):
+        try:
+            store_config = sale.store.effective_efris_config
+            if (store_config.get('enabled', False) and
+                    store_config.get('is_active', False) and
+                    store_config.get('auto_fiscalize_sales', True)):
+                sale._auto_fiscalize_sale()
+                logger.info(f"Deferred auto-fiscalization triggered for sale {sale.id}")
+        except Exception as e:
+            # ✅ Log but don't re-raise — fiscalization failure should not
+            # roll back a successfully created sale
+            logger.error(f"Deferred auto-fiscalization failed for sale {sale.id}: {e}")
+
+    if sale.document_type == 'RECEIPT':
+        try:
+            from .tasks import process_receipt_async
+            transaction.on_commit(lambda: process_receipt_async.delay(sale.id))
+        except Exception as e:
+            logger.warning(f"Background receipt processing failed for sale {sale.id}: {e}")
+
+    return sale
 
 
 

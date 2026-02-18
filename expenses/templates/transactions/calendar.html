@@ -1,0 +1,149 @@
+{% extends 'expenses/base.html' %}
+
+{% block title %}Calendar — PrintTrack Pro{% endblock %}
+{% block page_title %}Calendar{% endblock %}
+
+{% block content %}
+
+<!-- Month Header -->
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+    <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-ghost">← Prev</a>
+    
+    <div style="text-align: center;">
+        <div style="font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800;">{{ month_name }}</div>
+        <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
+            Income: <span style="color: var(--income);">{{ currency.symbol }}{{ month_summary.income|floatformat:0 }}</span> · 
+            Expenses: <span style="color: var(--expense);">{{ currency.symbol }}{{ month_summary.expense|floatformat:0 }}</span> · 
+            Balance: <span style="color: var(--gold);">{{ currency.symbol }}{{ month_summary.balance|floatformat:0 }}</span>
+        </div>
+    </div>
+
+    <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-ghost">Next →</a>
+</div>
+
+<!-- Calendar -->
+<div class="card" style="padding: 20px;">
+    <!-- Day Headers -->
+    <div class="calendar-grid" style="margin-bottom: 4px;">
+        {% for day_name in "Sun,Mon,Tue,Wed,Thu,Fri,Sat"|split:"," %}
+        <div class="cal-header">{{ day_name }}</div>
+        {% endfor %}
+    </div>
+
+    <!-- Calendar Grid -->
+    <div class="calendar-grid" id="calGrid">
+        {% for week in cal %}
+            {% for day in week %}
+                {% if day == 0 %}
+                <div class="cal-day empty"></div>
+                {% else %}
+                    {% with date_obj=year|stringformat:'04d'|add:'-'|add:month|stringformat:'02d'|add:'-'|add:day|stringformat:'02d' %}
+                    <div class="cal-day {% if day == today.day and month == today.month and year == today.year %}today{% endif %}"
+                         onclick="showDayModal('{{ year }}-{{ month|stringformat:"02d" }}-{{ day|stringformat:"02d" }}')"
+                         title="{{ year }}-{{ month }}-{{ day }}">
+                        <div class="cal-day-num">{{ day }}</div>
+                        
+                        {% for d, data in daily_data.items %}
+                            {% if d.day == day and d.month == month and d.year == year %}
+                                {% if data.income > 0 %}
+                                <div class="cal-income">+{{ data.income|floatformat:0 }}</div>
+                                {% endif %}
+                                {% if data.expense > 0 %}
+                                <div class="cal-expense">-{{ data.expense|floatformat:0 }}</div>
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endwith %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Day Detail Modal -->
+<div class="modal-overlay" id="dayModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title" id="modalDate">—</div>
+            <button onclick="closeModal()" class="btn btn-ghost btn-sm">✕</button>
+        </div>
+        <div id="modalSummary" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px;"></div>
+        <div id="modalTransactions"></div>
+        <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <a id="addIncomeBtn" href="#" class="btn btn-income btn-sm" style="flex:1; justify-content: center;">+ Income</a>
+            <a id="addExpenseBtn" href="#" class="btn btn-expense btn-sm" style="flex:1; justify-content: center;">+ Expense</a>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showDayModal(dateStr) {
+    document.getElementById('dayModal').classList.add('open');
+    document.getElementById('modalDate').textContent = new Date(dateStr + 'T00:00:00').toLocaleDateString('en', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+    document.getElementById('modalTransactions').innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">Loading...</div>';
+    
+    // Update add buttons with date
+    document.getElementById('addIncomeBtn').href = `/transactions/add/?type=income&date=${dateStr}`;
+    document.getElementById('addExpenseBtn').href = `/transactions/add/?type=expense&date=${dateStr}`;
+
+    fetch(`/api/daily/?date=${dateStr}`)
+        .then(r => r.json())
+        .then(data => {
+            // Summary
+            const summary = data.summary;
+            document.getElementById('modalSummary').innerHTML = `
+                <div style="background: var(--income-dim); border-radius: 8px; padding: 12px;">
+                    <div style="font-size: 10px; color: var(--income); font-weight: 600; margin-bottom: 3px;">INCOME</div>
+                    <div style="font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: var(--income);">UGX ${parseFloat(summary.income).toLocaleString()}</div>
+                </div>
+                <div style="background: var(--expense-dim); border-radius: 8px; padding: 12px;">
+                    <div style="font-size: 10px; color: var(--expense); font-weight: 600; margin-bottom: 3px;">EXPENSES</div>
+                    <div style="font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: var(--expense);">UGX ${parseFloat(summary.expense).toLocaleString()}</div>
+                </div>
+            `;
+
+            // Transactions
+            if (data.transactions.length === 0) {
+                document.getElementById('modalTransactions').innerHTML = '<div style="text-align:center; padding: 20px; color: var(--text-muted);">No transactions this day.</div>';
+                return;
+            }
+
+            let html = '';
+            data.transactions.forEach(t => {
+                const isIncome = t.transaction_type === 'income';
+                const sign = isIncome ? '+' : '-';
+                const color = isIncome ? 'var(--income)' : 'var(--expense)';
+                const icon = t['category__icon'] || (isIncome ? '💚' : '❤️');
+                html += `
+                <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border);">
+                    <div style="width: 36px; height: 36px; border-radius: 8px; background: ${isIncome ? 'var(--income-dim)' : 'var(--expense-dim)'}; display: flex; align-items: center; justify-content: center; font-size: 16px;">${icon}</div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 13px; font-weight: 500;">${t.description}</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">${t['category__name'] || 'Uncategorized'}</div>
+                    </div>
+                    <div style="font-family: 'DM Mono', monospace; font-size: 13px; color: ${color};">${sign}UGX ${parseFloat(t.amount).toLocaleString()}</div>
+                </div>`;
+            });
+            document.getElementById('modalTransactions').innerHTML = html;
+        });
+}
+
+function closeModal() {
+    document.getElementById('dayModal').classList.remove('open');
+}
+
+// Close on overlay click
+document.getElementById('dayModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+
+// Close on ESC
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+});
+</script>
+{% endblock %}

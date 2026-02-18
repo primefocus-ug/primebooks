@@ -385,8 +385,8 @@ class Category(models.Model):
         else:
             should_cascade = False
 
-        # Run validation
-        self.full_clean()
+        if not getattr(self, '_skip_full_clean', False):
+            self.full_clean()
 
         super().save(*args, **kwargs)
 
@@ -2162,6 +2162,7 @@ class Service(models.Model):
         original_tax_rate = None
         original_unit_price = None
         original_category_id = None
+        old_instance = None
         tax_rate_changed_by_vat = False
 
         if self.pk:
@@ -2222,11 +2223,12 @@ class Service(models.Model):
             self.efris_is_uploaded = False
 
         # Run full validation (this will call clean())
-        try:
-            self.full_clean()
-        except ValidationError as e:
-            logger.error(f"Validation error saving service '{self.name}': {e}")
-            raise
+        if not getattr(self, '_skip_full_clean', False):
+            try:
+                self.full_clean()
+            except ValidationError as e:
+                logger.error(f"Validation error saving service '{self.name}': {e}")
+                raise
 
         # Save the instance
         super().save(*args, **kwargs)
@@ -2532,11 +2534,13 @@ class StockMovement(models.Model):
     def save(self, *args, **kwargs):
         import logging
         from django.db import transaction, connection
+        from decimal import Decimal, InvalidOperation
         logger = logging.getLogger(__name__)
 
         # Calculate total value if unit price provided
         if self.unit_price is not None and self.total_value is None:
-            self.total_value = self.unit_price * self.quantity
+            # Force both operands to Decimal before multiplying
+            self.total_value = Decimal(str(self.unit_price)) * Decimal(str(self.quantity))
 
         logger.info(f"💾 StockMovement.save() called - Type: {self.movement_type}, Qty: {self.quantity}")
 
@@ -2575,17 +2579,14 @@ class StockMovement(models.Model):
         INCREASE_MOVEMENTS = ['PURCHASE', 'RETURN', 'TRANSFER_IN']
         DECREASE_MOVEMENTS = ['TRANSFER_OUT']
 
+        movement_qty = Decimal(str(self.quantity))  # guarantee Decimal regardless of input type
+
         if self.movement_type in INCREASE_MOVEMENTS:
-            stock_record.quantity += self.quantity
-            logger.info(f"➕ ADDING {self.quantity} to stock")
+            stock_record.quantity = Decimal(str(stock_record.quantity)) + movement_qty
         elif self.movement_type in DECREASE_MOVEMENTS:
-            stock_record.quantity -= self.quantity
-            logger.info(f"➖ SUBTRACTING {self.quantity} from stock")
+            stock_record.quantity = Decimal(str(stock_record.quantity)) - movement_qty
         elif self.movement_type == 'ADJUSTMENT':
-            stock_record.quantity += self.quantity
-            logger.info(f"⚖️ ADJUSTING stock by {self.quantity}")
-        else:
-            logger.warning(f"⚠️ Unknown movement type: {self.movement_type}")
+            stock_record.quantity = Decimal(str(stock_record.quantity)) + movement_qty
 
         stock_record.save()
         logger.info(f"📊 Stock AFTER movement save update: {stock_record.quantity} (was {old_qty})")

@@ -1,0 +1,185 @@
+{% extends 'expenses/base.html' %}
+
+{% block title %}Analytics — PrintTrack Pro{% endblock %}
+{% block page_title %}Analytics{% endblock %}
+
+{% block content %}
+
+<!-- Period Selector -->
+<div style="display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap;">
+    {% for days, label in "7,7 Days|30,30 Days|90,90 Days|365,1 Year"|split:"|" %}
+    {% with parts=days|split:"," %}
+    {% endwith %}
+    {% endfor %}
+    <a href="?period=7" class="btn {% if period_days == 7 %}btn-primary{% else %}btn-ghost{% endif %}">7 Days</a>
+    <a href="?period=30" class="btn {% if period_days == 30 %}btn-primary{% else %}btn-ghost{% endif %}">30 Days</a>
+    <a href="?period=90" class="btn {% if period_days == 90 %}btn-primary{% else %}btn-ghost{% endif %}">90 Days</a>
+    <a href="?period=365" class="btn {% if period_days == 365 %}btn-primary{% else %}btn-ghost{% endif %}">1 Year</a>
+</div>
+
+<!-- Summary Stats -->
+<div class="grid grid-3" style="margin-bottom: 24px;">
+    <div class="stat-card income">
+        <div class="stat-label">Total Income</div>
+        <div class="stat-amount">{{ currency.symbol }}{{ income_total|floatformat:0 }}</div>
+        <div class="stat-sub">Last {{ period_days }} days</div>
+    </div>
+    <div class="stat-card expense">
+        <div class="stat-label">Total Expenses</div>
+        <div class="stat-amount">{{ currency.symbol }}{{ expense_total|floatformat:0 }}</div>
+        <div class="stat-sub">
+            {% if trend > 0 %}📈 +{{ trend|floatformat:0 }} vs prev{% elif trend < 0 %}📉 {{ trend|floatformat:0 }} vs prev{% else %}↔ No change{% endif %}
+        </div>
+    </div>
+    <div class="stat-card balance">
+        <div class="stat-label">Net Balance</div>
+        <div class="stat-amount">{{ currency.symbol }}{{ balance|floatformat:0 }}</div>
+        <div class="stat-sub">Income minus expenses</div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="grid grid-2" style="margin-bottom: 24px;">
+
+    <!-- Daily Trend Line Chart -->
+    <div class="card">
+        <div class="section-title" style="margin-bottom: 16px;">Daily Cash Flow</div>
+        <canvas id="dailyChart" height="220"></canvas>
+    </div>
+
+    <!-- Category Doughnut -->
+    <div class="card">
+        <div class="section-title" style="margin-bottom: 16px;">Expense Breakdown</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: center;">
+            <canvas id="catDoughnut" height="220"></canvas>
+            <div id="catList"></div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Category Bar Chart -->
+<div class="card">
+    <div class="section-title" style="margin-bottom: 16px;">Top Expense Categories</div>
+    <canvas id="catBarChart" height="120"></canvas>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const dailyData = {{ daily_data|safe }};
+const catData = {{ cat_data|safe }};
+
+// Daily line chart
+const dailyCtx = document.getElementById('dailyChart').getContext('2d');
+new Chart(dailyCtx, {
+    type: 'line',
+    data: {
+        labels: dailyData.map(d => {
+            const dt = new Date(d.date + 'T00:00:00');
+            return dt.toLocaleDateString('en', {month:'short', day:'numeric'});
+        }),
+        datasets: [
+            {
+                label: 'Income',
+                data: dailyData.map(d => d.income),
+                borderColor: 'rgba(34,197,94,0.8)',
+                backgroundColor: 'rgba(34,197,94,0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 3,
+            },
+            {
+                label: 'Expenses',
+                data: dailyData.map(d => d.expense),
+                borderColor: 'rgba(244,63,94,0.8)',
+                backgroundColor: 'rgba(244,63,94,0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 3,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { labels: { color: '#7070a0', font: { size: 11 } } },
+            tooltip: {
+                callbacks: { label: ctx => ` ${ctx.dataset.label}: UGX ${ctx.parsed.y.toLocaleString()}` }
+            }
+        },
+        scales: {
+            x: { ticks: { color: '#7070a0', font: { size: 10 }, maxTicksLimit: 10 }, grid: { color: 'rgba(255,255,255,0.04)' } },
+            y: {
+                ticks: { color: '#7070a0', font: { size: 10 }, callback: v => 'UGX ' + (v/1000).toFixed(0) + 'K' },
+                grid: { color: 'rgba(255,255,255,0.04)' }
+            }
+        }
+    }
+});
+
+// Doughnut
+if (catData.length > 0) {
+    const dCtx = document.getElementById('catDoughnut').getContext('2d');
+    new Chart(dCtx, {
+        type: 'doughnut',
+        data: {
+            labels: catData.map(c => c.icon + ' ' + c.name),
+            datasets: [{
+                data: catData.map(c => c.total),
+                backgroundColor: catData.map(c => c.color),
+                borderWidth: 0,
+                hoverOffset: 4,
+            }]
+        },
+        options: {
+            cutout: '72%',
+            plugins: { legend: { display: false } }
+        }
+    });
+
+    // List
+    const total = catData.reduce((a, c) => a + c.total, 0);
+    const list = document.getElementById('catList');
+    catData.slice(0, 6).forEach(c => {
+        const pct = (c.total / total * 100).toFixed(1);
+        list.innerHTML += `<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <div style="width:8px; height:8px; border-radius:2px; background:${c.color}; flex-shrink:0;"></div>
+            <span style="font-size:12px; flex:1; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${c.icon} ${c.name}</span>
+            <span style="font-size:11px; font-family:'DM Mono',monospace; color:var(--text-muted);">${pct}%</span>
+        </div>`;
+    });
+
+    // Bar chart
+    const bCtx = document.getElementById('catBarChart').getContext('2d');
+    new Chart(bCtx, {
+        type: 'bar',
+        data: {
+            labels: catData.map(c => c.icon + ' ' + c.name),
+            datasets: [{
+                data: catData.map(c => c.total),
+                backgroundColor: catData.map(c => c.color + 'cc'),
+                borderColor: catData.map(c => c.color),
+                borderWidth: 1,
+                borderRadius: 6,
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => ` UGX ${ctx.parsed.x.toLocaleString()}` } }
+            },
+            scales: {
+                x: { ticks: { color: '#7070a0', callback: v => (v/1000).toFixed(0) + 'K' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+                y: { ticks: { color: '#7070a0', font: { size: 12 } }, grid: { display: false } }
+            }
+        }
+    });
+}
+</script>
+{% endblock %}

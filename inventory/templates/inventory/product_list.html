@@ -897,32 +897,26 @@
 {% block extra_js %}
 <script>
 $(document).ready(function() {
-    // Checkbox selection functionality
+
+    // ─── Select All / Bulk Actions ────────────────────────────────────────────
     $('#selectAll').on('change', function() {
         $('.product-checkbox').prop('checked', this.checked);
         toggleBulkActions();
     });
 
-    $('.product-checkbox').on('change', function() {
-        if ($('.product-checkbox:checked').length === $('.product-checkbox').length) {
-            $('#selectAll').prop('checked', true);
-        } else {
-            $('#selectAll').prop('checked', false);
-        }
+    $(document).on('change', '.product-checkbox', function() {
+        $('#selectAll').prop('checked',
+            $('.product-checkbox:checked').length === $('.product-checkbox').length
+        );
         toggleBulkActions();
     });
 
     function toggleBulkActions() {
         const selectedCount = $('.product-checkbox:checked').length;
-        if (selectedCount > 0) {
-            $('.bulk-actions-dropdown').show();
-            $('#selectedCount').text(selectedCount);
-        } else {
-            $('.bulk-actions-dropdown').hide();
-        }
+        $('.bulk-actions-dropdown').toggle(selectedCount > 0);
     }
 
-    // Bulk actions
+    // ─── Bulk Actions ─────────────────────────────────────────────────────────
     $('[data-action]').on('click', function(e) {
         e.preventDefault();
         const action = $(this).data('action');
@@ -939,306 +933,189 @@ $(document).ready(function() {
             return;
         }
 
-        // Show loading state
         const $btn = $(this);
         const originalHtml = $btn.html();
-        $btn.html('<i class="fas fa-spinner fa-spin"></i> Processing...');
-        $btn.prop('disabled', true);
+        $btn.html('<i class="fas fa-spinner fa-spin"></i> Processing...').prop('disabled', true);
 
-        // Simulate API call
-        setTimeout(() => {
-            // In a real application, this would be an AJAX call
-            console.log(`Performing ${action} on:`, selectedIds);
-
-            // Reset button state
-            $btn.html(originalHtml);
-            $btn.prop('disabled', false);
-
-            // Show success message
-            alert(`${selectedIds.length} product(s) ${action}d successfully`);
-
-            // Reload the page to reflect changes
+        $.post('{% url "inventory:bulk_actions" %}', {
+            action: action,
+            product_ids: selectedIds,
+            csrfmiddlewaretoken: $('[name=csrfmiddlewaretoken]').val()
+        })
+        .done(function() {
             location.reload();
-        }, 1000);
+        })
+        .fail(function() {
+            alert('Action failed. Please try again.');
+            $btn.html(originalHtml).prop('disabled', false);
+        });
     });
 
-    // Quick stock adjustment
-    $('.quick-stock-btn').on('click', function(e) {
-        e.preventDefault(); // Prevent default link behavior
-        const productId = $(this).data('product-id');
+    // ─── Quick Stock Modal: Open ───────────────────────────────────────────────
+    // FIX 1: Button is inside an <a> tag — clicking it navigates away before the
+    // modal opens. Stop propagation on the button AND prevent default on the <a>.
+    $(document).on('click', '.quick-stock-btn', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const productId   = $(this).data('product-id');
         const productName = $(this).data('product-name');
 
+        // Reset form fields
         $('#quickProductId').val(productId);
         $('#quickProductName').val(productName);
         $('#adjustmentQuantity').val('');
         $('#adjustmentReason').val('');
         $('#adjustmentNotes').val('');
+        $('#quickStore').val('');
+        $('#currentStock').val('Loading...');
         $('#reasonNoteContainer').hide();
+        $('#increaseStock').prop('checked', true);
 
-        // Load current stock levels
-        $.get(`/api/products/${productId}/stock/`, function(data) {
-            let stockInfo = 'Not available';
-            if (data.stock_levels && data.stock_levels.length > 0) {
-                stockInfo = data.stock_levels.map(s => `${s.store_name}: ${s.quantity}`).join(', ');
-            }
-            $('#currentStock').val(stockInfo);
-        }).fail(function() {
-            $('#currentStock').val('Failed to load');
-        });
+        // FIX 2: Use the correct API endpoint — /api/v1/stock/?product=X
+        // Old code used /api/products/{id}/stock/ which doesn't exist.
+        fetch(`/api/v1/stock/?product=${productId}`)
+            .then(r => r.json())
+            .then(data => {
+                const items = Array.isArray(data) ? data : (data.results || []);
+                if (items.length > 0) {
+                    // Show stock per store e.g. "Main Branch: 12, Kampala: 5"
+                    const info = items.map(s =>
+                        `${s.store_name || s.store}: ${s.quantity}`
+                    ).join(' | ');
+                    $('#currentStock').val(info);
+                } else {
+                    $('#currentStock').val('No stock records');
+                }
+            })
+            .catch(() => $('#currentStock').val('Failed to load'));
 
         $('#quickStockModal').modal('show');
     });
 
-    // Show notes field when "Other" is selected
-    $('#adjustmentReason').on('change', function() {
-        if ($(this).val() === 'other') {
-            $('#reasonNoteContainer').show();
-        } else {
-            $('#reasonNoteContainer').hide();
-        }
+    // Also prevent the parent <a> from navigating
+    $(document).on('click', 'a:has(.quick-stock-btn)', function(e) {
+        e.preventDefault();
     });
 
-    // Handle quick stock form submission
+    // ─── Quick Stock Modal: Store change — show current stock for that store ──
+    $('#quickStore').on('change', function() {
+        const productId = $('#quickProductId').val();
+        const storeId   = $(this).val();
+        if (!productId || !storeId) return;
+
+        fetch(`/api/v1/stock/?product=${productId}&store=${storeId}`)
+            .then(r => r.json())
+            .then(data => {
+                const items = Array.isArray(data) ? data : (data.results || []);
+                const stock = items.find(s => String(s.store) === String(storeId) ||
+                                              String(s.store_id) === String(storeId));
+                $('#currentStock').val(stock ? `${stock.quantity} units` : '0 units (new)');
+            })
+            .catch(() => $('#currentStock').val('Failed to load'));
+    });
+
+    // ─── Quick Stock Modal: Show notes on "Other" ─────────────────────────────
+    $('#adjustmentReason').on('change', function() {
+        $('#reasonNoteContainer').toggle($(this).val() === 'other');
+    });
+
+    // ─── Quick Stock Modal: Submit ────────────────────────────────────────────
     $('#quickStockForm').on('submit', function(e) {
         e.preventDefault();
 
-        const formData = {
-            product_id: $('#quickProductId').val(),
-            store_id: $('#quickStore').val(),
-            adjustment_type: $('input[name="adjustmentType"]:checked').val(),
-            quantity: $('#adjustmentQuantity').val(),
-            reason: $('#adjustmentReason').val(),
-            notes: $('#adjustmentNotes').val(),
-            csrfmiddlewaretoken: $('input[name=csrfmiddlewaretoken]').val()
-        };
+        const productId      = $('#quickProductId').val();
+        const storeId        = $('#quickStore').val();
+        const adjustmentType = $('input[name="adjustmentType"]:checked').val();
+        const quantity       = $('#adjustmentQuantity').val();
+        const reason         = $('#adjustmentReason').val();
+        const notes          = $('#adjustmentNotes').val();
 
-        // Validate form
-        if (!formData.store_id || !formData.quantity || !formData.reason) {
-            alert('Please fill all required fields');
+        if (!storeId || !quantity || !reason) {
+            alert('Please fill all required fields.');
             return;
         }
 
-        // Show loading state
-        const $submitBtn = $('#quickStockForm button[type="submit"]');
-        const originalBtnText = $submitBtn.html();
-        $submitBtn.html('<i class="fas fa-spinner fa-spin"></i> Processing...');
-        $submitBtn.prop('disabled', true);
+        if (parseFloat(quantity) <= 0) {
+            alert('Quantity must be greater than zero.');
+            return;
+        }
 
-        // Simulate API call
-        setTimeout(() => {
-            console.log('Stock adjustment submitted:', formData);
+        const $submitBtn    = $(this).find('button[type="submit"]');
+        const originalHtml  = $submitBtn.html();
+        $submitBtn.html('<i class="fas fa-spinner fa-spin"></i> Processing...').prop('disabled', true);
 
-            // Reset form and button
-            $submitBtn.html(originalBtnText);
-            $submitBtn.prop('disabled', false);
+        // API expects: { adjustments: [{product_id, store_id, adjustment_type, quantity, reason}] }
+        const typeMap = { increase: 'add', decrease: 'remove', set: 'set' };
 
-            // Close modal and show success message
+        $.ajax({
+            url: '{% url "inventory:bulk_stock_adjustment_api" %}',
+            method: 'POST',
+            contentType: 'application/json',
+            headers: { 'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val() },
+            data: JSON.stringify({
+                adjustments: [{
+                    product_id:      parseInt(productId),
+                    store_id:        parseInt(storeId),
+                    adjustment_type: typeMap[adjustmentType] || 'add',
+                    quantity:        parseFloat(quantity),
+                    reason:          reason + (notes ? ' - ' + notes : '')
+                }]
+            })
+        })
+        .done(function(response) {
             $('#quickStockModal').modal('hide');
-            alert('Stock adjustment saved successfully');
 
-            // In a real app, you might want to update the UI or reload data
-            // For now, we'll just reload the page
-            location.reload();
-        }, 1500);
-    });
+            // FIX 4: Show a proper toast/alert instead of browser alert()
+            showToast('Stock adjusted successfully!', 'success');
 
-    // Product quick view
-    $('.view-details-btn').on('click', function(e) {
-        e.preventDefault();
-        const productId = $(this).data('product-id');
-
-        // Show loading state
-        $('#productQuickViewContent').html(`
-            <div class="text-center py-4">
-                <i class="fas fa-spinner fa-spin fa-2x"></i>
-                <p>Loading product details...</p>
-            </div>
-        `);
-
-        $('#productQuickViewModal').modal('show');
-
-        // Load product details
-        $.get(`/api/products/${productId}/`, function(data) {
-            let content = `
-                <div class="product-detail-section">
-                    <div class="d-flex align-items-center mb-3">
-                        <div class="product-image me-3">
-                            ${data.image ? `<img src="${data.image}" alt="${data.name}" class="img-fluid rounded">` :
-                              `<div class="image-placeholder"><i class="fas fa-box"></i></div>`}
-                        </div>
-                        <div>
-                            <h4>${data.name}</h4>
-                            <div class="text-muted">SKU: ${data.sku || 'N/A'}</div>
-                        </div>
-                    </div>
-
-                    <div class="detail-row">
-                        <div class="detail-label">Category</div>
-                        <div class="detail-value">${data.category || 'Uncategorized'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Supplier</div>
-                        <div class="detail-value">${data.supplier || 'No supplier'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Barcode</div>
-                        <div class="detail-value">${data.barcode || 'N/A'}</div>
-                    </div>
-                </div>
-
-                <div class="product-detail-section">
-                    <h5 class="mb-3">Pricing Information</h5>
-                    <div class="detail-row">
-                        <div class="detail-label">Selling Price</div>
-                        <div class="detail-value">UGX ${parseFloat(data.selling_price).toLocaleString()}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Cost Price</div>
-                        <div class="detail-value">UGX ${parseFloat(data.cost_price).toLocaleString()}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Tax Rate</div>
-                        <div class="detail-value">${data.tax_rate || 'N/A'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Unit of Measure</div>
-                        <div class="detail-value">${data.unit_of_measure || 'N/A'}</div>
-                    </div>
-                </div>
-
-                <div class="product-detail-section">
-                    <h5 class="mb-3">Inventory Status</h5>
-                    <table class="stock-table">
-                        <thead>
-                            <tr>
-                                <th>Store</th>
-                                <th>Current Stock</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-
-            if (data.stock_levels && data.stock_levels.length > 0) {
-                data.stock_levels.forEach(stock => {
-                    let statusBadge = '';
-                    if (stock.status === 'in_stock') {
-                        statusBadge = '<span class="badge bg-success">In Stock</span>';
-                    } else if (stock.status === 'low_stock') {
-                        statusBadge = '<span class="badge bg-warning">Low Stock</span>';
-                    } else {
-                        statusBadge = '<span class="badge bg-danger">Out of Stock</span>';
-                    }
-
-                    content += `
-                        <tr>
-                            <td>${stock.store_name}</td>
-                            <td>${stock.quantity} ${data.unit_of_measure || ''}</td>
-                            <td>${statusBadge}</td>
-                        </tr>
-                    `;
-                });
-            } else {
-                content += `
-                    <tr>
-                        <td colspan="3" class="text-center text-muted py-3">No stock records available</td>
-                    </tr>
-                `;
+            // Refresh the stock display in the row without full page reload
+            const $row = $(`.product-row[data-product-id="${productId}"]`);
+            if ($row.length) {
+                fetch(`/api/v1/products/${productId}/`)
+                    .then(r => r.json())
+                    .then(data => {
+                        $row.find('.stock-level .value').text(`${data.total_stock ?? 0} in Stock`);
+                    })
+                    .catch(() => location.reload());
             }
-
-            content += `
-                        </tbody>
-                    </table>
-                </div>
-            `;
-
-            $('#productQuickViewContent').html(content);
-            $('#editProductBtn').attr('href', `/inventory/products/${productId}/edit/`);
-        }).fail(function() {
-            $('#productQuickViewContent').html(`
-                <div class="alert alert-danger m-3">
-                    Failed to load product details. Please try again.
-                </div>
-            `);
+        })
+        .fail(function(xhr) {
+            const msg = xhr.responseJSON?.message || xhr.responseJSON?.error || 'Adjustment failed. Please try again.';
+            alert(msg);
+        })
+        .always(function() {
+            $submitBtn.html(originalHtml).prop('disabled', false);
         });
     });
 
-    // Export functionality
-    window.exportProducts = function() {
-        const selectedIds = $('.product-checkbox:checked').map(function() {
-            return $(this).val();
-        }).get();
-
-        let url = '/inventory/products/export/';
-        if (selectedIds.length > 0) {
-            url += '?ids=' + selectedIds.join(',');
-        }
-
-        // Show loading state
-        const $btn = $('.export-btn');
-        if ($btn.length) {
-            const originalHtml = $btn.html();
-            $btn.html('<i class="fas fa-spinner fa-spin"></i> Exporting...');
-            $btn.prop('disabled', true);
-
-            // Simulate export process
-            setTimeout(() => {
-                // In a real application, this would trigger a file download
-                console.log('Exporting products:', selectedIds);
-
-                // Reset button state
-                $btn.html(originalHtml);
-                $btn.prop('disabled', false);
-
-                // Show success message
-                alert(`Exported ${selectedIds.length > 0 ? selectedIds.length : 'all'} products successfully`);
-            }, 1500);
+    // ─── Toast helper (uses Bootstrap toast if available, falls back to alert) ─
+    function showToast(message, type = 'success') {
+        // If you have a toast container in base.html, use it.
+        // Otherwise fall back gracefully.
+        if (typeof bootstrap !== 'undefined' && document.getElementById('toastContainer')) {
+            const toastEl = document.createElement('div');
+            toastEl.className = `toast align-items-center text-bg-${type} border-0`;
+            toastEl.setAttribute('role', 'alert');
+            toastEl.innerHTML = `
+                <div class="d-flex">
+                    <div class="toast-body">${message}</div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                </div>`;
+            document.getElementById('toastContainer').appendChild(toastEl);
+            new bootstrap.Toast(toastEl, { delay: 3000 }).show();
+            toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
         } else {
-            // Direct download if button not found
-            window.location.href = url;
+            alert(message);
         }
-    };
-
-    // Auto-submit filter form on change with debounce (REMOVED to prevent conflicts with pagination)
-    // Comment this out if you want manual filter submission only
-    /*
-    let filterTimeout;
-    $('#filterForm select, #filterForm input').on('change keyup', function() {
-        clearTimeout(filterTimeout);
-        filterTimeout = setTimeout(function() {
-            $('#filterForm').submit();
-        }, 500);
-    });
-    */
-
-    // Initialize tooltips
-    if (typeof bootstrap !== 'undefined') {
-        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
-        });
-    } else {
-        // Fallback for older Bootstrap versions
-        $('[data-bs-toggle="tooltip"]').tooltip({
-            trigger: 'hover',
-            placement: 'top'
-        });
     }
 
-    // Preserve checkbox state after page reload (optional feature)
-    // Uncomment if you want checkboxes to remember selection
-    /*
-    $('.product-checkbox').each(function() {
-        const productId = $(this).val();
-        const isChecked = sessionStorage.getItem('product_' + productId) === 'true';
-        $(this).prop('checked', isChecked);
-    });
-
-    $('.product-checkbox').on('change', function() {
-        const productId = $(this).val();
-        sessionStorage.setItem('product_' + productId, $(this).is(':checked'));
-    });
-    */
+    // ─── Tooltips ─────────────────────────────────────────────────────────────
+    if (typeof bootstrap !== 'undefined') {
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+            new bootstrap.Tooltip(el);
+        });
+    }
 });
 </script>
 {% endblock %}
