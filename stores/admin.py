@@ -1421,7 +1421,8 @@ class DeviceOperatorLogAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        return False
+        # Allow deletion only if deleting via cascade (not from log admin)
+        return request.user.is_superuser
 
     # ============================
     #  Display Configuration
