@@ -2,10 +2,10 @@
 -- PostgreSQL database dump
 --
 
-\restrict 2vjMYLnKfyKdvrAJveIzSCDTtu9ddH8ws9ZeAbAP9pwW5MYwOpEQEt4R8j0warJ
+\restrict ntSPPmpHcdLdAv1BXYA3YGBzwyCiQIYbxvSFl0Pd0XOv5tpvlNROBthaxh77baZ
 
--- Dumped from database version 16.11 (Ubuntu 16.11-1.pgdg24.04+1)
--- Dumped by pg_dump version 18.1 (Ubuntu 18.1-1.pgdg24.04+2)
+-- Dumped from database version 16.12 (Ubuntu 16.12-1.pgdg24.04+1)
+-- Dumped by pg_dump version 18.2 (Ubuntu 18.2-1.pgdg24.04+1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -331,6 +331,7 @@ DROP TABLE IF EXISTS public.company_efriscommoditycategory;
 DROP TABLE IF EXISTS public.company_crosscompanytransaction;
 DROP TABLE IF EXISTS public.company_companyrelationship;
 DROP TABLE IF EXISTS public.company_company;
+DROP FUNCTION IF EXISTS public.auto_fix_sequence();
 DROP SCHEMA IF EXISTS public;
 --
 -- Name: public; Type: SCHEMA; Schema: -; Owner: -
@@ -344,6 +345,34 @@ CREATE SCHEMA public;
 --
 
 COMMENT ON SCHEMA public IS 'standard public schema';
+
+
+--
+-- Name: auto_fix_sequence(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.auto_fix_sequence() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+                DECLARE
+                           seq_name TEXT;
+                    max_id
+                           BIGINT;
+                           BEGIN
+                    seq_name
+                           := pg_get_serial_sequence(TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME, 'id');
+
+                    IF
+                           seq_name IS NOT NULL THEN
+                        EXECUTE format('SELECT COALESCE(MAX(id), 0) FROM %I.%I', 
+                                      TG_TABLE_SCHEMA, TG_TABLE_NAME) INTO max_id;
+                           EXECUTE format('SELECT setval(%L, GREATEST(%s, 1), true)',
+                                          seq_name, max_id);
+                           END IF;
+
+                           RETURN NEW;
+                           END;
+                $$;
 
 
 SET default_tablespace = '';
@@ -4156,5 +4185,5 @@ ALTER TABLE ONLY public.tenant_invoice_settings
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 2vjMYLnKfyKdvrAJveIzSCDTtu9ddH8ws9ZeAbAP9pwW5MYwOpEQEt4R8j0warJ
+\unrestrict ntSPPmpHcdLdAv1BXYA3YGBzwyCiQIYbxvSFl0Pd0XOv5tpvlNROBthaxh77baZ
 

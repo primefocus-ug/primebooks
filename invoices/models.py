@@ -553,8 +553,7 @@ class Invoice(models.Model, EFRISInvoiceMixin):
 
     @property
     def issue_date(self):
-        """Get issue date from related sale"""
-        return self.sale.created_at if self.sale else None
+        return self.sale.created_at.date() if self.sale else None
 
     @property
     def due_date(self):

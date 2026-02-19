@@ -65,49 +65,73 @@ def check_user_limit(view_func):
 
 
 def check_branch_limit(view_func):
-    '''
-    Decorator to check if company can add more branches
-    Use on branch/store creation views
-    '''
+    """
+    Decorator to check if company can add more branches.
+    Allows exactly max_branches.
+    Blocks only when creating beyond the limit.
+    """
 
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
+
+        # 🚫 Skip check in public schema
+        if connection.schema_name == get_public_schema_name():
+            return view_func(request, *args, **kwargs)
+
+        # 🚫 Must be authenticated
+        if not request.user.is_authenticated:
+            return redirect('accounts:login')
+
         company = getattr(request.user, 'company', None)
 
         if not company:
-            messages.error(request, 'No company found')
+            messages.error(request, 'No company found.')
             return redirect('companies:dashboard')
 
-        # Skip check for SaaS admins
-        if request.user.is_saas_admin:
+        # 🚫 SaaS admin bypass
+        if getattr(request.user, 'is_saas_admin', False):
             return view_func(request, *args, **kwargs)
 
-        # Check branch limit
+        # 🚫 Must have active plan
         if not company.plan:
             messages.error(request, 'No active plan. Please subscribe.')
             return redirect('companies:subscription_plans')
 
-        current_branches = company.branches_count
+        # ✅ REAL DATABASE COUNT (do not use cached property)
+        current_branches = company.branches.filter(is_deleted=False).count() \
+            if hasattr(company.branches.model, 'is_deleted') \
+            else company.branches.count()
 
-        if current_branches >= company.plan.max_branches:
-            messages.warning(
-                request,
-                f'Branch limit reached ({current_branches}/{company.plan.max_branches}). '
+        max_allowed = company.plan.max_branches
+
+        logger.info(
+            f"Branch check → Company: {company.company_id}, "
+            f"Current: {current_branches}, Limit: {max_allowed}"
+        )
+
+        # ✅ Correct logic: allow exactly max_branches
+        # Block only if the NEXT branch exceeds limit
+        if current_branches + 1 > max_allowed:
+
+            message = (
+                f'Branch limit reached ({current_branches}/{max_allowed}). '
                 f'Please upgrade your plan to add more branches.'
             )
 
-            # Handle AJAX requests
+            # Handle AJAX
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({
                     'success': False,
-                    'message': 'Branch limit reached',
-                    'limit': company.plan.max_branches,
+                    'message': message,
+                    'limit': max_allowed,
                     'current': current_branches,
                     'upgrade_url': reverse('companies:subscription_plans')
                 }, status=403)
 
+            messages.warning(request, message)
             return redirect('companies:subscription_plans')
 
+        # ✅ Safe to create branch
         return view_func(request, *args, **kwargs)
 
     return wrapper

@@ -1,4 +1,7 @@
 from rest_framework import serializers
+from rest_framework import serializers
+from django.db import transaction
+from .models import Service,StockTransfer
 from .models import Category, Supplier, Product, Stock, StockMovement, ImportLog, ImportResult, ImportSession
 from company.serializers import CompanySerializer
 from stores.serializers import StoreSerializer
@@ -20,8 +23,102 @@ class CategoryBasicSerializer(serializers.ModelSerializer):
         model = Category
         fields = ['id', 'name', 'code']
 
-from rest_framework import serializers
-from .models import Service
+
+
+class StockTransferListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer used for the list endpoint.
+    Flat field names match what renderTransferItem() in the panel expects.
+    """
+    product_name    = serializers.CharField(source='product.name',        read_only=True)
+    product_sku     = serializers.CharField(source='product.sku',         read_only=True)
+    unit            = serializers.CharField(source='product.unit_of_measure', read_only=True)
+    from_store_name = serializers.CharField(source='from_store.name',     read_only=True)
+    to_store_name   = serializers.CharField(source='to_store.name',       read_only=True)
+    requested_by_name = serializers.SerializerMethodField()
+    approved_by_name  = serializers.SerializerMethodField()
+    completed_by_name = serializers.SerializerMethodField()
+    can_be_approved  = serializers.BooleanField(read_only=True)
+    can_be_completed = serializers.BooleanField(read_only=True)
+    can_be_cancelled = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model  = StockTransfer
+        fields = [
+            'id',
+            'transfer_number',
+            'status',
+            # product
+            'product', 'product_name', 'product_sku', 'unit',
+            # stores
+            'from_store', 'from_store_name',
+            'to_store',   'to_store_name',
+            # transfer details
+            'quantity', 'reference', 'notes',
+            # people
+            'requested_by_name',
+            'approved_by_name',
+            'completed_by_name',
+            # timestamps
+            'created_at', 'updated_at', 'approved_at', 'completed_at', 'cancelled_at',
+            # computed
+            'can_be_approved', 'can_be_completed', 'can_be_cancelled',
+        ]
+
+    def get_requested_by_name(self, obj):
+        u = obj.requested_by
+        return u.get_full_name() or u.username if u else None
+
+    def get_approved_by_name(self, obj):
+        u = obj.approved_by
+        return u.get_full_name() or u.username if u else None
+
+    def get_completed_by_name(self, obj):
+        u = obj.completed_by
+        return u.get_full_name() or u.username if u else None
+
+
+class StockTransferCreateSerializer(serializers.ModelSerializer):
+    """
+    Used for POST /api/v1/transfers/
+    The panel's saveTransfer() currently POSTs as a form to the Django view,
+    but if you ever switch to a JSON API this serializer is ready.
+    """
+    class Meta:
+        model  = StockTransfer
+        fields = ['product', 'from_store', 'to_store', 'quantity', 'reference', 'notes']
+
+    def validate(self, attrs):
+        if attrs['from_store'] == attrs['to_store']:
+            raise serializers.ValidationError(
+                "Source and destination stores must be different."
+            )
+        # Check source stock exists and has enough quantity
+        try:
+            stock = Stock.objects.get(
+                product=attrs['product'],
+                store=attrs['from_store'],
+            )
+            if stock.quantity < attrs['quantity']:
+                raise serializers.ValidationError(
+                    f"Insufficient stock in {attrs['from_store'].name}. "
+                    f"Available: {stock.quantity}, Requested: {attrs['quantity']}."
+                )
+        except Stock.DoesNotExist:
+            raise serializers.ValidationError(
+                f"No stock record found for this product in {attrs['from_store'].name}."
+            )
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context['request']
+        with transaction.atomic():
+            transfer = StockTransfer.objects.create(
+                **validated_data,
+                requested_by=request.user,
+                status='pending',
+            )
+        return transfer
 
 
 class ServiceSerializer(serializers.ModelSerializer):
@@ -157,29 +254,38 @@ class ProductBasicSerializer(serializers.ModelSerializer):
 
 
 class CategorySerializer(serializers.ModelSerializer):
-    # Add this line
+    # Nested read-only EFRIS details
     efris_commodity_category_details = EFRISCommodityCategorySerializer(
-        source='efris_commodity_category',
-        read_only=True
+        source='efris_commodity_category', read_only=True
     )
-
-    # Add these read-only properties
-    efris_commodity_category_id = serializers.ReadOnlyField()
-    efris_commodity_category_name = serializers.ReadOnlyField()
+    efris_commodity_category_id = serializers.ReadOnlyField(source='efris_commodity_category.id')
+    efris_commodity_category_name = serializers.ReadOnlyField(source='efris_commodity_category.name')
 
     class Meta:
         model = Category
+        # Exclude the raw ForeignKey field to avoid JSON serialization errors
         fields = [
-            'id', 'name', 'code', 'description',
-            'efris_commodity_category',  # ForeignKey field (writable)
-            'efris_commodity_category_details',  # Nested details (read-only)
-            'efris_commodity_category_id',  # Computed property (read-only)
-            'efris_commodity_category_name',  # Computed property (read-only)
-            'efris_auto_sync', 'efris_is_uploaded', 'efris_upload_date',
-            'is_active', 'created_at', 'updated_at'
+            'id',
+            'name',
+            'code',
+            'description',
+            'efris_commodity_category_details',  # Only include nested JSON
+            'efris_commodity_category_id',       # Read-only computed
+            'efris_commodity_category_name',     # Read-only computed
+            'efris_auto_sync',
+            'efris_is_uploaded',
+            'efris_upload_date',
+            'is_active',
+            'created_at',
+            'updated_at',
         ]
-        read_only_fields = ('created_at', 'updated_at', 'efris_upload_date',
-                            'efris_commodity_category_id', 'efris_commodity_category_name')
+        read_only_fields = (
+            'created_at',
+            'updated_at',
+            'efris_upload_date',
+            'efris_commodity_category_id',
+            'efris_commodity_category_name',
+        )
 
 
 class CategoryDetailSerializer(serializers.ModelSerializer):

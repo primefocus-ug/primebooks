@@ -12,6 +12,18 @@ from django.db.models import Q, Sum, F, Count, Avg
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
+from django.db import transaction
+from django.db.models import Q
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
+
+from rest_framework import serializers, viewsets, filters, status
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from stores.models import Store
+from .models import StockTransfer
+from rest_framework.pagination import PageNumberPagination
 
 from .models import (
     Category, Supplier, Product, Stock, StockMovement,
@@ -26,10 +38,320 @@ from .serializers import (
     ImportSessionSerializer, ImportLogSerializer, ImportResultSerializer,
     InventoryReportSerializer, StockMovementReportSerializer,
     LowStockReportSerializer, ValuationReportSerializer,
-    ServiceSerializer, EFRISCommodityCategorySerializer
+    ServiceSerializer, EFRISCommodityCategorySerializer,StockTransferListSerializer,StockTransferCreateSerializer
 )
 from company.models import EFRISCommodityCategory
 
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 50               # Default items per page
+    page_size_query_param = 'limit'  # Client can override with ?limit=
+    max_page_size = 100
+
+class StockTransferViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for /api/v1/transfers/
+
+    List / Retrieve  →  GET  /api/v1/transfers/
+    Create           →  POST /api/v1/transfers/
+    Approve          →  POST /api/v1/transfers/{id}/approve/
+    Complete         →  POST /api/v1/transfers/{id}/complete/
+    Cancel           →  POST /api/v1/transfers/{id}/cancel/
+    """
+    permission_classes = [IsAuthenticated]
+    filter_backends    = [filters.SearchFilter, filters.OrderingFilter]
+    pagination_class = StandardResultsSetPagination
+    search_fields      = [
+        'transfer_number', 'product__name', 'product__sku',
+        'from_store__name', 'to_store__name', 'reference', 'notes',
+    ]
+    ordering_fields = ['created_at', 'updated_at', 'status']
+    ordering        = ['-created_at']
+
+    def get_queryset(self):
+        qs = StockTransfer.objects.select_related(
+            'product', 'from_store', 'to_store',
+            'requested_by', 'approved_by', 'completed_by',
+        )
+
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            qs = qs.filter(status=status_param)
+
+        from_store = self.request.query_params.get('from_store')
+        to_store = self.request.query_params.get('to_store')
+        if from_store:
+            qs = qs.filter(from_store_id=from_store)
+        if to_store:
+            qs = qs.filter(to_store_id=to_store)
+
+        product = self.request.query_params.get('product')
+        if product:
+            qs = qs.filter(product_id=product)
+
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+
+        return qs
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return StockTransferCreateSerializer
+        return StockTransferListSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        transfer = serializer.save()
+        # Return the full representation
+        out = StockTransferListSerializer(transfer, context={'request': request})
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+    # ── Approve ──────────────────────────────────────────────────────────────
+    @action(detail=True, methods=['post'], url_path='approve')
+    def approve(self, request, pk=None):
+        transfer = self.get_object()
+        if not transfer.can_be_approved:
+            return Response(
+                {'success': False, 'error': 'This transfer cannot be approved.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            with transaction.atomic():
+                transfer.approve(request.user)
+            return Response({
+                'success': True,
+                'message': (
+                    f'Transfer {transfer.transfer_number} approved. '
+                    f'Stock deducted from {transfer.from_store.name}.'
+                ),
+                'status': transfer.status,
+            })
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    # ── Complete ─────────────────────────────────────────────────────────────
+    @action(detail=True, methods=['post'], url_path='complete')
+    def complete(self, request, pk=None):
+        transfer = self.get_object()
+        if not transfer.can_be_completed:
+            return Response(
+                {'success': False, 'error': 'This transfer cannot be completed.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            with transaction.atomic():
+                transfer.complete(request.user)
+            return Response({
+                'success': True,
+                'message': (
+                    f'Transfer {transfer.transfer_number} completed. '
+                    f'Stock added to {transfer.to_store.name}.'
+                ),
+                'status': transfer.status,
+            })
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    # ── Cancel ───────────────────────────────────────────────────────────────
+    @action(detail=True, methods=['post'], url_path='cancel')
+    def cancel(self, request, pk=None):
+        transfer = self.get_object()
+        if not transfer.can_be_cancelled:
+            return Response(
+                {'success': False, 'error': 'This transfer cannot be cancelled.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        reason = request.data.get('reason', '').strip()
+        if not reason:
+            return Response(
+                {'success': False, 'error': 'A cancellation reason is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            with transaction.atomic():
+                transfer.cancel(request.user, reason)
+            return Response({
+                'success': True,
+                'message': f'Transfer {transfer.transfer_number} cancelled.',
+                'status': transfer.status,
+            })
+        except Exception as e:
+            return Response(
+                {'success': False, 'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    # Disable PUT/PATCH/DELETE — transfers are immutable once created
+    def update(self, request, *args, **kwargs):
+        return Response(
+            {'error': 'Transfers cannot be edited. Create a new one instead.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {'error': 'Transfers cannot be deleted. Cancel them instead.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+
+
+
+@require_GET
+def product_availability(request):
+    """
+    Returns stock levels for a given product across all active stores.
+    Used by the transfer form to show where stock is available.
+
+    Query params:
+        product_id    (required)  — ID of the product
+        exclude_store (optional)  — store ID to exclude (e.g. the destination)
+
+    Response:
+        {
+          "success": true,
+          "product_id": 42,
+          "availability": [
+            {
+              "store_id": 1,
+              "store_name": "Main Branch",
+              "quantity": 120.0,
+              "unit": "EA",
+              "status": "In Stock"   // "Low Stock" | "Out of Stock"
+            },
+            ...
+          ]
+        }
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Authentication required.'}, status=401)
+
+    product_id    = request.GET.get('product_id')
+    exclude_store = request.GET.get('exclude_store')
+
+    if not product_id:
+        return JsonResponse({'success': False, 'error': 'product_id is required.'}, status=400)
+
+    try:
+        product = Product.objects.get(pk=product_id, is_active=True)
+    except Product.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Product not found.'}, status=404)
+
+    qs = Stock.objects.filter(
+        product=product,
+        store__is_active=True,
+    ).select_related('store')
+
+    if exclude_store:
+        qs = qs.exclude(store_id=exclude_store)
+
+    availability = []
+    for stock in qs.order_by('-quantity'):
+        if stock.quantity <= 0:
+            status_label = 'Out of Stock'
+        elif hasattr(stock, 'low_stock_threshold') and stock.quantity <= stock.low_stock_threshold:
+            status_label = 'Low Stock'
+        elif hasattr(product, 'min_stock_level') and stock.quantity <= product.min_stock_level:
+            status_label = 'Low Stock'
+        else:
+            status_label = 'In Stock'
+
+        availability.append({
+            'store_id':   stock.store.id,
+            'store_name': stock.store.name,
+            'quantity':   float(stock.quantity),
+            'unit':       getattr(product, 'unit_of_measure', 'units'),
+            'status':     status_label,
+        })
+
+    return JsonResponse({
+        'success':    True,
+        'product_id': product.id,
+        'availability': availability,
+    })
+
+
+@require_GET
+def current_stock_api(request):
+    """
+    Returns the current stock quantity for a specific product/store combination.
+    Used by the transfer form to show live stock beside each store selector.
+
+    Query params:
+        store   (required) — store ID
+        product (required) — product ID
+
+    Response:
+        {
+          "current_stock": 85.5,
+          "unit": "EA",
+          "store_name": "Main Branch",
+          "product_name": "Nile Special 500ml",
+          "low_stock_threshold": 10,
+          "is_low": false
+        }
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Authentication required.'}, status=401)
+
+    store_id   = request.GET.get('store')
+    product_id = request.GET.get('product')
+
+    if not store_id or not product_id:
+        return JsonResponse(
+            {'error': 'Both store and product parameters are required.'},
+            status=400,
+        )
+
+    try:
+        stock = Stock.objects.select_related('store', 'product').get(
+            store_id=store_id,
+            product_id=product_id,
+        )
+        threshold = getattr(stock, 'low_stock_threshold', None) \
+                    or getattr(stock.product, 'min_stock_level', 0) \
+                    or 0
+
+        return JsonResponse({
+            'current_stock':      float(stock.quantity),
+            'unit':               getattr(stock.product, 'unit_of_measure', 'units'),
+            'store_name':         stock.store.name,
+            'product_name':       stock.product.name,
+            'low_stock_threshold': float(threshold),
+            'is_low':             float(stock.quantity) <= float(threshold),
+        })
+
+    except Stock.DoesNotExist:
+        # No record yet — stock is 0, not an error
+        try:
+            product = Product.objects.get(pk=product_id)
+            store   = Store.objects.get(pk=store_id)
+            return JsonResponse({
+                'current_stock': 0,
+                'unit':          getattr(product, 'unit_of_measure', 'units'),
+                'store_name':    store.name,
+                'product_name':  product.name,
+                'low_stock_threshold': 0,
+                'is_low':        False,
+            })
+        except (Product.DoesNotExist, Store.DoesNotExist):
+            return JsonResponse(
+                {'error': 'Store or Product not found.'},
+                status=404,
+            )
 
 class EFRISCommodityCategoryViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -39,6 +361,7 @@ class EFRISCommodityCategoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = EFRISCommodityCategory.objects.all()
     serializer_class = EFRISCommodityCategorySerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['commodity_category_code', 'commodity_category_name']
     filterset_fields = ['is_exempt', 'is_leaf_node', 'is_zero_rate']
@@ -60,25 +383,33 @@ class EFRISCommodityCategoryViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data)
 
 
+class CategoryPagination(PageNumberPagination):
+    page_size = 50  # maximum categories per page
+    page_size_query_param = 'limit'  # optional, override with ?limit=
+    max_page_size = 100
+
+
 class CategoryViewSet(viewsets.ModelViewSet):
     """
     ViewSet for Product Categories
-    Supports CRUD operations and EFRIS integration
+    Supports CRUD operations with pagination
     """
-    queryset = Category.objects.filter(is_active=True)
+    queryset = Category.objects.filter(is_active=True).order_by('name')
+    serializer_class = CategorySerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'description']
     filterset_fields = ['is_active', 'efris_auto_sync', 'efris_is_uploaded']
     ordering_fields = ['name', 'code', 'created_at']
-    ordering = ['name']
+    pagination_class = CategoryPagination  # <-- Add pagination
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
             return CategoryDetailSerializer
         elif self.action == 'list':
-            return CategoryBasicSerializer
+            return CategorySerializer  # Use updated serializer without raw FK
         return CategorySerializer
+
 
     @action(detail=True, methods=['get'])
     def products(self, request, pk=None):
@@ -150,6 +481,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
     queryset = Service.objects.filter(is_active=True)
     serializer_class = ServiceSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'code', 'description']
     filterset_fields = ['is_active', 'category', 'tax_rate', 'efris_auto_sync_enabled']
@@ -232,6 +564,7 @@ class SupplierViewSet(viewsets.ModelViewSet):
     queryset = Supplier.objects.filter(is_active=True)
     serializer_class = SupplierSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'tin', 'contact_person', 'email']
     filterset_fields = ['is_active', 'country']
@@ -277,6 +610,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         'category', 'supplier'
     ).filter(is_active=True)
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'sku', 'barcode', 'description']
     filterset_fields = [
@@ -443,6 +777,7 @@ class StockViewSet(viewsets.ModelViewSet):
     queryset = Stock.objects.select_related('product', 'store')
     serializer_class = StockSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['store', 'product']
     ordering_fields = ['quantity', 'last_updated']
@@ -553,6 +888,7 @@ class StockMovementViewSet(viewsets.ModelViewSet):
     ).order_by('-created_at')
     serializer_class = StockMovementSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['movement_type', 'product', 'store', 'created_by']
     ordering_fields = ['created_at', 'quantity', 'total_value']
@@ -630,6 +966,7 @@ class ReportViewSet(viewsets.ViewSet):
     Generates various inventory reports
     """
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     @action(detail=False, methods=['get'])
     def inventory(self, request):

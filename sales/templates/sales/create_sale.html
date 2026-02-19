@@ -74,7 +74,7 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { font-size: 14px; -webkit-font-smoothing: antialiased; }
+html { font-size: 18px; -webkit-font-smoothing: antialiased; }
 
 body {
   font-family: var(--sans);
@@ -2058,6 +2058,9 @@ body {
       <span id="draftsBadge" style="display:none; background:var(--accent); color:#fff; border-radius:99px; padding:0 5px; font-size:.65rem;"></span>
     </button>
 
+    <button class="kbd-btn" onclick="openInventoryPanel()">
+      <i class="bi bi-box-seam"></i> Add Product
+    </button>
     <button class="kbd-btn" onclick="toggleShortcutsHelp()">
       <kbd>?</kbd>
     </button>
@@ -2795,7 +2798,2808 @@ body {
     </div>
   </div>
 </div>
+/===== new additions ======/
+    {% comment %}
+======================================================================
+INVENTORY MANAGEMENT PANEL — Extends the existing POS page
+Paste this BEFORE {% endblock content %} in your new_sale.html
+It hooks into your existing CSS variables, toast/loading system,
+and calls your /api/v1/ endpoints.
+======================================================================
+{% endcomment %}
 
+
+<!-- ═══════════════════════════════════════════════════════════
+     INVENTORY SIDE PANEL
+     ═══════════════════════════════════════════════════════════ -->
+<div id="inventoryPanel" class="inv-panel">
+  <div class="inv-panel-backdrop" onclick="closeInventoryPanel()"></div>
+
+  <div class="inv-panel-body">
+
+    <!-- Header -->
+    <div class="inv-header">
+      <div class="inv-header-left">
+        <div class="inv-header-icon"><i class="bi bi-box-seam"></i></div>
+        <div>
+          <div class="inv-header-title">Inventory</div>
+          <div class="inv-header-sub">Manage products, services &amp; stock</div>
+        </div>
+      </div>
+      <button class="inv-close-btn" onclick="closeInventoryPanel()">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+
+    <!-- Nav tabs -->
+    <div class="inv-tabs">
+      <button class="inv-tab active" data-tab="products" onclick="switchInvTab('products')">
+        <i class="bi bi-box"></i> Products
+      </button>
+      <button class="inv-tab" data-tab="services" onclick="switchInvTab('services')">
+        <i class="bi bi-gear"></i> Services
+      </button>
+      <button class="inv-tab" data-tab="categories" onclick="switchInvTab('categories')">
+        <i class="bi bi-tags"></i> Categories
+      </button>
+      <button class="inv-tab" data-tab="stock" onclick="switchInvTab('stock')">
+        <i class="bi bi-archive"></i> Stock
+      </button>
+      <button class="inv-tab" data-tab="transfers" onclick="switchInvTab('transfers')">
+        <i class="bi bi-arrow-left-right"></i> Transfers
+      </button>
+        <button class="inv-tab" data-tab="sales" onclick="switchInvTab('sales')">
+        <i class="bi bi-receipt"></i> Sales
+      </button>
+      <button class="inv-tab" data-tab="invoices" onclick="switchInvTab('invoices')">
+        <i class="bi bi-file-earmark-text"></i> Invoices
+      </button>
+    </div>
+
+    <!-- ── PRODUCTS TAB ── -->
+    <div id="inv-tab-products" class="inv-tab-content active">
+      <div class="inv-toolbar">
+        <div class="inv-search">
+          <i class="bi bi-search"></i>
+          <input type="text" id="invProductSearch" placeholder="Search products…" oninput="invDebounce('products', this.value)">
+        </div>
+        <button class="inv-add-btn" onclick="openProductForm()">
+          <i class="bi bi-plus"></i> Add New Product
+        </button>
+      </div>
+      <div id="invProductList" class="inv-list"></div>
+    </div>
+
+    <!-- ── SERVICES TAB ── -->
+    <div id="inv-tab-services" class="inv-tab-content">
+      <div class="inv-toolbar">
+        <div class="inv-search">
+          <i class="bi bi-search"></i>
+          <input type="text" id="invServiceSearch" placeholder="Search services…" oninput="invDebounce('services', this.value)">
+        </div>
+        <button class="inv-add-btn" onclick="openServiceForm()">
+          <i class="bi bi-plus"></i> Add New Service
+        </button>
+      </div>
+      <div id="invServiceList" class="inv-list"></div>
+    </div>
+
+    <!-- ── CATEGORIES TAB ── -->
+    <div id="inv-tab-categories" class="inv-tab-content">
+      <div class="inv-toolbar">
+        <div class="inv-search">
+          <i class="bi bi-search"></i>
+          <input type="text" id="invCategorySearch" placeholder="Search categories…" oninput="invDebounce('categories', this.value)">
+        </div>
+        <button class="inv-add-btn" onclick="openCategoryForm()">
+          <i class="bi bi-plus"></i> Add New Category
+        </button>
+      </div>
+      <div class="inv-filter-row">
+        <button class="inv-filter-btn active" data-ctype="all" onclick="filterCategories('all', this)">All</button>
+        <button class="inv-filter-btn" data-ctype="product" onclick="filterCategories('product', this)">Products</button>
+        <button class="inv-filter-btn" data-ctype="service" onclick="filterCategories('service', this)">Services</button>
+      </div>
+      <div id="invCategoryList" class="inv-list"></div>
+    </div>
+
+    <!-- ── STOCK TAB ── -->
+    <div id="inv-tab-stock" class="inv-tab-content">
+      <div class="inv-toolbar">
+        <div class="inv-search">
+          <i class="bi bi-search"></i>
+          <input type="text" id="invStockSearch" placeholder="Search stock…" oninput="invDebounce('stock', this.value)">
+        </div>
+        <button class="inv-add-btn" onclick="openStockForm()">
+          <i class="bi bi-plus"></i> Adjust Stock
+        </button>
+      </div>
+      <div class="inv-filter-row">
+        <button class="inv-filter-btn active" data-sfilter="all" onclick="filterStock('all', this)">All</button>
+        <button class="inv-filter-btn" data-sfilter="low" onclick="filterStock('low', this)">Low</button>
+        <button class="inv-filter-btn" data-sfilter="out" onclick="filterStock('out', this)">Out of Stock</button>
+      </div>
+      <div id="invStockList" class="inv-list"></div>
+    </div>
+
+    <!-- ── TRANSFERS TAB ── -->
+<div id="inv-tab-transfers" class="inv-tab-content">
+  <div class="inv-toolbar">
+    <div class="inv-search">
+      <i class="bi bi-search"></i>
+      <input type="text" id="invTransfersSearch" placeholder="Search transfers…"
+             oninput="invDebounce('transfers', this.value)">
+    </div>
+    <button class="inv-add-btn" onclick="openTransferForm()">
+      <i class="bi bi-plus"></i> New Transfer
+    </button>
+  </div>
+  <div class="inv-filter-row">
+    <button class="inv-filter-btn active" data-tfilter="all" onclick="filterTransfers('all',this)">All</button>
+    <button class="inv-filter-btn" data-tfilter="pending" onclick="filterTransfers('pending',this)">Pending</button>
+    <button class="inv-filter-btn" data-tfilter="in_transit" onclick="filterTransfers('in_transit',this)">In Transit</button>
+    <button class="inv-filter-btn" data-tfilter="completed" onclick="filterTransfers('completed',this)">Completed</button>
+    <button class="inv-filter-btn" data-tfilter="cancelled" onclick="filterTransfers('cancelled',this)">Cancelled</button>
+  </div>
+  <div id="invTransferList" class="inv-list"></div>
+</div><!-- /inv-tab-transfers -->
+
+<!-- ── SALES TAB ── -->
+<div id="inv-tab-sales" class="inv-tab-content">
+  <div class="inv-toolbar">
+    <div class="inv-search">
+      <i class="bi bi-search"></i>
+      <input type="text" id="invSalesSearch" placeholder="Search sales…"
+             oninput="invDebounce('sales', this.value)">
+    </div>
+    <a href="/sales/" target="_blank" class="inv-add-btn" style="text-decoration:none">
+      <i class="bi bi-box-arrow-up-right"></i> Full View
+    </a>
+  </div>
+  <div class="inv-filter-row">
+    <button class="inv-filter-btn active" data-salefilter="all" onclick="filterSales('all',this)">All</button>
+    <button class="inv-filter-btn" data-salefilter="completed" onclick="filterSales('completed',this)">Completed</button>
+    <button class="inv-filter-btn" data-salefilter="pending" onclick="filterSales('pending',this)">Pending</button>
+    <button class="inv-filter-btn" data-salefilter="refunded" onclick="filterSales('refunded',this)">Refunded</button>
+  </div>
+  <div id="invSalesList" class="inv-list"></div>
+</div><!-- /inv-tab-sales -->
+
+<!-- ── INVOICES TAB ── -->
+<div id="inv-tab-invoices" class="inv-tab-content">
+  <div class="inv-toolbar">
+    <div class="inv-search">
+      <i class="bi bi-search"></i>
+      <input type="text" id="invInvoicesSearch" placeholder="Search invoices…"
+             oninput="invDebounce('invoices', this.value)">
+    </div>
+    <a href="/invoices/" target="_blank" class="inv-add-btn" style="text-decoration:none">
+      <i class="bi bi-box-arrow-up-right"></i> Full View
+    </a>
+  </div>
+  <div class="inv-filter-row">
+    <button class="inv-filter-btn active" data-invfilter="all" onclick="filterInvoices('all',this)">All</button>
+    <button class="inv-filter-btn" data-invfilter="draft" onclick="filterInvoices('draft',this)">Draft</button>
+    <button class="inv-filter-btn" data-invfilter="sent" onclick="filterInvoices('sent',this)">Sent</button>
+    <button class="inv-filter-btn" data-invfilter="paid" onclick="filterInvoices('paid',this)">Paid</button>
+    <button class="inv-filter-btn" data-invfilter="overdue" onclick="filterInvoices('overdue',this)">Overdue</button>
+    <button class="inv-filter-btn" data-invfilter="cancelled" onclick="filterInvoices('cancelled',this)">Cancelled</button>
+  </div>
+  <div id="invInvoicesList" class="inv-list"></div>
+</div><!-- /inv-tab-invoices -->
+
+</div><!-- /inv-panel-body -->
+</div><!-- /inventoryPanel -->
+
+<!-- ═══════════════════════════════════════════════════════════
+     PRODUCT FORM MODAL
+     ═══════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="productFormModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content inv-modal-content">
+      <div class="modal-header inv-modal-header">
+        <h5 class="modal-title" id="productFormTitle">New Product</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="padding:1.25rem">
+
+        <ul class="nav nav-tabs mb-3" id="productFormTabs">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#pfTab-basic">Basic</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#pfTab-pricing">Pricing &amp; Tax</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#pfTab-stock">Stock</button></li>
+        </ul>
+
+        <div class="tab-content">
+          <!-- Basic -->
+          <div class="tab-pane fade show active" id="pfTab-basic">
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label">Product Name <span class="req">*</span></label>
+                <input type="text" class="form-control" id="pf-name" placeholder="e.g. Nile Special 500ml">
+              </div>
+              <div class="col-6">
+                <label class="form-label">SKU <span class="req">*</span></label>
+                <div class="input-group">
+                  <input type="text" class="form-control" id="pf-sku" placeholder="Unique code">
+                  <button class="btn btn-outline-secondary" type="button" onclick="genSKU()">Gen</button>
+                </div>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Barcode</label>
+                <input type="text" class="form-control" id="pf-barcode" placeholder="Optional">
+              </div>
+              <div class="col-6">
+                <label class="form-label">Category</label>
+                <select class="form-select" id="pf-category">
+                  <option value="">— Select —</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Supplier</label>
+                <select class="form-select" id="pf-supplier">
+                  <option value="">— None —</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" id="pf-description" rows="3" placeholder="Optional description…"></textarea>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Unit of Measure <span class="req">*</span></label>
+                <select class="form-select" id="pf-uom">
+                  <option value="101">Kilogram (KGM)</option>
+                  <option value="103">Litre (LTR)</option>
+                  <option value="104">Metre (MTR)</option>
+                  <option value="116" selected>Each (EA)</option>
+                  <option value="136">Box (BX)</option>
+                  <option value="201">Pack (PK)</option>
+                  <option value="206">Piece (PCE)</option>
+                </select>
+              </div>
+              <div class="col-3">
+                <label class="form-label">Min Stock</label>
+                <input type="number" class="form-control" id="pf-minstock" value="5" min="0">
+              </div>
+              <div class="col-3">
+                <div class="inv-check-row">
+                  <input type="checkbox" class="form-check-input" id="pf-active" checked>
+                  <label for="pf-active" class="form-check-label">Active</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pricing & Tax -->
+          <div class="tab-pane fade" id="pfTab-pricing">
+            <div class="row g-3">
+              <div class="col-6">
+                <label class="form-label">Selling Price (UGX) <span class="req">*</span></label>
+                <input type="number" class="form-control" id="pf-selling-price" placeholder="0.00" min="0" step="0.01">
+              </div>
+              <div class="col-6">
+                <label class="form-label">Cost Price (UGX)</label>
+                <input type="number" class="form-control" id="pf-cost-price" placeholder="0.00" min="0" step="0.01">
+              </div>
+              <div class="col-6">
+                <label class="form-label">Tax Rate <span class="req">*</span></label>
+                <select class="form-select" id="pf-tax-rate">
+                  <option value="A">A – Standard (18%)</option>
+                  <option value="B">B – Zero Rate (0%)</option>
+                  <option value="C">C – Exempt</option>
+                  <option value="D">D – Deemed</option>
+                  <option value="E">E – Excise Duty</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Discount %</label>
+                <input type="number" class="form-control" id="pf-discount" placeholder="0" min="0" max="100" step="0.01" value="0">
+              </div>
+              <div class="col-6" id="pf-excise-row">
+                <label class="form-label">Excise Duty Rate %</label>
+                <input type="number" class="form-control" id="pf-excise" placeholder="0" min="0" step="0.01" value="0">
+              </div>
+
+              <!-- Computed preview -->
+              <div class="col-12">
+                <div class="inv-price-preview" id="pfPricePreview">
+                  <div class="inv-pp-row"><span>Subtotal</span><span id="pfPPSub">UGX 0</span></div>
+                  <div class="inv-pp-row"><span>Tax</span><span id="pfPPTax">UGX 0</span></div>
+                  <div class="inv-pp-row inv-pp-total"><span>Final Price</span><span id="pfPPFinal">UGX 0</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stock -->
+          <div class="tab-pane fade" id="pfTab-stock">
+            <div class="alert alert-info" style="font-size:.78rem; margin-bottom:1rem">
+              <i class="bi bi-info-circle me-1"></i>
+              Initial stock will be created for the selected store. You can adjust stock levels per-store later.
+            </div>
+            <div class="row g-3">
+              <div class="col-6">
+                <label class="form-label">Store</label>
+                <select class="form-select" id="pf-store">
+                  {% for store in stores %}
+                  <option value="{{ store.id }}">{{ store.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Initial Quantity</label>
+                <input type="number" class="form-control" id="pf-initial-qty" placeholder="0" min="0" step="0.001" value="0">
+              </div>
+              <div class="col-6">
+                <label class="form-label">Low Stock Threshold</label>
+                <input type="number" class="form-control" id="pf-low-thresh" placeholder="5" min="0" step="0.001" value="5">
+              </div>
+              <div class="col-6">
+                <label class="form-label">Reorder Quantity</label>
+                <input type="number" class="form-control" id="pf-reorder-qty" placeholder="10" min="0" step="0.001" value="10">
+              </div>
+            </div>
+          </div>
+        </div><!-- /tab-content -->
+
+      </div>
+      <div class="modal-footer inv-modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="saveProductBtn" onclick="saveProduct()">
+          <span id="saveProductText"><i class="bi bi-check-circle me-1"></i>Save Product</span>
+          <span id="saveProductLoading" style="display:none"><span class="spinner-border spinner-border-sm"></span></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     SERVICE FORM MODAL
+     ═══════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="serviceFormModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content inv-modal-content">
+      <div class="modal-header inv-modal-header">
+        <h5 class="modal-title" id="serviceFormTitle">New Service</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="padding:1.25rem">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Service Name <span class="req">*</span></label>
+            <input type="text" class="form-control" id="sf-name" placeholder="e.g. Consulting, Delivery">
+          </div>
+          <div class="col-6">
+            <label class="form-label">Code <span class="req">*</span></label>
+            <div class="input-group">
+              <input type="text" class="form-control" id="sf-code" placeholder="SRV001">
+              <button class="btn btn-outline-secondary" type="button" onclick="genServiceCode()">Gen</button>
+            </div>
+          </div>
+          <div class="col-6">
+            <label class="form-label">Category</label>
+            <select class="form-select" id="sf-category">
+              <option value="">— Select —</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <textarea class="form-control" id="sf-description" rows="2" placeholder="Optional…"></textarea>
+          </div>
+          <div class="col-6">
+            <label class="form-label">Unit Price (UGX) <span class="req">*</span></label>
+            <input type="number" class="form-control" id="sf-price" placeholder="0.00" min="0" step="0.01">
+          </div>
+          <div class="col-6">
+            <label class="form-label">Tax Rate <span class="req">*</span></label>
+            <select class="form-select" id="sf-tax-rate">
+              <option value="A">A – Standard (18%)</option>
+              <option value="B">B – Zero Rate (0%)</option>
+              <option value="C">C – Exempt</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label">Unit of Measure</label>
+            <select class="form-select" id="sf-uom">
+              <option value="207">Hours (HR)</option>
+              <option value="206">Piece (PCE)</option>
+              <option value="205">Session</option>
+              <option value="116">Each (EA)</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <div class="inv-check-row mt-3">
+              <input type="checkbox" class="form-check-input" id="sf-active" checked>
+              <label for="sf-active" class="form-check-label">Active</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer inv-modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="saveServiceBtn" onclick="saveService()">
+          <span id="saveServiceText"><i class="bi bi-check-circle me-1"></i>Save Service</span>
+          <span id="saveServiceLoading" style="display:none"><span class="spinner-border spinner-border-sm"></span></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     CATEGORY FORM MODAL
+     ═══════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="categoryFormModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog">
+    <div class="modal-content inv-modal-content">
+      <div class="modal-header inv-modal-header">
+        <h5 class="modal-title" id="categoryFormTitle">New Category</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="padding:1.25rem">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Name <span class="req">*</span></label>
+            <input type="text" class="form-control" id="cf-name" placeholder="Category name">
+          </div>
+          <div class="col-6">
+            <label class="form-label">Code</label>
+            <input type="text" class="form-control" id="cf-code" placeholder="Optional code">
+          </div>
+          <div class="col-6">
+            <label class="form-label">Type <span class="req">*</span></label>
+            <select class="form-select" id="cf-type">
+              <option value="product">Product</option>
+              <option value="service">Service</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <textarea class="form-control" id="cf-description" rows="3" placeholder="Optional…"></textarea>
+          </div>
+          <div class="col-12">
+            <div class="inv-check-row">
+              <input type="checkbox" class="form-check-input" id="cf-active" checked>
+              <label for="cf-active" class="form-check-label">Active</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer inv-modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="saveCategoryBtn" onclick="saveCategory()">
+          <span id="saveCategoryText"><i class="bi bi-check-circle me-1"></i>Save Category</span>
+          <span id="saveCategoryLoading" style="display:none"><span class="spinner-border spinner-border-sm"></span></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     STOCK ADJUSTMENT MODAL
+     ═══════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="stockFormModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog">
+    <div class="modal-content inv-modal-content">
+      <div class="modal-header inv-modal-header">
+        <h5 class="modal-title" id="stockFormTitle">Stock Adjustment</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="padding:1.25rem">
+        <div id="stockCurrentInfo" class="inv-stock-info" style="display:none">
+          <div class="inv-stock-info-name" id="stockInfoName"></div>
+          <div class="inv-stock-info-meta" id="stockInfoMeta"></div>
+        </div>
+        <div class="row g-3">
+          <div class="col-12" id="stockProductRow">
+            <label class="form-label">Product <span class="req">*</span></label>
+            <select class="form-select" id="stf-product">
+              <option value="">— Select Product —</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label">Store <span class="req">*</span></label>
+            <select class="form-select" id="stf-store">
+              {% for store in stores %}
+              <option value="{{ store.id }}">{{ store.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label">Movement Type <span class="req">*</span></label>
+            <select class="form-select" id="stf-type">
+              <option value="PURCHASE">Purchase (Receive)</option>
+              <option value="RETURN">Customer Return</option>
+              <option value="ADJUSTMENT">Manual Adjustment</option>
+              <option value="DAMAGE">Damage / Loss</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label">Quantity <span class="req">*</span></label>
+            <input type="number" class="form-control" id="stf-qty" placeholder="0" min="0.001" step="0.001">
+          </div>
+          <div class="col-6">
+            <label class="form-label">Unit Price (UGX)</label>
+            <input type="number" class="form-control" id="stf-unit-price" placeholder="Optional" min="0" step="0.01">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Reference</label>
+            <input type="text" class="form-control" id="stf-ref" placeholder="Invoice/PO number (optional)">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" id="stf-notes" rows="2" placeholder="Optional notes…"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer inv-modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="saveStockBtn" onclick="saveStockAdjustment()">
+          <span id="saveStockText"><i class="bi bi-check-circle me-1"></i>Apply</span>
+          <span id="saveStockLoading" style="display:none"><span class="spinner-border spinner-border-sm"></span></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     DELETE CONFIRM MODAL (shared)
+     ═══════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="invDeleteModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content inv-modal-content">
+      <div class="modal-header" style="border-bottom:1px solid var(--red-dim); background:var(--red-dim)">
+        <h5 class="modal-title" style="color:var(--red); font-size:.88rem"><i class="bi bi-trash me-2"></i>Confirm Delete</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:.82rem; color:var(--text-2)" id="invDeleteMsg">Are you sure?</p>
+      </div>
+      <div class="modal-footer" style="border-top:1px solid var(--line); padding:.75rem 1rem">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="invDeleteConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     TRANSFER FORM MODAL
+     ═══════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="transferFormModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content inv-modal-content">
+      <div class="modal-header inv-modal-header">
+        <h5 class="modal-title" id="transferFormTitle">
+          <i class="bi bi-arrow-left-right me-2"></i>New Stock Transfer
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" style="padding:1.25rem">
+
+        <!-- Product -->
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label" style="font-size:.8rem;font-weight:600">Product <span class="req">*</span></label>
+            <select class="form-select" id="tf-product" onchange="onTransferProductChange()">
+              <option value="">— Select Product —</option>
+            </select>
+          </div>
+
+          <!-- From Store -->
+          <div class="col-6">
+            <label class="form-label" style="font-size:.8rem;font-weight:600">From Store <span class="req">*</span></label>
+            <select class="form-select" id="tf-from-store" onchange="onTransferStoreChange('source')">
+              <option value="">— Select —</option>
+              {% for store in stores %}
+              <option value="{{ store.id }}">{{ store.name }}</option>
+              {% endfor %}
+            </select>
+            <div id="tf-source-info" class="inv-transfer-stock-info" style="display:none">
+              <i class="bi bi-box-seam"></i> Available: <strong id="tf-source-qty">—</strong>
+            </div>
+          </div>
+
+          <!-- To Store -->
+          <div class="col-6">
+            <label class="form-label" style="font-size:.8rem;font-weight:600">To Store <span class="req">*</span></label>
+            <select class="form-select" id="tf-to-store" onchange="onTransferStoreChange('dest')">
+              <option value="">— Select —</option>
+              {% for store in stores %}
+              <option value="{{ store.id }}">{{ store.name }}</option>
+              {% endfor %}
+            </select>
+            <div id="tf-dest-info" class="inv-transfer-stock-info inv-transfer-stock-info--dest" style="display:none">
+              <i class="bi bi-archive"></i> Current stock: <strong id="tf-dest-qty">—</strong>
+            </div>
+          </div>
+
+          <!-- Quantity -->
+          <div class="col-4">
+            <label class="form-label" style="font-size:.8rem;font-weight:600">Quantity <span class="req">*</span></label>
+            <input type="number" class="form-control" id="tf-qty" min="0.001" step="any" placeholder="0">
+          </div>
+
+          <!-- Reference -->
+          <div class="col-8">
+            <label class="form-label" style="font-size:.8rem;font-weight:600">Reference</label>
+            <input type="text" class="form-control" id="tf-ref" placeholder="Optional PO / order number">
+          </div>
+
+          <!-- Notes -->
+          <div class="col-12">
+            <label class="form-label" style="font-size:.8rem;font-weight:600">Notes</label>
+            <textarea class="form-control" id="tf-notes" rows="2" placeholder="Optional notes…"></textarea>
+          </div>
+
+          <!-- Availability panel -->
+          <div class="col-12" id="tf-availability-wrap" style="display:none">
+            <div class="inv-avail-panel">
+              <div class="inv-avail-title"><i class="bi bi-shop"></i> Stock across all stores</div>
+              <div id="tf-availability-list"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer inv-modal-footer">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="saveTransferBtn" onclick="saveTransfer()">
+          <span id="saveTransferText"><i class="bi bi-paper-plane me-1"></i>Create Transfer</span>
+          <span id="saveTransferLoading" style="display:none"><span class="spinner-border spinner-border-sm"></span></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     TRANSFER CANCEL REASON MODAL
+     ═══════════════════════════════════════════════════════════ -->
+<div class="modal fade" id="transferCancelModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content inv-modal-content">
+      <div class="modal-header" style="background:var(--red-dim);border-bottom:1px solid var(--red)">
+        <h5 class="modal-title" style="color:var(--red);font-size:.88rem"><i class="bi bi-x-circle me-2"></i>Cancel Transfer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:.82rem;color:var(--text-2)">Transfer: <strong id="cancelTransferNum"></strong></p>
+        <label class="form-label" style="font-size:.8rem;font-weight:600">Reason <span class="req">*</span></label>
+        <textarea class="form-control" id="cancelTransferReason" rows="3" placeholder="Reason for cancellation…"></textarea>
+      </div>
+      <div class="modal-footer" style="border-top:1px solid var(--line);padding:.75rem 1rem">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Back</button>
+        <button class="btn btn-danger btn-sm" id="confirmTransferCancelBtn">Confirm Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     STYLES
+     ═══════════════════════════════════════════════════════════ -->
+<style>
+/* ── INVENTORY PANEL ── */
+.inv-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1065 !important;          /* above Bootstrap default (1055) — our modals go to 1065 */
+  display: flex;
+  align-items: stretch;
+  pointer-events: none;   /* panel itself handles its own clicks */
+  opacity: 0;
+  transition: opacity .22s ease;
+}
+
+.inv-panel.open {
+  opacity: 1;
+  /* NOTE: pointer-events stays none on the wrapper —
+     only the backdrop and body handle clicks individually */
+}
+
+.inv-sale-item {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: .625rem .875rem;
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  transition: border-color var(--transition);
+  cursor: default;
+}
+.inv-sale-item:hover { border-color: var(--accent); }
+
+.inv-sale-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.inv-sale-ref {
+  font-family: var(--mono);
+  font-size: .76rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.inv-sale-total {
+  font-family: var(--mono);
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--green);
+}
+.inv-sale-customer {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inv-sale-meta {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  font-size: .68rem;
+  color: var(--muted);
+  align-items: center;
+}
+.inv-sale-badge {
+  font-size: .63rem;
+  font-weight: 600;
+  padding: .12rem .45rem;
+  border-radius: 99px;
+}
+.inv-sale-badge.completed { background: var(--green-dim);  color: var(--green); }
+.inv-sale-badge.pending   { background: var(--amber-dim);  color: var(--amber); }
+.inv-sale-badge.refunded  { background: var(--red-dim);    color: var(--red); }
+.inv-sale-badge.cancelled { background: var(--ink-3);      color: var(--muted); }
+.inv-sale-badge.voided    { background: var(--ink-3);      color: var(--muted); }
+
+/* ── INVOICE LIST ITEMS ── */
+.inv-invoice-item {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: .625rem .875rem;
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  transition: border-color var(--transition);
+}
+.inv-invoice-item:hover { border-color: var(--accent); }
+
+.inv-invoice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.inv-invoice-num {
+  font-family: var(--mono);
+  font-size: .76rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.inv-invoice-amount {
+  font-family: var(--mono);
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--green);
+}
+.inv-invoice-amount.overdue { color: var(--red); }
+
+.inv-invoice-client {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inv-invoice-meta {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  font-size: .68rem;
+  color: var(--muted);
+  align-items: center;
+}
+.inv-invoice-badge {
+  font-size: .63rem;
+  font-weight: 600;
+  padding: .12rem .45rem;
+  border-radius: 99px;
+}
+.inv-invoice-badge.draft     { background: var(--ink-3);      color: var(--muted); }
+.inv-invoice-badge.sent      { background: var(--accent-dim);  color: var(--accent); }
+.inv-invoice-badge.paid      { background: var(--green-dim);   color: var(--green); }
+.inv-invoice-badge.overdue   { background: var(--red-dim);     color: var(--red); }
+.inv-invoice-badge.cancelled { background: var(--ink-3);       color: var(--muted); }
+.inv-invoice-badge.partial   { background: var(--amber-dim);   color: var(--amber); }
+
+.inv-invoice-actions {
+  display: flex;
+  gap: .25rem;
+  margin-top: .15rem;
+}
+.inv-panel-backdrop {
+  flex: 1;
+  background: transparent;
+  pointer-events: none;   /* CLOSED: clicks pass through to sidebar/page */
+  cursor: default;
+}
+
+/* Only capture clicks on backdrop when panel is actually open */
+.inv-panel.open .inv-panel-backdrop {
+  pointer-events: all;
+}
+
+.inv-panel-body {
+  width: 620px;           /* wider panel — more room to work */
+  max-width: 92vw;
+  pointer-events: all;    /* panel body is always interactive */
+  background: var(--surface);
+  border-left: 2px solid var(--accent);   /* clear visual edge — panel is active */
+  display: flex;
+  flex-direction: column;
+  box-shadow: -12px 0 50px rgba(0,0,0,.45), -1px 0 0 rgba(59,130,246,.3);
+  transform: translateX(100%);
+  transition: transform .28s cubic-bezier(.34,1.2,.64,1);
+  overflow: hidden;
+}
+
+.inv-panel.open .inv-panel-body {
+  transform: translateX(0);
+}
+
+/* Header */
+.inv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.125rem;
+  background: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.inv-header-left {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+
+.inv-header-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.inv-header-title {
+  font-weight: 700;
+  font-size: .9rem;
+}
+
+.inv-header-sub {
+  font-size: .7rem;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.inv-close-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 4px;
+  transition: color var(--transition);
+  line-height: 1;
+}
+
+.inv-close-btn:hover { color: var(--text); }
+
+/* Nav tabs */
+.inv-tabs {
+  display: flex;
+  background: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.inv-tab {
+  flex: 1;
+  padding: .6rem .25rem;
+  font-size: .72rem;
+  font-weight: 600;
+  font-family: var(--sans);
+  color: var(--muted);
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .2rem;
+}
+
+.inv-tab i { font-size: .9rem; }
+.inv-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.inv-tab:hover:not(.active) { color: var(--text-2); }
+
+/* Tab content */
+.inv-tab-content {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.inv-tab-content.active { display: flex; }
+
+/* Toolbar */
+.inv-toolbar {
+  display: flex;
+  gap: .5rem;
+  padding: .75rem;
+  background: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.inv-search {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.inv-search i {
+  position: absolute;
+  left: .625rem;
+  color: var(--muted);
+  font-size: .8rem;
+  pointer-events: none;
+}
+
+.inv-search input {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: .4rem .75rem .4rem 2rem;
+  font-family: var(--sans);
+  font-size: .8rem;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.inv-search input:focus { border-color: var(--accent); }
+.inv-search input::placeholder { color: var(--muted); }
+
+.inv-add-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: .4rem .875rem;
+  font-size: .78rem;
+  font-weight: 600;
+  font-family: var(--sans);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  transition: all var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.inv-add-btn:hover { filter: brightness(1.12); }
+
+/* Filter row */
+.inv-filter-row {
+  display: flex;
+  gap: .375rem;
+  padding: .5rem .75rem;
+  background: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.inv-filter-btn {
+  background: var(--ink-3);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 99px;
+  padding: .2rem .625rem;
+  font-size: .7rem;
+  font-weight: 600;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.inv-filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.inv-filter-btn:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+
+/* List */
+.inv-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: .75rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.inv-list::-webkit-scrollbar { width: 3px; }
+.inv-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+
+/* List items */
+.inv-item {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: .625rem .875rem;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  transition: border-color var(--transition);
+}
+
+.inv-item:hover { border-color: var(--accent); }
+
+.inv-item-icon {
+  width: 32px; height: 32px;
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .85rem;
+  flex-shrink: 0;
+}
+/* ── PAGINATION BAR ── */
+.inv-pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .5rem .75rem;
+  background: var(--ink-2);
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.inv-pg-info {
+  font-size: .75rem;
+  font-family: var(--mono);
+  color: var(--text-2);
+}
+
+.inv-pg-btn {
+  background: var(--ink-3);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  border-radius: var(--radius-sm);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: .78rem;
+  transition: all var(--transition);
+}
+
+.inv-pg-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.inv-pg-btn:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+.inv-item-icon.product { background: var(--accent-dim); color: var(--accent); }
+.inv-item-icon.service { background: var(--green-dim); color: var(--green); }
+.inv-item-icon.category { background: var(--purple); color: #fff; opacity:.85; }
+.inv-item-icon.stock { background: var(--amber-dim); color: var(--amber); }
+
+.inv-item-info { flex: 1; min-width: 0; }
+.inv-item-name { font-size: .8rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inv-item-meta { font-size: .68rem; color: var(--muted); margin-top: 2px; display: flex; gap: .5rem; flex-wrap: wrap; }
+
+.inv-item-price {
+  font-family: var(--mono);
+  font-size: .8rem;
+  font-weight: 500;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.inv-item-actions {
+  display: flex;
+  gap: .25rem;
+  flex-shrink: 0;
+}
+
+.inv-act-btn {
+  width: 26px; height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+  color: var(--text-2);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .72rem;
+  transition: all var(--transition);
+}
+
+.inv-act-btn:hover.edit { border-color: var(--accent); color: var(--accent); }
+.inv-act-btn:hover.del { border-color: var(--red); color: var(--red); }
+.inv-act-btn:hover.add-stock { border-color: var(--green); color: var(--green); }
+
+/* Stock badge */
+.stock-badge {
+  font-size: .65rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--mono);
+}
+
+.stock-badge.good { background: var(--green-dim); color: var(--green); }
+.stock-badge.low { background: var(--amber-dim); color: var(--amber); }
+.stock-badge.out { background: var(--red-dim); color: var(--red); }
+
+/* Loading / empty states */
+.inv-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  color: var(--muted);
+  text-align: center;
+  gap: .5rem;
+}
+
+.inv-state i { font-size: 2rem; opacity: .25; }
+.inv-state span { font-size: .78rem; }
+
+/* Modal z-indexes are managed dynamically by the MutationObserver in JS.
+   Static CSS overrides caused stuck backdrops — removed intentionally. */
+
+.inv-modal-content {
+  background: var(--card) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius) !important;
+}
+
+.inv-modal-header {
+  background: var(--ink-2) !important;
+  border-bottom: 1px solid var(--line) !important;
+  padding: 1rem 1.25rem !important;
+}
+
+.inv-modal-footer {
+  background: var(--ink-2);
+  border-top: 1px solid var(--line) !important;
+  padding: .875rem 1.25rem !important;
+}
+
+/* Price preview */
+.inv-price-preview {
+  background: var(--lift);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.inv-pp-row {
+  display: flex;
+  justify-content: space-between;
+  padding: .4rem .875rem;
+  font-size: .78rem;
+  border-bottom: 1px solid rgba(42,48,66,.4);
+  color: var(--text-2);
+}
+
+.inv-pp-row:last-child { border-bottom: none; }
+.inv-pp-total { font-weight: 700; color: var(--accent); background: var(--lift2); }
+.inv-pp-total span:last-child { font-family: var(--mono); font-size: .9rem; }
+
+/* Check row */
+.inv-check-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem 0;
+  font-size: .8rem;
+  color: var(--text-2);
+}
+
+/* Stock info (in modal) */
+.inv-stock-info {
+  background: var(--accent-dim);
+  border: 1px solid rgba(59,130,246,.2);
+  border-radius: var(--radius-sm);
+  padding: .625rem .875rem;
+  margin-bottom: 1rem;
+}
+
+.inv-stock-info-name { font-weight: 700; font-size: .85rem; }
+.inv-stock-info-meta { font-size: .72rem; color: var(--muted); margin-top: 3px; }
+
+/* Required asterisk */
+.req { color: var(--red); font-size: .8rem; }
+
+/* ── TRANSFER TAB STYLES ── */
+.inv-transfer-stock-info {
+  margin-top: .4rem;
+  padding: .3rem .6rem;
+  border-radius: var(--radius-sm);
+  font-size: .75rem;
+  background: var(--green-dim);
+  color: var(--green);
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+.inv-transfer-stock-info--dest {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* Availability panel in transfer form */
+.inv-avail-panel {
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.inv-avail-title {
+  padding: .5rem .875rem;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+.inv-avail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .45rem .875rem;
+  border-bottom: 1px solid rgba(42,48,66,.3);
+  font-size: .76rem;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.inv-avail-row:last-child { border-bottom: none; }
+.inv-avail-row:hover { background: var(--lift); }
+.inv-avail-row .inv-avail-store { color: var(--text); font-weight: 500; }
+.inv-avail-row .inv-avail-qty { font-family: var(--mono); color: var(--accent); font-weight: 600; }
+.inv-avail-row .inv-avail-use { font-size: .7rem; color: var(--muted); }
+
+/* Transfer list items */
+.inv-transfer-item {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: .625rem .875rem;
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  transition: border-color var(--transition);
+}
+.inv-transfer-item:hover { border-color: var(--accent); }
+
+.inv-transfer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.inv-transfer-num {
+  font-family: var(--mono);
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.inv-transfer-badge {
+  font-size: .65rem;
+  font-weight: 600;
+  padding: .15rem .5rem;
+  border-radius: 99px;
+}
+.inv-transfer-badge.pending   { background: var(--amber-dim); color: var(--amber); }
+.inv-transfer-badge.in_transit { background: var(--accent-dim); color: var(--accent); }
+.inv-transfer-badge.completed  { background: var(--green-dim);  color: var(--green); }
+.inv-transfer-badge.cancelled  { background: var(--ink-3); color: var(--muted); }
+
+.inv-transfer-product {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.inv-transfer-route {
+  font-size: .72rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+.inv-transfer-route i { color: var(--accent); }
+
+.inv-transfer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: .1rem;
+}
+.inv-transfer-qty {
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--text-2);
+}
+.inv-transfer-actions {
+  display: flex;
+  gap: .25rem;
+}
+.inv-tact-btn {
+  height: 24px;
+  padding: 0 .5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--ink-3);
+  color: var(--text-2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  font-size: .68rem;
+  font-weight: 600;
+  font-family: var(--sans);
+  transition: all var(--transition);
+}
+.inv-tact-btn:hover { filter: brightness(1.15); }
+.inv-tact-btn.approve { background: var(--green-dim); color: var(--green); border-color: var(--green); }
+.inv-tact-btn.complete { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+.inv-tact-btn.cancel   { background: var(--red-dim); color: var(--red); border-color: var(--red); }
+
+/* Responsive */
+@media (max-width: 480px) {
+  .inv-panel-body { width: 100%; }
+}
+</style>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     JAVASCRIPT
+     ═══════════════════════════════════════════════════════════ -->
+<script>
+/* ─────────────────────────────────────────────────────────────
+   INVENTORY PANEL — STATE & CONSTANTS
+   ───────────────────────────────────────────────────────────── */
+const INV_API = '/api/v1';  /* Adjust to match your actual prefix */
+const PAGE_SIZE = 50;
+
+const InvState = {
+  tab: 'products',
+  categoryFilter: 'all',
+  stockFilter: 'all',
+  searchTimers: {},
+  editingId: { products: null, services: null, categories: null },
+  productCategories: [],   /* cache */
+  serviceCategories: [],
+  suppliers: [],
+  products: [],            /* for stock dropdown */
+};
+
+/* ── PANEL OPEN / CLOSE ── */
+function openInventoryPanel() {
+  const panel = document.getElementById('inventoryPanel');
+  panel.classList.add('open');
+  invLoadTab(InvState.tab);
+  invLoadSelectOptions();
+}
+
+function closeInventoryPanel() {
+  /* Close any open modals first to prevent orphaned backdrops */
+  document.querySelectorAll('.modal.show').forEach(m => {
+    try { bootstrap.Modal.getInstance(m)?.hide(); } catch(e) {}
+  });
+  document.getElementById('inventoryPanel').classList.remove('open');
+}
+
+/* ── MODAL STACKING — clean MutationObserver approach ────────────────────────
+   The panel is z-index 1060. Bootstrap modals default to 1055 and backdrops
+   to 1050 — so without help they render BEHIND the panel.
+   We watch <body> for Bootstrap adding/removing .modal-backdrop divs and
+   immediately correct the z-index. No setTimeout races, no event listener
+   duplication.
+   ─────────────────────────────────────────────────────────────────────────── */
+const INV_MODAL_IDS = ['productFormModal','serviceFormModal','categoryFormModal',
+                        'stockFormModal','invDeleteModal','transferFormModal','transferCancelModal'];
+
+(function setupModalStacking() {
+  function fixStackingNow() {
+    const anyOpen = INV_MODAL_IDS.some(id => {
+      const el = document.getElementById(id);
+      return el && el.classList.contains('show');
+    });
+    /* Correct all backdrops */
+    document.querySelectorAll('.modal-backdrop').forEach(bd => {
+      bd.style.zIndex = anyOpen ? '1062' : '';
+    });
+    /* Correct each inv modal */
+    INV_MODAL_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.zIndex = el.classList.contains('show') ? '1065' : '';
+    });
+  }
+
+  /* Watch body for backdrop divs being added/removed */
+  new MutationObserver(fixStackingNow).observe(document.body, {
+    childList: true,
+    subtree: false,
+    attributes: true,
+    attributeFilter: ['class'],
+  });
+
+  /* Also fix on each modal's own class changes (show/hide transitions) */
+  document.addEventListener('DOMContentLoaded', () => {
+    INV_MODAL_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      new MutationObserver(fixStackingNow).observe(el, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+    });
+  });
+
+  /* Nuclear cleanup: when panel closes, remove any stuck backdrops */
+  document.addEventListener('DOMContentLoaded', () => {
+    const panel = document.getElementById('inventoryPanel');
+    if (!panel) return;
+    panel.addEventListener('transitionend', () => {
+      if (!panel.classList.contains('open')) {
+        /* If no real modals are open, clean up any orphaned backdrops */
+        const realModalOpen = document.querySelector('.modal.show');
+        if (!realModalOpen) {
+          document.querySelectorAll('.modal-backdrop').forEach(bd => bd.remove());
+          document.body.classList.remove('modal-open');
+          document.body.style.overflow = '';
+          document.body.style.paddingRight = '';
+        }
+      }
+    });
+  });
+})();
+
+/* ── TAB SWITCHING ── */
+function switchInvTab(name) {
+  InvState.tab = name;
+  document.querySelectorAll('.inv-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.inv-tab-content').forEach(c => c.classList.toggle('active', c.id === `inv-tab-${name}`));
+  invLoadTab(name);
+}
+
+function invLoadTab(name) {
+  // Map tab name → search input id
+  const searchIds = {
+    products:   'invProductSearch',
+    services:   'invServiceSearch',
+    categories: 'invCategorySearch',
+    stock:      'invStockSearch',
+    transfers:  'invTransfersSearch',   // ← was missing the input; now fixed in HTML
+    sales:      'invSalesSearch',
+    invoices:   'invInvoicesSearch',
+  };
+  const searchVal = document.getElementById(searchIds[name])?.value || '';
+
+  if      (name === 'products')   invLoadProducts(searchVal);
+  else if (name === 'services')   invLoadServices(searchVal);
+  else if (name === 'categories') invLoadCategories(searchVal);
+  else if (name === 'stock')      invLoadStock(searchVal);
+  else if (name === 'transfers')  invLoadTransfers(searchVal);
+  else if (name === 'sales')      invLoadSales(searchVal);
+  else if (name === 'invoices')   invLoadInvoices(searchVal);
+}
+
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/* ── DEBOUNCED SEARCH ── */
+function invDebounce(tab, val) {
+  clearTimeout(InvState.searchTimers[tab]);
+  InvState.searchTimers[tab] = setTimeout(() => {
+    /* Reset to page 1 on new search */
+    if (tab === 'sales')    InvState.salePage    = 1;
+    if (tab === 'invoices') InvState.invoicePage = 1;
+    invLoadTab(tab);
+  }, 320);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   API HELPERS
+   ───────────────────────────────────────────────────────────── */
+async function invFetch(url, opts = {}) {
+  const r = await fetch(url, {
+    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...opts.headers },
+    credentials: 'same-origin',
+    ...opts,
+  });
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) throw new Error(`HTTP ${r.status}`);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail || data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+async function invPost(url, body, method = 'POST') {
+  return invFetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+    body: JSON.stringify(body),
+  });
+}
+
+async function invDelete(url) {
+  const r = await fetch(url, {
+    method: 'DELETE',
+    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+    credentials: 'same-origin',
+  });
+  if (!r.ok && r.status !== 204) throw new Error(`HTTP ${r.status}`);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   LOAD SELECT OPTIONS (categories, suppliers, products)
+   ───────────────────────────────────────────────────────────── */
+async function invLoadSelectOptions() {
+  try {
+    /* Product categories */
+    const pc = await invFetch(`${INV_API}/categories/?category_type=product&is_active=true&limit=200`);
+    InvState.productCategories = pc.results || pc;
+    const pfCat = document.getElementById('pf-category');
+    if (pfCat) {
+      pfCat.innerHTML = '<option value="">— Select —</option>' +
+        InvState.productCategories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    }
+
+    /* Service categories */
+    const sc = await invFetch(`${INV_API}/categories/?category_type=service&is_active=true&limit=200`);
+    InvState.serviceCategories = sc.results || sc;
+    const sfCat = document.getElementById('sf-category');
+    if (sfCat) {
+      sfCat.innerHTML = '<option value="">— Select —</option>' +
+        InvState.serviceCategories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    }
+
+    /* Suppliers */
+    const sup = await invFetch(`${INV_API}/suppliers/?is_active=true&limit=200`);
+    InvState.suppliers = sup.results || sup;
+    const pfSup = document.getElementById('pf-supplier');
+    if (pfSup) {
+      pfSup.innerHTML = '<option value="">— None —</option>' +
+        InvState.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    }
+
+    /* Products for stock dropdown + transfer form */
+    const prods = await invFetch(`${INV_API}/products/?is_active=true&limit=500`);
+    InvState.products = prods.results || prods;
+    const stfProd = document.getElementById('stf-product');
+    if (stfProd) {
+      stfProd.innerHTML = '<option value="">— Select Product —</option>' +
+        InvState.products.map(p => `<option value="${p.id}">${esc(p.name)} (${esc(p.sku || '')})</option>`).join('');
+    }
+    /* Also pre-populate transfer form product dropdown if it exists */
+    const tfProd = document.getElementById('tf-product');
+    if (tfProd) {
+      tfProd.innerHTML = '<option value="">— Select Product —</option>' +
+        InvState.products.map(p => `<option value="${p.id}">${esc(p.name)} (${esc(p.sku || '')})</option>`).join('');
+    }
+  } catch(e) {
+    console.warn('Inv select options load error:', e);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   PRODUCTS
+   ───────────────────────────────────────────────────────────── */
+async function invLoadProducts(q = '') {
+  const listEl = document.getElementById('invProductList');
+  listEl.innerHTML = `<div class="inv-state"><div class="spinner-sm"></div><span>Loading…</span></div>`;
+  try {
+    const params = new URLSearchParams({ limit: 40, offset: 0 });
+    if (q) params.set('search', q);
+    const data = await invFetch(`${INV_API}/products/?${params}`);
+    const items = data.results || data;
+    if (!items.length) { listEl.innerHTML = `<div class="inv-state"><i class="bi bi-inbox"></i><span>No products found</span></div>`; return; }
+    listEl.innerHTML = items.map(p => `
+      <div class="inv-item">
+        <div class="inv-item-icon product"><i class="bi bi-box"></i></div>
+        <div class="inv-item-info">
+          <div class="inv-item-name">${esc(p.name)}</div>
+          <div class="inv-item-meta">
+            <span>${esc(p.sku || '—')}</span>
+            ${p.category_name ? `<span>${esc(p.category_name)}</span>` : ''}
+            <span class="stock-badge ${p.stock_status || 'good'}">${p.total_stock ?? '?'}</span>
+          </div>
+        </div>
+        <span class="inv-item-price">${fmt(p.selling_price)}</span>
+        <div class="inv-item-actions">
+          <button class="inv-act-btn add-stock" title="Adjust Stock" onclick="openStockFormForProduct(${p.id},'${esc(p.name).replace(/'/g,"\\'")}')"><i class="bi bi-archive"></i></button>
+          <button class="inv-act-btn edit" title="Edit" onclick="openProductForm(${p.id})"><i class="bi bi-pencil"></i></button>
+          <button class="inv-act-btn del" title="Deactivate" onclick="confirmInvDelete('product',${p.id},'${esc(p.name).replace(/'/g,"\\'")}')"><i class="bi bi-trash"></i></button>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    listEl.innerHTML = `<div class="inv-state"><i class="bi bi-exclamation-triangle"></i><span>${esc(e.message)}</span></div>`;
+  }
+}
+
+async function openProductForm(productId = null) {
+  InvState.editingId.products = productId;
+  document.getElementById('productFormTitle').textContent = productId ? 'Edit Product' : 'New Product';
+  clearProductForm();
+
+  if (productId) {
+    try {
+      showLoading(true);
+      const p = await invFetch(`${INV_API}/products/${productId}/`);
+      document.getElementById('pf-name').value = p.name || '';
+      document.getElementById('pf-sku').value = p.sku || '';
+      document.getElementById('pf-barcode').value = p.barcode || '';
+      document.getElementById('pf-description').value = p.description || '';
+      document.getElementById('pf-selling-price').value = p.selling_price || '';
+      document.getElementById('pf-cost-price').value = p.cost_price || '';
+      document.getElementById('pf-tax-rate').value = p.tax_rate || 'A';
+      document.getElementById('pf-discount').value = p.discount_percentage || 0;
+      document.getElementById('pf-excise').value = p.excise_duty_rate || 0;
+      document.getElementById('pf-uom').value = p.unit_of_measure || '116';
+      document.getElementById('pf-minstock').value = p.min_stock_level || 5;
+      document.getElementById('pf-active').checked = p.is_active !== false;
+      if (p.category) document.getElementById('pf-category').value = p.category;
+      if (p.supplier) document.getElementById('pf-supplier').value = p.supplier;
+      updatePricePreview();
+    } catch(e) { showToast('Failed to load product: ' + e.message, 'error'); return; }
+    finally { showLoading(false); }
+  }
+
+  new bootstrap.Modal(document.getElementById('productFormModal')).show();
+}
+
+function clearProductForm() {
+  ['pf-name','pf-sku','pf-barcode','pf-description','pf-selling-price','pf-cost-price','pf-excise'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('pf-category').value = '';
+  document.getElementById('pf-supplier').value = '';
+  document.getElementById('pf-tax-rate').value = 'A';
+  document.getElementById('pf-discount').value = 0;
+  document.getElementById('pf-uom').value = '116';
+  document.getElementById('pf-minstock').value = 5;
+  document.getElementById('pf-active').checked = true;
+  document.getElementById('pf-initial-qty').value = 0;
+  document.getElementById('pf-low-thresh').value = 5;
+  document.getElementById('pf-reorder-qty').value = 10;
+  updatePricePreview();
+}
+
+function updatePricePreview() {
+  const sp = parseFloat(document.getElementById('pf-selling-price')?.value) || 0;
+  const disc = parseFloat(document.getElementById('pf-discount')?.value) || 0;
+  const taxRate = document.getElementById('pf-tax-rate')?.value;
+  const taxMap = { A: 0.18, B: 0, C: 0, D: 0, E: 0 };
+  const afterDisc = sp * (1 - disc / 100);
+  const taxAmt = afterDisc * (taxMap[taxRate] || 0);
+  document.getElementById('pfPPSub').textContent = fmt(afterDisc);
+  document.getElementById('pfPPTax').textContent = fmt(taxAmt);
+  document.getElementById('pfPPFinal').textContent = fmt(afterDisc);
+}
+
+/* Wire price preview updates */
+['pf-selling-price','pf-discount','pf-tax-rate'].forEach(id => {
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById(id)?.addEventListener('input', updatePricePreview);
+    document.getElementById(id)?.addEventListener('change', updatePricePreview);
+  });
+});
+
+async function saveProduct() {
+  const name = document.getElementById('pf-name').value.trim();
+  const sku = document.getElementById('pf-sku').value.trim();
+  const sellingPrice = parseFloat(document.getElementById('pf-selling-price').value);
+
+  if (!name) { showToast('Product name is required', 'error'); return; }
+  if (!sku) { showToast('SKU is required', 'error'); return; }
+  if (!sellingPrice || sellingPrice < 0) { showToast('Valid selling price is required', 'error'); return; }
+
+  const payload = {
+    name,
+    sku,
+    barcode: document.getElementById('pf-barcode').value.trim() || null,
+    description: document.getElementById('pf-description').value.trim(),
+    category: document.getElementById('pf-category').value || null,
+    supplier: document.getElementById('pf-supplier').value || null,
+    selling_price: sellingPrice,
+    cost_price: parseFloat(document.getElementById('pf-cost-price').value) || 0,
+    tax_rate: document.getElementById('pf-tax-rate').value,
+    discount_percentage: parseFloat(document.getElementById('pf-discount').value) || 0,
+    excise_duty_rate: parseFloat(document.getElementById('pf-excise').value) || 0,
+    unit_of_measure: document.getElementById('pf-uom').value,
+    min_stock_level: parseInt(document.getElementById('pf-minstock').value) || 5,
+    is_active: document.getElementById('pf-active').checked,
+  };
+
+  const btnText = document.getElementById('saveProductText');
+  const btnLoad = document.getElementById('saveProductLoading');
+  const btn = document.getElementById('saveProductBtn');
+  btnText.style.display = 'none'; btnLoad.style.display = 'inline-block'; btn.disabled = true;
+
+  try {
+    const editing = InvState.editingId.products;
+    let saved;
+    if (editing) {
+      saved = await invPost(`${INV_API}/products/${editing}/`, payload, 'PATCH');
+    } else {
+      saved = await invPost(`${INV_API}/products/`, payload);
+      /* Create initial stock if qty > 0 */
+      const initQty = parseFloat(document.getElementById('pf-initial-qty').value) || 0;
+      const storeId = document.getElementById('pf-store')?.value;
+      if (initQty > 0 && storeId && saved.id) {
+        await invPost(`${INV_API}/stock/`, {
+          product: saved.id,
+          store: parseInt(storeId),
+          quantity: initQty,
+          low_stock_threshold: parseFloat(document.getElementById('pf-low-thresh').value) || 5,
+          reorder_quantity: parseFloat(document.getElementById('pf-reorder-qty').value) || 10,
+        }).catch(() => {}); /* Non-blocking */
+      }
+    }
+    bootstrap.Modal.getInstance(document.getElementById('productFormModal'))?.hide();
+    showToast(`Product "${saved.name}" ${editing ? 'updated' : 'created'}`, 'success');
+    invLoadProducts(document.getElementById('invProductSearch')?.value || '');
+    /* Refresh POS product grid */
+    SaleState.searchCache.clear();
+    loadItems();
+  } catch(e) {
+    showToast('Save failed: ' + e.message, 'error');
+  } finally {
+    btnText.style.display = 'inline'; btnLoad.style.display = 'none'; btn.disabled = false;
+  }
+}
+
+function genSKU() {
+  const name = document.getElementById('pf-name')?.value?.trim() || '';
+  const prefix = name.substring(0, 3).toUpperCase().replace(/\s/g, '') || 'PRD';
+  const suffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+  document.getElementById('pf-sku').value = `${prefix}-${suffix}`;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SERVICES
+   ───────────────────────────────────────────────────────────── */
+async function invLoadServices(q = '') {
+  const listEl = document.getElementById('invServiceList');
+  listEl.innerHTML = `<div class="inv-state"><div class="spinner-sm"></div><span>Loading…</span></div>`;
+  try {
+    const params = new URLSearchParams({ limit: 40 });
+    if (q) params.set('search', q);
+    const data = await invFetch(`${INV_API}/services/?${params}`);
+    const items = data.results || data;
+    if (!items.length) { listEl.innerHTML = `<div class="inv-state"><i class="bi bi-inbox"></i><span>No services found</span></div>`; return; }
+    listEl.innerHTML = items.map(s => `
+      <div class="inv-item">
+        <div class="inv-item-icon service"><i class="bi bi-gear"></i></div>
+        <div class="inv-item-info">
+          <div class="inv-item-name">${esc(s.name)}</div>
+          <div class="inv-item-meta">
+            <span>${esc(s.code || '—')}</span>
+            ${s.category_name ? `<span>${esc(s.category_name)}</span>` : ''}
+            <span style="color:${s.is_active ? 'var(--green)' : 'var(--red)'}">${s.is_active ? 'Active' : 'Inactive'}</span>
+          </div>
+        </div>
+        <span class="inv-item-price">${fmt(s.unit_price)}</span>
+        <div class="inv-item-actions">
+          <button class="inv-act-btn edit" title="Edit" onclick="openServiceForm(${s.id})"><i class="bi bi-pencil"></i></button>
+          <button class="inv-act-btn del" title="Deactivate" onclick="confirmInvDelete('service',${s.id},'${esc(s.name).replace(/'/g,"\\'")}')"><i class="bi bi-trash"></i></button>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    listEl.innerHTML = `<div class="inv-state"><i class="bi bi-exclamation-triangle"></i><span>${esc(e.message)}</span></div>`;
+  }
+}
+
+async function openServiceForm(serviceId = null) {
+  InvState.editingId.services = serviceId;
+  document.getElementById('serviceFormTitle').textContent = serviceId ? 'Edit Service' : 'New Service';
+  ['sf-name','sf-code','sf-description','sf-price'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('sf-category').value = '';
+  document.getElementById('sf-tax-rate').value = 'A';
+  document.getElementById('sf-uom').value = '207';
+  document.getElementById('sf-active').checked = true;
+
+  if (serviceId) {
+    try {
+      showLoading(true);
+      const s = await invFetch(`${INV_API}/services/${serviceId}/`);
+      document.getElementById('sf-name').value = s.name || '';
+      document.getElementById('sf-code').value = s.code || '';
+      document.getElementById('sf-description').value = s.description || '';
+      document.getElementById('sf-price').value = s.unit_price || '';
+      document.getElementById('sf-tax-rate').value = s.tax_rate || 'A';
+      document.getElementById('sf-uom').value = s.unit_of_measure || '207';
+      document.getElementById('sf-active').checked = s.is_active !== false;
+      if (s.category) document.getElementById('sf-category').value = s.category;
+    } catch(e) { showToast('Failed to load: ' + e.message, 'error'); return; }
+    finally { showLoading(false); }
+  }
+
+  new bootstrap.Modal(document.getElementById('serviceFormModal')).show();
+}
+
+async function saveService() {
+  const name = document.getElementById('sf-name').value.trim();
+  const code = document.getElementById('sf-code').value.trim();
+  const price = parseFloat(document.getElementById('sf-price').value);
+  if (!name) { showToast('Name required', 'error'); return; }
+  if (!code) { showToast('Code required', 'error'); return; }
+  if (!price || price < 0) { showToast('Valid price required', 'error'); return; }
+
+  const payload = {
+    name, code,
+    description: document.getElementById('sf-description').value.trim(),
+    category: document.getElementById('sf-category').value || null,
+    unit_price: price,
+    tax_rate: document.getElementById('sf-tax-rate').value,
+    unit_of_measure: document.getElementById('sf-uom').value,
+    is_active: document.getElementById('sf-active').checked,
+  };
+
+  const btnText = document.getElementById('saveServiceText');
+  const btnLoad = document.getElementById('saveServiceLoading');
+  const btn = document.getElementById('saveServiceBtn');
+  btnText.style.display = 'none'; btnLoad.style.display = 'inline-block'; btn.disabled = true;
+
+  try {
+    const editing = InvState.editingId.services;
+    const saved = editing
+      ? await invPost(`${INV_API}/services/${editing}/`, payload, 'PATCH')
+      : await invPost(`${INV_API}/services/`, payload);
+
+    bootstrap.Modal.getInstance(document.getElementById('serviceFormModal'))?.hide();
+    showToast(`Service "${saved.name}" ${editing ? 'updated' : 'created'}`, 'success');
+    invLoadServices(document.getElementById('invServiceSearch')?.value || '');
+    SaleState.searchCache.clear();
+    loadItems();
+  } catch(e) { showToast('Save failed: ' + e.message, 'error'); }
+  finally { btnText.style.display = 'inline'; btnLoad.style.display = 'none'; btn.disabled = false; }
+}
+
+function genServiceCode() {
+  const name = document.getElementById('sf-name')?.value?.trim() || '';
+  const prefix = name.substring(0, 3).toUpperCase().replace(/\s/g, '') || 'SRV';
+  const num = String(Math.floor(Math.random() * 900) + 100);
+  document.getElementById('sf-code').value = `${prefix}-${num}`;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   CATEGORIES
+   ───────────────────────────────────────────────────────────── */
+function filterCategories(type, btn) {
+  InvState.categoryFilter = type;
+  document.querySelectorAll('[data-ctype]').forEach(b => b.classList.toggle('active', b.dataset.ctype === type));
+  invLoadCategories(document.getElementById('invCategorySearch')?.value || '');
+}
+
+async function invLoadCategories(q = '', page = 1) {
+  const listEl = document.getElementById('invCategoryList');
+  listEl.innerHTML = `<div class="inv-state"><div class="spinner-sm"></div><span>Loading…</span></div>`;
+
+  try {
+    const params = new URLSearchParams({ limit: 50, page });
+    if (q) params.set('search', q);
+    if (InvState.categoryFilter && InvState.categoryFilter !== 'all') {
+      params.set('category_type', InvState.categoryFilter);
+    }
+
+    const data = await invFetch(`${INV_API}/categories/?${params}`);
+    const items = data.results || data;
+
+    if (!items.length) {
+      listEl.innerHTML = `<div class="inv-state"><i class="bi bi-inbox"></i><span>No categories found</span></div>`;
+      return;
+    }
+
+    listEl.innerHTML = items.map(c => `
+      <div class="inv-item">
+        <div class="inv-item-icon category"><i class="bi bi-tag"></i></div>
+        <div class="inv-item-info">
+          <div class="inv-item-name">${esc(c.name)}</div>
+          <div class="inv-item-meta">
+            <span style="text-transform:capitalize">${esc(c.category_type || '')}</span>
+            ${c.code ? `<span>${esc(c.code)}</span>` : ''}
+            <span style="color:${c.is_active ? 'var(--green)' : 'var(--red)'}">
+              ${c.is_active ? 'Active' : 'Inactive'}
+            </span>
+            ${c.efris_commodity_category_name ? `<span>EFRIS: ${esc(c.efris_commodity_category_name)}</span>` : ''}
+          </div>
+        </div>
+        <div class="inv-item-actions">
+          <button class="inv-act-btn edit" title="Edit" onclick="openCategoryForm(${c.id})">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <button class="inv-act-btn del" title="Delete" onclick="confirmInvDelete('category',${c.id},'${esc(c.name).replace(/'/g,"\\'")}')">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </div>
+    `).join('');
+
+    // Optional: add pagination controls
+    if (data.count && data.count > 50) {
+      listEl.innerHTML += `<div class="inv-pagination">Page ${page} of ${Math.ceil(data.count / 50)}</div>`;
+    }
+
+  } catch(e) {
+    listEl.innerHTML = `<div class="inv-state"><i class="bi bi-exclamation-triangle"></i><span>${esc(e.message)}</span></div>`;
+  }
+}
+
+
+async function openCategoryForm(catId = null) {
+  InvState.editingId.categories = catId;
+  document.getElementById('categoryFormTitle').textContent = catId ? 'Edit Category' : 'New Category';
+  ['cf-name','cf-code','cf-description'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('cf-type').value = 'product';
+  document.getElementById('cf-active').checked = true;
+
+  if (catId) {
+    try {
+      showLoading(true);
+      const c = await invFetch(`${INV_API}/categories/${catId}/`);
+      document.getElementById('cf-name').value = c.name || '';
+      document.getElementById('cf-code').value = c.code || '';
+      document.getElementById('cf-description').value = c.description || '';
+      document.getElementById('cf-type').value = c.category_type || 'product';
+      document.getElementById('cf-active').checked = c.is_active !== false;
+    } catch(e) { showToast('Failed to load: ' + e.message, 'error'); return; }
+    finally { showLoading(false); }
+  }
+
+  new bootstrap.Modal(document.getElementById('categoryFormModal')).show();
+}
+
+async function saveCategory() {
+  const name = document.getElementById('cf-name').value.trim();
+  if (!name) { showToast('Category name required', 'error'); return; }
+
+  const payload = {
+    name,
+    code: document.getElementById('cf-code').value.trim() || null,
+    description: document.getElementById('cf-description').value.trim(),
+    category_type: document.getElementById('cf-type').value,
+    is_active: document.getElementById('cf-active').checked,
+    efris_auto_sync: false,
+  };
+
+  const btnText = document.getElementById('saveCategoryText');
+  const btnLoad = document.getElementById('saveCategoryLoading');
+  const btn = document.getElementById('saveCategoryBtn');
+  btnText.style.display = 'none'; btnLoad.style.display = 'inline-block'; btn.disabled = true;
+
+  try {
+    const editing = InvState.editingId.categories;
+    const saved = editing
+      ? await invPost(`${INV_API}/categories/${editing}/`, payload, 'PATCH')
+      : await invPost(`${INV_API}/categories/`, payload);
+
+    bootstrap.Modal.getInstance(document.getElementById('categoryFormModal'))?.hide();
+    showToast(`Category "${saved.name}" ${editing ? 'updated' : 'created'}`, 'success');
+    invLoadCategories(document.getElementById('invCategorySearch')?.value || '');
+    invLoadSelectOptions(); /* refresh dropdowns */
+  } catch(e) { showToast('Save failed: ' + e.message, 'error'); }
+  finally { btnText.style.display = 'inline'; btnLoad.style.display = 'none'; btn.disabled = false; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   STOCK
+   ───────────────────────────────────────────────────────────── */
+function filterStock(filter, btn) {
+  InvState.stockFilter = filter;
+  document.querySelectorAll('[data-sfilter]').forEach(b => b.classList.toggle('active', b.dataset.sfilter === filter));
+  invLoadStock(document.getElementById('invStockSearch')?.value || '');
+}
+
+async function invLoadStock(q = '') {
+  const listEl = document.getElementById('invStockList');
+
+  listEl.innerHTML = `
+    <div class="inv-state">
+      <div class="spinner-sm"></div>
+      <span>Loading…</span>
+    </div>
+  `;
+
+  try {
+    const params = new URLSearchParams({ limit: 60 });
+
+    if (q) params.set('search', q);
+    if (InvState.stockFilter === 'low') params.set('low_stock', 'true');
+    if (InvState.stockFilter === 'out') params.set('out_of_stock', 'true');
+
+    const storeId = document.getElementById('storeSelect')?.value;
+    if (storeId) params.set('store', storeId);
+
+    const data = await invFetch(`${INV_API}/stock/?${params}`);
+    const items = data.results || data || [];
+
+    if (!items.length) {
+      listEl.innerHTML = `
+        <div class="inv-state">
+          <i class="bi bi-inbox"></i>
+          <span>No stock records found</span>
+        </div>
+      `;
+      return;
+    }
+
+    listEl.innerHTML = items.map(s => {
+      const qty = parseFloat(s.quantity ?? 0);
+      const thresh = parseFloat(s.low_stock_threshold ?? 0);
+
+      const productName = s.product_details?.name || '—';
+      const storeName = s.store_details?.name || '—';
+
+      const badgeClass =
+        qty <= 0 ? 'out' :
+        qty <= thresh ? 'low' :
+        'good';
+
+      const badgeTxt =
+        qty <= 0 ? 'OUT' :
+        qty <= thresh ? 'LOW' :
+        'OK';
+
+      const safeProductName = esc(productName).replace(/'/g, "\\'");
+
+      return `
+        <div class="inv-item">
+          <div class="inv-item-icon stock">
+            <i class="bi bi-archive"></i>
+          </div>
+
+          <div class="inv-item-info">
+            <div class="inv-item-name">
+              ${esc(productName)}
+            </div>
+
+            <div class="inv-item-meta">
+              <span>${esc(storeName)}</span>
+              <span>Threshold: ${thresh}</span>
+              <span class="stock-badge ${badgeClass}">
+                ${badgeTxt} · ${qty}
+              </span>
+            </div>
+          </div>
+
+          <div class="inv-item-actions">
+            <button
+              class="inv-act-btn add-stock"
+              title="Adjust"
+              onclick="openStockFormForProduct(${s.product}, '${safeProductName}', ${s.store})"
+            >
+              <i class="bi bi-pencil"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (e) {
+    listEl.innerHTML = `
+      <div class="inv-state">
+        <i class="bi bi-exclamation-triangle"></i>
+        <span>${esc(e.message)}</span>
+      </div>
+    `;
+  }
+}
+
+
+function openStockForm() {
+  document.getElementById('stockFormTitle').textContent = 'Stock Adjustment';
+  document.getElementById('stockCurrentInfo').style.display = 'none';
+  document.getElementById('stockProductRow').style.display = 'block';
+  document.getElementById('stf-product').value = '';
+  document.getElementById('stf-qty').value = '';
+  document.getElementById('stf-unit-price').value = '';
+  document.getElementById('stf-ref').value = '';
+  document.getElementById('stf-notes').value = '';
+  document.getElementById('stf-type').value = 'PURCHASE';
+  new bootstrap.Modal(document.getElementById('stockFormModal')).show();
+}
+
+function openStockFormForProduct(productId, productName, storeId = null) {
+  openStockForm();
+  document.getElementById('stockCurrentInfo').style.display = 'block';
+  document.getElementById('stockInfoName').textContent = productName;
+  document.getElementById('stockInfoMeta').textContent = `Product ID: ${productId}`;
+  document.getElementById('stf-product').value = productId;
+  document.getElementById('stockProductRow').style.display = 'none'; /* hide dropdown — pre-filled */
+  if (storeId) document.getElementById('stf-store').value = storeId;
+}
+
+async function saveStockAdjustment() {
+  const productId = document.getElementById('stf-product').value;
+  const storeId = document.getElementById('stf-store').value;
+  const qty = parseFloat(document.getElementById('stf-qty').value);
+  const movType = document.getElementById('stf-type').value;
+
+  if (!productId) { showToast('Select a product', 'error'); return; }
+  if (!storeId) { showToast('Select a store', 'error'); return; }
+  if (!qty || qty <= 0) { showToast('Enter valid quantity', 'error'); return; }
+
+  const payload = {
+    product: parseInt(productId),
+    store: parseInt(storeId),
+    movement_type: movType,
+    quantity: qty,
+    unit_price: parseFloat(document.getElementById('stf-unit-price').value) || null,
+    reference: document.getElementById('stf-ref').value.trim(),
+    notes: document.getElementById('stf-notes').value.trim(),
+  };
+
+  const btnText = document.getElementById('saveStockText');
+  const btnLoad = document.getElementById('saveStockLoading');
+  const btn = document.getElementById('saveStockBtn');
+  btnText.style.display = 'none'; btnLoad.style.display = 'inline-block'; btn.disabled = true;
+
+  try {
+    await invPost(`${INV_API}/stock-movements/`, payload);
+    bootstrap.Modal.getInstance(document.getElementById('stockFormModal'))?.hide();
+    showToast(`Stock adjusted: ${qty} units`, 'success');
+    invLoadStock(document.getElementById('invStockSearch')?.value || '');
+    SaleState.searchCache.clear();
+    loadItems();
+  } catch(e) { showToast('Adjustment failed: ' + e.message, 'error'); }
+  finally { btnText.style.display = 'inline'; btnLoad.style.display = 'none'; btn.disabled = false; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   DELETE CONFIRM
+   ───────────────────────────────────────────────────────────── */
+function confirmInvDelete(type, id, name) {
+  const urlMap = { product: `${INV_API}/products`, service: `${INV_API}/services`, category: `${INV_API}/categories` };
+  document.getElementById('invDeleteMsg').textContent = `Delete "${name}"? This cannot be undone.`;
+  const confirmBtn = document.getElementById('invDeleteConfirmBtn');
+  confirmBtn.onclick = async () => {
+    try {
+      /* For products/services: PATCH to deactivate (safer than hard delete) */
+      if (type === 'product' || type === 'service') {
+        await invPost(`${urlMap[type]}/${id}/`, { is_active: false }, 'PATCH');
+        showToast(`${cap(type)} deactivated`, 'warning');
+      } else {
+        await invDelete(`${urlMap[type]}/${id}/`);
+        showToast(`${cap(type)} deleted`, 'warning');
+      }
+      bootstrap.Modal.getInstance(document.getElementById('invDeleteModal'))?.hide();
+      invLoadTab(type === 'product' ? 'products' : type === 'service' ? 'services' : 'categories');
+    } catch(e) { showToast('Delete failed: ' + e.message, 'error'); }
+  };
+  new bootstrap.Modal(document.getElementById('invDeleteModal')).show();
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TRANSFERS — STATE
+   ───────────────────────────────────────────────────────────── */
+InvState.transferFilter = 'all';
+InvState.pendingCancelId = null;
+
+/* ─────────────────────────────────────────────────────────────
+   TRANSFERS — LOAD LIST
+   ───────────────────────────────────────────────────────────── */
+async function invLoadTransfers(q = '') {
+  const listEl = document.getElementById('invTransferList');
+  if (!listEl) return;
+  listEl.innerHTML = `<div class="inv-state"><div class="spinner-sm"></div><span>Loading…</span></div>`;
+
+  try {
+    const params = new URLSearchParams({ limit: 40 });
+    if (q) params.set('search', q);
+    if (InvState.transferFilter && InvState.transferFilter !== 'all') {
+      params.set('status', InvState.transferFilter);
+    }
+
+    const data  = await invFetch(`${INV_API}/transfers/?${params}`);
+    const items = data.results ?? (Array.isArray(data) ? data : []);
+
+    if (!items.length) {
+      listEl.innerHTML = `<div class="inv-state"><i class="bi bi-arrow-left-right"></i><span>No transfers found</span></div>`;
+      return;
+    }
+    listEl.innerHTML = items.map(t => renderTransferItem(t)).join('');
+  } catch(e) {
+    listEl.innerHTML = `
+      <div class="inv-state">
+        <i class="bi bi-info-circle"></i>
+        <span style="text-align:center">
+          ${esc(e.message)}<br>
+          <small style="font-size:.68rem;color:var(--muted)">
+            Register transfers: <code>router.register('transfers', StockTransferViewSet)</code>
+          </small>
+        </span>
+      </div>`;
+  }
+}
+
+function renderTransferItem(t) {
+  const statusLabel = { pending:'Pending', in_transit:'In Transit', completed:'Completed', cancelled:'Cancelled' }[t.status] || t.status;
+
+  /* Action buttons based on status */
+  let actions = '';
+  if (t.status === 'pending') {
+    actions += `<button class="inv-tact-btn approve" title="Approve — deducts stock from source"
+        onclick="doTransferAction(${t.id},'approve','${esc(t.transfer_number)}')">
+        <i class="bi bi-check"></i> Approve</button>`;
+    actions += `<button class="inv-tact-btn cancel" title="Cancel"
+        onclick="openCancelTransfer(${t.id},'${esc(t.transfer_number)}')">
+        <i class="bi bi-x"></i></button>`;
+  } else if (t.status === 'in_transit') {
+    actions += `<button class="inv-tact-btn complete" title="Complete — adds stock to destination"
+        onclick="doTransferAction(${t.id},'complete','${esc(t.transfer_number)}')">
+        <i class="bi bi-check2-all"></i> Complete</button>`;
+    actions += `<button class="inv-tact-btn cancel" title="Cancel"
+        onclick="openCancelTransfer(${t.id},'${esc(t.transfer_number)}')">
+        <i class="bi bi-x"></i></button>`;
+  }
+
+  return `
+    <div class="inv-transfer-item">
+      <div class="inv-transfer-header">
+        <span class="inv-transfer-num">${esc(t.transfer_number)}</span>
+        <span class="inv-transfer-badge ${t.status}">${statusLabel}</span>
+      </div>
+      <div class="inv-transfer-product">${esc(t.product_name || t.product?.name || '—')}</div>
+      <div class="inv-transfer-route">
+        <i class="bi bi-shop"></i>${esc(t.from_store_name || t.from_store?.name || '—')}
+        <i class="bi bi-arrow-right"></i>
+        <i class="bi bi-shop-window"></i>${esc(t.to_store_name || t.to_store?.name || '—')}
+      </div>
+      <div class="inv-transfer-footer">
+        <span class="inv-transfer-qty"><i class="bi bi-boxes"></i> ${t.quantity} ${esc(t.unit || '')}</span>
+        <div class="inv-transfer-actions">${actions}</div>
+      </div>
+    </div>`;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TRANSFERS — FILTER
+   ───────────────────────────────────────────────────────────── */
+function filterTransfers(filter, btn) {
+  InvState.transferFilter = filter;
+  document.querySelectorAll('[data-tfilter]').forEach(b => b.classList.toggle('active', b === btn));
+  invLoadTransfers(document.getElementById('invTransfersSearch')?.value || '');
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TRANSFERS — OPEN FORM
+   ───────────────────────────────────────────────────────────── */
+function openTransferForm() {
+  /* Reset fields */
+  ['tf-product','tf-from-store','tf-to-store'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  ['tf-qty','tf-ref','tf-notes'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('tf-source-info').style.display = 'none';
+  document.getElementById('tf-dest-info').style.display   = 'none';
+  document.getElementById('tf-availability-wrap').style.display = 'none';
+
+  /* Populate product dropdown from cached list */
+  const tfProd = document.getElementById('tf-product');
+  if (tfProd) {
+    tfProd.innerHTML = '<option value="">— Select Product —</option>' +
+      (InvState.products || []).map(p =>
+        `<option value="${p.id}">${esc(p.name)} (${esc(p.sku || '')})</option>`).join('');
+  }
+
+  new bootstrap.Modal(document.getElementById('transferFormModal')).show();
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TRANSFERS — PRODUCT CHANGE → show availability
+   ───────────────────────────────────────────────────────────── */
+async function onTransferProductChange() {
+  const productId = document.getElementById('tf-product').value;
+  const availWrap  = document.getElementById('tf-availability-wrap');
+  const availList  = document.getElementById('tf-availability-list');
+
+  if (!productId) {
+    availWrap.style.display = 'none';
+    document.getElementById('tf-source-info').style.display = 'none';
+    document.getElementById('tf-dest-info').style.display   = 'none';
+    return;
+  }
+
+  /* Refresh source/dest info if stores already chosen */
+  onTransferStoreChange('source');
+  onTransferStoreChange('dest');
+
+  /* Fetch availability across all stores */
+  availList.innerHTML = '<div style="padding:.5rem .875rem;font-size:.75rem;color:var(--muted)">Checking…</div>';
+  availWrap.style.display = 'block';
+  try {
+    const data = await invFetch(`${INV_API}/product-availability/?product_id=${productId}`);
+    const rows = (data.availability || []);
+    if (!rows.length) {
+      availList.innerHTML = '<div style="padding:.5rem .875rem;font-size:.75rem;color:var(--muted)">No stock found in any store.</div>';
+      return;
+    }
+    availList.innerHTML = rows.map(r => `
+      <div class="inv-avail-row" onclick="document.getElementById('tf-from-store').value='${r.store_id}';onTransferStoreChange('source')">
+        <span class="inv-avail-store">${esc(r.store_name)}</span>
+        <span>
+          <span class="inv-avail-qty">${r.quantity} ${esc(r.unit || '')}</span>
+          <span class="inv-avail-use ms-2">↑ use as source</span>
+        </span>
+      </div>`).join('');
+  } catch {
+    availList.innerHTML = '<div style="padding:.5rem .875rem;font-size:.75rem;color:var(--muted)">Could not load availability.</div>';
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TRANSFERS — STORE CHANGE → show current stock
+   ───────────────────────────────────────────────────────────── */
+async function onTransferStoreChange(which) {
+  const productId = document.getElementById('tf-product').value;
+  const storeId   = document.getElementById(which === 'source' ? 'tf-from-store' : 'tf-to-store').value;
+  const infoEl    = document.getElementById(which === 'source' ? 'tf-source-info' : 'tf-dest-info');
+  const qtyEl     = document.getElementById(which === 'source' ? 'tf-source-qty'  : 'tf-dest-qty');
+
+  if (!productId || !storeId) { infoEl.style.display = 'none'; return; }
+
+  try {
+    const data = await invFetch(`${INV_API}/current-stock/?store=${storeId}&product=${productId}`);
+    qtyEl.textContent = `${data.current_stock ?? 0}`;
+    infoEl.style.display = 'flex';
+  } catch {
+    infoEl.style.display = 'none';
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TRANSFERS — SAVE (POST to Django view)
+   ───────────────────────────────────────────────────────────── */
+async function saveTransfer() {
+  const productId   = document.getElementById('tf-product').value;
+  const fromStoreId = document.getElementById('tf-from-store').value;
+  const toStoreId   = document.getElementById('tf-to-store').value;
+  const qty         = parseFloat(document.getElementById('tf-qty').value);
+
+  if (!productId)   { showToast('Select a product', 'error'); return; }
+  if (!fromStoreId) { showToast('Select a source store', 'error'); return; }
+  if (!toStoreId)   { showToast('Select a destination store', 'error'); return; }
+  if (fromStoreId === toStoreId) { showToast('Source and destination must differ', 'error'); return; }
+  if (!qty || qty <= 0) { showToast('Enter a valid quantity', 'error'); return; }
+
+  const btnText = document.getElementById('saveTransferText');
+  const btnLoad = document.getElementById('saveTransferLoading');
+  const btn     = document.getElementById('saveTransferBtn');
+  btnText.style.display = 'none'; btnLoad.style.display = 'inline-block'; btn.disabled = true;
+
+  try {
+    /* POST to the existing Django CreateView (form POST, not JSON API) */
+    const formData = new FormData();
+    formData.append('csrfmiddlewaretoken', getCookie('csrftoken'));
+    formData.append('product',    productId);
+    formData.append('from_store', fromStoreId);
+    formData.append('to_store',   toStoreId);
+    formData.append('quantity',   qty);
+    formData.append('reference',  document.getElementById('tf-ref').value.trim());
+    formData.append('notes',      document.getElementById('tf-notes').value.trim());
+
+    const resp = await fetch('/inventory/transfers/create/', {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: formData,
+    });
+
+    /* The view redirects on success — if we're still on a 2xx page, it worked */
+    if (resp.ok || resp.redirected) {
+      bootstrap.Modal.getInstance(document.getElementById('transferFormModal'))?.hide();
+      showToast('Transfer request created!', 'success');
+      invLoadTransfers(document.getElementById('invTransfersSearch')?.value || '');
+    } else {
+      /* Try to read an error from the response */
+      const text = await resp.text();
+      const match = text.match(/class="alert[^"]*alert-danger[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+      const errMsg = match ? match[1].replace(/<[^>]+>/g, '').trim() : `Server error (${resp.status})`;
+      showToast(errMsg, 'error');
+    }
+  } catch(e) {
+    showToast('Transfer failed: ' + e.message, 'error');
+  } finally {
+    btnText.style.display = 'inline'; btnLoad.style.display = 'none'; btn.disabled = false;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TRANSFERS — APPROVE / COMPLETE (AJAX POST to Django views)
+   ───────────────────────────────────────────────────────────── */
+async function doTransferAction(id, action, transferNum) {
+  const labels = { approve: 'Approve', complete: 'Complete' };
+  const urls   = { approve: `${INV_API}/transfers/${id}/approve/`, complete: `${INV_API}/transfers/${id}/complete/` };
+  const confirmMsgs = {
+    approve: `Approve ${transferNum}? Stock will be deducted from the source store.`,
+    complete: `Complete ${transferNum}? Stock will be added to the destination store.`,
+  };
+
+  if (!confirm(confirmMsgs[action])) return;
+
+  try {
+    const resp = await fetch(urls[action], {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken'),
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    });
+    const data = await resp.json();
+    if (data.success) {
+      showToast(data.message || `${labels[action]} successful`, 'success');
+      invLoadTransfers(document.getElementById('invTransfersSearch')?.value || '');
+    } else {
+      showToast(data.error || 'Action failed', 'error');
+    }
+  } catch(e) {
+    showToast('Request failed: ' + e.message, 'error');
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TRANSFERS — CANCEL (opens reason modal)
+   ───────────────────────────────────────────────────────────── */
+function openCancelTransfer(id, transferNum) {
+  InvState.pendingCancelId = id;
+  document.getElementById('cancelTransferNum').textContent = transferNum;
+  document.getElementById('cancelTransferReason').value = '';
+  new bootstrap.Modal(document.getElementById('transferCancelModal')).show();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('confirmTransferCancelBtn')?.addEventListener('click', async () => {
+    const reason = document.getElementById('cancelTransferReason').value.trim();
+    if (!reason) { showToast('Please provide a cancellation reason', 'error'); return; }
+
+    const btn = document.getElementById('confirmTransferCancelBtn');
+    btn.disabled = true; btn.textContent = 'Cancelling…';
+
+    try {
+      const resp = await fetch(`${INV_API}/transfers/${InvState.pendingCancelId}/cancel/`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: new URLSearchParams({ csrfmiddlewaretoken: getCookie('csrftoken'), reason }),
+      });
+      const data = await resp.json();
+      if (data.success) {
+        bootstrap.Modal.getInstance(document.getElementById('transferCancelModal'))?.hide();
+        showToast(data.message || 'Transfer cancelled', 'warning');
+        invLoadTransfers(document.getElementById('invTransfersSearch')?.value || '');
+      } else {
+        showToast(data.error || 'Cancel failed', 'error');
+      }
+    } catch(e) {
+      showToast('Request failed: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Confirm Cancel';
+    }
+  });
+});
+/* ─────────────────────────────────────────────────────────────
+   SALES — STATE & LOAD
+   ───────────────────────────────────────────────────────────── */
+InvState.saleFilter    = 'all';
+InvState.invoiceFilter = 'all';
+InvState.salePage      = 1;
+InvState.invoicePage   = 1;
+
+const SALES_API    = '/api/v1/sales';
+const INVOICES_API = '/api/v1/invoices';
+
+/* ── Load Sales ── */
+
+async function invLoadSales(q = '', page = null) {
+  if (page !== null) InvState.salePage = page;
+  const listEl = document.getElementById('invSalesList');
+  if (!listEl) return;
+  listEl.innerHTML = `<div class="inv-state"><div class="spinner-sm"></div><span>Loading…</span></div>`;
+  try {
+    const offset = (InvState.salePage - 1) * PAGE_SIZE;
+    const params = new URLSearchParams({
+      limit:    PAGE_SIZE,
+      offset,
+      ordering: '-created_at'
+    });
+    if (q) params.set('search', q);
+    if (InvState.saleFilter !== 'all') params.set('status', InvState.saleFilter);
+
+    const data  = await invFetch(`${SALES_API}/?${params}`);
+    const items = data.results ?? (Array.isArray(data) ? data : []);
+    const total = data.count ?? items.length;
+
+    if (!items.length) {
+      listEl.innerHTML = `<div class="inv-state"><i class="bi bi-receipt"></i><span>No sales found</span></div>`;
+      renderSalesPagination(0, q);
+      return;
+    }
+    listEl.innerHTML = items.map(s => renderSaleItem(s)).join('');
+    renderSalesPagination(total, q);
+  } catch(e) {
+    listEl.innerHTML = `
+      <div class="inv-state">
+        <i class="bi bi-exclamation-triangle"></i>
+        <span>${esc(e.message)}</span>
+        <small style="font-size:.68rem;color:var(--muted);margin-top:.25rem">
+          Check that your DRF router registers a 'sales' viewset at /api/v1/sales/
+        </small>
+      </div>`;
+  }
+}
+
+function renderSalesPagination(total, q) {
+  /* Remove old pagination if present */
+  document.getElementById('invSalesPagination')?.remove();
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  if (totalPages <= 1) return;
+
+  const container = document.getElementById('inv-tab-sales');
+  if (!container) return;
+
+  const pg = document.createElement('div');
+  pg.id = 'invSalesPagination';
+  pg.className = 'inv-pagination-bar';
+  pg.innerHTML = `
+    <button class="inv-pg-btn" ${InvState.salePage <= 1 ? 'disabled' : ''}
+            onclick="invLoadSales('${esc(q)}', ${InvState.salePage - 1})">
+      <i class="bi bi-chevron-left"></i>
+    </button>
+    <span class="inv-pg-info">
+      Page ${InvState.salePage} of ${totalPages}
+      <span style="color:var(--muted)"> · ${total} total</span>
+    </span>
+    <button class="inv-pg-btn" ${InvState.salePage >= totalPages ? 'disabled' : ''}
+            onclick="invLoadSales('${esc(q)}', ${InvState.salePage + 1})">
+      <i class="bi bi-chevron-right"></i>
+    </button>`;
+  container.appendChild(pg);
+}
+
+function renderSaleItem(s) {
+  const status   = (s.status || 'completed').toLowerCase();
+  const customer = s.customer_name || s.customer?.name || 'Walk-in';
+  const ref      = s.receipt_number || s.sale_number || s.id;
+  const total    = fmt(s.total_amount ?? s.grand_total ?? 0);
+  const date     = s.created_at ? new Date(s.created_at).toLocaleDateString() : '—';
+  const items    = s.items_count ?? s.sale_items?.length ?? '';
+
+  return `
+    <div class="inv-sale-item">
+      <div class="inv-sale-header">
+        <span class="inv-sale-ref">#${esc(String(ref))}</span>
+        <span class="inv-sale-total">${total}</span>
+      </div>
+      <div class="inv-sale-customer">${esc(customer)}</div>
+      <div class="inv-sale-meta">
+        <span class="inv-sale-badge ${status}">${cap(status)}</span>
+        <span><i class="bi bi-calendar3"></i> ${date}</span>
+        ${items ? `<span><i class="bi bi-bag"></i> ${items} item${items !== 1 ? 's' : ''}</span>` : ''}
+        ${s.payment_method ? `<span><i class="bi bi-credit-card"></i> ${esc(s.payment_method)}</span>` : ''}
+      </div>
+      <div class="inv-transfer-actions">
+        <a href="/sales/${s.id}/" target="_blank" class="inv-tact-btn" style="text-decoration:none">
+          <i class="bi bi-eye"></i> View
+        </a>
+        ${s.receipt_number ? `
+        <a href="/sales/${s.id}/receipt/" target="_blank" class="inv-tact-btn" style="text-decoration:none">
+          <i class="bi bi-printer"></i> Receipt
+        </a>` : ''}
+      </div>
+    </div>`;
+}
+
+function filterSales(filter, btn) {
+  InvState.saleFilter = filter;
+  InvState.salePage   = 1;   /* reset to page 1 on filter change */
+  document.querySelectorAll('[data-salefilter]').forEach(b => b.classList.toggle('active', b === btn));
+  invLoadSales(document.getElementById('invSalesSearch')?.value || '');
+}
+
+/* ─────────────────────────────────────────────────────────────
+   INVOICES — LOAD (with pagination)
+   ───────────────────────────────────────────────────────────── */
+async function invLoadInvoices(q = '', page = null) {
+  if (page !== null) InvState.invoicePage = page;
+  const listEl = document.getElementById('invInvoicesList');
+  if (!listEl) return;
+  listEl.innerHTML = `<div class="inv-state"><div class="spinner-sm"></div><span>Loading…</span></div>`;
+  try {
+    const offset = (InvState.invoicePage - 1) * PAGE_SIZE;
+    const params = new URLSearchParams({
+      limit:    PAGE_SIZE,
+      offset,
+      ordering: '-created_at'
+    });
+    if (q) params.set('search', q);
+    if (InvState.invoiceFilter !== 'all') params.set('status', InvState.invoiceFilter);
+
+    const data  = await invFetch(`${INVOICES_API}/?${params}`);
+    const items = data.results ?? (Array.isArray(data) ? data : []);
+    const total = data.count ?? items.length;
+
+    if (!items.length) {
+      listEl.innerHTML = `<div class="inv-state"><i class="bi bi-file-earmark-text"></i><span>No invoices found</span></div>`;
+      renderInvoicesPagination(0, q);
+      return;
+    }
+    listEl.innerHTML = items.map(inv => renderInvoiceItem(inv)).join('');
+    renderInvoicesPagination(total, q);
+  } catch(e) {
+    listEl.innerHTML = `
+      <div class="inv-state">
+        <i class="bi bi-exclamation-triangle"></i>
+        <span>${esc(e.message)}</span>
+        <small style="font-size:.68rem;color:var(--muted);margin-top:.25rem">
+          Check that your DRF router registers an 'invoices' viewset at /api/v1/invoices/
+        </small>
+      </div>`;
+  }
+}
+
+function renderInvoicesPagination(total, q) {
+  document.getElementById('invInvoicesPagination')?.remove();
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  if (totalPages <= 1) return;
+
+  const container = document.getElementById('inv-tab-invoices');
+  if (!container) return;
+
+  const pg = document.createElement('div');
+  pg.id = 'invInvoicesPagination';
+  pg.className = 'inv-pagination-bar';
+  pg.innerHTML = `
+    <button class="inv-pg-btn" ${InvState.invoicePage <= 1 ? 'disabled' : ''}
+            onclick="invLoadInvoices('${esc(q)}', ${InvState.invoicePage - 1})">
+      <i class="bi bi-chevron-left"></i>
+    </button>
+    <span class="inv-pg-info">
+      Page ${InvState.invoicePage} of ${totalPages}
+      <span style="color:var(--muted)"> · ${total} total</span>
+    </span>
+    <button class="inv-pg-btn" ${InvState.invoicePage >= totalPages ? 'disabled' : ''}
+            onclick="invLoadInvoices('${esc(q)}', ${InvState.invoicePage + 1})">
+      <i class="bi bi-chevron-right"></i>
+    </button>`;
+  container.appendChild(pg);
+}
+
+function renderInvoiceItem(inv) {
+  const status    = (inv.status_display || inv.status || 'draft').toLowerCase();
+  const isOverdue = status === 'overdue';
+  const client    = inv.customer_name || inv.customer?.name || inv.billed_to || '—';
+  const num       = inv.invoice_number || inv.number || inv.id;
+  const total     = fmt(inv.total_amount ?? inv.grand_total ?? inv.amount ?? 0);
+  const due       = inv.due_date  ? new Date(inv.due_date).toLocaleDateString()  : '—';
+  const issued    = inv.issue_date || inv.created_at
+                    ? new Date(inv.issue_date || inv.created_at).toLocaleDateString() : '—';
+  const balance   = inv.amount_outstanding != null ? fmt(inv.amount_outstanding) : null;
+
+  return `
+    <div class="inv-invoice-item">
+      <div class="inv-invoice-header">
+        <span class="inv-invoice-num">${esc(String(num))}</span>
+        <span class="inv-invoice-amount ${isOverdue ? 'overdue' : ''}">${total}</span>
+      </div>
+      <div class="inv-invoice-client">${esc(client)}</div>
+      <div class="inv-invoice-meta">
+        <span class="inv-invoice-badge ${status}">${cap(status)}</span>
+        <span><i class="bi bi-calendar3"></i> Issued ${issued}</span>
+        <span><i class="bi bi-calendar-x"></i> Due ${due}</span>
+        ${balance ? `<span style="color:var(--amber)"><i class="bi bi-hourglass-split"></i> Bal: ${balance}</span>` : ''}
+      </div>
+      <div class="inv-invoice-actions">
+        <a href="/invoices/${inv.id}/" target="_blank" class="inv-tact-btn" style="text-decoration:none">
+          <i class="bi bi-eye"></i> View
+        </a>
+        <a href="/invoices/${inv.id}/pdf/" target="_blank" class="inv-tact-btn" style="text-decoration:none">
+          <i class="bi bi-file-pdf"></i> PDF
+        </a>
+        ${status === 'sent' || status === 'overdue' ? `
+        <button class="inv-tact-btn complete"
+                onclick="recordInvoicePayment(${inv.id},'${esc(String(num))}',${inv.amount_outstanding ?? inv.total_amount ?? 0})">
+          <i class="bi bi-cash"></i> Pay
+        </button>` : ''}
+      </div>
+    </div>`;
+}
+
+function filterInvoices(filter, btn) {
+  InvState.invoiceFilter = filter;
+  InvState.invoicePage   = 1;   /* reset to page 1 on filter change */
+  document.querySelectorAll('[data-invfilter]').forEach(b => b.classList.toggle('active', b === btn));
+  invLoadInvoices(document.getElementById('invInvoicesSearch')?.value || '');
+}
+
+/* ─────────────────────────────────────────────────────────────
+   INVOICES — QUICK PAYMENT RECORD
+   Opens a small confirm-style prompt for recording a payment
+   without leaving the POS page.
+   ───────────────────────────────────────────────────────────── */
+async function recordInvoicePayment(invoiceId, invoiceNum, balanceDue) {
+  const amount = prompt(
+    `Record payment for Invoice ${invoiceNum}\nBalance due: ${fmt(balanceDue)}\n\nEnter amount paid:`,
+    balanceDue
+  );
+  if (amount === null) return;          /* cancelled */
+  const parsed = parseFloat(amount);
+  if (!parsed || parsed <= 0) { showToast('Invalid amount', 'error'); return; }
+
+  const method = prompt('Payment method (cash / mobile_money / card / bank_transfer):', 'cash');
+  if (method === null) return;
+
+  try {
+    await invPost(`${INVOICES_API}/${invoiceId}/record_payment/`, {
+      amount:         parsed,
+      payment_method: method.trim() || 'cash',
+      payment_date:   new Date().toISOString().split('T')[0],
+      notes:          'Recorded from POS panel',
+    });
+    showToast(`Payment of ${fmt(parsed)} recorded for ${invoiceNum}`, 'success');
+    invLoadInvoices(document.getElementById('invInvoicesSearch')?.value || '');
+  } catch(e) {
+    showToast('Payment failed: ' + e.message, 'error');
+  }
+}
+/* ─────────────────────────────────────────────────────────────
+   KEYBOARD SHORTCUT  →  Ctrl+I opens inventory panel
+   ───────────────────────────────────────────────────────────── */
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'i') {
+    e.preventDefault();
+    const panel = document.getElementById('inventoryPanel');
+    if (panel.classList.contains('open')) closeInventoryPanel();
+    else openInventoryPanel();
+  }
+});
+
+console.log('✅ Inventory Panel Loaded');
+</script>
 {% endblock %}
 
 {% block extra_js %}

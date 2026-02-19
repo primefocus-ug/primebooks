@@ -14,8 +14,14 @@ from .api_views import (
     StockViewSet,
     StockMovementViewSet,
     ImportSessionViewSet,
-    ReportViewSet
+    ReportViewSet,StockTransferViewSet,
+            product_availability,
+            current_stock_api,
 )
+
+
+
+
 
 # Create router
 router = DefaultRouter()
@@ -27,6 +33,7 @@ router.register(r'services', ServiceViewSet, basename='service')
 router.register(r'suppliers', SupplierViewSet, basename='supplier')
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'stock', StockViewSet, basename='stock')
+router.register(r'transfers', StockTransferViewSet, basename='transfer')
 router.register(r'stock-movements', StockMovementViewSet, basename='stock-movement')
 router.register(r'imports', ImportSessionViewSet, basename='import')
 router.register(r'reports', ReportViewSet, basename='report')
@@ -35,4 +42,6 @@ app_name = 'inventory_api'
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('product-availability/', product_availability, name='product-availability'),
+    path('current-stock/',        current_stock_api,    name='current-stock'),
 ]

@@ -70,16 +70,20 @@ class SaleSerializer(serializers.ModelSerializer):
         )
 
     def get_invoice_detail(self, obj):
-        """Get invoice detail data if exists"""
         if hasattr(obj, 'invoice_detail') and obj.invoice_detail:
-            from invoices.serializers import InvoiceSerializer
-            return InvoiceSerializer(obj.invoice_detail).data
+            from invoices.serializers import InvoiceListSerializer
+            return InvoiceListSerializer(obj.invoice_detail).data
         return None
 
     def get_receipt_detail(self, obj):
-        """Get receipt detail data if exists"""
         if hasattr(obj, 'receipt_detail') and obj.receipt_detail:
-            return ReceiptSerializer(obj.receipt_detail).data
+            receipt = obj.receipt_detail
+            return {
+                'id': receipt.id,
+                'receipt_number': receipt.receipt_number,
+                'printed_by': receipt.printed_by_id,
+                'receipt_data': receipt.receipt_data,
+            }
         return None
 
     def validate(self, data):
