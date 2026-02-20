@@ -18,7 +18,10 @@ from primebooks.authentication import TenantAwareJWTAuthentication
 import logging
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-
+from django.shortcuts import redirect
+from django.contrib.auth import login, get_user_model
+from django.http import HttpResponseBadRequest
+from django.views.decorators.csrf import csrf_exempt
 logger = logging.getLogger(__name__)
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -27,6 +30,7 @@ from company.models import Company
 from django.utils import timezone
 from . models import AppVersions
 
+User = get_user_model()
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -295,6 +299,55 @@ class DesktopLoginView(APIView):
                 {'detail': f'Authentication error: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+@csrf_exempt
+def desktop_session_login(request):
+    """
+    Desktop-only endpoint: given a valid auth token, create a real
+    Django session for the user so the browser reflects the switch.
+
+    Called by PrimeBooksWindow._perform_session_switch().
+    Only works when DESKTOP_MODE is enabled.
+    """
+    import os
+    if not os.environ.get('DESKTOP_MODE'):
+        return HttpResponseBadRequest("Not in desktop mode")
+
+    token = request.GET.get('token')
+    email = request.GET.get('email')
+
+    if not token or not email:
+        return HttpResponseBadRequest("Missing token or email")
+
+    try:
+        # Validate token against server
+        from primebooks.auth import DesktopAuthManager
+        auth_manager = DesktopAuthManager()
+
+        valid = auth_manager.validate_token(token)
+        if not valid:
+            logger.warning(f"Invalid token for desktop session switch: {email}")
+            return HttpResponseBadRequest("Invalid token")
+
+        # Find user in local DB
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            logger.error(f"User not found locally: {email}")
+            return HttpResponseBadRequest(f"User {email} not found in local database")
+
+        # Create Django session for this user
+        # backend must match AUTHENTICATION_BACKENDS in settings
+        user.backend = 'django.contrib.auth.backends.ModelBackend'
+        login(request, user)
+
+        logger.info(f"✅ Desktop session created for {email}")
+        return redirect('/')
+
+    except Exception as e:
+        logger.error(f"Desktop session login error: {e}", exc_info=True)
+        return HttpResponseBadRequest(f"Session switch failed: {str(e)}")
 
 
 class DesktopUserSyncView(APIView):

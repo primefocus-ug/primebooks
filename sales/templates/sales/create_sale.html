@@ -3296,11 +3296,25 @@ and calls your /api/v1/ endpoints.
         </div>
         <div class="row g-3">
           <div class="col-12" id="stockProductRow">
-            <label class="form-label">Product <span class="req">*</span></label>
-            <select class="form-select" id="stf-product">
-              <option value="">— Select Product —</option>
-            </select>
-          </div>
+              <label class="form-label">Product <span class="req">*</span></label>
+              <div class="pp-wrap" id="pp-stf-product">
+                <div class="pp-trigger" tabindex="0">
+                  <span class="pp-trigger-text">— Search product —</span>
+                  <i class="bi bi-chevron-down pp-chevron"></i>
+                </div>
+                <div class="pp-dropdown">
+                  <div class="pp-search-wrap">
+                    <i class="bi bi-search"></i>
+                    <input class="pp-search" type="text" placeholder="Type name or SKU…" autocomplete="off">
+                  </div>
+                  <div class="pp-list">
+                    <div class="pp-loading"><i class="bi bi-arrow-repeat"></i> Loading…</div>
+                  </div>
+                </div>
+              </div>
+              <!-- hidden input so your existing code that reads stf-product still works -->
+              <input type="hidden" id="stf-product">
+            </div>
           <div class="col-6">
             <label class="form-label">Store <span class="req">*</span></label>
             <select class="form-select" id="stf-store">
@@ -3387,11 +3401,28 @@ and calls your /api/v1/ endpoints.
         <!-- Product -->
         <div class="row g-3">
           <div class="col-12">
-            <label class="form-label" style="font-size:.8rem;font-weight:600">Product <span class="req">*</span></label>
-            <select class="form-select" id="tf-product" onchange="onTransferProductChange()">
-              <option value="">— Select Product —</option>
-            </select>
-          </div>
+              <label class="form-label" style="font-size:.8rem;font-weight:600">
+                Product <span class="req">*</span>
+              </label>
+              <div class="pp-wrap" id="pp-tf-product">
+                <div class="pp-trigger" tabindex="0">
+                  <span class="pp-trigger-text">— Search product —</span>
+                  <i class="bi bi-chevron-down pp-chevron"></i>
+                </div>
+                <div class="pp-dropdown">
+                  <div class="pp-search-wrap">
+                    <i class="bi bi-search"></i>
+                    <input class="pp-search" type="text" placeholder="Type name or SKU…" autocomplete="off">
+                  </div>
+                  <div class="pp-list">
+                    <div class="pp-loading"><i class="bi bi-arrow-repeat"></i> Loading…</div>
+                  </div>
+                </div>
+              </div>
+              <!-- hidden input so your existing code that reads tf-product still works -->
+              <input type="hidden" id="tf-product">
+            </div>
+
 
           <!-- From Store -->
           <div class="col-6">
@@ -3505,6 +3536,251 @@ and calls your /api/v1/ endpoints.
   /* NOTE: pointer-events stays none on the wrapper —
      only the backdrop and body handle clicks individually */
 }
+
+.pp-wrap {
+  position: relative;
+  width: 100%;
+  --pp-radius:    6px;
+  --pp-border:    #ced4da;
+  --pp-focus:     #7c3aed;
+  --pp-bg:        #fff;
+  --pp-bg-search: #faf9ff;
+  --pp-bg-hover:  #f3f0ff;
+  --pp-line:      #f0edf8;
+  --pp-item-line: #faf9ff;
+  --pp-shadow:    rgba(0,0,0,.12);
+  --pp-text:      #1f2937;
+  --pp-muted:     #6b7280;
+  --pp-tag-bg:    #ede9fe;
+  --pp-tag-color: #5b21b6;
+  --pp-hl:        #fde68a;
+  --pp-scroll:    #d8d0f5;
+  --pp-height:    38px;
+}
+
+/* ── Dark theme overrides ─────────────────────────────────────── */
+[data-theme="dark"] .pp-wrap {
+  --pp-border:    #3a3554;
+  --pp-focus:     #a78bfa;
+  --pp-bg:        #1e1b2e;
+  --pp-bg-search: #16132a;
+  --pp-bg-hover:  #2d2850;
+  --pp-line:      #2a2545;
+  --pp-item-line: #231f3a;
+  --pp-shadow:    rgba(0,0,0,.4);
+  --pp-text:      #e5e2f0;
+  --pp-muted:     #8b85a8;
+  --pp-tag-bg:    #2d2460;
+  --pp-tag-color: #c4b5fd;
+  --pp-hl:        #78350f;
+  --pp-scroll:    #3d3660;
+}
+
+/* ── Trigger ──────────────────────────────────────────────────── */
+.pp-trigger {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  min-height: var(--pp-height);
+  padding: .375rem .75rem;
+  border: 1px solid var(--pp-border);
+  border-radius: var(--pp-radius);
+  background: var(--pp-bg);
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+  user-select: none;
+}
+.pp-trigger:focus-within,
+.pp-wrap.open .pp-trigger {
+  border-color: var(--pp-focus);
+  box-shadow: 0 0 0 3px rgba(124,58,237,.15);
+  outline: none;
+}
+[data-theme="dark"] .pp-wrap.open .pp-trigger,
+[data-theme="dark"] .pp-trigger:focus-within {
+  box-shadow: 0 0 0 3px rgba(167,139,250,.2);
+}
+
+.pp-trigger-text {
+  flex: 1;
+  font-size: .875rem;
+  color: var(--pp-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+.pp-trigger-text.has-value {
+  color: var(--pp-text);
+  font-weight: 500;
+}
+
+/* ── Selected badge ───────────────────────────────────────────── */
+.pp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  background: var(--pp-tag-bg);
+  color: var(--pp-tag-color);
+  border-radius: 20px;
+  padding: 2px 10px 2px 8px;
+  font-size: .78rem;
+  font-weight: 600;
+  max-width: 85%;
+}
+.pp-badge-clear {
+  background: none;
+  border: none;
+  padding: 0;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--pp-tag-color);
+  opacity: .7;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+}
+.pp-badge-clear:hover { opacity: 1; }
+
+/* ── Chevron ──────────────────────────────────────────────────── */
+.pp-chevron {
+  color: var(--pp-muted);
+  font-size: .75rem;
+  transition: transform .18s;
+  flex-shrink: 0;
+}
+.pp-wrap.open .pp-chevron { transform: rotate(180deg); }
+
+/* ── Dropdown panel ───────────────────────────────────────────── */
+.pp-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1060;
+  background: var(--pp-bg);
+  border: 1px solid var(--pp-border);
+  border-radius: var(--pp-radius);
+  box-shadow: 0 8px 24px var(--pp-shadow);
+  overflow: hidden;
+  animation: ppSlide .14s ease;
+}
+.pp-wrap.open .pp-dropdown { display: block; }
+
+@keyframes ppSlide {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Search bar ───────────────────────────────────────────────── */
+.pp-search-wrap {
+  padding: .5rem .6rem;
+  border-bottom: 1px solid var(--pp-line);
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  background: var(--pp-bg-search);
+}
+.pp-search-wrap i {
+  color: var(--pp-focus);
+  font-size: .85rem;
+  flex-shrink: 0;
+}
+.pp-search {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: .85rem;
+  width: 100%;
+  color: var(--pp-text);
+}
+.pp-search::placeholder { color: var(--pp-muted); }
+
+/* ── Results list ─────────────────────────────────────────────── */
+.pp-list {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.pp-list::-webkit-scrollbar { width: 4px; }
+.pp-list::-webkit-scrollbar-thumb {
+  background: var(--pp-scroll);
+  border-radius: 4px;
+}
+
+/* ── Result item ──────────────────────────────────────────────── */
+.pp-item {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .52rem .8rem;
+  cursor: pointer;
+  font-size: .85rem;
+  color: var(--pp-text);
+  transition: background .1s;
+  border-bottom: 1px solid var(--pp-item-line);
+}
+.pp-item:last-child { border-bottom: none; }
+.pp-item:hover,
+.pp-item.active {
+  background: var(--pp-bg-hover);
+  color: var(--pp-focus);
+}
+.pp-item.active { font-weight: 600; }
+
+.pp-item-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--pp-tag-bg);
+  color: var(--pp-focus);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .75rem;
+  flex-shrink: 0;
+}
+
+.pp-item-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pp-item-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+.pp-item-sub {
+  font-size: .72rem;
+  color: var(--pp-muted);
+}
+
+/* ── Search highlight ─────────────────────────────────────────── */
+.pp-hl {
+  background: var(--pp-hl);
+  border-radius: 2px;
+  padding: 0 1px;
+  color: var(--pp-text);
+}
+
+/* ── Empty / loading states ───────────────────────────────────── */
+.pp-empty,
+.pp-loading {
+  padding: 1rem;
+  text-align: center;
+  font-size: .82rem;
+  color: var(--pp-muted);
+}
+.pp-loading i {
+  animation: spin .7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+
 
 .inv-sale-item {
   background: var(--card);
@@ -4194,6 +4470,270 @@ and calls your /api/v1/ endpoints.
      JAVASCRIPT
      ═══════════════════════════════════════════════════════════ -->
 <script>
+const ProductPicker = (() => {
+  const _cache   = {};          // query → [{id,name,sku,unit}]
+  const _listeners = {};        // wrapperId → [fn]
+  const _state   = {};          // wrapperId → {id, label}
+
+  // ── Fetch products from DRF ──────────────────────────────────────────
+  async function fetchProducts(q = '') {
+    const key = q.trim().toLowerCase();
+    if (_cache[key]) return _cache[key];
+
+    const url = `/api/v1/products/?search=${encodeURIComponent(q)}&page_size=40&ordering=name`;
+    const resp = await fetch(url, { credentials: 'same-origin' });
+    if (!resp.ok) throw new Error('Failed to load products');
+    const data = await resp.json();
+
+    // Support both paginated {results:[]} and plain [] responses
+    const items = (data.results ?? data).map(p => ({
+      id:   String(p.id),
+      name: p.name,
+      sku:  p.sku || '',
+      unit: p.unit || '',
+    }));
+
+    _cache[key] = items;
+    return items;
+  }
+
+  // ── Highlight matching text ──────────────────────────────────────────
+  function hl(text, q) {
+    if (!q) return escHtml(text);
+    const idx = text.toLowerCase().indexOf(q.toLowerCase());
+    if (idx === -1) return escHtml(text);
+    return (
+      escHtml(text.slice(0, idx)) +
+      `<span class="pp-hl">${escHtml(text.slice(idx, idx + q.length))}</span>` +
+      escHtml(text.slice(idx + q.length))
+    );
+  }
+
+  function escHtml(str) {
+    return str.replace(/[&<>"']/g, m =>
+      ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])
+    );
+  }
+
+  // ── Render list items ────────────────────────────────────────────────
+  function renderList(listEl, items, q, currentId) {
+    if (!items.length) {
+      listEl.innerHTML = `<div class="pp-empty">No products found</div>`;
+      return;
+    }
+    listEl.innerHTML = items.map(p => `
+      <div class="pp-item ${p.id === currentId ? 'active' : ''}" data-id="${p.id}" data-name="${escHtml(p.name)}">
+        <div class="pp-item-icon"><i class="bi bi-box-seam"></i></div>
+        <div class="pp-item-meta">
+          <div class="pp-item-name">${hl(p.name, q)}</div>
+          ${p.sku ? `<div class="pp-item-sub">SKU: ${hl(p.sku, q)}${p.unit ? ' · ' + escHtml(p.unit) : ''}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── Init a single wrapper ────────────────────────────────────────────
+  function init(wrapperId, hiddenInputId, onSelectCallback) {
+    const wrap    = document.getElementById(wrapperId);
+    const hidden  = document.getElementById(hiddenInputId);
+    if (!wrap || !hidden) return;
+
+    const trigger  = wrap.querySelector('.pp-trigger');
+    const trigText = wrap.querySelector('.pp-trigger-text');
+    const dropdown = wrap.querySelector('.pp-dropdown');
+    const searchEl = wrap.querySelector('.pp-search');
+    const listEl   = wrap.querySelector('.pp-list');
+
+    _state[wrapperId] = { id: '', label: '' };
+    _listeners[wrapperId] = onSelectCallback ? [onSelectCallback] : [];
+
+    let debounceTimer;
+
+    // ── Open / close ───────────────────────────────────────────────────
+    function open() {
+      wrap.classList.add('open');
+      searchEl.value = '';
+      searchEl.focus();
+      loadList('');
+    }
+
+    function close() {
+      wrap.classList.remove('open');
+    }
+
+    function toggle() {
+      wrap.classList.contains('open') ? close() : open();
+    }
+
+    // ── Select a value ─────────────────────────────────────────────────
+    function select(id, name) {
+      _state[wrapperId] = { id, label: name };
+      hidden.value = id;
+
+      trigText.innerHTML = `
+        <span class="pp-badge">
+          <i class="bi bi-box-seam" style="font-size:.7rem"></i>
+          ${escHtml(name)}
+          <button type="button" class="pp-badge-clear" data-clear="${wrapperId}" title="Clear">×</button>
+        </span>`;
+      trigText.classList.add('has-value');
+
+      close();
+
+      // Fire listeners
+      (_listeners[wrapperId] || []).forEach(fn => fn(id, name));
+    }
+
+    // ── Clear ──────────────────────────────────────────────────────────
+    function clear() {
+      _state[wrapperId] = { id: '', label: '' };
+      hidden.value = '';
+      trigText.textContent = '— Search product —';
+      trigText.classList.remove('has-value');
+    }
+
+    // ── Load + render list ─────────────────────────────────────────────
+    async function loadList(q) {
+      listEl.innerHTML = `<div class="pp-loading"><i class="bi bi-arrow-repeat"></i> Loading…</div>`;
+      try {
+        const items = await fetchProducts(q);
+        renderList(listEl, items, q, _state[wrapperId].id);
+      } catch {
+        listEl.innerHTML = `<div class="pp-empty">⚠ Could not load products</div>`;
+      }
+    }
+
+    // ── Events ─────────────────────────────────────────────────────────
+    trigger.addEventListener('click', toggle);
+    trigger.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+
+    searchEl.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => loadList(searchEl.value.trim()), 250);
+    });
+
+    // Keydown: arrow nav + Enter select + Escape close
+    searchEl.addEventListener('keydown', e => {
+      const items = [...listEl.querySelectorAll('.pp-item')];
+      const active = listEl.querySelector('.pp-item.active');
+      let idx = items.indexOf(active);
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        items.forEach(i => i.classList.remove('active'));
+        const next = items[Math.min(idx + 1, items.length - 1)];
+        if (next) { next.classList.add('active'); next.scrollIntoView({ block: 'nearest' }); }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        items.forEach(i => i.classList.remove('active'));
+        const prev = items[Math.max(idx - 1, 0)];
+        if (prev) { prev.classList.add('active'); prev.scrollIntoView({ block: 'nearest' }); }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (active) select(active.dataset.id, active.dataset.name);
+      } else if (e.key === 'Escape') {
+        close();
+      }
+    });
+
+    listEl.addEventListener('click', e => {
+      const item = e.target.closest('.pp-item');
+      if (item) select(item.dataset.id, item.dataset.name);
+    });
+
+    // Click outside closes
+    document.addEventListener('click', e => {
+      if (!wrap.contains(e.target)) close();
+    });
+
+    // Clear button inside badge
+    document.addEventListener('click', e => {
+      const clearBtn = e.target.closest('[data-clear]');
+      if (clearBtn && clearBtn.dataset.clear === wrapperId) {
+        e.stopPropagation();
+        clear();
+        (_listeners[wrapperId] || []).forEach(fn => fn('', ''));
+      }
+    });
+
+    // Pre-load top products when modal opens (feels instant)
+    const modalEl = wrap.closest('.modal');
+    if (modalEl) {
+      modalEl.addEventListener('shown.bs.modal', () => {
+        fetchProducts(''); // warm the cache silently
+      });
+    }
+  }
+
+  // ── Public API ───────────────────────────────────────────────────────
+  return {
+    init,
+
+    getValue(wrapperId) {
+      return _state[wrapperId]?.id || '';
+    },
+
+    setValue(wrapperId, id, label) {
+      const wrap   = document.getElementById(wrapperId);
+      const hidden = wrap?.nextElementSibling; // fallback
+      if (_state[wrapperId] !== undefined) {
+        // trigger via internal select simulation
+        const trigText = wrap.querySelector('.pp-trigger-text');
+        _state[wrapperId] = { id, label };
+        document.getElementById(wrapperId.replace('pp-', ''))?.setAttribute && null;
+        trigText.innerHTML = `
+          <span class="pp-badge">
+            <i class="bi bi-box-seam" style="font-size:.7rem"></i>
+            ${label}
+            <button type="button" class="pp-badge-clear" data-clear="${wrapperId}" title="Clear">×</button>
+          </span>`;
+        trigText.classList.add('has-value');
+      }
+    },
+
+    clear(wrapperId) {
+      const wrap = document.getElementById(wrapperId);
+      if (!wrap) return;
+      _state[wrapperId] = { id: '', label: '' };
+      const trigText = wrap.querySelector('.pp-trigger-text');
+      trigText.textContent = '— Search product —';
+      trigText.classList.remove('has-value');
+      const hiddenId = wrapperId.replace('pp-', '');
+      const hidden = document.getElementById(hiddenId);
+      if (hidden) hidden.value = '';
+    },
+
+    onSelect(wrapperId, fn) {
+      if (!_listeners[wrapperId]) _listeners[wrapperId] = [];
+      _listeners[wrapperId].push(fn);
+    },
+  };
+})();
+
+
+// ── Wire up both pickers ────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+
+  // Transfer modal product picker
+  // Fires onTransferProductChange() exactly as the old <select onchange> did
+  ProductPicker.init('pp-tf-product', 'tf-product', (id, name) => {
+    if (typeof onTransferProductChange === 'function') {
+      onTransferProductChange();
+    }
+  });
+
+  // Stock adjustment modal product picker
+  // Fires onStockProductChange() if you define it, otherwise no-op
+  ProductPicker.init('pp-stf-product', 'stf-product', (id, name) => {
+    if (typeof onStockProductChange === 'function') {
+      onStockProductChange();
+    }
+  });
+
+});
+
 /* ─────────────────────────────────────────────────────────────
    INVENTORY PANEL — STATE & CONSTANTS
    ───────────────────────────────────────────────────────────── */
@@ -5199,52 +5739,69 @@ async function saveTransfer() {
   const toStoreId   = document.getElementById('tf-to-store').value;
   const qty         = parseFloat(document.getElementById('tf-qty').value);
 
-  if (!productId)   { showToast('Select a product', 'error'); return; }
-  if (!fromStoreId) { showToast('Select a source store', 'error'); return; }
-  if (!toStoreId)   { showToast('Select a destination store', 'error'); return; }
-  if (fromStoreId === toStoreId) { showToast('Source and destination must differ', 'error'); return; }
-  if (!qty || qty <= 0) { showToast('Enter a valid quantity', 'error'); return; }
+  // ── Client-side validation ─────────────────────────────────────────────
+  if (!productId)               { showToast('Select a product', 'error'); return; }
+  if (!fromStoreId)             { showToast('Select a source store', 'error'); return; }
+  if (!toStoreId)               { showToast('Select a destination store', 'error'); return; }
+  if (fromStoreId === toStoreId){ showToast('Source and destination must differ', 'error'); return; }
+  if (!qty || qty <= 0)         { showToast('Enter a valid quantity', 'error'); return; }
 
   const btnText = document.getElementById('saveTransferText');
   const btnLoad = document.getElementById('saveTransferLoading');
   const btn     = document.getElementById('saveTransferBtn');
-  btnText.style.display = 'none'; btnLoad.style.display = 'inline-block'; btn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoad.style.display = 'inline-block';
+  btn.disabled = true;
 
   try {
-    /* POST to the existing Django CreateView (form POST, not JSON API) */
-    const formData = new FormData();
-    formData.append('csrfmiddlewaretoken', getCookie('csrftoken'));
-    formData.append('product',    productId);
-    formData.append('from_store', fromStoreId);
-    formData.append('to_store',   toStoreId);
-    formData.append('quantity',   qty);
-    formData.append('reference',  document.getElementById('tf-ref').value.trim());
-    formData.append('notes',      document.getElementById('tf-notes').value.trim());
+    const payload = {
+      product:    parseInt(productId),
+      from_store: parseInt(fromStoreId),
+      to_store:   parseInt(toStoreId),
+      quantity:   qty,
+      reference:  document.getElementById('tf-ref')?.value.trim()   || '',
+      notes:      document.getElementById('tf-notes')?.value.trim() || '',
+    };
 
-    const resp = await fetch('/inventory/transfers/create/', {
-      method: 'POST',
+    const resp = await fetch('/api/v1/transfers/', {
+      method:      'POST',
       credentials: 'same-origin',
-      body: formData,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken':  getCookie('csrftoken'),
+      },
+      body: JSON.stringify(payload),
     });
 
-    /* The view redirects on success — if we're still on a 2xx page, it worked */
-    if (resp.ok || resp.redirected) {
+    const data = await resp.json();
+
+    if (resp.status === 201) {
+      // ── Success ──────────────────────────────────────────────────────
       bootstrap.Modal.getInstance(document.getElementById('transferFormModal'))?.hide();
-      showToast('Transfer request created!', 'success');
+      showToast(`Transfer ${data.transfer_number} created!`, 'success');
       invLoadTransfers(document.getElementById('invTransfersSearch')?.value || '');
-    } else {
-      /* Try to read an error from the response */
-      const text = await resp.text();
-      const match = text.match(/class="alert[^"]*alert-danger[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-      const errMsg = match ? match[1].replace(/<[^>]+>/g, '').trim() : `Server error (${resp.status})`;
-      showToast(errMsg, 'error');
+      return;
     }
-  } catch(e) {
-    showToast('Transfer failed: ' + e.message, 'error');
+
+    // ── Server-side validation errors (400) ───────────────────────────
+    // DRF returns errors as { field: ["msg", ...] } or { non_field_errors: [...] }
+    const messages = [];
+    for (const [field, errors] of Object.entries(data)) {
+      const label = field === 'non_field_errors' ? '' : `${field}: `;
+      messages.push(label + (Array.isArray(errors) ? errors.join(', ') : errors));
+    }
+    showToast(messages.join(' | ') || `Error ${resp.status}`, 'error');
+
+  } catch (e) {
+    console.error('saveTransfer error:', e);
+    showToast('Network error: ' + e.message, 'error');
   } finally {
-    btnText.style.display = 'inline'; btnLoad.style.display = 'none'; btn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoad.style.display = 'none';
+    btn.disabled = false;
   }
 }
+
 
 /* ─────────────────────────────────────────────────────────────
    TRANSFERS — APPROVE / COMPLETE (AJAX POST to Django views)
@@ -5531,13 +6088,13 @@ function renderInvoiceItem(inv) {
         <span class="inv-invoice-badge ${status}">${cap(status)}</span>
         <span><i class="bi bi-calendar3"></i> Issued ${issued}</span>
         <span><i class="bi bi-calendar-x"></i> Due ${due}</span>
-        ${balance ? `<span style="color:var(--amber)"><i class="bi bi-hourglass-split"></i> Bal: ${balance}</span>` : ''}
+        ${balance ? `<span style="color:var(--amber)"><i class="bi bi-hourglass-split"></i> Amount: ${balance}</span>` : ''}
       </div>
       <div class="inv-invoice-actions">
         <a href="/invoices/${inv.id}/" target="_blank" class="inv-tact-btn" style="text-decoration:none">
           <i class="bi bi-eye"></i> View
         </a>
-        <a href="/invoices/${inv.id}/pdf/" target="_blank" class="inv-tact-btn" style="text-decoration:none">
+        <a href="/invoices/${inv.id}/export-pdf/" target="_blank" class="inv-tact-btn" style="text-decoration:none">
           <i class="bi bi-file-pdf"></i> PDF
         </a>
         ${status === 'sent' || status === 'overdue' ? `

@@ -223,9 +223,11 @@ SYNC_MODEL_CONFIG = {
     },
     'stores.UserDeviceSession': {
         'dependencies': ['accounts.CustomUser', 'stores.StoreDevice'],
+        'download_only': True,
     },
     'stores.DeviceOperatorLog': {
         'dependencies': ['stores.StoreDevice', 'accounts.CustomUser'],
+        'download_only': True,
     },
     'stores.SecurityAlert': {
         'dependencies': ['stores.Store'],
@@ -772,29 +774,16 @@ class SyncManager:
     # ========================================================================
 
     def reset_sequences(self):
-        """
-        Reset all PostgreSQL sequences in the tenant schema to MAX(id).
-
-        Fixes applied:
-        ✅ Added relkind = 'S' filter on the sequence pg_class join so only
-           actual sequence objects are matched — previously ambiguous join
-           returned 0 rows, falling through to the slower name-heuristic path.
-        ✅ Added relkind = 'r' filter on the table pg_class join so only
-           regular tables (not views, indexes, etc.) are considered.
-        ✅ Heuristic fallback still present as a safety net.
-        """
         from django.db import connection
 
         logger.info(f"🔄 Resetting sequences in schema: {self.schema_name}")
         try:
             with schema_context(self.schema_name):
                 with connection.cursor() as cursor:
-                    # ── Primary query: join via pg_depend ────────────────────────
-                    # relkind = 'S' → sequence object
-                    # relkind = 'r' → regular (heap) table
-                    # Without these filters the join can match indexes/views and
-                    # return 0 rows, forcing the slower name-heuristic path every
-                    # time.
+                    # Pin search_path so pg_class lookups resolve correctly
+                    # regardless of what schema_context set it to
+                    cursor.execute("SET search_path TO %s, public", [self.schema_name])
+
                     cursor.execute("""
                                    SELECT s.sequencename, c.relname, a.attname
                                    FROM pg_sequences s
@@ -822,9 +811,6 @@ class SyncManager:
                     logger.info(f"  📊 Found {len(rows)} sequences to reset")
 
                     if not rows:
-                        # ── Heuristic fallback ────────────────────────────────────
-                        # Fires only if the pg_depend join genuinely finds nothing
-                        # (e.g. very old PostgreSQL, unusual setup).
                         logger.warning("⚠️ pg_sequences join returned 0 rows — using name heuristic")
                         cursor.execute(
                             "SELECT sequencename FROM pg_sequences WHERE schemaname = %s ORDER BY sequencename;",
@@ -841,17 +827,12 @@ class SyncManager:
                     reset_count = skipped_count = 0
                     for seq_name, table_name, col_name in rows:
                         try:
-                            cursor.execute(
-                                "SELECT to_regclass(%s)",
-                                [f"{self.schema_name}.{table_name}"]
-                            )
+                            cursor.execute("SELECT to_regclass(%s)", [f"{self.schema_name}.{table_name}"])
                             if cursor.fetchone()[0] is None:
                                 skipped_count += 1
                                 continue
-
                             cursor.execute(
-                                f'SELECT COALESCE(MAX("{col_name}"), 0) '
-                                f'FROM "{self.schema_name}"."{table_name}";'
+                                f'SELECT COALESCE(MAX("{col_name}"), 0) FROM "{self.schema_name}"."{table_name}";'
                             )
                             max_val = cursor.fetchone()[0]
                             cursor.execute(
@@ -869,6 +850,8 @@ class SyncManager:
         except Exception as e:
             logger.error(f"❌ reset_sequences failed: {e}", exc_info=True)
             return False
+
+    fix_sequences_after_upload = reset_sequences
 
 
     # Alias — keep old name working
@@ -1191,6 +1174,10 @@ class SyncManager:
                 if should_exclude_model(model_name):
                     continue
 
+                config = SYNC_MODEL_CONFIG.get(model_name, {})
+                if config.get('download_only'):
+                    continue
+
                 try:
                     model = apps.get_model(model_name)
                     config = SYNC_MODEL_CONFIG.get(model_name, {})
@@ -1343,6 +1330,76 @@ class SyncManager:
         except Exception as e:
             logger.error(f"❌ Error applying data: {e}", exc_info=True)
             return False
+
+    def _apply_stock_quantity_delta(self, existing_stock_obj, server_fields):
+        """
+        Instead of overwriting local quantity with server quantity,
+        compute and apply the server-side delta atomically.
+
+        Logic:
+            server_delta = server_quantity - last_synced_quantity
+            new_local    = local_quantity + server_delta
+
+        This preserves offline sales made on the desktop while also
+        incorporating sales/purchases made on the server since last sync.
+
+        Falls back to direct overwrite if no sync baseline is available
+        (e.g. first sync).
+        """
+        server_quantity = server_fields.get('quantity')
+        if server_quantity is None:
+            return  # nothing to merge
+
+        from decimal import Decimal
+        server_quantity = Decimal(str(server_quantity))
+
+        # Look up the last-synced quantity baseline from sync markers
+        sync_marker_file = settings.DESKTOP_DATA_DIR / f'.synced_{self.tenant_id}.json'
+        synced_baseline = None
+        try:
+            if sync_marker_file.exists():
+                synced_data = json.loads(sync_marker_file.read_text())
+                entry = synced_data.get('inventory.Stock', {}).get(str(existing_stock_obj.pk))
+                if isinstance(entry, dict):
+                    raw = entry.get('synced_quantity')
+                    if raw is not None:
+                        synced_baseline = Decimal(str(raw))
+        except Exception:
+            pass
+
+        if synced_baseline is None:
+            # No baseline — first sync or marker missing.
+            # Trust the server value outright.
+            existing_stock_obj.quantity = server_quantity
+            logger.debug(
+                f"  Stock pk={existing_stock_obj.pk}: "
+                f"no baseline, using server value {server_quantity}"
+            )
+            return
+
+        # Delta = how much the server quantity changed since we last synced
+        server_delta = server_quantity - synced_baseline
+        local_quantity = Decimal(str(existing_stock_obj.quantity))
+
+        if server_delta == 0:
+            # Server unchanged — keep local value (preserves offline sales)
+            logger.debug(
+                f"  Stock pk={existing_stock_obj.pk}: "
+                f"server unchanged (delta=0), keeping local={local_quantity}"
+            )
+            return
+
+        # Apply server delta on top of current local quantity
+        merged = local_quantity + server_delta
+        merged = max(merged, Decimal('0'))  # never go below zero
+
+        logger.info(
+            f"  📦 Stock pk={existing_stock_obj.pk}: "
+            f"local={local_quantity}, server={server_quantity}, "
+            f"baseline={synced_baseline}, delta={server_delta:+}, "
+            f"merged={merged}"
+        )
+        existing_stock_obj.quantity = merged
 
     def apply_model_data(self, model_name, records):
         """
@@ -1653,18 +1710,23 @@ class SyncManager:
             'product': ['sku'],
             'stock': ['product', 'store'],
             'customer': ['phone'],
-            'sale': ['receipt_number'],
+            'sale': ['transaction_id'],
+            'receipt': ['receipt_number'],
             'invoice': ['sale'],
+            'userdevicesession': ['session_key'],
         }
+
         unique_fields = unique_field_map.get(model_name, [])
         if not unique_fields:
             return None
+
         lookup = {}
         for field_name in unique_fields:
             if field_name in fields:
                 lookup[field_name] = fields[field_name]
             else:
-                return None
+                return None  # incomplete key — skip
+
         return lookup or None
 
     # ========================================================================

@@ -1817,6 +1817,7 @@ class PrimeBooksWindow(QMainWindow):
         self.browser = None
         self.sync_scheduler = None
         self.update_manager = None
+        self.current_user_email = None
 
         self.setup_ui()
         self.setup_toolbar()
@@ -2107,35 +2108,87 @@ class PrimeBooksWindow(QMainWindow):
     # ========================================================================
 
     def switch_user(self):
-        """Switch to different user without restarting app"""
+        """
+        Switch to a different user account without restarting the app.
+
+        Flow:
+          1. Show UserSwitchDialog — authenticates against the server
+          2. Save new credentials to disk (middleware reads these on every request)
+          3. Clear the browser's session cookies so the old session is gone
+          4. Reload — desktop_tenant middleware auto-logs in the new user,
+             syncing them on-demand if they don't exist locally yet
+        """
         logger.info("🔄 User switch requested")
 
         try:
-            # Show user switch dialog
+            from primebooks.auth import DesktopAuthManager
+            from django.conf import settings
+
+            # Non-critical subscription pre-check
+            try:
+                from primebooks.subscription import SubscriptionManager
+                sub_manager = SubscriptionManager(company_id=self.tenant_id)
+                valid, reason, *_ = sub_manager.validate_subscription(force_online=False)
+                if not valid:
+                    QMessageBox.warning(self, "Subscription Issue", reason)
+                    return
+            except Exception as e:
+                logger.warning(f"Subscription pre-check failed (non-fatal): {e}")
+
             dialog = UserSwitchDialog(
                 company_schema=self.subdomain,
                 company_id=self.tenant_id,
                 parent=self
             )
 
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                # User successfully authenticated
-                new_user_email = dialog.user_data['email']
-
-                logger.info(f"✅ User switched: {self.current_user_email} → {new_user_email}")
-
-                self.current_user_email = new_user_email
-
-                # Update status bar
-                self.status_label.setText(f"● {self.subdomain} - {new_user_email}")
-
-                # Reload the page to show new user's session
-                self.browser.reload()
-
-                # Show success message
-                self.statusBar.showMessage(f"✅ Logged in as {new_user_email}", 3000)
-            else:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
                 logger.info("User switch cancelled")
+                return
+
+            new_user_data = dialog.user_data
+            new_token = dialog.auth_token
+            new_email = new_user_data.get('email', '')
+
+            if not new_email or not new_token:
+                QMessageBox.warning(
+                    self,
+                    "Switch User",
+                    "Incomplete user data returned. Please try again."
+                )
+                return
+
+            old_email = getattr(self, 'current_user_email', None) or 'previous user'
+            logger.info(f"✅ Switching user: {old_email} → {new_email}")
+
+            auth_manager = DesktopAuthManager()
+
+            # Company doesn't change on user switch — keep existing company data
+            _, _, existing_company_data = auth_manager.load_credentials()
+
+            # Persist new credentials — middleware reads these on every request
+            auth_manager.save_credentials(new_user_data, existing_company_data, new_token)
+            auth_manager.save_auth_token(new_token)  # keeps .auth_token plain file current
+            auth_manager.save_user_info(new_user_data)  # middleware reads this for auto-login
+
+            # Re-save subdomain — must stay intact for middleware tenant lookup
+            subdomain = auth_manager.get_subdomain() or self.subdomain
+            auth_manager.save_subdomain(subdomain)
+
+            # Update in-memory state
+            self.auth_token = new_token
+            self.current_user_email = new_email
+
+            # Update sync scheduler so future syncs use the new token
+            if self.sync_scheduler:
+                try:
+                    self.sync_scheduler.auth_token = new_token
+                except Exception:
+                    pass
+
+            # Clear cookies then reload
+            self._clear_browser_session(
+                on_done=lambda: self._finish_user_switch(new_email)
+            )
 
         except Exception as e:
             logger.error(f"User switch error: {e}", exc_info=True)
@@ -2144,6 +2197,50 @@ class PrimeBooksWindow(QMainWindow):
                 "Switch User Error",
                 f"Failed to switch user:\n\n{str(e)}"
             )
+
+    def _clear_browser_session(self, on_done):
+        """
+        Clear all session cookies in the web engine profile so the old
+        Django session is invalidated before we reload.
+        The middleware no longer relies on session — it reads credentials
+        from disk on every request — so this just ensures Django doesn't
+        reuse the old user's server-side session object.
+        """
+        try:
+            profile = self.browser.page().profile()
+            cookie_store = profile.cookieStore()
+            cookie_store.deleteAllCookies()
+            logger.info("🍪 Browser session cookies cleared")
+
+            # 800ms delay — gives credential files time to fully flush to disk
+            # before the middleware reads them on the next request
+            QTimer.singleShot(800, on_done)
+
+        except Exception as e:
+            logger.warning(f"Could not clear cookies (non-fatal): {e}")
+            # Proceed anyway with delay
+            QTimer.singleShot(800, on_done)
+
+    def _finish_user_switch(self, new_email):
+        """
+        Called after cookies are cleared and credential files are written.
+        Updates the UI and navigates to the home page.
+        The middleware will:
+          1. Read new credentials from disk → find tenant
+          2. Call auto_login_user → find or on-demand sync the new user
+          3. Log them in automatically
+        """
+        # Update toolbar label
+        self.status_label.setText(f"● {self.subdomain} — {new_email}")
+        self.statusBar.showMessage(f"✅ Logged in as {new_email}", 5000)
+
+        # Navigate using the full subdomain URL — this is what the middleware
+        # uses to identify the tenant via the HOST header
+        home_url = f"http://{self.subdomain}.localhost:{self.port}/"
+        logger.info(f"🔄 Reloading app as {new_email} → {home_url}")
+
+        self.browser.setUrl(QUrl(home_url))
+        logger.info(f"✅ User switch complete → {new_email}")
 
     def handle_print_request(self):
         """Handle print request from JavaScript (window.print())"""
@@ -2320,29 +2417,37 @@ class PrimeBooksWindow(QMainWindow):
         toolbar.addSeparator()
 
         sync_action = QAction("🔄 Sync Data (Background)", self)
-        sync_action.triggered.connect(self.background_sync)  # ← Changed
+        sync_action.triggered.connect(self.background_sync)
         toolbar.addAction(sync_action)
 
         toolbar.addSeparator()
 
-        # ✅ NEW: Switch User Button
         switch_user_action = QAction("👥 Switch User", self)
         switch_user_action.triggered.connect(self.switch_user)
         toolbar.addAction(switch_user_action)
 
         toolbar.addSeparator()
 
-        # Status label (show current user)
+        # Status label — populated with real email once credentials load
         self.status_label = QLabel(f"● {self.subdomain}")
         self.status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
         toolbar.addWidget(self.status_label)
 
         toolbar.addSeparator()
 
-        # Logout
         logout_action = QAction("🚪 Logout", self)
         logout_action.triggered.connect(self.logout)
         toolbar.addAction(logout_action)
+
+        # Populate current user email from saved credentials
+        try:
+            from primebooks.auth import DesktopAuthManager
+            _, saved_user, _ = DesktopAuthManager().load_credentials()
+            if saved_user and saved_user.get('email'):
+                self.current_user_email = saved_user['email']
+                self.status_label.setText(f"● {self.subdomain} — {self.current_user_email}")
+        except Exception:
+            pass
 
     def setup_statusbar(self):
         """Setup status bar"""

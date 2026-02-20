@@ -779,11 +779,10 @@ def customer_credit_detail(request, customer_id):
 
         return render(request, 'invoices/customer_credit_detail.html', context)
 
-
 @login_required
 @permission_required('invoices.view_invoice')
 def export_invoice_pdf(request, pk):
-    """Export single invoice to PDF"""
+    """Export single invoice to PDF - styled to match HTML receipt design"""
     company = get_current_tenant(request)
     if not company:
         return HttpResponse('No company context', status=403)
@@ -794,164 +793,518 @@ def export_invoice_pdf(request, pk):
             pk=pk
         )
 
-        # Create PDF response
-        response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="invoice_{invoice.invoice_number}.pdf"'
-
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas as rl_canvas
+        from reportlab.lib.pagesizes import A4
         from reportlab.lib import colors
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.lib.units import inch
+        from reportlab.platypus import (
+            SimpleDocTemplate, Table, TableStyle, Paragraph,
+            Spacer, HRFlowable, Image
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm, inch
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
         from io import BytesIO
 
+        # ── Color palette (matches CSS variables) ──────────────────────────
+        PRIMARY      = colors.HexColor('#7c3aed')
+        PRIMARY_DARK = colors.HexColor('#6d28d9')
+        SECONDARY    = colors.HexColor('#ec4899')
+        ACCENT       = colors.HexColor('#f97316')
+        DARK         = colors.HexColor('#1f2937')
+        GRAY         = colors.HexColor('#6b7280')
+        LIGHT_GRAY   = colors.HexColor('#f3f4f6')
+        BORDER       = colors.HexColor('#e5e7eb')
+        SUCCESS      = colors.HexColor('#10b981')
+        RED          = colors.HexColor('#dc2626')
+        WHITE        = colors.white
+        BEIGE_ROW    = colors.HexColor('#faf5ff')   # very light purple tint
+
+        # ── Convenience shortcuts ───────────────────────────────────────────
+        store    = invoice.sale.store
+        sale     = invoice.sale
+        customer = invoice.customer
+
+        # ── Buffer / doc ────────────────────────────────────────────────────
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        PAGE_W, PAGE_H = A4
+        MARGIN = 15 * mm
+
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            leftMargin=MARGIN,
+            rightMargin=MARGIN,
+            topMargin=MARGIN,
+            bottomMargin=MARGIN,
+        )
+
         elements = []
 
-        # Styles
-        styles = getSampleStyleSheet()
+        # ── Styles ──────────────────────────────────────────────────────────
+        base = getSampleStyleSheet()
 
-        # Header
-        elements.append(Paragraph(f"Invoice #{invoice.invoice_number}", styles['Heading1']))
-        elements.append(Spacer(1, 12))
+        def style(name, **kw):
+            return ParagraphStyle(name, parent=base['Normal'], **kw)
 
-        # Company and Customer Info
-        company_data = [
-            ['From:', f'{company.name}', 'To:', f'{invoice.customer.name if invoice.customer else "Walk-in Customer"}'],
-            ['Address:', f'{company.physical_address or ""}', 'Address:',
-             f'{invoice.customer.physical_address if invoice.customer and invoice.customer.physical_address else ""}'],
-            ['Phone:', f'{company.phone or ""}', 'Phone:',
-             f'{invoice.customer.phone if invoice.customer and invoice.customer.phone else ""}'],
-            ['Email:', f'{company.email or ""}', 'Email:',
-             f'{invoice.customer.email if invoice.customer and invoice.customer.email else ""}'],
-            ['TIN:', f'{company.tin or ""}', 'TIN:',
-             f'{invoice.customer.tin if invoice.customer and invoice.customer.tin else ""}'],
+        S_STORE_NAME = style('StoreName',
+            fontSize=20, fontName='Helvetica-Bold',
+            textColor=PRIMARY, alignment=TA_CENTER,
+            spaceAfter=4)
+        S_TAGLINE = style('Tagline',
+            fontSize=9, fontName='Helvetica-Oblique',
+            textColor=GRAY, alignment=TA_CENTER, spaceAfter=6)
+        S_STORE_DETAIL = style('StoreDetail',
+            fontSize=9, fontName='Helvetica',
+            textColor=DARK, alignment=TA_CENTER, spaceAfter=2)
+        S_SECTION_TITLE = style('SectionTitle',
+            fontSize=9, fontName='Helvetica-Bold',
+            textColor=PRIMARY, spaceBefore=0, spaceAfter=4)
+        S_LABEL = style('Label',
+            fontSize=8, fontName='Helvetica-Bold', textColor=GRAY)
+        S_VALUE = style('Value',
+            fontSize=9, fontName='Helvetica-Bold', textColor=DARK)
+        S_MONO = style('Mono',
+            fontSize=9, fontName='Courier-Bold', textColor=DARK)
+        S_ITEM_NAME = style('ItemName',
+            fontSize=9, fontName='Helvetica-Bold', textColor=DARK)
+        S_ITEM_CODE = style('ItemCode',
+            fontSize=8, fontName='Courier', textColor=GRAY)
+        S_FOOTER = style('Footer',
+            fontSize=9, fontName='Helvetica', textColor=GRAY, alignment=TA_CENTER)
+        S_FOOTER_BOLD = style('FooterBold',
+            fontSize=10, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_CENTER)
+        S_NOTE_LABEL = style('NoteLabel',
+            fontSize=9, fontName='Helvetica-Bold', textColor=RED, alignment=TA_CENTER)
+
+        CONTENT_W = PAGE_W - 2 * MARGIN
+
+        # ════════════════════════════════════════════════════════════════════
+        # 1. HEADER — logo + store name + details
+        # ════════════════════════════════════════════════════════════════════
+        header_rows = []
+
+        # Logo cell
+        logo_cell = ''
+        if store.logo:
+            try:
+                logo_img = Image(store.logo.path, width=18*mm, height=18*mm)
+                logo_cell = logo_img
+            except Exception:
+                pass
+
+        if not logo_cell:
+            # Coloured square placeholder with store initial
+            logo_cell = Paragraph(
+                f'<font color="#ffffff"><b>{store.name[0].upper()}</b></font>',
+                style('LogoFallback',
+                      fontSize=20, fontName='Helvetica-Bold',
+                      alignment=TA_CENTER, textColor=WHITE)
+            )
+
+        # Build store info paragraphs
+        store_info_parts = [
+            Paragraph(store.name.upper(), S_STORE_NAME),
         ]
+        if store.physical_address:
+            store_info_parts.append(Paragraph(store.physical_address, S_TAGLINE))
 
-        company_table = Table(company_data, colWidths=[1 * inch, 2 * inch, 1 * inch, 2 * inch])
-        company_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        detail_parts = []
+        if getattr(store, 'phone', None):
+            detail_parts.append(f'Tel: {store.phone}')
+        if getattr(store, 'secondary_phone', None):
+            detail_parts.append(f'Tel: {store.secondary_phone}')
+        if getattr(store, 'email', None):
+            detail_parts.append(f'Email: {store.email}')
+        if getattr(store, 'tin', None):
+            detail_parts.append(f'TIN: {store.tin}')
+        if detail_parts:
+            store_info_parts.append(
+                Paragraph('   |   '.join(detail_parts), S_STORE_DETAIL)
+            )
+
+        # The header is a 2-col table: logo | store info
+        logo_w = 22 * mm
+        header_table = Table(
+            [[logo_cell, store_info_parts]],
+            colWidths=[logo_w, CONTENT_W - logo_w],
+        )
+        header_table.setStyle(TableStyle([
+            ('VALIGN',       (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN',        (0, 0), (0, 0),   'CENTER'),
+            ('ALIGN',        (1, 0), (1, 0),   'LEFT'),
+            ('BACKGROUND',   (0, 0), (0, 0),   PRIMARY),
+            ('ROUNDEDCORNERS', [6]),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING',   (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 6),
         ]))
-        elements.append(company_table)
-        elements.append(Spacer(1, 20))
+        elements.append(header_table)
 
-        # Invoice Details
-        details_data = [
-            ['Invoice Date:', invoice.issue_date.strftime('%B %d, %Y') if invoice.issue_date else 'N/A'],
-            ['Due Date:', invoice.due_date.strftime('%B %d, %Y') if invoice.due_date else 'N/A'],
-            ['Status:', invoice.sale.get_payment_status_display()],
-            ['Payment Method:', invoice.sale.get_payment_method_display()],
+        # Thick purple divider
+        elements.append(Spacer(1, 4))
+        elements.append(HRFlowable(
+            width=CONTENT_W, thickness=3,
+            color=PRIMARY, spaceAfter=10
+        ))
+
+        # ════════════════════════════════════════════════════════════════════
+        # 2. TWO-COLUMN GRID — Customer Info (left) + Receipt Details (right)
+        # ════════════════════════════════════════════════════════════════════
+        LEFT_W  = CONTENT_W * 0.55
+        RIGHT_W = CONTENT_W * 0.45 - 4 * mm
+
+        # ── Customer info ───────────────────────────────────────────────────
+        cust_rows = [
+            [Paragraph('👤  CUSTOMER INFORMATION', S_SECTION_TITLE), ''],
         ]
-
-        if invoice.is_fiscalized and invoice.fiscal_document_number:
-            details_data.append(['Fiscal No:', invoice.fiscal_document_number])
-            details_data.append(['Verification Code:', invoice.verification_code or 'N/A'])
-
-        details_table = Table(details_data, colWidths=[1.5 * inch, 3 * inch])
-        details_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        elements.append(details_table)
-        elements.append(Spacer(1, 20))
-
-        # Items Table
-        items_header = ['Item', 'Quantity', 'Unit Price', 'Total']
-        items_data = [items_header]
-
-        for item in invoice.sale.items.all():
-            item_name = item.product.name if item.product else item.service.name if item.service else item.description
-            items_data.append([
-                item_name,
-                str(item.quantity),
-                f"{item.unit_price:,.2f}",
-                f"{item.total_price:,.2f}"
+        if customer:
+            fields = [
+                ('Name',    customer.name),
+                ('Phone',   getattr(customer, 'phone',  None)),
+                ('Email',   getattr(customer, 'email',  None)),
+                ('TIN',     getattr(customer, 'tin',    None)),
+                ('Address', getattr(customer, 'physical_address', None)),
+            ]
+            for label, val in fields:
+                if val:
+                    cust_rows.append([
+                        Paragraph(label, S_LABEL),
+                        Paragraph(str(val), S_VALUE),
+                    ])
+        else:
+            cust_rows.append([
+                Paragraph('Walk-in Customer', style('WalkIn',
+                    fontSize=10, fontName='Helvetica-Oblique',
+                    textColor=GRAY, alignment=TA_CENTER)),
+                '',
             ])
 
-        items_table = Table(items_data, colWidths=[3 * inch, 1 * inch, 1.5 * inch, 1.5 * inch])
+        cust_table = Table(cust_rows, colWidths=[LEFT_W * 0.35, LEFT_W * 0.65])
+        cust_table.setStyle(TableStyle([
+            ('SPAN',         (0, 0), (1, 0)),
+            ('BACKGROUND',   (0, 0), (-1, -1), colors.HexColor('#faf5ff')),
+            ('BOX',          (0, 0), (-1, -1), 2, PRIMARY),
+            ('ROUNDEDCORNERS', [6]),
+            ('LINEBELOW',    (0, 0), (1, 0),   1, PRIMARY),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING',   (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 6),
+            ('VALIGN',       (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+
+        # ── Receipt details ─────────────────────────────────────────────────
+        payment_status = sale.get_payment_status_display() if hasattr(sale, 'get_payment_status_display') else ''
+        payment_method = sale.get_payment_method_display() if hasattr(sale, 'get_payment_method_display') else ''
+
+        det_rows = [
+            [Paragraph('📋  RECEIPT DETAILS', S_SECTION_TITLE), ''],
+            [Paragraph('Receipt No', S_LABEL),
+             Paragraph(str(invoice.invoice_number), S_MONO)],
+            [Paragraph('Date', S_LABEL),
+             Paragraph(invoice.issue_date.strftime('%d/%m/%Y') if invoice.issue_date else 'N/A', S_MONO)],
+            [Paragraph('Due Date', S_LABEL),
+             Paragraph(invoice.due_date.strftime('%d/%m/%Y') if invoice.due_date else 'N/A', S_MONO)],
+            [Paragraph('Status', S_LABEL),
+             Paragraph(payment_status, S_VALUE)],
+            [Paragraph('Payment', S_LABEL),
+             Paragraph(payment_method, S_VALUE)],
+        ]
+        if invoice.is_fiscalized and invoice.fiscal_document_number:
+            det_rows.append([
+                Paragraph('Fiscal No', S_LABEL),
+                Paragraph(str(invoice.fiscal_document_number), S_MONO),
+            ])
+
+        det_table = Table(det_rows, colWidths=[RIGHT_W * 0.4, RIGHT_W * 0.6])
+        det_table.setStyle(TableStyle([
+            ('SPAN',         (0, 0), (1, 0)),
+            ('BACKGROUND',   (0, 0), (-1, -1), LIGHT_GRAY),
+            ('BOX',          (0, 0), (-1, -1), 2, BORDER),
+            ('ROUNDEDCORNERS', [6]),
+            ('LINEBELOW',    (0, 0), (1, 0),   1, BORDER),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING',   (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 5),
+            ('VALIGN',       (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+
+        # Put them side by side
+        grid = Table(
+            [[cust_table, det_table]],
+            colWidths=[LEFT_W, RIGHT_W + 4 * mm],
+            hAlign='LEFT',
+        )
+        grid.setStyle(TableStyle([
+            ('VALIGN',      (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING',(0, 0), (-1, -1), 0),
+            ('TOPPADDING',  (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING',(0, 0),(-1, -1), 0),
+            ('ALIGN',       (1, 0), (1, 0),   'RIGHT'),
+        ]))
+        elements.append(grid)
+        elements.append(Spacer(1, 12))
+
+        # ════════════════════════════════════════════════════════════════════
+        # 3. ITEMS TABLE
+        # ════════════════════════════════════════════════════════════════════
+        items = list(sale.items.all())
+        many  = len(items) > 10
+        th_fs = 9 if many else 10
+        td_fs = 8 if many else 9
+        td_pad = 4 if many else 7
+
+        S_TH = style('TH', fontSize=th_fs, fontName='Helvetica-Bold',
+                     textColor=WHITE, alignment=TA_CENTER)
+        S_TD_C = style('TDC', fontSize=td_fs, fontName='Helvetica',
+                       textColor=DARK, alignment=TA_CENTER)
+        S_TD_R = style('TDR', fontSize=td_fs, fontName='Helvetica-Bold',
+                       textColor=DARK, alignment=TA_RIGHT)
+        S_ITEM_N = style('IN', fontSize=td_fs, fontName='Helvetica-Bold', textColor=DARK)
+        S_ITEM_C = style('IC', fontSize=max(7, td_fs-1), fontName='Courier', textColor=GRAY)
+
+        COL_QTY  = 15 * mm
+        COL_PRICE= 28 * mm
+        COL_TOTAL= 28 * mm
+        COL_DESC = CONTENT_W - COL_QTY - COL_PRICE - COL_TOTAL
+
+        item_data = [[
+            Paragraph('Qty',         S_TH),
+            Paragraph('Description', S_TH),
+            Paragraph('@ Price',     S_TH),
+            Paragraph('Amount',      S_TH),
+        ]]
+
+        for item in items:
+            if item.item_type == 'SERVICE' and item.service:
+                name = item.service.name
+                code = f"Code: {item.service.code}" if getattr(item.service, 'code', None) else ''
+                badge = 'SERVICE'
+            elif getattr(item, 'product', None):
+                name = item.product.name
+                code = f"SKU: {item.product.sku}" if getattr(item.product, 'sku', None) else ''
+                badge = 'PRODUCT'
+            else:
+                name = getattr(item, 'item_name', getattr(item, 'description', ''))
+                code = ''
+                badge = ''
+
+            desc_cell = [Paragraph(name, S_ITEM_N)]
+            if code:
+                desc_cell.append(Paragraph(code, S_ITEM_C))
+
+            qty_val   = item.quantity
+            try:
+                qty_display = f"{qty_val:g}"
+            except Exception:
+                qty_display = str(qty_val)
+
+            unit_price = getattr(item, 'unit_price', 0)
+            line_total = getattr(item, 'line_total', getattr(item, 'total_price', 0))
+
+            item_data.append([
+                Paragraph(qty_display, S_TD_C),
+                desc_cell,
+                Paragraph(f"{unit_price:,.2f}", S_TD_R),
+                Paragraph(f"{line_total:,.2f}", S_TD_R),
+            ])
+
+        items_table = Table(
+            item_data,
+            colWidths=[COL_QTY, COL_DESC, COL_PRICE, COL_TOTAL],
+            repeatRows=1,
+        )
         items_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-            ('ALIGN', (0, 1), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 10),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            # Header row
+            ('BACKGROUND',   (0, 0), (-1, 0),  PRIMARY),
+            ('TEXTCOLOR',    (0, 0), (-1, 0),  WHITE),
+            ('ALIGN',        (0, 0), (-1, 0),  'CENTER'),
+            ('FONTNAME',     (0, 0), (-1, 0),  'Helvetica-Bold'),
+            ('TOPPADDING',   (0, 0), (-1, 0),  8),
+            ('BOTTOMPADDING',(0, 0), (-1, 0),  8),
+            # Data rows — alternating
+            ('ROWBACKGROUNDS',(0, 1), (-1, -1), [WHITE, BEIGE_ROW]),
+            ('GRID',         (0, 0), (-1, -1), 0.5, BORDER),
+            ('ALIGN',        (0, 1), (0, -1),  'CENTER'),
+            ('ALIGN',        (2, 1), (3, -1),  'RIGHT'),
+            ('VALIGN',       (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING',   (0, 1), (-1, -1), td_pad),
+            ('BOTTOMPADDING',(0, 1), (-1, -1), td_pad),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 5),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
         ]))
         elements.append(items_table)
-        elements.append(Spacer(1, 20))
+        elements.append(Spacer(1, 12))
 
-        # Totals
-        totals_data = [
-            ['Subtotal:', f"{invoice.subtotal:,.2f}"],
-            ['Tax:', f"{invoice.tax_amount:,.2f}"],
-        ]
+        # ════════════════════════════════════════════════════════════════════
+        # 4. BOTTOM — QR code (left) + Totals (right)
+        # ════════════════════════════════════════════════════════════════════
+        HALF = CONTENT_W / 2 - 2 * mm
 
-        if invoice.discount_amount and invoice.discount_amount > 0:
-            totals_data.append(['Discount:', f"-{invoice.discount_amount:,.2f}"])
-
-        totals_data.append(['Total Amount:', f"{invoice.total_amount:,.2f}"])
-        totals_data.append(['Amount Paid:', f"{invoice.amount_paid:,.2f}"])
-        totals_data.append(['Balance Due:', f"{invoice.amount_outstanding:,.2f}"])
-
-        totals_table = Table(totals_data, colWidths=[2 * inch, 1.5 * inch])
-        totals_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
-            ('FONTNAME', (0, 0), (-1, -2), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -2), 11),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, -1), (-1, -1), 12),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ]))
-        elements.append(totals_table)
-
-        # Notes
-        if invoice.sale.notes:
-            elements.append(Spacer(1, 20))
-            elements.append(Paragraph("Notes:", styles['Heading3']))
-            elements.append(Paragraph(invoice.sale.notes, styles['Normal']))
-
-        # EFRIS Information
+        # ── QR / EFRIS (left) ───────────────────────────────────────────────
+        qr_content = ''
         if invoice.is_fiscalized:
-            elements.append(Spacer(1, 20))
-            elements.append(Paragraph("EFRIS Information:", styles['Heading3']))
-            efris_data = [
-                ['Fiscal Document Number:', invoice.fiscal_document_number],
-                ['Verification Code:', invoice.verification_code or 'N/A'],
-                ['Fiscalization Date:',
-                 invoice.fiscalization_time.strftime('%B %d, %Y %H:%M') if invoice.fiscalization_time else 'N/A'],
-            ]
-            efris_table = Table(efris_data, colWidths=[2 * inch, 3 * inch])
-            efris_table.setStyle(TableStyle([
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ]))
-            elements.append(efris_table)
+            try:
+                import qrcode
+                from io import BytesIO as BIO
+                qr_data = (
+                    invoice.verification_code or
+                    invoice.fiscal_document_number or
+                    str(invoice.invoice_number)
+                )
+                qr = qrcode.make(qr_data)
+                qr_buf = BIO()
+                qr.save(qr_buf, format='PNG')
+                qr_buf.seek(0)
+                qr_img = Image(qr_buf, width=35*mm, height=35*mm)
+                efris_rows = [[qr_img]]
+                if invoice.fiscal_document_number:
+                    efris_rows.append([
+                        Paragraph(f"<b>FDN:</b> {invoice.fiscal_document_number}",
+                                  style('EFRIS', fontSize=7, fontName='Helvetica',
+                                        textColor=DARK, alignment=TA_CENTER))
+                    ])
+                if invoice.verification_code:
+                    efris_rows.append([
+                        Paragraph(f"<b>Verification:</b> {invoice.verification_code}",
+                                  style('EFRISK', fontSize=7, fontName='Helvetica',
+                                        textColor=DARK, alignment=TA_CENTER))
+                    ])
+                qr_table = Table(efris_rows, colWidths=[HALF])
+                qr_table.setStyle(TableStyle([
+                    ('ALIGN',        (0, 0), (-1, -1), 'CENTER'),
+                    ('VALIGN',       (0, 0), (-1, -1), 'MIDDLE'),
+                    ('TOPPADDING',   (0, 0), (-1, -1), 4),
+                    ('BOTTOMPADDING',(0, 0), (-1, -1), 4),
+                ]))
+                qr_content = qr_table
+            except ImportError:
+                qr_content = Paragraph(
+                    'EFRIS Verified', style('EFRISfallback',
+                        fontSize=9, fontName='Helvetica-Bold',
+                        textColor=SUCCESS, alignment=TA_CENTER)
+                )
 
-        # Build PDF
+        # ── Totals (right) ──────────────────────────────────────────────────
+        currency = getattr(sale, 'currency', '')
+
+        S_TOT_L = style('TotL', fontSize=10, fontName='Helvetica',  textColor=GRAY, alignment=TA_LEFT)
+        S_TOT_V = style('TotV', fontSize=10, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_RIGHT)
+        S_FINAL_L = style('FinL', fontSize=13, fontName='Helvetica-Bold', textColor=PRIMARY, alignment=TA_LEFT)
+        S_FINAL_V = style('FinV', fontSize=13, fontName='Helvetica-Bold', textColor=PRIMARY, alignment=TA_RIGHT)
+        S_DISC_V  = style('DV',  fontSize=10, fontName='Helvetica-Bold', textColor=RED, alignment=TA_RIGHT)
+
+        subtotal = invoice.subtotal
+        tax      = invoice.tax_amount
+        discount = invoice.discount_amount or 0
+        total    = invoice.total_amount
+        paid     = invoice.amount_paid
+        balance  = invoice.amount_outstanding
+
+        tot_rows = [
+            [Paragraph('Net Amount', S_TOT_L),
+             Paragraph(f"{subtotal:,.2f} {currency}", S_TOT_V)],
+            [Paragraph('Tax Amount', S_TOT_L),
+             Paragraph(f"{tax:,.2f} {currency}", S_TOT_V)],
+        ]
+        if discount > 0:
+            tot_rows.append([
+                Paragraph('Discount', S_TOT_L),
+                Paragraph(f"-{discount:,.2f} {currency}", S_DISC_V),
+            ])
+        tot_rows.append([
+            Paragraph('Gross Amount', S_FINAL_L),
+            Paragraph(f"{total:,.2f} {currency}", S_FINAL_V),
+        ])
+        tot_rows.append([
+            Paragraph('Amount Paid', S_TOT_L),
+            Paragraph(f"{paid:,.2f} {currency}", S_TOT_V),
+        ])
+        tot_rows.append([
+            Paragraph('Balance Due', S_TOT_L),
+            Paragraph(f"{balance:,.2f} {currency}", S_TOT_V),
+        ])
+
+        GROSS_IDX = 2 if discount <= 0 else 3   # row index of "Gross Amount"
+
+        tot_table = Table(tot_rows, colWidths=[HALF * 0.55, HALF * 0.45])
+        tot_style = [
+            ('LINEABOVE',    (0, 0), (-1, 0),   2, PRIMARY),
+            ('LINEABOVE',    (0, GROSS_IDX), (-1, GROSS_IDX), 1.5, DARK),
+            ('LINEBELOW',    (0, GROSS_IDX), (-1, GROSS_IDX), 1.5, DARK),
+            ('TOPPADDING',   (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING',(0, 0), (-1, -1), 6),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('VALIGN',       (0, 0), (-1, -1), 'MIDDLE'),
+        ]
+        tot_table.setStyle(TableStyle(tot_style))
+
+        bottom_data = [[qr_content or '', tot_table]]
+        bottom_table = Table(
+            bottom_data,
+            colWidths=[HALF + 2*mm, HALF + 2*mm],
+        )
+        bottom_table.setStyle(TableStyle([
+            ('VALIGN',      (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING',(0, 0), (-1, -1), 0),
+            ('TOPPADDING',  (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING',(0, 0),(-1,-1),  0),
+        ]))
+        elements.append(bottom_table)
+        elements.append(Spacer(1, 10))
+
+        # ── Notes (if any) ──────────────────────────────────────────────────
+        if sale.notes:
+            elements.append(HRFlowable(width=CONTENT_W, thickness=1, color=BORDER, spaceAfter=6))
+            elements.append(Paragraph('<b>Notes:</b>', style('NL',
+                fontSize=9, fontName='Helvetica-Bold', textColor=DARK)))
+            elements.append(Paragraph(sale.notes, style('NB',
+                fontSize=9, fontName='Helvetica', textColor=DARK)))
+            elements.append(Spacer(1, 6))
+
+        # ════════════════════════════════════════════════════════════════════
+        # 5. FOOTER
+        # ════════════════════════════════════════════════════════════════════
+        elements.append(HRFlowable(
+            width=CONTENT_W, thickness=2, color=BORDER, spaceAfter=8
+        ))
+        elements.append(Paragraph(
+            '<font color="#dc2626"><b>*Goods and money once received cannot be returned!*</b></font>',
+            style('Warn', fontSize=9, fontName='Helvetica-Bold', alignment=TA_CENTER, spaceAfter=4)
+        ))
+        elements.append(Paragraph('THANK YOU FOR THE BUSINESS!', style('TY',
+            fontSize=11, fontName='Helvetica-Bold', textColor=DARK,
+            alignment=TA_CENTER, spaceAfter=4)))
+
+        from datetime import datetime
+        now_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+        elements.append(Paragraph(
+            f'Generated: {now_str} | Official receipt from {store.name}',
+            S_FOOTER
+        ))
+        elements.append(Spacer(1, 4))
+        elements.append(Paragraph(
+            'Powered by <b><font color="#7c3aed">Primebooks</font></b> '
+            '(www.primebooks.sale)',
+            S_FOOTER
+        ))
+
+        # ── Build ────────────────────────────────────────────────────────────
         doc.build(elements)
+
         pdf_data = buffer.getvalue()
         buffer.close()
-        response.write(pdf_data)
 
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = (
+            f'attachment; filename="invoice_{invoice.invoice_number}.pdf"'
+        )
+        response.write(pdf_data)
         return response
 
 

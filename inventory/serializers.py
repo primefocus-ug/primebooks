@@ -60,7 +60,7 @@ class StockTransferListSerializer(serializers.ModelSerializer):
             'approved_by_name',
             'completed_by_name',
             # timestamps
-            'created_at', 'updated_at', 'approved_at', 'completed_at', 'cancelled_at',
+            'created_at', 'approved_at', 'completed_at', 'cancelled_at',
             # computed
             'can_be_approved', 'can_be_completed', 'can_be_cancelled',
         ]

@@ -862,32 +862,36 @@ class Sale(models.Model, EFRISSaleMixin):
                             elif hasattr(self.customer, 'tin') and self.customer.tin:
                                 business_type = 'B2B'
 
-                        InvoiceModel.objects.create(
+                        invoice, created = InvoiceModel.objects.get_or_create(
                             sale=self,
-                            store=self.store,
-                            terms='',
-                            purchase_order='',
-                            created_by=self.created_by,
-                            business_type=business_type,
-                            operator_name=self.created_by.get_full_name() if self.created_by else 'System',
-                            fiscalization_status='pending',
-                            efris_document_type='1',
-                            auto_fiscalize=True
+                            defaults={
+                                'store': self.store,
+                                'terms': '',
+                                'purchase_order': '',
+                                'created_by': self.created_by,
+                                'business_type': business_type,
+                                'operator_name': self.created_by.get_full_name() if self.created_by else 'System',
+                                'fiscalization_status': 'pending',
+                                'efris_document_type': '1',
+                                'auto_fiscalize': True,
+                            }
                         )
-                        logger.info(f"✅ Auto-created Invoice record for sale {self.document_number}")
+                        if created:
+                            logger.info(f"✅ Auto-created Invoice record for sale {self.document_number}")
+                        else:
+                            logger.debug(f"ℹ️  Invoice already exists for sale {self.document_number}, skipping")
                     except Exception as e:
                         logger.error(f"❌ Failed to auto-create Invoice record for sale {self.id}: {e}", exc_info=True)
 
             if self.document_type == 'RECEIPT' and is_new:
                 try:
                     from sales.models import Receipt as ReceiptModel
-                    if not hasattr(self, 'receipt_detail') or self.receipt_detail is None:
-                        # ✅ FIX: Pass receipt_number to prevent double prefix
-                        ReceiptModel.objects.create(
-                            sale=self,
-                            receipt_number=self.document_number,  # ← ADD THIS LINE
-                            printed_by=self.created_by,
-                            receipt_data={
+                    receipt, created = ReceiptModel.objects.get_or_create(
+                        sale=self,
+                        defaults={
+                            'receipt_number': self.document_number,
+                            'printed_by': self.created_by,
+                            'receipt_data': {
                                 'items': [],
                                 'totals': {
                                     'subtotal': str(self.subtotal),
@@ -896,8 +900,12 @@ class Sale(models.Model, EFRISSaleMixin):
                                     'total': str(self.total_amount),
                                 }
                             }
-                        )
+                        }
+                    )
+                    if created:
                         logger.info(f"✅ Auto-created Receipt record for sale {self.document_number}")
+                    else:
+                        logger.debug(f"ℹ️  Receipt already exists for sale {self.document_number}, skipping")
                 except Exception as e:
                     logger.error(f"❌ Failed to auto-create Receipt record: {e}", exc_info=True)
 
@@ -931,10 +939,10 @@ class Sale(models.Model, EFRISSaleMixin):
                 except Exception as e:
                     logger.error(f"Auto-fiscalization check failed for sale {self.id}: {e}")
 
-
     def generate_document_number(self):
-        """Generate document number based on type"""
-        # ✅ CHANGED: Add REFUND prefix
+        """Generate unique document number — race-condition safe."""
+        from django.db import transaction as _tx
+
         if self.transaction_type == 'REFUND':
             prefix = 'REF'
         else:
@@ -946,23 +954,28 @@ class Sale(models.Model, EFRISSaleMixin):
             }.get(self.document_type, 'SAL')
 
         date_str = timezone.now().strftime('%Y%m%d')
+        today = timezone.now().date()
 
-        # Get last number for this type today
-        last_sale = Sale.objects.filter(
-            document_type=self.document_type,
-            transaction_type=self.transaction_type,
-            created_at__date=timezone.now().date()
-        ).order_by('-id').first()
+        # Retry loop handles the rare case where two concurrent sales grab
+        # the same sequence number. Max 10 attempts is more than enough.
+        for attempt in range(10):
+            # Count existing docs of this type today to determine next sequence
+            count = Sale.objects.filter(
+                document_type=self.document_type,
+                transaction_type=self.transaction_type,
+                created_at__date=today,
+            ).exclude(pk=self.pk).count()
 
-        if last_sale and last_sale.document_number:
-            try:
-                sequence = int(last_sale.document_number.split('-')[-1]) + 1
-            except:
-                sequence = 1
-        else:
-            sequence = 1
+            sequence = count + 1 + attempt  # attempt bumps sequence on collision
+            candidate = f"{prefix}-{date_str}-{sequence:04d}"
 
-        return f"{prefix}-{date_str}-{sequence:04d}"
+            # Check if candidate is already taken
+            if not Sale.objects.filter(document_number=candidate).exists():
+                return candidate
+
+        # Absolute fallback — use microseconds to guarantee uniqueness
+        import time
+        return f"{prefix}-{date_str}-{int(time.time() * 1000) % 100000:05d}"
 
     def update_totals(self):
         """Update totals using SaleItems - handles both sales and refunds"""
@@ -1414,29 +1427,36 @@ class Sale(models.Model, EFRISSaleMixin):
 
                 from invoices.models import Invoice
 
-                if hasattr(self, 'invoice_detail') and self.invoice_detail:
-                    logger.info(f"Invoice already exists for sale {self.id}")
-                    return self.invoice_detail
-
-                invoice = Invoice.objects.create(
-                    sale=self,
-                    store=self.store,
-                    terms='',
-                    purchase_order='',
-                    business_type=self._determine_business_type() if hasattr(self,
-                                                                             '_determine_business_type') else 'B2C',
-                    operator_name=self.created_by.get_full_name() if self.created_by else 'System',
-                    created_by=self.created_by,
-                    auto_fiscalize=True
+                business_type = (
+                    self._determine_business_type()
+                    if hasattr(self, '_determine_business_type')
+                    else 'B2C'
                 )
 
-                logger.info(f"Created invoice {invoice.id} for sale {self.id}")
+                invoice, created = Invoice.objects.get_or_create(
+                    sale=self,
+                    defaults={
+                        'store': self.store,
+                        'terms': '',
+                        'purchase_order': '',
+                        'business_type': business_type,
+                        'operator_name': self.created_by.get_full_name() if self.created_by else 'System',
+                        'created_by': self.created_by,
+                        'auto_fiscalize': True,
+                    }
+                )
+
+                if created:
+                    logger.info(f"✅ Created invoice {invoice.id} for sale {self.id}")
+                else:
+                    logger.info(f"ℹ️  Invoice already exists for sale {self.id} (id={invoice.id}), skipping")
+
                 return invoice
 
             return None
 
         except Exception as e:
-            logger.error(f"Error creating invoice for sale {self.id}: {e}")
+            logger.error(f"❌ Error creating invoice for sale {self.id}: {e}", exc_info=True)
             return None
 
 
@@ -2073,22 +2093,35 @@ class Payment(models.Model):
                 raise ValidationError(f"Payment amount {self.amount} exceeds outstanding amount {outstanding}")
 
     def save(self, *args, **kwargs):
-        """Save payment and update sale status without circular dependency"""
-        # Run validation
-        self.clean()
+        import logging
+        logger = logging.getLogger(__name__)
 
-        is_new = not self.pk
+        # Auto-generate receipt number only when missing
+        if not self.receipt_number and self.sale:
+            if self.sale.document_number and self.sale.document_number.startswith('RCP-'):
+                self.receipt_number = self.sale.document_number
+            else:
+                self.receipt_number = f"RCP-{self.sale.document_number}"
 
-        # Save the payment
+        # ✅ DEFENSIVE: Always clean double prefix, regardless of how receipt_number was set
+        if self.receipt_number and self.receipt_number.startswith('RCP-RCP-'):
+            self.receipt_number = self.receipt_number.replace('RCP-RCP-', 'RCP-', 1)
+            logger.warning(f"🔧 Fixed duplicate RCP prefix: {self.receipt_number}")
+
+        # Auto-populate store from sale
+        if not self.store_id and self.sale:
+            self.store = self.sale.store
+
+        # Auto-populate payment summary
+        if not self.payment_summary and self.sale:
+            self.payment_summary = {
+                'payment_method': self.sale.payment_method,
+                'amount': str(self.sale.total_amount),
+                'currency': self.sale.currency,
+                'items_count': self.sale.item_count,
+            }
+
         super().save(*args, **kwargs)
-
-        # Update sale payment status (use a delayed approach)
-        if is_new and self.sale:
-            try:
-                # Use a safer method that doesn't trigger circular save
-                self._update_sale_payment_status()
-            except Exception as e:
-                logger.error(f"Error updating sale payment status for payment {self.id}: {e}")
 
     def update_payment_status(self):
         """Update sale payment status based on payments"""
