@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict uOJqQp8JD4aTIgPgtgfMx2qQrS1OK3uCxSjoMaFrYGoJiCDOrgEgaOcYGcHINL1
+\restrict 5CFjZ5rzhueqCG5WaJgtdPGcLEy2zqR35XmlLcghZFYYodzD5HsKyd57SlFmJJg
 
 -- Dumped from database version 16.12 (Ubuntu 16.12-1.pgdg24.04+1)
 -- Dumped by pg_dump version 18.2 (Ubuntu 18.2-1.pgdg24.04+1)
@@ -745,62 +745,91 @@ ALTER TABLE IF EXISTS ONLY template.taggit_taggeditem DROP CONSTRAINT IF EXISTS 
 ALTER TABLE IF EXISTS ONLY template.taggit_tag DROP CONSTRAINT IF EXISTS taggit_tag_slug_key;
 ALTER TABLE IF EXISTS ONLY template.taggit_tag DROP CONSTRAINT IF EXISTS taggit_tag_pkey;
 ALTER TABLE IF EXISTS ONLY template.taggit_tag DROP CONSTRAINT IF EXISTS taggit_tag_name_key;
+ALTER TABLE IF EXISTS ONLY template.stores_userdevicesession DROP CONSTRAINT IF EXISTS stores_userdevicesession_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.stores_userdevicesession DROP CONSTRAINT IF EXISTS stores_userdevicesession_session_key_key;
 ALTER TABLE IF EXISTS ONLY template.stores_userdevicesession DROP CONSTRAINT IF EXISTS stores_userdevicesession_pkey;
+ALTER TABLE IF EXISTS ONLY template.stores_storeoperatinghours DROP CONSTRAINT IF EXISTS stores_storeoperatinghours_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.stores_storeoperatinghours DROP CONSTRAINT IF EXISTS stores_storeoperatinghours_pkey;
+ALTER TABLE IF EXISTS ONLY template.stores_storedevice DROP CONSTRAINT IF EXISTS stores_storedevice_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.stores_storedevice DROP CONSTRAINT IF EXISTS stores_storedevice_serial_number_key;
 ALTER TABLE IF EXISTS ONLY template.stores_storedevice DROP CONSTRAINT IF EXISTS stores_storedevice_pkey;
 ALTER TABLE IF EXISTS ONLY template.stores_storedevice DROP CONSTRAINT IF EXISTS stores_storedevice_device_number_key;
 ALTER TABLE IF EXISTS ONLY template.stores_storeaccess DROP CONSTRAINT IF EXISTS stores_storeaccess_user_id_store_id_894dda64_uniq;
+ALTER TABLE IF EXISTS ONLY template.stores_storeaccess DROP CONSTRAINT IF EXISTS stores_storeaccess_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.stores_storeaccess DROP CONSTRAINT IF EXISTS stores_storeaccess_pkey;
+ALTER TABLE IF EXISTS ONLY template.stores_store DROP CONSTRAINT IF EXISTS stores_store_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.stores_store_store_managers DROP CONSTRAINT IF EXISTS stores_store_store_managers_pkey;
 ALTER TABLE IF EXISTS ONLY template.stores_store_store_managers DROP CONSTRAINT IF EXISTS stores_store_store_manag_store_id_customuser_id_c59e88ae_uniq;
 ALTER TABLE IF EXISTS ONLY template.stores_store_staff DROP CONSTRAINT IF EXISTS stores_store_staff_store_id_customuser_id_5ed1c6c8_uniq;
 ALTER TABLE IF EXISTS ONLY template.stores_store_staff DROP CONSTRAINT IF EXISTS stores_store_staff_pkey;
 ALTER TABLE IF EXISTS ONLY template.stores_store DROP CONSTRAINT IF EXISTS stores_store_pkey;
 ALTER TABLE IF EXISTS ONLY template.stores_store DROP CONSTRAINT IF EXISTS stores_store_code_key;
+ALTER TABLE IF EXISTS ONLY template.stores_stockstore DROP CONSTRAINT IF EXISTS stores_stockstore_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.stores_stockstore_staff DROP CONSTRAINT IF EXISTS stores_stockstore_staff_stockstore_id_customuser_8ef3e7a8_uniq;
 ALTER TABLE IF EXISTS ONLY template.stores_stockstore_staff DROP CONSTRAINT IF EXISTS stores_stockstore_staff_pkey;
 ALTER TABLE IF EXISTS ONLY template.stores_stockstore DROP CONSTRAINT IF EXISTS stores_stockstore_pkey;
 ALTER TABLE IF EXISTS ONLY template.stores_stockstore_managers DROP CONSTRAINT IF EXISTS stores_stockstore_managers_pkey;
 ALTER TABLE IF EXISTS ONLY template.stores_stockstore_managers DROP CONSTRAINT IF EXISTS stores_stockstore_manage_stockstore_id_customuser_9153230b_uniq;
 ALTER TABLE IF EXISTS ONLY template.stores_stockstore DROP CONSTRAINT IF EXISTS stores_stockstore_code_key;
+ALTER TABLE IF EXISTS ONLY template.stores_securityalert DROP CONSTRAINT IF EXISTS stores_securityalert_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.stores_securityalert DROP CONSTRAINT IF EXISTS stores_securityalert_pkey;
+ALTER TABLE IF EXISTS ONLY template.stores_deviceoperatorlog DROP CONSTRAINT IF EXISTS stores_deviceoperatorlog_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.stores_deviceoperatorlog DROP CONSTRAINT IF EXISTS stores_deviceoperatorlog_pkey;
 ALTER TABLE IF EXISTS ONLY template.stores_devicefingerprint DROP CONSTRAINT IF EXISTS stores_devicefingerprint_user_id_fingerprint_hash_3fa58a86_uniq;
+ALTER TABLE IF EXISTS ONLY template.stores_devicefingerprint DROP CONSTRAINT IF EXISTS stores_devicefingerprint_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.stores_devicefingerprint DROP CONSTRAINT IF EXISTS stores_devicefingerprint_pkey;
+ALTER TABLE IF EXISTS ONLY template.sales_saleitem DROP CONSTRAINT IF EXISTS sales_saleitem_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.sales_saleitem DROP CONSTRAINT IF EXISTS sales_saleitem_pkey;
 ALTER TABLE IF EXISTS ONLY template.sales_sale DROP CONSTRAINT IF EXISTS sales_sale_transaction_id_key;
+ALTER TABLE IF EXISTS ONLY template.sales_sale DROP CONSTRAINT IF EXISTS sales_sale_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.sales_sale DROP CONSTRAINT IF EXISTS sales_sale_pkey;
 ALTER TABLE IF EXISTS ONLY template.sales_sale DROP CONSTRAINT IF EXISTS sales_sale_document_number_key;
+ALTER TABLE IF EXISTS ONLY template.sales_receipt DROP CONSTRAINT IF EXISTS sales_receipt_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.sales_receipt DROP CONSTRAINT IF EXISTS sales_receipt_sale_id_key;
 ALTER TABLE IF EXISTS ONLY template.sales_receipt DROP CONSTRAINT IF EXISTS sales_receipt_receipt_number_key;
 ALTER TABLE IF EXISTS ONLY template.sales_receipt DROP CONSTRAINT IF EXISTS sales_receipt_pkey;
 ALTER TABLE IF EXISTS ONLY template.sales_paymentreminder DROP CONSTRAINT IF EXISTS sales_paymentreminder_pkey;
+ALTER TABLE IF EXISTS ONLY template.sales_payment DROP CONSTRAINT IF EXISTS sales_payment_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.sales_payment DROP CONSTRAINT IF EXISTS sales_payment_pkey;
+ALTER TABLE IF EXISTS ONLY template.sales_cartitem DROP CONSTRAINT IF EXISTS sales_cartitem_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.sales_cartitem DROP CONSTRAINT IF EXISTS sales_cartitem_pkey;
+ALTER TABLE IF EXISTS ONLY template.sales_cart DROP CONSTRAINT IF EXISTS sales_cart_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.sales_cart DROP CONSTRAINT IF EXISTS sales_cart_pkey;
+ALTER TABLE IF EXISTS ONLY template.reports_savedreport DROP CONSTRAINT IF EXISTS reports_savedreport_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.reports_savedreport DROP CONSTRAINT IF EXISTS reports_savedreport_pkey;
+ALTER TABLE IF EXISTS ONLY template.reports_reportschedule DROP CONSTRAINT IF EXISTS reports_reportschedule_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.reports_reportschedule DROP CONSTRAINT IF EXISTS reports_reportschedule_pkey;
+ALTER TABLE IF EXISTS ONLY template.reports_reportcomparison DROP CONSTRAINT IF EXISTS reports_reportcomparison_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.reports_reportcomparison DROP CONSTRAINT IF EXISTS reports_reportcomparison_pkey;
+ALTER TABLE IF EXISTS ONLY template.reports_reportaccesslog DROP CONSTRAINT IF EXISTS reports_reportaccesslog_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.reports_reportaccesslog DROP CONSTRAINT IF EXISTS reports_reportaccesslog_pkey;
+ALTER TABLE IF EXISTS ONLY template.reports_generatedreport DROP CONSTRAINT IF EXISTS reports_generatedreport_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.reports_generatedreport DROP CONSTRAINT IF EXISTS reports_generatedreport_pkey;
+ALTER TABLE IF EXISTS ONLY template.reports_efrisreporttemplate DROP CONSTRAINT IF EXISTS reports_efrisreporttemplate_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.reports_efrisreporttemplate DROP CONSTRAINT IF EXISTS reports_efrisreporttemplate_pkey;
 ALTER TABLE IF EXISTS ONLY template.otp_totp_totpdevice DROP CONSTRAINT IF EXISTS otp_totp_totpdevice_pkey;
+ALTER TABLE IF EXISTS ONLY template.notifications_notificationtemplate DROP CONSTRAINT IF EXISTS notifications_notificationtemplate_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationtemplate DROP CONSTRAINT IF EXISTS notifications_notificationtemplate_pkey;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationtemplate DROP CONSTRAINT IF EXISTS notifications_notificationtemplate_event_type_key;
+ALTER TABLE IF EXISTS ONLY template.notifications_notificationrule DROP CONSTRAINT IF EXISTS notifications_notificationrule_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationrule_specific_users DROP CONSTRAINT IF EXISTS notifications_notificationrule_specific_users_pkey;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationrule DROP CONSTRAINT IF EXISTS notifications_notificationrule_pkey;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationpreference DROP CONSTRAINT IF EXISTS notifications_notificationpreference_user_id_key;
+ALTER TABLE IF EXISTS ONLY template.notifications_notificationpreference DROP CONSTRAINT IF EXISTS notifications_notificationpreference_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationpreference DROP CONSTRAINT IF EXISTS notifications_notificationpreference_pkey;
+ALTER TABLE IF EXISTS ONLY template.notifications_notificationlog DROP CONSTRAINT IF EXISTS notifications_notificationlog_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationlog DROP CONSTRAINT IF EXISTS notifications_notificationlog_pkey;
+ALTER TABLE IF EXISTS ONLY template.notifications_notificationcategory DROP CONSTRAINT IF EXISTS notifications_notificationcategory_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationcategory DROP CONSTRAINT IF EXISTS notifications_notificationcategory_slug_key;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationcategory DROP CONSTRAINT IF EXISTS notifications_notificationcategory_pkey;
+ALTER TABLE IF EXISTS ONLY template.notifications_notificationbatch DROP CONSTRAINT IF EXISTS notifications_notificationbatch_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationbatch_recipients DROP CONSTRAINT IF EXISTS notifications_notificationbatch_recipients_pkey;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationbatch DROP CONSTRAINT IF EXISTS notifications_notificationbatch_pkey;
+ALTER TABLE IF EXISTS ONLY template.notifications_notification DROP CONSTRAINT IF EXISTS notifications_notification_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.notifications_notification DROP CONSTRAINT IF EXISTS notifications_notification_pkey;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationrule_specific_users DROP CONSTRAINT IF EXISTS notifications_notificati_notificationrule_id_cust_76a004e5_uniq;
 ALTER TABLE IF EXISTS ONLY template.notifications_notificationbatch_recipients DROP CONSTRAINT IF EXISTS notifications_notificati_notificationbatch_id_cus_913060e4_uniq;
+ALTER TABLE IF EXISTS ONLY template.notifications_announcement DROP CONSTRAINT IF EXISTS notifications_announcement_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.notifications_announcement DROP CONSTRAINT IF EXISTS notifications_announcement_pkey;
 ALTER TABLE IF EXISTS ONLY template.notifications_announcement_dismissed_by DROP CONSTRAINT IF EXISTS notifications_announcement_dismissed_by_pkey;
 ALTER TABLE IF EXISTS ONLY template.notifications_announcement_dismissed_by DROP CONSTRAINT IF EXISTS notifications_announceme_announcement_id_customus_f21f7081_uniq;
@@ -830,71 +859,112 @@ ALTER TABLE IF EXISTS ONLY template.messaging_audit_log DROP CONSTRAINT IF EXIST
 ALTER TABLE IF EXISTS ONLY template.messaging_attachments DROP CONSTRAINT IF EXISTS messaging_attachments_pkey;
 ALTER TABLE IF EXISTS ONLY template.messaging_announcement_reads DROP CONSTRAINT IF EXISTS messaging_announcement_reads_pkey;
 ALTER TABLE IF EXISTS ONLY template.messaging_announcement_reads DROP CONSTRAINT IF EXISTS messaging_announcement_r_announcement_id_user_id_0374790f_uniq;
+ALTER TABLE IF EXISTS ONLY template.invoices_paymentschedule DROP CONSTRAINT IF EXISTS invoices_paymentschedule_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.invoices_paymentschedule DROP CONSTRAINT IF EXISTS invoices_paymentschedule_pkey;
 ALTER TABLE IF EXISTS ONLY template.invoices_paymentschedule DROP CONSTRAINT IF EXISTS invoices_paymentschedule_invoice_id_installment_n_bc65c4e2_uniq;
+ALTER TABLE IF EXISTS ONLY template.invoices_paymentreminder DROP CONSTRAINT IF EXISTS invoices_paymentreminder_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.invoices_paymentreminder DROP CONSTRAINT IF EXISTS invoices_paymentreminder_pkey;
+ALTER TABLE IF EXISTS ONLY template.invoices_paymentallocation DROP CONSTRAINT IF EXISTS invoices_paymentallocation_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.invoices_paymentallocation DROP CONSTRAINT IF EXISTS invoices_paymentallocation_pkey;
+ALTER TABLE IF EXISTS ONLY template.invoices_invoicetemplate DROP CONSTRAINT IF EXISTS invoices_invoicetemplate_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.invoices_invoicetemplate DROP CONSTRAINT IF EXISTS invoices_invoicetemplate_pkey;
+ALTER TABLE IF EXISTS ONLY template.invoices_invoicepayment DROP CONSTRAINT IF EXISTS invoices_invoicepayment_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.invoices_invoicepayment DROP CONSTRAINT IF EXISTS invoices_invoicepayment_pkey;
+ALTER TABLE IF EXISTS ONLY template.invoices_invoice DROP CONSTRAINT IF EXISTS invoices_invoice_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.invoices_invoice DROP CONSTRAINT IF EXISTS invoices_invoice_sale_id_key;
 ALTER TABLE IF EXISTS ONLY template.invoices_invoice DROP CONSTRAINT IF EXISTS invoices_invoice_pkey;
+ALTER TABLE IF EXISTS ONLY template.invoices_fiscalizationaudit DROP CONSTRAINT IF EXISTS invoices_fiscalizationaudit_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.invoices_fiscalizationaudit DROP CONSTRAINT IF EXISTS invoices_fiscalizationaudit_pkey;
+ALTER TABLE IF EXISTS ONLY template.inventory_supplier DROP CONSTRAINT IF EXISTS inventory_supplier_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_supplier DROP CONSTRAINT IF EXISTS inventory_supplier_pkey;
 ALTER TABLE IF EXISTS ONLY template.inventory_stocktransfer DROP CONSTRAINT IF EXISTS inventory_stocktransfer_transfer_number_key;
+ALTER TABLE IF EXISTS ONLY template.inventory_stocktransfer DROP CONSTRAINT IF EXISTS inventory_stocktransfer_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_stocktransfer DROP CONSTRAINT IF EXISTS inventory_stocktransfer_pkey;
+ALTER TABLE IF EXISTS ONLY template.inventory_stockmovement DROP CONSTRAINT IF EXISTS inventory_stockmovement_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_stockmovement DROP CONSTRAINT IF EXISTS inventory_stockmovement_pkey;
+ALTER TABLE IF EXISTS ONLY template.inventory_stock DROP CONSTRAINT IF EXISTS inventory_stock_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_stock DROP CONSTRAINT IF EXISTS inventory_stock_pkey;
+ALTER TABLE IF EXISTS ONLY template.inventory_service DROP CONSTRAINT IF EXISTS inventory_service_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_service DROP CONSTRAINT IF EXISTS inventory_service_pkey;
 ALTER TABLE IF EXISTS ONLY template.inventory_service DROP CONSTRAINT IF EXISTS inventory_service_code_key;
+ALTER TABLE IF EXISTS ONLY template.inventory_product DROP CONSTRAINT IF EXISTS inventory_product_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_product DROP CONSTRAINT IF EXISTS inventory_product_sku_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_product DROP CONSTRAINT IF EXISTS inventory_product_pkey;
 ALTER TABLE IF EXISTS ONLY template.inventory_product DROP CONSTRAINT IF EXISTS inventory_product_barcode_key;
+ALTER TABLE IF EXISTS ONLY template.inventory_importsession DROP CONSTRAINT IF EXISTS inventory_importsession_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_importsession DROP CONSTRAINT IF EXISTS inventory_importsession_pkey;
+ALTER TABLE IF EXISTS ONLY template.inventory_importresult DROP CONSTRAINT IF EXISTS inventory_importresult_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_importresult DROP CONSTRAINT IF EXISTS inventory_importresult_pkey;
+ALTER TABLE IF EXISTS ONLY template.inventory_importlog DROP CONSTRAINT IF EXISTS inventory_importlog_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_importlog DROP CONSTRAINT IF EXISTS inventory_importlog_pkey;
+ALTER TABLE IF EXISTS ONLY template.inventory_category DROP CONSTRAINT IF EXISTS inventory_category_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.inventory_category DROP CONSTRAINT IF EXISTS inventory_category_pkey;
+ALTER TABLE IF EXISTS ONLY template.expenses_expense DROP CONSTRAINT IF EXISTS expenses_expense_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.expenses_expense DROP CONSTRAINT IF EXISTS expenses_expense_pkey;
+ALTER TABLE IF EXISTS ONLY template.expenses_budget DROP CONSTRAINT IF EXISTS expenses_budget_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.expenses_budget DROP CONSTRAINT IF EXISTS expenses_budget_pkey;
 ALTER TABLE IF EXISTS ONLY template.errors_errorsummary DROP CONSTRAINT IF EXISTS errors_errorsummary_pkey;
 ALTER TABLE IF EXISTS ONLY template.errors_errorsummary DROP CONSTRAINT IF EXISTS errors_errorsummary_date_error_code_a61d3ebf_uniq;
 ALTER TABLE IF EXISTS ONLY template.errors_errorlog DROP CONSTRAINT IF EXISTS errors_errorlog_pkey;
 ALTER TABLE IF EXISTS ONLY template.efris_productuploadtask DROP CONSTRAINT IF EXISTS efris_productuploadtask_task_id_key;
+ALTER TABLE IF EXISTS ONLY template.efris_productuploadtask DROP CONSTRAINT IF EXISTS efris_productuploadtask_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_productuploadtask DROP CONSTRAINT IF EXISTS efris_productuploadtask_pkey;
+ALTER TABLE IF EXISTS ONLY template.efris_fiscalizationaudit DROP CONSTRAINT IF EXISTS efris_fiscalizationaudit_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_fiscalizationaudit DROP CONSTRAINT IF EXISTS efris_fiscalizationaudit_pkey;
+ALTER TABLE IF EXISTS ONLY template.efris_exception_logs DROP CONSTRAINT IF EXISTS efris_exception_logs_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_exception_logs DROP CONSTRAINT IF EXISTS efris_exception_logs_pkey;
+ALTER TABLE IF EXISTS ONLY template.efris_efrissystemdictionary DROP CONSTRAINT IF EXISTS efris_efrissystemdictionary_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrissystemdictionary DROP CONSTRAINT IF EXISTS efris_efrissystemdictionary_pkey;
 ALTER TABLE IF EXISTS ONLY template.efris_efrissystemdictionary DROP CONSTRAINT IF EXISTS efris_efrissystemdiction_company_id_dictionary_ty_b6922867_uniq;
+ALTER TABLE IF EXISTS ONLY template.efris_efrissyncqueue DROP CONSTRAINT IF EXISTS efris_efrissyncqueue_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrissyncqueue DROP CONSTRAINT IF EXISTS efris_efrissyncqueue_pkey;
+ALTER TABLE IF EXISTS ONLY template.efris_efrisoperationmetrics DROP CONSTRAINT IF EXISTS efris_efrisoperationmetrics_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisoperationmetrics DROP CONSTRAINT IF EXISTS efris_efrisoperationmetrics_pkey;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisoperationmetrics DROP CONSTRAINT IF EXISTS efris_efrisoperationmetr_company_id_metric_type_p_c137d59e_uniq;
+ALTER TABLE IF EXISTS ONLY template.efris_efrisnotification DROP CONSTRAINT IF EXISTS efris_efrisnotification_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisnotification DROP CONSTRAINT IF EXISTS efris_efrisnotification_pkey;
+ALTER TABLE IF EXISTS ONLY template.efris_efrisintegrationsettings DROP CONSTRAINT IF EXISTS efris_efrisintegrationsettings_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisintegrationsettings DROP CONSTRAINT IF EXISTS efris_efrisintegrationsettings_pkey;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisintegrationsettings DROP CONSTRAINT IF EXISTS efris_efrisintegrationsettings_company_id_key;
+ALTER TABLE IF EXISTS ONLY template.efris_efrisfiscalizationbatch DROP CONSTRAINT IF EXISTS efris_efrisfiscalizationbatch_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisfiscalizationbatch DROP CONSTRAINT IF EXISTS efris_efrisfiscalizationbatch_pkey;
+ALTER TABLE IF EXISTS ONLY template.efris_efriserrorpattern DROP CONSTRAINT IF EXISTS efris_efriserrorpattern_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efriserrorpattern DROP CONSTRAINT IF EXISTS efris_efriserrorpattern_pkey;
 ALTER TABLE IF EXISTS ONLY template.efris_efriserrorpattern DROP CONSTRAINT IF EXISTS efris_efriserrorpattern_company_id_error_code_in_4e55b915_uniq;
+ALTER TABLE IF EXISTS ONLY template.efris_efrisdigitalkey DROP CONSTRAINT IF EXISTS efris_efrisdigitalkey_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisdigitalkey DROP CONSTRAINT IF EXISTS efris_efrisdigitalkey_pkey;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisdigitalkey DROP CONSTRAINT IF EXISTS efris_efrisdigitalkey_fingerprint_key;
+ALTER TABLE IF EXISTS ONLY template.efris_efrisdeviceinfo DROP CONSTRAINT IF EXISTS efris_efrisdeviceinfo_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisdeviceinfo DROP CONSTRAINT IF EXISTS efris_efrisdeviceinfo_store_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisdeviceinfo DROP CONSTRAINT IF EXISTS efris_efrisdeviceinfo_pkey;
+ALTER TABLE IF EXISTS ONLY template.efris_efrisconfiguration DROP CONSTRAINT IF EXISTS efris_efrisconfiguration_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisconfiguration DROP CONSTRAINT IF EXISTS efris_efrisconfiguration_pkey;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisconfiguration DROP CONSTRAINT IF EXISTS efris_efrisconfiguration_company_id_key;
+ALTER TABLE IF EXISTS ONLY template.efris_efriscommoditycategorry DROP CONSTRAINT IF EXISTS efris_efriscommoditycategorry_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efriscommoditycategorry DROP CONSTRAINT IF EXISTS efris_efriscommoditycategorry_pkey;
 ALTER TABLE IF EXISTS ONLY template.efris_efriscommoditycategorry DROP CONSTRAINT IF EXISTS efris_efriscommoditycate_company_id_commodity_cat_e21438b9_uniq;
+ALTER TABLE IF EXISTS ONLY template.efris_efrisapilog DROP CONSTRAINT IF EXISTS efris_efrisapilog_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_efrisapilog DROP CONSTRAINT IF EXISTS efris_efrisapilog_pkey;
+ALTER TABLE IF EXISTS ONLY template.efris_creditnoteapplication DROP CONSTRAINT IF EXISTS efris_creditnoteapplication_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.efris_creditnoteapplication DROP CONSTRAINT IF EXISTS efris_creditnoteapplication_reference_no_key;
 ALTER TABLE IF EXISTS ONLY template.efris_creditnoteapplication DROP CONSTRAINT IF EXISTS efris_creditnoteapplication_pkey;
 ALTER TABLE IF EXISTS ONLY template.django_migrations DROP CONSTRAINT IF EXISTS django_migrations_pkey;
 ALTER TABLE IF EXISTS ONLY template.django_admin_log DROP CONSTRAINT IF EXISTS django_admin_log_pkey;
+ALTER TABLE IF EXISTS ONLY template.customers_efriscustomersync DROP CONSTRAINT IF EXISTS customers_efriscustomersync_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.customers_efriscustomersync DROP CONSTRAINT IF EXISTS customers_efriscustomersync_pkey;
+ALTER TABLE IF EXISTS ONLY template.customers_customernote DROP CONSTRAINT IF EXISTS customers_customernote_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.customers_customernote DROP CONSTRAINT IF EXISTS customers_customernote_pkey;
+ALTER TABLE IF EXISTS ONLY template.customers_customergroup DROP CONSTRAINT IF EXISTS customers_customergroup_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.customers_customergroup DROP CONSTRAINT IF EXISTS customers_customergroup_pkey;
 ALTER TABLE IF EXISTS ONLY template.customers_customergroup_customers DROP CONSTRAINT IF EXISTS customers_customergroup_customers_pkey;
 ALTER TABLE IF EXISTS ONLY template.customers_customergroup_customers DROP CONSTRAINT IF EXISTS customers_customergroup__customergroup_id_custome_e8560bf4_uniq;
+ALTER TABLE IF EXISTS ONLY template.customers_customercreditstatement DROP CONSTRAINT IF EXISTS customers_customercreditstatement_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.customers_customercreditstatement DROP CONSTRAINT IF EXISTS customers_customercreditstatement_pkey;
+ALTER TABLE IF EXISTS ONLY template.customers_customer DROP CONSTRAINT IF EXISTS customers_customer_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.customers_customer DROP CONSTRAINT IF EXISTS customers_customer_pkey;
 ALTER TABLE IF EXISTS ONLY template.customers_customer DROP CONSTRAINT IF EXISTS customers_customer_efris_customer_id_key;
 ALTER TABLE IF EXISTS ONLY template.customers_customer DROP CONSTRAINT IF EXISTS customers_customer_customer_id_key;
+ALTER TABLE IF EXISTS ONLY template.branches_companybranch DROP CONSTRAINT IF EXISTS branches_companybranch_sync_id_key;
 ALTER TABLE IF EXISTS ONLY template.branches_companybranch DROP CONSTRAINT IF EXISTS branches_companybranch_pkey;
 ALTER TABLE IF EXISTS ONLY template.branches_companybranch DROP CONSTRAINT IF EXISTS branches_companybranch_company_id_name_a43e7fd2_uniq;
 ALTER TABLE IF EXISTS ONLY template.branches_companybranch DROP CONSTRAINT IF EXISTS branches_companybranch_company_id_code_7113c240_uniq;
@@ -908,7 +978,9 @@ ALTER TABLE IF EXISTS ONLY template.accounts_usersignature DROP CONSTRAINT IF EX
 ALTER TABLE IF EXISTS ONLY template.accounts_usersignature DROP CONSTRAINT IF EXISTS accounts_usersignature_pkey;
 ALTER TABLE IF EXISTS ONLY template.accounts_usersession DROP CONSTRAINT IF EXISTS accounts_usersession_session_key_key;
 ALTER TABLE IF EXISTS ONLY template.accounts_usersession DROP CONSTRAINT IF EXISTS accounts_usersession_pkey;
+ALTER TABLE IF EXISTS ONLY template.accounts_rolehistory DROP CONSTRAINT IF EXISTS accounts_rolehistory_sync_id_96f2d469_uniq;
 ALTER TABLE IF EXISTS ONLY template.accounts_rolehistory DROP CONSTRAINT IF EXISTS accounts_rolehistory_pkey;
+ALTER TABLE IF EXISTS ONLY template.accounts_role DROP CONSTRAINT IF EXISTS accounts_role_sync_id_d00a4fd1_uniq;
 ALTER TABLE IF EXISTS ONLY template.accounts_role DROP CONSTRAINT IF EXISTS accounts_role_pkey;
 ALTER TABLE IF EXISTS ONLY template.accounts_role DROP CONSTRAINT IF EXISTS accounts_role_group_id_key;
 ALTER TABLE IF EXISTS ONLY template.accounts_role DROP CONSTRAINT IF EXISTS accounts_role_group_id_company_id_97fa5c14_uniq;
@@ -917,6 +989,7 @@ ALTER TABLE IF EXISTS ONLY template.accounts_dataexportlog DROP CONSTRAINT IF EX
 ALTER TABLE IF EXISTS ONLY template.accounts_customuser DROP CONSTRAINT IF EXISTS accounts_customuser_username_key;
 ALTER TABLE IF EXISTS ONLY template.accounts_customuser_user_permissions DROP CONSTRAINT IF EXISTS accounts_customuser_user_permissions_pkey;
 ALTER TABLE IF EXISTS ONLY template.accounts_customuser_user_permissions DROP CONSTRAINT IF EXISTS accounts_customuser_user_customuser_id_permission_9632a709_uniq;
+ALTER TABLE IF EXISTS ONLY template.accounts_customuser DROP CONSTRAINT IF EXISTS accounts_customuser_sync_id_c0c575f9_uniq;
 ALTER TABLE IF EXISTS ONLY template.accounts_customuser DROP CONSTRAINT IF EXISTS accounts_customuser_pkey;
 ALTER TABLE IF EXISTS ONLY template.accounts_customuser_groups DROP CONSTRAINT IF EXISTS accounts_customuser_groups_pkey;
 ALTER TABLE IF EXISTS ONLY template.accounts_customuser_groups DROP CONSTRAINT IF EXISTS accounts_customuser_groups_customuser_id_group_id_c074bdcb_uniq;
@@ -1174,6 +1247,7 @@ CREATE TABLE template.accounts_customuser (
     metadata jsonb NOT NULL,
     company_id character varying(10) NOT NULL,
     primary_role_id bigint,
+    sync_id uuid,
     CONSTRAINT accounts_customuser_failed_login_attempts_check CHECK ((failed_login_attempts >= 0)),
     CONSTRAINT accounts_customuser_login_count_check CHECK ((login_count >= 0))
 );
@@ -1330,6 +1404,7 @@ CREATE TABLE template.accounts_role (
     company_id character varying(10),
     created_by_id bigint,
     group_id integer NOT NULL,
+    sync_id uuid,
     CONSTRAINT accounts_role_max_users_check CHECK ((max_users >= 0)),
     CONSTRAINT accounts_role_priority_check CHECK ((priority >= 0))
 );
@@ -1361,7 +1436,8 @@ CREATE TABLE template.accounts_rolehistory (
     notes text,
     affected_user_id bigint,
     role_id bigint NOT NULL,
-    user_id bigint
+    user_id bigint,
+    sync_id uuid
 );
 
 
@@ -1546,6 +1622,7 @@ CREATE TABLE template.branches_companybranch (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     company_id character varying(10) NOT NULL,
+    sync_id uuid,
     CONSTRAINT branches_companybranch_sort_order_check CHECK ((sort_order >= 0))
 );
 
@@ -1606,6 +1683,7 @@ CREATE TABLE template.customers_customer (
     credit_days integer NOT NULL,
     credit_status character varying(20) NOT NULL,
     last_credit_review date,
+    sync_id uuid,
     CONSTRAINT customers_customer_credit_days_check CHECK ((credit_days >= 0))
 );
 
@@ -1640,7 +1718,8 @@ CREATE TABLE template.customers_customercreditstatement (
     created_by_id bigint,
     customer_id bigint NOT NULL,
     payment_id bigint,
-    sale_id bigint
+    sale_id bigint,
+    sync_id uuid
 );
 
 
@@ -1669,7 +1748,8 @@ CREATE TABLE template.customers_customergroup (
     discount_percentage numeric(5,2) NOT NULL,
     auto_sync_to_efris boolean NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL
+    updated_at timestamp with time zone NOT NULL,
+    sync_id uuid
 );
 
 
@@ -1724,7 +1804,8 @@ CREATE TABLE template.customers_customernote (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     author_id bigint,
-    customer_id bigint NOT NULL
+    customer_id bigint NOT NULL,
+    sync_id uuid
 );
 
 
@@ -1759,7 +1840,8 @@ CREATE TABLE template.customers_efriscustomersync (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     processed_at timestamp with time zone,
-    customer_id bigint NOT NULL
+    customer_id bigint NOT NULL,
+    sync_id uuid
 );
 
 
@@ -1851,7 +1933,8 @@ CREATE TABLE template.efris_creditnoteapplication (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     company_id character varying(10) NOT NULL,
-    created_by_id bigint
+    created_by_id bigint,
+    sync_id uuid
 );
 
 
@@ -1889,6 +1972,7 @@ CREATE TABLE template.efris_efrisapilog (
     invoice_id bigint,
     product_id bigint,
     user_id bigint,
+    sync_id uuid,
     CONSTRAINT efris_efrisapilog_duration_ms_check CHECK ((duration_ms >= 0))
 );
 
@@ -1919,7 +2003,8 @@ CREATE TABLE template.efris_efriscommoditycategorry (
     is_leaf_node character varying(3) NOT NULL,
     is_zero_rate character varying(3) NOT NULL,
     last_synced timestamp with time zone NOT NULL,
-    company_id character varying(10)
+    company_id character varying(10),
+    sync_id uuid
 );
 
 
@@ -1978,6 +2063,7 @@ CREATE TABLE template.efris_efrisconfiguration (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     company_id character varying(10) NOT NULL,
+    sync_id uuid,
     CONSTRAINT efris_efrisconfiguration_max_retry_attempts_check CHECK ((max_retry_attempts >= 0)),
     CONSTRAINT efris_efrisconfiguration_sync_interval_minutes_check CHECK ((sync_interval_minutes >= 0)),
     CONSTRAINT efris_efrisconfiguration_timeout_seconds_check CHECK ((timeout_seconds >= 0))
@@ -2014,6 +2100,7 @@ CREATE TABLE template.efris_efrisdeviceinfo (
     expires_at timestamp with time zone,
     last_sync timestamp with time zone,
     store_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT efris_efrisdeviceinfo_offline_days_limit_check CHECK ((offline_days_limit >= 0))
 );
 
@@ -2054,7 +2141,8 @@ CREATE TABLE template.efris_efrisdigitalkey (
     ura_upload_date timestamp with time zone,
     ura_response jsonb NOT NULL,
     company_id character varying(10) NOT NULL,
-    uploaded_by_id bigint
+    uploaded_by_id bigint,
+    sync_id uuid
 );
 
 
@@ -2092,6 +2180,7 @@ CREATE TABLE template.efris_efriserrorpattern (
     priority character varying(10) NOT NULL,
     company_id character varying(10) NOT NULL,
     resolved_by_id bigint,
+    sync_id uuid,
     CONSTRAINT efris_efriserrorpattern_occurrence_count_check CHECK ((occurrence_count >= 0))
 );
 
@@ -2129,6 +2218,7 @@ CREATE TABLE template.efris_efrisfiscalizationbatch (
     created_at timestamp with time zone NOT NULL,
     company_id character varying(10) NOT NULL,
     created_by_id bigint,
+    sync_id uuid,
     CONSTRAINT efris_efrisfiscalizationbatch_failed_items_check CHECK ((failed_items >= 0)),
     CONSTRAINT efris_efrisfiscalizationbatch_processed_items_check CHECK ((processed_items >= 0)),
     CONSTRAINT efris_efrisfiscalizationbatch_successful_items_check CHECK ((successful_items >= 0)),
@@ -2190,6 +2280,7 @@ CREATE TABLE template.efris_efrisintegrationsettings (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     company_id character varying(10) NOT NULL,
+    sync_id uuid,
     CONSTRAINT efris_efrisintegrationsettings_audit_retention_days_check CHECK ((audit_retention_days >= 0)),
     CONSTRAINT efris_efrisintegrationsettings_batch_size_limit_check CHECK ((batch_size_limit >= 0)),
     CONSTRAINT efris_efrisintegrationsettings_cache_duration_minutes_check CHECK ((cache_duration_minutes >= 0)),
@@ -2240,7 +2331,8 @@ CREATE TABLE template.efris_efrisnotification (
     company_id character varying(10) NOT NULL,
     invoice_id bigint,
     read_by_id bigint,
-    audit_id bigint
+    audit_id bigint,
+    sync_id uuid
 );
 
 
@@ -2271,7 +2363,8 @@ CREATE TABLE template.efris_efrisoperationmetrics (
     period_end timestamp with time zone NOT NULL,
     metadata jsonb NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    company_id character varying(10) NOT NULL
+    company_id character varying(10) NOT NULL,
+    sync_id uuid
 );
 
 
@@ -2313,6 +2406,7 @@ CREATE TABLE template.efris_efrissyncqueue (
     updated_at timestamp with time zone NOT NULL,
     company_id character varying(10) NOT NULL,
     created_by_id bigint,
+    sync_id uuid,
     CONSTRAINT efris_efrissyncqueue_max_retries_check CHECK ((max_retries >= 0)),
     CONSTRAINT efris_efrissyncqueue_object_id_check CHECK ((object_id >= 0)),
     CONSTRAINT efris_efrissyncqueue_retry_count_check CHECK ((retry_count >= 0))
@@ -2344,7 +2438,8 @@ CREATE TABLE template.efris_efrissystemdictionary (
     data jsonb NOT NULL,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    company_id character varying(10) NOT NULL
+    company_id character varying(10) NOT NULL,
+    sync_id uuid
 );
 
 
@@ -2375,7 +2470,8 @@ CREATE TABLE template.efris_exception_logs (
     uploaded boolean NOT NULL,
     uploaded_at timestamp with time zone,
     created_at timestamp with time zone NOT NULL,
-    company_id character varying(10) NOT NULL
+    company_id character varying(10) NOT NULL,
+    sync_id uuid
 );
 
 
@@ -2436,6 +2532,7 @@ CREATE TABLE template.efris_fiscalizationaudit (
     invoice_id bigint,
     parent_audit_id bigint,
     user_id bigint,
+    sync_id uuid,
     CONSTRAINT efris_fiscalizationaudit_max_retries_check CHECK ((max_retries >= 0)),
     CONSTRAINT efris_fiscalizationaudit_retry_count_check CHECK ((retry_count >= 0))
 );
@@ -2471,7 +2568,8 @@ CREATE TABLE template.efris_productuploadtask (
     created_at timestamp with time zone NOT NULL,
     started_at timestamp with time zone,
     completed_at timestamp with time zone,
-    created_by_id bigint
+    created_by_id bigint,
+    sync_id uuid
 );
 
 
@@ -2559,7 +2657,8 @@ CREATE TABLE template.expenses_budget (
     is_active boolean NOT NULL,
     created_at timestamp with time zone NOT NULL,
     user_id bigint NOT NULL,
-    updated_at timestamp with time zone NOT NULL
+    updated_at timestamp with time zone NOT NULL,
+    sync_id uuid
 );
 
 
@@ -2593,7 +2692,8 @@ CREATE TABLE template.expenses_expense (
     updated_at timestamp with time zone NOT NULL,
     is_recurring boolean NOT NULL,
     is_important boolean NOT NULL,
-    user_id bigint
+    user_id bigint,
+    sync_id uuid
 );
 
 
@@ -2628,7 +2728,8 @@ CREATE TABLE template.inventory_category (
     efris_category_id character varying(50),
     is_active boolean NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL
+    updated_at timestamp with time zone NOT NULL,
+    sync_id uuid
 );
 
 
@@ -2658,6 +2759,7 @@ CREATE TABLE template.inventory_importlog (
     details jsonb NOT NULL,
     "timestamp" timestamp with time zone NOT NULL,
     session_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT inventory_importlog_row_number_check CHECK ((row_number >= 0))
 );
 
@@ -2694,6 +2796,7 @@ CREATE TABLE template.inventory_importresult (
     raw_data jsonb NOT NULL,
     created_at timestamp with time zone NOT NULL,
     session_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT inventory_importresult_row_number_check CHECK ((row_number >= 0))
 );
 
@@ -2737,6 +2840,7 @@ CREATE TABLE template.inventory_importsession (
     error_message text NOT NULL,
     error_details jsonb NOT NULL,
     user_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT inventory_importsession_created_count_check CHECK ((created_count >= 0)),
     CONSTRAINT inventory_importsession_error_count_check CHECK ((error_count >= 0)),
     CONSTRAINT inventory_importsession_file_size_check CHECK ((file_size >= 0)),
@@ -2816,6 +2920,7 @@ CREATE TABLE template.inventory_product (
     is_export_product boolean NOT NULL,
     item_weight numeric(10,2),
     piece_qty integer,
+    sync_id uuid,
     CONSTRAINT inventory_product_min_stock_level_check CHECK ((min_stock_level >= 0))
 );
 
@@ -2857,7 +2962,8 @@ CREATE TABLE template.inventory_service (
     updated_at timestamp with time zone NOT NULL,
     category_id bigint,
     created_by_id bigint,
-    efris_service_mark character varying(3) NOT NULL
+    efris_service_mark character varying(3) NOT NULL,
+    sync_id uuid
 );
 
 
@@ -2892,7 +2998,8 @@ CREATE TABLE template.inventory_stock (
     last_import_update timestamp with time zone,
     import_session_id bigint,
     product_id bigint NOT NULL,
-    store_id bigint NOT NULL
+    store_id bigint NOT NULL,
+    sync_id uuid
 );
 
 
@@ -2930,7 +3037,8 @@ CREATE TABLE template.inventory_stockmovement (
     efris_sync_attempted boolean NOT NULL,
     efris_sync_error text NOT NULL,
     efris_synced_at timestamp with time zone,
-    synced_to_efris boolean NOT NULL
+    synced_to_efris boolean NOT NULL,
+    sync_id uuid
 );
 
 
@@ -2968,7 +3076,8 @@ CREATE TABLE template.inventory_stocktransfer (
     from_store_id bigint NOT NULL,
     product_id bigint NOT NULL,
     requested_by_id bigint,
-    to_store_id bigint NOT NULL
+    to_store_id bigint NOT NULL,
+    sync_id uuid
 );
 
 
@@ -3001,7 +3110,8 @@ CREATE TABLE template.inventory_supplier (
     country character varying(100) NOT NULL,
     is_active boolean NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL
+    updated_at timestamp with time zone NOT NULL,
+    sync_id uuid
 );
 
 
@@ -3034,7 +3144,8 @@ CREATE TABLE template.invoices_fiscalizationaudit (
     device_number character varying(50) NOT NULL,
     "timestamp" timestamp with time zone NOT NULL,
     user_id bigint,
-    invoice_id bigint NOT NULL
+    invoice_id bigint NOT NULL,
+    sync_id uuid
 );
 
 
@@ -3090,7 +3201,8 @@ CREATE TABLE template.invoices_invoice (
     export_sad_number character varying(20),
     export_sad_submitted_at timestamp with time zone,
     export_status character varying(10),
-    export_total_weight numeric(12,2)
+    export_total_weight numeric(12,2),
+    sync_id uuid
 );
 
 
@@ -3124,7 +3236,8 @@ CREATE TABLE template.invoices_invoicepayment (
     processed_by_id bigint,
     allocated_date timestamp with time zone,
     allocation_notes text,
-    is_allocated boolean NOT NULL
+    is_allocated boolean NOT NULL,
+    sync_id uuid
 );
 
 
@@ -3155,7 +3268,8 @@ CREATE TABLE template.invoices_invoicetemplate (
     version character varying(20) NOT NULL,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    created_by_id bigint
+    created_by_id bigint,
+    sync_id uuid
 );
 
 
@@ -3183,7 +3297,8 @@ CREATE TABLE template.invoices_paymentallocation (
     allocation_date timestamp with time zone NOT NULL,
     notes text,
     payment_id bigint NOT NULL,
-    payment_schedule_id bigint
+    payment_schedule_id bigint,
+    sync_id uuid
 );
 
 
@@ -3221,7 +3336,8 @@ CREATE TABLE template.invoices_paymentreminder (
     next_reminder_date date,
     invoice_id bigint NOT NULL,
     sent_by_id bigint,
-    payment_schedule_id bigint
+    payment_schedule_id bigint,
+    sync_id uuid
 );
 
 
@@ -3254,6 +3370,7 @@ CREATE TABLE template.invoices_paymentschedule (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     invoice_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT invoices_paymentschedule_installment_number_check CHECK ((installment_number >= 0))
 );
 
@@ -3809,7 +3926,8 @@ CREATE TABLE template.notifications_announcement (
     priority integer NOT NULL,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    created_by_id bigint
+    created_by_id bigint,
+    sync_id uuid
 );
 
 
@@ -3885,7 +4003,8 @@ CREATE TABLE template.notifications_notification (
     tenant_id character varying(100) NOT NULL,
     category_id bigint,
     template_id bigint,
-    sender_id bigint
+    sender_id bigint,
+    sync_id uuid
 );
 
 
@@ -3922,6 +4041,7 @@ CREATE TABLE template.notifications_notificationbatch (
     sent_count integer NOT NULL,
     started_at timestamp with time zone,
     template_id bigint,
+    sync_id uuid,
     CONSTRAINT notifications_notificationbatch_failed_count_check CHECK ((failed_count >= 0)),
     CONSTRAINT notifications_notificationbatch_recipient_count_83f57671_check CHECK ((recipient_count >= 0)),
     CONSTRAINT notifications_notificationbatch_sent_count_check CHECK ((sent_count >= 0))
@@ -3981,6 +4101,7 @@ CREATE TABLE template.notifications_notificationcategory (
     description text NOT NULL,
     is_active boolean NOT NULL,
     sort_order integer NOT NULL,
+    sync_id uuid,
     CONSTRAINT notifications_notificationcategory_sort_order_check CHECK ((sort_order >= 0))
 );
 
@@ -4017,6 +4138,7 @@ CREATE TABLE template.notifications_notificationlog (
     metadata jsonb NOT NULL,
     created_at timestamp with time zone NOT NULL,
     notification_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT notifications_notificationlog_max_retries_check CHECK ((max_retries >= 0)),
     CONSTRAINT notifications_notificationlog_retry_count_check CHECK ((retry_count >= 0))
 );
@@ -4057,7 +4179,8 @@ CREATE TABLE template.notifications_notificationpreference (
     event_preferences jsonb NOT NULL,
     in_app_enabled boolean NOT NULL,
     quiet_hours_enabled boolean NOT NULL,
-    sms_enabled boolean NOT NULL
+    sms_enabled boolean NOT NULL,
+    sync_id uuid
 );
 
 
@@ -4096,6 +4219,7 @@ CREATE TABLE template.notifications_notificationrule (
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
     template_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT notifications_notificationrule_throttle_minutes_check CHECK ((throttle_minutes >= 0)),
     CONSTRAINT notifications_notificationrule_triggered_count_check CHECK ((triggered_count >= 0))
 );
@@ -4162,7 +4286,8 @@ CREATE TABLE template.notifications_notificationtemplate (
     is_active boolean NOT NULL,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    category_id bigint
+    category_id bigint,
+    sync_id uuid
 );
 
 
@@ -4236,7 +4361,8 @@ CREATE TABLE template.reports_efrisreporttemplate (
     valid_to date,
     description text,
     is_active boolean NOT NULL,
-    ura_approved boolean NOT NULL
+    ura_approved boolean NOT NULL,
+    sync_id uuid
 );
 
 
@@ -4279,6 +4405,7 @@ CREATE TABLE template.reports_generatedreport (
     generation_time double precision NOT NULL,
     generated_by_id bigint,
     report_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT reports_generatedreport_download_count_check CHECK ((download_count >= 0)),
     CONSTRAINT reports_generatedreport_file_size_check CHECK ((file_size >= 0)),
     CONSTRAINT reports_generatedreport_progress_check CHECK ((progress >= 0)),
@@ -4316,7 +4443,8 @@ CREATE TABLE template.reports_reportaccesslog (
     error_message text NOT NULL,
     generated_report_id bigint,
     user_id bigint,
-    report_id bigint
+    report_id bigint,
+    sync_id uuid
 );
 
 
@@ -4347,7 +4475,8 @@ CREATE TABLE template.reports_reportcomparison (
     created_at timestamp with time zone NOT NULL,
     last_run timestamp with time zone,
     created_by_id bigint NOT NULL,
-    report_id bigint NOT NULL
+    report_id bigint NOT NULL,
+    sync_id uuid
 );
 
 
@@ -4388,6 +4517,7 @@ CREATE TABLE template.reports_reportschedule (
     created_at timestamp with time zone,
     updated_at timestamp with time zone NOT NULL,
     report_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT reports_reportschedule_max_retries_check CHECK ((max_retries >= 0)),
     CONSTRAINT reports_reportschedule_retry_count_check CHECK ((retry_count >= 0))
 );
@@ -4433,6 +4563,7 @@ CREATE TABLE template.reports_savedreport (
     include_charts boolean NOT NULL,
     tags jsonb NOT NULL,
     created_by_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT reports_savedreport_cache_duration_check CHECK ((cache_duration >= 0)),
     CONSTRAINT reports_savedreport_execution_count_check CHECK ((execution_count >= 0))
 );
@@ -4473,7 +4604,8 @@ CREATE TABLE template.sales_cart (
     document_type character varying(20) NOT NULL,
     due_date date,
     purchase_order character varying(100),
-    terms text
+    terms text,
+    sync_id uuid
 );
 
 
@@ -4508,6 +4640,7 @@ CREATE TABLE template.sales_cartitem (
     added_at timestamp with time zone NOT NULL,
     cart_id bigint NOT NULL,
     product_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT sales_cartitem_quantity_check CHECK ((quantity >= 0))
 );
 
@@ -4546,7 +4679,8 @@ CREATE TABLE template.sales_payment (
     store_id bigint,
     voided_by_id bigint,
     sale_id bigint NOT NULL,
-    payment_type character varying(20) NOT NULL
+    payment_type character varying(20) NOT NULL,
+    sync_id uuid
 );
 
 
@@ -4617,6 +4751,7 @@ CREATE TABLE template.sales_receipt (
     customer_copy boolean NOT NULL,
     payment_summary jsonb NOT NULL,
     terminal_id character varying(50),
+    sync_id uuid,
     CONSTRAINT sales_receipt_print_count_check CHECK ((print_count >= 0))
 );
 
@@ -4689,7 +4824,8 @@ CREATE TABLE template.sales_sale (
     export_exchange_rate numeric(10,4),
     delivery_terms_code character varying(3) NOT NULL,
     invoice_industry_code character varying(3) NOT NULL,
-    is_export_sale boolean NOT NULL
+    is_export_sale boolean NOT NULL,
+    sync_id uuid
 );
 
 
@@ -4731,6 +4867,7 @@ CREATE TABLE template.sales_saleitem (
     export_piece_measure_unit character varying(3),
     export_piece_qty numeric(12,2),
     export_total_weight numeric(12,4),
+    sync_id uuid,
     CONSTRAINT product_or_service_required CHECK ((((product_id IS NOT NULL) AND (service_id IS NULL)) OR ((product_id IS NULL) AND (service_id IS NOT NULL))))
 );
 
@@ -4769,6 +4906,7 @@ CREATE TABLE template.stores_devicefingerprint (
     is_active boolean NOT NULL,
     notes text NOT NULL,
     user_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT stores_devicefingerprint_login_count_check CHECK ((login_count >= 0))
 );
 
@@ -4803,7 +4941,8 @@ CREATE TABLE template.stores_deviceoperatorlog (
     user_id bigint NOT NULL,
     store_id bigint NOT NULL,
     device_id bigint,
-    session_id bigint
+    session_id bigint,
+    sync_id uuid
 );
 
 
@@ -4843,7 +4982,8 @@ CREATE TABLE template.stores_securityalert (
     user_id bigint NOT NULL,
     store_id bigint NOT NULL,
     device_id bigint,
-    session_id bigint
+    session_id bigint,
+    sync_id uuid
 );
 
 
@@ -4889,6 +5029,7 @@ CREATE TABLE template.stores_stockstore (
     updated_at timestamp with time zone NOT NULL,
     company_id character varying(10) NOT NULL,
     created_by_id bigint,
+    sync_id uuid,
     CONSTRAINT stores_stockstore_sort_order_check CHECK ((sort_order >= 0))
 );
 
@@ -5013,6 +5154,7 @@ CREATE TABLE template.stores_store (
     use_company_efris boolean NOT NULL,
     accessible_by_all boolean NOT NULL,
     store_efris_certificate_fingerprint character varying(128),
+    sync_id uuid,
     CONSTRAINT stores_store_sort_order_check CHECK ((sort_order >= 0))
 );
 
@@ -5101,7 +5243,8 @@ CREATE TABLE template.stores_storeaccess (
     notes text NOT NULL,
     granted_by_id bigint,
     store_id bigint NOT NULL,
-    user_id bigint NOT NULL
+    user_id bigint NOT NULL,
+    sync_id uuid
 );
 
 
@@ -5140,6 +5283,7 @@ CREATE TABLE template.stores_storedevice (
     last_seen_at timestamp with time zone,
     notes text,
     store_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT stores_storedevice_max_concurrent_users_check CHECK ((max_concurrent_users >= 0))
 );
 
@@ -5168,7 +5312,8 @@ CREATE TABLE template.stores_storeoperatinghours (
     opening_time time without time zone NOT NULL,
     closing_time time without time zone NOT NULL,
     is_closed boolean NOT NULL,
-    store_id bigint NOT NULL
+    store_id bigint NOT NULL,
+    sync_id uuid
 );
 
 
@@ -5218,6 +5363,7 @@ CREATE TABLE template.stores_userdevicesession (
     store_id bigint NOT NULL,
     store_device_id bigint,
     user_id bigint NOT NULL,
+    sync_id uuid,
     CONSTRAINT stores_userdevicesession_security_alerts_count_check CHECK ((security_alerts_count >= 0))
 );
 
@@ -5344,6 +5490,14 @@ ALTER TABLE ONLY template.accounts_customuser
 
 
 --
+-- Name: accounts_customuser accounts_customuser_sync_id_c0c575f9_uniq; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.accounts_customuser
+    ADD CONSTRAINT accounts_customuser_sync_id_c0c575f9_uniq UNIQUE (sync_id);
+
+
+--
 -- Name: accounts_customuser_user_permissions accounts_customuser_user_customuser_id_permission_9632a709_uniq; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -5408,11 +5562,27 @@ ALTER TABLE ONLY template.accounts_role
 
 
 --
+-- Name: accounts_role accounts_role_sync_id_d00a4fd1_uniq; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.accounts_role
+    ADD CONSTRAINT accounts_role_sync_id_d00a4fd1_uniq UNIQUE (sync_id);
+
+
+--
 -- Name: accounts_rolehistory accounts_rolehistory_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.accounts_rolehistory
     ADD CONSTRAINT accounts_rolehistory_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: accounts_rolehistory accounts_rolehistory_sync_id_96f2d469_uniq; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.accounts_rolehistory
+    ADD CONSTRAINT accounts_rolehistory_sync_id_96f2d469_uniq UNIQUE (sync_id);
 
 
 --
@@ -5520,6 +5690,14 @@ ALTER TABLE ONLY template.branches_companybranch
 
 
 --
+-- Name: branches_companybranch branches_companybranch_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.branches_companybranch
+    ADD CONSTRAINT branches_companybranch_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: customers_customer customers_customer_customer_id_key; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -5544,11 +5722,27 @@ ALTER TABLE ONLY template.customers_customer
 
 
 --
+-- Name: customers_customer customers_customer_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.customers_customer
+    ADD CONSTRAINT customers_customer_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: customers_customercreditstatement customers_customercreditstatement_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.customers_customercreditstatement
     ADD CONSTRAINT customers_customercreditstatement_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: customers_customercreditstatement customers_customercreditstatement_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.customers_customercreditstatement
+    ADD CONSTRAINT customers_customercreditstatement_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5576,6 +5770,14 @@ ALTER TABLE ONLY template.customers_customergroup
 
 
 --
+-- Name: customers_customergroup customers_customergroup_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.customers_customergroup
+    ADD CONSTRAINT customers_customergroup_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: customers_customernote customers_customernote_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -5584,11 +5786,27 @@ ALTER TABLE ONLY template.customers_customernote
 
 
 --
+-- Name: customers_customernote customers_customernote_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.customers_customernote
+    ADD CONSTRAINT customers_customernote_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: customers_efriscustomersync customers_efriscustomersync_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.customers_efriscustomersync
     ADD CONSTRAINT customers_efriscustomersync_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: customers_efriscustomersync customers_efriscustomersync_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.customers_efriscustomersync
+    ADD CONSTRAINT customers_efriscustomersync_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5624,11 +5842,27 @@ ALTER TABLE ONLY template.efris_creditnoteapplication
 
 
 --
+-- Name: efris_creditnoteapplication efris_creditnoteapplication_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_creditnoteapplication
+    ADD CONSTRAINT efris_creditnoteapplication_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: efris_efrisapilog efris_efrisapilog_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.efris_efrisapilog
     ADD CONSTRAINT efris_efrisapilog_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: efris_efrisapilog efris_efrisapilog_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efrisapilog
+    ADD CONSTRAINT efris_efrisapilog_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5648,6 +5882,14 @@ ALTER TABLE ONLY template.efris_efriscommoditycategorry
 
 
 --
+-- Name: efris_efriscommoditycategorry efris_efriscommoditycategorry_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efriscommoditycategorry
+    ADD CONSTRAINT efris_efriscommoditycategorry_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: efris_efrisconfiguration efris_efrisconfiguration_company_id_key; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -5661,6 +5903,14 @@ ALTER TABLE ONLY template.efris_efrisconfiguration
 
 ALTER TABLE ONLY template.efris_efrisconfiguration
     ADD CONSTRAINT efris_efrisconfiguration_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: efris_efrisconfiguration efris_efrisconfiguration_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efrisconfiguration
+    ADD CONSTRAINT efris_efrisconfiguration_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5680,6 +5930,14 @@ ALTER TABLE ONLY template.efris_efrisdeviceinfo
 
 
 --
+-- Name: efris_efrisdeviceinfo efris_efrisdeviceinfo_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efrisdeviceinfo
+    ADD CONSTRAINT efris_efrisdeviceinfo_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: efris_efrisdigitalkey efris_efrisdigitalkey_fingerprint_key; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -5693,6 +5951,14 @@ ALTER TABLE ONLY template.efris_efrisdigitalkey
 
 ALTER TABLE ONLY template.efris_efrisdigitalkey
     ADD CONSTRAINT efris_efrisdigitalkey_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: efris_efrisdigitalkey efris_efrisdigitalkey_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efrisdigitalkey
+    ADD CONSTRAINT efris_efrisdigitalkey_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5712,11 +5978,27 @@ ALTER TABLE ONLY template.efris_efriserrorpattern
 
 
 --
+-- Name: efris_efriserrorpattern efris_efriserrorpattern_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efriserrorpattern
+    ADD CONSTRAINT efris_efriserrorpattern_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: efris_efrisfiscalizationbatch efris_efrisfiscalizationbatch_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.efris_efrisfiscalizationbatch
     ADD CONSTRAINT efris_efrisfiscalizationbatch_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: efris_efrisfiscalizationbatch efris_efrisfiscalizationbatch_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efrisfiscalizationbatch
+    ADD CONSTRAINT efris_efrisfiscalizationbatch_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5736,11 +6018,27 @@ ALTER TABLE ONLY template.efris_efrisintegrationsettings
 
 
 --
+-- Name: efris_efrisintegrationsettings efris_efrisintegrationsettings_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efrisintegrationsettings
+    ADD CONSTRAINT efris_efrisintegrationsettings_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: efris_efrisnotification efris_efrisnotification_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.efris_efrisnotification
     ADD CONSTRAINT efris_efrisnotification_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: efris_efrisnotification efris_efrisnotification_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efrisnotification
+    ADD CONSTRAINT efris_efrisnotification_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5760,11 +6058,27 @@ ALTER TABLE ONLY template.efris_efrisoperationmetrics
 
 
 --
+-- Name: efris_efrisoperationmetrics efris_efrisoperationmetrics_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efrisoperationmetrics
+    ADD CONSTRAINT efris_efrisoperationmetrics_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: efris_efrissyncqueue efris_efrissyncqueue_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.efris_efrissyncqueue
     ADD CONSTRAINT efris_efrissyncqueue_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: efris_efrissyncqueue efris_efrissyncqueue_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efrissyncqueue
+    ADD CONSTRAINT efris_efrissyncqueue_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5784,11 +6098,27 @@ ALTER TABLE ONLY template.efris_efrissystemdictionary
 
 
 --
+-- Name: efris_efrissystemdictionary efris_efrissystemdictionary_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_efrissystemdictionary
+    ADD CONSTRAINT efris_efrissystemdictionary_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: efris_exception_logs efris_exception_logs_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.efris_exception_logs
     ADD CONSTRAINT efris_exception_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: efris_exception_logs efris_exception_logs_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_exception_logs
+    ADD CONSTRAINT efris_exception_logs_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5800,11 +6130,27 @@ ALTER TABLE ONLY template.efris_fiscalizationaudit
 
 
 --
+-- Name: efris_fiscalizationaudit efris_fiscalizationaudit_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_fiscalizationaudit
+    ADD CONSTRAINT efris_fiscalizationaudit_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: efris_productuploadtask efris_productuploadtask_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.efris_productuploadtask
     ADD CONSTRAINT efris_productuploadtask_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: efris_productuploadtask efris_productuploadtask_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.efris_productuploadtask
+    ADD CONSTRAINT efris_productuploadtask_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5848,11 +6194,27 @@ ALTER TABLE ONLY template.expenses_budget
 
 
 --
+-- Name: expenses_budget expenses_budget_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.expenses_budget
+    ADD CONSTRAINT expenses_budget_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: expenses_expense expenses_expense_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.expenses_expense
     ADD CONSTRAINT expenses_expense_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: expenses_expense expenses_expense_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.expenses_expense
+    ADD CONSTRAINT expenses_expense_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5864,11 +6226,27 @@ ALTER TABLE ONLY template.inventory_category
 
 
 --
+-- Name: inventory_category inventory_category_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.inventory_category
+    ADD CONSTRAINT inventory_category_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: inventory_importlog inventory_importlog_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.inventory_importlog
     ADD CONSTRAINT inventory_importlog_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_importlog inventory_importlog_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.inventory_importlog
+    ADD CONSTRAINT inventory_importlog_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5880,11 +6258,27 @@ ALTER TABLE ONLY template.inventory_importresult
 
 
 --
+-- Name: inventory_importresult inventory_importresult_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.inventory_importresult
+    ADD CONSTRAINT inventory_importresult_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: inventory_importsession inventory_importsession_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.inventory_importsession
     ADD CONSTRAINT inventory_importsession_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_importsession inventory_importsession_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.inventory_importsession
+    ADD CONSTRAINT inventory_importsession_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5912,6 +6306,14 @@ ALTER TABLE ONLY template.inventory_product
 
 
 --
+-- Name: inventory_product inventory_product_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.inventory_product
+    ADD CONSTRAINT inventory_product_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: inventory_service inventory_service_code_key; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -5928,11 +6330,27 @@ ALTER TABLE ONLY template.inventory_service
 
 
 --
+-- Name: inventory_service inventory_service_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.inventory_service
+    ADD CONSTRAINT inventory_service_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: inventory_stock inventory_stock_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.inventory_stock
     ADD CONSTRAINT inventory_stock_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_stock inventory_stock_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.inventory_stock
+    ADD CONSTRAINT inventory_stock_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5944,11 +6362,27 @@ ALTER TABLE ONLY template.inventory_stockmovement
 
 
 --
+-- Name: inventory_stockmovement inventory_stockmovement_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.inventory_stockmovement
+    ADD CONSTRAINT inventory_stockmovement_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: inventory_stocktransfer inventory_stocktransfer_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.inventory_stocktransfer
     ADD CONSTRAINT inventory_stocktransfer_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_stocktransfer inventory_stocktransfer_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.inventory_stocktransfer
+    ADD CONSTRAINT inventory_stocktransfer_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5968,11 +6402,27 @@ ALTER TABLE ONLY template.inventory_supplier
 
 
 --
+-- Name: inventory_supplier inventory_supplier_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.inventory_supplier
+    ADD CONSTRAINT inventory_supplier_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: invoices_fiscalizationaudit invoices_fiscalizationaudit_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.invoices_fiscalizationaudit
     ADD CONSTRAINT invoices_fiscalizationaudit_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: invoices_fiscalizationaudit invoices_fiscalizationaudit_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.invoices_fiscalizationaudit
+    ADD CONSTRAINT invoices_fiscalizationaudit_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -5992,11 +6442,27 @@ ALTER TABLE ONLY template.invoices_invoice
 
 
 --
+-- Name: invoices_invoice invoices_invoice_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.invoices_invoice
+    ADD CONSTRAINT invoices_invoice_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: invoices_invoicepayment invoices_invoicepayment_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.invoices_invoicepayment
     ADD CONSTRAINT invoices_invoicepayment_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: invoices_invoicepayment invoices_invoicepayment_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.invoices_invoicepayment
+    ADD CONSTRAINT invoices_invoicepayment_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6008,6 +6474,14 @@ ALTER TABLE ONLY template.invoices_invoicetemplate
 
 
 --
+-- Name: invoices_invoicetemplate invoices_invoicetemplate_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.invoices_invoicetemplate
+    ADD CONSTRAINT invoices_invoicetemplate_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: invoices_paymentallocation invoices_paymentallocation_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -6016,11 +6490,27 @@ ALTER TABLE ONLY template.invoices_paymentallocation
 
 
 --
+-- Name: invoices_paymentallocation invoices_paymentallocation_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.invoices_paymentallocation
+    ADD CONSTRAINT invoices_paymentallocation_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: invoices_paymentreminder invoices_paymentreminder_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.invoices_paymentreminder
     ADD CONSTRAINT invoices_paymentreminder_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: invoices_paymentreminder invoices_paymentreminder_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.invoices_paymentreminder
+    ADD CONSTRAINT invoices_paymentreminder_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6037,6 +6527,14 @@ ALTER TABLE ONLY template.invoices_paymentschedule
 
 ALTER TABLE ONLY template.invoices_paymentschedule
     ADD CONSTRAINT invoices_paymentschedule_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: invoices_paymentschedule invoices_paymentschedule_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.invoices_paymentschedule
+    ADD CONSTRAINT invoices_paymentschedule_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6272,6 +6770,14 @@ ALTER TABLE ONLY template.notifications_announcement
 
 
 --
+-- Name: notifications_announcement notifications_announcement_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.notifications_announcement
+    ADD CONSTRAINT notifications_announcement_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: notifications_notificationbatch_recipients notifications_notificati_notificationbatch_id_cus_913060e4_uniq; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -6296,6 +6802,14 @@ ALTER TABLE ONLY template.notifications_notification
 
 
 --
+-- Name: notifications_notification notifications_notification_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.notifications_notification
+    ADD CONSTRAINT notifications_notification_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: notifications_notificationbatch notifications_notificationbatch_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -6309,6 +6823,14 @@ ALTER TABLE ONLY template.notifications_notificationbatch
 
 ALTER TABLE ONLY template.notifications_notificationbatch_recipients
     ADD CONSTRAINT notifications_notificationbatch_recipients_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notifications_notificationbatch notifications_notificationbatch_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.notifications_notificationbatch
+    ADD CONSTRAINT notifications_notificationbatch_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6328,6 +6850,14 @@ ALTER TABLE ONLY template.notifications_notificationcategory
 
 
 --
+-- Name: notifications_notificationcategory notifications_notificationcategory_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.notifications_notificationcategory
+    ADD CONSTRAINT notifications_notificationcategory_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: notifications_notificationlog notifications_notificationlog_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -6336,11 +6866,27 @@ ALTER TABLE ONLY template.notifications_notificationlog
 
 
 --
+-- Name: notifications_notificationlog notifications_notificationlog_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.notifications_notificationlog
+    ADD CONSTRAINT notifications_notificationlog_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: notifications_notificationpreference notifications_notificationpreference_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.notifications_notificationpreference
     ADD CONSTRAINT notifications_notificationpreference_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notifications_notificationpreference notifications_notificationpreference_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.notifications_notificationpreference
+    ADD CONSTRAINT notifications_notificationpreference_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6368,6 +6914,14 @@ ALTER TABLE ONLY template.notifications_notificationrule_specific_users
 
 
 --
+-- Name: notifications_notificationrule notifications_notificationrule_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.notifications_notificationrule
+    ADD CONSTRAINT notifications_notificationrule_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: notifications_notificationtemplate notifications_notificationtemplate_event_type_key; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -6381,6 +6935,14 @@ ALTER TABLE ONLY template.notifications_notificationtemplate
 
 ALTER TABLE ONLY template.notifications_notificationtemplate
     ADD CONSTRAINT notifications_notificationtemplate_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notifications_notificationtemplate notifications_notificationtemplate_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.notifications_notificationtemplate
+    ADD CONSTRAINT notifications_notificationtemplate_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6400,11 +6962,27 @@ ALTER TABLE ONLY template.reports_efrisreporttemplate
 
 
 --
+-- Name: reports_efrisreporttemplate reports_efrisreporttemplate_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.reports_efrisreporttemplate
+    ADD CONSTRAINT reports_efrisreporttemplate_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: reports_generatedreport reports_generatedreport_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.reports_generatedreport
     ADD CONSTRAINT reports_generatedreport_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reports_generatedreport reports_generatedreport_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.reports_generatedreport
+    ADD CONSTRAINT reports_generatedreport_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6416,11 +6994,27 @@ ALTER TABLE ONLY template.reports_reportaccesslog
 
 
 --
+-- Name: reports_reportaccesslog reports_reportaccesslog_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.reports_reportaccesslog
+    ADD CONSTRAINT reports_reportaccesslog_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: reports_reportcomparison reports_reportcomparison_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.reports_reportcomparison
     ADD CONSTRAINT reports_reportcomparison_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reports_reportcomparison reports_reportcomparison_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.reports_reportcomparison
+    ADD CONSTRAINT reports_reportcomparison_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6432,11 +7026,27 @@ ALTER TABLE ONLY template.reports_reportschedule
 
 
 --
+-- Name: reports_reportschedule reports_reportschedule_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.reports_reportschedule
+    ADD CONSTRAINT reports_reportschedule_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: reports_savedreport reports_savedreport_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.reports_savedreport
     ADD CONSTRAINT reports_savedreport_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reports_savedreport reports_savedreport_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.reports_savedreport
+    ADD CONSTRAINT reports_savedreport_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6448,6 +7058,14 @@ ALTER TABLE ONLY template.sales_cart
 
 
 --
+-- Name: sales_cart sales_cart_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.sales_cart
+    ADD CONSTRAINT sales_cart_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: sales_cartitem sales_cartitem_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -6456,11 +7074,27 @@ ALTER TABLE ONLY template.sales_cartitem
 
 
 --
+-- Name: sales_cartitem sales_cartitem_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.sales_cartitem
+    ADD CONSTRAINT sales_cartitem_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: sales_payment sales_payment_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.sales_payment
     ADD CONSTRAINT sales_payment_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sales_payment sales_payment_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.sales_payment
+    ADD CONSTRAINT sales_payment_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6496,6 +7130,14 @@ ALTER TABLE ONLY template.sales_receipt
 
 
 --
+-- Name: sales_receipt sales_receipt_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.sales_receipt
+    ADD CONSTRAINT sales_receipt_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: sales_sale sales_sale_document_number_key; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -6509,6 +7151,14 @@ ALTER TABLE ONLY template.sales_sale
 
 ALTER TABLE ONLY template.sales_sale
     ADD CONSTRAINT sales_sale_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sales_sale sales_sale_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.sales_sale
+    ADD CONSTRAINT sales_sale_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6528,11 +7178,27 @@ ALTER TABLE ONLY template.sales_saleitem
 
 
 --
+-- Name: sales_saleitem sales_saleitem_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.sales_saleitem
+    ADD CONSTRAINT sales_saleitem_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: stores_devicefingerprint stores_devicefingerprint_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.stores_devicefingerprint
     ADD CONSTRAINT stores_devicefingerprint_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stores_devicefingerprint stores_devicefingerprint_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.stores_devicefingerprint
+    ADD CONSTRAINT stores_devicefingerprint_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6552,11 +7218,27 @@ ALTER TABLE ONLY template.stores_deviceoperatorlog
 
 
 --
+-- Name: stores_deviceoperatorlog stores_deviceoperatorlog_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.stores_deviceoperatorlog
+    ADD CONSTRAINT stores_deviceoperatorlog_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: stores_securityalert stores_securityalert_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.stores_securityalert
     ADD CONSTRAINT stores_securityalert_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stores_securityalert stores_securityalert_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.stores_securityalert
+    ADD CONSTRAINT stores_securityalert_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6608,6 +7290,14 @@ ALTER TABLE ONLY template.stores_stockstore_staff
 
 
 --
+-- Name: stores_stockstore stores_stockstore_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.stores_stockstore
+    ADD CONSTRAINT stores_stockstore_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: stores_store stores_store_code_key; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
@@ -6656,11 +7346,27 @@ ALTER TABLE ONLY template.stores_store_store_managers
 
 
 --
+-- Name: stores_store stores_store_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.stores_store
+    ADD CONSTRAINT stores_store_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: stores_storeaccess stores_storeaccess_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.stores_storeaccess
     ADD CONSTRAINT stores_storeaccess_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stores_storeaccess stores_storeaccess_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.stores_storeaccess
+    ADD CONSTRAINT stores_storeaccess_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6696,11 +7402,27 @@ ALTER TABLE ONLY template.stores_storedevice
 
 
 --
+-- Name: stores_storedevice stores_storedevice_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.stores_storedevice
+    ADD CONSTRAINT stores_storedevice_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: stores_storeoperatinghours stores_storeoperatinghours_pkey; Type: CONSTRAINT; Schema: template; Owner: -
 --
 
 ALTER TABLE ONLY template.stores_storeoperatinghours
     ADD CONSTRAINT stores_storeoperatinghours_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stores_storeoperatinghours stores_storeoperatinghours_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.stores_storeoperatinghours
+    ADD CONSTRAINT stores_storeoperatinghours_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -6717,6 +7439,14 @@ ALTER TABLE ONLY template.stores_userdevicesession
 
 ALTER TABLE ONLY template.stores_userdevicesession
     ADD CONSTRAINT stores_userdevicesession_session_key_key UNIQUE (session_key);
+
+
+--
+-- Name: stores_userdevicesession stores_userdevicesession_sync_id_key; Type: CONSTRAINT; Schema: template; Owner: -
+--
+
+ALTER TABLE ONLY template.stores_userdevicesession
+    ADD CONSTRAINT stores_userdevicesession_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -12039,5 +12769,5 @@ ALTER TABLE ONLY template.taggit_taggeditem
 -- PostgreSQL database dump complete
 --
 
-\unrestrict uOJqQp8JD4aTIgPgtgfMx2qQrS1OK3uCxSjoMaFrYGoJiCDOrgEgaOcYGcHINL1
+\unrestrict 5CFjZ5rzhueqCG5WaJgtdPGcLEy2zqR35XmlLcghZFYYodzD5HsKyd57SlFmJJg
 

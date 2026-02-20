@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ntSPPmpHcdLdAv1BXYA3YGBzwyCiQIYbxvSFl0Pd0XOv5tpvlNROBthaxh77baZ
+\restrict hdG737Sdo5sWUwY2dWf34YMAfAqwdh8VabMGgwWS5CvRg1xlr9Ctvm7NVFVeGKu
 
 -- Dumped from database version 16.12 (Ubuntu 16.12-1.pgdg24.04+1)
 -- Dumped by pg_dump version 18.2 (Ubuntu 18.2-1.pgdg24.04+1)
@@ -238,12 +238,17 @@ ALTER TABLE IF EXISTS ONLY public.public_analytics_events DROP CONSTRAINT IF EXI
 ALTER TABLE IF EXISTS ONLY public.public_analytics_daily_stats DROP CONSTRAINT IF EXISTS public_analytics_daily_stats_pkey;
 ALTER TABLE IF EXISTS ONLY public.public_analytics_daily_stats DROP CONSTRAINT IF EXISTS public_analytics_daily_stats_date_key;
 ALTER TABLE IF EXISTS ONLY public.public_analytics_conversions DROP CONSTRAINT IF EXISTS public_analytics_conversions_pkey;
+ALTER TABLE IF EXISTS ONLY public.primebooks_updatelog DROP CONSTRAINT IF EXISTS primebooks_updatelog_sync_id_key;
 ALTER TABLE IF EXISTS ONLY public.primebooks_updatelog DROP CONSTRAINT IF EXISTS primebooks_updatelog_pkey;
+ALTER TABLE IF EXISTS ONLY public.primebooks_maintenancewindow DROP CONSTRAINT IF EXISTS primebooks_maintenancewindow_sync_id_key;
 ALTER TABLE IF EXISTS ONLY public.primebooks_maintenancewindow DROP CONSTRAINT IF EXISTS primebooks_maintenancewindow_pkey;
+ALTER TABLE IF EXISTS ONLY public.primebooks_errorreport DROP CONSTRAINT IF EXISTS primebooks_errorreport_sync_id_key;
 ALTER TABLE IF EXISTS ONLY public.primebooks_errorreport DROP CONSTRAINT IF EXISTS primebooks_errorreport_pkey;
 ALTER TABLE IF EXISTS ONLY public.primebooks_appversions DROP CONSTRAINT IF EXISTS primebooks_appversions_version_key;
+ALTER TABLE IF EXISTS ONLY public.primebooks_appversions DROP CONSTRAINT IF EXISTS primebooks_appversions_sync_id_key;
 ALTER TABLE IF EXISTS ONLY public.primebooks_appversions DROP CONSTRAINT IF EXISTS primebooks_appversions_pkey;
 ALTER TABLE IF EXISTS ONLY public.primebooks_appversion DROP CONSTRAINT IF EXISTS primebooks_appversion_version_key;
+ALTER TABLE IF EXISTS ONLY public.primebooks_appversion DROP CONSTRAINT IF EXISTS primebooks_appversion_sync_id_key;
 ALTER TABLE IF EXISTS ONLY public.primebooks_appversion DROP CONSTRAINT IF EXISTS primebooks_appversion_pkey;
 ALTER TABLE IF EXISTS ONLY public.django_session DROP CONSTRAINT IF EXISTS django_session_pkey;
 ALTER TABLE IF EXISTS ONLY public.django_migrations DROP CONSTRAINT IF EXISTS django_migrations_pkey;
@@ -980,7 +985,8 @@ CREATE TABLE public.primebooks_appversion (
     is_active boolean NOT NULL,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    rollback_target_id bigint
+    rollback_target_id bigint,
+    sync_id uuid
 );
 
 
@@ -1013,7 +1019,8 @@ CREATE TABLE public.primebooks_appversions (
     release_notes text NOT NULL,
     is_active boolean NOT NULL,
     is_critical boolean NOT NULL,
-    created_at timestamp with time zone NOT NULL
+    created_at timestamp with time zone NOT NULL,
+    sync_id uuid
 );
 
 
@@ -1049,7 +1056,8 @@ CREATE TABLE public.primebooks_errorreport (
     is_resolved boolean NOT NULL,
     resolution_notes text NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    app_version_id bigint
+    app_version_id bigint,
+    sync_id uuid
 );
 
 
@@ -1084,7 +1092,8 @@ CREATE TABLE public.primebooks_maintenancewindow (
     is_active boolean NOT NULL,
     is_completed boolean NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    version_id bigint
+    version_id bigint,
+    sync_id uuid
 );
 
 
@@ -1119,7 +1128,8 @@ CREATE TABLE public.primebooks_updatelog (
     platform character varying(20) NOT NULL,
     update_type character varying(20) NOT NULL,
     created_at timestamp with time zone NOT NULL,
-    version_id bigint NOT NULL
+    version_id bigint NOT NULL,
+    sync_id uuid
 );
 
 
@@ -2514,6 +2524,14 @@ ALTER TABLE ONLY public.primebooks_appversion
 
 
 --
+-- Name: primebooks_appversion primebooks_appversion_sync_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.primebooks_appversion
+    ADD CONSTRAINT primebooks_appversion_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: primebooks_appversion primebooks_appversion_version_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2527,6 +2545,14 @@ ALTER TABLE ONLY public.primebooks_appversion
 
 ALTER TABLE ONLY public.primebooks_appversions
     ADD CONSTRAINT primebooks_appversions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: primebooks_appversions primebooks_appversions_sync_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.primebooks_appversions
+    ADD CONSTRAINT primebooks_appversions_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -2546,6 +2572,14 @@ ALTER TABLE ONLY public.primebooks_errorreport
 
 
 --
+-- Name: primebooks_errorreport primebooks_errorreport_sync_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.primebooks_errorreport
+    ADD CONSTRAINT primebooks_errorreport_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: primebooks_maintenancewindow primebooks_maintenancewindow_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2554,11 +2588,27 @@ ALTER TABLE ONLY public.primebooks_maintenancewindow
 
 
 --
+-- Name: primebooks_maintenancewindow primebooks_maintenancewindow_sync_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.primebooks_maintenancewindow
+    ADD CONSTRAINT primebooks_maintenancewindow_sync_id_key UNIQUE (sync_id);
+
+
+--
 -- Name: primebooks_updatelog primebooks_updatelog_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.primebooks_updatelog
     ADD CONSTRAINT primebooks_updatelog_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: primebooks_updatelog primebooks_updatelog_sync_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.primebooks_updatelog
+    ADD CONSTRAINT primebooks_updatelog_sync_id_key UNIQUE (sync_id);
 
 
 --
@@ -4185,5 +4235,5 @@ ALTER TABLE ONLY public.tenant_invoice_settings
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ntSPPmpHcdLdAv1BXYA3YGBzwyCiQIYbxvSFl0Pd0XOv5tpvlNROBthaxh77baZ
+\unrestrict hdG737Sdo5sWUwY2dWf34YMAfAqwdh8VabMGgwWS5CvRg1xlr9Ctvm7NVFVeGKu
 
