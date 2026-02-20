@@ -807,91 +807,143 @@ def get_default_roles_config():
 
 @receiver(post_save, sender=Company)
 def create_default_roles_for_tenant(sender, instance, created, **kwargs):
-    """Create default roles when a new company is created"""
+    """
+    Create default roles when a new company is created.
+
+    Fixes applied:
+    ✅ If auth tables aren't ready yet (happens during initial tenant schema
+       creation), the role creation is deferred via a post_migrate signal
+       registered dynamically — so roles are never silently dropped.
+    ✅ should_suppress_signals() guard preserved.
+    """
     if not created:
         return
 
     if instance.schema_name == 'public':
         return
 
-    # Skip if signals are suppressed (during tenant creation)
     if should_suppress_signals():
-        logger.info(f"Skipping role creation for {instance.schema_name} - signals suppressed")
+        logger.info(f"Skipping role creation for {instance.schema_name} — signals suppressed")
         return
 
     from django_tenants.utils import schema_context
 
     with schema_context(instance.schema_name):
         try:
-            # Check if tables exist
-            if not table_exists('auth_group') or not table_exists('accounts_role'):
+            tables_ready = table_exists('auth_group') and table_exists('accounts_role')
+
+            if not tables_ready:
+                # ── Deferred creation ─────────────────────────────────────────
+                # Auth tables don't exist yet (schema still being migrated).
+                # Register a one-shot post_migrate listener that will create
+                # roles as soon as migrations finish for this tenant.
                 logger.warning(
-                    f"Skipping role creation for {instance.schema_name} — auth tables not ready"
+                    f"Auth tables not ready for {instance.schema_name} — "
+                    f"deferring role creation to post_migrate"
                 )
+                _schedule_deferred_role_creation(instance)
                 return
 
-            logger.info(f"Creating default roles for tenant: {instance.schema_name}")
-
-            roles_config = get_default_roles_config()
-            created_roles = []
-
-            for role_name, config in roles_config.items():
-                group, group_created = Group.objects.get_or_create(name=role_name)
-                role, role_created = Role.objects.get_or_create(
-                    group=group,
-                    company=instance,
-                    defaults={
-                        'description': config['description'],
-                        'color_code': config['color_code'],
-                        'priority': config['priority'],
-                        'is_system_role': config.get('is_system_role', True),
-                        'is_active': True,
-                    }
-                )
-
-                if role_created:
-                    if config['permissions'] == 'all':
-                        group.permissions.set(Permission.objects.all())
-                    else:
-                        permissions_to_add = []
-                        for model_path, actions in config['permissions'].items():
-                            app_label, model_name = model_path.split('.')
-                            try:
-                                content_type = ContentType.objects.get(
-                                    app_label=app_label,
-                                    model=model_name.lower()
-                                )
-                                for action in actions:
-                                    codename = f"{action}_{model_name.lower()}"
-                                    try:
-                                        permission = Permission.objects.get(
-                                            codename=codename,
-                                            content_type=content_type
-                                        )
-                                        permissions_to_add.append(permission)
-                                    except Permission.DoesNotExist:
-                                        logger.debug(
-                                            f"Permission {codename} not found for {app_label}.{model_name}"
-                                        )
-                            except ContentType.DoesNotExist:
-                                logger.debug(f"ContentType not found for {model_path}")
-
-                        if permissions_to_add:
-                            group.permissions.add(*permissions_to_add)
-
-                    created_roles.append(role_name)
-                    logger.info(f"✓ Created role: {role_name} (priority: {config['priority']})")
-
-            if created_roles:
-                logger.info(f"✅ Created {len(created_roles)} roles: {', '.join(created_roles)}")
-            else:
-                logger.info(f"ℹ️  All roles already exist for {instance.schema_name}")
+            _do_create_roles(instance)
 
         except Exception as e:
             logger.error(
                 f"❌ Error creating default roles for tenant {instance.schema_name}: {e}",
                 exc_info=True
             )
+
+
+def _schedule_deferred_role_creation(company_instance):
+    """
+    Register a one-shot post_migrate signal handler that creates roles
+    for `company_instance` once migrations have finished running.
+    The handler disconnects itself after firing so it doesn't run again.
+    """
+    from django.db.models.signals import post_migrate
+
+    def _deferred_handler(sender, **kwargs):
+        from django_tenants.utils import schema_context
+        try:
+            with schema_context(company_instance.schema_name):
+                if table_exists('auth_group') and table_exists('accounts_role'):
+                    if not Role.objects.filter(is_system_role=True).exists():
+                        logger.info(
+                            f"🔄 Deferred role creation running for {company_instance.schema_name}"
+                        )
+                        _do_create_roles(company_instance)
+        except Exception as e:
+            logger.error(
+                f"❌ Deferred role creation failed for {company_instance.schema_name}: {e}",
+                exc_info=True
+            )
+        finally:
+            # Disconnect so this only fires once
+            post_migrate.disconnect(_deferred_handler)
+
+    post_migrate.connect(_deferred_handler)
+
+
+def _do_create_roles(instance):
+    """
+    Core role-creation logic, extracted so it can be called from both
+    the signal handler and the deferred post_migrate path.
+    """
+    logger.info(f"Creating default roles for tenant: {instance.schema_name}")
+
+    roles_config = get_default_roles_config()
+    created_roles = []
+
+    for role_name, config in roles_config.items():
+        group, group_created = Group.objects.get_or_create(name=role_name)
+        role, role_created = Role.objects.get_or_create(
+            group=group,
+            company=instance,
+            defaults={
+                'description': config['description'],
+                'color_code': config['color_code'],
+                'priority': config['priority'],
+                'is_system_role': config.get('is_system_role', True),
+                'is_active': True,
+            }
+        )
+
+        if role_created:
+            if config['permissions'] == 'all':
+                group.permissions.set(Permission.objects.all())
+            else:
+                permissions_to_add = []
+                for model_path, actions in config['permissions'].items():
+                    app_label, model_name = model_path.split('.')
+                    try:
+                        content_type = ContentType.objects.get(
+                            app_label=app_label,
+                            model=model_name.lower()
+                        )
+                        for action in actions:
+                            codename = f"{action}_{model_name.lower()}"
+                            try:
+                                permission = Permission.objects.get(
+                                    codename=codename,
+                                    content_type=content_type
+                                )
+                                permissions_to_add.append(permission)
+                            except Permission.DoesNotExist:
+                                logger.debug(
+                                    f"Permission {codename} not found for {app_label}.{model_name}"
+                                )
+                    except ContentType.DoesNotExist:
+                        logger.debug(f"ContentType not found for {model_path}")
+
+                if permissions_to_add:
+                    group.permissions.add(*permissions_to_add)
+
+            created_roles.append(role_name)
+            logger.info(f"✓ Created role: {role_name} (priority: {config['priority']})")
+
+    if created_roles:
+        logger.info(f"✅ Created {len(created_roles)} roles: {', '.join(created_roles)}")
+    else:
+        logger.info(f"ℹ️  All roles already exist for {instance.schema_name}")
 
 
 def create_default_roles_on_migrate(sender, **kwargs):

@@ -33,7 +33,13 @@ class Expense(models.Model):
         validators=[MinValueValidator(Decimal('0.01'))]
     )
     description = models.CharField(max_length=500)
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Organization
     tags = TaggableManager(blank=True)
 
@@ -70,7 +76,13 @@ class Expense(models.Model):
 
 class Budget(models.Model):
     """Budget tracking with smart alerts"""
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     PERIOD_CHOICES = [
         ('daily', '📅 Daily'),
         ('weekly', '📅 Weekly'),

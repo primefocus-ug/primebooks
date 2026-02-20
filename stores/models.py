@@ -19,7 +19,13 @@ class Store(models.Model):
         ('WAREHOUSE', _('Warehouse')),
         ('OUTLET', _('Retail Outlet')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     company = models.ForeignKey(
         'company.Company',
         on_delete=models.CASCADE,
@@ -1039,7 +1045,13 @@ class StoreAccess(models.Model):
         ('manager', _('Manager Access')),
         ('admin', _('Admin Access')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -1168,7 +1180,13 @@ class StoreOperatingHours(models.Model):
         (5, _('Saturday')),
         (6, _('Sunday')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     store = models.ForeignKey(
         Store,
         on_delete=models.CASCADE,
@@ -1211,7 +1229,13 @@ class StoreDevice(models.Model):
         ('EFRIS_FISCAL', _('EFRIS Fiscal Device')),
         ('OTHER', _('Other Device')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     store = models.ForeignKey(
         'stores.Store',
         on_delete=models.CASCADE,
@@ -1341,7 +1365,13 @@ class UserDeviceSession(models.Model):
         ('FORCE_CLOSED', _('Force Closed')),
         ('SUSPICIOUS', _('Suspicious')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -1590,7 +1620,13 @@ class DeviceOperatorLog(models.Model):
         ('ERROR', _('Error Occurred')),
         ('OTHER', _('Other Action')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -1703,7 +1739,13 @@ class SecurityAlert(models.Model):
         ('FALSE_POSITIVE', _('False Positive')),
         ('IGNORED', _('Ignored')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -1838,7 +1880,13 @@ class SecurityAlert(models.Model):
 
 class DeviceFingerprint(models.Model):
     """Store known device fingerprints for users"""
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -1942,7 +1990,13 @@ class StockStore(models.Model):
         related_name='stock_stores',
         verbose_name=_("Company")
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Basic Information
     name = models.CharField(
         max_length=255,

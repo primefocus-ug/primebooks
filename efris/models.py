@@ -5,7 +5,7 @@ from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+import uuid
 from cryptography import x509
 import base64
 import hashlib
@@ -26,7 +26,13 @@ class CreditNoteApplication(models.Model):
         ('REJECTED', 'Rejected'),
         ('CANCELLED', 'Cancelled'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     company = models.ForeignKey(
         Company,
         on_delete=models.CASCADE,
@@ -125,7 +131,13 @@ class EFRISConfiguration(models.Model):
         on_delete=models.CASCADE,
         related_name='efris_config'
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # API Configuration
     environment = models.CharField(
         max_length=20,
@@ -794,7 +806,13 @@ class ProductUploadTask(models.Model):
         ('completed', 'Completed'),
         ('failed', 'Failed'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     task_id = models.CharField(max_length=100, unique=True, db_index=True)
 
     # Progress tracking
@@ -858,7 +876,13 @@ class EFRISDigitalKey(models.Model):
         on_delete=models.CASCADE,
         related_name='efris_keys'
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     key_type = models.CharField(max_length=20, choices=KEY_TYPES, default='self_signed')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
 
@@ -962,7 +986,13 @@ class EFRISExceptionLog(models.Model):
         ('104', 'System related errors'),
         ('105', 'Paper roll replacement'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     company = models.ForeignKey(
         'company.Company',
         on_delete=models.CASCADE,
@@ -1008,7 +1038,13 @@ class EFRISSystemDictionary(models.Model):
         ('exciseDuty', 'Excise Duties'),
         ('format', 'Date/Time Formats'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     company = models.ForeignKey(
         'company.Company',
         on_delete=models.CASCADE,
@@ -1066,7 +1102,13 @@ class EFRISAPILog(models.Model):
         ('timeout', 'Timeout'),
         ('cancelled', 'Cancelled'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     company = models.ForeignKey(
         'company.Company',
         on_delete=models.CASCADE,
@@ -1139,7 +1181,13 @@ class EFRISSyncQueue(models.Model):
         ('cancelled', 'Cancelled'),
         ('retry', 'Retry Required'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     PRIORITY_CHOICES = [
         (1, 'High'),
         (2, 'Normal'),
@@ -1210,7 +1258,13 @@ class EFRISFiscalizationBatch(models.Model):
         ('partial', 'Partially Completed'),
         ('failed', 'Failed'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     company = models.ForeignKey(
         'company.Company',
         on_delete=models.CASCADE,
@@ -1259,7 +1313,13 @@ class EFRISDeviceInfo(models.Model):
         ('registered', 'Registered'),
         ('pending', 'Pending Registration'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     store = models.OneToOneField(
         'stores.Store',
         on_delete=models.CASCADE,
@@ -1354,7 +1414,13 @@ class FiscalizationAudit(models.Model):
         ('high', 'High'),
         ('critical', 'Critical'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Core Information
     company = models.ForeignKey(
         'company.Company',
@@ -1577,7 +1643,13 @@ class EFRISCommodityCategorry(models.Model):
     is_exempt = models.CharField(max_length=3)     # 101=Yes, 102=No
     is_leaf_node = models.CharField(max_length=3)  # 101=Yes, 102=No
     is_zero_rate = models.CharField(max_length=3)  # 101=Yes, 102=No
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     last_synced = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -1595,7 +1667,13 @@ class EFRISIntegrationSettings(models.Model):
         on_delete=models.CASCADE,
         related_name='efris_integration_settings'
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Automation Settings
     auto_fiscalize_invoices = models.BooleanField(default=True)
     auto_upload_products = models.BooleanField(default=False)
@@ -1673,7 +1751,13 @@ class EFRISOperationMetrics(models.Model):
         ('certificate_status', 'Certificate Status'),
         ('system_uptime', 'System Uptime'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     company = models.ForeignKey(
         'company.Company',
         on_delete=models.CASCADE,
@@ -1725,7 +1809,13 @@ class EFRISNotification(models.Model):
         ('high', 'High'),
         ('urgent', 'Urgent'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     STATUS_CHOICES = [
         ('unread', 'Unread'),
         ('read', 'Read'),
@@ -1821,7 +1911,13 @@ class EFRISErrorPattern(models.Model):
         on_delete=models.CASCADE,
         related_name='efris_error_patterns'
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     error_code = models.CharField(max_length=50)
     error_message = models.TextField()
     interface_code = models.CharField(max_length=10, blank=True)

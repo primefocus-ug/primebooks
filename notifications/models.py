@@ -5,6 +5,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from django.urls import reverse
+import uuid
 from django.template import Template, Context
 from django.template.exceptions import TemplateSyntaxError
 
@@ -29,7 +30,13 @@ class Announcement(models.Model):
         max_length=255,
         verbose_name=_("Title")
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     message = models.TextField(
         verbose_name=_("Message")
     )
@@ -152,7 +159,13 @@ class NotificationCategory(models.Model):
         ('bell', 'Bell'),
         ('settings', 'Settings'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     name = models.CharField(max_length=100)
     slug = models.SlugField(unique=True)
     category_type = models.CharField(max_length=20, choices=CATEGORY_TYPES)
@@ -226,7 +239,13 @@ class NotificationTemplate(models.Model):
         null=True,
         related_name='templates'
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Message templates
     title_template = models.CharField(
         max_length=255,
@@ -336,6 +355,13 @@ class Notification(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name='notifications'
+    )
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
     )
     sender=models.ForeignKey(User,blank=True,null=True,on_delete=models.SET_NULL,related_name='sent_notifications')
     # Classification
@@ -477,7 +503,13 @@ class NotificationPreference(models.Model):
         on_delete=models.CASCADE,
         related_name='notification_preferences'
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Global preferences
     email_enabled = models.BooleanField(default=True)
     sms_enabled = models.BooleanField(default=False)
@@ -570,7 +602,13 @@ class NotificationPreference(models.Model):
 
 class NotificationBatch(models.Model):
     """Batch notifications for bulk sending"""
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     name = models.CharField(max_length=200, blank=True, null=True)
     description = models.TextField(blank=True)
 
@@ -648,7 +686,13 @@ class NotificationLog(models.Model):
         on_delete=models.CASCADE,
         related_name='delivery_logs'
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     channel = models.CharField(
         max_length=20,
         choices=[
@@ -708,7 +752,13 @@ class NotificationLog(models.Model):
 
 class NotificationRule(models.Model):
     """Automated notification rules based on triggers"""
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
 

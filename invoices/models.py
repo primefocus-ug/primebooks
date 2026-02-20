@@ -42,7 +42,13 @@ class Invoice(models.Model, EFRISInvoiceMixin):
         ('failed', 'Fiscalization Failed'),
         ('cancelled', 'Cancelled'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     sale = models.OneToOneField(
         'sales.Sale',
         on_delete=models.CASCADE,  # Changed from PROTECT
@@ -1379,6 +1385,13 @@ class PaymentSchedule(models.Model):
         on_delete=models.CASCADE,
         related_name='payment_schedules'
     )
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     installment_number = models.PositiveIntegerField(
         verbose_name="Installment Number"
     )
@@ -1457,7 +1470,13 @@ class PaymentReminder(models.Model):
         ('OVERDUE', 'Payment Overdue'),
         ('FINAL_NOTICE', 'Final Notice'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     REMINDER_METHOD_CHOICES = [
         ('EMAIL', 'Email'),
         ('SMS', 'SMS'),
@@ -1536,6 +1555,13 @@ class PaymentAllocation(models.Model):
         on_delete=models.CASCADE,
         related_name='allocations'
     )
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     payment_schedule = models.ForeignKey(
         'PaymentSchedule',
         on_delete=models.SET_NULL,
@@ -1567,6 +1593,13 @@ class InvoiceTemplate(models.Model):
     is_default = models.BooleanField(
         default=False,
         verbose_name=_("Is Default Template")
+    )
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
     )
     is_efris_compliant = models.BooleanField(
         default=False,
@@ -1613,7 +1646,13 @@ class InvoicePayment(models.Model):
         ('CREDIT_CARD', _('Credit Card')),
         ('OTHER', _('Other')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     invoice = models.ForeignKey(
         'Invoice',
         on_delete=models.CASCADE,
@@ -1822,7 +1861,13 @@ class FiscalizationAudit(models.Model):
         ('URA_APPROVAL', _('URA Approval')),
         ('EFRIS_SUBMIT', _('EFRIS Submission')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     invoice = models.ForeignKey(
         'Invoice',
         on_delete=models.CASCADE,

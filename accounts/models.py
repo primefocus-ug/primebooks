@@ -11,7 +11,7 @@ from django.urls import reverse
 from django.core.exceptions import ValidationError
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-import json
+import uuid
 
 
 def validate_phone_number(value):
@@ -120,6 +120,13 @@ class CustomUserManager(BaseUserManager):
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     # Core Fields
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     company = models.ForeignKey('company.Company', on_delete=models.CASCADE)
     email = models.EmailField(unique=True, verbose_name=_("Email Address"))
     username = models.CharField(
@@ -742,6 +749,7 @@ class UserSignature(models.Model):
 
 
 class RoleManager(models.Manager):
+
     """Custom manager for Role model with useful querysets"""
 
     def system_roles(self):
@@ -793,6 +801,13 @@ class RoleManager(models.Manager):
 
 
 class Role(models.Model):
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     """Extended Group model for company-specific roles with metadata."""
     group = models.OneToOneField(
         Group,
@@ -969,6 +984,13 @@ class RoleHistory(models.Model):
         Role,
         on_delete=models.CASCADE,
         related_name='history'
+    )
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
     )
     action = models.CharField(max_length=20, choices=ACTION_CHOICES)
     user = models.ForeignKey(

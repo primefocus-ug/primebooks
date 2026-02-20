@@ -8,6 +8,7 @@ Version Management Models
 from django.db import models
 from django.core.validators import FileExtensionValidator
 from django.utils import timezone
+import uuid
 
 
 class AppVersion(models.Model):
@@ -17,7 +18,13 @@ class AppVersion(models.Model):
     version = models.CharField(max_length=20, unique=True)
     release_date = models.DateTimeField()
     release_notes = models.TextField()
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Lifecycle states
     LIFECYCLE_CHOICES = [
         ('active', '🟢 Active - Fully supported'),
@@ -139,7 +146,13 @@ class ErrorReport(models.Model):
     error_type = models.CharField(max_length=200)
     error_message = models.TextField()
     traceback = models.TextField()
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Context
     app_version = models.ForeignKey(
         AppVersion,
@@ -178,7 +191,13 @@ class UpdateLog(models.Model):
     """Track version updates by users"""
 
     version = models.ForeignKey(AppVersion, on_delete=models.CASCADE)
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Download tracking
     download_started = models.DateTimeField(null=True, blank=True)
     download_completed = models.DateTimeField(null=True, blank=True)
@@ -218,7 +237,13 @@ class UpdateLog(models.Model):
 
 class MaintenanceWindow(models.Model):
     """Scheduled maintenance"""
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     title = models.CharField(max_length=200)
     description = models.TextField()
 
@@ -253,7 +278,13 @@ class MaintenanceWindow(models.Model):
 
 
 class AppVersions(models.Model):
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     version = models.CharField(max_length=20, unique=True)
     release_date = models.DateField(auto_now_add=True)
 

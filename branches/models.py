@@ -2,12 +2,19 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import RegexValidator
 from django.utils.translation import gettext_lazy as _
+import uuid
 
 
 
 class CompanyBranch(models.Model):
     """Enhanced company branch model with additional features."""
-    
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     company = models.ForeignKey(
         'company.Company',
         on_delete=models.CASCADE,

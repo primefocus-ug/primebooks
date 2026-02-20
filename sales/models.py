@@ -493,7 +493,7 @@ from primebooks.mixins import OfflineIDMixin
 logger = logging.getLogger(__name__)
 
 
-class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
+class Sale(models.Model, EFRISSaleMixin):
     # ==================== NEW: Document Type System ====================
     DOCUMENT_TYPE_CHOICES = [
         ('RECEIPT', 'Receipt'),
@@ -549,7 +549,13 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
         choices=STATUS_CHOICES,
         default='DRAFT'
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True,
+    )
     # ==================== NEW: Payment Status ====================
     PAYMENT_STATUS_CHOICES = [
         ('PENDING', 'Pending Payment'),
@@ -1434,7 +1440,7 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
             return None
 
 
-class SaleItem(OfflineIDMixin,models.Model):
+class SaleItem(models.Model):
     TAX_RATE_CHOICES = [
         ('A', 'Standard rate (18%)'),
         ('B', 'Zero rate (0%)'),
@@ -1447,7 +1453,13 @@ class SaleItem(OfflineIDMixin,models.Model):
         ('PRODUCT', 'Product'),
         ('SERVICE', 'Service'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True,
+    )
     sale = models.ForeignKey('Sale', related_name='items', on_delete=models.CASCADE)
     item_type = models.CharField(
         max_length=10,
@@ -1890,13 +1902,20 @@ class SaleItem(OfflineIDMixin,models.Model):
 
 
 # ==================== ENHANCED: Receipt Model ====================
-class Receipt(OfflineIDMixin,models.Model):
+class Receipt(models.Model):
     """Receipt document for immediate payment sales"""
     sale = models.OneToOneField(
         Sale,
         on_delete=models.CASCADE,
         related_name='receipt_detail',
         verbose_name="Sale"
+    )
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True,
     )
     store = models.ForeignKey('stores.Store', on_delete=models.PROTECT, null=True, blank=True)
     receipt_number = models.CharField(
@@ -1986,8 +2005,15 @@ class Receipt(OfflineIDMixin,models.Model):
         self.save(update_fields=['print_count', 'is_duplicate'])
 
 
-class Payment(OfflineIDMixin,models.Model):
+class Payment(models.Model):
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name='payments')
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True,
+    )
     store = models.ForeignKey('stores.Store', on_delete=models.PROTECT, null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0.01)])
     payment_method = models.CharField(max_length=20, choices=Sale.PAYMENT_METHODS)
@@ -2133,13 +2159,19 @@ class Payment(OfflineIDMixin,models.Model):
             logger.info(f"Updated sale {sale.id} payment status to {new_payment_status}")
 
 
-class Cart(OfflineIDMixin,models.Model):
+class Cart(models.Model):
     STATUS_CHOICES = [
         ('OPEN', 'Open'),
         ('CONFIRMED', 'Confirmed'),
         ('ABANDONED', 'Abandoned'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True,blank=True
+    )
     session_key = models.CharField(max_length=40, blank=True, null=True)
     user = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE, null=True, blank=True)
     customer = models.ForeignKey('customers.Customer', on_delete=models.SET_NULL, null=True, blank=True)
@@ -2297,9 +2329,15 @@ class Cart(OfflineIDMixin,models.Model):
             pass  # Don't let WebSocket errors break cart operations
 
 
-class CartItem(OfflineIDMixin,models.Model):
+class CartItem(models.Model):
     TAX_RATE_CHOICES = SaleItem.TAX_RATE_CHOICES
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True,blank=True
+    )
     cart = models.ForeignKey(Cart, related_name='items', on_delete=models.CASCADE)
     product = models.ForeignKey('inventory.Product', on_delete=models.PROTECT)
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])

@@ -31,7 +31,13 @@ class Customer(models.Model,EFRISCustomerMixin):
         ('FAILED', _('Registration Failed')),
         ('UPDATED', _('Updated')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     customer_id = models.CharField(
         max_length=36,
         unique=True,
@@ -499,7 +505,13 @@ class CustomerCreditStatement(models.Model):
         on_delete=models.CASCADE,
         related_name='credit_statements'
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
 
     sale = models.ForeignKey(
@@ -550,6 +562,13 @@ class CustomerGroup(models.Model):
         default=0,
         verbose_name=_("Discount Percentage")
     )
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     customers = models.ManyToManyField(
         Customer,
         related_name='groups',
@@ -599,6 +618,13 @@ class CustomerNote(models.Model):
         null=True,
         verbose_name=_("Author")
     )
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     note = models.TextField(verbose_name=_("Note"))
 
     # Note categories
@@ -644,7 +670,13 @@ class EFRISCustomerSync(models.Model):
         ('FAILED', _('Failed')),
         ('RETRY', _('Retry Required')),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     customer = models.ForeignKey(
         Customer,
         on_delete=models.CASCADE,

@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.core.cache import cache
 import hashlib
 import json
+import uuid
 from django.db.models import Q, UniqueConstraint
 from django.db import connection
 from decimal import Decimal
@@ -25,7 +26,13 @@ class SavedReport(models.Model):
         ('CUSTOMER_ANALYTICS', 'Customer Analytics'),
         ('CUSTOM', 'Custom Report'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     name = models.CharField(
         max_length=100,
         null=True,blank=True,
@@ -219,7 +226,13 @@ class ReportSchedule(models.Model):
         ('CSV', 'CSV'),
         ('JSON', 'JSON'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     report = models.ForeignKey(
         SavedReport,
         on_delete=models.CASCADE,
@@ -441,7 +454,13 @@ class GeneratedReport(models.Model):
         ('FAILED', 'Failed'),
         ('CANCELLED', 'Cancelled'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     report = models.ForeignKey(
         SavedReport,
         on_delete=models.CASCADE,
@@ -613,7 +632,13 @@ class ReportAccessLog(models.Model):
         ('DELETE', 'Deleted'),
         ('SCHEDULE', 'Scheduled'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     report = models.ForeignKey(
         SavedReport,
         on_delete=models.CASCADE,
@@ -685,7 +710,13 @@ class ReportAccessLog(models.Model):
 
 class ReportComparison(models.Model):
     """Store report comparison configurations"""
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     name = models.CharField(
         max_length=200,
         verbose_name=_("Comparison Name")
@@ -732,6 +763,13 @@ class EFRISReportTemplate(models.Model):
         max_length=50,
         choices=SavedReport.REPORT_TYPES,
         verbose_name=_("Report Type")
+    )
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
     )
     template_file = models.FileField(
         upload_to='reports/efris_templates/',

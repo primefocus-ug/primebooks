@@ -10,6 +10,7 @@ from .managers import ProductCategoryManager, ServiceCategoryManager
 from .efris import EFRISProductMixin
 from primebooks.mixins import OfflineIDMixin
 import logging
+import uuid
 
 logger=logging.getLogger(__name__)
 
@@ -24,7 +25,13 @@ class ImportSession(models.Model):
         ('completed', 'Completed'),
         ('failed', 'Failed'),
     ]
-    
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     user = models.ForeignKey('accounts.CustomUser', on_delete=models.CASCADE)
     filename = models.CharField(max_length=255)
     file_size = models.PositiveIntegerField()  # in bytes
@@ -80,7 +87,13 @@ class Category(models.Model):
         ('product', 'Product Category'),
         ('service', 'Service Category'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Basic Info
     name = models.CharField(
         max_length=255,
@@ -408,6 +421,13 @@ class Supplier(models.Model):
     name = models.CharField(
         max_length=200,
         verbose_name=_("Supplier Name")
+    )
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
     )
     tin = models.CharField(
         max_length=20,
@@ -1008,7 +1028,13 @@ class Product(models.Model, EFRISProductMixin):
         ('PAIR', 'Pair'),
     ]
 
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Core Product Fields
     category = models.ForeignKey(
         Category,
@@ -1784,7 +1810,13 @@ class Service(models.Model):
         ('104', 'Deemed rate (18%)'),
         ('105', 'Excise Duty + VAT'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Core Service Fields
     category = models.ForeignKey(
         Category,
@@ -2266,7 +2298,13 @@ class Stock(models.Model):
         related_name='inventory_items',
         verbose_name=_("Store")
     )
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Quantity tracking
     quantity = models.DecimalField(
         max_digits=12,
@@ -2495,7 +2533,13 @@ class StockMovement(models.Model):
         ('TRANSFER_IN', 'Transfer In'),
         ('TRANSFER_OUT', 'Transfer Out'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='movements', verbose_name=_("Product"))
     store = models.ForeignKey('stores.Store', on_delete=models.CASCADE, related_name='stock_movements',
                               verbose_name=_("Store"))
@@ -2684,7 +2728,13 @@ class ImportLog(models.Model):
         ('error', 'Error'),
         ('success', 'Success'),
     ]
-    
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     session = models.ForeignKey(ImportSession, on_delete=models.CASCADE, related_name='logs')
     level = models.CharField(max_length=10, choices=LOG_LEVELS)
     message = models.TextField()
@@ -2706,7 +2756,13 @@ class ImportResult(models.Model):
         ('skipped', 'Skipped'),
         ('error', 'Error'),
     ]
-    
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     session = models.ForeignKey(ImportSession, on_delete=models.CASCADE, related_name='results')
     result_type = models.CharField(max_length=10, choices=RESULT_TYPES)
     row_number = models.PositiveIntegerField()
@@ -2743,7 +2799,13 @@ class StockTransfer(models.Model):
         ('cancelled', 'Cancelled'),
         ('rejected', 'Rejected'),
     ]
-
+    sync_id = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        db_index=True,
+        editable=False,
+        null=True, blank=True
+    )
     # Transfer identification
     transfer_number = models.CharField(
         max_length=50,
