@@ -705,6 +705,84 @@ class SyncManager:
             return f"http://{self.schema_name}.localhost:8000"
         return f"https://{self.schema_name}.primebooks.sale"
 
+    def reset_sequences(self):
+        from django.db import connection
+
+        logger.info(f"Resetting sequences in schema: {self.schema_name}")
+        try:
+            with schema_context(self.schema_name):
+                with connection.cursor() as cursor:
+                    cursor.execute("SET search_path TO %s, public", [self.schema_name])
+
+                    cursor.execute("""
+                                   SELECT s.sequencename, c.relname, a.attname
+                                   FROM pg_sequences s
+                                            JOIN pg_class seq_cls
+                                                 ON seq_cls.relname = s.sequencename
+                                                     AND seq_cls.relkind = 'S'
+                                                     AND seq_cls.relnamespace =
+                                                         (SELECT oid FROM pg_namespace WHERE nspname = %s)
+                                            JOIN pg_depend dep
+                                                 ON dep.objid = seq_cls.oid
+                                                     AND dep.classid = 'pg_class'::regclass
+                            AND dep.deptype = 'a'
+                        JOIN pg_attribute a
+                                   ON a.attrelid = dep.refobjid
+                                       AND a.attnum = dep.refobjsubid
+                                       JOIN pg_class c
+                                       ON c.oid = dep.refobjid
+                                       AND c.relkind = 'r'
+                                   WHERE s.schemaname = %s
+                                   ORDER BY s.sequencename;
+                                   """, [self.schema_name, self.schema_name])
+
+                    rows = cursor.fetchall()
+                    logger.info(f"  Found {len(rows)} sequences to reset")
+
+                    if not rows:
+                        logger.warning("pg_sequences join returned 0 rows — using name heuristic")
+                        cursor.execute(
+                            "SELECT sequencename FROM pg_sequences WHERE schemaname = %s ORDER BY sequencename;",
+                            [self.schema_name]
+                        )
+                        rows = []
+                        for (sname,) in cursor.fetchall():
+                            parts = sname.rsplit("_", 2)
+                            if len(parts) == 3 and parts[2] == "seq":
+                                rows.append((sname, parts[0], parts[1]))
+                            else:
+                                rows.append((sname, sname.replace("_id_seq", ""), "id"))
+
+                    reset_count = skipped_count = 0
+                    for seq_name, table_name, col_name in rows:
+                        try:
+                            cursor.execute("SELECT to_regclass(%s)", [f"{self.schema_name}.{table_name}"])
+                            if cursor.fetchone()[0] is None:
+                                skipped_count += 1
+                                continue
+                            cursor.execute(
+                                f'SELECT COALESCE(MAX("{col_name}"), 0) FROM "{self.schema_name}"."{table_name}";'
+                            )
+                            max_val = cursor.fetchone()[0]
+                            cursor.execute(
+                                f'SELECT setval(\'"{self.schema_name}"."{seq_name}"\', GREATEST(%s, 1), true);',
+                                [max_val]
+                            )
+                            reset_count += 1
+                        except Exception as e:
+                            logger.warning(f"  Skipped {seq_name}: {str(e)[:120]}")
+                            skipped_count += 1
+
+                    logger.info(f"Sequences reset: {reset_count} done, {skipped_count} skipped")
+                    return True
+
+        except Exception as e:
+            logger.error(f"reset_sequences failed: {e}", exc_info=True)
+            return False
+
+    # Alias
+    fix_sequences_after_upload = reset_sequences
+
     def is_online(self):
         try:
             if not self.auth_token:
@@ -769,93 +847,6 @@ class SyncManager:
             logger.error(f"❌ Request error: {e}", exc_info=True)
             return None
 
-    # ========================================================================
-    # SEQUENCE RESET (shared by download and upload paths)
-    # ========================================================================
-
-    def reset_sequences(self):
-        from django.db import connection
-
-        logger.info(f"🔄 Resetting sequences in schema: {self.schema_name}")
-        try:
-            with schema_context(self.schema_name):
-                with connection.cursor() as cursor:
-                    # Pin search_path so pg_class lookups resolve correctly
-                    # regardless of what schema_context set it to
-                    cursor.execute("SET search_path TO %s, public", [self.schema_name])
-
-                    cursor.execute("""
-                                   SELECT s.sequencename, c.relname, a.attname
-                                   FROM pg_sequences s
-                                            JOIN pg_class seq_cls
-                                                 ON seq_cls.relname = s.sequencename
-                                                     AND seq_cls.relkind = 'S'
-                                                     AND seq_cls.relnamespace = (SELECT oid
-                                                                                 FROM pg_namespace
-                                                                                 WHERE nspname = %s)
-                                            JOIN pg_depend dep
-                                                 ON dep.objid = seq_cls.oid
-                                                     AND dep.classid = 'pg_class'::regclass
-                            AND dep.deptype = 'a'
-                        JOIN pg_attribute a
-                                   ON a.attrelid = dep.refobjid
-                                       AND a.attnum = dep.refobjsubid
-                                       JOIN pg_class c
-                                       ON c.oid = dep.refobjid
-                                       AND c.relkind = 'r'
-                                   WHERE s.schemaname = %s
-                                   ORDER BY s.sequencename;
-                                   """, [self.schema_name, self.schema_name])
-
-                    rows = cursor.fetchall()
-                    logger.info(f"  📊 Found {len(rows)} sequences to reset")
-
-                    if not rows:
-                        logger.warning("⚠️ pg_sequences join returned 0 rows — using name heuristic")
-                        cursor.execute(
-                            "SELECT sequencename FROM pg_sequences WHERE schemaname = %s ORDER BY sequencename;",
-                            [self.schema_name]
-                        )
-                        rows = []
-                        for (sname,) in cursor.fetchall():
-                            parts = sname.rsplit("_", 2)
-                            if len(parts) == 3 and parts[2] == "seq":
-                                rows.append((sname, parts[0], parts[1]))
-                            else:
-                                rows.append((sname, sname.replace("_id_seq", ""), "id"))
-
-                    reset_count = skipped_count = 0
-                    for seq_name, table_name, col_name in rows:
-                        try:
-                            cursor.execute("SELECT to_regclass(%s)", [f"{self.schema_name}.{table_name}"])
-                            if cursor.fetchone()[0] is None:
-                                skipped_count += 1
-                                continue
-                            cursor.execute(
-                                f'SELECT COALESCE(MAX("{col_name}"), 0) FROM "{self.schema_name}"."{table_name}";'
-                            )
-                            max_val = cursor.fetchone()[0]
-                            cursor.execute(
-                                f'SELECT setval(\'"{self.schema_name}"."{seq_name}"\', GREATEST(%s, 1), true);',
-                                [max_val]
-                            )
-                            reset_count += 1
-                        except Exception as e:
-                            logger.warning(f"  Skipped {seq_name}: {str(e)[:120]}")
-                            skipped_count += 1
-
-                    logger.info(f"✅ Reset {reset_count} sequences ({skipped_count} skipped)")
-                    return True
-
-        except Exception as e:
-            logger.error(f"❌ reset_sequences failed: {e}", exc_info=True)
-            return False
-
-    fix_sequences_after_upload = reset_sequences
-
-
-    # Alias — keep old name working
-    fix_sequences_after_upload = reset_sequences
 
     # ========================================================================
     # DOWNLOAD FROM SERVER
@@ -881,7 +872,7 @@ class SyncManager:
             )
 
             if not response or response.status_code != 200:
-                logger.error(f"❌ Download failed: {getattr(response, 'status_code', 'no response')}")
+                logger.error(f"Download failed: {getattr(response, 'status_code', 'no response')}")
                 return False
 
             data = response.json()
@@ -889,13 +880,13 @@ class SyncManager:
             total_changed = sum(len(r) for r in changes.values())
 
             if total_changed == 0:
-                logger.info("✅ No server changes to download")
+                logger.info("No server changes to download")
                 self.update_last_sync_time()
                 if progress_callback:
                     progress_callback("No changes to download", 100)
                 return True
 
-            logger.info(f"✅ Downloaded {total_changed} changed records across {len(changes)} models")
+            logger.info(f"Downloaded {total_changed} changed records across {len(changes)} models")
 
             if progress_callback:
                 progress_callback(f"Applying {total_changed} changes...", 30)
@@ -912,7 +903,7 @@ class SyncManager:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Download changes error: {e}", exc_info=True)
+            logger.error(f"Download changes error: {e}", exc_info=True)
             return False
 
     def download_all_data(self, progress_callback=None):
@@ -930,18 +921,18 @@ class SyncManager:
             )
 
             if not response or response.status_code != 200:
-                logger.error(f"❌ Download failed")
+                logger.error(f"Download failed")
                 return False
 
             data = response.json()
             if not data.get('success'):
-                logger.error(f"❌ Download failed: {data.get('error')}")
+                logger.error(f"Download failed: {data.get('error')}")
                 return False
 
             all_data = data.get('data', {})
             total_records = data.get('total_records', 0)
 
-            logger.info(f"✅ Downloaded {total_records} records across {len(all_data)} models")
+            logger.info(f"Downloaded {total_records} records across {len(all_data)} models")
 
             if progress_callback:
                 progress_callback(f"Downloaded {total_records} records...", 30)
@@ -960,7 +951,7 @@ class SyncManager:
             return False
 
         except Exception as e:
-            logger.error(f"❌ Download error: {e}", exc_info=True)
+            logger.error(f"Download error: {e}", exc_info=True)
             return False
 
     # ========================================================================
@@ -981,11 +972,11 @@ class SyncManager:
             changes = self.collect_local_changes(last_sync)
 
             if not changes:
-                logger.info("✅ No local changes to upload")
+                logger.info("No local changes to upload")
                 return True
 
             total_changed = sum(len(r) for r in changes.values())
-            logger.info(f"📤 Uploading {total_changed} records across {len(changes)} model(s)")
+            logger.info(f"Uploading {total_changed} records across {len(changes)} model(s)")
 
             if progress_callback:
                 progress_callback(f"Uploading {total_changed} records...", 30)
@@ -1002,23 +993,21 @@ class SyncManager:
             )
 
             if not response or response.status_code != 200:
-                logger.error(f"❌ Upload failed: {getattr(response, 'status_code', 'no response')}")
+                logger.error(f"Upload failed: {getattr(response, 'status_code', 'no response')}")
                 return False
 
             result = response.json()
             if not result.get("success"):
-                logger.error(f"❌ Upload failed: {result.get('error')}")
+                logger.error(f"Upload failed: {result.get('error')}")
                 return False
 
-            logger.info("✅ Upload successful")
+            logger.info("Upload successful")
 
-            # ✅ Process sync_id-based ID mappings from server
             id_mappings = result.get("id_mappings", {})
             if id_mappings:
-                logger.info(f"🔄 Applying ID mappings for {len(id_mappings)} model(s)")
+                logger.info(f"Applying ID mappings for {len(id_mappings)} model(s)")
                 self._apply_sync_id_mappings(id_mappings)
 
-            # Fix sequences after upload in case new server IDs were assigned
             self.reset_sequences()
 
             if progress_callback:
@@ -1027,7 +1016,7 @@ class SyncManager:
             return True
 
         except Exception as e:
-            logger.error("❌ Upload error", exc_info=True)
+            logger.error("Upload error", exc_info=True)
             return False
 
     def _apply_sync_id_mappings(self, id_mappings):
@@ -1284,9 +1273,6 @@ class SyncManager:
         ✅ Each model in its own atomic block — one failure never poisons others.
         ✅ Progress reporting maintained.
         """
-        # Reset sequences after these models to prevent number-generation collisions
-        # in subsequent models that auto-generate codes (e.g. Receipt numbers).
-        RESET_SEQUENCES_AFTER = {'sales.SaleItem', 'invoices.Invoice'}
 
         try:
             logger.info("💾 Applying data to local database")
@@ -1309,17 +1295,6 @@ class SyncManager:
 
                         created_total += created
                         updated_total += updated
-
-                        # ── Mid-sync sequence reset ──────────────────────────────
-                        # After syncing sale items (which triggers auto-Invoice
-                        # creation via signals), reset sequences so that when we
-                        # subsequently sync invoices.Invoice the sequence is ahead
-                        # of any auto-created IDs — preventing duplicate PK errors.
-                        # Same logic applies after invoices are fully written before
-                        # any receipt-number-generating models run.
-                        if model_name in RESET_SEQUENCES_AFTER:
-                            logger.debug(f"  🔄 Mid-sync sequence reset after {model_name}")
-                            self.reset_sequences()
 
                     except Exception as e:
                         logger.error(f"  ❌ Error saving {model_name}: {e}")
@@ -1805,7 +1780,7 @@ class SyncManager:
             from primebooks.auth import DesktopAuthManager
             is_authed, error_msg = DesktopAuthManager().require_authentication()
             if not is_authed:
-                logger.error(f"❌ Authentication required: {error_msg}")
+                logger.error(f"Authentication required: {error_msg}")
                 if progress_callback:
                     progress_callback(f"Error: {error_msg}", 0)
                 return False
@@ -1817,23 +1792,23 @@ class SyncManager:
 
             if is_first_sync:
                 if not self.is_online():
-                    logger.warning("⚠️  Server not reachable")
+                    logger.warning("Server not reachable")
                     self.update_last_sync_time()
                     return True
                 success = self.download_all_data(progress_callback)
                 if success:
                     self.reset_sequences()
-                    logger.info("✅ First sync complete")
+                    logger.info("First sync complete")
                     return True
-                logger.error("❌ First sync failed")
+                logger.error("First sync failed")
                 return False
 
             else:
                 last_sync = self.get_last_sync_time()
-                logger.info(f"🔄 Bidirectional sync — last sync: {last_sync}")
+                logger.info(f"Bidirectional sync — last sync: {last_sync}")
 
                 if not self.is_online():
-                    logger.warning("⚠️  Server not reachable — staying offline")
+                    logger.warning("Server not reachable — staying offline")
                     return False
 
                 if progress_callback:
@@ -1841,7 +1816,7 @@ class SyncManager:
 
                 upload_success = self.upload_changes(progress_callback)
                 if not upload_success:
-                    logger.warning("⚠️  Upload had issues, continuing with download...")
+                    logger.warning("Upload had issues, continuing with download...")
 
                 if progress_callback:
                     progress_callback("Downloading server changes...", 50)
@@ -1849,11 +1824,10 @@ class SyncManager:
                 download_success = self.download_changes(progress_callback)
 
                 if download_success:
-                    # Final safety-net sequence reset
                     self.reset_sequences()
 
                     logger.info("=" * 70)
-                    logger.info("✅ SYNC COMPLETE")
+                    logger.info("SYNC COMPLETE")
                     logger.info(f"  Timestamp: {self.get_last_sync_time()}")
                     logger.info("=" * 70)
 
@@ -1861,11 +1835,11 @@ class SyncManager:
                         progress_callback("Sync complete!", 100)
                     return True
 
-                logger.error("❌ Download failed — sync incomplete")
+                logger.error("Download failed — sync incomplete")
                 return False
 
         except Exception as e:
-            logger.error(f"❌ Sync error: {e}", exc_info=True)
+            logger.error(f"Sync error: {e}", exc_info=True)
             if progress_callback:
                 progress_callback(f"Error: {str(e)}", 0)
             return False

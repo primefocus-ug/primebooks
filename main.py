@@ -7,6 +7,28 @@ Main PyQt launcher with embedded PostgreSQL
 ✅ Data sync before loading app
 ✅ Schema-aware tenant handling
 """
+import sys
+import io
+
+# Force UTF-8 for stdout/stderr — prevents charmap codec crashes on Windows
+# when emoji characters appear in log output during frozen/compiled mode
+if sys.stdout and hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr and hasattr(sys.stderr, 'buffer'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+# Also set environment variable for subprocesses
+import os
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+os.environ['PYTHONUTF8'] = '1'
+
+if hasattr(sys.stdout, 'buffer'):
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 import os
 import sys
 import traceback
@@ -120,7 +142,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QResizeEvent
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
-from primebooks.schema_loader import create_tenant_schema, load_public_schema, verify_schema
 from PyQt6.QtWebEngineCore import QWebEnginePage
 from primebooks.login_dialogs import UserSwitchDialog, InitialLoginDialog
 from primebooks.update_manager import UpdateManager
@@ -1637,112 +1658,182 @@ class PostgresInitThread(QThread):
             logger.error(f"PostgreSQL init error: {e}", exc_info=True)
             self.finished.emit(False, str(e))
 
+# ============================================================================
+# MIGRATION PROGRESS DIALOG
+# ============================================================================
 
-def initialize_django(data_dir):
-    """
-    ✅ NEW: Initialize Django using SQL dumps (FAST!)
-    """
-    logger.info("Initializing Django in desktop mode")
-    logger.info(f"Data directory: {data_dir}")
+# ============================================================================
+# MIGRATION PROGRESS DIALOG
+# ============================================================================
 
-    # Setup Django first
-    import django
-    django.setup()
-    logger.info("✅ Django apps loaded")
+class MigrationThread(QThread):
+    status_update = pyqtSignal(str)
+    finished = pyqtSignal(bool, str)
 
-    # Check if this is first run
-    first_run = not (data_dir / '.initialized').exists()
+    def __init__(self, data_dir):
+        super().__init__()
+        self.data_dir = data_dir
 
-    if first_run:
-        logger.info("🚀 First run detected - loading schema from SQL dumps...")
-
+    def run(self):
         try:
+            from django.core.management import call_command
             from django.db import connection
 
-            # ============================================================
-            # STEP 1: Load public schema from SQL dump
-            # ============================================================
-            logger.info("📄 Loading public schema from data_public.sql...")
+            self.status_update.emit("Creating database schema...")
+            with connection.cursor() as cursor:
+                cursor.execute("CREATE SCHEMA IF NOT EXISTS public;")
 
-            public_sql_path = BASE_DIR / 'data_public.sql'
-            if not public_sql_path.exists():
-                raise FileNotFoundError(f"Public schema SQL file not found: {public_sql_path}")
+            self.status_update.emit("Setting up PrimeBooks Desktop...")
+            call_command(
+                'migrate_schemas',
+                schema_name='public',
+                interactive=False,
+                verbosity=0
+            )
 
-            if not load_public_schema(public_sql_path):
-                raise Exception("Failed to load public schema from SQL")
-
-            logger.info("✅ Public schema loaded from SQL (2-3 seconds instead of 60!)")
-
-            # ✅ Ensure django_session table exists in public schema
-            logger.info("🔄 Creating django_session table in public schema...")
-            try:
-                from django.core.management import call_command
-                from django.db import connection
-
-                with connection.cursor() as cursor:
-                    cursor.execute("SET search_path TO public;")
-
-                    # Create django_session table if it doesn't exist
-                    cursor.execute("""
-                                   CREATE TABLE IF NOT EXISTS django_session
-                                   (
-                                       session_key
-                                       varchar
-                                   (
-                                       40
-                                   ) NOT NULL PRIMARY KEY,
-                                       session_data text NOT NULL,
-                                       expire_date timestamp with time zone NOT NULL
-                                                                 );
-                                   """)
-
-                    cursor.execute("""
-                                   CREATE INDEX IF NOT EXISTS django_session_expire_date_idx
-                                       ON django_session (expire_date);
-                                   """)
-
-                logger.info("✅ django_session table ready in public schema")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not create session table: {e}")
-
-            # ============================================================
-            # STEP 2: Verify public schema
-            # ============================================================
-            if not verify_schema_tables('public'):
-                raise Exception("Public schema verification failed")
-
-            # Mark as initialized
-            (data_dir / '.initialized').touch()
-            logger.info("✅ Database initialized successfully using SQL dumps! 🚀")
+            self.status_update.emit("Database ready!")
+            (self.data_dir / '.initialized').touch()
+            self.finished.emit(True, "")
 
         except Exception as e:
-            logger.error(f"❌ Failed to initialize from SQL dumps: {e}", exc_info=True)
-            logger.warning("⚠️ Falling back to Django migrations...")
+            logger.error(f"Migration error: {e}", exc_info=True)
+            self.finished.emit(False, str(e))
 
-            # Fallback to old method
-            try:
-                from django.core.management import call_command
 
-                # Create basic tables manually
-                with connection.cursor() as cursor:
-                    cursor.execute("CREATE SCHEMA IF NOT EXISTS public;")
-                    cursor.execute("SET search_path TO public;")
+class MigrationSetupDialog(QDialog):
+    """Shown on first run while migrations execute — spinner style"""
 
-                # Run migrations
-                call_command('migrate_schemas',
-                             schema_name='public',
-                             interactive=False,
-                             verbosity=2)
+    def __init__(self, data_dir, parent=None):
+        super().__init__(parent)
+        self.data_dir = data_dir
+        self.success = False
+        self._angle = 0
 
-                (data_dir / '.initialized').touch()
-                logger.info("✅ Database initialized using migrations (fallback)")
+        self.setWindowTitle("PrimeBooks — First Time Setup")
+        self.setModal(True)
+        self.setFixedSize(420, 260)
+        self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, False)
 
-            except Exception as fallback_error:
-                logger.error(f"❌ Fallback migration also failed: {fallback_error}", exc_info=True)
-                raise
-    else:
-        logger.info("Database already initialized")
+        self._build_ui()
+        self._apply_theme()
 
+        # Spinner animation timer
+        self._spin_timer = QTimer(self)
+        self._spin_timer.timeout.connect(self._tick_spinner)
+        self._spin_timer.start(30)
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 35, 40, 35)
+        layout.setSpacing(16)
+
+        title = QLabel("⚙️  Setting Up Your PrimeBooks")
+        title.setObjectName("migTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        note = QLabel("This only happens once — please don't close the app.")
+        note.setObjectName("migNote")
+        note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        # Spinner canvas
+        self._spinner = QLabel()
+        self._spinner.setFixedSize(56, 56)
+        self._spinner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._spinner, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self.status = QLabel("Initializing...")
+        self.status.setObjectName("migStatus")
+        self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+
+        layout.addStretch()
+
+    def _tick_spinner(self):
+        """Draw a rotating arc as the spinner"""
+        from PyQt6.QtGui import QPainter, QColor, QPen
+        from PyQt6.QtCore import QRect
+
+        self._angle = (self._angle + 8) % 360
+
+        size = 56
+        pixmap = QPixmap(size, size)
+        pixmap.fill(QColor(0, 0, 0, 0))  # transparent
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Background circle
+        pen = QPen(QColor("#2d3748"), 5)
+        painter.setPen(pen)
+        margin = 6
+        rect = QRect(margin, margin, size - margin * 2, size - margin * 2)
+        painter.drawEllipse(rect)
+
+        # Spinning arc
+        pen = QPen(QColor("#667eea"), 5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        # Qt drawArc uses 1/16th degrees, starts from 3 o'clock, goes counter-clockwise
+        start_angle = (90 - self._angle) * 16   # rotate so it starts from top
+        span_angle = -100 * 16                   # arc length ~100 degrees
+        painter.drawArc(rect, start_angle, span_angle)
+
+        painter.end()
+        self._spinner.setPixmap(pixmap)
+
+    def _apply_theme(self):
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #1a202c;
+            }
+            #migTitle {
+                color: #f7fafc;
+                font-size: 17px;
+                font-weight: bold;
+            }
+            #migNote {
+                color: #a0aec0;
+                font-size: 12px;
+            }
+            #migStatus {
+                color: #cbd5e0;
+                font-size: 13px;
+            }
+        """)
+
+    def run(self):
+        """Start migration thread and show dialog. Returns True on success."""
+        self.thread = MigrationThread(self.data_dir)
+        self.thread.status_update.connect(self._on_status)
+        self.thread.finished.connect(self._on_finished)
+        self.thread.start()
+        self.exec()
+        return self.success
+
+    def _on_status(self, message):
+        self.status.setText(message)
+
+    def _on_finished(self, success, error):
+        self._spin_timer.stop()
+        self.success = success
+        if not success:
+            QMessageBox.critical(
+                self,
+                "Setup Failed",
+                f"Database setup failed:\n\n{error}\n\nPlease restart the app."
+            )
+        self.accept()
+
+def initialize_django(data_dir):
+    """Setup Django. Migrations are handled separately via MigrationSetupDialog."""
+    logger.info("Initializing Django in desktop mode")
+    import django
+    django.setup()
+    logger.info("Django apps loaded")
     return True
 
 
@@ -2667,6 +2758,17 @@ def main():
                 QMessageBox.critical(None, "Init Error", str(e))
                 return
 
+            # Show migration dialog on first run
+            if not (data_dir / '.initialized').exists():
+                logger.info("First run — showing migration setup dialog...")
+                mig_dialog = MigrationSetupDialog(data_dir)
+                if not mig_dialog.run():
+                    app.quit()
+                    return
+                logger.info("✅ First-run migrations complete")
+            else:
+                logger.info("Database already initialized — skipping migrations")
+
             # Authentication
             from primebooks.auth import DesktopAuthManager
             auth_manager = DesktopAuthManager()
@@ -2691,38 +2793,8 @@ def main():
 
                 auth_manager.save_credentials(user_data, company_data, token)
 
-                logger.info(f"Performing initial sync for {subdomain}...")
-
-                # ✅ Create tenant schema from SQL BEFORE syncing data
-                logger.info("📄 Creating tenant schema from SQL dump...")
-                tenant_sql = BASE_DIR / 'data_tenant.sql'
-
-                if not tenant_sql.exists():
-                    logger.warning(f"⚠️ Tenant SQL not found: {tenant_sql}")
-                    logger.warning("⚠️ Tenant will be created during data sync")
-                else:
-                    # ✅ Load TENANT schema using the correct function
-                    if not create_tenant_schema(subdomain, tenant_sql):
-                        logger.warning("⚠️ Failed to load tenant schema from SQL")
-                    else:
-                        logger.info("✅ Tenant schema loaded from SQL dump successfully")
-
                 sync_dialog = DataSyncDialog(subdomain, token, company_data)
                 sync_dialog.exec()
-
-                # ✅ NEW: Reset sequences after initial sync (safety net)
-                logger.info("🔄 Resetting sequences on startup (safety net)...")
-                try:
-                    from primebooks.sync import SyncManager
-                    sync_manager = SyncManager(
-                        tenant_id=tenant_id,
-                        schema_name=subdomain,
-                        auth_token=token
-                    )
-                    sync_manager.reset_sequences()
-                    logger.info("✅ Sequences reset on startup")
-                except Exception as e:
-                    logger.warning(f"⚠️ Could not reset sequences on startup: {e}")
             else:
                 logger.info("Using saved credentials...")
                 token = saved_token

@@ -1,7 +1,7 @@
 # primebooks/auth.py
 """
-Desktop authentication with SQL dump schema creation
-✅ Runs SQL dump for schema (2-3 seconds vs 30-60 seconds)
+Desktop authentication with Django migrations schema creation
+✅ Clean sequences from day one — no setval conflicts
 ✅ Validates subscription before allowing access
 ✅ Caches subscription for offline grace period
 ✅ Downloads data from server
@@ -80,7 +80,6 @@ class DesktopAuthManager:
             if not company:
                 return False, {'error': 'Could not fetch company details'}
 
-            # ✅ Always use subdomain as schema_name (single source of truth)
             company['schema_name'] = subdomain
             self.save_company_info(company)
             self.save_subdomain(subdomain)
@@ -114,7 +113,7 @@ class DesktopAuthManager:
     # -------------------------------------------------------------------------
     def save_subdomain(self, subdomain):
         self.subdomain_file.write_text(subdomain)
-        logger.info(f"✅ Saved subdomain: {subdomain}")
+        logger.info(f"Saved subdomain: {subdomain}")
 
     def get_subdomain(self):
         if self.subdomain_file.exists():
@@ -127,20 +126,11 @@ class DesktopAuthManager:
     def sync_company_from_server(self, company_data, token, subdomain):
         """
         Download and sync company with PostgreSQL multi-tenancy.
-        ✅ Uses SQL dump for fast tenant creation.
-        ✅ Ensures migrations run in TENANT schema, not public.
+        Uses Django migrations for clean schema creation.
+        Sequences start at 1 — no conflicts with synced data.
         """
         from django.utils.text import slugify
-        from .schema_loader import (
-            create_tenant_schema,
-            verify_schema,
-            check_schema_exists,
-            reset_sequences,
-            get_schema_tables,
-        )
         from primebooks.subscription import SubscriptionManager
-        from django.core.management import call_command
-        from django.db import connection
         from django_tenants.utils import schema_context
 
         try:
@@ -156,7 +146,7 @@ class DesktopAuthManager:
             logger.info("=" * 70)
 
             # ── STEP 1: PUBLIC schema — Company + Domain ──────────────────────
-            logger.info("🔄 Switching to PUBLIC schema for Company operations...")
+            logger.info("Switching to PUBLIC schema for Company operations...")
             connection.set_schema('public')
 
             company, created = Company.objects.update_or_create(
@@ -185,83 +175,59 @@ class DesktopAuthManager:
             if created:
                 company.save(is_initial_sync=True)
 
-            logger.info(f"✅ Company {'created' if created else 'updated'}: {company.name}")
+            logger.info(f"Company {'created' if created else 'updated'}: {company.name}")
 
             domain_name = f"{subdomain}.localhost"
             Domain.objects.update_or_create(
                 domain=domain_name,
                 defaults={'tenant': company, 'is_primary': True}
             )
-            logger.info(f"✅ Domain configured: {domain_name}")
+            logger.info(f"Domain configured: {domain_name}")
 
-            # ── STEP 2: Check / create tenant schema ──────────────────────────
-            logger.info(f"🔄 Checking tenant schema: {schema_name}")
-            schema_exists = check_schema_exists(schema_name)
-            needs_creation = False
+            # ── STEP 2: Create tenant schema via migrations ───────────────────
+            logger.info(f"Checking tenant schema: {schema_name}")
+            schema_exists = self._check_schema_exists(schema_name)
 
             if schema_exists:
-                tables = get_schema_tables(schema_name)
-                if len(tables) > 0:
-                    logger.info(f"✅ Schema '{schema_name}' exists with {len(tables)} tables")
+                table_count = self._get_table_count(schema_name)
+                if table_count > 0:
+                    logger.info(f"Schema '{schema_name}' exists with {table_count} tables — skipping creation")
                 else:
-                    logger.warning(f"⚠️ Schema '{schema_name}' exists but is EMPTY")
-                    needs_creation = True
+                    logger.warning(f"Schema '{schema_name}' exists but is empty — running migrations")
+                    self._run_migrations(schema_name)
             else:
-                logger.info(f"ℹ️  Schema '{schema_name}' does not exist")
-                needs_creation = True
-
-            if needs_creation:
-                if getattr(sys, 'frozen', False):
-                    tenant_sql = Path(sys._MEIPASS) / 'data_tenant.sql'
-                else:
-                    tenant_sql = Path(__file__).parent.parent / 'data_tenant.sql'
-
-                if tenant_sql.exists():
-                    logger.info(f"🚀 Creating tenant schema from SQL dump...")
-                    success = create_tenant_schema(schema_name, tenant_sql)
-                    if not success:
-                        raise Exception("Failed to create tenant schema from SQL")
-                    logger.info("✅ Tenant schema created from SQL dump")
-                else:
-                    logger.warning("⚠️ SQL dump not found — falling back to migrations (slow)...")
-                    with connection.cursor() as cursor:
-                        cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}";')
-
-                    with schema_context(schema_name):
-                        call_command('migrate_schemas', schema_name=schema_name, verbosity=0)
-                    logger.info(f"✅ Migrations completed in schema: {schema_name}")
+                logger.info(f"Schema '{schema_name}' does not exist — running migrations")
+                self._run_migrations(schema_name)
 
             # ── STEP 3: Switch to tenant schema ───────────────────────────────
-            logger.info(f"🔄 Switching to TENANT schema: {schema_name}")
+            logger.info(f"Switching to TENANT schema: {schema_name}")
             connection.set_schema(schema_name)
 
-            reset_sequences(schema_name)
-
             # ── STEP 4: Validate subscription ─────────────────────────────────
-            logger.info("🔒 Validating subscription...")
+            logger.info("Validating subscription...")
             subscription_manager = SubscriptionManager(company_id, schema_name)
             is_valid, message, days, sub_status = subscription_manager.validate_subscription(
                 force_online=True
             )
             if not is_valid:
-                logger.warning(f"⚠️ Subscription issue: {message}")
+                logger.warning(f"Subscription issue: {message}")
             else:
-                logger.info(f"✅ Subscription valid: {message}")
+                logger.info(f"Subscription valid: {message}")
 
             # ── STEP 5: Sync authenticated user ───────────────────────────────
             user_info = self.get_user_info()
             authenticated_user_email = user_info.get('email') if user_info else None
 
             if authenticated_user_email:
-                logger.info(f"🔄 Syncing user to tenant schema: {authenticated_user_email}")
+                logger.info(f"Syncing user to tenant schema: {authenticated_user_email}")
                 self.sync_user_to_tenant(
                     authenticated_user_email, subdomain, token, company_id
                 )
             else:
-                logger.warning("⚠️ No authenticated user email found")
+                logger.warning("No authenticated user email found")
 
             logger.info("=" * 70)
-            logger.info(f"✅ COMPANY SYNC COMPLETE: {company.name}")
+            logger.info(f"COMPANY SYNC COMPLETE: {company.name}")
             logger.info(f"   Final schema: {connection.schema_name}")
             logger.info("=" * 70)
 
@@ -269,11 +235,63 @@ class DesktopAuthManager:
 
         except Exception as e:
             logger.error("=" * 70)
-            logger.error("❌ CRITICAL ERROR syncing company")
+            logger.error("CRITICAL ERROR syncing company")
             logger.error(f"Error: {e}", exc_info=True)
             logger.error(f"Schema at error: {connection.schema_name}")
             logger.error("=" * 70)
             return None
+
+    def _check_schema_exists(self, schema_name):
+        """Check if a PostgreSQL schema exists."""
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT EXISTS(
+                    SELECT 1 FROM information_schema.schemata
+                    WHERE schema_name = %s
+                )
+            """, [schema_name])
+            return cursor.fetchone()[0]
+
+    def _get_table_count(self, schema_name):
+        """Count tables in a schema."""
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT COUNT(*) FROM information_schema.tables
+                WHERE table_schema = %s
+                AND table_type = 'BASE TABLE'
+            """, [schema_name])
+            return cursor.fetchone()[0]
+
+    def _run_migrations(self, schema_name):
+        """
+        Create tenant schema and run all migrations in it.
+        This gives clean sequences starting at 1 — no setval conflicts.
+        Slower than SQL dump (~30-60s) but reliable.
+        """
+        logger.info(f"Running migrations for schema: {schema_name}")
+        logger.info("This may take 30-60 seconds on first run...")
+
+        try:
+            # Create the schema if it doesn't exist
+            with connection.cursor() as cursor:
+                cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}";')
+            logger.info(f"Schema '{schema_name}' created")
+
+            # Run tenant migrations — this creates all tables with
+            # sequences starting at 1, exactly as they should be
+            call_command(
+                'migrate_schemas',
+                schema_name=schema_name,
+                interactive=False,
+                verbosity=1,
+            )
+
+            table_count = self._get_table_count(schema_name)
+            logger.info(f"Migrations complete — {table_count} tables created in '{schema_name}'")
+
+        except Exception as e:
+            logger.error(f"Migration failed for schema '{schema_name}': {e}", exc_info=True)
+            raise
 
     # -------------------------------------------------------------------------
     # User sync — sync_id aware
@@ -282,9 +300,9 @@ class DesktopAuthManager:
         """
         Sync authenticated user into the tenant schema.
 
-        ✅ Looks up existing user by sync_id (UUID) first.
-        ✅ Falls back to email / integer PK for pre-existing records.
-        ✅ Stamps sync_id onto old records so future syncs are stable.
+        Looks up existing user by sync_id (UUID) first.
+        Falls back to email / integer PK for pre-existing records.
+        Stamps sync_id onto old records so future syncs are stable.
         """
         from accounts.models import CustomUser
 
@@ -296,7 +314,7 @@ class DesktopAuthManager:
             else:
                 url = f"https://{subdomain}.{self.base_domain}/api/desktop/sync/user/{email}/"
 
-            logger.info(f"  📥 Fetching user data from: {url}")
+            logger.info(f"  Fetching user data from: {url}")
 
             response = requests.get(
                 url,
@@ -306,12 +324,12 @@ class DesktopAuthManager:
             )
 
             if response.status_code != 200:
-                logger.error(f"  ❌ Failed to fetch user: HTTP {response.status_code}")
+                logger.error(f"  Failed to fetch user: HTTP {response.status_code}")
                 return False
 
             user_data = response.json()
             if not user_data:
-                logger.error(f"  ❌ No user data returned for {email}")
+                logger.error(f"  No user data returned for {email}")
                 return False
 
             user_id = user_data.get('id')
@@ -319,41 +337,37 @@ class DesktopAuthManager:
             server_sync_id_raw = user_data.get('sync_id')
 
             if not password_hash:
-                logger.error(f"  ❌ No password hash in user data for {email}")
+                logger.error(f"  No password hash in user data for {email}")
                 return False
 
-            # Parse server sync_id if present
             server_sync_id = None
             if server_sync_id_raw:
                 try:
                     server_sync_id = uuid.UUID(str(server_sync_id_raw))
                 except ValueError:
-                    logger.warning(f"  ⚠️ Invalid sync_id from server: {server_sync_id_raw}")
+                    logger.warning(f"  Invalid sync_id from server: {server_sync_id_raw}")
 
-            logger.info(f"  ✅ Received user data (server_id={user_id}, sync_id={server_sync_id})")
+            logger.info(f"  Received user data (server_id={user_id}, sync_id={server_sync_id})")
 
-            # ------------------------------------------------------------------
-            # Look up existing user:  sync_id → email → integer PK
-            # ------------------------------------------------------------------
+            # Look up existing user: sync_id → email → integer PK
             user = None
             created = False
 
-            has_sync_id_field = hasattr(CustomUser, 'sync_id') or any(
+            has_sync_id_field = any(
                 f.name == 'sync_id' for f in CustomUser._meta.get_fields()
             )
 
             if server_sync_id and has_sync_id_field:
                 try:
                     user = CustomUser.objects.get(sync_id=server_sync_id)
-                    logger.info(f"  🔍 Found user by sync_id: {user.email}")
+                    logger.info(f"  Found user by sync_id: {user.email}")
                 except CustomUser.DoesNotExist:
                     pass
 
             if user is None:
                 try:
                     user = CustomUser.objects.get(email=email)
-                    logger.info(f"  🔍 Found user by email: {user.email}")
-                    # Stamp sync_id for future lookups
+                    logger.info(f"  Found user by email: {user.email}")
                     if server_sync_id and has_sync_id_field and not user.sync_id:
                         user.sync_id = server_sync_id
                 except CustomUser.DoesNotExist:
@@ -362,15 +376,12 @@ class DesktopAuthManager:
             if user is None and user_id:
                 try:
                     user = CustomUser.objects.get(pk=user_id)
-                    logger.info(f"  🔍 Found user by PK: {user.email}")
+                    logger.info(f"  Found user by PK: {user.email}")
                     if server_sync_id and has_sync_id_field and not user.sync_id:
                         user.sync_id = server_sync_id
                 except CustomUser.DoesNotExist:
                     pass
 
-            # ------------------------------------------------------------------
-            # Shared field defaults
-            # ------------------------------------------------------------------
             defaults = {
                 'email': user_data['email'],
                 'username': user_data['username'],
@@ -387,12 +398,10 @@ class DesktopAuthManager:
                 defaults['sync_id'] = server_sync_id
 
             if user is not None:
-                # Update existing record
                 for field, value in defaults.items():
                     setattr(user, field, value)
                 user.save()
             else:
-                # Create new record with server's integer PK if available
                 if user_id:
                     user, created = CustomUser.objects.update_or_create(
                         id=user_id,
@@ -403,20 +412,19 @@ class DesktopAuthManager:
                     user.save()
                     created = True
 
-            # Set role if provided
             role_id = user_data.get('role')
             if role_id:
                 user.primary_role_id = role_id
                 user.save()
 
             logger.info(
-                f"  ✅ User {'created' if created else 'updated'}: "
+                f"  User {'created' if created else 'updated'}: "
                 f"{email} (pk={user.pk}, sync_id={getattr(user, 'sync_id', 'n/a')})"
             )
             return True
 
         except Exception as e:
-            logger.error(f"  ❌ Error syncing user {email}: {e}", exc_info=True)
+            logger.error(f"  Error syncing user {email}: {e}", exc_info=True)
             return False
 
     # -------------------------------------------------------------------------
@@ -463,7 +471,7 @@ class DesktopAuthManager:
             new_token = response.json().get('access')
             if new_token:
                 self.save_auth_token(new_token)
-                logger.info("✅ Access token refreshed")
+                logger.info("Access token refreshed")
                 return new_token
 
             logger.error("No access token in refresh response")

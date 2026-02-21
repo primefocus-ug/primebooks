@@ -4,6 +4,7 @@ PRODUCTION Nuitka Build - PrimeBooks Desktop (NO CONSOLE)
 ✅ GUI-only mode (no terminal window)
 ✅ All console output redirected to log files
 ✅ End users never see terminal
+✅ Schema created via migrations — clean sequences, no SQL dumps
 """
 import sys
 import os
@@ -40,41 +41,6 @@ if DEBUG_MODE:
 else:
     print("✨ PRODUCTION MODE - GUI only, NO CONSOLE (END USER BUILD)")
 print("=" * 80)
-
-# ============================================================================
-# STEP 0: CHECK SQL DUMP FILES EXIST
-# ============================================================================
-# ============================================================================
-# STEP 0: CHECK SQL DUMP FILES EXIST
-# ============================================================================
-print("\n🗄️  Step 0: Checking SQL dump files...")
-
-sql_files_required = [
-    'data_tenant.sql',  # ✅ Tenant schema template
-    'data_public.sql',  # ✅ Public schema template (used in main.py line 245)
-]
-
-missing_files = []
-for sql_file in sql_files_required:
-    sql_path = BASE_DIR / sql_file
-    if not sql_path.exists():
-        missing_files.append(sql_file)
-    else:
-        size_kb = sql_path.stat().st_size / 1024
-        print(f"  ✅ Found {sql_file} ({size_kb:.1f} KB)")
-
-if missing_files:
-    print(f"\n  ❌ ERROR: Missing required SQL dump files:")
-    for f in missing_files:
-        print(f"     • {f}")
-    print("\n  💡 These files are REQUIRED for the app to work!")
-    print("     Make sure both data_tenant.sql and data_public.sql exist")
-    print("     in the project root directory.")
-
-    response = input("\n  Continue anyway? (y/N): ")
-    if response.lower() != 'y':
-        print("  Build cancelled.")
-        sys.exit(1)
 
 # ============================================================================
 # STEP 1: CHECK NUITKA INSTALLATION
@@ -153,7 +119,6 @@ if primebooks_dir.exists():
             module_name = f'primebooks.{module_path}' if module_path != '__init__' else 'primebooks'
             if module_name not in primebooks_modules:
                 primebooks_modules.append(module_name)
-                # ✅ Verify critical modules
                 if any(x in module_name for x in ['sync_dialogs', 'sync', 'auth', 'schema_loader']):
                     print(f"     ✅ Found critical: {module_name}")
     print(f"  Total primebooks modules: {len(primebooks_modules)}")
@@ -199,7 +164,6 @@ if IS_WINDOWS:
         cmd.extend(['--windows-console-mode=force'])
         print("  🐛 Console window ENABLED (developer mode)")
     else:
-        # ✅ CRITICAL: Disable console for end users
         cmd.extend(['--windows-console-mode=disable'])
         print("  ✅ Console window DISABLED (GUI only for end users)")
 
@@ -290,7 +254,7 @@ critical_modules = [
 for mod in critical_modules:
     cmd.append(f'--include-module={mod}')
 
-# ✅ EXPLICITLY include critical primebooks modules
+# Explicitly include critical primebooks modules
 print("\n  🎯 Explicitly including critical primebooks modules...")
 critical_primebooks = [
     'primebooks.sync',
@@ -332,19 +296,6 @@ try:
             print(f"    • {dst_path}")
 except Exception as e:
     print(f"    ⚠️  Could not include Django templates: {e}")
-
-# ============================================================================
-# ✅ INCLUDE SQL DUMP FILES (CRITICAL!)
-# ============================================================================
-print("\n  🗄️  Including SQL dump files...")
-
-for sql_file in sql_files_required:
-    sql_path = BASE_DIR / sql_file
-    if sql_path.exists():
-        cmd.append(f'--include-data-files={sql_path}={sql_file}')
-        print(f"    ✅ {sql_file}")
-    else:
-        print(f"    ⚠️  Missing: {sql_file}")
 
 # ============================================================================
 # INCLUDE DATA DIRECTORIES
@@ -467,7 +418,7 @@ try:
         print(f"   • Primebooks modules: {len(primebooks_modules)}")
         print(f"   • Custom apps: {len(custom_apps)}")
         print(f"   • Django form templates: ✓")
-        print(f"   • SQL dumps: ✓")
+        print(f"   • Schema: migrations (clean sequences)")
 
         print(f"\n🚀 Run your app:")
         if IS_WINDOWS:
