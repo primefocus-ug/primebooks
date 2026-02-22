@@ -135,8 +135,26 @@ for dir_name in ['dist', 'build', 'PrimeBooks.build', 'PrimeBooks.dist',
         print(f"  ✅ Removed {dir_name}/")
 
 # ============================================================================
-# STEP 4: BUILD NUITKA COMMAND
+# STEP 3.5: COLLECT STATIC FILES
 # ============================================================================
+print("\n📦 Step 3.5: Collecting static files...")
+static_output_dir = BASE_DIR / 'staticfiles'
+try:
+    collect_result = subprocess.run(
+        [sys.executable, str(BASE_DIR / 'manage.py'), 'collectstatic', '--noinput', '--clear'],
+        cwd=BASE_DIR,
+        capture_output=True,
+        text=True
+    )
+    if collect_result.returncode == 0:
+        print(f"  ✅ Static files collected to: {static_output_dir}")
+    else:
+        print(f"  ⚠️  collectstatic returned code {collect_result.returncode}")
+        print(f"     stderr: {collect_result.stderr[:300]}")
+        print("  ⚠️  Continuing build — static files may be incomplete")
+except Exception as e:
+    print(f"  ⚠️  Could not run collectstatic: {e}")
+    print("  ⚠️  Continuing build — static files may be incomplete")
 print("\n🔧 Step 4: Building Nuitka command...")
 
 cmd = [
@@ -217,6 +235,8 @@ core_packages = [
     'PyQt6',
     'cryptography',
     'requests',
+    'channels',       # Required for WebSocket support (gracefully handles no channel layer)
+    'daphne',         # ASGI server backing channels (include even if unused in desktop)
 ]
 
 for pkg in core_packages:
@@ -304,7 +324,11 @@ print("\n  📁 Including data directories...")
 
 data_dirs = [
     ('templates', 'templates'),
-    ('static', 'static'),
+    # Use the collected staticfiles output (produced by collectstatic above),
+    # NOT the raw per-app 'static' source dirs. This ensures ALL static files
+    # (including efris-conditional.js, themes.css, plan-limits.js, favicons, etc.)
+    # that are referenced by templates are present in the built bundle.
+    (BASE_DIR / 'staticfiles', 'static'),
     ('locale', 'locale'),
     ('primebooks', 'primebooks'),
     ('tenancy', 'tenancy'),

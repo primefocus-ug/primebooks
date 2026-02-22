@@ -189,7 +189,11 @@ class NotificationService:
                         is_active=True
                     )
                 except NotificationTemplate.DoesNotExist:
-                    logger.warning(f"No active template found for event_type: {event_type}")
+                    logger.warning(
+                        f"No active template found for event_type: {event_type} "
+                        f"(schema={schema_name}). "
+                        f"Run NotificationService.seed_default_templates(schema_name) to create defaults."
+                    )
                     return None
 
                 # Render template
@@ -237,6 +241,109 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error creating notification from template: {e}", exc_info=True)
             return None
+
+    @staticmethod
+    def seed_default_templates(schema_name):
+        """
+        Create essential notification templates if they don't already exist.
+        Safe to call multiple times — uses get_or_create so it never duplicates.
+
+        Called automatically during tenant role creation (accounts/signals.py)
+        so that sale_completed and other core notifications work out of the box
+        on first run without requiring manual admin setup.
+        """
+        DEFAULT_TEMPLATES = [
+            {
+                'event_type': 'sale_completed',
+                'name': 'Sale Completed',
+                'title_template': '✅ {{document_type_display}} {{document_number}} completed',
+                'message_template': (
+                    'Total: {{total_amount}} | Customer: {{customer_name}} | '
+                    'Store: {{store_name}}'
+                ),
+                'send_in_app': True,
+                'send_email': False,
+                'send_sms': False,
+                'send_push': False,
+                'priority': 'LOW',
+                'is_active': True,
+            },
+            {
+                'event_type': 'efris_fiscalized',
+                'name': 'EFRIS Fiscalization Successful',
+                'title_template': '🧾 {{document_type_display}} {{document_number}} fiscalized',
+                'message_template': 'Fiscal number: {{fiscal_number}} | Code: {{verification_code}}',
+                'send_in_app': True,
+                'send_email': False,
+                'send_sms': False,
+                'send_push': False,
+                'priority': 'MEDIUM',
+                'is_active': True,
+            },
+            {
+                'event_type': 'low_stock',
+                'name': 'Low Stock Alert',
+                'title_template': '⚠️ Low stock: {{product_name}}',
+                'message_template': (
+                    '{{product_name}} has {{current_quantity}} units remaining '
+                    '(threshold: {{threshold}}) at {{store_name}}'
+                ),
+                'send_in_app': True,
+                'send_email': False,
+                'send_sms': False,
+                'send_push': False,
+                'priority': 'HIGH',
+                'is_active': True,
+            },
+            {
+                'event_type': 'out_of_stock',
+                'name': 'Out of Stock Alert',
+                'title_template': '🚫 Out of stock: {{product_name}}',
+                'message_template': '{{product_name}} is out of stock at {{store_name}}',
+                'send_in_app': True,
+                'send_email': False,
+                'send_sms': False,
+                'send_push': False,
+                'priority': 'URGENT',
+                'is_active': True,
+            },
+            {
+                'event_type': 'subscription_expiring',
+                'name': 'Subscription Expiring',
+                'title_template': '⏰ Subscription expiring in {{days_remaining}} days',
+                'message_template': (
+                    '{{company_name}} subscription expires on {{expiry_date}}. '
+                    'Please renew to avoid interruption.'
+                ),
+                'send_in_app': True,
+                'send_email': True,
+                'send_sms': False,
+                'send_push': False,
+                'priority': 'URGENT',
+                'is_active': True,
+            },
+        ]
+
+        try:
+            with schema_context(schema_name):
+                created_count = 0
+                for tpl_data in DEFAULT_TEMPLATES:
+                    _, created = NotificationTemplate.objects.get_or_create(
+                        event_type=tpl_data['event_type'],
+                        defaults=tpl_data,
+                    )
+                    if created:
+                        created_count += 1
+                        logger.info(f"  ✅ Seeded template: {tpl_data['event_type']}")
+
+                if created_count:
+                    logger.info(
+                        f"✅ Seeded {created_count} notification templates for schema '{schema_name}'"
+                    )
+                else:
+                    logger.debug(f"All default notification templates already exist for '{schema_name}'")
+        except Exception as e:
+            logger.error(f"Failed to seed notification templates for '{schema_name}': {e}", exc_info=True)
 
     @staticmethod
     def _send_via_channel(notification, channel, schema_name):

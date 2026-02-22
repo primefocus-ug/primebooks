@@ -1,0 +1,1390 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Payments Out — POS Pro{% endblock %}
+
+{% block extra_head %}
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── CSS Variables ── */
+:root{
+  --bg:#0b0f1a;--surface:#111827;--surface2:#18243a;--surface3:#1e2d45;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#f0f4ff;--muted:#7a8caa;--muted2:#4a5c78;
+  --orange:#f97316;--orange-bg:rgba(249,115,22,0.12);--orange-bd:rgba(249,115,22,0.25);
+  --cyan:#06b6d4;--cyan-bg:rgba(6,182,212,0.12);--cyan-bd:rgba(6,182,212,0.25);
+  --purple:#a855f7;--purple-bg:rgba(168,85,247,0.12);--purple-bd:rgba(168,85,247,0.25);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.12);--amber-bd:rgba(245,158,11,0.28);
+  --red:#ef4444;--red-bg:rgba(239,68,68,0.12);--red-bd:rgba(239,68,68,0.25);
+  --green:#22c55e;--green-bg:rgba(34,197,94,0.12);--green-bd:rgba(34,197,94,0.25);
+  --blue:#3b82f6;--blue-bg:rgba(59,130,246,0.12);--blue-bd:rgba(59,130,246,0.25);
+  --r:14px;--r-sm:9px;--r-xs:6px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);
+  font-size:14px;line-height:1.55;min-height:100vh;
+  background-image:linear-gradient(rgba(255,255,255,0.018) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,0.018) 1px,transparent 1px);
+  background-size:48px 48px;
+}
+/* ── TOPBAR ── */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:60px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100;backdrop-filter:blur(12px)}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:var(--orange);letter-spacing:-0.5px}
+.logo span{color:var(--muted);font-weight:400}
+.page-crumb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);border-left:1px solid var(--border2);padding-left:14px}
+.page-crumb strong{color:var(--text);font-weight:600}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+/* ── BUTTONS ── */
+.btn{font-family:'DM Sans',sans-serif;font-weight:600;font-size:13px;padding:8px 16px;border-radius:var(--r-sm);border:none;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all .18s;text-decoration:none;white-space:nowrap}
+.btn-orange{background:var(--orange);color:#fff;box-shadow:0 4px 20px rgba(249,115,22,.3)}
+.btn-orange:hover{background:#ea6c0a;transform:translateY(-1px)}
+.btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border2)}
+.btn-ghost:hover{border-color:var(--orange);color:var(--orange)}
+.btn-sm{padding:6px 13px;font-size:12px}
+.btn-xs{padding:4px 10px;font-size:11px;border-radius:var(--r-xs)}
+.btn-red{background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)}
+.btn-red:hover{background:var(--red);color:#fff}
+.btn-green{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
+.btn-green:hover{background:var(--green);color:#fff}
+.btn-icon{width:36px;height:36px;padding:0;justify-content:center}
+/* ── PAGE ── */
+.page{padding:22px 24px 100px;max-width:1360px;margin:0 auto}
+/* ── ALERT ── */
+.alert-banner{display:flex;align-items:center;gap:14px;padding:13px 18px;border-radius:var(--r);margin-bottom:18px;animation:fadeUp .4s both;border:1px solid}
+.alert-banner.warning{background:var(--amber-bg);border-color:var(--amber-bd);color:var(--amber)}
+.alert-close{margin-left:auto;cursor:pointer;opacity:.5;font-size:16px}
+.alert-close:hover{opacity:1}
+/* ── TODAY STRIP ── */
+.today-strip{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 20px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:18px;animation:fadeUp .4s .05s both;border-left:3px solid var(--orange)}
+.today-item{display:flex;flex-direction:column;gap:2px}
+.today-label{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.8px}
+.today-val{font-family:'Syne',sans-serif;font-weight:800;font-size:20px;letter-spacing:-1px}
+.today-divider{width:1px;height:36px;background:var(--border2)}
+.today-badge{margin-left:auto;border-radius:var(--r-sm);padding:7px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px;border:1px solid;transition:all .3s}
+/* ── KPI CARDS ── */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:18px;position:relative;overflow:hidden;transition:transform .2s,box-shadow .2s,border-color .2s;animation:fadeUp .45s both;cursor:default}
+.stat-card:hover{transform:translateY(-2px);border-color:var(--border2);box-shadow:0 8px 30px rgba(0,0,0,.3)}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.stat-card.c-orange::before{background:var(--orange)}
+.stat-card.c-amber::before{background:var(--amber)}
+.stat-card.c-cyan::before{background:var(--cyan)}
+.stat-card.c-red::before{background:var(--red)}
+.stat-card:nth-child(1){animation-delay:.08s}.stat-card:nth-child(2){animation-delay:.13s}.stat-card:nth-child(3){animation-delay:.18s}.stat-card:nth-child(4){animation-delay:.23s}
+.stat-emoji{font-size:22px;margin-bottom:8px;display:block}
+.stat-lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px}
+.stat-num{font-family:'Syne',sans-serif;font-weight:800;font-size:20px;letter-spacing:-1px;margin-bottom:8px}
+.stat-hint{font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px}
+.hint-good{background:var(--green-bg);color:var(--green)}.hint-warn{background:var(--amber-bg);color:var(--amber)}.hint-bad{background:var(--red-bg);color:var(--red)}.hint-neu{background:var(--surface2);color:var(--muted)}
+.stat-bar{height:3px;background:var(--surface3);border-radius:4px;margin-top:12px;overflow:hidden}
+.stat-bar-fill{height:100%;border-radius:4px;transition:width 1.2s cubic-bezier(.16,1,.3,1);width:0}
+/* ── APPROVAL SECTION ── */
+.approval-section{background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--r);padding:16px 20px;margin-bottom:18px;animation:fadeUp .5s .3s both;display:none}
+.approval-section-title{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;color:var(--amber);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.approval-items{display:flex;flex-direction:column;gap:8px}
+.approval-item{background:var(--surface);border:1px solid var(--amber-bd);border-radius:var(--r-sm);padding:12px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.approval-desc{flex:1;min-width:140px}
+.approval-name{font-weight:700;font-size:13px}
+.approval-meta{font-size:11px;color:var(--muted);margin-top:2px}
+.approval-amount{font-family:'Syne',sans-serif;font-weight:800;font-size:15px;color:var(--red)}
+.approval-actions{display:flex;gap:7px;flex-shrink:0}
+/* ── BODY GRID ── */
+.body-grid{display:grid;grid-template-columns:1fr 350px;gap:18px;animation:fadeUp .5s .35s both}
+/* ── PANEL ── */
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid var(--border)}
+.panel-title{font-family:'Syne',sans-serif;font-weight:700;font-size:15px}
+.panel-sub{font-size:12px;color:var(--muted);margin-top:2px}
+/* ── CHART ── */
+.chart-tabs{display:flex;background:var(--surface2);border-radius:var(--r-sm);padding:3px;width:fit-content}
+.cptab{padding:5px 15px;border-radius:7px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;border:none;background:transparent;transition:all .15s}
+.cptab.active{background:var(--surface3);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.chart-wrap{padding:16px 20px;border-bottom:1px solid var(--border)}
+.chart-legend{display:flex;gap:16px;margin-bottom:12px}
+.leg-item{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--muted)}
+.leg-dot{width:9px;height:9px;border-radius:3px;flex-shrink:0}
+.chart-container{height:180px;position:relative}
+/* ── FILTERS ── */
+.filter-row{display:flex;align-items:center;gap:8px;padding:12px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.dd{position:relative;display:inline-block}
+.dd-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);font-family:'DM Sans',sans-serif;font-weight:600;font-size:12px;color:var(--text);cursor:pointer;transition:all .16s;user-select:none}
+.dd-btn:hover,.dd-btn.open{border-color:var(--orange);color:var(--orange)}
+.dd-chevron{font-size:9px;color:var(--muted);transition:transform .2s}
+.dd-btn.open .dd-chevron{transform:rotate(180deg)}
+.dd-menu{position:absolute;top:calc(100%+6px);left:0;min-width:200px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:200;overflow:hidden;opacity:0;transform:translateY(-8px) scale(.97);pointer-events:none;transition:opacity .18s,transform .2s cubic-bezier(.16,1,.3,1)}
+.dd-menu.open{opacity:1;transform:translateY(0) scale(1);pointer-events:all}
+.dd-sec{font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);padding:10px 14px 4px}
+.dd-item{display:flex;align-items:center;gap:10px;padding:9px 14px;font-size:13px;color:var(--text);cursor:pointer;transition:background .1s;font-weight:500}
+.dd-item:hover{background:var(--surface2)}.dd-item.active{background:var(--orange-bg);color:var(--orange)}
+.dd-ico{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.dd-check{margin-left:auto;font-size:12px;display:none}.dd-item.active .dd-check{display:block}
+/* ── SEARCH ── */
+.search-wrap{position:relative;flex:1;min-width:180px;max-width:240px}
+.search-wrap i{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
+.search-input{width:100%;padding:8px 12px 8px 32px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);outline:none;transition:border-color .16s}
+.search-input:focus{border-color:var(--orange)}.search-input::placeholder{color:var(--muted2)}
+/* ── TABLE ── */
+.pb-table{width:100%;border-collapse:collapse}
+.pb-table th{padding:10px 16px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;transition:color .15s;user-select:none;background:rgba(255,255,255,0.02)}
+.pb-table th:hover{color:var(--text)}.pb-table th.sorted{color:var(--orange)}
+.pb-table td{padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle}
+.pb-table tbody tr{cursor:pointer;transition:background .1s}
+.pb-table tbody tr:hover{background:rgba(249,115,22,0.05)}.pb-table tbody tr:last-child td{border-bottom:none}
+.tx-name{font-weight:600;font-size:13px}.tx-meta{font-size:11px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px}
+.tx-ref{font-family:monospace;font-size:10px;color:var(--muted2);background:var(--surface2);padding:1px 6px;border-radius:4px}
+.recurring-tag{font-size:10px;color:var(--cyan);background:var(--cyan-bg);border:1px solid var(--cyan-bd);padding:1px 7px;border-radius:10px;font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;border:1px solid}
+.pill-admin{background:var(--blue-bg);color:var(--blue);border-color:var(--blue-bd)}
+.pill-purchase{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-bd)}
+.pill-expense{background:var(--purple-bg);color:var(--purple);border-color:var(--purple-bd)}
+.pill-salary{background:var(--green-bg);color:var(--green);border-color:var(--green-bd)}
+.pill-utility{background:var(--surface2);color:var(--muted);border-color:var(--border2)}
+.pill-maintenance{background:rgba(251,146,60,0.12);color:#fb923c;border-color:rgba(251,146,60,0.3)}
+.pill-tax{background:rgba(234,179,8,0.12);color:var(--amber);border-color:var(--amber-bd)}
+.pill-petty_cash{background:var(--cyan-bg);color:var(--cyan);border-color:var(--cyan-bd)}
+.pill-other{background:var(--surface2);color:var(--muted);border-color:var(--border2)}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.badge-paid{color:var(--green)}.badge-paid::before{background:var(--green);box-shadow:0 0 5px var(--green)}
+.badge-waiting{color:var(--amber)}.badge-waiting::before{background:var(--amber);animation:pulse 1.5s infinite}
+.badge-cancelled{color:var(--red)}.badge-cancelled::before{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.amount-cell{font-family:'Syne',sans-serif;font-weight:800;font-size:14px;color:var(--red)}
+.row-acts{display:flex;gap:5px;opacity:0;transition:opacity .15s}
+.pb-table tbody tr:hover .row-acts{opacity:1}
+.row-btn{width:28px;height:28px;border-radius:var(--r-xs);border:1px solid var(--border2);background:var(--surface2);color:var(--muted);cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;transition:all .15s}
+.row-btn:hover{border-color:var(--orange);color:var(--orange)}.row-btn.danger:hover{border-color:var(--red);color:var(--red)}
+/* ── PAGINATION ── */
+.pag{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--border)}
+.pag-btns{display:flex;gap:5px}
+.pag-btn{width:28px;height:28px;border-radius:var(--r-xs);border:1px solid var(--border2);background:var(--surface2);color:var(--muted);cursor:pointer;font-size:12px;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;font-family:'DM Sans',sans-serif}
+.pag-btn.active{background:var(--orange);color:#fff;border-color:var(--orange)}
+.pag-btn:hover:not(.active){border-color:var(--orange);color:var(--orange)}
+.pag-btn:disabled{opacity:.3;cursor:not-allowed}
+/* ── RIGHT PANEL ── */
+.r-col{display:flex;flex-direction:column;gap:16px}
+/* ── FORM STEPS ── */
+.form-steps{display:flex;padding:14px 20px;border-bottom:1px solid var(--border)}
+.step-item{display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;padding:7px 10px;border-radius:var(--r-sm);transition:background .15s}
+.step-item:hover{background:var(--surface2)}
+.step-item.active .step-num{background:var(--orange);color:#fff;border-color:var(--orange)}
+.step-item.done .step-num{background:var(--green);color:#fff;border-color:var(--green)}
+.step-num{width:26px;height:26px;border-radius:50%;border:2px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);flex-shrink:0;transition:all .2s}
+.step-label{font-size:12px;font-weight:600;color:var(--muted)}.step-item.active .step-label{color:var(--text)}
+.form-body{padding:16px 20px}
+.form-step-pane{display:none}.form-step-pane.active{display:block;animation:fadeUp .25s both}
+.form-group{margin-bottom:14px}
+.form-lbl{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px;display:flex;align-items:center;gap:7px}
+.form-control{width:100%;padding:9px 13px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);outline:none;transition:border-color .16s}
+.form-control:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(249,115,22,.12)}
+.form-control::placeholder{color:var(--muted2)}
+textarea.form-control{resize:vertical}
+select.form-control{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a8caa' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+.amount-wrap{position:relative}
+.amount-pfx{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-weight:700;font-size:14px;pointer-events:none}
+.amount-input{padding-left:52px!important;font-family:'Syne',sans-serif;font-weight:700;font-size:18px}
+.cat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.cat-tile{background:var(--surface2);border:1.5px solid var(--border2);border-radius:var(--r-sm);padding:10px 6px;text-align:center;cursor:pointer;transition:all .18s}
+.cat-tile:hover{border-color:var(--orange);background:var(--orange-bg)}
+.cat-tile.active{border-color:var(--orange);background:var(--orange-bg);box-shadow:0 0 0 3px rgba(249,115,22,.12)}
+.ct-icon{font-size:22px;margin-bottom:5px}.ct-lbl{font-size:11px;font-weight:700;color:var(--muted)}.cat-tile.active .ct-lbl{color:var(--orange)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.toggle-row{display:flex;align-items:center;gap:14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px;margin-top:4px}
+.toggle-info{flex:1}.toggle-lbl{font-size:13px;font-weight:600}.toggle-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.toggle{position:relative;cursor:pointer;flex-shrink:0}.toggle input{display:none}
+.toggle-track{width:40px;height:22px;border-radius:11px;background:var(--surface3);transition:background .2s;border:1px solid var(--border2);position:relative}
+.toggle-track::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:all .2s}
+.toggle input:checked~.toggle-track{background:var(--orange)}.toggle input:checked~.toggle-track::after{left:20px;background:#fff}
+.file-upload-area{border:1.5px dashed var(--border2);border-radius:var(--r-sm);padding:18px;text-align:center;cursor:pointer;transition:all .2s}
+.file-upload-area:hover{border-color:var(--orange);background:var(--orange-bg)}
+.up-icon{font-size:26px;display:block;margin-bottom:6px}
+.file-upload-area p{font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px}
+.file-upload-area span{font-size:11px;color:var(--muted)}
+input[type=file]{display:none}
+.uploaded-file{display:flex;align-items:center;gap:10px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--r-sm);padding:10px 14px;margin-top:8px}
+.uf-name{flex:1;font-size:13px;font-weight:600;color:var(--green);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-rm{cursor:pointer;color:var(--muted);font-size:14px}.uf-rm:hover{color:var(--red)}
+.step-nav{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--border)}
+/* ── BUDGET LIST ── */
+.budget-list{padding:8px 20px 16px;display:flex;flex-direction:column;gap:14px}
+.budget-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.budget-name{font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px}
+.budget-nums{font-size:11px;color:var(--muted)}
+.budget-track{height:6px;background:var(--surface3);border-radius:6px;overflow:hidden}
+.budget-fill{height:100%;border-radius:6px;transition:width 1.2s cubic-bezier(.16,1,.3,1);width:0}
+.budget-warn{font-size:10px;color:var(--amber);margin-top:3px;display:flex;align-items:center;gap:4px}
+/* ── PETTY CASH ── */
+.petty-panel{padding:16px 20px}
+.petty-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.petty-label{font-size:12px;color:var(--muted)}.petty-value{font-family:'Syne',sans-serif;font-weight:800;font-size:16px}
+.petty-track{height:8px;background:var(--surface3);border-radius:8px;overflow:hidden;margin-bottom:8px}
+.petty-fill{height:100%;border-radius:8px;background:linear-gradient(90deg,var(--cyan),var(--orange));transition:width 1s}
+.petty-stats{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
+.petty-low{font-size:11px;color:var(--amber);background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--r-xs);padding:6px 10px;margin-top:8px;display:flex;align-items:center;gap:6px}
+/* ── MODALS ── */
+.modal-bg{position:fixed;inset:0;background:rgba(5,8,15,.75);backdrop-filter:blur(4px);z-index:300;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-bg.open{display:flex;animation:fadeIn .2s both}
+.modal-box{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,.7);animation:scaleIn .22s both}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+.modal-title{font-family:'Syne',sans-serif;font-weight:700;font-size:16px}
+.modal-body{padding:20px}.modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--border)}
+.voucher{background:var(--surface2);border-radius:var(--r-sm);padding:24px}
+.voucher-logo{font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:var(--orange);margin-bottom:4px}
+.voucher-sub{font-size:12px;color:var(--muted);margin-bottom:20px}
+.voucher-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.vk{color:var(--muted);font-size:12px}.vv{font-weight:600}
+.voucher-total{background:var(--orange-bg);border:1px solid var(--orange-bd);border-radius:var(--r-sm);padding:14px;margin-top:16px;display:flex;justify-content:space-between;align-items:center}
+.voucher-total .vk{color:var(--orange);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.voucher-total .vv{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:var(--orange)}
+.voucher-sig{display:flex;gap:20px;margin-top:24px}.voucher-sig>div{flex:1}
+.voucher-sig-line{border-top:1px solid var(--border2);padding-top:6px;font-size:11px;color:var(--muted);margin-top:30px}
+.detail-head{text-align:center;padding:16px 0;border-bottom:1px solid var(--border);margin-bottom:16px}
+.detail-amount{font-family:'Syne',sans-serif;font-weight:800;font-size:28px;color:var(--red)}
+.detail-name{font-size:14px;color:var(--muted);margin-top:4px}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.detail-cell{background:var(--surface2);border-radius:var(--r-sm);padding:10px 14px}
+.dk{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:4px}.dv{font-size:13px;font-weight:600}
+.del-warning{text-align:center;padding:10px 0}.del-emoji{font-size:40px;margin-bottom:12px}
+.del-item-name{font-family:'Syne',sans-serif;font-weight:700;font-size:16px;margin-bottom:8px}.del-msg{font-size:13px;color:var(--muted)}
+/* ── TOAST ── */
+.toast-zone{position:fixed;bottom:24px;right:24px;z-index:400;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.toast{background:var(--surface);color:var(--text);border-radius:var(--r);padding:14px 18px;display:flex;align-items:flex-start;gap:11px;min-width:260px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.6);animation:toastIn .32s cubic-bezier(.16,1,.3,1);border:1px solid var(--border2);border-left:3px solid}
+.toast-success{border-left-color:var(--green)}.toast-warning{border-left-color:var(--amber)}.toast-error{border-left-color:var(--red)}
+.toast-icon{font-size:17px;flex-shrink:0;margin-top:1px}.t-title{font-family:'Syne',sans-serif;font-weight:700;font-size:13px}.t-sub{font-size:11px;color:var(--muted);margin-top:2px}
+/* ── MOBILE NAV ── */
+.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:8px 0;z-index:90}
+.bn-inner{display:flex;justify-content:space-around}
+.bn-item{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;padding:4px 14px;transition:color .15s}
+.bn-item.active{color:var(--orange)}.bn-item i{font-size:20px}
+.bn-fab{width:50px;height:50px;background:var(--orange);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;box-shadow:0 4px 20px rgba(249,115,22,.4);margin-top:-18px;cursor:pointer;transition:all .2s}
+.bn-fab:hover{transform:scale(1.07)}
+.empty{text-align:center;padding:50px 20px;color:var(--muted)}
+.empty-emoji{font-size:42px;margin-bottom:12px}
+.empty-title{font-family:'Syne',sans-serif;font-weight:700;font-size:16px;color:var(--text);margin-bottom:4px}
+.loading-row td{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+/* ── ANIMATIONS ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+@keyframes toastIn{from{opacity:0;transform:translateX(60px)}to{opacity:1;transform:translateX(0)}}
+@media(max-width:1100px){.body-grid{grid-template-columns:1fr}.r-col{display:grid;grid-template-columns:1fr 1fr}}
+@media(max-width:768px){.stat-grid{grid-template-columns:repeat(2,1fr)}.body-grid{grid-template-columns:1fr}.r-col{grid-template-columns:1fr}.bottom-nav{display:block}.topbar-right .btn-ghost{display:none}.page{padding-bottom:120px}}
+@media(max-width:480px){.today-strip{flex-direction:column;align-items:flex-start}.today-divider{display:none}}
+@media print{body *{visibility:hidden}.voucher,.voucher *{visibility:visible}.voucher{position:fixed;top:0;left:0;width:100%;background:#fff;padding:30px;z-index:9999;color:#000}}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── TOPBAR ── -->
+<header class="topbar">
+  <div class="logo">POS<span>Pro</span></div>
+  <div class="page-crumb">
+    <i class="bi bi-cash-coin" style="color:var(--orange)"></i>&nbsp;
+    <strong>Payments Out</strong>
+  </div>
+  <div class="topbar-right">
+    <span style="font-size:12px;color:var(--muted)">{{ user_name }}</span>
+    <button class="btn btn-ghost btn-sm" onclick="window.print()">
+      <i class="bi bi-printer"></i> Print
+    </button>
+    <button class="btn btn-orange btn-sm" onclick="openModal('add')">
+      <i class="bi bi-plus-lg"></i> Record Payment
+    </button>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- ── BUDGET ALERT (rendered server-side, dismissible) ── -->
+  <div class="alert-banner warning" id="budget-alert" style="display:none">
+    <i class="bi bi-exclamation-triangle-fill" style="font-size:18px;flex-shrink:0"></i>
+    <div id="budget-alert-text"><strong>Budget Warning</strong></div>
+    <i class="bi bi-x-lg alert-close" onclick="this.parentElement.style.display='none'"></i>
+  </div>
+
+  <!-- ── TODAY STRIP ── -->
+  <div class="today-strip">
+    <div class="today-item">
+      <div class="today-label">📅 Today's Spending</div>
+      <div class="today-val" id="today-val">—</div>
+    </div>
+    <div class="today-divider"></div>
+    <div class="today-item">
+      <div class="today-label">📆 This Month</div>
+      <div class="today-val" id="month-val">—</div>
+    </div>
+    <div class="today-divider"></div>
+    <div class="today-item">
+      <div class="today-label">⏳ Waiting Approval</div>
+      <div class="today-val" id="wait-val" style="color:var(--amber)">—</div>
+    </div>
+    <div class="today-badge" id="summary-msg" style="border-color:var(--border2);color:var(--muted);background:var(--surface2)">
+      <i class="bi bi-arrow-repeat"></i> Loading...
+    </div>
+  </div>
+
+  <!-- ── KPI CARDS ── -->
+  <div class="stat-grid">
+    <div class="stat-card c-orange">
+      <span class="stat-emoji">💸</span>
+      <div class="stat-lbl">Total Paid Out</div>
+      <div class="stat-num" id="s-total">—</div>
+      <span class="stat-hint hint-bad" id="s-total-hint"></span>
+      <div class="stat-bar"><div class="stat-bar-fill" id="s-total-bar" style="background:var(--red)"></div></div>
+    </div>
+    <div class="stat-card c-amber">
+      <span class="stat-emoji">🛒</span>
+      <div class="stat-lbl">Purchases</div>
+      <div class="stat-num" id="s-purchase">—</div>
+      <span class="stat-hint hint-warn" id="s-purchase-hint"></span>
+      <div class="stat-bar"><div class="stat-bar-fill" id="s-purchase-bar" style="background:var(--amber)"></div></div>
+    </div>
+    <div class="stat-card c-cyan">
+      <span class="stat-emoji">💡</span>
+      <div class="stat-lbl">Bills & Utilities</div>
+      <div class="stat-num" id="s-utility">—</div>
+      <span class="stat-hint hint-good">Within budget</span>
+      <div class="stat-bar"><div class="stat-bar-fill" id="s-utility-bar" style="background:var(--cyan)"></div></div>
+    </div>
+    <div class="stat-card c-red">
+      <span class="stat-emoji">⏳</span>
+      <div class="stat-lbl">Awaiting Approval</div>
+      <div class="stat-num" id="s-pending" style="color:var(--amber)">—</div>
+      <span class="stat-hint hint-neu" id="s-pending-amt">UGX 0 on hold</span>
+    </div>
+  </div>
+
+  <!-- ── PENDING APPROVALS ── -->
+  <div class="approval-section" id="approval-bar">
+    <div class="approval-section-title">
+      <i class="bi bi-hourglass-split"></i> Payments waiting for your approval
+    </div>
+    <div class="approval-items" id="approval-list"></div>
+  </div>
+
+  <!-- ── MAIN BODY ── -->
+  <div class="body-grid">
+    <!-- LEFT -->
+    <div style="display:flex;flex-direction:column;gap:16px">
+
+      <!-- CHART -->
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">📊 Spending Overview</div>
+            <div class="panel-sub">How much you're spending over time</div>
+          </div>
+          <div class="chart-tabs">
+            <button class="cptab active" onclick="switchPeriod(this,'week')">7 Days</button>
+            <button class="cptab" onclick="switchPeriod(this,'month')">Month</button>
+            <button class="cptab" onclick="switchPeriod(this,'year')">Year</button>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <div class="chart-legend">
+            <div class="leg-item"><div class="leg-dot" style="background:var(--red);opacity:.7"></div>Money Out</div>
+            <div class="leg-item"><div class="leg-dot" style="background:var(--green)"></div>Money In</div>
+          </div>
+          <div class="chart-container"><canvas id="mainChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- TABLE -->
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">All Payments</div>
+            <div class="panel-sub" id="table-sub">Loading records...</div>
+          </div>
+          <button class="btn btn-orange btn-sm" onclick="openModal('add')">
+            <i class="bi bi-plus-lg"></i> Add
+          </button>
+        </div>
+
+        <div class="filter-row">
+          <!-- Period -->
+          <div class="dd" id="dd-period">
+            <button class="dd-btn" onclick="toggleDD('dd-period')">
+              <i class="bi bi-calendar3" style="color:var(--orange)"></i>
+              <span id="dd-period-lbl">This Month</span>
+              <i class="bi bi-chevron-down dd-chevron"></i>
+            </button>
+            <div class="dd-menu">
+              <div class="dd-sec">Time Period</div>
+              <div class="dd-item active" onclick="pickPeriod(this,'Today','today')"><div class="dd-ico" style="background:var(--orange-bg);color:var(--orange)"><i class="bi bi-calendar-day"></i></div>Today<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickPeriod(this,'This Week','week')"><div class="dd-ico" style="background:var(--orange-bg);color:var(--orange)"><i class="bi bi-calendar-week"></i></div>This Week<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickPeriod(this,'This Month','month')"><div class="dd-ico" style="background:var(--orange-bg);color:var(--orange)"><i class="bi bi-calendar-month"></i></div>This Month<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickPeriod(this,'Last 3 Months','quarter')"><div class="dd-ico" style="background:var(--orange-bg);color:var(--orange)"><i class="bi bi-calendar3"></i></div>Last 3 Months<i class="bi bi-check-lg dd-check"></i></div>
+            </div>
+          </div>
+
+          <!-- Category -->
+          <div class="dd" id="dd-cat">
+            <button class="dd-btn" onclick="toggleDD('dd-cat')">
+              <i class="bi bi-tag" style="color:var(--amber)"></i>
+              <span id="dd-cat-lbl">All Types</span>
+              <i class="bi bi-chevron-down dd-chevron"></i>
+            </button>
+            <div class="dd-menu">
+              <div class="dd-sec">Payment Type</div>
+              <div class="dd-item active" onclick="pickCat(this,'All Types','all')"><div class="dd-ico" style="background:var(--surface2)">🗂️</div>All Types<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickCat(this,'Office & Admin','admin')"><div class="dd-ico" style="background:var(--blue-bg)">🏢</div>Office & Admin<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickCat(this,'Purchases','purchase')"><div class="dd-ico" style="background:var(--amber-bg)">🛒</div>Purchases<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickCat(this,'Running Costs','expense')"><div class="dd-ico" style="background:var(--purple-bg)">📊</div>Running Costs<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickCat(this,'Staff Pay','salary')"><div class="dd-ico" style="background:var(--green-bg)">👥</div>Staff Pay<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickCat(this,'Bills','utility')"><div class="dd-ico" style="background:var(--surface2)">💡</div>Bills & Utilities<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickCat(this,'Repairs','maintenance')"><div class="dd-ico" style="background:rgba(251,146,60,0.12)">🔧</div>Repairs<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickCat(this,'Tax','tax')"><div class="dd-ico" style="background:var(--amber-bg)">🧾</div>Tax<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickCat(this,'Petty Cash','petty_cash')"><div class="dd-ico" style="background:var(--cyan-bg)">💰</div>Petty Cash<i class="bi bi-check-lg dd-check"></i></div>
+            </div>
+          </div>
+
+          <!-- Status -->
+          <div class="dd" id="dd-status">
+            <button class="dd-btn" onclick="toggleDD('dd-status')">
+              <i class="bi bi-circle-half" style="color:var(--muted)"></i>
+              <span id="dd-status-lbl">All Statuses</span>
+              <i class="bi bi-chevron-down dd-chevron"></i>
+            </button>
+            <div class="dd-menu">
+              <div class="dd-item active" onclick="pickStatus(this,'All Statuses','all')">All Statuses<i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickStatus(this,'✅ Paid','paid')"><span class="badge badge-paid">Paid</span><i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickStatus(this,'⏳ Waiting','waiting')"><span class="badge badge-waiting">Waiting</span><i class="bi bi-check-lg dd-check"></i></div>
+              <div class="dd-item" onclick="pickStatus(this,'❌ Cancelled','cancelled')"><span class="badge badge-cancelled">Cancelled</span><i class="bi bi-check-lg dd-check"></i></div>
+            </div>
+          </div>
+
+          <div class="search-wrap">
+            <i class="bi bi-search"></i>
+            <input type="text" class="search-input" placeholder="Search payments..." id="search-input" oninput="debounceSearch(this.value)">
+          </div>
+        </div>
+
+        <div style="overflow-x:auto">
+          <table class="pb-table">
+            <thead>
+              <tr>
+                <th onclick="sortCol('desc')">What For</th>
+                <th onclick="sortCol('cat')">Type</th>
+                <th onclick="sortCol('date')" class="sorted">Date</th>
+                <th onclick="sortCol('amount')">Amount</th>
+                <th>Status</th>
+                <th>Method</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tx-tbody">
+              <tr class="loading-row"><td colspan="7">⏳ Loading payments...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pag">
+          <span id="pag-info" style="font-size:12px;color:var(--muted)"></span>
+          <div class="pag-btns" id="pag-btns"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="r-col">
+
+      <!-- RECORD FORM -->
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">✏️ Record a Payment</div>
+            <div class="panel-sub">Step by step — easy!</div>
+          </div>
+        </div>
+
+        <div class="form-steps">
+          <div class="step-item active" id="step-tab-1" onclick="goStep(1)">
+            <div class="step-num" id="step-num-1">1</div>
+            <span class="step-label">Basics</span>
+          </div>
+          <div class="step-item" id="step-tab-2" onclick="goStep(2)">
+            <div class="step-num" id="step-num-2">2</div>
+            <span class="step-label">Details</span>
+          </div>
+          <div class="step-item" id="step-tab-3" onclick="goStep(3)">
+            <div class="step-num" id="step-num-3">3</div>
+            <span class="step-label">Receipt</span>
+          </div>
+        </div>
+
+        <div class="form-body">
+          <!-- STEP 1 -->
+          <div class="form-step-pane active" id="step-1">
+            <div class="form-group">
+              <div class="form-lbl">What type of payment?</div>
+              <div class="cat-grid">
+                <div class="cat-tile active" data-cat="admin"        onclick="pickFormCat(this)"><div class="ct-icon">🏢</div><div class="ct-lbl">Office</div></div>
+                <div class="cat-tile"        data-cat="purchase"     onclick="pickFormCat(this)"><div class="ct-icon">🛒</div><div class="ct-lbl">Purchase</div></div>
+                <div class="cat-tile"        data-cat="expense"      onclick="pickFormCat(this)"><div class="ct-icon">📊</div><div class="ct-lbl">Expense</div></div>
+                <div class="cat-tile"        data-cat="salary"       onclick="pickFormCat(this)"><div class="ct-icon">👥</div><div class="ct-lbl">Staff Pay</div></div>
+                <div class="cat-tile"        data-cat="utility"      onclick="pickFormCat(this)"><div class="ct-icon">💡</div><div class="ct-lbl">Bill</div></div>
+                <div class="cat-tile"        data-cat="maintenance"  onclick="pickFormCat(this)"><div class="ct-icon">🔧</div><div class="ct-lbl">Repair</div></div>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="form-lbl">How much was paid?</div>
+              <div class="amount-wrap">
+                <span class="amount-pfx">{{ currency }}</span>
+                <input type="number" id="f-amount" class="form-control amount-input" placeholder="0" min="0" step="100">
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="form-lbl">What was it for?</div>
+              <input type="text" id="f-desc" class="form-control" placeholder="e.g. Electricity bill, office chairs...">
+            </div>
+          </div>
+
+          <!-- STEP 2 -->
+          <div class="form-step-pane" id="step-2">
+            <div class="form-group">
+              <div class="form-lbl">Who was paid?</div>
+              <input type="text" id="f-vendor" class="form-control" placeholder="e.g. UMEME Ltd, John Doe">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <div class="form-lbl">Date paid</div>
+                <input type="date" id="f-date" class="form-control">
+              </div>
+              <div class="form-group">
+                <div class="form-lbl">How paid?</div>
+                <select id="f-method" class="form-control">
+                  <option value="Cash">Cash</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="MTN Mobile Money">MTN Mobile Money</option>
+                  <option value="Airtel Money">Airtel Money</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Credit Card">Credit Card</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="form-lbl">Payment Status</div>
+              <select id="f-status" class="form-control">
+                <option value="paid">✅ Already Paid</option>
+                <option value="waiting">⏳ Waiting for Approval</option>
+                <option value="cancelled">❌ Cancelled</option>
+              </select>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <div class="toggle-lbl">🔁 Recurring Payment?</div>
+                <div class="toggle-sub">Happens every month automatically</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="f-recurring"><div class="toggle-track"></div></label>
+            </div>
+          </div>
+
+          <!-- STEP 3 -->
+          <div class="form-step-pane" id="step-3">
+            <div class="form-group">
+              <div class="form-lbl">📎 Attach Receipt or Proof</div>
+              <div class="file-upload-area" onclick="document.getElementById('file-input').click()">
+                <span class="up-icon">📎</span>
+                <p>Click to upload receipt</p>
+                <span>JPG, PNG or PDF — max 5MB</span>
+              </div>
+              <input type="file" id="file-input" accept="image/*,.pdf" onchange="handleFile(this)">
+              <div id="file-preview" style="display:none"></div>
+            </div>
+            <div class="form-group">
+              <div class="form-lbl">Extra Notes (optional)</div>
+              <textarea id="f-notes" class="form-control" rows="3" placeholder="Any extra information..."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-nav">
+          <button class="btn btn-ghost btn-sm" id="btn-prev" onclick="goStep(currentStep-1)" style="display:none">
+            <i class="bi bi-arrow-left"></i> Back
+          </button>
+          <button class="btn btn-orange btn-sm" id="btn-next" onclick="nextStep()">
+            Next <i class="bi bi-arrow-right"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- PETTY CASH -->
+      <div class="panel" id="petty-cash-panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">💰 Petty Cash Float</div>
+            <div class="panel-sub">Small daily cash expenses</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="topUpPettyCash()">+ Top Up</button>
+        </div>
+        <div class="petty-panel" id="petty-cash-body">
+          <div style="text-align:center;color:var(--muted);padding:20px;font-size:12px">Loading...</div>
+        </div>
+      </div>
+
+      <!-- BUDGETS -->
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">📋 Monthly Budgets</div>
+            <div class="panel-sub">How much of each budget you've used</div>
+          </div>
+        </div>
+        <div class="budget-list" id="budget-list">
+          <div style="text-align:center;color:var(--muted);padding:20px;font-size:12px">Loading...</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- MOBILE NAV -->
+<nav class="bottom-nav">
+  <div class="bn-inner">
+    <div class="bn-item active"><i class="bi bi-cash-coin"></i>Payments</div>
+    <div class="bn-item" onclick="window.location='{% url 'expenses:analytics' %}'"><i class="bi bi-bar-chart"></i>Reports</div>
+    <div class="bn-fab" onclick="openModal('add')"><i class="bi bi-plus-lg"></i></div>
+    <div class="bn-item" onclick="window.location='{% url 'expenses:budget_list' %}'"><i class="bi bi-wallet2"></i>Budgets</div>
+    <div class="bn-item"><i class="bi bi-gear"></i>Settings</div>
+  </div>
+</nav>
+
+<!-- ── MODALS ── -->
+
+<!-- ADD PAYMENT -->
+<div class="modal-bg" id="modal-add">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-header">
+      <div class="modal-title">✏️ Record New Payment</div>
+      <button class="btn btn-ghost btn-icon btn-sm" onclick="closeModal('add')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" style="padding:0">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div class="form-lbl" style="margin-bottom:10px">What type of payment?</div>
+        <div class="cat-grid">
+          <div class="cat-tile active" data-cat="admin"       onclick="pickModalCat(this)"><div class="ct-icon">🏢</div><div class="ct-lbl">Office</div></div>
+          <div class="cat-tile"       data-cat="purchase"    onclick="pickModalCat(this)"><div class="ct-icon">🛒</div><div class="ct-lbl">Purchase</div></div>
+          <div class="cat-tile"       data-cat="expense"     onclick="pickModalCat(this)"><div class="ct-icon">📊</div><div class="ct-lbl">Expense</div></div>
+          <div class="cat-tile"       data-cat="salary"      onclick="pickModalCat(this)"><div class="ct-icon">👥</div><div class="ct-lbl">Staff Pay</div></div>
+          <div class="cat-tile"       data-cat="utility"     onclick="pickModalCat(this)"><div class="ct-icon">💡</div><div class="ct-lbl">Bill</div></div>
+          <div class="cat-tile"       data-cat="maintenance" onclick="pickModalCat(this)"><div class="ct-icon">🔧</div><div class="ct-lbl">Repair</div></div>
+        </div>
+      </div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+        <div>
+          <div class="form-lbl">How much?</div>
+          <div class="amount-wrap"><span class="amount-pfx">{{ currency }}</span><input type="number" id="m-amount" class="form-control amount-input" placeholder="0"></div>
+        </div>
+        <div><div class="form-lbl">What was it for?</div><input type="text" id="m-desc" class="form-control" placeholder="e.g. Office rent, stock..."></div>
+        <div><div class="form-lbl">Who was paid?</div><input type="text" id="m-vendor" class="form-control" placeholder="Vendor or person name"></div>
+        <div class="form-row">
+          <div><div class="form-lbl">Date</div><input type="date" id="m-date" class="form-control"></div>
+          <div><div class="form-lbl">How paid?</div>
+            <select id="m-method" class="form-control">
+              <option value="Cash">Cash</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+              <option value="MTN Mobile Money">MTN Mobile Money</option>
+              <option value="Airtel Money">Airtel Money</option>
+              <option value="Cheque">Cheque</option>
+              <option value="Credit Card">Credit Card</option>
+            </select>
+          </div>
+        </div>
+        <div><div class="form-lbl">Status</div>
+          <select id="m-status" class="form-control">
+            <option value="paid">✅ Already Paid</option>
+            <option value="waiting">⏳ Waiting for Approval</option>
+            <option value="cancelled">❌ Cancelled</option>
+          </select>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info"><div class="toggle-lbl">🔁 Recurring Payment?</div><div class="toggle-sub">Happens monthly</div></div>
+          <label class="toggle"><input type="checkbox" id="m-recurring"><div class="toggle-track"></div></label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('add')">Cancel</button>
+      <button class="btn btn-orange btn-sm" id="save-btn" onclick="saveModal()"><i class="bi bi-check-lg"></i> Save Payment</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE -->
+<div class="modal-bg" id="modal-del">
+  <div class="modal-box" style="max-width:380px">
+    <div class="modal-header">
+      <div class="modal-title">Delete Payment?</div>
+      <button class="btn btn-ghost btn-icon btn-sm" onclick="closeModal('del')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="del-warning">
+        <div class="del-emoji">🗑️</div>
+        <div class="del-item-name" id="del-name"></div>
+        <div class="del-msg">This cannot be undone. Are you sure?</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('del')">No, Keep it</button>
+      <button class="btn btn-red btn-sm" onclick="confirmDelete()"><i class="bi bi-trash3"></i> Yes, Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- VOUCHER -->
+<div class="modal-bg" id="modal-voucher">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">🧾 Payment Voucher</div>
+      <button class="btn btn-ghost btn-icon btn-sm" onclick="closeModal('voucher')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body"><div class="voucher" id="voucher-content"></div></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('voucher')">Close</button>
+      <button class="btn btn-orange btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Print Voucher</button>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW DETAIL -->
+<div class="modal-bg" id="modal-view">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">Payment Details</div>
+      <button class="btn btn-ghost btn-icon btn-sm" onclick="closeModal('view')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" id="view-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('view')">Close</button>
+      <button class="btn btn-ghost btn-sm" onclick="printVoucher(viewingId)"><i class="bi bi-printer"></i> Print</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-zone" id="toast-zone"></div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* ═══════════════════════════════════════════════
+   POS PRO — Payments Out
+   All data fetched from Django REST API
+═══════════════════════════════════════════════ */
+
+// ── CONFIG ────────────────────────────────────
+const API   = '{{ api_base }}';
+const CSRF  = getCookie('csrftoken');
+const CUR   = '{{ currency }}';
+
+// ── LOOKUP MAPS ───────────────────────────────
+const PILL_LBL = {admin:'Office & Admin',purchase:'Purchases',expense:'Running Costs',salary:'Staff Pay',utility:'Bills',maintenance:'Repairs',tax:'Tax',petty_cash:'Petty Cash',loan:'Loan',other:'Other'};
+const PILL_ICO = {admin:'🏢',purchase:'🛒',expense:'📊',salary:'👥',utility:'💡',maintenance:'🔧',tax:'🧾',petty_cash:'💰',loan:'🏦',other:'📝'};
+const PILL_CLS = {admin:'pill-admin',purchase:'pill-purchase',expense:'pill-expense',salary:'pill-salary',utility:'pill-utility',maintenance:'pill-maintenance',tax:'pill-tax',petty_cash:'pill-petty_cash',other:'pill-other'};
+const METHOD_ICON = {Cash:'💵','Bank Transfer':'🏦','MTN Mobile Money':'📱','Airtel Money':'📲',Cheque:'📝','Credit Card':'💳','Debit Card':'💳'};
+
+// ── STATE ─────────────────────────────────────
+let currentPage = 1;
+let totalPages  = 1;
+let filterCat='all', filterStatus='all', filterPeriod='month', searchQ='';
+let sortField='date', sortAsc=false;
+let currentStep=1, formCat='admin', modalCat='admin';
+let deleteTargetPk=null, viewingId=null;
+let searchTimer=null;
+
+// ── INIT ──────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('f-date').valueAsDate = new Date();
+  document.getElementById('m-date').valueAsDate = new Date();
+
+  loadStats();
+  loadTable();
+  loadChart('week');
+  loadBudgets();
+  loadPettyCash();
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.dd'))
+      document.querySelectorAll('.dd-menu').forEach(m => m.classList.remove('open'));
+  });
+});
+
+// ── CSRF ──────────────────────────────────────
+function getCookie(name) {
+  let c = document.cookie.split(';').find(s => s.trim().startsWith(name+'='));
+  return c ? decodeURIComponent(c.trim().split('=')[1]) : '';
+}
+
+async function apiCall(url, method='GET', body=null) {
+  const opts = {
+    method,
+    headers: { 'X-CSRFToken': CSRF, 'Accept': 'application/json' }
+  };
+  if (body instanceof FormData) {
+    opts.body = body;
+  } else if (body) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || JSON.stringify(err) || 'Request failed');
+  }
+  return r.json();
+}
+
+// ── STATS ─────────────────────────────────────
+async function loadStats() {
+  try {
+    const d = await apiCall(`${API}/expenses/stats/`);
+    animNum('today-val',  d.today_total,   `${CUR} `);
+    animNum('month-val',  d.month_total,   `${CUR} `);
+    animNum('s-total',    d.month_total,   `${CUR} `);
+    animNum('s-purchase', d.purchase_total,`${CUR} `);
+    animNum('s-utility',  d.utility_total, `${CUR} `);
+    document.getElementById('wait-val').textContent   = d.pending_count;
+    document.getElementById('s-pending').textContent  = d.pending_count + ' items';
+    document.getElementById('s-pending-amt').textContent = `${CUR} ${fmtNum(d.pending_amount)} on hold`;
+
+    const msg = document.getElementById('summary-msg');
+    if (d.pending_count > 0) {
+      msg.innerHTML = `<i class="bi bi-hourglass-split"></i> ${d.pending_count} payment${d.pending_count>1?'s':''} need${d.pending_count===1?'s':''} approval`;
+      msg.style.cssText = 'background:var(--amber-bg);border-color:var(--amber-bd);color:var(--amber);margin-left:auto;border-radius:var(--r-sm);padding:7px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px;border:1px solid';
+    } else {
+      msg.innerHTML = `<i class="bi bi-check-circle-fill"></i> All payments are up to date!`;
+      msg.style.cssText = 'background:var(--green-bg);border-color:var(--green-bd);color:var(--green);margin-left:auto;border-radius:var(--r-sm);padding:7px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px;border:1px solid';
+    }
+  } catch(e) { console.error('Stats error:', e); }
+}
+
+// ── TABLE ─────────────────────────────────────
+async function loadTable() {
+  const params = new URLSearchParams();
+  if (filterCat    !== 'all') params.set('cat',    filterCat);
+  if (filterStatus !== 'all') params.set('status', filterStatus);
+  if (filterPeriod)           params.set('period', filterPeriod);
+  if (searchQ)                params.set('search', searchQ);
+  params.set('page', currentPage);
+  params.set('sort', sortAsc ? sortField : '-' + sortField);
+
+  const tbody = document.getElementById('tx-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="7">⏳ Loading...</td></tr>';
+
+  try {
+    const data = await apiCall(`${API}/expenses/?${params}`);
+    const results = data.results || [];
+    totalPages = Math.ceil((data.count || 0) / 7);
+
+    if (!results.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="empty-emoji">🔍</div><div class="empty-title">No payments found</div><div>Try changing your filters</div></div></td></tr>`;
+    } else {
+      tbody.innerHTML = results.map(t => `
+        <tr onclick="viewTx('${t.id}', ${t.id.replace('EXP-','')})">
+          <td>
+            <div class="tx-name">${t.desc}</div>
+            <div class="tx-meta">
+              <span class="tx-ref">${t.reference || t.id}</span>
+              ${t.recurring ? '<span class="recurring-tag"><i class="bi bi-arrow-repeat"></i> Recurring</span>' : ''}
+            </div>
+          </td>
+          <td><span class="pill ${PILL_CLS[t.cat]||'pill-other'}">${PILL_ICO[t.cat]||'📝'} ${PILL_LBL[t.cat]||t.cat}</span></td>
+          <td style="font-size:12px;color:var(--muted)">${fmtDate(t.date)}</td>
+          <td><div class="amount-cell">${CUR} ${fmtNum(t.amount)}</div></td>
+          <td><span class="badge badge-${t.status}">${t.status==='paid'?'Paid':t.status==='waiting'?'Waiting':'Cancelled'}</span></td>
+          <td style="font-size:12px;color:var(--muted)">${METHOD_ICON[t.method]||''} ${t.method}</td>
+          <td>
+            <div class="row-acts" onclick="event.stopPropagation()">
+              <button class="row-btn" onclick="printVoucher('${t.id}', ${t.id.replace('EXP-','')})" title="Print"><i class="bi bi-printer"></i></button>
+              <button class="row-btn danger" onclick="askDelete('${t.id}', ${t.id.replace('EXP-','')}, '${escHtml(t.desc)}')" title="Delete"><i class="bi bi-trash3"></i></button>
+            </div>
+          </td>
+        </tr>`).join('');
+    }
+
+    document.getElementById('table-sub').textContent = `Showing ${data.count||0} record${data.count!==1?'s':''}`;
+    renderPagination(data.count || 0);
+    renderApprovals(results.filter(t => t.status === 'waiting'));
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--red);padding:30px">⚠ Could not load payments: ${e.message}</td></tr>`;
+  }
+}
+
+function renderPagination(total) {
+  const info = document.getElementById('pag-info');
+  const btns = document.getElementById('pag-btns');
+  if (!total) { info.textContent=''; btns.innerHTML=''; return; }
+  const perPage = 7;
+  const start = (currentPage-1)*perPage+1;
+  const end   = Math.min(currentPage*perPage, total);
+  info.textContent = `${start}–${end} of ${total}`;
+  totalPages = Math.ceil(total/perPage);
+  let html = `<button class="pag-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>&lsaquo;</button>`;
+  for (let i=1; i<=totalPages; i++)
+    html += `<button class="pag-btn ${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</button>`;
+  html += `<button class="pag-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>&rsaquo;</button>`;
+  btns.innerHTML = html;
+}
+
+function goPage(n) {
+  if (n<1 || n>totalPages) return;
+  currentPage = n;
+  loadTable();
+}
+
+function sortCol(f) {
+  if (sortField===f) sortAsc=!sortAsc; else { sortField=f; sortAsc=false; }
+  document.querySelectorAll('.pb-table th').forEach(th => th.classList.remove('sorted'));
+  event.currentTarget.classList.add('sorted');
+  currentPage=1; loadTable();
+}
+
+function debounceSearch(v) {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { searchQ=v.trim(); currentPage=1; loadTable(); }, 350);
+}
+
+// ── APPROVAL QUEUE ────────────────────────────
+function renderApprovals(pending) {
+  const bar  = document.getElementById('approval-bar');
+  const list = document.getElementById('approval-list');
+  if (!pending || !pending.length) { bar.style.display='none'; return; }
+  bar.style.display = 'block';
+  list.innerHTML = pending.map(t => `
+    <div class="approval-item">
+      <div class="approval-desc">
+        <div class="approval-name">${PILL_ICO[t.cat]||'📝'} ${t.desc}</div>
+        <div class="approval-meta">${t.vendor} · ${METHOD_ICON[t.method]||''} ${t.method} · ${fmtDate(t.date)}</div>
+      </div>
+      <div class="approval-amount">${CUR} ${fmtNum(t.amount)}</div>
+      <div class="approval-actions">
+        <button class="btn btn-green btn-xs" onclick="approveItem(${t.id.replace('EXP-','')})"><i class="bi bi-check-lg"></i> Approve</button>
+        <button class="btn btn-red btn-xs"   onclick="rejectItem(${t.id.replace('EXP-','')})"><i class="bi bi-x-lg"></i> Reject</button>
+      </div>
+    </div>`).join('');
+}
+
+async function approveItem(pk) {
+  try {
+    await apiCall(`${API}/expenses/${pk}/approve/`, 'POST');
+    toast('✅ Approved!', 'Payment marked as paid', 'success');
+    loadTable(); loadStats(); loadBudgets();
+  } catch(e) { toast('⚠ Error', e.message, 'error'); }
+}
+
+async function rejectItem(pk) {
+  try {
+    await apiCall(`${API}/expenses/${pk}/reject/`, 'POST', {reason:''});
+    toast('❌ Rejected', 'Payment has been cancelled', 'warning');
+    loadTable(); loadStats();
+  } catch(e) { toast('⚠ Error', e.message, 'error'); }
+}
+
+// ── CHART ─────────────────────────────────────
+let mainChart;
+async function loadChart(range) {
+  try {
+    const d = await apiCall(`${API}/expenses/chart/?range=${range}`);
+    const ctx = document.getElementById('mainChart').getContext('2d');
+    if (mainChart) mainChart.destroy();
+    mainChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: d.labels,
+        datasets: [
+          {label:'Money Out', data:d.out, backgroundColor:'rgba(239,68,68,.18)', borderColor:'rgba(239,68,68,.8)', borderWidth:2, borderRadius:6, order:2},
+          {label:'Money In',  data:d.income, type:'line', fill:true, backgroundColor:'rgba(34,197,94,.06)', borderColor:'rgba(34,197,94,.8)', borderWidth:2.5, tension:.4, pointBackgroundColor:'#22c55e', pointRadius:4, pointHoverRadius:6, order:1},
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            backgroundColor:'#111827', titleColor:'#f0f4ff', bodyColor:'#7a8caa',
+            borderColor:'rgba(255,255,255,0.12)', borderWidth:1,
+            padding:12, cornerRadius:8,
+            callbacks:{label:c=>` ${c.dataset.label}: ${CUR} ${(c.parsed.y*1e6).toLocaleString()}`}
+          }
+        },
+        scales:{
+          x:{grid:{display:false}, ticks:{font:{family:'DM Sans',size:11}, color:'#7a8caa'}},
+          y:{grid:{color:'rgba(255,255,255,.04)'}, ticks:{font:{family:'DM Sans',size:11}, color:'#7a8caa', callback:v=>'M'+v}},
+        },
+        animation:{duration:600, easing:'easeOutQuart'}
+      }
+    });
+  } catch(e) { console.error('Chart error:', e); }
+}
+
+function switchPeriod(el, range) {
+  document.querySelectorAll('.cptab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  loadChart(range);
+}
+
+// ── BUDGETS ───────────────────────────────────
+async function loadBudgets() {
+  try {
+    const budgets = await apiCall(`${API}/budgets/`);
+    const list = document.getElementById('budget-list');
+    if (!budgets.length) {
+      list.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px">No budgets set up yet. <a href="{% url "expenses:budget_create" %}" style="color:var(--orange)">Add one</a></div>';
+      return;
+    }
+    list.innerHTML = budgets.map(b => {
+      const pct = Math.min(100, b.percentage);
+      const colorMap = {success:'var(--green)', warning:'var(--amber)', danger:'var(--red)'};
+      const color = colorMap[b.status] || 'var(--cyan)';
+      return `
+        <div class="budget-item">
+          <div class="budget-row">
+            <div class="budget-name"><span>${b.emoji}</span>${b.name}</div>
+            <div class="budget-nums">${CUR} ${fmtNum(b.spending)} / ${fmtNum(b.amount)}</div>
+          </div>
+          <div class="budget-track"><div class="budget-fill" style="width:${pct}%;background:${color}"></div></div>
+          ${b.is_over ? `<div class="budget-warn"><i class="bi bi-exclamation-triangle-fill"></i>${b.percentage}% used — close to limit</div>` : ''}
+        </div>`;
+    }).join('');
+    // Budget alert banner
+    const overBudgets = budgets.filter(b => b.is_over);
+    if (overBudgets.length) {
+      const alertEl = document.getElementById('budget-alert');
+      document.getElementById('budget-alert-text').innerHTML =
+        `<strong>⚠️ Budget Warning</strong><div style="font-size:12px;color:var(--muted);margin-top:2px">${overBudgets.map(b=>b.name+' is at '+b.percentage+'%').join(' · ')}</div>`;
+      alertEl.style.display = 'flex';
+    }
+  } catch(e) { console.error('Budgets error:', e); }
+}
+
+// ── PETTY CASH ────────────────────────────────
+async function loadPettyCash() {
+  const body = document.getElementById('petty-cash-body');
+  try {
+    const d = await apiCall(`${API}/petty-cash/`);
+    if (!d.configured) {
+      body.innerHTML = `<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px">No petty cash fund configured.</div>`;
+      return;
+    }
+    const pct = Math.round(d.percentage_remaining);
+    body.innerHTML = `
+      <div class="petty-row">
+        <span class="petty-label">Remaining</span>
+        <span class="petty-value" style="color:${d.is_low?'var(--amber)':'var(--text)'}">${CUR} ${fmtNum(d.current_balance)}</span>
+      </div>
+      <div class="petty-track"><div class="petty-fill" style="width:${pct}%"></div></div>
+      <div class="petty-stats">
+        <span>of ${CUR} ${fmtNum(d.opening_float)} float</span><span>${pct}% left</span>
+      </div>
+      ${d.is_low ? `<div class="petty-low"><i class="bi bi-exclamation-triangle-fill"></i> Float is low — consider topping up</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        <div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--muted)">Opening Float</span><span>${fmtNum(d.opening_float)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--muted)">Spent Today</span><span style="color:var(--red)">− ${fmtNum(d.today_spent)}</span></div>
+        ${d.last_topped_up ? `<div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--muted)">Last Top-Up</span><span>${fmtDate(d.last_topped_up.split('T')[0])}</span></div>` : ''}
+      </div>`;
+  } catch(e) {
+    body.innerHTML = `<div style="text-align:center;color:var(--muted);padding:20px;font-size:12px">Petty cash unavailable.</div>`;
+  }
+}
+
+async function topUpPettyCash() {
+  const amount = prompt('Enter top-up amount (UGX):');
+  if (!amount || isNaN(+amount) || +amount <= 0) return;
+  try {
+    await apiCall(`${API}/petty-cash/top-up/`, 'POST', {amount: +amount});
+    toast('💰 Float topped up!', `+${CUR} ${(+amount).toLocaleString()} added`, 'success');
+    loadPettyCash();
+  } catch(e) { toast('⚠ Error', e.message, 'error'); }
+}
+
+// ── CREATE PAYMENT (modal) ────────────────────
+function pickModalCat(el) {
+  document.querySelectorAll('#modal-add .cat-tile').forEach(t => t.classList.remove('active'));
+  el.classList.add('active'); modalCat = el.dataset.cat;
+}
+
+async function saveModal() {
+  const amt    = +document.getElementById('m-amount').value;
+  const desc   = document.getElementById('m-desc').value.trim();
+  const vendor = document.getElementById('m-vendor').value.trim();
+  const date   = document.getElementById('m-date').value;
+  const method = document.getElementById('m-method').value;
+  const status = document.getElementById('m-status').value;
+  const recur  = document.getElementById('m-recurring').checked;
+
+  if (!amt || !desc) {
+    toast('⚠️ Missing info', 'Fill in amount and description', 'warning');
+    return;
+  }
+
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...';
+
+  try {
+    await apiCall(`${API}/expenses/`, 'POST', {
+      desc, cat: modalCat, vendor: vendor||'', date, amount: amt,
+      method, status, recurring: recur, notes: ''
+    });
+    closeModal('add');
+    toast('✅ Payment saved!', `${CUR} ${amt.toLocaleString()} recorded`, 'success');
+    loadTable(); loadStats(); loadBudgets(); loadPettyCash();
+  } catch(e) {
+    toast('⚠ Error', e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-lg"></i> Save Payment';
+  }
+}
+
+// ── FORM STEPS (sidebar) ──────────────────────
+function goStep(n) {
+  if (n<1||n>3) return;
+  currentStep = n;
+  document.querySelectorAll('.form-step-pane').forEach((p,i) => p.classList.toggle('active', i===n-1));
+  document.querySelectorAll('.step-item').forEach((s,i) => {
+    s.classList.toggle('active', i===n-1);
+    s.classList.toggle('done', i<n-1);
+    const num = s.querySelector('.step-num');
+    num.innerHTML = i<n-1 ? '<i class="bi bi-check-lg" style="font-size:11px"></i>' : String(i+1);
+  });
+  document.getElementById('btn-prev').style.display = n>1 ? 'inline-flex' : 'none';
+  const nextBtn = document.getElementById('btn-next');
+  nextBtn.innerHTML = n===3
+    ? '<i class="bi bi-check-lg"></i> Save Payment'
+    : 'Next <i class="bi bi-arrow-right"></i>';
+}
+
+function nextStep() { if (currentStep===3) saveSidebar(); else goStep(currentStep+1); }
+
+function pickFormCat(el) {
+  document.querySelectorAll('#step-1 .cat-tile').forEach(t => t.classList.remove('active'));
+  el.classList.add('active'); formCat = el.dataset.cat;
+}
+
+async function saveSidebar() {
+  const amt    = +document.getElementById('f-amount').value;
+  const desc   = document.getElementById('f-desc').value.trim();
+  const vendor = document.getElementById('f-vendor').value.trim();
+  const date   = document.getElementById('f-date').value;
+  const method = document.getElementById('f-method').value;
+  const status = document.getElementById('f-status').value;
+  const recur  = document.getElementById('f-recurring').checked;
+  const notes  = document.getElementById('f-notes').value;
+
+  if (!amt || !desc) {
+    toast('⚠️ Missing info', 'Fill in the amount and description', 'warning');
+    goStep(1); return;
+  }
+
+  const fileInput = document.getElementById('file-input');
+  let body;
+
+  if (fileInput.files.length) {
+    body = new FormData();
+    body.append('desc',      desc);
+    body.append('cat',       formCat);
+    body.append('vendor',    vendor || '');
+    body.append('date',      date);
+    body.append('amount',    amt);
+    body.append('method',    method);
+    body.append('status',    status);
+    body.append('recurring', recur);
+    body.append('notes',     notes);
+    body.append('receipt',   fileInput.files[0]);
+  } else {
+    body = {desc, cat:formCat, vendor:vendor||'', date, amount:amt, method, status, recurring:recur, notes};
+  }
+
+  try {
+    await apiCall(`${API}/expenses/`, 'POST', body);
+    // Reset form
+    ['f-amount','f-desc','f-vendor','f-notes'].forEach(id => document.getElementById(id).value='');
+    document.getElementById('f-recurring').checked = false;
+    document.getElementById('file-input').value = '';
+    document.getElementById('file-preview').style.display = 'none';
+    document.querySelectorAll('#step-1 .cat-tile').forEach(t=>t.classList.remove('active'));
+    document.querySelector('#step-1 .cat-tile[data-cat="admin"]').classList.add('active');
+    formCat = 'admin'; goStep(1);
+    toast('✅ Payment saved!', `${CUR} ${amt.toLocaleString()} recorded`, 'success');
+    loadTable(); loadStats(); loadBudgets(); loadPettyCash();
+  } catch(e) { toast('⚠ Error', e.message, 'error'); }
+}
+
+function handleFile(input) {
+  const file=input.files[0]; if(!file) return;
+  const prev=document.getElementById('file-preview');
+  prev.style.display='block';
+  prev.innerHTML=`<div class="uploaded-file"><i class="bi bi-file-earmark-check" style="font-size:18px;color:var(--green)"></i><span class="uf-name">${file.name}</span><i class="bi bi-x-lg uf-rm" onclick="removeFile()"></i></div>`;
+}
+function removeFile() {
+  document.getElementById('file-input').value='';
+  const p=document.getElementById('file-preview'); p.style.display='none'; p.innerHTML='';
+}
+
+// ── DELETE ────────────────────────────────────
+function askDelete(ref, pk, desc) {
+  deleteTargetPk = pk;
+  document.getElementById('del-name').textContent = desc;
+  openModal('del');
+}
+
+async function confirmDelete() {
+  if (!deleteTargetPk) return;
+  try {
+    await apiCall(`${API}/expenses/${deleteTargetPk}/`, 'DELETE');
+    closeModal('del'); deleteTargetPk=null;
+    toast('🗑️ Deleted', 'Payment removed', 'warning');
+    loadTable(); loadStats(); loadBudgets();
+  } catch(e) { toast('⚠ Error', e.message, 'error'); }
+}
+
+// ── VIEW DETAIL ───────────────────────────────
+async function viewTx(ref, pk) {
+  viewingId = pk;
+  openModal('view');
+  document.getElementById('view-body').innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">Loading...</div>';
+  try {
+    const t = await apiCall(`${API}/expenses/${pk}/`);
+    const sl = {paid:'✅ Paid', waiting:'⏳ Waiting for Approval', cancelled:'❌ Cancelled'};
+    document.getElementById('view-body').innerHTML = `
+      <div class="detail-head">
+        <div class="detail-amount">${CUR} ${fmtNum(t.amount)}</div>
+        <div class="detail-name">${t.desc}</div>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-cell"><div class="dk">Type</div><div class="dv">${PILL_ICO[t.cat]||'📝'} ${PILL_LBL[t.cat]||t.cat}</div></div>
+        <div class="detail-cell"><div class="dk">Status</div><div class="dv">${sl[t.status]||t.status}</div></div>
+        <div class="detail-cell"><div class="dk">Paid To</div><div class="dv">${t.vendor||'—'}</div></div>
+        <div class="detail-cell"><div class="dk">Method</div><div class="dv">${METHOD_ICON[t.method]||''} ${t.method}</div></div>
+        <div class="detail-cell"><div class="dk">Date</div><div class="dv">${fmtDate(t.date)}</div></div>
+        <div class="detail-cell"><div class="dk">Reference</div><div class="dv" style="font-family:monospace;font-size:11px">${t.reference}</div></div>
+      </div>
+      ${t.recurring ? `<div style="background:var(--cyan-bg);border:1px solid var(--cyan-bd);border-radius:var(--r-sm);padding:10px 14px;font-size:13px;color:var(--cyan);font-weight:600;margin-bottom:12px"><i class="bi bi-arrow-repeat"></i> This is a recurring monthly payment</div>` : ''}
+      ${t.notes ? `<div style="background:var(--surface2);border-radius:var(--r-sm);padding:12px 14px;font-size:13px;color:var(--muted)"><strong style="color:var(--text)">Notes:</strong> ${t.notes}</div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+        ${t.status==='waiting' ? `
+          <button class="btn btn-green btn-sm" onclick="approveItem(${pk});closeModal('view')"><i class="bi bi-check-lg"></i> Approve Payment</button>
+          <button class="btn btn-red btn-sm"   onclick="rejectItem(${pk});closeModal('view')"><i class="bi bi-x-lg"></i> Reject</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="askDelete('${t.reference}',${pk},'${escHtml(t.desc)}');closeModal('view')"><i class="bi bi-trash3"></i> Delete</button>
+      </div>`;
+  } catch(e) {
+    document.getElementById('view-body').innerHTML = `<div style="text-align:center;color:var(--red);padding:30px">⚠ ${e.message}</div>`;
+  }
+}
+
+// ── VOUCHER ───────────────────────────────────
+async function printVoucher(ref, pk) {
+  openModal('voucher');
+  document.getElementById('voucher-content').innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">Loading...</div>';
+  try {
+    const t = await apiCall(`${API}/expenses/${pk}/`);
+    const sl = {paid:'✅ PAID', waiting:'⏳ PENDING APPROVAL', cancelled:'❌ CANCELLED'};
+    document.getElementById('voucher-content').innerHTML = `
+      <div class="voucher-logo">POSPro</div>
+      <div class="voucher-sub">Official Payment Voucher</div>
+      <div class="voucher-row"><span class="vk">Voucher No.</span><span class="vv">${t.reference}</span></div>
+      <div class="voucher-row"><span class="vk">Date</span><span class="vv">${fmtDate(t.date)}</span></div>
+      <div class="voucher-row"><span class="vk">Description</span><span class="vv">${t.desc}</span></div>
+      <div class="voucher-row"><span class="vk">Category</span><span class="vv">${PILL_ICO[t.cat]||'📝'} ${PILL_LBL[t.cat]||t.cat}</span></div>
+      <div class="voucher-row"><span class="vk">Paid To</span><span class="vv">${t.vendor||'—'}</span></div>
+      <div class="voucher-row"><span class="vk">Payment Method</span><span class="vv">${METHOD_ICON[t.method]||''} ${t.method}</span></div>
+      <div class="voucher-row"><span class="vk">Status</span><span class="vv">${sl[t.status]||t.status}</span></div>
+      ${t.notes ? `<div class="voucher-row"><span class="vk">Notes</span><span class="vv">${t.notes}</span></div>` : ''}
+      <div class="voucher-total">
+        <span class="vk">TOTAL AMOUNT PAID</span>
+        <span class="vv">${CUR} ${fmtNum(t.amount)}</span>
+      </div>
+      <div class="voucher-sig">
+        <div><div class="voucher-sig-line">Prepared By</div></div>
+        <div><div class="voucher-sig-line">Authorized By</div></div>
+      </div>`;
+  } catch(e) {
+    document.getElementById('voucher-content').innerHTML = `<div style="color:var(--red)">⚠ ${e.message}</div>`;
+  }
+}
+
+// ── FILTERS ───────────────────────────────────
+function toggleDD(id){
+  const dd=document.getElementById(id);
+  const btn=dd.querySelector('.dd-btn');
+  const menu=dd.querySelector('.dd-menu');
+  const isOpen=menu.classList.contains('open');
+  document.querySelectorAll('.dd-menu').forEach(m=>m.classList.remove('open'));
+  document.querySelectorAll('.dd-btn').forEach(b=>b.classList.remove('open'));
+  if(!isOpen){menu.classList.add('open');btn.classList.add('open');}
+}
+function pickCat(el,lbl,val){
+  filterCat=val; currentPage=1;
+  document.getElementById('dd-cat-lbl').textContent=lbl;
+  el.closest('.dd-menu').querySelectorAll('.dd-item').forEach(i=>i.classList.remove('active'));
+  el.classList.add('active'); toggleDD('dd-cat'); loadTable();
+}
+function pickStatus(el,lbl,val){
+  filterStatus=val; currentPage=1;
+  document.getElementById('dd-status-lbl').textContent=lbl;
+  el.closest('.dd-menu').querySelectorAll('.dd-item').forEach(i=>i.classList.remove('active'));
+  el.classList.add('active'); toggleDD('dd-status'); loadTable();
+}
+function pickPeriod(el,lbl,val){
+  filterPeriod=val; currentPage=1;
+  document.getElementById('dd-period-lbl').textContent=lbl;
+  el.closest('.dd-menu').querySelectorAll('.dd-item').forEach(i=>i.classList.remove('active'));
+  el.classList.add('active'); toggleDD('dd-period'); loadTable();
+}
+
+// ── MODALS ────────────────────────────────────
+function openModal(name){document.getElementById('modal-'+name).classList.add('open')}
+function closeModal(name){document.getElementById('modal-'+name).classList.remove('open')}
+document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
+
+// ── TOAST ─────────────────────────────────────
+function toast(title,sub,type='success'){
+  const icons={success:'bi-check-circle-fill',warning:'bi-exclamation-triangle-fill',error:'bi-x-circle-fill'};
+  const colors={success:'var(--green)',warning:'var(--amber)',error:'var(--red)'};
+  const zone=document.getElementById('toast-zone');
+  const el=document.createElement('div');
+  el.className=`toast toast-${type==='error'?'error':type}`;
+  el.innerHTML=`<i class="bi ${icons[type]||icons.success} toast-icon" style="color:${colors[type]||colors.success}"></i><div><div class="t-title">${title}</div><div class="t-sub">${sub}</div></div>`;
+  zone.appendChild(el);
+  setTimeout(()=>{el.style.transition='opacity .3s,transform .3s';el.style.opacity='0';el.style.transform='translateX(60px)';setTimeout(()=>el.remove(),300)},3500);
+}
+
+// ── FORMATTERS ────────────────────────────────
+function fmtNum(n) {
+  n = parseFloat(n)||0;
+  if (n>=1e6) return (n/1e6).toFixed(1)+'M';
+  if (n>=1e3) return (n/1e3).toFixed(0)+'K';
+  return Math.round(n).toLocaleString();
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  const dt = new Date(d+'T00:00:00');
+  return dt.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+}
+
+function escHtml(s) {
+  return String(s).replace(/'/g,"&#39;").replace(/"/g,"&quot;");
+}
+
+function animNum(id, target, pfx='') {
+  const el=document.getElementById(id); if(!el) return;
+  const dur=700; const begin=performance.now();
+  const step=now=>{
+    const p=Math.min((now-begin)/dur,1);
+    const ease=1-Math.pow(1-p,3);
+    el.textContent=pfx+fmtNum(target*ease);
+    if(p<1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+</script>
+{% endblock %}

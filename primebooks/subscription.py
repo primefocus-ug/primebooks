@@ -30,13 +30,38 @@ class SubscriptionManager:
     HARD_LIMIT_DAYS = 30  # Must check online at least once per month
     CACHE_EXPIRY_DAYS = 1  # Refresh cache daily when online
 
-    def __init__(self, company_id, schema_name):
+    def __init__(self, company_id, schema_name=None):
+        """
+        Args:
+            company_id: The company's unique ID (e.g. 'PF-N178266')
+            schema_name: The tenant schema name (e.g. 'desk').
+                         Optional — defaults to company_id lowercased if not provided.
+                         Callers should always pass this explicitly.
+        """
         self.company_id = company_id
-        self.schema_name = schema_name
+        # Fallback: derive schema_name from company_id so callers that only
+        # pass company_id don't crash (previously caused a TypeError).
+        self.schema_name = schema_name or company_id.lower().replace('-', '_')
         self.cache_file = settings.DESKTOP_DATA_DIR / f'.subscription_{company_id}'
 
         # Get server URL
         self.server_url = self._get_server_url()
+
+    @classmethod
+    def from_settings(cls):
+        """
+        Convenience constructor — builds a SubscriptionManager from Django settings.
+        Useful for the pre-check call in __main__ where company/schema may not yet
+        be known from a login session.
+
+        Returns None if required settings are missing.
+        """
+        company_id = getattr(settings, 'DESKTOP_COMPANY_ID', None)
+        schema_name = getattr(settings, 'DESKTOP_SCHEMA_NAME', None)
+        if not company_id:
+            logger.warning("SubscriptionManager.from_settings: DESKTOP_COMPANY_ID not set")
+            return None
+        return cls(company_id, schema_name)
 
     def _get_server_url(self):
         """Get server URL based on DEBUG mode"""
@@ -270,7 +295,7 @@ class SubscriptionManager:
         try:
             response = requests.get('https://www.google.com', timeout=3)
             return response.status_code == 200
-        except:
+        except Exception:
             return False
 
     def force_refresh(self):
@@ -285,5 +310,5 @@ class SubscriptionManager:
 
         try:
             return json.loads(self.cache_file.read_text())
-        except:
+        except Exception:
             return None

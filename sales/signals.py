@@ -82,9 +82,17 @@ def handle_sale_completion(sender, instance, created, **kwargs):
 
 
 def send_receipt_ws_update(sale):
-    """Send immediate WebSocket update for receipt completion"""
+    """Send immediate WebSocket update for receipt completion.
+    
+    Guarded against None channel_layer — in desktop mode Django Channels is
+    not configured so get_channel_layer() returns None. The sale is still
+    created successfully; the dashboard will reflect it on next page load.
+    """
     try:
         channel_layer = get_channel_layer()
+        if channel_layer is None:
+            logger.debug("WebSocket channel layer not configured — skipping receipt WS update")
+            return
         async_to_sync(channel_layer.group_send)(
             f'receipt_updates_{sale.store.id}',
             {
@@ -473,6 +481,12 @@ def update_dashboard_on_sale(sender, instance, created, **kwargs):
 
             # Send to tenant-specific WebSocket group
             channel_layer = get_channel_layer()
+            if channel_layer is None:
+                logger.debug(
+                    f"[{company.schema_name}] WebSocket channel layer not configured — "
+                    f"skipping dashboard update for sale {instance.pk}"
+                )
+                return
             async_to_sync(channel_layer.group_send)(
                 f'dashboard_{company.schema_name}',
                 {
@@ -490,7 +504,7 @@ def update_dashboard_on_sale(sender, instance, created, **kwargs):
             )
 
     except Exception as e:
-        logger.error(
+        logger.warning(
             f"[{getattr(company, 'schema_name', 'unknown')}] "
             f"Dashboard update failed for sale {instance.pk}: {e}"
         )

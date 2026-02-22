@@ -92,10 +92,11 @@ SYNC_MODEL_CONFIG = {
     # ============================================================================
     # TIER 1: NO DEPENDENCIES
     # ============================================================================
+    # NOTE: contenttypes.ContentType and auth.Permission are intentionally NOT
+    # listed here — they are already in EXCLUDED_MODELS and are managed entirely
+    # by Django migrations on the desktop. Syncing them caused duplicate-key
+    # errors because the DB already had them from the initial migration run.
 
-    'contenttypes.ContentType': {
-        'dependencies': [],
-    },
     'company.SubscriptionPlan': {
         'dependencies': [],
     },
@@ -143,10 +144,10 @@ SYNC_MODEL_CONFIG = {
     # ============================================================================
     # TIER 3: AUTH & ROLES
     # ============================================================================
+    # NOTE: auth.Permission is intentionally excluded — it is in EXCLUDED_MODELS
+    # and is managed by Django migrations. Syncing it caused FK-not-found warnings
+    # because its content_type IDs differed between server and desktop schemas.
 
-    'auth.Permission': {
-        'dependencies': ['contenttypes.ContentType'],
-    },
     'auth.Group': {
         'dependencies': [],
         'exclude_fields': ['permissions'],
@@ -747,11 +748,20 @@ class SyncManager:
                         )
                         rows = []
                         for (sname,) in cursor.fetchall():
-                            parts = sname.rsplit("_", 2)
-                            if len(parts) == 3 and parts[2] == "seq":
-                                rows.append((sname, parts[0], parts[1]))
+                            # Standard Django pattern: <table>_<column>_seq
+                            # e.g. "sales_sale_id_seq" → table="sales_sale", col="id"
+                            if sname.endswith('_seq'):
+                                body = sname[:-4]  # strip trailing _seq
+                                # Split on last underscore to get column name
+                                last_sep = body.rfind('_')
+                                if last_sep > 0:
+                                    table_part = body[:last_sep]
+                                    col_part = body[last_sep + 1:]
+                                    rows.append((sname, table_part, col_part))
+                                else:
+                                    rows.append((sname, body, 'id'))
                             else:
-                                rows.append((sname, sname.replace("_id_seq", ""), "id"))
+                                rows.append((sname, sname, 'id'))
 
                     reset_count = skipped_count = 0
                     for seq_name, table_name, col_name in rows:
@@ -1622,8 +1632,18 @@ class SyncManager:
                             saved_objects.append(obj)
 
                 except Exception as e:
-                    # Savepoint already rolled back — log and move on
-                    logger.error(f"  Error saving record pk={record.get('pk')}: {e}")
+                    # Savepoint already rolled back — log and move on.
+                    # Use WARNING for expected DB constraint violations (e.g. unique
+                    # constraint on system tables) and ERROR for unexpected failures.
+                    from django.db import IntegrityError as _IntegrityError
+                    if isinstance(e, _IntegrityError):
+                        logger.warning(
+                            f"  ⚠️  Skipped record pk={record.get('pk')} ({model_name}): {e}"
+                        )
+                    else:
+                        logger.error(
+                            f"  ❌ Error saving record pk={record.get('pk')} ({model_name}): {e}"
+                        )
 
             if synced_ids:
                 self._mark_as_synced(model_name, synced_ids, objects=saved_objects)

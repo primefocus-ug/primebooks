@@ -945,6 +945,14 @@ def _do_create_roles(instance):
     else:
         logger.info(f"ℹ️  All roles already exist for {instance.schema_name}")
 
+    # Seed default notification templates so events like sale_completed work
+    # immediately without requiring manual admin configuration.
+    try:
+        from notifications.services import NotificationService
+        NotificationService.seed_default_templates(instance.schema_name)
+    except Exception as e:
+        logger.warning(f"Could not seed notification templates for {instance.schema_name}: {e}")
+
 
 def create_default_roles_on_migrate(sender, **kwargs):
     """
