@@ -9,26 +9,22 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
+from django.contrib.auth import login, get_user_model
+from django.http import JsonResponse, HttpResponseBadRequest
+from django.shortcuts import redirect
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from company.models import Company
 from accounts.models import CustomUser
 from django_tenants.utils import schema_context
 from primebooks.authentication import TenantAwareJWTAuthentication
+from .models import AppVersions
 import logging
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.shortcuts import redirect
-from django.contrib.auth import login, get_user_model
-from django.http import HttpResponseBadRequest
-from django.views.decorators.csrf import csrf_exempt
+
 logger = logging.getLogger(__name__)
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from company.models import Company
-from django.utils import timezone
-from . models import AppVersions
 
 User = get_user_model()
 
@@ -102,13 +98,12 @@ def check_updates(request):
     latest = latest_version.version_tuple
 
     if latest > current:
-        # Determine download URL based on platform
-        import platform
-        system = request.META.get('HTTP_USER_AGENT', '').lower()
+        # Determine download URL based on platform from User-Agent
+        user_agent = request.META.get('HTTP_USER_AGENT', '').lower()
 
-        if 'windows' in system:
+        if 'windows' in user_agent:
             download_url = latest_version.windows_url
-        elif 'mac' in system or 'darwin' in system:
+        elif 'mac' in user_agent or 'darwin' in user_agent:
             download_url = latest_version.mac_url
         else:
             download_url = latest_version.linux_url
@@ -143,6 +138,7 @@ class DesktopLoginView(APIView):
     Returns JWT token + user data + company data
     ✅ Works with PostgreSQL schemas
     """
+    authentication_classes = []        # No token yet — this IS the login endpoint
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -325,8 +321,8 @@ def desktop_session_login(request):
         from primebooks.auth import DesktopAuthManager
         auth_manager = DesktopAuthManager()
 
-        valid = auth_manager.validate_token(token)
-        if not valid:
+        valid = auth_manager.get_valid_token()
+        if not valid or valid != token:
             logger.warning(f"Invalid token for desktop session switch: {email}")
             return HttpResponseBadRequest("Invalid token")
 
@@ -387,9 +383,10 @@ class DesktopUserSyncView(APIView):
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-            # Return user data INCLUDING password hash
+            # Return user data INCLUDING password hash and sync_id
             user_data = {
                 'id': user.id,
+                'sync_id': str(user.sync_id) if getattr(user, 'sync_id', None) else None,
                 'email': user.email,
                 'username': user.username,
                 'first_name': user.first_name,

@@ -18,7 +18,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Global sync status
+# Global sync status + lock to prevent race conditions across threads
+_sync_lock = threading.Lock()
 sync_status = {
     'in_progress': False,
     'progress': 0,
@@ -54,9 +55,9 @@ class DesktopLoginView(View):
 
         # Authenticate with server
         auth_manager = DesktopAuthManager()
-        result = auth_manager.authenticate(email, password, subdomain)
+        success, result = auth_manager.authenticate(email, password, subdomain)
 
-        if not result['success']:
+        if not success:
             return render(request, self.template_name, {
                 'error': result.get('error', 'Authentication failed')
             })
@@ -88,21 +89,22 @@ class DesktopLoginView(View):
         logger.info(f"📦 Schema not found for {company_id}, starting sync...")
 
         # Reset sync status
-        sync_status = {
-            'in_progress': True,
-            'progress': 10,
-            'message': 'Preparing to sync...',
-            'step': 'sync',
-            'complete': False,
-            'success': False,
-        }
+        with _sync_lock:
+            sync_status.update({
+                'in_progress': True,
+                'progress': 10,
+                'message': 'Preparing to sync...',
+                'step': 'sync',
+                'complete': False,
+                'success': False,
+            })
 
         # Start data sync in background thread
         def run_sync():
-            global sync_status
             try:
-                sync_status['progress'] = 20
-                sync_status['message'] = 'Syncing company data...'
+                with _sync_lock:
+                    sync_status['progress'] = 20
+                    sync_status['message'] = 'Syncing company data...'
 
                 auth_manager = DesktopAuthManager()
                 token = result['token']
@@ -115,24 +117,34 @@ class DesktopLoginView(View):
                 )
 
                 if company:
-                    sync_status['progress'] = 100
-                    sync_status['message'] = 'Sync complete!'
-                    sync_status['complete'] = True
-                    sync_status['success'] = True
+                    with _sync_lock:
+                        sync_status.update({
+                            'progress': 100,
+                            'message': 'Sync complete!',
+                            'complete': True,
+                            'success': True,
+                        })
                     logger.info(f"✅ Sync completed successfully for {company.name}")
                 else:
-                    sync_status['message'] = 'Sync failed - no company returned'
-                    sync_status['complete'] = True
-                    sync_status['success'] = False
+                    with _sync_lock:
+                        sync_status.update({
+                            'message': 'Sync failed - no company returned',
+                            'complete': True,
+                            'success': False,
+                        })
                     logger.error("Sync failed - no company returned")
 
             except Exception as e:
-                sync_status['message'] = f'Sync error: {str(e)}'
-                sync_status['complete'] = True
-                sync_status['success'] = False
+                with _sync_lock:
+                    sync_status.update({
+                        'message': f'Sync error: {str(e)}',
+                        'complete': True,
+                        'success': False,
+                    })
                 logger.error(f"Sync error: {e}", exc_info=True)
             finally:
-                sync_status['in_progress'] = False
+                with _sync_lock:
+                    sync_status['in_progress'] = False
 
         # Start sync thread
         sync_thread = threading.Thread(target=run_sync, daemon=True)
@@ -208,8 +220,9 @@ class DesktopSyncStatusView(View):
     """API endpoint for sync status"""
 
     def get(self, request):
-        global sync_status
-        return JsonResponse(sync_status)
+        with _sync_lock:
+            status_copy = dict(sync_status)
+        return JsonResponse(status_copy)
 
 
 class DesktopManualSyncView(View):
@@ -248,20 +261,21 @@ class DesktopManualSyncView(View):
         subdomain = company_data.get('schema_name', 'pada')
 
         # Start sync
-        sync_status = {
-            'in_progress': True,
-            'progress': 10,
-            'message': 'Starting manual sync...',
-            'step': 'sync',
-            'complete': False,
-            'success': False,
-        }
+        with _sync_lock:
+            sync_status.update({
+                'in_progress': True,
+                'progress': 10,
+                'message': 'Starting manual sync...',
+                'step': 'sync',
+                'complete': False,
+                'success': False,
+            })
 
         def run_sync():
-            global sync_status
             try:
-                sync_status['progress'] = 20
-                sync_status['message'] = 'Syncing company data...'
+                with _sync_lock:
+                    sync_status['progress'] = 20
+                    sync_status['message'] = 'Syncing company data...'
 
                 auth_manager = DesktopAuthManager()
                 company = auth_manager.sync_company_from_server(
@@ -271,22 +285,32 @@ class DesktopManualSyncView(View):
                 )
 
                 if company:
-                    sync_status['progress'] = 100
-                    sync_status['message'] = 'Sync complete!'
-                    sync_status['complete'] = True
-                    sync_status['success'] = True
+                    with _sync_lock:
+                        sync_status.update({
+                            'progress': 100,
+                            'message': 'Sync complete!',
+                            'complete': True,
+                            'success': True,
+                        })
                 else:
-                    sync_status['message'] = 'Sync failed'
-                    sync_status['complete'] = True
-                    sync_status['success'] = False
+                    with _sync_lock:
+                        sync_status.update({
+                            'message': 'Sync failed',
+                            'complete': True,
+                            'success': False,
+                        })
 
             except Exception as e:
-                sync_status['message'] = f'Sync error: {str(e)}'
-                sync_status['complete'] = True
-                sync_status['success'] = False
+                with _sync_lock:
+                    sync_status.update({
+                        'message': f'Sync error: {str(e)}',
+                        'complete': True,
+                        'success': False,
+                    })
                 logger.error(f"Manual sync error: {e}", exc_info=True)
             finally:
-                sync_status['in_progress'] = False
+                with _sync_lock:
+                    sync_status['in_progress'] = False
 
         sync_thread = threading.Thread(target=run_sync, daemon=True)
         sync_thread.start()

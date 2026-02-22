@@ -77,6 +77,24 @@ EXCLUDED_MODELS = {
     'company.Domain',
     'django_otp.Device',
     'otp_totp.TOTPDevice',
+    # Notifications: server-side concern, not needed on desktop
+    'notifications.NotificationCategory',
+    'notifications.NotificationTemplate',
+    'notifications.NotificationRule',
+    'notifications.NotificationPreference',
+    'notifications.Announcement',
+    'notifications.Notification',
+    'notifications.NotificationBatch',
+    'notifications.NotificationLog',
+    # Audit & login history: server-side records, too noisy for desktop
+    'accounts.AuditLog',
+    'accounts.LoginHistory',
+    'accounts.DataExportLog',
+    # Device security: tied to server sessions, not meaningful offline
+    'stores.DeviceFingerprint',
+    'stores.UserDeviceSession',
+    'stores.DeviceOperatorLog',
+    'stores.SecurityAlert',
 }
 
 
@@ -219,20 +237,8 @@ SYNC_MODEL_CONFIG = {
     'stores.StoreDevice': {
         'dependencies': ['stores.Store'],
     },
-    'stores.DeviceFingerprint': {
-        'dependencies': ['stores.StoreDevice'],
-    },
-    'stores.UserDeviceSession': {
-        'dependencies': ['accounts.CustomUser', 'stores.StoreDevice'],
-        'download_only': True,
-    },
-    'stores.DeviceOperatorLog': {
-        'dependencies': ['stores.StoreDevice', 'accounts.CustomUser'],
-        'download_only': True,
-    },
-    'stores.SecurityAlert': {
-        'dependencies': ['stores.Store'],
-    },
+    # DeviceFingerprint, UserDeviceSession, DeviceOperatorLog, SecurityAlert
+    # excluded — device security is server-side only (see EXCLUDED_MODELS)
 
     # ============================================================================
     # TIER 8: PRODUCTS & SERVICES
@@ -433,34 +439,7 @@ SYNC_MODEL_CONFIG = {
         'dependencies': ['customers.Customer', 'sales.Sale', 'sales.Payment', 'accounts.CustomUser'],
     },
 
-    # ============================================================================
-    # TIER 17: NOTIFICATIONS
-    # ============================================================================
-
-    'notifications.NotificationCategory': {
-        'dependencies': [],
-    },
-    'notifications.NotificationTemplate': {
-        'dependencies': ['notifications.NotificationCategory'],
-    },
-    'notifications.NotificationRule': {
-        'dependencies': ['accounts.CustomUser'],
-    },
-    'notifications.NotificationPreference': {
-        'dependencies': ['accounts.CustomUser', 'notifications.NotificationCategory'],
-    },
-    'notifications.Announcement': {
-        'dependencies': ['accounts.CustomUser'],
-    },
-    'notifications.Notification': {
-        'dependencies': ['accounts.CustomUser'],
-    },
-    'notifications.NotificationBatch': {
-        'dependencies': [],
-    },
-    'notifications.NotificationLog': {
-        'dependencies': ['notifications.Notification'],
-    },
+    # TIER 17: NOTIFICATIONS — excluded (server-side only, see EXCLUDED_MODELS)
 
     # ============================================================================
     # TIER 18: MESSAGING
@@ -570,15 +549,7 @@ SYNC_MODEL_CONFIG = {
     'accounts.UserSignature': {
         'dependencies': ['accounts.CustomUser'],
     },
-    'accounts.AuditLog': {
-        'dependencies': ['accounts.CustomUser', 'stores.Store'],
-    },
-    'accounts.LoginHistory': {
-        'dependencies': ['accounts.CustomUser'],
-    },
-    'accounts.DataExportLog': {
-        'dependencies': ['accounts.CustomUser'],
-    },
+    # AuditLog, LoginHistory, DataExportLog excluded — server-side only (see EXCLUDED_MODELS)
     'errors.ErrorLog': {
         'dependencies': ['accounts.CustomUser'],
     },

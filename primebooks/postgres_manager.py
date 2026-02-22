@@ -613,14 +613,7 @@ class EmbeddedPostgresManager:
             logger.info(f"Found {file_count} encrypted files - decrypting...")
             if progress_callback:
                 progress_callback("Decrypting existing database...")
-
             self._decrypt_database()
-
-            if self.is_initialized():
-                logger.info("✅ Database already initialized (after decryption)")
-                if progress_callback:
-                    progress_callback("Database already initialized")
-                return True
 
         if self.is_initialized():
             logger.info("PostgreSQL already initialized")
@@ -853,7 +846,12 @@ host    all             all             ::1/128                 trust
         self._cleanup_stale_locks()
 
         try:
-            self.port = self._find_available_port()
+            # If we already have a config, honour the port written there.
+            # Only search for a new port when the configured one is unavailable.
+            self._read_port_from_config()
+            if not self._is_port_available(self.port):
+                logger.warning(f"Configured port {self.port} is in use, searching for alternative...")
+                self.port = self._find_available_port()
             self._configure_postgres()
 
             logger.info(f"Starting PostgreSQL on port {self.port}...")

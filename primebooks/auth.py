@@ -61,11 +61,19 @@ class DesktopAuthManager:
             )
 
             if response.status_code != 200:
-                error_detail = response.json().get('detail', 'Invalid credentials')
+                try:
+                    error_detail = response.json().get('detail', 'Invalid credentials')
+                except Exception:
+                    error_detail = response.text.strip() or f"HTTP {response.status_code}"
                 logger.error(f"Authentication failed: {response.status_code} - {error_detail}")
                 return False, {'error': error_detail}
 
-            data = response.json()
+            try:
+                data = response.json()
+            except Exception:
+                body = response.text.strip()
+                logger.error(f"Server returned non-JSON response (status {response.status_code}): {body!r}")
+                return False, {'error': "Server returned an invalid response. Please try again or contact support."}
             access_token = data.get('token')
             refresh_token = data.get('refresh')
 
@@ -327,7 +335,11 @@ class DesktopAuthManager:
                 logger.error(f"  Failed to fetch user: HTTP {response.status_code}")
                 return False
 
-            user_data = response.json()
+            try:
+                user_data = response.json()
+            except Exception:
+                logger.error(f"  User sync response was not valid JSON: {response.text!r}")
+                return False
             if not user_data:
                 logger.error(f"  No user data returned for {email}")
                 return False
@@ -468,7 +480,11 @@ class DesktopAuthManager:
                 logger.error(f"Token refresh failed: {response.status_code}")
                 return None
 
-            new_token = response.json().get('access')
+            try:
+                new_token = response.json().get('access')
+            except Exception:
+                logger.error(f"Token refresh response was not valid JSON: {response.text!r}")
+                return None
             if new_token:
                 self.save_auth_token(new_token)
                 logger.info("Access token refreshed")
@@ -545,7 +561,11 @@ class DesktopAuthManager:
                 logger.error(f"Failed to fetch company details: {response.status_code}")
                 return None
 
-            return response.json()
+            try:
+                return response.json()
+            except Exception:
+                logger.error(f"Company details response was not valid JSON: {response.text!r}")
+                return None
 
         except Exception as e:
             logger.error(f"Error fetching company details: {e}")
@@ -584,22 +604,38 @@ class DesktopAuthManager:
         return token, user_data, company_data
 
     def save_auth_token(self, token):
-        self.auth_token_file.write_text(token)
+        encrypted = self.encryption.encrypt_data(token)
+        self.auth_token_file.write_bytes(encrypted)
         settings.SYNC_AUTH_TOKEN = token
 
     def get_auth_token(self):
         if self.auth_token_file.exists():
-            token = self.auth_token_file.read_text().strip()
+            try:
+                token = self.encryption.decrypt_data(self.auth_token_file.read_bytes()).decode().strip()
+            except Exception:
+                # Fall back to plain-text token from older installs
+                try:
+                    token = self.auth_token_file.read_text().strip()
+                except Exception:
+                    return None
             settings.SYNC_AUTH_TOKEN = token
             return token
         return None
 
     def save_refresh_token(self, token):
-        self.refresh_token_file.write_text(token)
+        encrypted = self.encryption.encrypt_data(token)
+        self.refresh_token_file.write_bytes(encrypted)
 
     def get_refresh_token(self):
         if self.refresh_token_file.exists():
-            return self.refresh_token_file.read_text().strip()
+            try:
+                return self.encryption.decrypt_data(self.refresh_token_file.read_bytes()).decode().strip()
+            except Exception:
+                # Fall back to plain-text token from older installs
+                try:
+                    return self.refresh_token_file.read_text().strip()
+                except Exception:
+                    return None
         return None
 
     def save_user_info(self, user_info):

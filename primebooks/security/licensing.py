@@ -35,9 +35,22 @@ class LicenseManager:
         # License server URL (for online validation)
         self.license_server = "https://license.primebooks.com"
 
-        # Secret key for HMAC (store securely on server)
-        # This is just for offline validation
-        self.secret_key = b'YOUR_SECRET_KEY_HERE'  # Change this!
+        # Secret key for HMAC offline validation.
+        # Read from Django settings or environment variable — never hardcode this.
+        import os
+        try:
+            from django.conf import settings as django_settings
+            self.secret_key = django_settings.LICENSE_HMAC_SECRET.encode() \
+                if isinstance(django_settings.LICENSE_HMAC_SECRET, str) \
+                else django_settings.LICENSE_HMAC_SECRET
+        except Exception:
+            env_key = os.environ.get('LICENSE_HMAC_SECRET', '')
+            if not env_key:
+                logger.warning(
+                    "LICENSE_HMAC_SECRET is not set — license validation will be unreliable. "
+                    "Add LICENSE_HMAC_SECRET to your Django settings or environment."
+                )
+            self.secret_key = env_key.encode() if env_key else b'UNSET_PLACEHOLDER_KEY'
 
     def generate_license(self, email, expiry_days=365, company_limit=1):
         """
