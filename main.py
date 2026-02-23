@@ -175,6 +175,21 @@ def find_free_port():
     return port
 
 
+def find_icon():
+    """Find icon file at runtime — works both frozen (Nuitka) and unfrozen."""
+    if getattr(sys, 'frozen', False):
+        # Nuitka: icon sits next to the compiled binary
+        base = Path(sys.argv[0]).parent
+    else:
+        base = Path(__file__).resolve().parent
+
+    for name in ['icon.png', 'icon.ico', 'icon.icns']:
+        candidate = base / name
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
 # ============================================================================
 # SQL SCHEMA LOADER
 # ============================================================================
@@ -1922,6 +1937,14 @@ class PrimeBooksWindow(QMainWindow):
         self.setWindowTitle(f"PrimeBooks Desktop - {self.subdomain}")
         self.setGeometry(100, 100, 1400, 900)
 
+        # ✅ Set window icon explicitly at runtime (required for taskbar/titlebar)
+        icon_path = find_icon()
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
+            logger.info(f"✅ Window icon set from: {icon_path}")
+        else:
+            logger.warning("⚠️  No icon file found for main window")
+
         self.browser = QWebEngineView()
 
         self.browser.settings().setAttribute(
@@ -2721,6 +2744,14 @@ def main():
         app = QApplication(sys.argv)
         app.setApplicationName("PrimeBooks")
 
+        # ✅ Set app-wide icon at runtime (controls taskbar, Alt+Tab, titlebar)
+        icon_path = find_icon()
+        if icon_path:
+            app.setWindowIcon(QIcon(icon_path))
+            logger.info(f"✅ App icon set from: {icon_path}")
+        else:
+            logger.warning("⚠️  No icon file found — window will use default icon")
+
         from django.conf import settings
         data_dir = settings.DESKTOP_DATA_DIR
 
@@ -2736,6 +2767,8 @@ def main():
         progress = QProgressDialog("Initializing PostgreSQL...", None, 0, 0)
         progress.setWindowTitle("PrimeBooks - Startup")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
+        if icon_path:
+            progress.setWindowIcon(QIcon(icon_path))
         progress.show()
 
         def on_postgres_progress(message):
@@ -2779,6 +2812,8 @@ def main():
             if not saved_token or not saved_company:
                 logger.info("No saved credentials found. Opening login...")
                 login_dialog = ThemedLoginDialog(theme=Theme.DARK)
+                if icon_path:
+                    login_dialog.setWindowIcon(QIcon(icon_path))
                 if login_dialog.exec() != QDialog.DialogCode.Accepted:
                     app.quit()
                     return
@@ -2794,6 +2829,8 @@ def main():
                 auth_manager.save_credentials(user_data, company_data, token)
 
                 sync_dialog = DataSyncDialog(subdomain, token, company_data)
+                if icon_path:
+                    sync_dialog.setWindowIcon(QIcon(icon_path))
                 sync_dialog.exec()
             else:
                 logger.info("Using saved credentials...")
@@ -2810,6 +2847,8 @@ def main():
                     auth_manager.logout()
 
                     login_dialog = ThemedLoginDialog(theme=Theme.DARK)
+                    if icon_path:
+                        login_dialog.setWindowIcon(QIcon(icon_path))
                     if login_dialog.exec() != QDialog.DialogCode.Accepted:
                         app.quit()
                         return
@@ -2825,6 +2864,8 @@ def main():
                     auth_manager.save_credentials(user_data, company_data, token)
 
                     sync_dialog = DataSyncDialog(subdomain, token, company_data)
+                    if icon_path:
+                        sync_dialog.setWindowIcon(QIcon(icon_path))
                     sync_dialog.exec()
 
                     # ✅ NEW: Reset sequences after initial sync (safety net)
@@ -2869,6 +2910,8 @@ def main():
             progress_dialog = QProgressDialog("Starting server...", None, 0, 0)
             progress_dialog.setWindowTitle("PrimeBooks - Starting Server")
             progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+            if icon_path:
+                progress_dialog.setWindowIcon(QIcon(icon_path))
             progress_dialog.show()
 
             logger.info(f"⏳ Waiting for server to start on port {port}...")
