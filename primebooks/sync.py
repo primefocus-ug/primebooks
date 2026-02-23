@@ -77,24 +77,6 @@ EXCLUDED_MODELS = {
     'company.Domain',
     'django_otp.Device',
     'otp_totp.TOTPDevice',
-    # Notifications: server-side concern, not needed on desktop
-    'notifications.NotificationCategory',
-    'notifications.NotificationTemplate',
-    'notifications.NotificationRule',
-    'notifications.NotificationPreference',
-    'notifications.Announcement',
-    'notifications.Notification',
-    'notifications.NotificationBatch',
-    'notifications.NotificationLog',
-    # Audit & login history: server-side records, too noisy for desktop
-    'accounts.AuditLog',
-    'accounts.LoginHistory',
-    'accounts.DataExportLog',
-    # Device security: tied to server sessions, not meaningful offline
-    'stores.DeviceFingerprint',
-    'stores.UserDeviceSession',
-    'stores.DeviceOperatorLog',
-    'stores.SecurityAlert',
 }
 
 
@@ -237,8 +219,20 @@ SYNC_MODEL_CONFIG = {
     'stores.StoreDevice': {
         'dependencies': ['stores.Store'],
     },
-    # DeviceFingerprint, UserDeviceSession, DeviceOperatorLog, SecurityAlert
-    # excluded — device security is server-side only (see EXCLUDED_MODELS)
+    'stores.DeviceFingerprint': {
+        'dependencies': ['stores.StoreDevice'],
+    },
+    'stores.UserDeviceSession': {
+        'dependencies': ['accounts.CustomUser', 'stores.StoreDevice'],
+        'download_only': True,
+    },
+    'stores.DeviceOperatorLog': {
+        'dependencies': ['stores.StoreDevice', 'accounts.CustomUser'],
+        'download_only': True,
+    },
+    'stores.SecurityAlert': {
+        'dependencies': ['stores.Store'],
+    },
 
     # ============================================================================
     # TIER 8: PRODUCTS & SERVICES
@@ -439,7 +433,34 @@ SYNC_MODEL_CONFIG = {
         'dependencies': ['customers.Customer', 'sales.Sale', 'sales.Payment', 'accounts.CustomUser'],
     },
 
-    # TIER 17: NOTIFICATIONS — excluded (server-side only, see EXCLUDED_MODELS)
+    # ============================================================================
+    # TIER 17: NOTIFICATIONS
+    # ============================================================================
+
+    'notifications.NotificationCategory': {
+        'dependencies': [],
+    },
+    'notifications.NotificationTemplate': {
+        'dependencies': ['notifications.NotificationCategory'],
+    },
+    'notifications.NotificationRule': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'notifications.NotificationPreference': {
+        'dependencies': ['accounts.CustomUser', 'notifications.NotificationCategory'],
+    },
+    'notifications.Announcement': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'notifications.Notification': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'notifications.NotificationBatch': {
+        'dependencies': [],
+    },
+    'notifications.NotificationLog': {
+        'dependencies': ['notifications.Notification'],
+    },
 
     # ============================================================================
     # TIER 18: MESSAGING
@@ -549,7 +570,15 @@ SYNC_MODEL_CONFIG = {
     'accounts.UserSignature': {
         'dependencies': ['accounts.CustomUser'],
     },
-    # AuditLog, LoginHistory, DataExportLog excluded — server-side only (see EXCLUDED_MODELS)
+    'accounts.AuditLog': {
+        'dependencies': ['accounts.CustomUser', 'stores.Store'],
+    },
+    'accounts.LoginHistory': {
+        'dependencies': ['accounts.CustomUser'],
+    },
+    'accounts.DataExportLog': {
+        'dependencies': ['accounts.CustomUser'],
+    },
     'errors.ErrorLog': {
         'dependencies': ['accounts.CustomUser'],
     },
@@ -1523,7 +1552,22 @@ class SyncManager:
 
                         if existing_obj is None:
                             try:
-                                existing_obj = model.objects.get(pk=obj_id)
+                                candidate = model.objects.get(pk=obj_id)
+                                # PK collision guard: if both records have sync_ids
+                                # and they differ, this is a different record that
+                                # happens to share the same integer PK (offline vs
+                                # server race). Do NOT overwrite — skip so the
+                                # server record gets created with a new PK instead.
+                                local_sync_id = getattr(candidate, 'sync_id', None)
+                                if (has_sync_id and record_sync_id and local_sync_id
+                                        and local_sync_id != record_sync_id):
+                                    logger.warning(
+                                        f"  ⚠️  {model_name} pk={obj_id}: PK collision — "
+                                        f"local sync_id={local_sync_id} ≠ server sync_id={record_sync_id}. "
+                                        f"Skipping server record to protect local offline data."
+                                    )
+                                    continue
+                                existing_obj = candidate
                             except model.DoesNotExist:
                                 pass
 
