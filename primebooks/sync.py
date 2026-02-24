@@ -973,7 +973,7 @@ class SyncManager:
             last_sync = self.get_last_sync_time()
 
             logger.info("=" * 70)
-            logger.info(f"UPLOADING CHANGES SINCE {last_sync}")
+            logger.info(f"📤 UPLOADING CHANGES SINCE {last_sync}")
             logger.info("=" * 70)
 
             if progress_callback:
@@ -982,15 +982,28 @@ class SyncManager:
             changes = self.collect_local_changes(last_sync)
 
             if not changes:
-                logger.info("No local changes to upload")
+                logger.info("📤 No local changes to upload")
                 return True
 
+            # Log detailed upload summary
             total_changed = sum(len(r) for r in changes.values())
-            logger.info(f"Uploading {total_changed} records across {len(changes)} model(s)")
+            logger.info(f"📦 Preparing to upload {total_changed} records across {len(changes)} model(s)")
+            
+            # Log per-model breakdown
+            for model_name, records in changes.items():
+                logger.info(f"  📄 {model_name}: {len(records)} records")
+                # Log first few record IDs for debugging
+                if records and len(records) <= 5:
+                    for i, record in enumerate(records[:3]):
+                        logger.debug(f"    {i+1}. PK: {record.get('pk')}, Sync ID: {record.get('fields', {}).get('sync_id', 'N/A')}")
+                elif records:
+                    logger.debug(f"    First: PK={records[0].get('pk')}, Last: PK={records[-1].get('pk')}")
 
             if progress_callback:
                 progress_callback(f"Uploading {total_changed} records...", 30)
 
+            # Make the upload request
+            logger.info(f"📡 Sending upload request to {self.server_url}/api/desktop/sync/upload/")
             response = self._make_request(
                 f"{self.server_url}/api/desktop/sync/upload/",
                 method='POST',
@@ -1002,31 +1015,70 @@ class SyncManager:
                 }
             )
 
-            if not response or response.status_code != 200:
-                logger.error(f"Upload failed: {getattr(response, 'status_code', 'no response')}")
+            if not response:
+                logger.error("❌ Upload failed: No response from server")
+                return False
+                
+            if response.status_code != 200:
+                logger.error(f"❌ Upload failed with status {response.status_code}")
+                try:
+                    error_data = response.json()
+                    logger.error(f"   Error: {error_data.get('error', 'Unknown error')}")
+                except:
+                    logger.error(f"   Response: {response.text[:200]}")
                 return False
 
             result = response.json()
             if not result.get("success"):
-                logger.error(f"Upload failed: {result.get('error')}")
+                logger.error(f"❌ Upload failed: {result.get('error')}")
                 return False
 
-            logger.info("Upload successful")
+            # Log upload success with details
+            logger.info("✅ Upload successful!")
+            
+            # Log what was uploaded/updated on server
+            upload_results = result.get("results", {})
+            if upload_results:
+                logger.info("📊 Upload results:")
+                for model_name, model_results in upload_results.items():
+                    created = model_results.get("created", 0)
+                    updated = model_results.get("updated", 0)
+                    failed = model_results.get("failed", 0)
+                    logger.info(f"  📄 {model_name}: {created} created, {updated} updated, {failed} failed")
+                    
+                    # Log any failures
+                    if failed > 0 and "errors" in model_results:
+                        for error in model_results["errors"][:5]:  # First 5 errors
+                            logger.warning(f"    ⚠️  {error}")
 
+            # Apply ID mappings with logging
             id_mappings = result.get("id_mappings", {})
             if id_mappings:
-                logger.info(f"Applying ID mappings for {len(id_mappings)} model(s)")
+                logger.info(f"🔄 Applying ID mappings for {len(id_mappings)} model(s)")
+                for model_name, mappings in id_mappings.items():
+                    logger.info(f"  📄 {model_name}: {len(mappings)} ID mappings")
                 self._apply_sync_id_mappings(id_mappings)
 
+            # Log sync marker updates
+            logger.info("📝 Updating sync markers...")
             self.reset_sequences()
+            
+            # Log final sync time
+            new_sync_time = self.get_last_sync_time()
+            logger.info(f"⏱️  Last sync time updated to: {new_sync_time}")
 
             if progress_callback:
                 progress_callback("Upload complete!", 60)
 
+            logger.info("=" * 70)
+            logger.info("✅ UPLOAD PHASE COMPLETE")
+            logger.info(f"   Total uploaded: {total_changed} records")
+            logger.info("=" * 70)
+
             return True
 
         except Exception as e:
-            logger.error("Upload error", exc_info=True)
+            logger.error(f"❌ Upload error: {e}", exc_info=True)
             return False
 
     def _apply_sync_id_mappings(self, id_mappings):
