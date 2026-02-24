@@ -172,6 +172,7 @@ class BackgroundSyncWorker(QThread):
             upload_success = self._upload_with_progress(sync_manager)
 
             if not upload_success:
+                logger.warning("⚠️ Upload failed — continuing with download anyway")
                 self.error_occurred.emit("Upload", "Failed to upload local changes")
                 self.sync_completed.emit(False, {'error': 'upload_failed'})
                 return
@@ -268,19 +269,21 @@ class BackgroundSyncWorker(QThread):
             self.sync_completed.emit(False, {'error': str(e)})
 
     def _upload_with_progress(self, sync_manager):
-        """Upload with progress tracking"""
         try:
             last_sync = sync_manager.get_last_sync_time()
+            logger.info(f"📤 _upload_with_progress — last_sync={last_sync}")
+            
             changes = sync_manager.collect_local_changes(last_sync)
 
             if not changes:
+                logger.info("📤 No local changes to upload")
                 self.overall_progress.emit(40, "No local changes to upload")
                 return True
 
             total_records = sum(len(records) for records in changes.values())
+            logger.info(f"📤 Uploading {total_records} records across {len(changes)} models")
             self.overall_progress.emit(15, f"Uploading {total_records} records...")
 
-            # Upload to server
             url = f"{sync_manager.server_url}/api/desktop/sync/upload/"
             upload_data = {
                 "tenant_id": self.tenant_id,
@@ -289,16 +292,44 @@ class BackgroundSyncWorker(QThread):
                 "last_sync": last_sync.isoformat() if last_sync else None,
             }
 
+            logger.info(f"📡 POST {url}")
             response = sync_manager._make_request(url, method='POST', data=upload_data)
 
-            if not response or response.status_code != 200:
+            if not response:
+                logger.error("❌ Upload failed: no response (connection error or timeout)")
                 return False
 
-            result = response.json()
-            return result.get("success", False)
+            logger.info(f"📥 Upload response: HTTP {response.status_code}")
+
+            if response.status_code != 200:
+                logger.error(f"❌ Upload HTTP {response.status_code}: {response.text[:300]}")
+                return False
+
+            try:
+                result = response.json()
+            except Exception as e:
+                logger.error(f"❌ Could not parse upload response: {e} — raw: {response.text[:300]}")
+                return False
+
+            logger.info(f"📥 Upload result: success={result.get('success')}")
+            
+            if not result.get('success'):
+                logger.error(f"❌ Server rejected upload: {result.get('error', 'no error message')}")
+                logger.error(f"   Full response: {result}")
+                return False
+
+            # Mark records as synced ONLY after server confirms
+            logger.info("✅ Upload confirmed — marking records as synced")
+            with __import__('django_tenants.utils', fromlist=['schema_context']).schema_context(self.schema_name):
+                for model_name, records in changes.items():
+                    ids = [r['pk'] for r in records]
+                    sync_manager._mark_as_synced(model_name, ids)
+
+            logger.info(f"✅ Upload complete: {total_records} records")
+            return True
 
         except Exception as e:
-            logger.error(f"Upload error: {e}")
+            logger.error(f"❌ Upload error: {e}", exc_info=True)
             return False
 
     def _download_with_progress(self, sync_manager):
