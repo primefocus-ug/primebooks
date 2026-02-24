@@ -159,6 +159,11 @@ urlpatterns += [
 
     # Credit/Debit Note Applications (T111, T112, T113, T114, T118, T120)
     path('credit-notes/applications/', version.credit_note_applications_view, name='credit_note_applications'),
+    path(
+        'credit-notes/<str:application_id>/print/',
+        version.print_credit_note,
+        name='print_credit_note',
+    ),
     path('credit-notes/applications/<str:application_id>/', version.credit_note_application_detail_view,
          name='credit_note_application_detail'),
     path('credit-notes/approve/<str:application_id>/', version.approve_credit_note_application,

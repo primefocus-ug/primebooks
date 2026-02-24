@@ -1020,6 +1020,248 @@ def credit_note_application_detail_view(request, application_id):
         messages.error(request, f"Error: {str(e)}")
         return redirect('efris:credit_note_applications')
 
+import qrcode
+import io
+import base64
+import logging
+
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import redirect
+from django.http import HttpResponse
+from django.shortcuts import render
+from django.contrib import messages
+
+logger = logging.getLogger(__name__)
+
+
+@login_required
+def print_credit_note(request, application_id):
+    """
+    Render a printable credit note page — mirrors print_receipt() pattern.
+    Calls T112 + T118 to get full data, generates QR code, returns HTML.
+
+    URL pattern to add to efris/urls.py:
+        path('credit-notes/<str:application_id>/print/', views.print_credit_note, name='print_credit_note'),
+
+    Usage in template (opens in new tab):
+        <a href="{% url 'efris:print_credit_note' application_id %}" target="_blank" class="btn btn-primary">
+            <i class="fas fa-print me-2"></i>Print Credit Note
+        </a>
+    """
+    company = request.tenant
+
+    if not company.efris_enabled:
+        messages.error(request, "EFRIS is not enabled for your company")
+        return redirect('dashboard')
+
+    try:
+        client = EnhancedEFRISAPIClient(company)
+
+        # ── T112: Basic application info ─────────────────────────────────
+        basic_result = client.t112_query_credit_note_application_detail(application_id)
+
+        if not basic_result.get('success'):
+            error = basic_result.get('error') or "Unknown error"
+            messages.error(request, f"Failed to load application: {error}")
+            return redirect('efris:credit_note_applications')
+
+        application_data = basic_result.get('application_detail', {})
+
+        # ── DEBUG: Log full T112 response to find antiFakeCode field ─────
+        logger.info(f"T112 FULL RAW for {application_id}: {application_data}")
+        logger.info(f"T112 ALL KEYS: {list(application_data.keys())}")
+        for key, value in application_data.items():
+            logger.info(f"  T112 [{key}] = {value}")
+
+        EFRIS_STATUS_MAP = {
+            '101': 'Approved',
+            '102': 'Submitted',
+            '103': 'Rejected',
+            '104': 'Voided',
+        }
+
+        approve_status = str(
+            application_data.get('approveStatus') or
+            application_data.get('approveStatusCode') or ''
+        ).strip()
+
+        reason_code = str(
+            application_data.get('selectRefundReasonCode') or
+            application_data.get('reasonCode') or
+            application_data.get('invoiceApplyCategoryCode') or ''
+        )
+
+        reason_codes = {
+            '101': 'Return of products due to expiry or damage',
+            '102': 'Cancellation of the purchase',
+            '103': 'Invoice amount wrongly stated',
+            '104': 'Partial or complete waive off',
+            '105': 'Others',
+        }
+
+        application = {
+            'application_id':      application_data.get('id') or application_id,
+            'original_invoice_no': application_data.get('oriInvoiceNo') or application_data.get('toinvoiceNo'),
+            'credit_note_no':      application_data.get('referenceNo'),
+            'refund_invoice_no':   application_data.get('refundInvoiceNo'),
+            'application_date':    application_data.get('applicationTime'),
+            'issued_date':         application_data.get('refundIssuedDate') or application_data.get('issuedDate'),
+            'status':              EFRIS_STATUS_MAP.get(approve_status, f'Unknown ({approve_status})'),
+            'approve_status':      approve_status,
+            'currency':            application_data.get('currency') or 'UGX',
+            'reason_code':         reason_code,
+            'reason_description':  reason_codes.get(reason_code, reason_code),
+            'remarks':             application_data.get('remarks'),
+            'applicant_name':      application_data.get('legalName'),
+            'applicant_tin':       application_data.get('tin'),
+            'applicant_address':   application_data.get('address'),
+            'buyer_name':          application_data.get('buyerLegalName'),
+            'buyer_tin':           application_data.get('buyerTin'),
+            'buyer_email':         application_data.get('buyerEmailAddress') or application_data.get('buyerEmail'),
+            'buyer_mobile':        application_data.get('buyerMobilePhone'),
+            'contact_name':        application_data.get('contactName'),
+            'contact_mobile':      application_data.get('contactMobileNum') or application_data.get('mobilePhone'),
+            'contact_email':       application_data.get('contactEmail'),
+            'approve_remarks':     application_data.get('approveRemarks'),
+            'task_id':             application_data.get('taskId'),
+        }
+
+        # ── T118: Goods / summary / tax / payment detail ──────────────────
+        goods_details   = []
+        tax_details     = []
+        payment_methods = []
+        summary         = {}
+
+        detail_result = client.t118_query_credit_debit_note_detail(application_id)
+
+        # ── DEBUG: Log full T118 raw response ────────────────────────────
+        raw = detail_result.get('raw_data', {})
+        logger.info(f"T118 FULL RAW for {application_id}: {raw}")
+        logger.info(f"T118 basicInformation: {raw.get('basicInformation', {})}")
+        logger.info(f"T118 taxDetails[0]: {raw.get('taxDetails', [{}])[0]}")
+        logger.info(f"T118 goodsDetails[0]: {raw.get('goodsDetails', [{}])[0]}")
+
+        if detail_result.get('success'):
+            goods_details   = detail_result.get('goods_details', [])
+            tax_details     = detail_result.get('tax_details', [])
+            payment_methods = detail_result.get('payment_methods', [])
+
+            ds = detail_result.get('summary', {})
+            summary = {
+                'gross_amount':          float(ds.get('grossAmount')         or 0),
+                'net_amount':            float(ds.get('netAmount')           or 0),
+                'tax_amount':            float(ds.get('taxAmount')           or 0),
+                'previous_gross_amount': float(ds.get('previousGrossAmount') or 0),
+                'previous_net_amount':   float(ds.get('previousNetAmount')   or 0),
+                'previous_tax_amount':   float(ds.get('previousTaxAmount')   or 0),
+                'remarks':               ds.get('remarks', ''),
+            }
+
+            application['net_amount']   = summary['net_amount']
+            application['tax_amount']   = summary['tax_amount']
+            application['gross_amount'] = summary['gross_amount']
+
+        # ── QR Code generation — identical URL format as print_receipt ─────
+        # EFRIS identifies it as a credit note from the invoice number itself
+        # Same as: f"{base_url}/site_mobile/#/invoiceValidation?invoiceNo={sale.efris_invoice_number}&antiFakeCode={sale.verification_code}"
+        # antiFakeCode = verification_code from the original Sale record in the database
+        # Same as sale.verification_code used in print_receipt and SaleDetailView
+        original_invoice_no = application.get('original_invoice_no') or ''
+        refund_invoice_no   = application.get('refund_invoice_no') or ''
+        anti_fake_code      = ''
+
+        if original_invoice_no:
+            try:
+                from sales.models import Sale as SaleModel
+                original_sale = SaleModel.objects.filter(
+                    efris_invoice_number=original_invoice_no
+                ).first()
+                if original_sale and original_sale.verification_code:
+                    anti_fake_code = original_sale.verification_code
+                    logger.info(f"Found verification_code for {original_invoice_no}: {anti_fake_code}")
+                else:
+                    logger.warning(f"No Sale found with efris_invoice_number={original_invoice_no}")
+            except Exception as e:
+                logger.warning(f"Could not look up original sale: {e}")
+        qr_data             = None
+        qr_image_src        = None
+
+        qr_invoice_no = refund_invoice_no or original_invoice_no
+        if qr_invoice_no and anti_fake_code:
+            try:
+                efris_config  = getattr(company, 'effective_efris_config', {}) or {}
+                is_production = efris_config.get('is_production', False)
+
+                if is_production:
+                    base_url = "https://efris.ura.go.ug"
+                    qr_data  = f"{base_url}/site_mobile/#/invoiceValidation?invoiceNo={qr_invoice_no}&antiFakeCode={anti_fake_code}"
+                else:
+                    base_url = "https://efristest.ura.go.ug"
+                    qr_data  = f"{base_url}/site_new/#/invoiceValidation?invoiceNo={qr_invoice_no}&antiFakeCode={anti_fake_code}"
+
+            except Exception as e:
+                logger.warning(f"Could not build EFRIS URL: {e}")
+                qr_data = (
+                    f"Original Invoice: {original_invoice_no}\n"
+                    f"Applicant TIN: {application.get('applicant_tin', '')}\n"
+                    f"Amount: {summary.get('gross_amount', 0)} {application.get('currency', 'UGX')}"
+                )
+        else:
+            qr_data = (
+                f"Application ID: {application_id}\n"
+                f"Original Invoice: {original_invoice_no}\n"
+                f"Status: {application.get('status', '')}\n"
+                f"Applicant TIN: {application.get('applicant_tin', '')}"
+            )
+
+        # Generate QR image → base64 (same as print_receipt)
+        try:
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=8,
+                border=4,
+            )
+            qr.add_data(qr_data)
+            qr.make(fit=True)
+
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            buf    = io.BytesIO()
+            qr_img.save(buf, format='PNG', optimize=True)
+            buf.seek(0)
+
+            qr_base64    = base64.b64encode(buf.getvalue()).decode()
+            qr_image_src = f"data:image/png;base64,{qr_base64}"
+
+        except Exception as e:
+            logger.error(f"QR code generation failed: {e}")
+            qr_image_src = None
+
+        # ── Build context ─────────────────────────────────────────────────
+        context = {
+            'application':     application,
+            'application_id':  application_id,
+            'goods_details':   goods_details,
+            'tax_details':     tax_details,
+            'payment_methods': payment_methods,
+            'summary':         summary,
+            'company':         company,
+            'qr_image_src':    qr_image_src,
+            'qr_data':         qr_data,
+            'anti_fake_code':  anti_fake_code,
+        }
+
+        return render(request, 'efris/credit_note_print.html', context)
+
+    except Exception as e:
+        logger.error(f"print_credit_note failed: {e}", exc_info=True)
+        messages.error(request, f"Error generating print view: {str(e)}")
+        return redirect('efris:credit_note_applications')
+
+
+
+
+
 
 import json
 

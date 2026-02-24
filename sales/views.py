@@ -1341,7 +1341,7 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
 
         if is_production:
             # Production EFRIS URL
-            base_url = "https://efrisws.ura.go.ug/"
+            base_url = "https://efris.ura.go.ug/"
         else:
             # Test EFRIS URL (from your logs)
             base_url = "https://efristest.ura.go.ug"
@@ -5106,12 +5106,13 @@ def print_receipt(request, sale_id):
             is_production = store_config.get('is_production', False)
 
             if is_production:
-                base_url = "https://efrisws.ura.go.ug/"
+                base_url = "https://efris.ura.go.ug/"
+                # Build the verification URL using your pattern
+                qr_data = f"{base_url}/site_mobile/#/invoiceValidation?invoiceNo={sale.efris_invoice_number}&antiFakeCode={sale.verification_code}"
             else:
                 base_url = "https://efristest.ura.go.ug"
-
-            # Build the verification URL using your pattern
-            qr_data = f"{base_url}/site_new/#/invoiceValidation?invoiceNo={sale.efris_invoice_number}&antiFakeCode={sale.verification_code}"
+                # Build the verification URL using your pattern
+                qr_data = f"{base_url}/site_new/#/invoiceValidation?invoiceNo={sale.efris_invoice_number}&antiFakeCode={sale.verification_code}"
 
         except Exception as e:
             # Fallback to basic data if URL generation fails
@@ -5265,12 +5266,13 @@ def print_receipt(request, sale_id):
             is_production = store_config.get('is_production', False)
 
             if is_production:
-                base_url = "https://efrisws.ura.go.ug/"
+                base_url = "https://efris.ura.go.ug/"
+                context[
+                    'efris_verification_url'] = f"{base_url}/site_mobile/#/invoiceValidation?invoiceNo={sale.efris_invoice_number}&antiFakeCode={sale.verification_code}"
             else:
                 base_url = "https://efristest.ura.go.ug"
-
-            context[
-                'efris_verification_url'] = f"{base_url}/site_new/#/invoiceValidation?invoiceNo={sale.efris_invoice_number}&antiFakeCode={sale.verification_code}"
+                context[
+                    'efris_verification_url'] = f"{base_url}/site_new/#/invoiceValidation?invoiceNo={sale.efris_invoice_number}&antiFakeCode={sale.verification_code}"
 
         except Exception as e:
             # Log but continue without URL
