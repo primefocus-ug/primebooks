@@ -145,6 +145,8 @@ urlpatterns = [
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/company/', include('company.api_urls')),
     path('pos/', include('pos_app.urls')),
+    path("api/v1/",       include("sync.urls")),
+    path("api/desk/",  include("sync.desktop_urls")),
     path('api/', include('accounts.api_urls')),
     path('api/', include('primebooks.api_urls')),
     path('api/v1/', include('sales.api_urls')),

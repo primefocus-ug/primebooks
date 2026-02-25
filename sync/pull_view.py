@@ -1,0 +1,285 @@
+"""
+sync/pull_view.py
+=================
+GET /api/v1/sync/pull/
+
+Params:
+  last_pulled_at  - Unix timestamp (float). 0 or absent = full pull.
+  tables          - Comma-separated list of tables to pull.
+                    Defaults to all tables if absent.
+
+Response:
+  {
+    "timestamp": 1234567890.123,        ← server time, store as new last_pulled_at
+    "changes": {
+      "stores": {
+        "created": [{...}, ...],
+        "updated": [{...}, ...],
+        "deleted": ["<sync_id>", ...]
+      },
+      "categories": { ... },
+      "suppliers":  { ... },
+      "products":   { ... },
+      "stock":      { ... },
+      "stock_movements": { ... },
+      "customers":  { ... },
+      "sales":      { ... },
+      "sale_items": { ... },
+      "expenses":   { ... }
+    }
+  }
+
+Delta strategy:
+  - created: updated_at >= last_pulled_at AND created_at >= last_pulled_at
+             (or sync_id was NULL and we just assigned one → always re-send)
+  - updated: updated_at >= last_pulled_at AND created_at < last_pulled_at
+  - deleted: is_deleted=True AND updated_at >= last_pulled_at
+
+FK resolution:
+  All FK fields are serialized as sync_id strings so the desktop never
+  needs to know Django integer PKs.
+
+NULL sync_id handling:
+  Records with sync_id=NULL get a deterministic UUID auto-assigned.
+  On first pull these always appear in "created" (their synced_at is null).
+"""
+
+import time
+import logging
+from datetime import datetime, timezone as tz
+
+from django.utils import timezone
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from .utils import unix_to_dt, now_unix, ensure_sync_id
+from .serializers import (
+    serialize_store, serialize_category, serialize_supplier,
+    serialize_product, serialize_stock, serialize_stock_movement,
+    serialize_customer, serialize_sale, serialize_sale_item,
+    serialize_expense,
+)
+
+logger = logging.getLogger(__name__)
+
+ALL_TABLES = [
+    "stores", "categories", "suppliers", "products",
+    "stock", "stock_movements", "customers",
+    "sales", "sale_items", "expenses",
+]
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def sync_pull(request):
+    """
+    Main pull endpoint. Returns all changes since last_pulled_at.
+    """
+    try:
+        raw_ts = request.GET.get("last_pulled_at", "0")
+        last_pulled_at = float(raw_ts) if raw_ts else 0.0
+    except (ValueError, TypeError):
+        last_pulled_at = 0.0
+
+    # Which tables the client wants
+    tables_param = request.GET.get("tables", "")
+    if tables_param:
+        requested_tables = [t.strip() for t in tables_param.split(",") if t.strip()]
+        # Validate — only allow known tables
+        requested_tables = [t for t in requested_tables if t in ALL_TABLES]
+    else:
+        requested_tables = ALL_TABLES
+
+    # Grab tenant schema name from the request (django-tenants sets this)
+    schema_name = _get_schema_name(request)
+    since_dt = unix_to_dt(last_pulled_at) if last_pulled_at > 0 else None
+
+    logger.info(
+        f"Pull request: user={request.user.email}, "
+        f"schema={schema_name}, "
+        f"since={last_pulled_at}, "
+        f"tables={requested_tables}"
+    )
+
+    server_timestamp = now_unix()
+    changes = {}
+
+    for table in requested_tables:
+        try:
+            handler = TABLE_HANDLERS.get(table)
+            if handler:
+                changes[table] = handler(since_dt, schema_name)
+        except Exception as e:
+            logger.error(f"Pull error for table '{table}': {e}", exc_info=True)
+            changes[table] = {"created": [], "updated": [], "deleted": []}
+
+    total = sum(
+        len(v.get("created", [])) + len(v.get("updated", [])) + len(v.get("deleted", []))
+        for v in changes.values()
+    )
+    logger.info(f"Pull response: {total} total records across {len(changes)} tables")
+
+    return Response({
+        "timestamp": server_timestamp,
+        "changes": changes,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-table pull handlers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _pull_stores(since_dt, schema_name):
+    from stores.models import Store
+    return _build_changes(Store, since_dt, schema_name, serialize_store, "stores")
+
+
+def _pull_categories(since_dt, schema_name):
+    from inventory.models import Category
+    return _build_changes(Category, since_dt, schema_name, serialize_category, "categories")
+
+
+def _pull_suppliers(since_dt, schema_name):
+    from inventory.models import Supplier
+    return _build_changes(Supplier, since_dt, schema_name, serialize_supplier, "suppliers")
+
+
+def _pull_products(since_dt, schema_name):
+    from inventory.models import Product
+    qs = Product.objects.select_related("category", "supplier")
+    return _build_changes_qs(qs, since_dt, schema_name, serialize_product, "products")
+
+
+def _pull_stock(since_dt, schema_name):
+    from inventory.models import Stock
+    qs = Stock.objects.select_related("product", "store")
+    return _build_changes_qs(qs, since_dt, schema_name, serialize_stock, "stock")
+
+
+def _pull_stock_movements(since_dt, schema_name):
+    from inventory.models import StockMovement
+    qs = StockMovement.objects.select_related("product", "store")
+    return _build_changes_qs(qs, since_dt, schema_name, serialize_stock_movement, "stock_movements")
+
+
+def _pull_customers(since_dt, schema_name):
+    from customers.models import Customer
+    return _build_changes(Customer, since_dt, schema_name, serialize_customer, "customers")
+
+
+def _pull_sales(since_dt, schema_name):
+    from sales.models import Sale
+    qs = Sale.objects.select_related("store", "customer")
+    return _build_changes_qs(qs, since_dt, schema_name, serialize_sale, "sales")
+
+
+def _pull_sale_items(since_dt, schema_name):
+    from sales.models import SaleItem
+    qs = SaleItem.objects.select_related("sale", "product")
+    return _build_changes_qs(qs, since_dt, schema_name, serialize_sale_item, "sale_items")
+
+
+def _pull_expenses(since_dt, schema_name):
+    try:
+        from expenses.models import Expense
+        qs = Expense.objects.select_related("store")
+        return _build_changes_qs(qs, since_dt, schema_name, serialize_expense, "expenses")
+    except ImportError:
+        return {"created": [], "updated": [], "deleted": []}
+
+
+TABLE_HANDLERS = {
+    "stores":          _pull_stores,
+    "categories":      _pull_categories,
+    "suppliers":       _pull_suppliers,
+    "products":        _pull_products,
+    "stock":           _pull_stock,
+    "stock_movements": _pull_stock_movements,
+    "customers":       _pull_customers,
+    "sales":           _pull_sales,
+    "sale_items":      _pull_sale_items,
+    "expenses":        _pull_expenses,
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Generic queryset → {created, updated, deleted} builder
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_changes(model_class, since_dt, schema_name, serializer_fn, table_name):
+    """Build changes dict for a simple model (no prefetch needed)."""
+    return _build_changes_qs(
+        model_class.objects.all(),
+        since_dt, schema_name, serializer_fn, table_name,
+    )
+
+
+def _build_changes_qs(queryset, since_dt, schema_name, serializer_fn, table_name):
+    """
+    Split a queryset into created / updated / deleted buckets.
+
+    NULL sync_id records: their updated_at may predate since_dt, but because
+    their sync_id was never sent, we must include them. We handle this by
+    always including records where sync_id IS NULL in the 'created' bucket,
+    then auto-assigning their sync_ids via ensure_sync_id().
+    """
+    created = []
+    updated = []
+    deleted = []
+
+    model = queryset.model
+    has_deleted = _has_field(model, "is_deleted")
+    has_updated = _has_field(model, "updated_at")
+    has_created = _has_field(model, "created_at")
+
+    if since_dt and has_updated:
+        # Delta pull: records changed since last pull
+        qs_changed = queryset.filter(updated_at__gte=since_dt)
+        # Also grab any records that still have sync_id=NULL (never pulled)
+        if _has_field(model, "sync_id"):
+            qs_null = queryset.filter(sync_id__isnull=True)
+            # Union approach — combine without duplicates
+            changed_pks = set(qs_changed.values_list("pk", flat=True))
+            null_pks = set(qs_null.values_list("pk", flat=True))
+            all_pks = changed_pks | null_pks
+            qs_to_process = queryset.filter(pk__in=all_pks)
+        else:
+            qs_to_process = qs_changed
+    else:
+        # Full pull: everything
+        qs_to_process = queryset
+
+    for obj in qs_to_process.iterator(chunk_size=500):
+        try:
+            is_new_to_desktop = (
+                not obj.sync_id  # Never had a sync_id → brand new to desktop
+                or (has_created and since_dt and obj.created_at >= since_dt)
+            )
+
+            if has_deleted and obj.is_deleted:
+                # Include sync_id so desktop can soft-delete locally
+                sid = ensure_sync_id(obj, table_name, schema_name)
+                deleted.append(sid)
+            elif is_new_to_desktop or not since_dt:
+                created.append(serializer_fn(obj, schema_name))
+            else:
+                updated.append(serializer_fn(obj, schema_name))
+        except Exception as e:
+            logger.warning(f"Serialization error {table_name}#{obj.pk}: {e}")
+
+    return {"created": created, "updated": updated, "deleted": deleted}
+
+
+def _has_field(model, field_name: str) -> bool:
+    return hasattr(model, field_name) or any(
+        f.name == field_name for f in model._meta.get_fields()
+        if hasattr(f, "name")
+    )
+
+
+def _get_schema_name(request) -> str:
+    """Extract tenant schema name from request (django-tenants)."""
+    if hasattr(request, "tenant"):
+        return request.tenant.schema_name
+    return getattr(request, "schema_name", "")
