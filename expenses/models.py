@@ -8,10 +8,12 @@ from taggit.managers import TaggableManager
 from datetime import datetime, timedelta
 import uuid
 
+from primebooks.mixins import OfflineIDMixin
+
 User = get_user_model()
 
 
-class Expense(models.Model):
+class Expense(OfflineIDMixin, models.Model):
     """Streamlined expense tracking model"""
 
     PAYMENT_METHODS = [
@@ -74,7 +76,7 @@ class Expense(models.Model):
         return f"{self.description} - ${self.amount}"
 
 
-class Budget(models.Model):
+class Budget(OfflineIDMixin, models.Model):
     """Budget tracking with smart alerts"""
     sync_id = models.UUIDField(
         default=uuid.uuid4,

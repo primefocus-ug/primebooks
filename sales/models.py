@@ -13,6 +13,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from inventory.models import Stock, StockMovement
 from datetime import timedelta
 import logging
+from primebooks.mixins import OfflineIDMixin
 
 logger = logging.getLogger(__name__)
 
@@ -493,7 +494,7 @@ from primebooks.mixins import OfflineIDMixin
 logger = logging.getLogger(__name__)
 
 
-class Sale(models.Model, EFRISSaleMixin):
+class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
     # ==================== NEW: Document Type System ====================
     DOCUMENT_TYPE_CHOICES = [
         ('RECEIPT', 'Receipt'),
@@ -1460,7 +1461,7 @@ class Sale(models.Model, EFRISSaleMixin):
             return None
 
 
-class SaleItem(models.Model):
+class SaleItem(OfflineIDMixin, models.Model):
     TAX_RATE_CHOICES = [
         ('A', 'Standard rate (18%)'),
         ('B', 'Zero rate (0%)'),
@@ -1922,7 +1923,7 @@ class SaleItem(models.Model):
 
 
 # ==================== ENHANCED: Receipt Model ====================
-class Receipt(models.Model):
+class Receipt(OfflineIDMixin, models.Model):
     """Receipt document for immediate payment sales"""
     sale = models.OneToOneField(
         Sale,
@@ -2025,7 +2026,7 @@ class Receipt(models.Model):
         self.save(update_fields=['print_count', 'is_duplicate'])
 
 
-class Payment(models.Model):
+class Payment(OfflineIDMixin, models.Model):
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name='payments')
     sync_id = models.UUIDField(
         default=uuid.uuid4,
@@ -2192,7 +2193,7 @@ class Payment(models.Model):
             logger.info(f"Updated sale {sale.id} payment status to {new_payment_status}")
 
 
-class Cart(models.Model):
+class Cart(OfflineIDMixin, models.Model):
     STATUS_CHOICES = [
         ('OPEN', 'Open'),
         ('CONFIRMED', 'Confirmed'),
@@ -2362,7 +2363,7 @@ class Cart(models.Model):
             pass  # Don't let WebSocket errors break cart operations
 
 
-class CartItem(models.Model):
+class CartItem(OfflineIDMixin, models.Model):
     TAX_RATE_CHOICES = SaleItem.TAX_RATE_CHOICES
     sync_id = models.UUIDField(
         default=uuid.uuid4,

@@ -6,13 +6,14 @@ from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from django.urls import reverse
 import uuid
+from primebooks.mixins import OfflineIDMixin
 from django.template import Template, Context
 from django.template.exceptions import TemplateSyntaxError
 
 User = get_user_model()
 
 
-class Announcement(models.Model):
+class Announcement(OfflineIDMixin, models.Model):
     """
     System-wide announcements
     """
@@ -132,7 +133,7 @@ class Announcement(models.Model):
         return True
 
 
-class NotificationCategory(models.Model):
+class NotificationCategory(OfflineIDMixin, models.Model):
     """Categories for organizing notifications"""
 
     CATEGORY_TYPES = [
@@ -183,7 +184,7 @@ class NotificationCategory(models.Model):
         return self.name
 
 
-class NotificationTemplate(models.Model):
+class NotificationTemplate(OfflineIDMixin, models.Model):
     """Templates for notification messages"""
 
     EVENT_TYPES = [
@@ -339,7 +340,7 @@ class NotificationTemplate(models.Model):
             }
 
 
-class Notification(models.Model):
+class Notification(OfflineIDMixin, models.Model):
     """Individual notifications sent to users"""
 
     NOTIFICATION_TYPES = [
@@ -495,7 +496,7 @@ class Notification(models.Model):
         return timesince(self.created_at)
 
 
-class NotificationPreference(models.Model):
+class NotificationPreference(OfflineIDMixin, models.Model):
     """User preferences for notifications"""
 
     user = models.OneToOneField(
@@ -600,7 +601,7 @@ class NotificationPreference(models.Model):
         return True
 
 
-class NotificationBatch(models.Model):
+class NotificationBatch(OfflineIDMixin, models.Model):
     """Batch notifications for bulk sending"""
     sync_id = models.UUIDField(
         default=uuid.uuid4,
@@ -678,7 +679,7 @@ class NotificationBatch(models.Model):
         return f"{self.name or 'Batch'} ({self.recipient_count} recipients)"
 
 
-class NotificationLog(models.Model):
+class NotificationLog(OfflineIDMixin, models.Model):
     """Log of all notification deliveries"""
 
     notification = models.ForeignKey(
@@ -750,7 +751,7 @@ class NotificationLog(models.Model):
         return self.status == 'FAILED' and self.retry_count < self.max_retries
 
 
-class NotificationRule(models.Model):
+class NotificationRule(OfflineIDMixin, models.Model):
     """Automated notification rules based on triggers"""
     sync_id = models.UUIDField(
         default=uuid.uuid4,

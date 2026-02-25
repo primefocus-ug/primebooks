@@ -11,13 +11,14 @@ from .efris import EFRISProductMixin
 from primebooks.mixins import OfflineIDMixin
 import logging
 import uuid
+from primebooks.mixins import OfflineIDMixin
 
 logger=logging.getLogger(__name__)
 
 User = get_user_model()
 
 
-class ImportSession(models.Model):
+class ImportSession(OfflineIDMixin, models.Model):
     """Track import sessions and their results"""
     STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -82,7 +83,7 @@ class ImportSession(models.Model):
         return 0
 
 
-class Category(models.Model):
+class Category(OfflineIDMixin, models.Model):
     CATEGORY_TYPE_CHOICES = [
         ('product', 'Product Category'),
         ('service', 'Service Category'),
@@ -417,7 +418,7 @@ class Category(models.Model):
         """Get only service categories"""
         return cls.objects.filter(category_type='service', is_active=True)
 
-class Supplier(models.Model):
+class Supplier(OfflineIDMixin, models.Model):
     name = models.CharField(
         max_length=200,
         verbose_name=_("Supplier Name")
@@ -490,7 +491,7 @@ class Supplier(models.Model):
             'supplier_contact': self.phone
         }
 
-class Product(models.Model, EFRISProductMixin):
+class Product(OfflineIDMixin, models.Model, EFRISProductMixin):
     TAX_RATE_CHOICES = [
         ('A', 'Standard rate (18%)'),
         ('B', 'Zero rate (0%)'),
@@ -1794,7 +1795,7 @@ class Product(models.Model, EFRISProductMixin):
         return data
 
 
-class Service(models.Model):
+class Service(OfflineIDMixin, models.Model):
     TAX_RATE_CHOICES = [
         ('A', 'Standard rate (18%)'),
         ('B', 'Zero rate (0%)'),
@@ -2285,7 +2286,7 @@ class Service(models.Model):
         except (Company.DoesNotExist, AttributeError):
             return self.tax_rate
 
-class Stock(models.Model):
+class Stock(OfflineIDMixin, models.Model):
     product = models.ForeignKey(
         'inventory.Product',
         on_delete=models.CASCADE,
@@ -2522,7 +2523,7 @@ class Stock(models.Model):
 
 
 
-class StockMovement(models.Model):
+class StockMovement(OfflineIDMixin, models.Model):
     MOVEMENT_TYPES = [
         ('PURCHASE', 'Purchase'),
         ('SALE', 'Sale'),
@@ -2720,7 +2721,7 @@ class StockMovement(models.Model):
             logger.error(f"Error manually syncing movement to EFRIS: {e}")
             return False
 
-class ImportLog(models.Model):
+class ImportLog(OfflineIDMixin, models.Model):
     """Detailed log entries for import operations"""
     LOG_LEVELS = [
         ('info', 'Info'),
@@ -2748,7 +2749,7 @@ class ImportLog(models.Model):
     def __str__(self):
         return f"{self.level.upper()}: {self.message[:50]}"
 
-class ImportResult(models.Model):
+class ImportResult(OfflineIDMixin, models.Model):
     """Store detailed results for each imported item"""
     RESULT_TYPES = [
         ('created', 'Created'),
@@ -2790,7 +2791,7 @@ class ImportResult(models.Model):
         return f"{self.result_type}: {self.product_name or 'Row ' + str(self.row_number)}"
 
 
-class StockTransfer(models.Model):
+class StockTransfer(OfflineIDMixin, models.Model):
     """Track stock transfers between stores"""
     STATUS_CHOICES = [
         ('pending', 'Pending'),

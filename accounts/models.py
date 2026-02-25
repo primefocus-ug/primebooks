@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 import uuid
+from primebooks.mixins import OfflineIDMixin
 
 
 def validate_phone_number(value):
@@ -118,7 +119,7 @@ class CustomUserManager(BaseUserManager):
         return self.filter(company=company, is_hidden=False)
 
 
-class CustomUser(AbstractBaseUser, PermissionsMixin):
+class CustomUser(OfflineIDMixin,AbstractBaseUser, PermissionsMixin):
     # Core Fields
     sync_id = models.UUIDField(
         default=uuid.uuid4,
@@ -800,7 +801,7 @@ class RoleManager(models.Manager):
         return queryset.filter(priority__lte=max_priority)
 
 
-class Role(models.Model):
+class Role(OfflineIDMixin, models.Model):
     sync_id = models.UUIDField(
         default=uuid.uuid4,
         unique=True,
@@ -966,7 +967,7 @@ class Role(models.Model):
         return self.priority >= other_role.priority
 
 
-class RoleHistory(models.Model):
+class RoleHistory(OfflineIDMixin, models.Model):
     """Track changes to roles for auditing."""
 
     ACTION_CHOICES = [
@@ -1020,7 +1021,7 @@ class RoleHistory(models.Model):
         return f"{self.role.group.name} - {self.get_action_display()} by {self.user}"
 
 
-class AuditLogManager(models.Manager):
+class AuditLogManager(OfflineIDMixin, models.Manager):
     """Custom manager for AuditLog with filtering methods"""
 
     def for_user(self, user):
@@ -1043,7 +1044,7 @@ class AuditLogManager(models.Manager):
         return self.filter(timestamp__gte=cutoff)
 
 
-class AuditLog(models.Model):
+class AuditLog(OfflineIDMixin, models.Model):
     ACTION_TYPES = [
         # User Management
         ('user_created', _('User Created')),
@@ -1372,7 +1373,7 @@ class AuditLog(models.Model):
         )
 
 
-class LoginHistory(models.Model):
+class LoginHistory(OfflineIDMixin, models.Model):
     STATUS_CHOICES = [
         ('success', _('Success')),
         ('failed', _('Failed')),
@@ -1484,7 +1485,7 @@ class LoginHistory(models.Model):
         return None
 
 
-class DataExportLog(models.Model):
+class DataExportLog(OfflineIDMixin, models.Model):
     EXPORT_TYPES = [
         ('csv', 'CSV'),
         ('excel', 'Excel'),

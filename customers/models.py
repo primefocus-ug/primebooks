@@ -5,10 +5,11 @@ from django.core.validators import RegexValidator
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 import uuid
+from primebooks.mixins import OfflineIDMixin
 from .efris import  EFRISCustomerMixin
 
 
-class Customer(models.Model,EFRISCustomerMixin):
+class Customer(OfflineIDMixin, models.Model,EFRISCustomerMixin):
     CUSTOMER_TYPES = [
         ('INDIVIDUAL', _('Individual')),
         ('BUSINESS', _('Business')),
@@ -490,7 +491,7 @@ class Customer(models.Model,EFRISCustomerMixin):
         self.save()
 
 
-class CustomerCreditStatement(models.Model):
+class CustomerCreditStatement(OfflineIDMixin, models.Model):
     """Track all credit transactions for a customer"""
 
     TRANSACTION_TYPES = [
@@ -553,7 +554,7 @@ class CustomerCreditStatement(models.Model):
     def __str__(self):
         return f"{self.customer.name} - {self.transaction_type} - {self.amount}"
 
-class CustomerGroup(models.Model):
+class CustomerGroup(OfflineIDMixin, models.Model):
     name = models.CharField(max_length=100, verbose_name=_("Group Name"))
     description = models.TextField(blank=True, null=True, verbose_name=_("Description"))
     discount_percentage = models.DecimalField(
@@ -605,7 +606,7 @@ class CustomerGroup(models.Model):
         return self.customers.filter(efris_status__in=['NOT_REGISTERED', 'PENDING']).count()
 
 
-class CustomerNote(models.Model):
+class CustomerNote(OfflineIDMixin, models.Model):
     customer = models.ForeignKey(
         Customer,
         on_delete=models.CASCADE,

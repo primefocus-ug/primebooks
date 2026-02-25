@@ -9,14 +9,14 @@ from django.db.models import Sum, Q
 from decimal import Decimal, ROUND_HALF_UP
 import uuid
 import logging
-
+from primebooks.mixins import OfflineIDMixin
 from inventory.models import Stock
 from .efris import EFRISInvoiceMixin
 from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
-class Invoice(models.Model, EFRISInvoiceMixin):
+class Invoice(OfflineIDMixin, models.Model, EFRISInvoiceMixin):
     """Invoice detail model - stores invoice-specific data"""
 
 
@@ -1378,7 +1378,7 @@ class Invoice(models.Model, EFRISInvoiceMixin):
 
 
 
-class PaymentSchedule(models.Model):
+class PaymentSchedule(OfflineIDMixin, models.Model):
     """Track expected payment installments for invoices"""
     invoice = models.ForeignKey(
         'Invoice',
@@ -1462,7 +1462,7 @@ class PaymentSchedule(models.Model):
         self.save(update_fields=['status'])
 
 
-class PaymentReminder(models.Model):
+class PaymentReminder(OfflineIDMixin, models.Model):
     """Track payment reminders sent to customers"""
     REMINDER_TYPE_CHOICES = [
         ('UPCOMING', 'Upcoming Payment'),
@@ -1545,7 +1545,7 @@ class PaymentReminder(models.Model):
         return f"{self.get_reminder_type_display()} - {self.invoice.invoice_number}"
 
 
-class PaymentAllocation(models.Model):
+class PaymentAllocation(OfflineIDMixin, models.Model):
     """
     Track how payments are allocated across invoice line items
     Useful for complex partial payments
@@ -1584,7 +1584,7 @@ class PaymentAllocation(models.Model):
     def __str__(self):
         return f"{self.allocated_amount} allocated to installment {self.payment_schedule.installment_number if self.payment_schedule else 'N/A'}"
 
-class InvoiceTemplate(models.Model):
+class InvoiceTemplate(OfflineIDMixin, models.Model):
     name = models.CharField(max_length=100, verbose_name=_("Template Name"))
     template_file = models.FileField(
         upload_to='invoice_templates/',
@@ -1637,7 +1637,7 @@ class InvoiceTemplate(models.Model):
         return f"{self.name} (v{self.version})"
 
 
-class InvoicePayment(models.Model):
+class InvoicePayment(OfflineIDMixin, models.Model):
     PAYMENT_METHODS = [
         ('CASH', _('Cash')),
         ('BANK_TRANSFER', _('Bank Transfer')),
@@ -1853,7 +1853,7 @@ class InvoicePayment(models.Model):
         return f"Payment of {self.amount} for {self.invoice.sale.document_number}"
 
 
-class FiscalizationAudit(models.Model):
+class FiscalizationAudit(OfflineIDMixin, models.Model):
     ACTION_CHOICES = [
         ('FISCALIZE', _('Fiscalized')),
         ('RETRY', _('Retry Fiscalization')),

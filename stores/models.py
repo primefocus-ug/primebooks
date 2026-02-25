@@ -9,10 +9,11 @@ import uuid
 from django.utils import timezone
 from datetime import timedelta
 import json
+from primebooks.mixins import OfflineIDMixin
 from django.conf import settings
 
 
-class Store(models.Model):
+class Store(OfflineIDMixin, models.Model):
     STORE_TYPES = [
         ('MAIN', _('Main Store')),
         ('BRANCH', _('Branch Store')),
@@ -1035,7 +1036,7 @@ class Store(models.Model):
         return self.code
 
 
-class StoreAccess(models.Model):
+class StoreAccess(OfflineIDMixin, models.Model):
     """
     Detailed store access control with permissions
     """
@@ -1170,7 +1171,7 @@ def geocode_address(address_string):
 
     return None
 
-class StoreOperatingHours(models.Model):
+class StoreOperatingHours(OfflineIDMixin, models.Model):
     DAYS_OF_WEEK = [
         (0, _('Monday')),
         (1, _('Tuesday')),
@@ -1221,7 +1222,7 @@ class StoreOperatingHours(models.Model):
             return f"{self.store.name} - {self.get_day_display()}: Closed"
         return f"{self.store.name} - {self.get_day_display()}: {self.opening_time} to {self.closing_time}"
 
-class StoreDevice(models.Model):
+class StoreDevice(OfflineIDMixin, models.Model):
     DEVICE_TYPES = [
         ('POS', _('Point of Sale')),
         ('INVOICE', _('Invoice Printer')),
@@ -1355,7 +1356,7 @@ class StoreDevice(models.Model):
         self.save(update_fields=['last_seen_at'])
 
 
-class UserDeviceSession(models.Model):
+class UserDeviceSession(OfflineIDMixin, models.Model):
     """Track active user sessions on devices with fingerprinting"""
 
     SESSION_STATUS = [
@@ -1604,7 +1605,7 @@ class UserDeviceSession(models.Model):
                                  'security_alerts_count', 'status'])
 
 
-class DeviceOperatorLog(models.Model):
+class DeviceOperatorLog(OfflineIDMixin, models.Model):
     ACTION_CHOICES = [
         ('LOGIN', _('Device Login')),
         ('LOGOUT', _('Device Logout')),
@@ -1710,7 +1711,7 @@ class DeviceOperatorLog(models.Model):
         return f"{self.user} - {self.get_action_display()}{device_info} at {self.timestamp}"
 
 
-class SecurityAlert(models.Model):
+class SecurityAlert(OfflineIDMixin, models.Model):
     """Track security alerts and suspicious activities"""
 
     ALERT_TYPES = [
@@ -1878,7 +1879,7 @@ class SecurityAlert(models.Model):
         self.save(update_fields=['status', 'resolved_at', 'resolved_by', 'resolution_notes'])
 
 
-class DeviceFingerprint(models.Model):
+class DeviceFingerprint(OfflineIDMixin, models.Model):
     """Store known device fingerprints for users"""
     sync_id = models.UUIDField(
         default=uuid.uuid4,

@@ -8,12 +8,13 @@ from django.core.cache import cache
 import hashlib
 import json
 import uuid
+from primebooks.mixins import OfflineIDMixin
 from django.db.models import Q, UniqueConstraint
 from django.db import connection
 from decimal import Decimal
 from datetime import date, datetime
 
-class SavedReport(models.Model):
+class SavedReport(OfflineIDMixin, models.Model):
     REPORT_TYPES = [
         ('SALES_SUMMARY', 'Sales Summary'),
         ('PRODUCT_PERFORMANCE', 'Product Performance'),
@@ -200,7 +201,7 @@ class SavedReport(models.Model):
                 cache.delete_pattern(f"report:{self.id}:*")
 
 
-class ReportSchedule(models.Model):
+class ReportSchedule(OfflineIDMixin, models.Model):
     FREQUENCIES = [
         ('HOURLY', 'Hourly'),
         ('DAILY', 'Daily'),
