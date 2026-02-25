@@ -597,9 +597,10 @@ if not IS_DESKTOP:
 TENANT_APPS = [
     'django.contrib.auth',
     'django.contrib.admin',
+    'rest_framework.authtoken',
     'django_otp',
     'django_otp.plugins.otp_totp',
-    'accounts',
+    'accounts.apps.AccountsConfig',
     'branches',
     'stores',
     'inventory',

@@ -209,20 +209,6 @@ SYNC_MODEL_CONFIG = {
     'stores.StoreDevice': {
         'dependencies': ['stores.Store'],
     },
-    'stores.DeviceFingerprint': {
-        'dependencies': ['stores.StoreDevice'],
-    },
-    'stores.UserDeviceSession': {
-        'dependencies': ['accounts.CustomUser', 'stores.StoreDevice'],
-        'download_only': True,
-    },
-    'stores.DeviceOperatorLog': {
-        'dependencies': ['stores.StoreDevice', 'accounts.CustomUser'],
-        'download_only': True,
-    },
-    'stores.SecurityAlert': {
-        'dependencies': ['stores.Store'],
-    },
 
     # ============================================================================
     # TIER 8: PRODUCTS & SERVICES
@@ -249,12 +235,6 @@ SYNC_MODEL_CONFIG = {
     },
     'inventory.StockMovement': {
         'dependencies': ['inventory.Product', 'stores.Store'],
-        # created_by is NOT NULL in DB but excluded from sync data.
-        # We keep it in exclude_fields so it isn't overwritten on updates,
-        # but apply_model_data will skip the record if created_by can't be
-        # resolved (the field is non-nullable so the DB will reject it).
-        # To fix permanently: either make created_by nullable in your migration,
-        # or remove it from exclude_fields so it syncs normally.
         'exclude_fields': [],  # was ['created_by'] — removed because it caused NOT NULL errors
     },
     'inventory.StockTransfer': {
@@ -682,7 +662,8 @@ class SyncManager:
         logger.info(f"  Tenant: {tenant_id}")
         logger.info(f"  Schema: {schema_name}")
         logger.info(f"  Server: {self.server_url}")
-        logger.info(f"  Auth Token: {'Present (****' + self.auth_token[-4:] + ')' if self.auth_token else '❌ MISSING!'}")
+        logger.info(
+            f"  Auth Token: {'Present (****' + self.auth_token[-4:] + ')' if self.auth_token else '❌ MISSING!'}")
         logger.info(f"  Models to sync: {len(self.sync_models)}")
         logger.info("=" * 70)
 
@@ -847,7 +828,6 @@ class SyncManager:
             logger.error(f"❌ Request error: {e}", exc_info=True)
             return None
 
-
     # ========================================================================
     # DOWNLOAD FROM SERVER
     # ========================================================================
@@ -984,14 +964,15 @@ class SyncManager:
             # Log detailed upload summary
             total_changed = sum(len(r) for r in changes.values())
             logger.info(f"📦 Preparing to upload {total_changed} records across {len(changes)} model(s)")
-            
+
             # Log per-model breakdown
             for model_name, records in changes.items():
                 logger.info(f"  📄 {model_name}: {len(records)} records")
                 # Log first few record IDs for debugging
                 if records and len(records) <= 5:
                     for i, record in enumerate(records[:3]):
-                        logger.debug(f"    {i+1}. PK: {record.get('pk')}, Sync ID: {record.get('fields', {}).get('sync_id', 'N/A')}")
+                        logger.debug(
+                            f"    {i + 1}. PK: {record.get('pk')}, Sync ID: {record.get('fields', {}).get('sync_id', 'N/A')}")
                 elif records:
                     logger.debug(f"    First: PK={records[0].get('pk')}, Last: PK={records[-1].get('pk')}")
 
@@ -1014,7 +995,7 @@ class SyncManager:
             if not response:
                 logger.error("❌ Upload failed: No response from server")
                 return False
-                
+
             if response.status_code != 200:
                 logger.error(f"❌ Upload failed with status {response.status_code}")
                 try:
@@ -1031,7 +1012,7 @@ class SyncManager:
 
             # Log upload success with details
             logger.info("✅ Upload successful!")
-            
+
             # Log what was uploaded/updated on server
             upload_results = result.get("results", {})
             if upload_results:
@@ -1041,7 +1022,7 @@ class SyncManager:
                     updated = model_results.get("updated", 0)
                     failed = model_results.get("failed", 0)
                     logger.info(f"  📄 {model_name}: {created} created, {updated} updated, {failed} failed")
-                    
+
                     # Log any failures
                     if failed > 0 and "errors" in model_results:
                         for error in model_results["errors"][:5]:  # First 5 errors
@@ -1336,41 +1317,70 @@ class SyncManager:
 
     def _apply_bulk_data_impl(self, all_data, progress_callback=None):
         """
-        Apply downloaded data model-by-model.
+        Apply downloaded data model-by-model in topological dependency order.
 
         Fixes applied:
-        ✅ Mid-sync sequence reset after sales.SaleItem and before sales.Receipt
-           prevents duplicate RCP prefix collisions.
+        ✅ Re-orders server payload by self.sync_models (topological sort) so
+           parents always exist before children — eliminates FK-not-found warnings
+           caused by the server sending models in arbitrary serialization order.
+        ✅ Cascade-skip tracking: if a record is skipped, its PK is remembered so
+           child records that FK to it are cascade-skipped with a clear log message
+           instead of hundreds of individual "not found" warnings.
         ✅ Each model in its own atomic block — one failure never poisons others.
         ✅ Progress reporting maintained.
         """
+        from collections import defaultdict
 
         try:
             logger.info("💾 Applying data to local database")
-            total_models = len(all_data)
-            created_total = updated_total = 0
+
+            # ── Re-order by topological sync order ──────────────────────────
+            # self.sync_models is already topologically sorted by get_sync_order().
+            # all_data arrives from the server in arbitrary dict order.
+            # We must apply parents before children.
+            ordered_items = []
+            sync_order_index = {m: i for i, m in enumerate(self.sync_models)}
+            for model_name, records in all_data.items():
+                priority = sync_order_index.get(model_name, 99999)
+                ordered_items.append((priority, model_name, records))
+            ordered_items.sort(key=lambda x: x[0])
+
+            total_models = len(ordered_items)
+            created_total = updated_total = skipped_total = 0
+
+            # skipped_pks[model_name] = set of PKs skipped this sync run
+            # Used to cascade-skip children whose parent was skipped.
+            skipped_pks: dict[str, set] = defaultdict(set)
 
             with schema_context(self.schema_name):
-                for index, (model_name, records) in enumerate(all_data.items()):
+                for index, (_, model_name, records) in enumerate(ordered_items):
                     try:
                         if progress_callback:
                             progress = 30 + int((index / total_models) * 60)
                             progress_callback(f"Saving {model_name}...", progress)
 
-                        # Each model runs in its own atomic block so records are
-                        # visible to FK lookups in later models. Individual record
-                        # failures are isolated via savepoints inside apply_model_data.
                         from django.db import transaction
                         with transaction.atomic():
-                            created, updated = self.apply_model_data(model_name, records)
+                            created, updated, skipped = self.apply_model_data(
+                                model_name, records, skipped_pks
+                            )
 
                         created_total += created
                         updated_total += updated
+                        skipped_total += skipped
 
                     except Exception as e:
                         logger.error(f"  ❌ Error saving {model_name}: {e}")
 
-            logger.info(f"✅ Data applied: {created_total} created, {updated_total} updated")
+            logger.info(
+                f"✅ Data applied: {created_total} created, "
+                f"{updated_total} updated, {skipped_total} skipped"
+            )
+            if skipped_total > 0:
+                logger.warning(
+                    f"⚠️  {skipped_total} records skipped due to missing/skipped FK parents. "
+                    f"Root causes are logged above as the FIRST skipped record per model."
+                )
             return True
 
         except Exception as e:
@@ -1447,7 +1457,7 @@ class SyncManager:
         )
         existing_stock_obj.quantity = merged
 
-    def apply_model_data(self, model_name, records):
+    def apply_model_data(self, model_name, records, skipped_pks=None):
         """
         Apply records for a specific model.
         ✅ Looks up existing records by sync_id first, then business key, then PK.
@@ -1455,6 +1465,9 @@ class SyncManager:
         ✅ FK resolution: sync_id → int PK fallback (int cast is critical).
         ✅ Company FK resolved by schema_name OR int PK (handles string company_id).
         ✅ Required FK not found → skip record (not crash), logged as WARNING.
+        ✅ Cascade-skip: if a parent record was skipped this run, all children
+           that FK to it are also skipped with a single summary log per model
+           instead of one warning per record.
         ✅ M2M fields deferred and set after save — never raises on missing members.
         ✅ Each record wrapped in its own savepoint — one failure never
            poisons the rest of the model's batch.
@@ -1466,15 +1479,23 @@ class SyncManager:
         from django.db import transaction as _tx
         from django.core.exceptions import ValidationError
         from django_tenants.utils import schema_context as _schema_context
+        from collections import defaultdict
+
+        if skipped_pks is None:
+            skipped_pks = defaultdict(set)
 
         logger.debug(f"🔍 apply_model_data: {model_name} ({len(records)} records)")
 
         try:
             model = apps.get_model(model_name)
             has_sync_id = any(f.name == 'sync_id' for f in model._meta.get_fields())
-            created_count = updated_count = 0
+            created_count = updated_count = skipped_count = 0
             synced_ids = []
             saved_objects = []
+
+            # Track cascade-skip reasons for summary logging
+            # cascade_skips[reason_str] = count
+            cascade_skips: dict[str, int] = {}
 
             for record in records:
                 # ── Savepoint per record ─────────────────────────────────────
@@ -1483,6 +1504,35 @@ class SyncManager:
                     with _tx.atomic():
                         obj_id = record['pk']
                         fields = record['fields']
+
+                        # ── Cascade-skip: check if any FK parent was skipped ──
+                        # Inspect FK fields before doing any real work. If the
+                        # value matches a PK we already skipped this run,
+                        # cascade-skip this record too and record the reason.
+                        cascade_reason = None
+                        for field_name, value in fields.items():
+                            if value is None:
+                                continue
+                            try:
+                                field_obj = model._meta.get_field(field_name)
+                            except Exception:
+                                continue
+                            if not (field_obj.many_to_one or field_obj.one_to_one):
+                                continue
+                            related_label = (
+                                f"{field_obj.related_model._meta.app_label}."
+                                f"{field_obj.related_model.__name__}"
+                            )
+                            if value in skipped_pks.get(related_label, set()):
+                                cascade_reason = f"{field_name}={value} (parent {related_label} was skipped)"
+                                break
+
+                        if cascade_reason:
+                            skipped_pks[model_name].add(obj_id)
+                            cascade_skips[cascade_reason] = cascade_skips.get(cascade_reason, 0) + 1
+                            skipped_count += 1
+                            continue
+                        # ─────────────────────────────────────────────────────
 
                         # Extract sync_id from fields
                         record_sync_id = None
@@ -1562,6 +1612,7 @@ class SyncManager:
                                             f"  ⚠️  {model_name} pk={obj_id}: "
                                             f"required FK {field_name}={value} not found — skipping record"
                                         )
+                                        skipped_pks[model_name].add(obj_id)
                                         skip_record = True
                                         break
                                     continue
@@ -1580,6 +1631,7 @@ class SyncManager:
                                 continue
 
                         if skip_record:
+                            skipped_count += 1
                             continue
 
                         # ── CustomUser: ensure password is never blank ────────
@@ -1724,15 +1776,30 @@ class SyncManager:
             if synced_ids:
                 self._mark_as_synced(model_name, synced_ids, objects=saved_objects)
 
-            logger.info(f"  ✅ {model_name}: {created_count} created, {updated_count} updated")
-            return created_count, updated_count
+            # Log cascade-skip summary — one line per root cause instead of per record
+            if cascade_skips:
+                for reason, count in cascade_skips.items():
+                    logger.warning(
+                        f"  ⚠️  {model_name}: {count} records cascade-skipped "
+                        f"because {reason}"
+                    )
+
+            if skipped_count > 0:
+                logger.warning(
+                    f"  ⚠️  {model_name}: {created_count} created, "
+                    f"{updated_count} updated, {skipped_count} skipped"
+                )
+            else:
+                logger.info(f"  ✅ {model_name}: {created_count} created, {updated_count} updated")
+
+            return created_count, updated_count, skipped_count
 
         except LookupError:
             logger.warning(f"  ⚠️  Model not found: {model_name}")
-            return 0, 0
+            return 0, 0, 0
         except Exception as e:
             logger.error(f"  ❌ Fatal error in apply_model_data for {model_name}: {e}")
-            return 0, 0
+            return 0, 0, 0
 
     def _resolve_fk(self, related_model, value):
         """
