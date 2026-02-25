@@ -79,7 +79,6 @@ def subscription_status(request):
     except Company.DoesNotExist:
         return Response({'error': 'Company not found'}, status=404)
 
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def check_updates(request):
@@ -92,9 +91,18 @@ def check_updates(request):
         return Response({'update_available': False})
 
     def parse_version(v):
-        return tuple(map(int, v.split('.')))
+        try:
+            return tuple(int(x) for x in v.split('.') if x.isdigit())
+        except (ValueError, AttributeError):
+            return (0, 0, 0)
 
     current = parse_version(current_version)
+    if not current:
+        return Response(
+            {'error': 'Invalid current_version format. Expected x.y.z'},
+            status=400
+        )
+
     latest = latest_version.version_tuple
 
     if latest > current:
@@ -123,7 +131,7 @@ def check_updates(request):
             'latest_version': latest_version.version,
             'current_version': current_version,
         })
-
+    
 @csrf_exempt
 def health_check(request):
     """Simple health check endpoint for desktop sync"""
@@ -146,7 +154,10 @@ class DesktopLoginView(APIView):
         password = request.data.get('password')
         company_id = request.data.get('company_id')
 
-        logger.info(f"🔍 Login attempt - Email: {email}, Company ID: {company_id}")
+        # Avoid logging the raw email — use a hash for correlation only
+        import hashlib
+        email_hint = hashlib.sha256(email.encode()).hexdigest()[:8] if email else 'none'
+        logger.info(f"🔍 Login attempt - email_hint={email_hint}, Company ID: {company_id}")
         logger.info(f"🔍 Host: {request.get_host()}")
 
         if not email or not password:
@@ -218,9 +229,9 @@ class DesktopLoginView(APIView):
                 # Get user in tenant schema
                 try:
                     user = CustomUser.objects.get(email=email)
-                    logger.info(f"✅ Found user: {user.email}")
+                    logger.info(f"✅ Found user in schema")
                 except CustomUser.DoesNotExist:
-                    logger.error(f"❌ User {email} not found in schema {company.schema_name}")
+                    logger.error(f"❌ User not found in schema {company.schema_name} (hint={email_hint})")
                     return Response(
                         {'detail': 'Invalid credentials'},
                         status=status.HTTP_401_UNAUTHORIZED
@@ -228,14 +239,14 @@ class DesktopLoginView(APIView):
 
                 # Check password
                 if not user.check_password(password):
-                    logger.error(f"❌ Invalid password for {email}")
+                    logger.error(f"❌ Invalid password (hint={email_hint})")
                     return Response(
                         {'detail': 'Invalid credentials'},
                         status=status.HTTP_401_UNAUTHORIZED
                     )
 
                 if not user.is_active:
-                    logger.error(f"❌ User {email} is not active")
+                    logger.error(f"❌ User is not active (hint={email_hint})")
                     return Response(
                         {'detail': 'User account is disabled'},
                         status=status.HTTP_401_UNAUTHORIZED
@@ -286,13 +297,13 @@ class DesktopLoginView(APIView):
                 'company': company_data,
             }
 
-            logger.info(f"✅ Desktop login successful: {email}")
+            logger.info(f"✅ Desktop login successful (hint={email_hint})")
             return Response(response_data, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error(f"❌ Error during authentication: {e}", exc_info=True)
             return Response(
-                {'detail': f'Authentication error: {str(e)}'},
+                {'detail': 'Authentication error'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -305,45 +316,61 @@ def desktop_session_login(request):
 
     Called by PrimeBooksWindow._perform_session_switch().
     Only works when DESKTOP_MODE is enabled.
+
+    Token must be sent in the Authorization header (Bearer <token>),
+    NOT as a query parameter, to avoid logging in access logs.
     """
     import os
     if not os.environ.get('DESKTOP_MODE'):
         return HttpResponseBadRequest("Not in desktop mode")
 
-    token = request.GET.get('token')
-    email = request.GET.get('email')
+    # Accept token from Authorization header only (not query string)
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header[7:].strip()
+    else:
+        return HttpResponseBadRequest("Missing Authorization header")
+
+    email = request.GET.get('email') or (
+        request.POST.get('email') if request.method == 'POST' else None
+    )
 
     if not token or not email:
         return HttpResponseBadRequest("Missing token or email")
 
     try:
-        # Validate token against server
-        from primebooks.auth import DesktopAuthManager
-        auth_manager = DesktopAuthManager()
-
-        valid = auth_manager.get_valid_token()
-        if not valid or valid != token:
-            logger.warning(f"Invalid token for desktop session switch: {email}")
+        # Validate token cryptographically via simplejwt
+        from rest_framework_simplejwt.tokens import AccessToken
+        from rest_framework_simplejwt.exceptions import TokenError
+        try:
+            validated_token = AccessToken(token)
+        except TokenError as e:
+            logger.warning(f"Invalid token for desktop session switch: {e}")
             return HttpResponseBadRequest("Invalid token")
 
         # Find user in local DB
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            logger.error(f"User not found locally: {email}")
-            return HttpResponseBadRequest(f"User {email} not found in local database")
+            logger.error(f"User not found locally for session switch")
+            return HttpResponseBadRequest("User not found in local database")
+
+        # Confirm the token belongs to this user
+        token_user_id = validated_token.get('user_id')
+        if str(user.pk) != str(token_user_id):
+            logger.warning("Token user_id does not match requested email")
+            return HttpResponseBadRequest("Invalid token")
 
         # Create Django session for this user
-        # backend must match AUTHENTICATION_BACKENDS in settings
         user.backend = 'django.contrib.auth.backends.ModelBackend'
         login(request, user)
 
-        logger.info(f"✅ Desktop session created for {email}")
+        logger.info(f"✅ Desktop session created")
         return redirect('/')
 
     except Exception as e:
         logger.error(f"Desktop session login error: {e}", exc_info=True)
-        return HttpResponseBadRequest(f"Session switch failed: {str(e)}")
+        return HttpResponseBadRequest("Session switch failed")
 
 
 class DesktopUserSyncView(APIView):
@@ -359,17 +386,16 @@ class DesktopUserSyncView(APIView):
     def get(self, request, email):
         try:
             # ✅ User is already authenticated in correct schema by TenantAwareJWTAuthentication
-            # Get schema from token for logging
             token = request.auth
             schema_name = token.get('schema_name') if token else None
 
-            logger.info(f"User sync request for {email} in schema: {schema_name}")
+            logger.info(f"User sync request in schema: {schema_name}")
 
             # Get user from current schema context (already set by authentication)
             try:
                 user = CustomUser.objects.get(email=email)
             except CustomUser.DoesNotExist:
-                logger.error(f"❌ User not found: {email}")
+                logger.error(f"❌ User not found in schema")
                 return Response(
                     {'detail': 'User not found'},
                     status=status.HTTP_404_NOT_FOUND
@@ -377,13 +403,16 @@ class DesktopUserSyncView(APIView):
 
             # Verify requesting user has permission
             if request.user.email != email and not (request.user.is_staff or request.user.is_superuser):
-                logger.warning(f"Permission denied: {request.user.email} tried to sync {email}")
+                logger.warning(f"Permission denied: user tried to sync another account")
                 return Response(
                     {'detail': 'Permission denied'},
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-            # Return user data INCLUDING password hash and sync_id
+            # Return user data — NEVER expose the real password hash.
+            # Desktop authenticates via the server, not local password checks.
+            # Use the same unusable placeholder as the bulk download path so
+            # the NOT NULL constraint passes on the desktop side.
             user_data = {
                 'id': user.id,
                 'sync_id': str(user.sync_id) if getattr(user, 'sync_id', None) else None,
@@ -393,7 +422,7 @@ class DesktopUserSyncView(APIView):
                 'last_name': user.last_name,
                 'middle_name': getattr(user, 'middle_name', ''),
                 'phone_number': getattr(user, 'phone_number', ''),
-                'password': user.password,  # 🔥 Include password hash
+                'password': '!desktop-no-local-login',  # Never send real hash
                 'is_active': user.is_active,
                 'is_staff': user.is_staff,
                 'is_superuser': user.is_superuser,
@@ -401,13 +430,13 @@ class DesktopUserSyncView(APIView):
                 'role': getattr(user, 'primary_role_id', None),
             }
 
-            logger.info(f"✅ User sync successful: {email}")
+            logger.info(f"✅ User sync successful")
             return Response(user_data, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error(f"❌ Error syncing user: {e}", exc_info=True)
             return Response(
-                {'detail': str(e)},
+                {'detail': 'User sync failed'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

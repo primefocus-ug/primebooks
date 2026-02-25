@@ -22,7 +22,6 @@ from contextlib import contextmanager
 from django.db.models.signals import post_save, pre_save, post_delete
 from django.core.exceptions import ValidationError
 import json
-from django.apps import apps
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -66,6 +65,7 @@ def suppress_signals():
 # MODELS TO EXCLUDE FROM SYNC
 # ============================================================================
 
+
 EXCLUDED_MODELS = {
     'contenttypes.ContentType',
     'auth.Permission',
@@ -89,13 +89,6 @@ def should_exclude_model(model_name):
 # ============================================================================
 
 SYNC_MODEL_CONFIG = {
-    # ============================================================================
-    # TIER 1: NO DEPENDENCIES
-    # ============================================================================
-    # NOTE: contenttypes.ContentType and auth.Permission are intentionally NOT
-    # listed here — they are already in EXCLUDED_MODELS and are managed entirely
-    # by Django migrations on the desktop. Syncing them caused duplicate-key
-    # errors because the DB already had them from the initial migration run.
 
     'company.SubscriptionPlan': {
         'dependencies': [],
@@ -170,9 +163,6 @@ SYNC_MODEL_CONFIG = {
             'backup_codes',
             'failed_login_attempts',
         ],
-    },
-    'otp_totp.TOTPDevice': {
-        'dependencies': ['accounts.CustomUser'],
     },
 
     # ============================================================================
@@ -692,7 +682,7 @@ class SyncManager:
         logger.info(f"  Tenant: {tenant_id}")
         logger.info(f"  Schema: {schema_name}")
         logger.info(f"  Server: {self.server_url}")
-        logger.info(f"  Auth Token: {'Present (' + self.auth_token[:20] + '...)' if self.auth_token else '❌ MISSING!'}")
+        logger.info(f"  Auth Token: {'Present (****' + self.auth_token[-4:] + ')' if self.auth_token else '❌ MISSING!'}")
         logger.info(f"  Models to sync: {len(self.sync_models)}")
         logger.info("=" * 70)
 
@@ -958,7 +948,13 @@ class SyncManager:
                         progress_callback("Download complete!", 100)
                     return True
                 return False
-            return False
+
+            # Server returned success but no data — still a valid completed sync
+            logger.info("Server has no records to download")
+            self.update_last_sync_time()
+            if progress_callback:
+                progress_callback("Download complete!", 100)
+            return True
 
         except Exception as e:
             logger.error(f"Download error: {e}", exc_info=True)
@@ -1024,7 +1020,7 @@ class SyncManager:
                 try:
                     error_data = response.json()
                     logger.error(f"   Error: {error_data.get('error', 'Unknown error')}")
-                except:
+                except Exception:
                     logger.error(f"   Response: {response.text[:200]}")
                 return False
 
@@ -1062,7 +1058,8 @@ class SyncManager:
             # Log sync marker updates
             logger.info("📝 Updating sync markers...")
             self.reset_sequences()
-            
+            self.update_last_sync_time()
+
             # Log final sync time
             new_sync_time = self.get_last_sync_time()
             logger.info(f"⏱️  Last sync time updated to: {new_sync_time}")
@@ -1217,8 +1214,16 @@ class SyncManager:
         ✅ sync_id included in every record sent to server.
         ✅ FKs sent as integer PKs (server resolves via sync_id).
         ✅ Stock delta injected for atomic server-side quantity updates.
+        ✅ Sync marker file is loaded once into memory — no per-record disk reads.
         """
         changes = {}
+
+        # Load sync markers once for the entire collection pass (avoids N disk reads)
+        sync_marker_file = settings.DESKTOP_DATA_DIR / f'.synced_{self.tenant_id}.json'
+        try:
+            synced_cache = json.loads(sync_marker_file.read_text()) if sync_marker_file.exists() else {}
+        except Exception:
+            synced_cache = {}
 
         with schema_context(self.schema_name):
             for model_name in self.sync_models:
@@ -1253,10 +1258,12 @@ class SyncManager:
                     if not queryset.exists():
                         continue
 
-                    local_records = [
-                        obj for obj in queryset
-                        if not self._is_synced(model_name, obj.pk, obj=obj)
-                    ]
+                    # Filter using in-memory cache — no per-record disk reads
+                    model_synced = synced_cache.get(model_name, {})
+                    local_records = []
+                    for obj in queryset:
+                        if not self._is_synced_from_cache(model_synced, obj):
+                            local_records.append(obj)
 
                     if not local_records:
                         continue
@@ -1271,7 +1278,7 @@ class SyncManager:
 
                     # ✅ Inject Stock quantity delta
                     if model_name == 'inventory.Stock':
-                        records = self._inject_stock_deltas(records)
+                        records = self._inject_stock_deltas(records, synced_cache)
 
                     changes[model_name] = records
                     logger.info(f"  Found {len(records)} LOCAL changes in {model_name}")
@@ -1283,20 +1290,22 @@ class SyncManager:
 
         return changes
 
-    def _inject_stock_deltas(self, records):
+    def _inject_stock_deltas(self, records, synced_cache=None):
         """
         Inject _quantity_delta into Stock records so server applies
         delta atomically instead of overwriting (preserves concurrent online sales).
+        Accepts an optional pre-loaded synced_cache dict to avoid redundant disk reads.
         """
-        sync_marker_file = settings.DESKTOP_DATA_DIR / f'.synced_{self.tenant_id}.json'
-        synced_data = {}
-        if sync_marker_file.exists():
-            try:
-                synced_data = json.loads(sync_marker_file.read_text())
-            except Exception:
-                pass
+        if synced_cache is None:
+            sync_marker_file = settings.DESKTOP_DATA_DIR / f'.synced_{self.tenant_id}.json'
+            synced_cache = {}
+            if sync_marker_file.exists():
+                try:
+                    synced_cache = json.loads(sync_marker_file.read_text())
+                except Exception:
+                    pass
 
-        stock_synced = synced_data.get('inventory.Stock', {})
+        stock_synced = synced_cache.get('inventory.Stock', {})
 
         for record in records:
             record_id = str(record['pk'])
@@ -1638,7 +1647,7 @@ class SyncManager:
                                 if not self._is_skippable_validation_error(e):
                                     raise
                                 logger.debug(f"  Skipping validation error (update) pk={obj_id}: {e}")
-                                raise  # rolls back savepoint
+                                # skippable — do NOT re-raise; just skip this record
 
                             # M2M: set members, skip any that don't exist yet
                             for fname, val in m2m_fields.items():
@@ -1678,7 +1687,7 @@ class SyncManager:
                                 if not self._is_skippable_validation_error(e):
                                     raise
                                 logger.debug(f"  Skipping validation error (create) pk={obj_id}: {e}")
-                                raise
+                                # skippable — do NOT re-raise; just skip this record
 
                             # M2M: set members, skip any that don't exist yet
                             for fname, val in m2m_fields.items():
@@ -1816,6 +1825,43 @@ class SyncManager:
             synced[model_name][str(record_id)] = entry
 
         sync_marker_file.write_text(json.dumps(synced))
+
+    def _is_synced_from_cache(self, model_synced, obj):
+        """
+        Check whether an object has already been synced using a pre-loaded
+        model_synced dict (avoids reading the sync marker file per record).
+        """
+        if isinstance(model_synced, list):
+            return str(obj.pk) in model_synced
+
+        entry = model_synced.get(str(obj.pk))
+        if not entry:
+            return False
+
+        sync_time_str = entry if isinstance(entry, str) else entry.get('synced_at')
+        if not sync_time_str:
+            return False
+
+        try:
+            sync_time = datetime.fromisoformat(sync_time_str)
+            if sync_time.tzinfo is None:
+                sync_time = timezone.make_aware(sync_time)
+
+            modified_at = None
+            for field_name in ('modified_at', 'updated_at', 'last_updated'):
+                modified_at = getattr(obj, field_name, None)
+                if modified_at:
+                    break
+
+            if modified_at:
+                if modified_at.tzinfo is None:
+                    modified_at = timezone.make_aware(modified_at)
+                if modified_at > sync_time:
+                    return False  # Modified after last sync — upload it
+        except Exception:
+            return False
+
+        return True
 
     def _is_synced(self, model_name, record_id, obj=None):
         sync_marker_file = settings.DESKTOP_DATA_DIR / f'.synced_{self.tenant_id}.json'
@@ -1957,6 +2003,8 @@ class SyncManager:
         last_sync = self.get_last_sync_time()
         if not last_sync:
             return True
+        if last_sync.tzinfo is None:
+            last_sync = timezone.make_aware(last_sync)
         return timezone.now() - last_sync > timedelta(days=1)
 
     def update_last_sync_time(self):
@@ -1986,7 +2034,9 @@ class SyncManager:
             timestamp = timezone.now()
         elif timestamp.tzinfo is None:
             timestamp = timezone.make_aware(timestamp)
-        self.last_sync_file.write_text(timestamp.isoformat())
+        # Write to the same file that get_last_sync_time() reads from
+        sync_file = settings.DESKTOP_DATA_DIR / f'.last_sync_{self.tenant_id}.txt'
+        sync_file.write_text(timestamp.isoformat())
         logger.info(f"✅ Last sync time updated: {timestamp.isoformat()}")
 
     def _get_auth_token(self):

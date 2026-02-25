@@ -58,8 +58,10 @@ class SyncThread(QThread):
 
 class SyncProgressDialog(QDialog):
     """
-    Progress dialog for sync operations
-    Shows detailed progress with status messages
+    Progress dialog for sync operations.
+    Shows detailed progress with status messages.
+    Includes a Cancel button so the user is never locked out.
+    Cleans up the background thread on close.
     """
 
     def __init__(self, parent, tenant_id, schema_name, auth_token, is_first_sync=False):
@@ -68,10 +70,14 @@ class SyncProgressDialog(QDialog):
         self.schema_name = schema_name
         self.auth_token = auth_token
         self.is_first_sync = is_first_sync
+        self.sync_thread = None
 
         self.setWindowTitle("Syncing Data")
-        self.setFixedSize(450, 150)
+        self.setFixedSize(450, 180)
         self.setModal(True)
+
+        # Prevent the window close button from bypassing cleanup
+        self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, True)
 
         self.setup_ui()
 
@@ -99,10 +105,15 @@ class SyncProgressDialog(QDialog):
         self.progress_bar = QProgressBar()
         layout.addWidget(self.progress_bar)
 
+        # Cancel button — always visible so the user is never locked out
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.cancel_sync)
+        layout.addWidget(self.cancel_btn)
+
         self.setLayout(layout)
 
     def start_sync(self):
-        """Start sync in background thread"""
+        """Start sync in background thread."""
         self.sync_thread = SyncThread(
             self.tenant_id,
             self.schema_name,
@@ -115,12 +126,13 @@ class SyncProgressDialog(QDialog):
         self.sync_thread.start()
 
     def update_progress(self, message, percentage):
-        """Update progress display"""
+        """Update progress display."""
         self.status_label.setText(message)
         self.progress_bar.setValue(percentage)
 
     def on_sync_complete(self, success, message):
-        """Handle sync completion"""
+        """Handle sync completion."""
+        self.cancel_btn.setEnabled(False)
         if success:
             self.status_label.setText("✅ Sync complete!")
             self.progress_bar.setValue(100)
@@ -133,6 +145,27 @@ class SyncProgressDialog(QDialog):
             )
             self.reject()
 
+    def cancel_sync(self):
+        """User pressed Cancel — stop the thread gracefully then close."""
+        self.status_label.setText("Cancelling...")
+        self.cancel_btn.setEnabled(False)
+        self._stop_thread()
+        self.reject()
+
+    def closeEvent(self, event):
+        """Ensure the thread is stopped if the dialog is closed any other way."""
+        self._stop_thread()
+        super().closeEvent(event)
+
+    def _stop_thread(self):
+        """Ask the thread to stop and wait for it to finish."""
+        if self.sync_thread and self.sync_thread.isRunning():
+            # SyncThread doesn't have a cancel() method — request interruption
+            self.sync_thread.requestInterruption()
+            # Give it up to 3 seconds to exit cleanly before forcing quit
+            if not self.sync_thread.wait(3000):
+                self.sync_thread.quit()
+                self.sync_thread.wait(1000)
 
 class ManualSyncDialog(QDialog):
     """
@@ -197,12 +230,14 @@ class ManualSyncDialog(QDialog):
         self.setLayout(layout)
 
     def start_sync(self):
-        """Start sync"""
+        """Start sync — capture parent before closing this dialog."""
+        # Capture parent reference BEFORE accept() closes the dialog
+        parent_widget = self.parent()
         self.accept()
 
-        # Show progress dialog
+        # Show progress dialog using the captured parent
         sync_dialog = SyncProgressDialog(
-            self.parent(),
+            parent_widget,
             self.tenant_id,
             self.schema_name,
             self.auth_token,

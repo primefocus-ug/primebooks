@@ -89,8 +89,12 @@ class BackgroundSyncWorker(QThread):
             self.resumed.emit()
 
     def check_pause(self):
-        """Check if paused and wait if necessary"""
-        if self._is_paused:
+        """Check if paused and wait if necessary. Guards the flag read with the mutex."""
+        self._pause_mutex.lock()
+        is_paused = self._is_paused
+        self._pause_mutex.unlock()
+
+        if is_paused:
             self._pause_mutex.lock()
             self._pause_condition.wait(self._pause_mutex)
             self._pause_mutex.unlock()
@@ -172,10 +176,10 @@ class BackgroundSyncWorker(QThread):
             upload_success = self._upload_with_progress(sync_manager)
 
             if not upload_success:
+                # Warn but continue — download may still succeed and upload
+                # will be retried on the next sync cycle.
                 logger.warning("⚠️ Upload failed — continuing with download anyway")
-                self.error_occurred.emit("Upload", "Failed to upload local changes")
-                self.sync_completed.emit(False, {'error': 'upload_failed'})
-                return
+                self.warning_occurred.emit("Upload", "Failed to upload local changes — will retry next sync")
 
             # Phase 2: Download
             self.phase_changed.emit("download", "📥 Downloading server changes")
@@ -210,6 +214,7 @@ class BackgroundSyncWorker(QThread):
                 'created': self.total_created,
                 'updated': self.total_updated,
                 'errors': self.total_errors,
+                'upload_failed': not upload_success,
             }
 
             self.sync_completed.emit(True, summary)
@@ -269,10 +274,12 @@ class BackgroundSyncWorker(QThread):
             self.sync_completed.emit(False, {'error': str(e)})
 
     def _upload_with_progress(self, sync_manager):
+        from django_tenants.utils import schema_context
+
         try:
             last_sync = sync_manager.get_last_sync_time()
             logger.info(f"📤 _upload_with_progress — last_sync={last_sync}")
-            
+
             changes = sync_manager.collect_local_changes(last_sync)
 
             if not changes:
@@ -312,7 +319,7 @@ class BackgroundSyncWorker(QThread):
                 return False
 
             logger.info(f"📥 Upload result: success={result.get('success')}")
-            
+
             if not result.get('success'):
                 logger.error(f"❌ Server rejected upload: {result.get('error', 'no error message')}")
                 logger.error(f"   Full response: {result}")
@@ -320,10 +327,13 @@ class BackgroundSyncWorker(QThread):
 
             # Mark records as synced ONLY after server confirms
             logger.info("✅ Upload confirmed — marking records as synced")
-            with __import__('django_tenants.utils', fromlist=['schema_context']).schema_context(self.schema_name):
+            with schema_context(self.schema_name):
                 for model_name, records in changes.items():
                     ids = [r['pk'] for r in records]
                     sync_manager._mark_as_synced(model_name, ids)
+
+            # Save the sync timestamp so next collect_local_changes uses the right window
+            sync_manager.update_last_sync_time()
 
             logger.info(f"✅ Upload complete: {total_records} records")
             return True

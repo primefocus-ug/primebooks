@@ -175,6 +175,7 @@ class ChangesDownloadView(APIView):
     def get(self, request):
         try:
             from django.db import connection
+            from django.utils import timezone as tz
 
             since = request.query_params.get('since')
             if not since:
@@ -185,6 +186,9 @@ class ChangesDownloadView(APIView):
 
             try:
                 since_datetime = datetime.fromisoformat(since)
+                # Make timezone-aware if naive, so ORM comparisons don't TypeError
+                if since_datetime.tzinfo is None:
+                    since_datetime = tz.make_aware(since_datetime)
             except ValueError:
                 return Response(
                     {'error': 'Invalid datetime format. Use ISO format.'},
@@ -275,7 +279,6 @@ class ChangesDownloadView(APIView):
                 {'success': False, 'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 
 class UploadChangesView(APIView):
     """
@@ -413,7 +416,11 @@ class UploadChangesView(APIView):
         - Decimal     → cast from string
         - Internal _* → skipped
         Returns (field_type, resolved_value) where field_type is one of:
-            'skip', 'm2m', 'fk', 'value'
+            'skip'        — field should be omitted (internal field, unknown field)
+            'skip_record' — the FK is required but unresolvable; caller must skip the whole record
+            'm2m'         — set after save
+            'fk'          — resolved FK instance
+            'value'       — plain scalar value
         """
         from decimal import Decimal
 
@@ -437,10 +444,21 @@ class UploadChangesView(APIView):
                 return 'skip', None
 
             instance = _resolve_fk_by_sync_id(related_model, value)
-            if instance is None:
-                logger.debug(f"      FK {field_name}={value} not resolved — skipping")
-                return 'skip', None
-            return 'fk', instance
+            if instance is not None:
+                return 'fk', instance
+
+            # FK not resolved — check if the field allows NULL
+            if field.null:
+                logger.debug(f"      FK {field_name}={value} not resolved — nulling nullable field")
+                return 'value', None
+            else:
+                # Required FK missing — the whole record must be skipped to avoid
+                # a NOT NULL constraint error or silent data corruption.
+                logger.warning(
+                    f"      FK {field_name}={value} not resolved and field is NOT NULL "
+                    f"— skipping record"
+                )
+                return 'skip_record', None
 
         if (hasattr(field, 'get_internal_type') and
                 field.get_internal_type() == 'DecimalField'):
@@ -450,24 +468,30 @@ class UploadChangesView(APIView):
 
         return 'value', value
 
-    def _process_fields(self, model, raw_fields):
-        """
-        Separate raw fields into processed_fields and m2m_fields.
-        FKs are resolved to instances using sync_id.
-        """
-        processed = {}
-        m2m = {}
 
-        for field_name, value in raw_fields.items():
-            kind, resolved = self._resolve_field_value(model, field_name, value)
-            if kind == 'skip':
-                continue
-            elif kind == 'm2m':
-                m2m[field_name] = value  # set after save
-            else:
-                processed[field_name] = resolved
+def _process_fields(self, model, raw_fields):
+    """
+    Separate raw fields into processed_fields and m2m_fields.
+    FKs are resolved to instances using sync_id.
+    Returns (processed, m2m, should_skip) where should_skip=True means
+    a required FK was unresolvable and this record must not be saved.
+    """
+    processed = {}
+    m2m = {}
 
-        return processed, m2m
+    for field_name, value in raw_fields.items():
+        kind, resolved = self._resolve_field_value(model, field_name, value)
+        if kind == 'skip':
+            continue
+        elif kind == 'skip_record':
+            # Propagate: tell the caller to skip the entire record
+            return {}, {}, True
+        elif kind == 'm2m':
+            m2m[field_name] = value  # set after save
+        else:
+            processed[field_name] = resolved
+
+    return processed, m2m, False
 
     # -------------------------------------------------------------------------
     # Core upload logic
@@ -601,7 +625,10 @@ class UploadChangesView(APIView):
                                     fields.pop('id', None)
 
                                     # Resolve all fields
-                                    processed_fields, m2m_fields = self._process_fields(model, fields)
+                                    processed_fields, m2m_fields, skip_record = self._process_fields(model, fields)
+                                    if skip_record:
+                                        total_skipped += 1
+                                        continue
 
                                     # Determine if this is an offline (new) record
                                     is_offline = (
