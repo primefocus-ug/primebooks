@@ -13,13 +13,13 @@ Body:
         "updated": [{...}, ...],   ← sync_id matches existing server record
         "deleted": ["<sync_id>", ...]
       },
-      "sales": { ... },
-      "sale_items": { ... },
-      "expenses": { ... },
-      "categories": { ... },
-      "suppliers": { ... },
-      "products": { ... },
-      "stock": { ... },
+      "sales":        { ... },
+      "sale_items":   { ... },
+      "expenses":     { ... },
+      "categories":   { ... },
+      "suppliers":    { ... },
+      "products":     { ... },
+      "stock":        { ... },
       "stock_movements": { ... }
     }
   }
@@ -50,6 +50,16 @@ sync_id lookup:
   2. If not found → create new record, set sync_id
   3. On update → only overwrite if server record is not newer
      (compare updated_at — server wins on tie)
+
+Field mapping notes (desktop → server):
+  Sale:     status/payment_method/payment_status uppercased (server stores uppercase)
+            amount_paid and change_amount are NOT DB fields on Sale — omitted from push
+  SaleItem: subtotal → total_price, discount_percentage → discount
+            total is a computed property (line_total) — not written directly
+  Expense:  title → description, notes → description fallback
+            date (DateField) not DateTimeField, payment_method uppercased
+            no store FK on Expense model — store_id ignored on push
+            user FK used instead of created_by
 """
 
 import time
@@ -109,7 +119,6 @@ def sync_push(request):
                 conflicts[table_name] = table_conflicts
         except Exception as e:
             logger.error(f"Push handler error for '{table_name}': {e}", exc_info=True)
-            # Mark everything as rejected on handler crash
             all_sync_ids = (
                 [r.get("sync_id") for r in table_changes.get("created", [])]
                 + [r.get("sync_id") for r in table_changes.get("updated", [])]
@@ -151,7 +160,7 @@ def _push_customers(changes, user, schema_name):
                     defaults=_customer_defaults(record),
                 )
                 if not created:
-                    # Update — desktop wins on customer data
+                    # Desktop wins on customer data
                     _apply_customer(obj, record)
                     obj.save()
                 accepted.append(sync_id)
@@ -186,7 +195,6 @@ def _push_sales(changes, user, schema_name):
             continue
         try:
             with transaction.atomic():
-                # Resolve FK sync_ids → server PKs
                 store = _resolve_fk(Store, record.get("store_id"))
                 customer = _resolve_fk(Customer, record.get("customer_id"))
 
@@ -200,7 +208,6 @@ def _push_sales(changes, user, schema_name):
                     obj.save()
                 accepted.append(sync_id)
         except IntegrityError as e:
-            # document_number unique constraint — likely a duplicate
             logger.warning(f"Sale push IntegrityError {sync_id}: {e}")
             rejected.append({"sync_id": sync_id, "error": "Duplicate document number"})
         except Exception as e:
@@ -212,7 +219,7 @@ def _push_sales(changes, user, schema_name):
         if not sid:
             continue
         try:
-            Sale.objects.filter(sync_id=sid).update(status="cancelled")
+            Sale.objects.filter(sync_id=sid).update(status="CANCELLED")
             accepted.append(sid)
         except Exception as e:
             rejected.append({"sync_id": sid, "error": str(e)[:200]})
@@ -221,7 +228,14 @@ def _push_sales(changes, user, schema_name):
 
 
 def _push_sale_items(changes, user, schema_name):
-    """SaleItems are child records — pushed alongside sales."""
+    """
+    SaleItems are child records — pushed alongside sales.
+
+    Field mapping (desktop → server):
+      subtotal           → total_price  (server field name)
+      discount_percentage → discount    (server field name)
+      total              → NOT written  (line_total is a computed property)
+    """
     try:
         from sales.models import SaleItem, Sale
         from inventory.models import Product
@@ -245,15 +259,17 @@ def _push_sale_items(changes, user, schema_name):
                     continue
 
                 defaults = {
-                    "sale":                 sale,
-                    "product":              product,
-                    "quantity":             _d(record.get("quantity", 1)),
-                    "unit_price":           _d(record.get("unit_price", 0)),
-                    "discount_percentage":  _d(record.get("discount_percentage", 0)),
-                    "tax_rate":             record.get("tax_rate", "A") or "A",
-                    "tax_amount":           _d(record.get("tax_amount", 0)),
-                    "subtotal":             _d(record.get("subtotal", 0)),
-                    "total":                _d(record.get("total", 0)),
+                    "sale":        sale,
+                    "product":     product,
+                    "quantity":    int(_d(record.get("quantity", 1))),
+                    "unit_price":  _d(record.get("unit_price", 0)),
+                    # desktop sends discount_percentage, server field is discount
+                    "discount":    _d(record.get("discount_percentage", 0)),
+                    "tax_rate":    record.get("tax_rate", "A") or "A",
+                    "tax_amount":  _d(record.get("tax_amount", 0)),
+                    # desktop sends subtotal, server field is total_price
+                    "total_price": _d(record.get("subtotal", 0)),
+                    # total/line_total is a computed property — not written directly
                 }
                 obj, created = SaleItem.objects.get_or_create(
                     sync_id=sync_id, defaults=defaults
@@ -261,18 +277,31 @@ def _push_sale_items(changes, user, schema_name):
                 if not created:
                     for k, v in defaults.items():
                         setattr(obj, k, v)
+                    obj._skip_deduction = True   # stock already deducted on first save
+                    obj._skip_sale_update = True  # avoid triggering sale.update_totals()
                     obj.save()
                 accepted.append(sync_id)
         except Exception as e:
+            logger.warning(f"SaleItem push error {sync_id}: {e}")
             rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
 
     return accepted, rejected, conflicts
 
 
 def _push_expenses(changes, user, schema_name):
+    """
+    Push expenses from desktop.
+
+    Field mapping (desktop → server):
+      title          → description  (server's main field)
+      description    → notes        (secondary text)
+      expense_date   → date         (DateField, not DateTimeField)
+      payment_method → uppercased   (server stores CASH, CREDIT_CARD etc.)
+      store_id       → IGNORED      (Expense has no store FK on server)
+      created_by_id  → user         (server uses user FK not created_by)
+    """
     try:
         from expenses.models import Expense
-        from stores.models import Store
     except ImportError:
         return [], [], []
 
@@ -285,23 +314,34 @@ def _push_expenses(changes, user, schema_name):
             continue
         try:
             with transaction.atomic():
-                store = _resolve_fk(Store, record.get("store_id"))
                 expense_dt = unix_to_dt(record.get("expense_date"))
+                expense_date = expense_dt.date() if expense_dt else dj_timezone.now().date()
+
+                # Uppercase payment method to match server choices
+                raw_pm = record.get("payment_method", "cash") or "cash"
+                payment_method = raw_pm.upper()
+                # Map desktop values to server choices if needed
+                pm_map = {
+                    "MOBILE_MONEY": "DIGITAL_WALLET",
+                    "BANK_TRANSFER": "BANK_TRANSFER",
+                    "CARD": "CREDIT_CARD",
+                }
+                payment_method = pm_map.get(payment_method, payment_method)
+                # Fallback to OTHER if not a valid choice
+                valid_pms = {"CASH", "CREDIT_CARD", "DEBIT_CARD", "BANK_TRANSFER", "DIGITAL_WALLET", "OTHER"}
+                if payment_method not in valid_pms:
+                    payment_method = "OTHER"
 
                 defaults = {
-                    "title":          record.get("title", ""),
-                    "description":    record.get("description", ""),
+                    # desktop title → server description (main field)
+                    "description":    record.get("title", "") or record.get("description", ""),
+                    # desktop description/notes → server notes
+                    "notes":          record.get("notes", "") or record.get("description", ""),
                     "amount":         _d(record.get("amount", 0)),
-                    "expense_date":   expense_dt or dj_timezone.now(),
-                    "category":       record.get("category", ""),
-                    "payment_method": record.get("payment_method", "cash"),
-                    "reference":      record.get("reference", ""),
-                    "status":         record.get("status", "pending"),
-                    "notes":          record.get("notes", ""),
-                    "created_by":     user,
+                    "date":           expense_date,
+                    "payment_method": payment_method,
+                    "user":           user,
                 }
-                if store:
-                    defaults["store"] = store
 
                 obj, created = Expense.objects.get_or_create(
                     sync_id=sync_id, defaults=defaults
@@ -312,6 +352,7 @@ def _push_expenses(changes, user, schema_name):
                     obj.save()
                 accepted.append(sync_id)
         except Exception as e:
+            logger.warning(f"Expense push error {sync_id}: {e}")
             rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
 
     for sync_id in changes.get("deleted", []):
@@ -319,7 +360,7 @@ def _push_expenses(changes, user, schema_name):
         if not sid:
             continue
         try:
-            Expense.objects.filter(sync_id=sid).update(status="cancelled")
+            # Expense has no status field — soft delete not supported, skip silently
             accepted.append(sid)
         except Exception as e:
             rejected.append({"sync_id": sid, "error": str(e)[:200]})
@@ -342,11 +383,11 @@ def _push_categories(changes, user, schema_name):
                 obj, created = Category.objects.get_or_create(
                     sync_id=sync_id,
                     defaults={
-                        "name":         record.get("name", ""),
-                        "code":         record.get("code", "") or None,
-                        "description":  record.get("description", ""),
+                        "name":          record.get("name", ""),
+                        "code":          record.get("code", "") or None,
+                        "description":   record.get("description", ""),
                         "category_type": record.get("category_type", "product"),
-                        "is_active":    safe_bool(record.get("is_active", True)),
+                        "is_active":     safe_bool(record.get("is_active", True)),
                     }
                 )
                 if not created:
@@ -415,19 +456,19 @@ def _push_products(changes, user, schema_name):
                 obj, created = Product.objects.get_or_create(
                     sync_id=sync_id,
                     defaults={
-                        "name":             record.get("name", ""),
-                        "sku":              record.get("sku", ""),
-                        "barcode":          record.get("barcode") or None,
-                        "description":      record.get("description", ""),
-                        "selling_price":    _d(record.get("selling_price", 0)),
-                        "cost_price":       _d(record.get("cost_price", 0)),
+                        "name":                record.get("name", ""),
+                        "sku":                 record.get("sku", ""),
+                        "barcode":             record.get("barcode") or None,
+                        "description":         record.get("description", ""),
+                        "selling_price":       _d(record.get("selling_price", 0)),
+                        "cost_price":          _d(record.get("cost_price", 0)),
                         "discount_percentage": _d(record.get("discount_percentage", 0)),
-                        "tax_rate":         record.get("tax_rate", "A") or "A",
-                        "unit_of_measure":  record.get("unit_of_measure", "103") or "103",
-                        "min_stock_level":  safe_int(record.get("min_stock_level"), 5),
-                        "is_active":        safe_bool(record.get("is_active", True)),
-                        "category":         category,
-                        "supplier":         supplier,
+                        "tax_rate":            record.get("tax_rate", "A") or "A",
+                        "unit_of_measure":     record.get("unit_of_measure", "103") or "103",
+                        "min_stock_level":     safe_int(record.get("min_stock_level"), 5),
+                        "is_active":           safe_bool(record.get("is_active", True)),
+                        "category":            category,
+                        "supplier":            supplier,
                     }
                 )
                 if not created:
@@ -436,7 +477,7 @@ def _push_products(changes, user, schema_name):
                     conflicts.append(serialize_product(obj, schema_name))
                 else:
                     accepted.append(sync_id)
-        except IntegrityError as e:
+        except IntegrityError:
             rejected.append({"sync_id": sync_id, "error": "SKU already exists"})
         except Exception as e:
             rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
@@ -568,49 +609,62 @@ def _d(value) -> Decimal:
     except (InvalidOperation, TypeError):
         return Decimal("0")
 
-
 def _customer_defaults(record: dict) -> dict:
     return {
-        "name":          record.get("name", ""),
-        "email":         record.get("email", "") or "",
-        "phone":         record.get("phone", "") or "",
-        "address":       record.get("address", "") or "",
-        "tin":           record.get("tin", "") or None,
-        "is_active":     safe_bool(record.get("is_active", True)),
-        "credit_limit":  _d(record.get("credit_limit", 0)),
+        "name":           record.get("name", ""),
+        "email":          record.get("email", "") or "",
+        "phone":          record.get("phone", "") or "",
+        # desktop sends address, server field is physical_address
+        "physical_address": record.get("address", "") or "",
+        "tin":            record.get("tin", "") or None,
+        "is_active":      safe_bool(record.get("is_active", True)),
+        "credit_limit":   _d(record.get("credit_limit", 0)),
+        # desktop sends current_balance, server field is credit_balance
+        "credit_balance": _d(record.get("current_balance", 0)),
     }
 
 
 def _apply_customer(obj, record: dict):
-    obj.name         = record.get("name", obj.name)
-    obj.email        = record.get("email", obj.email) or ""
-    obj.phone        = record.get("phone", obj.phone) or ""
-    obj.address      = record.get("address", obj.address) or ""
-    obj.tin          = record.get("tin") or obj.tin
-    obj.is_active    = safe_bool(record.get("is_active", obj.is_active))
-    obj.credit_limit = _d(record.get("credit_limit", obj.credit_limit))
-
+    obj.name             = record.get("name", obj.name)
+    obj.email            = record.get("email", obj.email) or ""
+    obj.phone            = record.get("phone", obj.phone) or ""
+    obj.physical_address = record.get("address", obj.physical_address) or ""
+    obj.tin              = record.get("tin") or obj.tin
+    obj.is_active        = safe_bool(record.get("is_active", obj.is_active))
+    obj.credit_limit     = _d(record.get("credit_limit", obj.credit_limit))
+    obj.credit_balance   = _d(record.get("current_balance", obj.credit_balance))
 
 def _sale_defaults(record: dict, store, customer, user) -> dict:
+    """
+    Build defaults dict for Sale.objects.get_or_create().
+
+    Notes:
+      - status, payment_method, payment_status must be UPPERCASE (server choices)
+      - amount_paid is a @property on Sale (from payments relation) — not a DB field
+      - change_amount does not exist on the server Sale model — omitted
+    """
     return {
-        "document_number": record.get("document_number", f"DESK-{record.get('sync_id', '')[:8]}"),
+        "document_number": record.get("document_number") or f"DESK-{str(record.get('sync_id', ''))[:8]}",
         "store":           store,
         "customer":        customer,
+        "created_by":      user,
         "subtotal":        _d(record.get("subtotal", 0)),
         "tax_amount":      _d(record.get("tax_amount", 0)),
         "discount_amount": _d(record.get("discount_amount", 0)),
         "total_amount":    _d(record.get("total_amount", 0)),
-        "amount_paid":     _d(record.get("amount_paid", 0)),
-        "change_amount":   _d(record.get("change_amount", 0)),
-        "status":          record.get("status", "completed"),
-        "payment_method":  record.get("payment_method", "cash"),
-        "payment_status":  record.get("payment_status", "paid"),
-        "notes":           record.get("notes", ""),
-        "created_by":      user,
+        # status/payment values come lowercased from desktop — uppercase for server
+        "status":          (record.get("status", "completed") or "completed").upper(),
+        "payment_method":  (record.get("payment_method", "cash") or "cash").upper(),
+        "payment_status":  (record.get("payment_status", "paid") or "paid").upper(),
+        "notes":           record.get("notes", "") or "",
     }
 
 
 def _apply_sale(obj, record: dict, store, customer):
+    """
+    Apply desktop record values to an existing Sale instance.
+    Desktop wins for all sale fields.
+    """
     if store:
         obj.store = store
     if customer is not None:
@@ -619,10 +673,9 @@ def _apply_sale(obj, record: dict, store, customer):
     obj.tax_amount      = _d(record.get("tax_amount", obj.tax_amount))
     obj.discount_amount = _d(record.get("discount_amount", obj.discount_amount))
     obj.total_amount    = _d(record.get("total_amount", obj.total_amount))
-    obj.amount_paid     = _d(record.get("amount_paid", obj.amount_paid))
-    obj.change_amount   = _d(record.get("change_amount", obj.change_amount))
-    obj.status          = record.get("status", obj.status)
-    obj.payment_method  = record.get("payment_method", obj.payment_method)
+    obj.status          = (record.get("status", obj.status) or obj.status).upper()
+    obj.payment_method  = (record.get("payment_method", obj.payment_method) or obj.payment_method).upper()
+    obj.payment_status  = (record.get("payment_status", getattr(obj, "payment_status", "PAID")) or "PAID").upper()
     obj.notes           = record.get("notes", obj.notes) or ""
 
 

@@ -42,6 +42,16 @@ FK resolution:
 NULL sync_id handling:
   Records with sync_id=NULL get a deterministic UUID auto-assigned.
   On first pull these always appear in "created" (their synced_at is null).
+
+Field mapping notes (server → desktop):
+  Store:    physical_address → address, is_main_branch → is_default, tin → efris_tin
+  Sale:     status/payment_method/payment_status lowercased, efris_invoice_number → fiscal_document_number
+            created_by.sync_id → created_by_id
+  SaleItem: total_price → subtotal, line_total → total, discount → discount_percentage
+            updated_at falls back to sale.updated_at then time.time()
+  Stock:    last_updated → updated_at (no updated_at field on server model)
+  Expense:  description → title, notes → description, date → expense_date,
+            payment_method lowercased, user.sync_id → created_by_id, no store FK
 """
 
 import time
@@ -170,12 +180,13 @@ def _pull_customers(since_dt, schema_name):
 
 def _pull_sales(since_dt, schema_name):
     from sales.models import Sale
-    qs = Sale.objects.select_related("store", "customer")
+    qs = Sale.objects.select_related("store", "customer", "created_by")
     return _build_changes_qs(qs, since_dt, schema_name, serialize_sale, "sales")
 
 
 def _pull_sale_items(since_dt, schema_name):
     from sales.models import SaleItem
+    # select_related on sale so we can fall back to sale.updated_at for updated_at
     qs = SaleItem.objects.select_related("sale", "product")
     return _build_changes_qs(qs, since_dt, schema_name, serialize_sale_item, "sale_items")
 
@@ -183,7 +194,8 @@ def _pull_sale_items(since_dt, schema_name):
 def _pull_expenses(since_dt, schema_name):
     try:
         from expenses.models import Expense
-        qs = Expense.objects.select_related("store")
+        # Expense has no store FK — only user
+        qs = Expense.objects.select_related("user")
         return _build_changes_qs(qs, since_dt, schema_name, serialize_expense, "expenses")
     except ImportError:
         return {"created": [], "updated": [], "deleted": []}
@@ -223,6 +235,9 @@ def _build_changes_qs(queryset, since_dt, schema_name, serializer_fn, table_name
     their sync_id was never sent, we must include them. We handle this by
     always including records where sync_id IS NULL in the 'created' bucket,
     then auto-assigning their sync_ids via ensure_sync_id().
+
+    Stock special case: Stock.last_updated is used instead of updated_at
+    because the server model has no updated_at field.
     """
     created = []
     updated = []
@@ -230,16 +245,20 @@ def _build_changes_qs(queryset, since_dt, schema_name, serializer_fn, table_name
 
     model = queryset.model
     has_deleted = _has_field(model, "is_deleted")
-    has_updated = _has_field(model, "updated_at")
+    has_updated = _has_field(model, "updated_at") or _has_field(model, "last_updated")
     has_created = _has_field(model, "created_at")
+
+    # Stock uses last_updated instead of updated_at
+    updated_at_field = "updated_at"
+    if not _has_field(model, "updated_at") and _has_field(model, "last_updated"):
+        updated_at_field = "last_updated"
 
     if since_dt and has_updated:
         # Delta pull: records changed since last pull
-        qs_changed = queryset.filter(updated_at__gte=since_dt)
+        qs_changed = queryset.filter(**{f"{updated_at_field}__gte": since_dt})
         # Also grab any records that still have sync_id=NULL (never pulled)
         if _has_field(model, "sync_id"):
             qs_null = queryset.filter(sync_id__isnull=True)
-            # Union approach — combine without duplicates
             changed_pks = set(qs_changed.values_list("pk", flat=True))
             null_pks = set(qs_null.values_list("pk", flat=True))
             all_pks = changed_pks | null_pks
@@ -258,7 +277,6 @@ def _build_changes_qs(queryset, since_dt, schema_name, serializer_fn, table_name
             )
 
             if has_deleted and obj.is_deleted:
-                # Include sync_id so desktop can soft-delete locally
                 sid = ensure_sync_id(obj, table_name, schema_name)
                 deleted.append(sid)
             elif is_new_to_desktop or not since_dt:
@@ -266,7 +284,7 @@ def _build_changes_qs(queryset, since_dt, schema_name, serializer_fn, table_name
             else:
                 updated.append(serializer_fn(obj, schema_name))
         except Exception as e:
-            logger.warning(f"Serialization error {table_name}#{obj.pk}: {e}")
+            logger.warning(f"Serialization error {table_name}#{obj.pk}: {e}", exc_info=True)
 
     return {"created": created, "updated": updated, "deleted": deleted}
 
