@@ -564,9 +564,10 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 # Application definition
 SHARED_APPS = [
-    'django_tenants',  # ✅ Must be first
+    'django_tenants', 
     'primebooks',
-    'company',  # ✅ Must be in shared apps (public schema)
+    'saad',
+    'company',  
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
