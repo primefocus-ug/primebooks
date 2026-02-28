@@ -1,5 +1,7 @@
+from public_accounts.admin_site import public_admin, PublicModelAdmin
 from django.contrib import admin
 from django.utils import timezone
+from django.utils.html import format_html
 from django.db.models import F
 
 from .models import PrimeBooksVersion, CrashReport
@@ -9,8 +11,8 @@ from .models import PrimeBooksVersion, CrashReport
 # PRIMEBOOKS VERSION ADMIN
 # ==========================================================
 
-@admin.register(PrimeBooksVersion)
-class PrimeBooksVersionAdmin(admin.ModelAdmin):
+class PrimeBooksVersionAdmin(PublicModelAdmin):
+
     list_display = (
         "version",
         "is_active",
@@ -70,8 +72,7 @@ class PrimeBooksVersionAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         """
-        When activating a new version,
-        automatically deactivate all others.
+        Ensure only one version is active at a time.
         """
         super().save_model(request, obj, form, change)
 
@@ -83,12 +84,12 @@ class PrimeBooksVersionAdmin(admin.ModelAdmin):
 # CRASH REPORT ADMIN
 # ==========================================================
 
-@admin.register(CrashReport)
-class CrashReportAdmin(admin.ModelAdmin):
+class CrashReportAdmin(PublicModelAdmin):
+
     list_display = (
-        "short_schema",
+        "schema_name",
         "app_version",
-        "status",
+        "colored_status",
         "occurrence_count",
         "last_seen_at",
         "created_at",
@@ -154,26 +155,52 @@ class CrashReportAdmin(admin.ModelAdmin):
         }),
     )
 
-    # --------------------------
-    # Admin Actions
-    # --------------------------
+    # ---------------------------
+    # Colored Status
+    # ---------------------------
 
-    @admin.action(description="Mark selected as Reviewed")
+    def colored_status(self, obj):
+        colors = {
+            CrashReport.STATUS_NEW: "red",
+            CrashReport.STATUS_REVIEWED: "orange",
+            CrashReport.STATUS_RESOLVED: "green",
+            CrashReport.STATUS_IGNORED: "gray",
+        }
+        color = colors.get(obj.status, "black")
+        return format_html(
+            '<span style="color:{}; font-weight:bold;">{}</span>',
+            color,
+            obj.get_status_display(),
+        )
+
+    colored_status.short_description = "Status"
+
+    # ---------------------------
+    # Bulk Actions
+    # ---------------------------
+
     def mark_reviewed(self, request, queryset):
         queryset.update(status=CrashReport.STATUS_REVIEWED)
 
-    @admin.action(description="Mark selected as Resolved")
     def mark_resolved(self, request, queryset):
         queryset.update(status=CrashReport.STATUS_RESOLVED)
 
-    @admin.action(description="Mark selected as Ignored")
     def mark_ignored(self, request, queryset):
         queryset.update(status=CrashReport.STATUS_IGNORED)
 
-    # --------------------------
-    # Helpers
-    # --------------------------
 
-    def short_schema(self, obj):
-        return obj.schema_name or "?"
-    short_schema.short_description = "Tenant"
+# ==========================================================
+# REGISTER TO PUBLIC ADMIN
+# ==========================================================
+
+public_admin.register(
+    PrimeBooksVersion,
+    PrimeBooksVersionAdmin,
+    app_label="primebooks"
+)
+
+public_admin.register(
+    CrashReport,
+    CrashReportAdmin,
+    app_label="primebooks"
+)
