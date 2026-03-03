@@ -480,10 +480,10 @@ class SaleItemAdmin(admin.ModelAdmin):
     sale_document.admin_order_field = 'sale__document_number'
 
     def product_name(self, obj):
-        return obj.product.name
+        return obj.product.name if obj.product else "Deleted Product"
 
-    product_name.short_description = 'Product'
-    product_name.admin_order_field = 'product__name'
+    product_name.short_description = "Product"
+    product_name.admin_order_field = "product__name"
 
     def discount_display(self, obj):
         if obj.discount > 0:
