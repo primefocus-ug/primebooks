@@ -320,6 +320,130 @@ body {
   opacity: .4;
   pointer-events: none;
 }
+/* ── Out-of-Stock toolbar button ── */
+.oos-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .28rem .75rem;
+  font-size: .72rem;
+  font-weight: 600;
+  background: var(--badge-red-bg, rgba(239,68,68,.12));
+  color: var(--red, #ef4444);
+  border: 1px solid rgba(239,68,68,.3);
+  border-radius: var(--radius-sm, 5px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.oos-toggle-btn:hover {
+  background: var(--red, #ef4444);
+  color: #fff;
+  border-color: transparent;
+}
+.oos-count-badge {
+  background: var(--red, #ef4444);
+  color: #fff;
+  border-radius: 10px;
+  padding: 0 5px;
+  font-size: .65rem;
+  font-weight: 700;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* ── Out-of-Stock slide-over panel ── */
+.oos-panel-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 1040;
+  display: none;
+}
+.oos-panel-backdrop.open { display: block; }
+
+.oos-panel {
+  position: fixed;
+  top: 0; right: -480px;
+  width: 460px; height: 100%;
+  background: var(--surface, #1a1f2b);
+  border-left: 1px solid var(--line, #2a3040);
+  box-shadow: -8px 0 32px rgba(0,0,0,.4);
+  z-index: 1050;
+  display: flex; flex-direction: column;
+  transition: right .28s cubic-bezier(.4,0,.2,1);
+}
+.oos-panel.open { right: 0; }
+
+.oos-panel-hdr {
+  display: flex; align-items: center; gap: .6rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-elevated, #1e2535);
+  flex-shrink: 0;
+}
+.oos-panel-hdr h5 {
+  margin: 0; flex: 1;
+  font-size: 1rem; font-weight: 700;
+  color: var(--text, #e2e8f0);
+}
+.oos-panel-hdr .close-oos {
+  background: none; border: none;
+  color: var(--muted); cursor: pointer;
+  font-size: 1.1rem; line-height: 1;
+}
+.oos-panel-hdr .close-oos:hover { color: var(--text); }
+
+.oos-panel-body {
+  flex: 1; overflow-y: auto; padding: .75rem 1rem;
+  display: flex; flex-direction: column; gap: .5rem;
+}
+
+.oos-item-row {
+  display: flex; align-items: center; gap: .75rem;
+  background: var(--surface-elevated, #1e2535);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: .6rem .75rem;
+  transition: border-color .15s;
+}
+.oos-item-row:hover { border-color: var(--red, #ef4444); }
+
+.oos-item-icon {
+  width: 32px; height: 32px; border-radius: 7px;
+  background: rgba(239,68,68,.12);
+  color: var(--red, #ef4444);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .9rem; flex-shrink: 0;
+}
+.oos-item-info { flex: 1; min-width: 0; }
+.oos-item-name {
+  font-weight: 600; font-size: .82rem;
+  color: var(--text); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.oos-item-meta {
+  font-size: .72rem; color: var(--muted);
+  margin-top: 1px;
+}
+.oos-item-badge {
+  font-size: .6rem; font-weight: 700;
+  background: rgba(239,68,68,.15);
+  color: var(--red, #ef4444);
+  border-radius: 4px; padding: 1px 5px;
+  flex-shrink: 0;
+}
+.oos-adj-btn {
+  padding: .25rem .7rem;
+  font-size: .72rem; font-weight: 700;
+  background: var(--overlay, #262d3d);
+  color: var(--accent, #60a5fa);
+  border: 1px solid rgba(96,165,250,.3);
+  border-radius: 6px; cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.oos-adj-btn:hover { background: var(--accent); color: #fff; border-color: transparent; }
 
 .product-icon {
   width: 40px; height: 40px;
@@ -2143,17 +2267,22 @@ body {
 
     <!-- Toolbar -->
     <div class="section-toolbar">
-      <div class="type-tabs">
-        <button class="type-tab active" data-type="all" onclick="switchItemType('all')">All</button>
-        <button class="type-tab" data-type="product" onclick="switchItemType('product')">Products</button>
-        <button class="type-tab" data-type="service" onclick="switchItemType('service')">Services</button>
-      </div>
-      <div class="search-box">
-        <i class="bi bi-search icon"></i>
-        <input type="text" id="productSearchBar" placeholder="Search items… (F1)" autocomplete="off">
-        <button class="clear-btn" onclick="clearProductSearch()" title="Clear"><i class="bi bi-x-lg"></i></button>
-      </div>
-    </div>
+  <div class="type-tabs">
+    <button class="type-tab active" data-type="all" onclick="switchItemType('all')">All</button>
+    <button class="type-tab" data-type="product" onclick="switchItemType('product')">Products</button>
+    <button class="type-tab" data-type="service" onclick="switchItemType('service')">Services</button>
+  </div>
+  <div class="search-box">
+    <i class="bi bi-search icon"></i>
+    <input type="text" id="productSearchBar" placeholder="Search items… (F1)" autocomplete="off">
+    <button class="clear-btn" onclick="clearProductSearch()" title="Clear"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <!-- Out-of-Stock button -->
+  <button id="oosToggleBtn" class="oos-toggle-btn" onclick="openOOSPanel()" style="display:none">
+    <i class="bi bi-exclamation-circle"></i>
+    Out of Stock <span id="oosCount" class="oos-count-badge">0</span>
+  </button>
+</div>
 
     <!-- Stats bar -->
     <div class="stats-bar">
@@ -3029,16 +3158,99 @@ and calls your /api/v1/ endpoints.
                 <input type="text" class="form-control" id="pf-barcode" placeholder="Optional">
               </div>
               <div class="col-6">
-                <label class="form-label">Category</label>
-                <select class="form-select" id="pf-category">
-                  <option value="">— Select —</option>
-                </select>
+                <label class="form-label">Category
+                  <button type="button" class="ss-inline-add-btn" onclick="openQuickAddCategory('pf-category','product')" title="Add new category">
+                    <i class="bi bi-plus-circle-fill"></i>
+                  </button>
+                </label>
+                <div class="ss-wrap" id="ss-wrap-pf-category">
+                  <select class="form-select ss-select" id="pf-category">
+                    <option value="">— Select —</option>
+                  </select>
+                </div>
+                <!-- Quick-add category inline form -->
+                <div class="ss-quick-form" id="ss-qf-pf-category" style="display:none">
+                  <div class="ss-qf-title"><i class="bi bi-tags me-1"></i>New Product Category</div>
+                  <div class="row g-2">
+                    <div class="col-8">
+                      <label class="ss-qf-label">Name <span class="req">*</span></label>
+                      <input type="text" class="form-control form-control-sm ss-qf-input" id="ss-qf-pf-category-name" placeholder="e.g. Beverages">
+                    </div>
+                    <div class="col-4">
+                      <label class="ss-qf-label">Code</label>
+                      <div class="input-group input-group-sm">
+                        <input type="text" class="form-control ss-qf-input" id="ss-qf-pf-category-code" placeholder="BEV">
+                        <button class="btn btn-outline-secondary" type="button" onclick="genCategoryCode('ss-qf-pf-category-code','ss-qf-pf-category-name')">Gen</button>
+                      </div>
+                    </div>
+                    <div class="col-12">
+                      <label class="ss-qf-label">Description</label>
+                      <textarea class="form-control form-control-sm ss-qf-input" id="ss-qf-pf-category-desc" rows="2" placeholder="Optional description…"></textarea>
+                    </div>
+                      <div class="col-12">
+                      <label class="ss-qf-label">Category Type</label>
+                      <select class="form-select form-select-sm ss-qf-input" id="ss-qf-pf-category-type">
+                        <option value="product" selected>Product</option>
+                        <option value="service">Service</option>
+                        <option value="both">Both</option>
+                      </select>
+                    </div>
+                    <div class="col-12">
+                      <div class="form-check" style="margin-top:.1rem">
+                        <input type="checkbox" class="form-check-input" id="ss-qf-pf-category-active" checked>
+                        <label class="form-check-label ss-qf-label" for="ss-qf-pf-category-active">Active</label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="ss-qf-actions">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeQuickForm('pf-category')">Cancel</button>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="submitQuickCategory('pf-category','product')">
+                      <span class="ss-qf-btn-text"><i class="bi bi-check2 me-1"></i>Save Category</span>
+                      <span class="ss-qf-btn-load" style="display:none"><span class="spinner-border spinner-border-sm"></span></span>
+                    </button>
+                  </div>
+                </div>
               </div>
               <div class="col-6">
-                <label class="form-label">Supplier</label>
-                <select class="form-select" id="pf-supplier">
-                  <option value="">— None —</option>
-                </select>
+                <label class="form-label">Supplier
+                  <button type="button" class="ss-inline-add-btn" onclick="openQuickAddSupplier('pf-supplier')" title="Add new supplier">
+                    <i class="bi bi-plus-circle-fill"></i>
+                  </button>
+                </label>
+                <div class="ss-wrap" id="ss-wrap-pf-supplier">
+                  <select class="form-select ss-select" id="pf-supplier">
+                    <option value="">— None —</option>
+                  </select>
+                </div>
+                <!-- Quick-add supplier inline form -->
+                <div class="ss-quick-form" id="ss-qf-pf-supplier" style="display:none">
+                  <div class="ss-qf-title"><i class="bi bi-building me-1"></i>New Supplier</div>
+                  <div class="row g-2">
+                    <div class="col-12">
+                      <label class="ss-qf-label">Name <span class="req">*</span></label>
+                      <input type="text" class="form-control form-control-sm ss-qf-input" id="ss-qf-pf-supplier-name" placeholder="e.g. Nile Breweries Ltd">
+                    </div>
+                    <div class="col-6">
+                      <label class="ss-qf-label">Phone</label>
+                      <input type="text" class="form-control form-control-sm ss-qf-input" id="ss-qf-pf-supplier-phone" placeholder="+256 …">
+                    </div>
+                    <div class="col-6">
+                      <label class="ss-qf-label">Email</label>
+                      <input type="email" class="form-control form-control-sm ss-qf-input" id="ss-qf-pf-supplier-email" placeholder="supplier@example.com">
+                    </div>
+                    <div class="col-12">
+                      <label class="ss-qf-label">Address</label>
+                      <input type="text" class="form-control form-control-sm ss-qf-input" id="ss-qf-pf-supplier-address" placeholder="Physical address (optional)">
+                    </div>
+                  </div>
+                  <div class="ss-qf-actions">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeQuickForm('pf-supplier')">Cancel</button>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="submitQuickSupplier('pf-supplier')">
+                      <span class="ss-qf-btn-text"><i class="bi bi-check2 me-1"></i>Save Supplier</span>
+                      <span class="ss-qf-btn-load" style="display:none"><span class="spinner-border spinner-border-sm"></span></span>
+                    </button>
+                  </div>
+                </div>
               </div>
               <div class="col-12">
                 <label class="form-label">Description</label>
@@ -3178,10 +3390,58 @@ and calls your /api/v1/ endpoints.
             </div>
           </div>
           <div class="col-6">
-            <label class="form-label">Category</label>
-            <select class="form-select" id="sf-category">
-              <option value="">— Select —</option>
-            </select>
+            <label class="form-label">Category
+              <button type="button" class="ss-inline-add-btn" onclick="openQuickAddCategory('sf-category','service')" title="Add new category">
+                <i class="bi bi-plus-circle-fill"></i>
+              </button>
+            </label>
+            <div class="ss-wrap" id="ss-wrap-sf-category">
+              <select class="form-select ss-select" id="sf-category">
+                <option value="">— Select —</option>
+              </select>
+            </div>
+            <!-- Quick-add category inline form -->
+            <div class="ss-quick-form" id="ss-qf-sf-category" style="display:none">
+              <div class="ss-qf-title"><i class="bi bi-tags me-1"></i>New Service Category</div>
+              <div class="row g-2">
+                <div class="col-8">
+                  <label class="ss-qf-label">Name <span class="req">*</span></label>
+                  <input type="text" class="form-control form-control-sm ss-qf-input" id="ss-qf-sf-category-name" placeholder="e.g. Consulting">
+                </div>
+                <div class="col-4">
+                  <label class="ss-qf-label">Code</label>
+                  <div class="input-group input-group-sm">
+                    <input type="text" class="form-control ss-qf-input" id="ss-qf-sf-category-code" placeholder="CON">
+                    <button class="btn btn-outline-secondary" type="button" onclick="genCategoryCode('ss-qf-sf-category-code','ss-qf-sf-category-name')">Gen</button>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <label class="ss-qf-label">Description</label>
+                  <textarea class="form-control form-control-sm ss-qf-input" id="ss-qf-sf-category-desc" rows="2" placeholder="Optional description…"></textarea>
+                </div>
+                  <div class="col-12">
+                      <label class="ss-qf-label">Category Type</label>
+                      <select class="form-select form-select-sm ss-qf-input" id="ss-qf-sf-category-type">
+                        <option value="product">Product</option>
+                        <option value="service" selected>Service</option>
+                        <option value="both">Both</option>
+                      </select>
+                    </div>
+                <div class="col-12">
+                  <div class="form-check" style="margin-top:.1rem">
+                    <input type="checkbox" class="form-check-input" id="ss-qf-sf-category-active" checked>
+                    <label class="form-check-label ss-qf-label" for="ss-qf-sf-category-active">Active</label>
+                  </div>
+                </div>
+              </div>
+              <div class="ss-qf-actions">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeQuickForm('sf-category')">Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="submitQuickCategory('sf-category','service')">
+                  <span class="ss-qf-btn-text"><i class="bi bi-check2 me-1"></i>Save Category</span>
+                  <span class="ss-qf-btn-load" style="display:none"><span class="spinner-border spinner-border-sm"></span></span>
+                </button>
+              </div>
+            </div>
           </div>
           <div class="col-12">
             <label class="form-label">Description</label>
@@ -3245,9 +3505,12 @@ and calls your /api/v1/ endpoints.
             <input type="text" class="form-control" id="cf-name" placeholder="Category name">
           </div>
           <div class="col-6">
-            <label class="form-label">Code</label>
-            <input type="text" class="form-control" id="cf-code" placeholder="Optional code">
-          </div>
+              <label class="form-label">Code</label>
+              <div class="input-group">
+                <input type="text" class="form-control" id="cf-code" placeholder="Optional code">
+                <button class="btn btn-outline-secondary" type="button" onclick="genCategoryCode('cf-code','cf-name')">Gen</button>
+              </div>
+            </div>
           <div class="col-6">
             <label class="form-label">Type <span class="req">*</span></label>
             <select class="form-select" id="cf-type">
@@ -3514,6 +3777,22 @@ and calls your /api/v1/ endpoints.
   </div>
 </div>
 
+<!-- ── Out-of-Stock Slide Panel ── -->
+<div class="oos-panel-backdrop" id="oosPanelBackdrop" onclick="closeOOSPanel()"></div>
+<div class="oos-panel" id="oosPanel">
+  <div class="oos-panel-hdr">
+    <i class="bi bi-exclamation-circle" style="color:var(--red);font-size:1.1rem"></i>
+    <h5>Out of Stock <span id="oosPanelCount" style="font-size:.8rem;color:var(--muted);font-weight:400">(0 products)</span></h5>
+    <button class="close-oos" onclick="closeOOSPanel()"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div style="padding:.5rem 1rem;border-bottom:1px solid var(--line)">
+    <input type="text" id="oosSearch" class="form-control form-control-sm"
+      placeholder="Filter by name or SKU…"
+      oninput="renderOOSList(this.value)"
+      style="background:var(--overlay);border-color:var(--line);color:var(--text)">
+  </div>
+  <div class="oos-panel-body" id="oosPanelBody"></div>
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════
      STYLES
@@ -4260,6 +4539,100 @@ and calls your /api/v1/ endpoints.
 /* Modal z-indexes are managed dynamically by the MutationObserver in JS.
    Static CSS overrides caused stuck backdrops — removed intentionally. */
 
+/* ── SMART-SELECT (inline quick-add) ── */
+.form-label .ss-inline-add-btn {
+  background: none;
+  border: none;
+  padding: 0 0 0 .35rem;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: .82rem;
+  vertical-align: middle;
+  opacity: .75;
+  transition: opacity var(--transition), transform var(--transition);
+  line-height: 1;
+}
+.form-label .ss-inline-add-btn:hover { opacity: 1; transform: scale(1.15); }
+
+.ss-wrap { position: relative; }
+
+.ss-select option.ss-add-option {
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+}
+
+/* Quick-add inline form */
+.ss-quick-form {
+  margin-top: .5rem;
+  background: var(--lift);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: .75rem;
+  animation: ssQfIn .18s ease;
+}
+@keyframes ssQfIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+
+.ss-qf-title {
+  font-size: .72rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  margin-bottom: .5rem;
+}
+
+.ss-qf-label {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--text-2);
+  display: block;
+  margin-bottom: .2rem;
+}
+
+.ss-qf-input {
+  font-size: .8rem;
+  background: var(--ink-3);
+  border-color: var(--line);
+  color: var(--text);
+}
+.ss-qf-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+
+.ss-qf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+  margin-top: .5rem;
+}
+
+/* Enhanced field-level error */
+.ss-field-error {
+  font-size: .7rem;
+  color: var(--red);
+  margin-top: .25rem;
+  display: none;
+}
+.ss-field-error.show { display: block; }
+.form-control.is-invalid-custom,
+.form-select.is-invalid-custom {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 0 2px var(--red-dim) !important;
+}
+
+/* Toast enhancements */
+.toast-item.error .toast-icon { background: var(--red-dim); color: var(--red); }
+.toast-item.warning .toast-icon { background: var(--amber-dim); color: var(--amber); }
+.toast-item.info .toast-icon { background: var(--accent-dim); color: var(--accent); }
+.toast-item.success .toast-icon { background: var(--green-dim); color: var(--green); }
+.toast-item .toast-detail {
+  font-size: .68rem;
+  color: var(--muted);
+  margin-top: .15rem;
+  line-height: 1.3;
+}
+
 .inv-modal-content {
   background: var(--card) !important;
   border: 1px solid var(--line) !important;
@@ -4753,11 +5126,12 @@ const InvState = {
 };
 
 /* ── PANEL OPEN / CLOSE ── */
-function openInventoryPanel() {
+async function openInventoryPanel() {
   const panel = document.getElementById('inventoryPanel');
   panel.classList.add('open');
   invLoadTab(InvState.tab);
-  invLoadSelectOptions();
+  await invLoadSelectOptions();
+  ssInjectAddOptions();   // wire sentinel listeners now that DOM elements exist
 }
 
 function closeInventoryPanel() {
@@ -4890,7 +5264,20 @@ async function invFetch(url, opts = {}) {
   const ct = r.headers.get('content-type') || '';
   if (!ct.includes('application/json')) throw new Error(`HTTP ${r.status}`);
   const data = await r.json();
-  if (!r.ok) throw new Error(data.detail || data.error || `HTTP ${r.status}`);
+  if (!r.ok) {
+    // Build a rich error message from DRF validation errors
+    if (typeof data === 'object' && !data.detail && !data.error) {
+      // Field-level errors: { field: ["msg1"], ... } or { non_field_errors: [...] }
+      const parts = [];
+      for (const [key, val] of Object.entries(data)) {
+        const msgs = Array.isArray(val) ? val : [val];
+        if (key === 'non_field_errors') parts.push(...msgs);
+        else parts.push(`${key}: ${msgs.join(', ')}`);
+      }
+      if (parts.length) throw new Error(parts.join(' · '));
+    }
+    throw new Error(data.detail || data.error || `HTTP ${r.status}`);
+  }
   return data;
 }
 
@@ -4921,8 +5308,11 @@ async function invLoadSelectOptions() {
     InvState.productCategories = pc.results || pc;
     const pfCat = document.getElementById('pf-category');
     if (pfCat) {
-      pfCat.innerHTML = '<option value="">— Select —</option>' +
-        InvState.productCategories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+      const cur = pfCat.value;
+      pfCat.innerHTML = '<option value="">— Select category —</option>' +
+        InvState.productCategories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') +
+        '<option value="__add_category_product__" class="ss-add-option">＋ Add new category…</option>';
+      if (cur && cur !== '__add_category_product__') pfCat.value = cur;
     }
 
     /* Service categories */
@@ -4930,8 +5320,11 @@ async function invLoadSelectOptions() {
     InvState.serviceCategories = sc.results || sc;
     const sfCat = document.getElementById('sf-category');
     if (sfCat) {
-      sfCat.innerHTML = '<option value="">— Select —</option>' +
-        InvState.serviceCategories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+      const cur = sfCat.value;
+      sfCat.innerHTML = '<option value="">— Select category —</option>' +
+        InvState.serviceCategories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') +
+        '<option value="__add_category_service__" class="ss-add-option">＋ Add new category…</option>';
+      if (cur && cur !== '__add_category_service__') sfCat.value = cur;
     }
 
     /* Suppliers */
@@ -4939,8 +5332,11 @@ async function invLoadSelectOptions() {
     InvState.suppliers = sup.results || sup;
     const pfSup = document.getElementById('pf-supplier');
     if (pfSup) {
-      pfSup.innerHTML = '<option value="">— None —</option>' +
-        InvState.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+      const cur = pfSup.value;
+      pfSup.innerHTML = '<option value="">— Select supplier —</option>' +
+        InvState.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('') +
+        '<option value="__add_supplier__" class="ss-add-option">＋ Add new supplier…</option>';
+      if (cur && cur !== '__add_supplier__') pfSup.value = cur;
     }
 
     /* Products for stock dropdown + transfer form */
@@ -5025,6 +5421,7 @@ async function openProductForm(productId = null) {
     finally { showLoading(false); }
   }
 
+  ssInjectAddOptions();
   new bootstrap.Modal(document.getElementById('productFormModal')).show();
 }
 
@@ -5195,6 +5592,7 @@ async function openServiceForm(serviceId = null) {
     finally { showLoading(false); }
   }
 
+  ssInjectAddOptions();
   new bootstrap.Modal(document.getElementById('serviceFormModal')).show();
 }
 
@@ -5242,7 +5640,12 @@ function genServiceCode() {
   const num = String(Math.floor(Math.random() * 900) + 100);
   document.getElementById('sf-code').value = `${prefix}-${num}`;
 }
-
+function genCategoryCode(codeFieldId, nameFieldId) {
+  const name = document.getElementById(nameFieldId)?.value?.trim() || '';
+  const prefix = name.substring(0, 3).toUpperCase().replace(/\s/g, '') || 'CAT';
+  const num = String(Math.floor(Math.random() * 900) + 100);
+  document.getElementById(codeFieldId).value = `${prefix}-${num}`;
+}
 /* ─────────────────────────────────────────────────────────────
    CATEGORIES
    ───────────────────────────────────────────────────────────── */
@@ -5447,7 +5850,7 @@ async function invLoadStock(q = '') {
             <button
               class="inv-act-btn add-stock"
               title="Adjust"
-              onclick="openStockFormForProduct(${s.product}, '${safeProductName}', ${s.store})"
+              onclick="openStockFormForProduct(${s.product}, '${safeProductName}', ${s.store}, ${qty})"
             >
               <i class="bi bi-pencil"></i>
             </button>
@@ -5480,14 +5883,18 @@ function openStockForm() {
   new bootstrap.Modal(document.getElementById('stockFormModal')).show();
 }
 
-function openStockFormForProduct(productId, productName, storeId = null) {
+function openStockFormForProduct(productId, productName, storeId = null, currentQty = null) {
   openStockForm();
   document.getElementById('stockCurrentInfo').style.display = 'block';
   document.getElementById('stockInfoName').textContent = productName;
-  document.getElementById('stockInfoMeta').textContent = `Product ID: ${productId}`;
+  document.getElementById('stockInfoMeta').textContent =
+    `Current stock: ${currentQty !== null ? currentQty + ' units' : 'loading...'}`;
   document.getElementById('stf-product').value = productId;
-  document.getElementById('stockProductRow').style.display = 'none'; /* hide dropdown — pre-filled */
+  document.getElementById('stockProductRow').style.display = 'none';
   if (storeId) document.getElementById('stf-store').value = storeId;
+  if (currentQty !== null) {
+    document.getElementById('stf-qty').value = currentQty;
+  }
 }
 
 async function saveStockAdjustment() {
@@ -5496,9 +5903,18 @@ async function saveStockAdjustment() {
   const qty = parseFloat(document.getElementById('stf-qty').value);
   const movType = document.getElementById('stf-type').value;
 
-  if (!productId) { showToast('Select a product', 'error'); return; }
+  // Validation
+  if (!productId) {
+    showEnhancedToast('No product selected', 'error', 'Search and select a product first.');
+    return;
+  }
   if (!storeId) { showToast('Select a store', 'error'); return; }
-  if (!qty || qty <= 0) { showToast('Enter valid quantity', 'error'); return; }
+  if (!qty || qty <= 0) {
+    document.getElementById('stf-qty')?.classList.add('is-invalid-custom');
+    showEnhancedToast('Please fix the highlighted fields', 'error', 'Enter a valid quantity.');
+    return;
+  }
+  document.getElementById('stf-qty')?.classList.remove('is-invalid-custom');
 
   const payload = {
     product: parseInt(productId),
@@ -7824,20 +8240,35 @@ function displayItems(items) {
 function renderProducts(items) {
   const grid = document.getElementById('productsGrid');
   if (!grid) return;
-  grid.innerHTML = items.map(item => {
+
+  // Split in-stock vs out-of-stock; update the OOS button badge
+  updateOOSButton(items);
+
+  // Only show in-stock items in the main grid (services always shown)
+  const visibleItems = items.filter(item =>
+    item.item_type !== 'PRODUCT' || (item.stock?.available ?? 0) > 0
+  );
+
+  if (!visibleItems.length) {
+    // Let displayItems handle the empty state
+    grid.innerHTML = '';
+    showProductsEmpty();
+    return;
+  }
+
+  grid.innerHTML = visibleItems.map(item => {
     const isProd = item.item_type==='PRODUCT';
-    const oos = isProd && item.stock?.available <= 0;
-    return `<div class="product-card ${oos?'out-of-stock':''}">
+    return `<div class="product-card">
       ${item.discount_percentage>0 ? `<span class="discount-tag">-${item.discount_percentage}%</span>` : ''}
       ${item.is_export_ready ? `<span class="export-tag">EXPORT</span>` : ''}
       <div class="product-icon type-${isProd?'product':'service'}"><i class="bi bi-${isProd?'box':'gear'}"></i></div>
       <div class="product-name">${esc(item.name)}</div>
       <div class="product-meta">
         <span class="product-price">${fmt(item.final_price)}</span>
-        ${isProd&&item.stock ? `<span class="product-stock"><span class="stock-dot ${item.stock.available>5?'good':item.stock.available<0?'low':'empty'}"></span>${item.stock.available}</span>` : ''}
+        ${isProd&&item.stock ? `<span class="product-stock"><span class="stock-dot ${item.stock.available>5?'good':item.stock.available<1?'low':'empty'}"></span>${item.stock.available}</span>` : ''}
       </div>
-      <button class="product-add-btn" onclick='addToCartSafe(${item.id},"${item.item_type}")' ${oos?'disabled':''}>
-        <i class="bi bi-cart-plus"></i>${oos?'Out of Stock':'Add'}
+      <button class="product-add-btn" onclick='addToCartSafe(${item.id},"${item.item_type}")'>
+        <i class="bi bi-cart-plus"></i> Add
       </button>
     </div>`;
   }).join('');
@@ -7865,6 +8296,89 @@ function clearProductSearch() {
 }
 
 function resetProductFilters() { clearProductSearch(); switchItemType('all'); }
+
+// ══════════════════════════════════════════════════════════
+// OUT-OF-STOCK PANEL
+// ══════════════════════════════════════════════════════════
+
+/** Called after renderProducts — show/hide and badge the OOS button */
+function updateOOSButton(allItems) {
+  const products = allItems.filter(it => it.item_type === 'PRODUCT');
+  const oosItems = products.filter(it => (it.stock?.available ?? 0) <= 0);
+  const btn      = document.getElementById('oosToggleBtn');
+  const badge    = document.getElementById('oosCount');
+  if (!btn) return;
+  if (oosItems.length > 0) {
+    btn.style.display = 'flex';
+    if (badge) badge.textContent = oosItems.length;
+  } else {
+    btn.style.display = 'none';
+  }
+  // Stash for the panel
+  window._oosItems = oosItems;
+}
+
+function openOOSPanel() {
+  renderOOSList('');
+  document.getElementById('oosPanel')?.classList.add('open');
+  document.getElementById('oosPanelBackdrop')?.classList.add('open');
+  document.getElementById('oosSearch').value = '';
+}
+
+function closeOOSPanel() {
+  document.getElementById('oosPanel')?.classList.remove('open');
+  document.getElementById('oosPanelBackdrop')?.classList.remove('open');
+}
+
+function renderOOSList(filter) {
+  const items = (window._oosItems || []).filter(p =>
+    !filter || p.name.toLowerCase().includes(filter.toLowerCase())
+              || (p.sku||'').toLowerCase().includes(filter.toLowerCase())
+  );
+  const count = document.getElementById('oosPanelCount');
+  if (count) count.textContent = `(${items.length} product${items.length!==1?'s':''})`;
+
+  const body = document.getElementById('oosPanelBody');
+  if (!body) return;
+
+  if (!items.length) {
+    body.innerHTML = `<div style="text-align:center;color:var(--muted);padding:2rem;font-size:.85rem">
+      <i class="bi bi-check-circle" style="font-size:2rem;color:var(--green)"></i>
+      <p style="margin-top:.5rem">No out-of-stock products match the filter.</p>
+    </div>`;
+    return;
+  }
+
+  body.innerHTML = items.map(p => `
+    <div class="oos-item-row">
+      <div class="oos-item-icon"><i class="bi bi-box"></i></div>
+      <div class="oos-item-info">
+        <div class="oos-item-name">${esc(p.name)}</div>
+        <div class="oos-item-meta">${p.sku ? 'SKU: '+esc(p.sku)+' · ' : ''}${fmt(p.final_price)}</div>
+      </div>
+      <span class="oos-item-badge">OUT OF STOCK</span>
+      <button class="oos-adj-btn" onclick="openStockAdjFromOOS('${p.id}','${esc(p.name)}')">
+        <i class="bi bi-plus-circle me-1"></i>Adjust Stock
+      </button>
+    </div>
+  `).join('');
+}
+
+function openStockAdjFromOOS(productId, productName) {
+  closeOOSPanel();
+
+  // Open the inventory panel first, then trigger the stock adjustment modal
+  openInventoryPanel().then(() => {
+    switchInvTab('stock');
+    setTimeout(() => {
+      openStockFormForProduct(
+        productId,
+        productName,
+        document.getElementById('storeSelect')?.value || null
+      );
+    }, 150);
+  });
+}
 
 // ═══════════════════════════════════════════════
 // PAGINATION
@@ -9490,7 +10004,325 @@ function clearAllDrafts() {
 // Cache cleanup
 setInterval(()=>{ const now=Date.now(); for(const[k,v] of SaleState.searchCache.entries()) if(now-v.ts>300000) SaleState.searchCache.delete(k); }, 60000);
 
-console.log('✅ POS Loaded');
+// ═══════════════════════════════════════════════════════════════
+// SMART SELECT — inline quick-add for category / supplier
+// ═══════════════════════════════════════════════════════════════
+
+/** After invLoadSelectOptions runs, inject "＋ Add…" sentinel option into
+ *  every ss-select so users can trigger quick-add from the dropdown itself. */
+/** Wire up the sentinel "＋ Add new…" change listeners — called once on DOMContentLoaded.
+ *  The options themselves are baked into invLoadSelectOptions now. */
+function ssInjectAddOptions() {
+  function wireSelect(selectId, handler) {
+    const el = document.getElementById(selectId);
+    if (!el || el.dataset.ssWired) return;
+    el.dataset.ssWired = '1';
+    el.addEventListener('change', handler);
+  }
+
+  wireSelect('pf-category', e => {
+    if (e.target.value === '__add_category_product__') {
+      e.target.value = '';
+      openQuickAddCategory('pf-category', 'product');
+    }
+  });
+  wireSelect('pf-supplier', e => {
+    if (e.target.value === '__add_supplier__') {
+      e.target.value = '';
+      openQuickAddSupplier('pf-supplier');
+    }
+  });
+  wireSelect('sf-category', e => {
+    if (e.target.value === '__add_category_service__') {
+      e.target.value = '';
+      openQuickAddCategory('sf-category', 'service');
+    }
+  });
+}
+
+// Patch invLoadSelectOptions to also inject add-options after load
+/** Open the quick-add mini-form for category */
+function openQuickAddCategory(fieldId, catType) {
+  closeAllQuickForms();
+  const qf = document.getElementById(`ss-qf-${fieldId}`);
+  const nameInput = document.getElementById(`ss-qf-${fieldId}-name`);
+  if (!qf) return;
+  qf.style.display = 'block';
+  if (nameInput) { nameInput.value = ''; setTimeout(() => nameInput.focus(), 60); }
+  // Set the type if there's a type field in this qf (not present for all)
+  const typeHidden = document.getElementById(`ss-qf-${fieldId}-type`);
+  if (typeHidden) typeHidden.value = catType;
+}
+
+/** Open the quick-add mini-form for supplier */
+function openQuickAddSupplier(fieldId) {
+  closeAllQuickForms();
+  const qf = document.getElementById(`ss-qf-${fieldId}`);
+  if (!qf) return;
+  qf.style.display = 'block';
+  const nameInput = document.getElementById(`ss-qf-${fieldId}-name`);
+  if (nameInput) { nameInput.value = ''; setTimeout(() => nameInput.focus(), 60); }
+  const phoneInput = document.getElementById(`ss-qf-${fieldId}-phone`);
+  if (phoneInput) phoneInput.value = '';
+}
+
+/** Close a specific quick-form */
+function closeQuickForm(fieldId) {
+  const qf = document.getElementById(`ss-qf-${fieldId}`);
+  if (qf) qf.style.display = 'none';
+}
+
+/** Close all open quick-forms */
+function closeAllQuickForms() {
+  document.querySelectorAll('.ss-quick-form').forEach(el => el.style.display = 'none');
+}
+
+/** Submit quick-add category, then auto-select the new one in the target select */
+async function submitQuickCategory(fieldId, catType) {
+  const nameInput = document.getElementById(`ss-qf-${fieldId}-name`);
+  const codeInput = document.getElementById(`ss-qf-${fieldId}-code`);
+  const descInput = document.getElementById(`ss-qf-${fieldId}-desc`);
+  const activeInput = document.getElementById(`ss-qf-${fieldId}-active`);
+  const typeInput   = document.getElementById(`ss-qf-${fieldId}-type`);
+
+  const resolvedType = typeInput?.value || catType;
+
+  const name = nameInput?.value?.trim();
+  if (!name) {
+    showEnhancedToast('Category name is required', 'error', 'Please enter a name before saving.');
+    nameInput?.classList.add('is-invalid-custom');
+    nameInput?.focus();
+    return;
+  }
+  nameInput?.classList.remove('is-invalid-custom');
+
+  const qfEl = document.getElementById(`ss-qf-${fieldId}`);
+  const btnText = qfEl?.querySelector('.ss-qf-btn-text');
+  const btnLoad = qfEl?.querySelector('.ss-qf-btn-load');
+  const btn = qfEl?.querySelector('.btn-primary');
+  if (btnText) btnText.style.display = 'none';
+  if (btnLoad) btnLoad.style.display = 'inline-block';
+  if (btn) btn.disabled = true;
+
+  try {
+    const saved = await invPost(`${INV_API}/categories/`, {
+    name,
+    code: codeInput?.value?.trim() || null,
+    description: descInput?.value?.trim() || '',
+    category_type: resolvedType,  // ← was catType
+    is_active: activeInput ? activeInput.checked : true,
+    efris_auto_sync: false,
+  });
+
+    // Reload all selects (options are rebuilt with sentinel baked in)
+    await invLoadSelectOptions();
+
+    // Auto-select the new category in the target field
+    const selectEl = document.getElementById(fieldId);
+    if (selectEl) selectEl.value = saved.id;
+
+    // Clear form fields
+    if (nameInput) nameInput.value = '';
+    if (codeInput) codeInput.value = '';
+    if (descInput) descInput.value = '';
+    if (activeInput) activeInput.checked = true;
+
+    closeQuickForm(fieldId);
+    showEnhancedToast(`Category "${saved.name}" added`, 'success', 'It has been selected automatically.');
+
+    // Also refresh the categories tab list if visible
+    invLoadCategories(document.getElementById('invCategorySearch')?.value || '');
+
+  } catch(e) {
+    const detail = ssParseApiError(e);
+    showEnhancedToast('Failed to create category', 'error', detail);
+  } finally {
+    if (btnText) btnText.style.display = 'inline';
+    if (btnLoad) btnLoad.style.display = 'none';
+    if (btn) btn.disabled = false;
+  }
+}
+
+/** Submit quick-add supplier, then auto-select in target select */
+async function submitQuickSupplier(fieldId) {
+  const nameInput    = document.getElementById(`ss-qf-${fieldId}-name`);
+  const phoneInput   = document.getElementById(`ss-qf-${fieldId}-phone`);
+  const emailInput   = document.getElementById(`ss-qf-${fieldId}-email`);
+  const addressInput = document.getElementById(`ss-qf-${fieldId}-address`);
+
+  const name = nameInput?.value?.trim();
+  if (!name) {
+    showEnhancedToast('Supplier name is required', 'error', 'Please enter a name before saving.');
+    nameInput?.classList.add('is-invalid-custom');
+    nameInput?.focus();
+    return;
+  }
+  nameInput?.classList.remove('is-invalid-custom');
+
+  const qfEl = document.getElementById(`ss-qf-${fieldId}`);
+  const btnText = qfEl?.querySelector('.ss-qf-btn-text');
+  const btnLoad = qfEl?.querySelector('.ss-qf-btn-load');
+  const btn = qfEl?.querySelector('.btn-primary');
+  if (btnText) btnText.style.display = 'none';
+  if (btnLoad) btnLoad.style.display = 'inline-block';
+  if (btn) btn.disabled = true;
+
+  try {
+    const payload = { name, is_active: true };
+    const phone = phoneInput?.value?.trim();
+    const email = emailInput?.value?.trim();
+    const address = addressInput?.value?.trim();
+    if (phone) payload.phone = phone;
+    if (email) payload.email = email;
+    if (address) payload.address = address;
+
+    const saved = await invPost(`${INV_API}/suppliers/`, payload);
+
+    await invLoadSelectOptions();
+
+    const selectEl = document.getElementById(fieldId);
+    if (selectEl) selectEl.value = saved.id;
+
+    // Clear form fields
+    [nameInput, phoneInput, emailInput, addressInput].forEach(el => { if (el) el.value = ''; });
+
+    closeQuickForm(fieldId);
+    showEnhancedToast(`Supplier "${saved.name}" added`, 'success', 'It has been selected automatically.');
+
+  } catch(e) {
+    const detail = ssParseApiError(e);
+    showEnhancedToast('Failed to create supplier', 'error', detail);
+  } finally {
+    if (btnText) btnText.style.display = 'inline';
+    if (btnLoad) btnLoad.style.display = 'none';
+    if (btn) btn.disabled = false;
+  }
+}
+
+/** Parse API error into a human-readable string */
+function ssParseApiError(err) {
+  if (!err) return 'An unknown error occurred.';
+  const msg = err.message || String(err);
+  // Try to detect common patterns
+  if (msg.includes('unique') || msg.includes('already exists')) return 'This name already exists. Try a different name.';
+  if (msg.includes('400')) return 'Invalid data submitted. Please check your input.';
+  if (msg.includes('401') || msg.includes('403')) return 'Permission denied. You may not have access to this action.';
+  if (msg.includes('404')) return 'The resource was not found. Please refresh and try again.';
+  if (msg.includes('500') || msg.includes('502') || msg.includes('503')) return 'Server error. Please try again in a moment.';
+  if (msg.includes('NetworkError') || msg.includes('Failed to fetch')) return 'Network error. Check your internet connection.';
+  return msg.length > 120 ? msg.slice(0, 120) + '…' : msg;
+}
+
+/** Enhanced showToast with optional detail line */
+function showEnhancedToast(message, type = 'info', detail = null) {
+  // Try to use the existing showToast with extra detail in message
+  if (detail) {
+    // Inject detail via a secondary call or extend the message
+    const shelf = document.getElementById('toastShelf');
+    if (!shelf) { showToast(message, type); return; }
+    const id = 'toast-' + Date.now();
+    const iconMap = { success: 'bi-check-circle', error: 'bi-x-circle', warning: 'bi-exclamation-triangle', info: 'bi-info-circle' };
+    const icon = iconMap[type] || 'bi-info-circle';
+    const el = document.createElement('div');
+    el.className = `toast-item ${type}`;
+    el.id = id;
+    el.innerHTML = `
+      <div class="toast-icon"><i class="bi ${icon}"></i></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.8rem;font-weight:600;color:var(--text)">${escSafe(message)}</div>
+        <div class="toast-detail">${escSafe(detail)}</div>
+      </div>
+      <button onclick="document.getElementById('${id}')?.remove()" style="background:none;border:none;color:var(--muted);cursor:pointer;padding:0;font-size:.9rem;flex-shrink:0"><i class="bi bi-x"></i></button>
+    `;
+    shelf.appendChild(el);
+    setTimeout(() => el.classList.add('show'), 10);
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); }, 5000);
+  } else {
+    showToast(message, type);
+  }
+}
+
+// ── Patch saveProduct / saveService / saveCategory / saveStockAdjustment
+// to use enhanced error feedback with specific field highlighting
+
+const _origSaveProduct = saveProduct;
+async function saveProduct() {
+  // Clear any previous field errors
+  ['pf-name','pf-sku','pf-selling-price'].forEach(id => {
+    document.getElementById(id)?.classList.remove('is-invalid-custom');
+  });
+
+  const name = document.getElementById('pf-name')?.value?.trim();
+  const sku = document.getElementById('pf-sku')?.value?.trim();
+  const price = parseFloat(document.getElementById('pf-selling-price')?.value);
+
+  let hasError = false;
+  if (!name) {
+    document.getElementById('pf-name')?.classList.add('is-invalid-custom');
+    hasError = true;
+  }
+  if (!sku) {
+    document.getElementById('pf-sku')?.classList.add('is-invalid-custom');
+    hasError = true;
+  }
+  if (!price || price < 0) {
+    document.getElementById('pf-selling-price')?.classList.add('is-invalid-custom');
+    hasError = true;
+  }
+  if (hasError) {
+    showEnhancedToast('Please fix the highlighted fields', 'error', 'Name, SKU and Selling Price are required.');
+    // Switch to Basic tab if needed
+    document.querySelector('[data-bs-target="#pfTab-basic"]')?.click();
+    return;
+  }
+
+  // Delegate to original
+  return _origSaveProduct();
+}
+
+const _origSaveService = saveService;
+async function saveService() {
+  ['sf-name','sf-code','sf-price'].forEach(id => {
+    document.getElementById(id)?.classList.remove('is-invalid-custom');
+  });
+  const name = document.getElementById('sf-name')?.value?.trim();
+  const code = document.getElementById('sf-code')?.value?.trim();
+  const price = parseFloat(document.getElementById('sf-price')?.value);
+
+  let hasError = false;
+  if (!name) { document.getElementById('sf-name')?.classList.add('is-invalid-custom'); hasError = true; }
+  if (!code) { document.getElementById('sf-code')?.classList.add('is-invalid-custom'); hasError = true; }
+  if (!price || price < 0) { document.getElementById('sf-price')?.classList.add('is-invalid-custom'); hasError = true; }
+  if (hasError) {
+    showEnhancedToast('Please fix the highlighted fields', 'error', 'Name, Code and Unit Price are required.');
+    return;
+  }
+  return _origSaveService();
+}
+
+const _origSaveCategory = saveCategory;
+async function saveCategory() {
+  document.getElementById('cf-name')?.classList.remove('is-invalid-custom');
+  const name = document.getElementById('cf-name')?.value?.trim();
+  if (!name) {
+    document.getElementById('cf-name')?.classList.add('is-invalid-custom');
+    showEnhancedToast('Category name is required', 'error', 'Enter a name to continue.');
+    return;
+  }
+  return _origSaveCategory();
+}
+
+
+
+// Auto-close quick forms when modals close
+document.addEventListener('hidden.bs.modal', () => closeAllQuickForms());
+
+// ssInjectAddOptions() is called from openInventoryPanel(), openProductForm(),
+// and openServiceForm() — right before each modal/panel shows, so elements exist.
+
+
+console.log('✅ Smart-Select & Enhanced Error Handling loaded');
+
 </script>
 <script src="{% static 'sales/js/draft_preview.js' %}"></script>
 <script src="{% static 'print_preview.js' %}"></script>

@@ -433,7 +433,7 @@ def search_products_and_services(request):
                 if store:
                     products_query = products_query.filter(
                         store_inventory__store=store,
-                        store_inventory__quantity__gt=0
+                        store_inventory__quantity__gte=0
                     )
 
                 # ✅ Get total count BEFORE slicing

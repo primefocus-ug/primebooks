@@ -14,9 +14,12 @@ from .api_views import (
     DesktopCompanyDetailsView,desktop_session_login,
     health_check,subscription_status,check_updates
 )
+from company.license_views import generate_license, activate_license
 
 urlpatterns = [
     path('desktop/subscription/status/', subscription_status, name='subscription_status'),
+    path("license/generate/",    generate_license,     name="desktop-license-generate"),
+    path("license/activate/",    activate_license,     name="desktop-license-activate"),
     path('desktop/updates/check/', check_updates, name='check_updates'),
     path('desktop-session-login/', desktop_session_login, name='desktop_session_login'),
 
