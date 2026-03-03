@@ -360,6 +360,7 @@ class StockTransferForm(forms.ModelForm):
     class Meta:
         model = StockTransfer
         fields = [
+            'transfer_date',
             'from_store', 'to_store', 'product',
             'quantity', 'notes', 'reference'
         ]
@@ -371,6 +372,10 @@ class StockTransferForm(forms.ModelForm):
             'to_store': forms.Select(attrs={
                 'class': 'form-control select2',
                 'required': True
+            }),
+            'transfer_date': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date',  # 👈 gives browser date picker
             }),
             'product': forms.Select(attrs={
                 'class': 'form-control select2',

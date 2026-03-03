@@ -2827,7 +2827,11 @@ class StockTransfer(OfflineIDMixin, models.Model):
         related_name='transfers_in',
         verbose_name=_("To Store")
     )
-
+    transfer_date = models.DateField(
+        verbose_name=_("Transfer Date"),
+        blank=True,null=True,
+        help_text=_("Actual date when the stock was physically transferred."),
+    )
     # Product and quantity
     product = models.ForeignKey(
         Product,

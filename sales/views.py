@@ -392,7 +392,7 @@ def search_products_and_services(request):
             except (ValueError, TypeError):
                 page = 1
 
-            limit = 10  # ✅ Fixed at 10 items per page
+            limit = 50  # ✅ Fixed at 50 items per page
 
             # Validate store access
             store = None
