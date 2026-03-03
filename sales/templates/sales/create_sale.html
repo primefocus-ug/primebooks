@@ -320,6 +320,56 @@ body {
   opacity: .4;
   pointer-events: none;
 }
+.product-card.oos-card {
+  opacity: .75;
+  border-color: var(--red);
+  border-style: dashed;
+}
+
+.product-card.oos-card:hover {
+  border-color: var(--red);
+  box-shadow: 0 8px 24px rgba(239,68,68,.2), 0 0 0 1px var(--red-dim);
+  transform: translateY(-2px);
+}
+
+.oos-flag {
+  position: absolute;
+  top: .5rem;
+  left: .5rem;
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid rgba(239,68,68,.4);
+  border-radius: 3px;
+  font-size: .6rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  letter-spacing: .04em;
+}
+
+.product-adj-btn {
+  width: 100%;
+  padding: .45rem;
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid rgba(239,68,68,.3);
+  border-radius: var(--radius-sm);
+  font-size: .75rem;
+  font-weight: 600;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .3rem;
+  margin-top: auto;
+}
+
+.product-adj-btn:hover {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+}
 /* ── Out-of-Stock toolbar button ── */
 .oos-toggle-btn {
   display: flex;
@@ -8241,31 +8291,46 @@ function renderProducts(items) {
   const grid = document.getElementById('productsGrid');
   if (!grid) return;
 
-  // Split in-stock vs out-of-stock; update the OOS button badge
   updateOOSButton(items);
 
-  // Only show in-stock items in the main grid (services always shown)
-  const visibleItems = items.filter(item =>
-    item.item_type !== 'PRODUCT' || (item.stock?.available ?? 0) > 0
-  );
-
-  if (!visibleItems.length) {
-    // Let displayItems handle the empty state
+  // Show all items — in-stock normally, OOS with special card
+  if (!items.length) {
     grid.innerHTML = '';
     showProductsEmpty();
     return;
   }
 
-  grid.innerHTML = visibleItems.map(item => {
-    const isProd = item.item_type==='PRODUCT';
+  grid.innerHTML = items.map(item => {
+    const isProd  = item.item_type === 'PRODUCT';
+    const avail   = item.stock?.available ?? (isProd ? 0 : 999);
+    const isOOS   = isProd && avail <= 0;
+
+    if (isOOS) {
+      return `<div class="product-card oos-card">
+        <span class="oos-flag">OUT OF STOCK</span>
+        ${item.is_export_ready ? `<span class="export-tag">EXPORT</span>` : ''}
+        <div class="product-icon type-product" style="opacity:.5"><i class="bi bi-box"></i></div>
+        <div class="product-name">${esc(item.name)}</div>
+        <div class="product-meta">
+          <span class="product-price" style="color:var(--muted)">${fmt(item.final_price)}</span>
+          <span class="product-stock">
+            <span class="stock-dot empty"></span>0
+          </span>
+        </div>
+        <button class="product-adj-btn" onclick="openStockAdjFromOOS('${item.id}','${esc(item.name).replace(/'/g,"\\'")}')" >
+          <i class="bi bi-plus-circle"></i> Adjust Stock
+        </button>
+      </div>`;
+    }
+
     return `<div class="product-card">
-      ${item.discount_percentage>0 ? `<span class="discount-tag">-${item.discount_percentage}%</span>` : ''}
+      ${item.discount_percentage > 0 ? `<span class="discount-tag">-${item.discount_percentage}%</span>` : ''}
       ${item.is_export_ready ? `<span class="export-tag">EXPORT</span>` : ''}
-      <div class="product-icon type-${isProd?'product':'service'}"><i class="bi bi-${isProd?'box':'gear'}"></i></div>
+      <div class="product-icon type-${isProd ? 'product' : 'service'}"><i class="bi bi-${isProd ? 'box' : 'gear'}"></i></div>
       <div class="product-name">${esc(item.name)}</div>
       <div class="product-meta">
         <span class="product-price">${fmt(item.final_price)}</span>
-        ${isProd&&item.stock ? `<span class="product-stock"><span class="stock-dot ${item.stock.available>5?'good':item.stock.available<1?'low':'empty'}"></span>${item.stock.available}</span>` : ''}
+        ${isProd && item.stock ? `<span class="product-stock"><span class="stock-dot ${avail > 5 ? 'good' : avail < 1 ? 'empty' : 'low'}"></span>${avail}</span>` : ''}
       </div>
       <button class="product-add-btn" onclick='addToCartSafe(${item.id},"${item.item_type}")'>
         <i class="bi bi-cart-plus"></i> Add
