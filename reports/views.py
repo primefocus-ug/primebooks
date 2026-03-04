@@ -1517,10 +1517,10 @@ def edit_schedule(request, schedule_id):
     if request.method == 'POST':
         form = ReportScheduleForm(request.POST, instance=schedule, user=request.user)
         if form.is_valid():
+            # form.save() triggers ReportSchedule.save() which already recalculates
+            # next_scheduled — do NOT call schedule.calculate_next_run() here as that
+            # causes a redundant second DB write and can clobber concurrent updates.
             schedule = form.save()
-
-            # Recalculate next run since schedule was updated
-            schedule.calculate_next_run()
 
             messages.success(request, 'Report schedule updated successfully!')
             return redirect('reports:schedules')

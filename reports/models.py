@@ -190,16 +190,6 @@ class SavedReport(OfflineIDMixin, models.Model):
         else:
             self.save()
 
-    def invalidate_cache(self, user_id=None):
-        """Invalidate cached report results"""
-        if user_id:
-            cache_key = self.get_cache_key(user_id)
-            cache.delete(cache_key)
-        else:
-            # Clear all cache entries for this report
-            if self.pk:  # Ensure instance has a primary key
-                cache.delete_pattern(f"report:{self.id}:*")
-
 
 class ReportSchedule(OfflineIDMixin, models.Model):
     FREQUENCIES = [
@@ -324,14 +314,24 @@ class ReportSchedule(OfflineIDMixin, models.Model):
         return f"{self.report.name} - {self.get_frequency_display()}"
 
     def save(self, *args, **kwargs):
-        """Override save to calculate next_scheduled for new schedules"""
-        is_new = not self.pk
+        """Override save to (re)calculate next_scheduled when relevant fields change."""
+        update_fields = kwargs.get('update_fields')
 
-        # Calculate next_scheduled BEFORE saving if it's a new schedule
-        if is_new and not self.next_scheduled:
+        # Recalculate next_scheduled when:
+        #   - creating a new schedule (no pk yet)
+        #   - doing a full save (no update_fields restriction)
+        #   - explicitly saving next_scheduled itself
+        # Do NOT recalculate during narrow update_fields calls (e.g. last_sent, retry_count)
+        # so that process_scheduled_reports can advance the schedule without a loop.
+        should_recalculate = (
+            not self.pk                                        # new instance
+            or update_fields is None                          # full save (edit form)
+            or 'next_scheduled' in update_fields             # explicit recalc
+        )
+
+        if should_recalculate and not self.next_scheduled:
             self._calculate_next_run_in_memory()
 
-        # Now save
         super().save(*args, **kwargs)
 
     def _calculate_next_run_in_memory(self):

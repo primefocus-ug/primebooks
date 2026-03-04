@@ -1,43 +1,18 @@
-from django.core.management.base import BaseCommand
-from django_tenants.utils import get_tenant_model, schema_context
-from django.utils import timezone
-from datetime import timedelta
-from reports.models import GeneratedReport
-import os
+from django_tenants.utils import schema_context
+from django.core.mail import send_mail
 
-class Command(BaseCommand):
-    help = "Cancel stale reports and remove expired ones for all tenants"
+schema = 'rem'  # e.g. 'acme_ltd'
 
-    def handle(self, *args, **options):
-        TenantModel = get_tenant_model()
-        tenants = TenantModel.objects.exclude(schema_name='public')  # skip public
+with schema_context(schema):
+    from sales.models import Sale
+    from django.db.models import Sum
+    from django.utils import timezone
+    from datetime import timedelta
 
-        for tenant in tenants:
-            self.stdout.write(f"Processing tenant: {tenant.schema_name}")
+    rev = Sale.objects.filter(is_voided=False,status__in=['COMPLETED', 'PAID'],created_at__date__gte=timezone.now().date() - timedelta(days=30),).aggregate(t=Sum('total_amount'))['t'] or 0
 
-            with schema_context(tenant.schema_name):
-                # Cancel stale PENDING / PROCESSING reports older than 1 day
-                stale_time = timezone.now() - timedelta(days=0)
-                stale_reports = GeneratedReport.objects.filter(
-                    status__in=['PENDING', 'PROCESSING','CANCELLED','FAILED'],
-                    generated_at__lt=stale_time
-                )
-                cancelled_count = stale_reports.update(
-                    status='CANCELLED',
-                    error_message='Cancelled due to inactivity/stuck state',
-                    completed_at=timezone.now()
-                )
-                self.stdout.write(f"Cancelled {cancelled_count} stale reports")
+    print(f'Revenue in {schema}: {float(rev):,.0f}')
 
-                # Delete expired reports (and their files)
-                expired_reports = GeneratedReport.objects.filter(
-                    expires_at__lt=timezone.now()
-                )
-                for report in expired_reports:
-                    if report.file_path and os.path.exists(report.file_path):
-                        try:
-                            os.remove(report.file_path)
-                        except Exception as e:
-                            self.stderr.write(f"Failed to delete {report.file_path}: {e}")
-                    report.delete()
-                self.stdout.write(f"Deleted {expired_reports.count()} expired reports")
+# Now send — outside context is fine since no more DB calls
+send_mail(subject=f'Revenue test — {schema}',message=f'30d revenue: {float(rev):,.0f}',from_email='noreply@yourapp.com',recipient_list=['nashvybzes2@gmail.com'],fail_silently=False,)
+print('Email sent (or printed to console if using console backend)')

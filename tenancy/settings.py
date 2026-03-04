@@ -126,8 +126,10 @@ DESKTOP_DATA_DIR = get_desktop_data_dir()
 import pytz
 from datetime import datetime
 
-# Django timezone
-TIME_ZONE = os.getenv("TIME_ZONE", "Africa/Nairobi")
+# Timezone — defined early so the maintenance block and Celery config below
+# can both reference it. The Internationalization section further down uses
+# this same value; do not add a second assignment there.
+TIME_ZONE = os.getenv('TIME_ZONE', 'Africa/Kampala')
 USE_TZ = True
 
 # Maintenance settings
@@ -209,8 +211,8 @@ if IS_DESKTOP:
     EMAIL_USE_TLS = False
     EMAIL_HOST_USER = ''
     EMAIL_HOST_PASSWORD = ''
-    DEFAULT_FROM_EMAIL = 'noreply@localhost'
-    SUPPORT_EMAIL = 'support@localhost'
+    DEFAULT_FROM_EMAIL = 'kondenationafrica@gmail.com'
+    SUPPORT_EMAIL = 'primefocusug@gmail.com'
 
     # Site
     if IS_COMPILED:
@@ -339,8 +341,8 @@ elif DEBUG:
     EMAIL_USE_TLS = True
     EMAIL_HOST_USER = 'kondenationafrica@gmail.com'
     EMAIL_HOST_PASSWORD = 'ckpbealacabdnyal'
-    DEFAULT_FROM_EMAIL = 'noreply@yourdomain.com'
-    SUPPORT_EMAIL = 'support@yourdomain.com'
+    DEFAULT_FROM_EMAIL = 'kondenationafrica@gmail.com'
+    SUPPORT_EMAIL = 'primefocusug@gmail.com'
 
     # Site
     FRONTEND_URL = 'http://localhost:8000'
@@ -449,8 +451,8 @@ else:
     EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
     EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
     EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@primebooks.sale')
-    SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'support.primebooks@gmail.com')
+    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'kondenationafrica@gmail.com')
+    SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'primefocusug@gmail.com')
 
     # Site
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://primebooks.sale')
@@ -564,10 +566,10 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 # Application definition
 SHARED_APPS = [
-    'django_tenants', 
+    'django_tenants',
     'primebooks',
     'saad',
-    'company',  
+    'company',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
@@ -787,21 +789,92 @@ else:
 
 # Celery Configuration - Only for web mode
 if not IS_DESKTOP and REDIS_URL:
-    CELERY_BROKER_URL = f'{REDIS_URL}/0'
-    CELERY_RESULT_BACKEND = f'{REDIS_URL}/0'
-    CELERY_ACCEPT_CONTENT = ['json']
-    CELERY_TASK_SERIALIZER = 'json'
+    CELERY_BROKER_URL        = f'{REDIS_URL}/0'
+    CELERY_RESULT_BACKEND    = f'{REDIS_URL}/2'   # ✅ FIX: separate DB from broker (/0) and cache (/1)
+    CELERY_ACCEPT_CONTENT    = ['json']
+    CELERY_TASK_SERIALIZER   = 'json'
     CELERY_RESULT_SERIALIZER = 'json'
-    CELERY_TIMEZONE = 'Africa/Kampala'
-    if CELERY_AVAILABLE:
-        CELERY_BEAT_SCHEDULE = {
-            'check-company-access': {
-                'task': 'company.tasks.check_company_access_status',
-                'schedule': crontab(minute=0, hour='*/6'),
-            },
-        }
-    else:
-        CELERY_BEAT_SCHEDULE = {}
+    CELERY_TIMEZONE          = TIME_ZONE           # ✅ FIX: always in sync with Django TIME_ZONE
+
+    # ── Beat schedule ─────────────────────────────────────────────────────────
+    # ✅ FIX: removed `if CELERY_AVAILABLE:` guard — Celery is a hard dependency
+    # for web mode. The outer `if not IS_DESKTOP and REDIS_URL:` is sufficient.
+    # The old guard caused CELERY_BEAT_SCHEDULE to silently become {} when the
+    # celery import failed at startup, meaning NO scheduled tasks would ever run.
+    CELERY_BEAT_SCHEDULE = {
+
+        # ── Company / subscription lifecycle ─────────────────────────────────
+        'check-company-access': {
+            'task': 'company.tasks.check_company_access_status',
+            'schedule': crontab(minute=0, hour='*/6'),          # Every 6 hours
+        },
+        'check-trial-expirations': {
+            'task': 'company.tasks.check_trial_expirations',
+            'schedule': crontab(hour=1, minute=0),              # Daily  01:00
+        },
+        'check-subscription-expirations': {
+            'task': 'company.tasks.check_subscription_expirations',
+            'schedule': crontab(hour=1, minute=30),             # Daily  01:30
+        },
+
+        # ── Reports — broadcast emails ────────────────────────────────────────
+        'daily-report-all-tenants': {
+            'task': 'reports.tasks.dispatch_daily_reports',
+            'schedule': crontab(hour=8, minute=0),              # Daily  08:00
+        },
+        'weekly-report-all-tenants': {
+            'task': 'reports.tasks.dispatch_weekly_reports',
+            'schedule': crontab(hour=8, minute=30, day_of_week=1),  # Monday 08:30
+        },
+
+        # ── Reports — user-configured schedules ──────────────────────────────
+        'process-scheduled-reports': {
+            'task': 'reports.tasks.process_scheduled_reports',
+            'schedule': crontab(minute='*/5'),                  # Every 5 minutes
+        },
+
+        # ── Reports — housekeeping ────────────────────────────────────────────
+        # ✅ ADDED: deletes expired GeneratedReport files + DB records
+        'cleanup-expired-reports': {
+            'task': 'reports.tasks.cleanup_expired_reports',
+            'schedule': crontab(hour=2, minute=30),             # Daily  02:30
+        },
+        # ✅ ADDED: moves completed reports >90 days old to /archived_reports/
+        'archive-old-reports': {
+            'task': 'reports.tasks.archive_old_reports',
+            'schedule': crontab(hour=3, minute=0, day_of_week=0),  # Sunday 03:00
+        },
+
+        # ── Real-time dashboard + stock/EFRIS alerts ──────────────────────────
+        # ✅ ADDED: fans out to update_dashboard_cache, check_stock_alerts,
+        #           check_efris_compliance for every tenant
+        'update-real-time-dashboard': {
+            'task': 'reports.tasks.update_real_time_dashboard',
+            'schedule': crontab(minute='*/5'),                  # Every 5 minutes
+        },
+
+        # ── Sign-up / onboarding cleanup ─────────────────────────────────────
+        'cleanup-failed-signups': {
+            'task': 'public_router.tasks.cleanup_failed_signups',
+            'schedule': crontab(minute='*/5'),                  # Every 5 minutes
+        },
+        'cleanup-stale-signups': {
+            'task': 'public_router.tasks.cleanup_stale_pending_signups',
+            'schedule': crontab(minute='*/15'),                 # Every 15 minutes
+        },
+
+        # ── Analytics ────────────────────────────────────────────────────────
+        'generate-daily-analytics': {
+            'task': 'public_analytics.tasks.generate_daily_stats',
+            'schedule': crontab(hour=1, minute=0),              # Daily  01:00
+        },
+
+        # ── Messaging ────────────────────────────────────────────────────────
+        'cleanup-old-statistics': {
+            'task': 'messaging.tasks.cleanup_old_statistics',
+            'schedule': crontab(hour=2, minute=0, day_of_week=0),  # Sunday 02:00
+        },
+    }
 
     CELERY_TASK_ROUTES = {
         'public_router.tasks.create_tenant_async': {'queue': 'tenant_creation'},
@@ -828,7 +901,8 @@ SITE_ID = 1
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'Africa/Kampala'
+# TIME_ZONE is defined near the top of this file (after the pytz import) so
+# it is available to both the maintenance block and the Celery config block.
 USE_I18N = True
 USE_TZ = True
 

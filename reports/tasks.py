@@ -1,26 +1,72 @@
 """
 Celery Tasks for Asynchronous Report Generation
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUIRED: Add the following to your settings.py to enable
+          scheduled tasks via Celery Beat:
+
+    from celery.schedules import crontab
+
+    CELERY_BEAT_SCHEDULE = {
+        # Fire per-schedule report generation every 5 minutes
+        'process-scheduled-reports': {
+            'task': 'reports.tasks.process_scheduled_reports',
+            'schedule': crontab(minute='*/5'),
+        },
+        # Send a daily summary email to all tenant admins at 7 AM
+        'dispatch-daily-reports': {
+            'task': 'reports.tasks.dispatch_daily_reports',
+            'schedule': crontab(hour=7, minute=0),
+        },
+        # Send a weekly summary email every Monday at 8 AM
+        'dispatch-weekly-reports': {
+            'task': 'reports.tasks.dispatch_weekly_reports',
+            'schedule': crontab(day_of_week=1, hour=8, minute=0),
+        },
+        # Clean up expired report files daily at 2 AM
+        'cleanup-expired-reports': {
+            'task': 'reports.tasks.cleanup_expired_reports',
+            'schedule': crontab(hour=2, minute=0),
+        },
+        # Refresh real-time dashboard every 5 minutes
+        'update-real-time-dashboard': {
+            'task': 'reports.tasks.update_real_time_dashboard',
+            'schedule': crontab(minute='*/5'),
+        },
+    }
+
+Then run the beat worker alongside your Celery worker:
+    celery -A <your_project> worker -l info
+    celery -A <your_project> beat   -l info
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-from celery import shared_task
-from django.core.cache import cache
-from django.utils import timezone
-from django.conf import settings
-from django.core.mail import EmailMessage
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
-from django_tenants.utils import schema_context, tenant_context
-from django.db import connection
-import os
-import time
-from django.db.models import Q
+import json
 import logging
+import os
+import shutil
+import time
+from datetime import timedelta
+
+from asgiref.sync import async_to_sync
+from celery import shared_task
+from django.conf import settings
+from django.core.cache import cache
+from django.core.mail import EmailMessage, send_mail
+from django.db import connection, transaction
+from django.db.models import Avg, Count, F, Q, Sum
+from django.utils import timezone
+from django_tenants.utils import get_tenant_model, schema_context, tenant_context
 
 logger = logging.getLogger(__name__)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TENANT HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
 def get_tenant_from_schema(schema_name):
-    """Helper function to get tenant object from schema name"""
-    from company.models import Company  # Company is in shared_apps
+    """Return the tenant object for the given schema, or None."""
+    from company.models import Company
     try:
         return Company.objects.get(schema_name=schema_name)
     except Company.DoesNotExist:
@@ -28,15 +74,10 @@ def get_tenant_from_schema(schema_name):
         return None
 
 
-from celery import shared_task
-from django.db import transaction
-from django.utils import timezone
-from asgiref.sync import async_to_sync
-import os
-import time
-import json
-from io import BytesIO
-from django.conf import settings
+def get_all_tenants():
+    """Return all non-public active tenant objects."""
+    from company.models import Company
+    return Company.objects.filter(is_active=True).exclude(schema_name='public')
 
 @shared_task(bind=True, max_retries=3)
 def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
@@ -163,6 +204,24 @@ def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
                 row_count
             )
 
+            # ✅ FIX: Send email if this was triggered by a schedule
+            email_report = kwargs.get('email_report', False)
+            email_recipients = kwargs.get('email_recipients', '')
+            cc_recipients = kwargs.get('cc_recipients', '')
+
+            if email_report and email_recipients:
+                all_recipients = email_recipients
+                send_report_email.delay(
+                    generated_report.id,
+                    all_recipients,
+                    schema_name,
+                    cc_recipients=cc_recipients
+                )
+                logger.info(
+                    f"Queued email delivery for report {generated_report.id} "
+                    f"to: {email_recipients}"
+                )
+
         except Exception as e:
             if generated_report and generated_report.status != 'COMPLETED':
                 generated_report.mark_as_failed(str(e))
@@ -178,11 +237,12 @@ def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
 
 
 
-@shared_task
-def send_report_email(generated_report_id, recipients, schema_name):
+@shared_task(bind=True, max_retries=3)
+def send_report_email(self, generated_report_id, recipients, schema_name, cc_recipients=''):
     """Send generated report via email"""
     tenant = get_tenant_from_schema(schema_name)
     if not tenant:
+        logger.error(f"send_report_email: tenant not found for schema '{schema_name}'")
         return
 
     with tenant_context(tenant):
@@ -191,46 +251,67 @@ def send_report_email(generated_report_id, recipients, schema_name):
         try:
             report = GeneratedReport.objects.get(id=generated_report_id)
 
-            if not os.path.exists(report.file_path):
+            if not report.file_path or not os.path.exists(report.file_path):
                 logger.error(f"Report file not found: {report.file_path}")
                 return
 
-            # Parse recipients
+            # Parse TO recipients
             if isinstance(recipients, str):
-                recipients = [email.strip() for email in recipients.split(',')]
+                recipients = [e.strip() for e in recipients.split(',') if e.strip()]
 
-            subject = f"Report: {report.report.name}"
-            body = f"""
-            Hello,
+            # Parse CC recipients
+            cc_list = []
+            if cc_recipients:
+                if isinstance(cc_recipients, str):
+                    cc_list = [e.strip() for e in cc_recipients.split(',') if e.strip()]
+                elif isinstance(cc_recipients, list):
+                    cc_list = cc_recipients
 
-            Your requested report "{report.report.name}" has been generated successfully.
+            if not recipients:
+                logger.warning(f"No valid recipients for report {generated_report_id}, skipping email.")
+                return
 
-            Report Details:
-            - Generated At: {report.generated_at.strftime('%B %d, %Y %I:%M %p')}
-            - Format: {report.file_format}
-            - File Size: {report.file_size / 1024:.2f} KB
-            - Rows: {report.row_count:,}
+            company_name = (
+                report.generated_by.company.name
+                if report.generated_by and report.generated_by.company
+                else 'System'
+            )
 
-            Please find the report attached to this email.
-
-            Best regards,
-            {report.generated_by.company.name if report.generated_by.company else 'System'}
-            """
+            subject = f"Scheduled Report: {report.report.name}"
+            body = (
+                f"Hello,\n\n"
+                f'Your scheduled report "{report.report.name}" has been generated successfully.\n\n'
+                f"Report Details:\n"
+                f"  - Generated At : {report.generated_at.strftime('%B %d, %Y %I:%M %p')}\n"
+                f"  - Format       : {report.file_format}\n"
+                f"  - File Size    : {report.file_size / 1024:.2f} KB\n"
+                f"  - Rows         : {report.row_count:,}\n\n"
+                f"Please find the report attached to this email.\n\n"
+                f"Best regards,\n{company_name}"
+            )
 
             email = EmailMessage(
                 subject=subject,
                 body=body,
                 from_email=settings.DEFAULT_FROM_EMAIL,
-                to=recipients
+                to=recipients,
+                cc=cc_list if cc_list else [],
             )
 
             email.attach_file(report.file_path)
             email.send()
 
-            logger.info(f"Report emailed successfully to {recipients}")
+            logger.info(
+                f"✅ Report '{report.report.name}' emailed to {recipients}"
+                + (f" (CC: {cc_list})" if cc_list else "")
+            )
+
+        except GeneratedReport.DoesNotExist:
+            logger.error(f"send_report_email: GeneratedReport {generated_report_id} does not exist.")
 
         except Exception as e:
             logger.error(f"Error sending report email: {str(e)}", exc_info=True)
+            raise self.retry(exc=e, countdown=120)
 
 
 @shared_task
@@ -424,6 +505,7 @@ def update_dashboard_cache():
                         store__in=stores,
                         status__in=['COMPLETED', 'PAID'],
                         is_fiscalized=False,
+                        fiscalization_status='PENDING',
                         created_at__date__gte=week_ago
                     ).count(),
                 }
@@ -522,6 +604,7 @@ def check_efris_compliance():
                         store=store,
                         status__in=['COMPLETED', 'PAID'],
                         is_fiscalized=False,
+                        fiscalization_status='PENDING',
                         created_at__date__gte=week_ago
                     ).count()
 
@@ -541,7 +624,7 @@ def check_efris_compliance():
                     failed = Sale.objects.filter(
                         store=store,
                         status__in=['COMPLETED', 'PAID'],
-                        fiscalization_failed=True,
+                        fiscalization_status='FAILED',
                         created_at__date__gte=week_ago
                     ).count()
 
@@ -718,8 +801,8 @@ def generate_efris_compliance_report(store_id, start_date, end_date, schema_name
                 },
                 'total_sales': sales.count(),
                 'fiscalized': sales.filter(is_fiscalized=True).count(),
-                'pending': sales.filter(is_fiscalized=False, fiscalization_failed=False).count(),
-                'failed': sales.filter(fiscalization_failed=True).count(),
+                'pending':    sales.filter(is_fiscalized=False, fiscalization_status='PENDING').count(),
+                'failed':     sales.filter(fiscalization_status='FAILED').count(),
             }
 
             # Calculate compliance rate
@@ -731,7 +814,7 @@ def generate_efris_compliance_report(store_id, start_date, end_date, schema_name
                 compliance_data['compliance_rate'] = 0
 
             # Get failed sales details
-            failed_sales = sales.filter(fiscalization_failed=True).values(
+            failed_sales = sales.filter(fiscalization_status='FAILED').values(
                 'id', 'sale_number', 'total_amount', 'created_at', 'fiscalization_error'
             )[:50]
 
@@ -874,3 +957,409 @@ def update_real_time_dashboard():
     check_stock_alerts.delay()
     check_efris_compliance.delay()
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DAILY / WEEKLY BROADCAST EMAIL REPORTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_report_data(schema_name, period_days=30):
+    """
+    Collect aggregated revenue, expense, inventory and store metrics for a
+    single tenant schema.  Must be called from inside a schema_context block
+    (or will open one itself).  Returns a plain-Python dict safe for email/JSON.
+    """
+    with schema_context(schema_name):
+        from stores.models import Store
+        from sales.models import Sale
+        from expenses.models import Expense
+        from company.models import Company
+
+        today      = timezone.now().date()
+        since      = today - timedelta(days=period_days)
+        prev_since = today - timedelta(days=period_days * 2)
+
+        company = Company.objects.filter(is_active=True).first()
+        if not company:
+            return None
+
+        all_stores = Store.objects.filter(company=company)
+        store_ids  = list(all_stores.values_list('id', flat=True))
+
+        base_qs = Sale.objects.filter(
+            store_id__in=store_ids,
+            is_voided=False,
+            status__in=['COMPLETED', 'PAID'],
+        )
+
+        # Current period aggregates
+        current = base_qs.filter(created_at__date__gte=since).aggregate(
+            revenue=Sum('total_amount'),
+            sales=Count('id'),
+            avg_sale=Avg('total_amount'),
+        )
+
+        # Previous period (for growth %)
+        previous = base_qs.filter(
+            created_at__date__range=[prev_since, since]
+        ).aggregate(
+            revenue=Sum('total_amount'),
+            sales=Count('id'),
+        )
+
+        cur_rev    = float(current['revenue']  or 0)
+        prev_rev   = float(previous['revenue'] or 0)
+        cur_sales  = int(current['sales']      or 0)
+        prev_sales = int(previous['sales']     or 0)
+
+        rev_growth   = round(((cur_rev   - prev_rev)   / prev_rev   * 100), 1) if prev_rev   else 0.0
+        sales_growth = round(((cur_sales - prev_sales) / prev_sales * 100), 1) if prev_sales else 0.0
+
+        # Expenses
+        expenses_qs  = Expense.objects.all()
+        expenses_cur = float(expenses_qs.filter(date__gte=since).aggregate(t=Sum('amount'))['t'] or 0)
+        pending_exp  = expenses_qs.filter(status='submitted').count()
+
+        # Profit
+        profit = cur_rev - expenses_cur
+        margin = round((profit / cur_rev * 100), 1) if cur_rev else 0.0
+
+        # Today
+        today_rev = float(
+            base_qs.filter(created_at__date=today)
+            .aggregate(t=Sum('total_amount'))['t'] or 0
+        )
+        today_exp = float(
+            expenses_qs.filter(date=today).aggregate(t=Sum('amount'))['t'] or 0
+        )
+
+        # Inventory
+        try:
+            from inventory.models import Stock
+            low_stock = Stock.objects.filter(
+                store__in=all_stores,
+                quantity__lte=F('low_stock_threshold'),
+                quantity__gt=0,
+            ).count()
+            out_stock = Stock.objects.filter(store__in=all_stores, quantity=0).count()
+        except Exception:
+            low_stock = out_stock = 0
+
+        # Top 5 stores by revenue
+        top_stores = list(
+            base_qs.filter(created_at__date__gte=since)
+            .values('store__name')
+            .annotate(rev=Sum('total_amount'), cnt=Count('id'))
+            .order_by('-rev')[:5]
+        )
+
+        return {
+            'schema':         schema_name,
+            'company_name':   company.name,
+            'period_days':    period_days,
+            'today':          str(today),
+            'since':          str(since),
+            # Revenue
+            'revenue':        cur_rev,
+            'prev_revenue':   prev_rev,
+            'rev_growth':     rev_growth,
+            'sales_count':    cur_sales,
+            'sales_growth':   sales_growth,
+            'avg_sale':       float(current['avg_sale'] or 0),
+            # Today
+            'today_revenue':  today_rev,
+            'today_expenses': today_exp,
+            'today_profit':   today_rev - today_exp,
+            # Expenses
+            'expenses':       expenses_cur,
+            'pending_exp':    pending_exp,
+            # Profit
+            'profit':         profit,
+            'margin':         margin,
+            # Inventory
+            'low_stock':      low_stock,
+            'out_stock':      out_stock,
+            # Top stores
+            'top_stores': [
+                {'name': r['store__name'], 'rev': float(r['rev'] or 0), 'count': r['cnt']}
+                for r in top_stores
+            ],
+        }
+
+
+def build_html_email(data):
+    """Render a polished HTML report email from a build_report_data() dict."""
+    fmt   = lambda n: f"{float(n):,.0f}"
+    pct   = lambda n: f"{float(n):+.1f}%"
+    sign  = lambda n: "+" if float(n) >= 0 else ""
+    p_col = "#16a34a" if data['profit'] >= 0 else "#dc2626"
+    g_col = lambda g: "#16a34a" if float(g) >= 0 else "#dc2626"
+
+    top_rows = "".join(
+        f"<tr>"
+        f"<td style='padding:8px 12px;border-bottom:1px solid #f0f0f0'>{s['name']}</td>"
+        f"<td style='padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;"
+        f"font-weight:600'>{fmt(s['rev'])}</td>"
+        f"<td style='padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;"
+        f"color:#6b7280'>{s['count']}</td>"
+        f"</tr>"
+        for s in data['top_stores']
+    ) or "<tr><td colspan='3' style='padding:12px;color:#9ca3af;text-align:center'>No sales data</td></tr>"
+
+    inv_alert = (
+        f"<tr><td style='padding:12px 32px 0'>"
+        f"<div style='background:#fffbeb;border-left:4px solid #d97706;border-radius:4px;"
+        f"padding:10px 14px;font-size:13px;color:#92400e'>"
+        f"⚠️ <strong>{data['low_stock']} low stock</strong> · "
+        f"<strong>{data['out_stock']} out of stock</strong> items need attention"
+        f"</div></td></tr>"
+    ) if (data['low_stock'] or data['out_stock']) else ''
+
+    p_bg  = '#f0fdf4' if data['profit'] >= 0 else '#fef2f2'
+    p_bdr = '#bbf7d0' if data['profit'] >= 0 else '#fecaca'
+    p_lbl = '#14532d' if data['profit'] >= 0 else '#991b1b'
+
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:'Segoe UI',Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:32px 16px">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0"
+  style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+
+  <!-- Header -->
+  <tr><td style="background:linear-gradient(135deg,#1e40af,#7c3aed);padding:28px 32px">
+    <h1 style="color:#fff;margin:0;font-size:22px;font-weight:700">📊 {data['company_name']}</h1>
+    <p style="color:rgba(255,255,255,.8);margin:6px 0 0;font-size:14px">
+      {data['period_days']}-Day Report &nbsp;·&nbsp; {data['since']} → {data['today']}
+    </p>
+  </td></tr>
+
+  <!-- KPI cards -->
+  <tr><td style="padding:24px 32px 0">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td width="33%" style="padding-right:8px">
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#d97706">{fmt(data['revenue'])}</div>
+          <div style="font-size:11px;color:#92400e;text-transform:uppercase;letter-spacing:.05em;margin-top:4px">
+            Revenue ({data['period_days']}d)</div>
+          <div style="font-size:12px;color:{g_col(data['rev_growth'])};margin-top:4px;font-weight:600">
+            {pct(data['rev_growth'])} vs prev</div>
+        </div>
+      </td>
+      <td width="33%" style="padding:0 4px">
+        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#dc2626">{fmt(data['expenses'])}</div>
+          <div style="font-size:11px;color:#991b1b;text-transform:uppercase;letter-spacing:.05em;margin-top:4px">
+            Expenses ({data['period_days']}d)</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:4px">{data['pending_exp']} pending</div>
+        </div>
+      </td>
+      <td width="33%" style="padding-left:8px">
+        <div style="background:{p_bg};border:1px solid {p_bdr};border-radius:8px;padding:16px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:{p_col}">{sign(data['profit'])}{fmt(data['profit'])}</div>
+          <div style="font-size:11px;color:{p_lbl};text-transform:uppercase;letter-spacing:.05em;margin-top:4px">
+            Net Profit</div>
+          <div style="font-size:12px;color:{p_col};margin-top:4px;font-weight:600">
+            Margin: {data['margin']}%</div>
+        </div>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- Today strip -->
+  <tr><td style="padding:16px 32px 0">
+    <div style="background:#f8faff;border:1px solid #dbeafe;border-radius:8px;padding:14px 18px">
+      <table width="100%"><tr>
+        <td style="font-size:12px;color:#6b7280">Today Revenue</td>
+        <td style="font-size:12px;color:#6b7280">Today Expenses</td>
+        <td style="font-size:12px;color:#6b7280">Today Profit</td>
+        <td style="font-size:12px;color:#6b7280">Sales ({data['period_days']}d)</td>
+      </tr><tr>
+        <td style="font-size:16px;font-weight:700;color:#d97706">{fmt(data['today_revenue'])}</td>
+        <td style="font-size:16px;font-weight:700;color:#dc2626">{fmt(data['today_expenses'])}</td>
+        <td style="font-size:16px;font-weight:700;color:{p_col}">{sign(data['today_profit'])}{fmt(data['today_profit'])}</td>
+        <td style="font-size:16px;font-weight:700;color:#2563eb">{data['sales_count']:,}</td>
+      </tr></table>
+    </div>
+  </td></tr>
+
+  {inv_alert}
+
+  <!-- Top stores -->
+  <tr><td style="padding:20px 32px 0">
+    <h3 style="font-size:13px;font-weight:600;color:#374151;text-transform:uppercase;
+               letter-spacing:.06em;margin:0 0 10px">Top Stores by Revenue</h3>
+    <table width="100%" style="border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#f9fafb">
+        <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;
+                   font-weight:600;border-bottom:2px solid #e5e7eb">Store</th>
+        <th style="padding:8px 12px;text-align:right;font-size:11px;color:#6b7280;
+                   font-weight:600;border-bottom:2px solid #e5e7eb">Revenue</th>
+        <th style="padding:8px 12px;text-align:right;font-size:11px;color:#6b7280;
+                   font-weight:600;border-bottom:2px solid #e5e7eb">Sales</th>
+      </tr></thead>
+      <tbody>{top_rows}</tbody>
+    </table>
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="padding:24px 32px;border-top:1px solid #f3f4f6;margin-top:20px">
+    <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center">
+      {settings.SITE_NAME} · Automated report · {data['today']}<br>
+      <a href="{settings.FRONTEND_URL}" style="color:#2563eb;text-decoration:none">Open Dashboard</a>
+    </p>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+
+def get_report_recipients(schema_name):
+    """
+    Return list of admin email addresses to receive broadcast reports for this
+    tenant.  Queries company_admin users with valid emails.
+    """
+    with schema_context(schema_name):
+        from accounts.models import CustomUser
+        return list(
+            CustomUser.objects.filter(
+                is_active=True,
+                is_hidden=False,
+                company_admin=True,
+                email__isnull=False,
+            ).exclude(email='').values_list('email', flat=True)
+        )
+
+
+@shared_task(bind=True, name='reports.tasks.send_daily_report', max_retries=3)
+def send_daily_report(self, schema_name, recipient_override=None):
+    """
+    Send a 30-day revenue/expense/profit summary email for a single tenant.
+
+    Args:
+        schema_name: tenant schema to report on.
+        recipient_override: optional single email address (useful for testing).
+    """
+    logger.info(f'[reports] send_daily_report starting  schema={schema_name}')
+    try:
+        data = build_report_data(schema_name, period_days=30)
+        if not data:
+            logger.warning(f'[reports] No company in schema={schema_name}, skipping')
+            return {'status': 'skipped', 'reason': 'no_company'}
+
+        recipients = [recipient_override] if recipient_override else get_report_recipients(schema_name)
+        if not recipients:
+            logger.warning(f'[reports] No recipients for schema={schema_name}')
+            return {'status': 'skipped', 'reason': 'no_recipients'}
+
+        subject = f"📊 Daily Report — {data['company_name']} — {data['today']}"
+        html    = build_html_email(data)
+        plain   = (
+            f"Daily Report: {data['company_name']}\n"
+            f"Period: {data['since']} → {data['today']}\n\n"
+            f"Revenue:   {data['revenue']:>14,.0f}  ({data['rev_growth']:+.1f}% vs prev)\n"
+            f"Expenses:  {data['expenses']:>14,.0f}\n"
+            f"Profit:    {data['profit']:>14,.0f}  (Margin: {data['margin']}%)\n\n"
+            f"Today Revenue:  {data['today_revenue']:>10,.0f}\n"
+            f"Today Expenses: {data['today_expenses']:>10,.0f}\n"
+            f"Today Profit:   {data['today_profit']:>10,.0f}\n\n"
+            f"Low Stock: {data['low_stock']}   Out of Stock: {data['out_stock']}\n"
+        )
+
+        send_mail(
+            subject=subject,
+            message=plain,
+            html_message=html,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=recipients,
+            fail_silently=False,
+        )
+
+        logger.info(f'[reports] ✅ Daily report sent to {recipients}  schema={schema_name}')
+        return {'status': 'sent', 'recipients': recipients, 'schema': schema_name}
+
+    except Exception as exc:
+        logger.error(f'[reports] send_daily_report failed  schema={schema_name}: {exc}', exc_info=True)
+        # Exponential back-off: 60 s → 120 s → 240 s
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
+
+
+@shared_task(bind=True, name='reports.tasks.send_weekly_report', max_retries=3)
+def send_weekly_report(self, schema_name, recipient_override=None):
+    """
+    Send a 7-day summary email for a single tenant.
+
+    Args:
+        schema_name: tenant schema to report on.
+        recipient_override: optional single email address (useful for testing).
+    """
+    logger.info(f'[reports] send_weekly_report starting  schema={schema_name}')
+    try:
+        data = build_report_data(schema_name, period_days=7)
+        if not data:
+            return {'status': 'skipped', 'reason': 'no_company'}
+
+        recipients = [recipient_override] if recipient_override else get_report_recipients(schema_name)
+        if not recipients:
+            return {'status': 'skipped', 'reason': 'no_recipients'}
+
+        subject = f"📈 Weekly Report — {data['company_name']} — {data['today']}"
+        html    = build_html_email(data)
+        plain   = (
+            f"Weekly Report: {data['company_name']}\n"
+            f"Period: last 7 days\n\n"
+            f"Revenue:  {data['revenue']:,.0f}\n"
+            f"Expenses: {data['expenses']:,.0f}\n"
+            f"Profit:   {data['profit']:,.0f}  ({data['margin']}% margin)\n"
+            f"Sales:    {data['sales_count']}\n"
+        )
+
+        send_mail(
+            subject=subject,
+            message=plain,
+            html_message=html,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=recipients,
+            fail_silently=False,
+        )
+
+        logger.info(f'[reports] ✅ Weekly report sent to {recipients}  schema={schema_name}')
+        return {'status': 'sent', 'recipients': recipients}
+
+    except Exception as exc:
+        logger.error(f'[reports] send_weekly_report failed  schema={schema_name}: {exc}', exc_info=True)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
+
+
+@shared_task(name='reports.tasks.dispatch_daily_reports')
+def dispatch_daily_reports():
+    """
+    Master Beat task: fan-out send_daily_report to every active tenant.
+    Runs in the public schema — no tenant data is accessed here.
+    """
+    tenants = get_all_tenants()
+    count   = 0
+    for tenant in tenants:
+        send_daily_report.delay(tenant.schema_name)
+        count += 1
+    logger.info(f'[reports] dispatch_daily_reports queued {count} tenant tasks')
+    return {'queued': count}
+
+
+@shared_task(name='reports.tasks.dispatch_weekly_reports')
+def dispatch_weekly_reports():
+    """
+    Master Beat task: fan-out send_weekly_report to every active tenant.
+    Runs in the public schema — no tenant data is accessed here.
+    """
+    tenants = get_all_tenants()
+    count   = 0
+    for tenant in tenants:
+        send_weekly_report.delay(tenant.schema_name)
+        count += 1
+    logger.info(f'[reports] dispatch_weekly_reports queued {count} tenant tasks')
+    return {'queued': count}
