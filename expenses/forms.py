@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -10,13 +12,17 @@ from taggit.forms import TagWidget
 # Expense form
 # ---------------------------------------------------------------------------
 
+
 class ExpenseForm(forms.ModelForm):
+    # Plain CharField so the template's comma-separated hidden input works directly
+    tags = forms.CharField(required=False, help_text="Comma-separated tag names.")
+
     class Meta:
         model = Expense
         fields = [
             'amount', 'currency', 'exchange_rate',
             'description', 'vendor',
-            'date', 'tags', 'payment_method',
+            'date', 'payment_method',
             'receipt', 'notes',
             'is_recurring', 'recurrence_interval', 'next_recurrence_date',
             'is_important',
@@ -24,7 +30,6 @@ class ExpenseForm(forms.ModelForm):
         widgets = {
             'date': forms.DateInput(attrs={'type': 'date'}),
             'next_recurrence_date': forms.DateInput(attrs={'type': 'date'}),
-            'tags': TagWidget(),
             'notes': forms.Textarea(attrs={'rows': 3}),
         }
         help_texts = {
@@ -62,6 +67,11 @@ class ExpenseForm(forms.ModelForm):
 
         return cleaned
 
+    def clean_currency(self):
+        return self.cleaned_data.get('currency') or 'UGX'
+
+    def clean_exchange_rate(self):
+        return self.cleaned_data.get('exchange_rate') or Decimal('1.000000')
 
 # ---------------------------------------------------------------------------
 # Budget form

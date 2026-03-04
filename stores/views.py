@@ -124,7 +124,7 @@ def tenant_overview(request):
     """
     High-level operations overview across all tenant apps.
     Shows summary cards + charts for Stores, Inventory, Sales,
-    Devices, and Security. Detail panels load via AJAX.
+    Expenses, Customers, and Profit. Detail panels load via AJAX.
     """
     stores = get_user_accessible_stores(request.user)
     active_stores = stores.filter(is_active=True)
@@ -132,6 +132,10 @@ def tenant_overview(request):
     today = now.date()
     thirty_days_ago = today - timedelta(days=30)
     fourteen_days_ago = today - timedelta(days=14)
+    six_months_ago = today - timedelta(days=180)
+
+    from django.db.models.functions import TruncMonth
+    import json as _json
 
     # ── STORES MODULE ──────────────────────────────────────────
     stores_by_region = list(
@@ -169,25 +173,35 @@ def tenant_overview(request):
     }
 
     # ── SALES MODULE ───────────────────────────────────────────
-    sales_qs = Sale.objects.filter(store__in=active_stores)
-    sales_30d = sales_qs.filter(created_at__gte=thirty_days_ago)
-    sales_today = sales_qs.filter(created_at__gte=today)
+    # Use ALL stores (including inactive) to match company_detail revenue figures.
+    # Filter is_voided=False and only COMPLETED/PAID to exclude cancelled/pending.
+    all_stores = stores  # not just active_stores — mirrors company_detail scope
+    sales_qs = Sale.objects.filter(
+        store__in=all_stores,
+        is_voided=False,
+        status__in=['COMPLETED', 'PAID'],
+    )
+    sales_30d = sales_qs.filter(created_at__date__gte=thirty_days_ago)
+    sales_today_qs = sales_qs.filter(created_at__date=today)
 
     # Daily sales for last 14 days (chart data)
     daily_sales = list(
-        sales_qs.filter(created_at__gte=fourteen_days_ago)
-        .values('created_at')
+        sales_qs.filter(created_at__date__gte=fourteen_days_ago)
+        .values('created_at__date')
         .annotate(
             revenue=Sum('total_amount'),
             count=Count('id')
         )
-        .order_by('created_at')
+        .order_by('created_at__date')
     )
-    # Fill in missing days with zeros
-    daily_map = {str(d['created_at']): {'revenue': float(d['revenue'] or 0), 'count': d['count']} for d in daily_sales}
-    daily_labels = []
-    daily_revenue = []
-    daily_counts = []
+    daily_map = {
+        str(d['created_at__date']): {
+            'revenue': float(d['revenue'] or 0),
+            'count': d['count'],
+        }
+        for d in daily_sales
+    }
+    daily_labels, daily_revenue, daily_counts = [], [], []
     for i in range(14):
         day = fourteen_days_ago + timedelta(days=i)
         day_str = str(day)
@@ -202,19 +216,36 @@ def tenant_overview(request):
         .order_by('-count')[:5]
     )
 
-    revenue_30d = sales_30d.aggregate(total=Sum('total_amount'))['total'] or 0
-    revenue_today = sales_today.aggregate(total=Sum('total_amount'))['total'] or 0
+    revenue_30d_val = float(sales_30d.aggregate(total=Sum('total_amount'))['total'] or 0)
+    revenue_today_val = float(sales_today_qs.aggregate(total=Sum('total_amount'))['total'] or 0)
+
+    # Monthly revenue — last 6 months (for profit trend) — same filters as above
+    monthly_revenue_qs = list(
+        sales_qs.filter(created_at__date__gte=six_months_ago)
+        .annotate(month=TruncMonth('created_at'))
+        .values('month')
+        .annotate(total=Sum('total_amount'), count=Count('id'))
+        .order_by('month')
+    )
+    monthly_revenue_safe = [
+        {
+            'month': r['month'].strftime('%b %Y'),
+            'total': float(r['total'] or 0),
+            'count': r['count'],
+        }
+        for r in monthly_revenue_qs
+    ]
 
     sales_summary = {
-        'total_today': sales_today.count(),
-        'revenue_today': float(revenue_today),
+        'total_today': sales_today_qs.count(),
+        'revenue_today': revenue_today_val,
         'total_30d': sales_30d.count(),
-        'revenue_30d': float(revenue_30d),
+        'revenue_30d': revenue_30d_val,
         'payment_breakdown': payment_breakdown,
         'daily_labels': daily_labels,
         'daily_revenue': daily_revenue,
         'daily_counts': daily_counts,
-        'payment_breakdown_json': json.dumps([
+        'payment_breakdown_json': _json.dumps([
             {
                 'payment_method': p['payment_method'],
                 'count': p['count'],
@@ -247,42 +278,42 @@ def tenant_overview(request):
         'type_breakdown': device_type_breakdown,
     }
 
-    # ── EXPENSES MODULE ────────────────────────────────────────────────────────
-    expenses_qs = Expense.objects.filter(user__in=active_stores.values('staff'))
-    # If Expense is scoped by store instead of user, adjust the filter above.
-    # Simplest approach — all expenses visible to this tenant user:
-    expenses_qs_all = Expense.objects.all()  # scope as needed for your multi-tenant setup
+    # ── EXPENSES MODULE ────────────────────────────────────────
+    expenses_qs_all = Expense.objects.all()  # scope to tenant as needed
     expenses_30d = expenses_qs_all.filter(date__gte=thirty_days_ago)
-
-    # Monthly trend for the sparkline card chart (last 6 months)
-    from django.db.models.functions import TruncMonth
-    import json as _json
+    expenses_today_qs = expenses_qs_all.filter(date=today)
 
     exp_monthly_trend = list(
         expenses_qs_all
-        .filter(date__gte=today - timedelta(days=180))
+        .filter(date__gte=six_months_ago)
         .annotate(month=TruncMonth('date'))
         .values('month')
         .annotate(total=Sum('amount'), count=Count('id'))
         .order_by('month')
     )
-    # Cast to plain Python types — avoids Decimal/date serialization errors in templates
     exp_monthly_safe = [
-        {'month': row['month'].strftime('%b %Y'), 'total': float(row['total'] or 0), 'count': row['count']}
+        {
+            'month': row['month'].strftime('%b %Y'),
+            'total': float(row['total'] or 0),
+            'count': row['count'],
+        }
         for row in exp_monthly_trend
     ]
 
+    expenses_30d_total = float(expenses_30d.aggregate(t=Sum('amount'))['t'] or 0)
+    expenses_today_total = float(expenses_today_qs.aggregate(t=Sum('amount'))['t'] or 0)
+
     expenses_summary = {
         'count_30d': expenses_30d.count(),
-        'total_30d': float(expenses_30d.aggregate(t=Sum('amount'))['t'] or 0),
+        'total_30d': expenses_30d_total,
         'pending': expenses_qs_all.filter(status='submitted').count(),
         'approved': expenses_qs_all.filter(status='approved').count(),
         'rejected': expenses_qs_all.filter(status='rejected').count(),
         'monthly_trend': exp_monthly_safe,
-        'monthly_trend_json': _json.dumps(exp_monthly_safe),  # pre-serialized for {{ |safe }}
+        'monthly_trend_json': _json.dumps(exp_monthly_safe),
     }
 
-    # ── CUSTOMERS MODULE ───────────────────────────────────────────────────────
+    # ── CUSTOMERS MODULE ───────────────────────────────────────
     sales_base = Sale.objects.filter(store__in=active_stores)
     sales_30d_all = sales_base.filter(created_at__date__gte=thirty_days_ago)
 
@@ -305,7 +336,6 @@ def tenant_overview(request):
     avg_spend = sales_30d_all.filter(customer__isnull=False) \
                     .aggregate(avg=Avg('total_amount'))['avg'] or 0
 
-    # High value: customers whose total spend > 1,000,000 UGX (adjust threshold)
     HIGH_VALUE_THRESHOLD = 1_000_000
     high_value_count = (
         sales_base.filter(customer__isnull=False)
@@ -326,13 +356,13 @@ def tenant_overview(request):
             'repeat': repeat_customers,
             'new': new_customers_30d,
         },
-        # Pre-serialized — no Decimal/date objects, safe for {{ |safe }} in template
         'segments_json': _json.dumps({
             'high_value': high_value_count,
             'repeat': repeat_customers,
             'new': new_customers_30d,
         }),
     }
+
     # ── SECURITY MODULE ────────────────────────────────────────
     alerts_qs = SecurityAlert.objects.filter(store__in=active_stores)
     open_alerts = alerts_qs.filter(status='OPEN')
@@ -360,16 +390,61 @@ def tenant_overview(request):
         'severity_breakdown': alert_severity_breakdown,
     }
 
+    # ── PROFIT MODULE ──────────────────────────────────────────
+    # 30-day profit
+    profit_30d = revenue_30d_val - expenses_30d_total
+    profit_margin_30d = (profit_30d / revenue_30d_val * 100) if revenue_30d_val else 0.0
+
+    # Today's profit
+    profit_today = revenue_today_val - expenses_today_total
+
+    # Monthly profit trend — merge revenue and expenses by month label
+    rev_map = {r['month']: r['total'] for r in monthly_revenue_safe}
+    exp_map = {e['month']: e['total'] for e in exp_monthly_safe}
+
+    # Union of all months present in either dataset
+    all_months_ordered = sorted(
+        set(rev_map.keys()) | set(exp_map.keys()),
+        key=lambda m: datetime.strptime(m, '%b %Y')
+    )
+
+    profit_monthly = []
+    for month in all_months_ordered:
+        rev  = rev_map.get(month, 0.0)
+        exp  = exp_map.get(month, 0.0)
+        pft  = rev - exp
+        mgn  = (pft / rev * 100) if rev else 0.0
+        profit_monthly.append({
+            'month':    month,
+            'revenue':  round(rev, 2),
+            'expenses': round(exp, 2),
+            'profit':   round(pft, 2),
+            'margin':   round(mgn, 2),
+        })
+
+    profit_summary = {
+        'profit_30d':          round(profit_30d, 2),
+        'margin_30d':          round(profit_margin_30d, 2),
+        'profit_today':        round(profit_today, 2),
+        'revenue_today':       revenue_today_val,
+        'expenses_today':      expenses_today_total,
+        'revenue_30d':         revenue_30d_val,
+        'expenses_30d':        expenses_30d_total,
+        'monthly_trend':       profit_monthly,
+        'monthly_trend_json':  _json.dumps(profit_monthly),
+    }
+
     context = {
-        'stores_summary': stores_summary,
+        'stores_summary':    stores_summary,
         'inventory_summary': inventory_summary,
-        'sales_summary': sales_summary,
-        'devices_summary': devices_summary,
-        'security_summary': security_summary,
+        'sales_summary':     sales_summary,
+        'devices_summary':   devices_summary,
+        'security_summary':  security_summary,
         'accessible_stores': stores,
-        'expenses_summary': expenses_summary,
+        'expenses_summary':  expenses_summary,
         'customers_summary': customers_summary,
-        'today': today,
+        'profit_summary':    profit_summary,
+        'today':             today,
     }
     return render(request, 'stores/tenant_overview.html', context)
 
@@ -382,27 +457,32 @@ def tenant_overview_detail_api(request):
     Called when user clicks a module card on the overview page.
 
     Query params:
-        module: stores | inventory | sales | devices | security
+        module: stores | inventory | sales | devices | security | expenses | customers | profit
         store_id: (optional) filter to a specific store
         period: (optional) 7 | 30 | 90  (days, default 30)
     """
-    module = request.GET.get('module', '')
+    module   = request.GET.get('module', '')
     store_id = request.GET.get('store_id')
-    period = int(request.GET.get('period', 30))
+    period   = int(request.GET.get('period', 30))
 
     stores = get_user_accessible_stores(request.user)
     active_stores = stores.filter(is_active=True)
-    now = timezone.now()
+    now   = timezone.now()
+    today = now.date()
     since = now - timedelta(days=period)
+    since_date = since.date()
 
-    # Optionally scope to one store
+    from django.db.models.functions import TruncMonth
+    import json as _json
+
     if store_id:
         try:
-            single_store = stores.get(pk=store_id)
+            stores.get(pk=store_id)
             active_stores = active_stores.filter(pk=store_id)
         except Store.DoesNotExist:
             return JsonResponse({'error': 'Store not found or access denied'}, status=403)
 
+    # ── STORES ────────────────────────────────────────────────
     if module == 'stores':
         data = list(
             stores.annotate(
@@ -420,12 +500,12 @@ def tenant_overview_detail_api(request):
                 'staff_count', 'device_count', 'inventory_count', 'low_stock_count'
             ).order_by('-is_active', 'name')
         )
-        # Serialize datetimes
         for row in data:
             if row.get('created_at'):
                 row['created_at'] = row['created_at'].strftime('%Y-%m-%d')
         return JsonResponse({'module': 'stores', 'rows': data})
 
+    # ── INVENTORY ─────────────────────────────────────────────
     elif module == 'inventory':
         low_stock_items = list(
             Stock.objects.filter(
@@ -439,7 +519,6 @@ def tenant_overview_detail_api(request):
                 'product__cost_price'
             )
         )
-        # Top products by value
         top_by_value = list(
             Stock.objects.filter(store__in=active_stores)
             .annotate(value=F('quantity') * F('product__cost_price'))
@@ -452,217 +531,35 @@ def tenant_overview_detail_api(request):
             'top_by_value': top_by_value,
         })
 
-
-    elif module == 'expenses':
-
-        qs = Expense.objects.all()  # scope to tenant as needed
-
-        qs = qs.filter(date__gte=since.date())
-
-        rows = list(
-
-            qs.order_by('-date')[:60]
-
-            .values(
-
-                'id', 'description', 'vendor', 'amount', 'currency',
-
-                'payment_method', 'status', 'date', 'is_recurring',
-
-                'amount_base', 'exchange_rate',
-
-            )
-
-        )
-
-        for r in rows:
-            r['date'] = str(r['date'])
-
-            r['amount'] = float(r['amount'])
-
-            r['amount_base'] = float(r['amount_base'])
-
-        # Payment method breakdown (for side chart)
-
-        payment_breakdown = list(
-
-            qs.values('payment_method')
-
-            .annotate(total_amount=Sum('amount'), count=Count('id'))
-
-            .order_by('-total_amount')
-
-        )
-
-        for p in payment_breakdown:
-            p['total_amount'] = float(p['total_amount'] or 0)
-
-        # Monthly trend (for side chart)
-
-        monthly_trend = list(
-
-            qs.filter(date__gte=today - timedelta(days=180))
-
-            .annotate(month=TruncMonth('date'))
-
-            .values('month')
-
-            .annotate(total=Sum('amount'), count=Count('id'))
-
-            .order_by('month')
-
-        )
-
-        for m in monthly_trend:
-            m['month'] = m['month'].strftime('%b %Y')
-
-            m['total'] = float(m['total'] or 0)
-
-        return JsonResponse({
-
-            'module': 'expenses',
-
-            'rows': rows,
-
-            'payment_breakdown': payment_breakdown,
-
-            'monthly_trend': monthly_trend,
-
-        })
-
-
-    elif module == 'customers':
-
-        sales_qs = Sale.objects.filter(store__in=active_stores, created_at__gte=since)
-
-        customers = list(
-
-            sales_qs.filter(customer__isnull=False)
-
-            .values('customer', 'customer__name')
-
-            .annotate(
-
-                total_purchases=Count('id'),
-
-                total_spent=Sum('total_amount'),
-
-                avg_spend=Avg('total_amount'),
-
-                last_purchase=Max('created_at__date'),
-
-            )
-
-            .order_by('-total_spent')[:50]
-
-        )
-
-        for c in customers:
-
-            c['total_spent'] = float(c['total_spent'] or 0)
-
-            c['avg_spend'] = float(c['avg_spend'] or 0)
-
-            if c.get('last_purchase'):
-                c['last_purchase'] = str(c['last_purchase'])
-
-        # Segment counts
-
-        HIGH_VALUE_THRESHOLD = 1_000_000
-
-        segments = {
-
-            'high_value': sum(1 for c in customers if c['total_spent'] >= HIGH_VALUE_THRESHOLD),
-
-            'mid_value': sum(1 for c in customers if 500_000 <= c['total_spent'] < HIGH_VALUE_THRESHOLD),
-
-            'standard': sum(1 for c in customers if c['total_spent'] < 500_000),
-
-            'new_count': sum(1 for c in customers if c['total_purchases'] == 1),
-
-        }
-
-        return JsonResponse({
-
-            'module': 'customers',
-
-            'customers': customers,
-
-            'segments': segments,
-
-        })
-
-
-    elif module == 'sale_items':
-
-        # Inline row expand for Sales panel
-
-        sale_id = request.GET.get('sale_id')
-
-        if not sale_id:
-            return JsonResponse({'error': 'sale_id required'}, status=400)
-
-        try:
-
-            sale = Sale.objects.get(pk=sale_id, store__in=active_stores)
-
-        except Sale.DoesNotExist:
-
-            return JsonResponse({'error': 'Sale not found or access denied'}, status=403)
-
-        items = list(
-
-            SaleItem.objects.filter(sale=sale)
-
-            .values(
-
-                'id',
-
-                'product__name',
-
-                'product__sku',
-
-                'quantity',
-
-                'unit_price',
-
-                'total_price',
-
-                'discount_amount',
-
-                'tax_amount',
-
-            )
-
-        )
-
-        for item in items:
-
-            for field in ('unit_price', 'total_price', 'discount_amount', 'tax_amount'):
-                item[field] = float(item[field] or 0)
-
-        return JsonResponse({'module': 'sale_items', 'items': items})
-
+    # ── SALES ─────────────────────────────────────────────────
     elif module == 'sales':
         recent_sales = list(
-            Sale.objects.filter(store__in=active_stores, created_at__gte=since.date())
+            Sale.objects.filter(
+                store__in=stores,          # all stores, not just active
+                is_voided=False,
+                status__in=['COMPLETED', 'PAID'],
+                created_at__date__gte=since_date,
+            )
             .select_related('store', 'customer')
-            .order_by( '-created_at')[:50]
+            .order_by('-created_at')[:50]
             .values(
                 'id', 'document_number', 'store__name',
                 'created_at', 'total_amount', 'payment_method',
-                'payment_status', 'transaction_type',
-                'customer__name'
+                'payment_status', 'transaction_type', 'customer__name'
             )
         )
-        # Serialize dates
         for row in recent_sales:
             if row.get('created_at'):
                 row['created_at'] = str(row['created_at'])
+            row['total_amount'] = float(row['total_amount'] or 0)
 
-        # Top stores by revenue this period
         top_stores = list(
-            Sale.objects.filter(store__in=active_stores, created_at__gte=since.date())
+            Sale.objects.filter(
+                store__in=stores,
+                is_voided=False,
+                status__in=['COMPLETED', 'PAID'],
+                created_at__date__gte=since_date,
+            )
             .values('store__name')
             .annotate(revenue=Sum('total_amount'), count=Count('id'))
             .order_by('-revenue')[:10]
@@ -676,6 +573,187 @@ def tenant_overview_detail_api(request):
             'top_stores': top_stores,
         })
 
+    # ── SALE ITEMS (row expand) ────────────────────────────────
+    elif module == 'sale_items':
+        sale_id = request.GET.get('sale_id')
+        if not sale_id:
+            return JsonResponse({'error': 'sale_id required'}, status=400)
+        try:
+            sale = Sale.objects.get(pk=sale_id, store__in=active_stores)
+        except Sale.DoesNotExist:
+            return JsonResponse({'error': 'Sale not found or access denied'}, status=403)
+
+        items = list(
+            SaleItem.objects.filter(sale=sale)
+            .values(
+                'id', 'product__name', 'product__sku',
+                'quantity', 'unit_price', 'total_price',
+                'discount_amount', 'tax_amount',
+            )
+        )
+        for item in items:
+            for field in ('unit_price', 'total_price', 'discount_amount', 'tax_amount'):
+                item[field] = float(item[field] or 0)
+        return JsonResponse({'module': 'sale_items', 'items': items})
+
+    # ── EXPENSES ──────────────────────────────────────────────
+    elif module == 'expenses':
+        qs = Expense.objects.all().filter(date__gte=since_date)
+
+        rows = list(
+            qs.order_by('-date')[:60]
+            .values(
+                'id', 'description', 'vendor', 'amount', 'currency',
+                'payment_method', 'status', 'date', 'is_recurring',
+                'amount_base', 'exchange_rate',
+            )
+        )
+        for r in rows:
+            r['date']        = str(r['date'])
+            r['amount']      = float(r['amount'] or 0)
+            r['amount_base'] = float(r['amount_base'] or 0)
+
+        payment_breakdown = list(
+            qs.values('payment_method')
+            .annotate(total_amount=Sum('amount'), count=Count('id'))
+            .order_by('-total_amount')
+        )
+        for p in payment_breakdown:
+            p['total_amount'] = float(p['total_amount'] or 0)
+
+        monthly_trend = list(
+            qs.filter(date__gte=today - timedelta(days=180))
+            .annotate(month=TruncMonth('date'))
+            .values('month')
+            .annotate(total=Sum('amount'), count=Count('id'))
+            .order_by('month')
+        )
+        for m in monthly_trend:
+            m['month'] = m['month'].strftime('%b %Y')
+            m['total'] = float(m['total'] or 0)
+
+        return JsonResponse({
+            'module': 'expenses',
+            'rows': rows,
+            'payment_breakdown': payment_breakdown,
+            'monthly_trend': monthly_trend,
+        })
+
+    # ── CUSTOMERS ─────────────────────────────────────────────
+    elif module == 'customers':
+        sales_qs = Sale.objects.filter(store__in=active_stores, created_at__gte=since)
+
+        customers = list(
+            sales_qs.filter(customer__isnull=False)
+            .values('customer', 'customer__name')
+            .annotate(
+                total_purchases=Count('id'),
+                total_spent=Sum('total_amount'),
+                avg_spend=Avg('total_amount'),
+                last_purchase=Max('created_at__date'),
+            )
+            .order_by('-total_spent')[:50]
+        )
+        for c in customers:
+            c['total_spent'] = float(c['total_spent'] or 0)
+            c['avg_spend']   = float(c['avg_spend']   or 0)
+            if c.get('last_purchase'):
+                c['last_purchase'] = str(c['last_purchase'])
+
+        HIGH_VALUE_THRESHOLD = 1_000_000
+        segments = {
+            'high_value': sum(1 for c in customers if c['total_spent'] >= HIGH_VALUE_THRESHOLD),
+            'mid_value':  sum(1 for c in customers if 500_000 <= c['total_spent'] < HIGH_VALUE_THRESHOLD),
+            'standard':   sum(1 for c in customers if c['total_spent'] < 500_000),
+            'new_count':  sum(1 for c in customers if c['total_purchases'] == 1),
+        }
+        return JsonResponse({'module': 'customers', 'customers': customers, 'segments': segments})
+
+    # ── PROFIT (AJAX detail — respects period + store filter) ──
+    elif module == 'profit':
+        sales_qs    = Sale.objects.filter(
+            store__in=stores,          # all stores
+            is_voided=False,
+            status__in=['COMPLETED', 'PAID'],
+            created_at__date__gte=since_date,
+        )
+        expenses_qs = Expense.objects.all().filter(date__gte=since_date)
+
+        revenue_period   = float(sales_qs.aggregate(t=Sum('total_amount'))['t'] or 0)
+        expenses_period  = float(expenses_qs.aggregate(t=Sum('amount'))['t'] or 0)
+        profit_period    = revenue_period - expenses_period
+        margin_period    = (profit_period / revenue_period * 100) if revenue_period else 0.0
+
+        # Monthly breakdown within period
+        monthly_rev = list(
+            sales_qs
+            .annotate(month=TruncMonth('created_at'))
+            .values('month')
+            .annotate(total=Sum('total_amount'))
+            .order_by('month')
+        )
+        monthly_exp = list(
+            expenses_qs
+            .annotate(month=TruncMonth('date'))
+            .values('month')
+            .annotate(total=Sum('amount'))
+            .order_by('month')
+        )
+
+        rev_map = {r['month'].strftime('%b %Y'): float(r['total'] or 0) for r in monthly_rev}
+        exp_map = {e['month'].strftime('%b %Y'): float(e['total'] or 0) for e in monthly_exp}
+
+        all_months = sorted(
+            set(rev_map.keys()) | set(exp_map.keys()),
+            key=lambda m: datetime.strptime(m, '%b %Y')
+        )
+
+        monthly_trend = []
+        for month in all_months:
+            rev = rev_map.get(month, 0.0)
+            exp = exp_map.get(month, 0.0)
+            pft = rev - exp
+            mgn = (pft / rev * 100) if rev else 0.0
+            monthly_trend.append({
+                'month':    month,
+                'revenue':  round(rev, 2),
+                'expenses': round(exp, 2),
+                'profit':   round(pft, 2),
+                'margin':   round(mgn, 2),
+            })
+
+        # Top stores by profit
+        store_rev = {
+            r['store__name']: float(r['rev'] or 0)
+            for r in sales_qs.values('store__name').annotate(rev=Sum('total_amount'))
+        }
+        # Expenses don't have a store FK in this model — attribute equally across stores
+        store_count = len(store_rev) or 1
+        exp_per_store = expenses_period / store_count
+
+        top_stores_profit = sorted([
+            {
+                'store':    name,
+                'revenue':  round(rev, 2),
+                'expenses': round(exp_per_store, 2),
+                'profit':   round(rev - exp_per_store, 2),
+                'margin':   round(((rev - exp_per_store) / rev * 100) if rev else 0, 2),
+            }
+            for name, rev in store_rev.items()
+        ], key=lambda x: x['profit'], reverse=True)[:10]
+
+        return JsonResponse({
+            'module':          'profit',
+            'revenue_period':  revenue_period,
+            'expenses_period': expenses_period,
+            'profit_period':   profit_period,
+            'margin_period':   round(margin_period, 2),
+            'monthly_trend':   monthly_trend,
+            'top_stores':      top_stores_profit,
+            'period_days':     period,
+        })
+
+    # ── DEVICES ───────────────────────────────────────────────
     elif module == 'devices':
         devices = list(
             StoreDevice.objects.filter(store__in=active_stores)
@@ -698,12 +776,11 @@ def tenant_overview_detail_api(request):
                 d['registered_at'] = ra.strftime('%Y-%m-%d')
         return JsonResponse({'module': 'devices', 'rows': devices})
 
+    # ── SECURITY ──────────────────────────────────────────────
     elif module == 'security':
         open_alerts = list(
-            SecurityAlert.objects.filter(
-                store__in=active_stores,
-                status='OPEN'
-            ).order_by('-created_at')[:50]
+            SecurityAlert.objects.filter(store__in=active_stores, status='OPEN')
+            .order_by('-created_at')[:50]
             .values(
                 'id', 'title', 'alert_type', 'severity',
                 'status', 'store__name', 'created_at', 'description'
@@ -714,10 +791,8 @@ def tenant_overview_detail_api(request):
                 a['created_at'] = a['created_at'].strftime('%Y-%m-%d %H:%M')
 
         recent_sessions = list(
-            UserDeviceSession.objects.filter(
-                store__in=active_stores,
-                created_at__gte=since
-            ).order_by('-created_at')[:30]
+            UserDeviceSession.objects.filter(store__in=active_stores, created_at__gte=since)
+            .order_by('-created_at')[:30]
             .values(
                 'id', 'user__username', 'store__name',
                 'ip_address', 'browser_name', 'os_name',

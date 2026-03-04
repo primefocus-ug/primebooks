@@ -650,6 +650,107 @@ select.form-control {
   margin-bottom: 1rem;
 }
 
+/* ── TOAST NOTIFICATIONS ── */
+#toast-container {
+  position: fixed;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--r-lg, 16px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  font-size: 0.85rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  min-width: 280px;
+  max-width: 380px;
+  pointer-events: all;
+  animation: toastIn 0.3s cubic-bezier(0.16,1,0.3,1);
+  border: 1px solid transparent;
+}
+.toast.hiding {
+  animation: toastOut 0.25s ease forwards;
+}
+@keyframes toastIn {
+  from { opacity:0; transform: translateX(40px) scale(0.95); }
+  to   { opacity:1; transform: translateX(0)   scale(1);    }
+}
+@keyframes toastOut {
+  from { opacity:1; transform: translateX(0)   scale(1);    }
+  to   { opacity:0; transform: translateX(40px) scale(0.95); }
+}
+.toast-error {
+  background: rgba(220,38,38,0.12);
+  border-color: rgba(220,38,38,0.25);
+  color: var(--dash-red, #dc2626);
+}
+[data-theme="dark"] .toast-error {
+  background: rgba(239,68,68,0.18);
+  border-color: rgba(239,68,68,0.35);
+  color: #f87171;
+}
+.toast-success {
+  background: rgba(22,163,74,0.12);
+  border-color: rgba(22,163,74,0.25);
+  color: #15803d;
+}
+[data-theme="dark"] .toast-success {
+  background: rgba(34,197,94,0.15);
+  border-color: rgba(34,197,94,0.3);
+  color: #4ade80;
+}
+.toast-icon { font-size: 1.1rem; flex-shrink: 0; line-height: 1; }
+.toast-body { flex: 1; }
+.toast-title { font-weight: 700; margin-bottom: 2px; }
+.toast-msg   { font-size: 0.78rem; opacity: 0.85; line-height: 1.4; }
+.toast-close {
+  background: none; border: none; cursor: pointer;
+  color: currentColor; opacity: 0.5; padding: 0; font-size: 1rem;
+  transition: opacity 0.15s; flex-shrink: 0;
+}
+.toast-close:hover { opacity: 1; }
+
+/* ── INPUT ERROR STATE ── */
+.form-control.is-error {
+  border-color: var(--dash-red, #dc2626) !important;
+  box-shadow: 0 0 0 3px rgba(220,38,38,0.12) !important;
+}
+[data-theme="dark"] .form-control.is-error {
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.2) !important;
+}
+.amount-input.is-error {
+  color: var(--dash-red, #dc2626);
+}
+.amount-input-row.has-error {
+  border-color: var(--dash-red, #dc2626);
+}
+
+/* ── FIELD ERROR MESSAGES ── */
+.field-error-msg {
+  font-size: 0.72rem;
+  color: var(--dash-red, #dc2626);
+  margin-top: 0.35rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  animation: fadeSlideIn 0.2s ease;
+}
+@keyframes fadeSlideIn {
+  from { opacity:0; transform: translateY(-4px); }
+  to   { opacity:1; transform: translateY(0); }
+}
+
 /* ── UTILITIES ── */
 .truncate {
   white-space: nowrap;
@@ -704,8 +805,27 @@ select.form-control {
     </div>
   </div>
 
+  <!-- ─── TOAST CONTAINER ─── -->
+  <div id="toast-container"></div>
+
+  {% if form.errors %}
+  <div class="alert alert-danger" id="server-error-banner" style="margin-bottom:1.25rem">
+    <strong>❌ Please fix the errors below before saving:</strong>
+    <ul style="margin-top:0.5rem;padding-left:1.25rem">
+      {% for field, errors in form.errors.items %}
+        {% for error in errors %}
+          <li>{% if field != '__all__' %}<strong>{{ field|title }}:</strong> {% endif %}{{ error }}</li>
+        {% endfor %}
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   <form method="post" enctype="multipart/form-data" id="expense-form" novalidate>
     {% csrf_token %}
+    {# Hidden fields — currency and exchange_rate default to UGX / 1.0 #}
+    <input type="hidden" name="currency" value="{% if expense %}{{ expense.currency }}{% else %}UGX{% endif %}" />
+    <input type="hidden" name="exchange_rate" value="{% if expense %}{{ expense.exchange_rate }}{% else %}1.000000{% endif %}" />
 
     <!-- AMOUNT PANEL (prominent, with accent) -->
     <div class="amount-panel">
@@ -714,9 +834,12 @@ select.form-control {
         <span class="amount-currency">UGX</span>
         <input type="number" name="amount" id="id_amount"
           value="{% if expense %}{{ expense.amount }}{% endif %}"
-          class="amount-input" placeholder="0.00" step="0.01" min="0.01" required
+          class="amount-input{% if form.amount.errors %} is-error{% endif %}" placeholder="0.00" step="0.01" min="0.01" required
           oninput="updateAmountPreview(this.value)" />
       </div>
+      {% if form.amount.errors %}
+      <div class="field-error-msg">⚠ {{ form.amount.errors|join:", " }}</div>
+      {% endif %}
       <div class="amount-words" id="amount-words"></div>
 
       <div class="form-row">
@@ -724,7 +847,8 @@ select.form-control {
           <label class="form-label">Date *</label>
           <input type="date" name="date" id="id_date"
             value="{% if expense %}{{ expense.date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}"
-            class="form-control" required />
+            class="form-control{% if form.date.errors %} is-error{% endif %}" required />
+          {% if form.date.errors %}<div class="field-error-msg">⚠ {{ form.date.errors|join:", " }}</div>{% endif %}
         </div>
         <div class="form-group">
           <label class="form-label">Payment Method</label>
@@ -750,10 +874,10 @@ select.form-control {
           <label class="form-label">Description *</label>
           <input type="text" name="description" id="id_description"
             value="{% if expense %}{{ expense.description }}{% endif %}"
-            class="form-control" placeholder="What was this for?" required autofocus
+            class="form-control{% if form.description.errors %} is-error{% endif %}" placeholder="What was this for?" required autofocus
             maxlength="200" oninput="updateCharCount(this, 'desc-counter', 200)" />
           <div class="char-counter" id="desc-counter">{% if expense %}{{ expense.description|length }}{% else %}0{% endif %}/200</div>
-          {% if form.description.errors %}<div class="form-error">{{ form.description.errors|join:", " }}</div>{% endif %}
+          {% if form.description.errors %}<div class="field-error-msg">⚠ {{ form.description.errors|join:", " }}</div>{% endif %}
         </div>
 
         <!-- TAGS -->
@@ -837,13 +961,11 @@ select.form-control {
       </div>
     </div>
 
-    <!-- ERRORS -->
+    <!-- NON-FIELD ERRORS -->
     {% if form.non_field_errors %}
-    <div class="alert alert-danger">
-      <strong>❌ Please fix the following:</strong>
-      <ul>
-        {% for err in form.non_field_errors %}<li>{{ err }}</li>{% endfor %}
-      </ul>
+    <div class="alert alert-danger" style="margin-bottom:1rem">
+      <strong>❌ </strong>
+      {% for err in form.non_field_errors %}{{ err }}{% if not forloop.last %} · {% endif %}{% endfor %}
     </div>
     {% endif %}
 
@@ -866,10 +988,127 @@ select.form-control {
 
 {% block extra_js %}
 <script>
-/* ── TAG SYSTEM ── */
+/* ══════════════════════════════════════════
+   TOAST SYSTEM
+══════════════════════════════════════════ */
+function showToast(type, title, message, duration = 5000) {
+  const container = document.getElementById('toast-container');
+  const icons = { error: '❌', success: '✅', warning: '⚠️', info: 'ℹ️' };
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `
+    <span class="toast-icon">${icons[type] || 'ℹ️'}</span>
+    <div class="toast-body">
+      <div class="toast-title">${title}</div>
+      ${message ? `<div class="toast-msg">${message}</div>` : ''}
+    </div>
+    <button class="toast-close" onclick="dismissToast(this.parentElement)" title="Dismiss">✕</button>
+  `;
+  container.appendChild(toast);
+  if (duration > 0) setTimeout(() => dismissToast(toast), duration);
+  return toast;
+}
+function dismissToast(toast) {
+  if (!toast || !toast.parentElement) return;
+  toast.classList.add('hiding');
+  toast.addEventListener('animationend', () => toast.remove(), { once: true });
+}
+
+/* Show server-side errors as toasts on page load */
+{% if form.errors %}
+document.addEventListener('DOMContentLoaded', () => {
+  const errorFields = [];
+  {% for field, errors in form.errors.items %}
+    {% for error in errors %}
+      errorFields.push("{% if field != '__all__' %}{{ field|title }}: {% endif %}{{ error|escapejs }}");
+    {% endfor %}
+  {% endfor %}
+  const preview = errorFields.slice(0, 3).join('<br>');
+  const extra   = errorFields.length > 3 ? `<br>…and ${errorFields.length - 3} more` : '';
+  showToast('error', 'Could not save expense', preview + extra, 8000);
+
+  /* Scroll to first error field */
+  const firstErr = document.querySelector('.is-error, .field-error-msg');
+  if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+{% endif %}
+
+/* Show Django messages as toasts */
+{% for message in messages %}
+document.addEventListener('DOMContentLoaded', () => {
+  showToast(
+    '{% if message.tags == "error" %}error{% elif message.tags == "warning" %}warning{% else %}success{% endif %}',
+    '{{ message|escapejs }}',
+    '',
+    5000
+  );
+});
+{% endfor %}
+
+/* ══════════════════════════════════════════
+   CLIENT-SIDE VALIDATION
+══════════════════════════════════════════ */
+function setFieldError(input, message) {
+  input.classList.add('is-error');
+  let existing = input.parentElement.querySelector('.field-error-msg');
+  if (!existing) {
+    existing = document.createElement('div');
+    existing.className = 'field-error-msg';
+    input.after(existing);
+  }
+  existing.innerHTML = `⚠ ${message}`;
+}
+function clearFieldError(input) {
+  input.classList.remove('is-error');
+  const msg = input.parentElement.querySelector('.field-error-msg');
+  if (msg) msg.remove();
+}
+
+/* Clear error styling on user input */
+document.querySelectorAll('.form-control, .amount-input').forEach(el => {
+  el.addEventListener('input', () => clearFieldError(el));
+  el.addEventListener('change', () => clearFieldError(el));
+});
+
+function validateForm() {
+  const errors = [];
+
+  const amount = document.getElementById('id_amount');
+  const amountVal = parseFloat(amount.value);
+  if (!amount.value || isNaN(amountVal) || amountVal <= 0) {
+    setFieldError(amount, 'Enter a valid amount greater than 0.');
+    document.querySelector('.amount-input-row').classList.add('has-error');
+    errors.push('Amount is required and must be greater than 0');
+  } else {
+    clearFieldError(amount);
+    document.querySelector('.amount-input-row').classList.remove('has-error');
+  }
+
+  const date = document.getElementById('id_date');
+  if (!date.value) {
+    setFieldError(date, 'Date is required.');
+    errors.push('Date is required');
+  } else {
+    clearFieldError(date);
+  }
+
+  const desc = document.getElementById('id_description');
+  if (!desc.value.trim()) {
+    setFieldError(desc, 'Description is required.');
+    errors.push('Description is required');
+  } else {
+    clearFieldError(desc);
+  }
+
+  return errors;
+}
+
+/* ══════════════════════════════════════════
+   TAG SYSTEM
+══════════════════════════════════════════ */
 const tagsHidden = document.getElementById('tags-hidden');
 let tags = tagsHidden.value ? tagsHidden.value.split(',').map(t => t.trim()).filter(Boolean) : [];
-const allTagSuggestions = {{ all_tags|safe|default:"[]" }};
+const allTagSuggestions = {{ recent_tags|safe|default:"[]" }};
 
 function renderTags() {
   document.getElementById('tags-preview').innerHTML = tags.map((t, i) =>
@@ -902,7 +1141,9 @@ tagInput.addEventListener('input', function() {
 });
 document.addEventListener('click', e => { if (!e.target.closest('.tag-input-wrap')) tagSugs.classList.remove('open'); });
 
-/* ── RECEIPT DRAG & DROP ── */
+/* ══════════════════════════════════════════
+   RECEIPT DRAG & DROP
+══════════════════════════════════════════ */
 const drop = document.getElementById('receipt-drop');
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
@@ -919,8 +1160,13 @@ drop.addEventListener('drop', e => {
 function previewReceipt(input) {
   if (!input.files || !input.files[0]) return;
   const f = input.files[0];
+  if (f.size > 10 * 1024 * 1024) {
+    showToast('error', 'File too large', 'Maximum receipt size is 10 MB.');
+    input.value = '';
+    return;
+  }
   const prev = document.getElementById('receipt-preview');
-  const ph = document.getElementById('receipt-placeholder');
+  const ph   = document.getElementById('receipt-placeholder');
   if (f.type.startsWith('image/')) {
     prev.src = URL.createObjectURL(f);
     prev.style.display = 'block';
@@ -932,9 +1178,11 @@ function previewReceipt(input) {
   }
 }
 
-/* ── AMOUNT WORDS ── */
+/* ══════════════════════════════════════════
+   AMOUNT PREVIEW
+══════════════════════════════════════════ */
 function updateAmountPreview(val) {
-  const n = parseFloat(val);
+  const n  = parseFloat(val);
   const el = document.getElementById('amount-words');
   if (!isNaN(n) && n > 0) {
     el.textContent = `≈ ${n.toLocaleString('en-UG', { maximumFractionDigits: 2 })} Ugandan Shillings`;
@@ -944,7 +1192,9 @@ function updateAmountPreview(val) {
 }
 if (document.getElementById('id_amount').value) updateAmountPreview(document.getElementById('id_amount').value);
 
-/* ── CHAR COUNTERS ── */
+/* ══════════════════════════════════════════
+   CHAR COUNTERS
+══════════════════════════════════════════ */
 function updateCharCount(el, counterId, max) {
   const n = el.value.length;
   const counter = document.getElementById(counterId);
@@ -952,22 +1202,50 @@ function updateCharCount(el, counterId, max) {
   counter.className = 'char-counter' + (n > max ? ' over' : n > max * .85 ? ' warn' : '');
 }
 
-/* ── SUBMIT WITH LOADING ── */
-document.getElementById('expense-form').addEventListener('submit', function() {
-  const btn = document.getElementById('submit-btn');
-  btn.textContent = '⏳ Saving…';
-  btn.disabled = true;
+/* ══════════════════════════════════════════
+   FORM SUBMIT
+══════════════════════════════════════════ */
+const expenseForm = document.getElementById('expense-form');
+const submitBtn   = document.getElementById('submit-btn');
+const originalBtnHTML = submitBtn.innerHTML;
+
+expenseForm.addEventListener('submit', function(e) {
+  const errors = validateForm();
+
+  if (errors.length > 0) {
+    e.preventDefault();
+    showToast('error', 'Please fix the errors below', errors.join('<br>'), 7000);
+    /* Scroll to first error */
+    const firstErr = document.querySelector('.is-error');
+    if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  /* Show loading state */
+  submitBtn.innerHTML = '⏳ Saving… <span class="kbd-hint">please wait</span>';
+  submitBtn.disabled = true;
+
+  /* Safety net: re-enable after 15s in case of network issue */
+  setTimeout(() => {
+    submitBtn.innerHTML = originalBtnHTML;
+    submitBtn.disabled = false;
+    showToast('warning', 'Taking longer than expected', 'Check your connection and try again.');
+  }, 15000);
 });
 
-/* ── KEYBOARD ── */
+/* ══════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+══════════════════════════════════════════ */
 document.addEventListener('keydown', e => {
-  if (e.ctrlKey && e.key === 'Enter') document.getElementById('expense-form').submit();
+  if (e.ctrlKey && e.key === 'Enter') expenseForm.requestSubmit();
   if (e.key === 'Escape' && !e.target.closest('input,textarea,select')) {
     window.location = '{% url "expenses:expense_list" %}';
   }
 });
 
-/* ── SET TODAY ── */
+/* ══════════════════════════════════════════
+   SET TODAY IF BLANK
+══════════════════════════════════════════ */
 if (!document.getElementById('id_date').value) {
   document.getElementById('id_date').value = new Date().toISOString().split('T')[0];
 }

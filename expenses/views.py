@@ -268,7 +268,6 @@ def expense_list(request):
 # ===========================================================================
 # Expense CRUD
 # ===========================================================================
-
 @login_required
 def expense_create(request):
     if request.method == 'POST':
@@ -277,7 +276,14 @@ def expense_create(request):
             expense = form.save(commit=False)
             expense.user = request.user
             expense.save()
-            form.save_m2m()
+
+            # Handle tags from the comma-separated hidden input
+            raw_tags = form.cleaned_data.get('tags', '')
+            tag_names = [t.strip() for t in raw_tags.split(',') if t.strip()]
+            if tag_names:
+                expense.tags.set(*tag_names)
+            else:
+                expense.tags.clear()
 
             # Trigger OCR if a receipt was uploaded
             if expense.receipt:
@@ -285,11 +291,13 @@ def expense_create(request):
                     from .tasks import process_receipt_ocr
                     process_receipt_ocr.delay(expense.pk)
                 except Exception as exc:
-                    logger.warning("Could not queue OCR task for expense %s: %s", expense.pk, exc)
+                    logger.warning(
+                        "Could not queue OCR task for expense %s: %s",
+                        expense.pk, exc
+                    )
 
             messages.success(request, '✅ Expense added successfully!')
 
-            # Re-check budgets so alerts fire if this expense pushed one over threshold
             _check_budgets_after_expense(request.user)
 
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -310,17 +318,21 @@ def expense_create(request):
                 return redirect('expenses:expense_create')
 
             return redirect('expenses:dashboard')
+
+            # Form invalid — fall through to re-render with errors
+
     else:
         form = ExpenseForm()
 
+    # Build recent tags for the tag autocomplete
     recent_tags = set()
-    for expense in Expense.objects.filter(user=request.user)[:50]:
-        recent_tags.update(expense.tags.names())
+    for exp in Expense.objects.filter(user=request.user).prefetch_related('tags')[:50]:
+        recent_tags.update(exp.tags.names())
 
     return render(request, 'expenses/expense_form.html', {
         'form': form,
         'recent_tags': sorted(recent_tags)[:20],
-        'today': date.today().isoformat(),
+        'today': date.today(),
     })
 
 
