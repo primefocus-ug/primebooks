@@ -1,1128 +1,688 @@
-{% extends 'base.html' %}
-{% load i18n %}
+{% extends "base.html" %}
 {% load static %}
 {% load humanize %}
+{% load i18n %}
 
-{% block title %}{% trans "Dashboard" %} - {{ company.trading_name|default:company.name|default:"Company Dashboard" }}{% endblock %}
-
-{% block breadcrumb %}
-{{ block.super }}
-<li class="breadcrumb-item active" aria-current="page">{% trans "Dashboard" %}</li>
-{% endblock %}
+{% block title %}{{ company.trading_name|default:company.name|default:"Dashboard" }} — Operations{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-    :root {
-        --primary-color: #007bff;
-        --success-color: #28a745;
-        --info-color: #17a2b8;
-        --warning-color: #ffc107;
-        --danger-color: #dc3545;
-    }
+/* ── DESIGN SYSTEM ─────────────────────────────── */
+:root {
+  --bg:          #0d1117;
+  --surface:     #161b22;
+  --surface-2:   #1c2333;
+  --surface-3:   #21262d;
+  --border:      #30363d;
+  --border-soft: #21262d;
+  --text:        #e6edf3;
+  --text-muted:  #8b949e;
+  --text-dim:    #484f58;
+  --blue:        #58a6ff;  --blue-dim:   #1f3a5c;
+  --green:       #3fb950;  --green-dim:  #1a3a25;
+  --yellow:      #d29922;  --yellow-dim: #3d2b00;
+  --red:         #f85149;  --red-dim:    #3d1818;
+  --purple:      #bc8cff;  --purple-dim: #2e1f5e;
+  --orange:      #f0883e;  --orange-dim: #3d2200;
+  --radius:10px; --radius-sm:6px;
+  --transition:.2s ease; --shadow:0 4px 20px rgba(0,0,0,.4);
+}
+.dv-wrap { background:var(--bg); min-height:100vh; padding:0 0 60px;
+  font-family:'IBM Plex Mono',monospace; color:var(--text); }
 
-    .stat-card {
-        background: linear-gradient(135deg, var(--bg-color) 0%, var(--bg-color) 100%);
-        color: var(--text-color);
-        transition: all 0.3s ease;
-        position: relative;
-        overflow: hidden;
-    }
+/* ── HEADER ────────────────────────────────────── */
+.dv-header { background:var(--surface); border-bottom:1px solid var(--border);
+  padding:18px 28px; display:flex; align-items:center;
+  justify-content:space-between; position:sticky; top:0; z-index:50; }
+.dv-header h1 { font-size:14px; font-weight:600; letter-spacing:.08em;
+  text-transform:uppercase; margin:0; }
+.dv-header p  { font-size:11px; color:var(--text-muted); margin:2px 0 0; }
+.dv-header-right { display:flex; gap:10px; align-items:center; }
+.dv-badge  { padding:4px 12px; border-radius:20px; font-size:11px; letter-spacing:.05em; }
+.dv-badge-plan { background:var(--blue-dim); border:1px solid var(--blue); color:var(--blue); }
+.dv-badge-date { color:var(--text-muted); }
+.dv-refresh-btn { background:var(--surface-2); border:1px solid var(--border);
+  color:var(--text-muted); font-size:11px; padding:5px 12px; border-radius:var(--radius-sm);
+  cursor:pointer; font-family:inherit; transition:all var(--transition); }
+.dv-refresh-btn:hover { border-color:var(--blue); color:var(--blue); }
 
-    .stat-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
-    }
+/* ── BODY ──────────────────────────────────────── */
+.dv-body { padding:24px 28px 0; }
 
-    .stat-icon {
-        font-size: 1.5rem;
-        opacity: 0.8;
-    }
+/* ── ALERTS STRIP ──────────────────────────────── */
+.dv-alert { padding:10px 16px; border-radius:var(--radius-sm); font-size:12px;
+  margin-bottom:10px; display:flex; align-items:center; gap:10px; }
+.dv-alert-warning { background:var(--yellow-dim); border:1px solid var(--yellow); color:var(--yellow); }
+.dv-alert-danger  { background:var(--red-dim);    border:1px solid var(--red);    color:var(--red); }
+.dv-alert-info    { background:var(--blue-dim);   border:1px solid var(--blue);   color:var(--blue); }
 
-    .stat-number {
-        font-size: 2rem;
-        font-weight: 700;
-        line-height: 1;
-    }
+/* ── KPI STRIP ─────────────────────────────────── */
+.dv-kpi-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:24px; }
+.dv-kpi { background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius-sm); padding:14px 16px; position:relative; overflow:hidden;
+  opacity:0; animation:fadeUp .3s ease forwards; }
+.dv-kpi::before { content:''; position:absolute; top:0;left:0;right:0; height:2px; }
+.dv-kpi.k-blue::before   { background:var(--blue); }
+.dv-kpi.k-green::before  { background:var(--green); }
+.dv-kpi.k-yellow::before { background:var(--yellow); }
+.dv-kpi.k-purple::before { background:var(--purple); }
+.dv-kpi.k-red::before    { background:var(--red); }
+.dv-kpi:nth-child(1){animation-delay:.02s} .dv-kpi:nth-child(2){animation-delay:.06s}
+.dv-kpi:nth-child(3){animation-delay:.10s} .dv-kpi:nth-child(4){animation-delay:.14s}
+.dv-kpi:nth-child(5){animation-delay:.18s}
+.dv-kpi-label { font-size:10px; text-transform:uppercase; letter-spacing:.1em;
+  color:var(--text-muted); margin-bottom:6px; }
+.dv-kpi-value { font-size:24px; font-weight:700; line-height:1; margin-bottom:3px; }
+.dv-kpi.k-blue   .dv-kpi-value { color:var(--blue); }
+.dv-kpi.k-green  .dv-kpi-value { color:var(--green); }
+.dv-kpi.k-yellow .dv-kpi-value { color:var(--yellow); }
+.dv-kpi.k-purple .dv-kpi-value { color:var(--purple); }
+.dv-kpi.k-red    .dv-kpi-value { color:var(--red); }
+.dv-kpi-sub { font-size:10px; color:var(--text-dim); }
 
-    .stat-label {
-        font-size: 0.875rem;
-        font-weight: 500;
-        opacity: 0.9;
-    }
+/* ── MODULE GRID ───────────────────────────────── */
+.dv-module-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:22px; }
+.dv-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:18px; cursor:pointer; transition:border-color var(--transition),transform var(--transition),box-shadow var(--transition);
+  opacity:0; animation:fadeUp .4s ease forwards; }
+.dv-card:nth-child(1){animation-delay:.05s} .dv-card:nth-child(2){animation-delay:.12s}
+.dv-card:nth-child(3){animation-delay:.19s} .dv-card:nth-child(4){animation-delay:.26s}
+.dv-card:nth-child(5){animation-delay:.33s}
+.dv-card:hover { border-color:var(--blue); transform:translateY(-2px); box-shadow:var(--shadow); }
+.dv-card.active { border-color:var(--blue); background:var(--surface-2); }
+.dv-card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.dv-card-icon { width:30px; height:30px; border-radius:var(--radius-sm);
+  display:flex; align-items:center; justify-content:center; font-size:14px; }
+.ic-blue   { background:var(--blue-dim);   color:var(--blue); }
+.ic-green  { background:var(--green-dim);  color:var(--green); }
+.ic-yellow { background:var(--yellow-dim); color:var(--yellow); }
+.ic-purple { background:var(--purple-dim); color:var(--purple); }
+.ic-orange { background:var(--orange-dim); color:var(--orange); }
+.dv-card-arrow { color:var(--text-dim); font-size:11px;
+  transition:color var(--transition),transform var(--transition); }
+.dv-card:hover .dv-card-arrow, .dv-card.active .dv-card-arrow
+  { color:var(--blue); transform:rotate(90deg); }
+.dv-card-title   { font-size:10px; text-transform:uppercase; letter-spacing:.1em;
+  color:var(--text-muted); margin-bottom:5px; }
+.dv-card-primary { font-size:28px; font-weight:700; line-height:1; margin-bottom:8px; }
+.mod-sales     .dv-card-primary { color:var(--blue); }
+.mod-revenue   .dv-card-primary { color:var(--green); }
+.mod-inventory .dv-card-primary { color:var(--yellow); }
+.mod-customers .dv-card-primary { color:var(--purple); }
+.mod-stores    .dv-card-primary { color:var(--orange); }
+.dv-stat-row { display:flex; justify-content:space-between; font-size:11px; margin-bottom:3px; }
+.dv-stat-row .lbl { color:var(--text-muted); }
+.dv-stat-row .val { color:var(--text); font-weight:500; }
+.dv-stat-row .val.ok     { color:var(--green); }
+.dv-stat-row .val.warn   { color:var(--yellow); }
+.dv-stat-row .val.danger { color:var(--red); }
+.dv-chart-wrap { height:65px; margin-top:10px; }
 
-    .metric-card,
-    .chart-card,
-    .activity-card,
-    .actions-card {
-        transition: all 0.3s ease;
-    }
+/* ── DETAIL PANEL ──────────────────────────────── */
+.dv-panel { background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); overflow:hidden; max-height:0; opacity:0;
+  transition:max-height .4s ease, opacity .3s ease; margin-bottom:22px; }
+.dv-panel.open { max-height:1200px; opacity:1; }
+.dv-panel-toolbar { padding:12px 18px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+  background:var(--surface-3); }
+.dv-panel-title { font-size:12px; font-weight:600; text-transform:uppercase;
+  letter-spacing:.08em; color:var(--text); }
+.dv-pill { font-size:10px; padding:2px 8px; border-radius:20px; border:1px solid;
+  margin-left:8px; }
+.pill-blue   { border-color:var(--blue);   color:var(--blue);   background:var(--blue-dim); }
+.pill-green  { border-color:var(--green);  color:var(--green);  background:var(--green-dim); }
+.pill-yellow { border-color:var(--yellow); color:var(--yellow); background:var(--yellow-dim); }
+.pill-purple { border-color:var(--purple); color:var(--purple); background:var(--purple-dim); }
+.pill-orange { border-color:var(--orange); color:var(--orange); background:var(--orange-dim); }
+.dv-panel-right { display:flex; align-items:center; gap:8px; }
+.dv-search { background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+  font-size:11px; padding:5px 10px; border-radius:var(--radius-sm);
+  font-family:inherit; width:180px; outline:none; transition:border-color var(--transition); }
+.dv-search:focus { border-color:var(--blue); }
+.dv-search::placeholder { color:var(--text-dim); }
+.dv-period-sel { background:var(--surface-2); border:1px solid var(--border);
+  color:var(--text-muted); font-size:11px; padding:5px 8px;
+  border-radius:var(--radius-sm); font-family:inherit; cursor:pointer; }
+.dv-close { background:transparent; border:1px solid var(--border); color:var(--text-muted);
+  width:26px; height:26px; border-radius:var(--radius-sm); font-size:13px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:all var(--transition); }
+.dv-close:hover { background:var(--red-dim); color:var(--red); border-color:var(--red); }
+.dv-panel-body { display:grid; grid-template-columns:1fr 300px; }
+.dv-panel-main { padding:18px; overflow:auto; max-height:580px; border-right:1px solid var(--border); }
+.dv-panel-side { padding:18px; }
+.dv-loading { display:flex; align-items:center; justify-content:center;
+  height:180px; color:var(--text-muted); font-size:12px; gap:10px; }
 
-    .metric-card:hover,
-    .chart-card:hover,
-    .activity-card:hover,
-    .actions-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
-    }
+/* ── TABLE ─────────────────────────────────────── */
+.dv-table { width:100%; border-collapse:collapse; font-size:11px; }
+.dv-table th { text-align:left; padding:7px 10px; background:var(--surface-3);
+  color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em;
+  font-size:10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+.dv-table td { padding:8px 10px; border-bottom:1px solid var(--border-soft);
+  color:var(--text); vertical-align:middle; }
+.dv-table tr:last-child td { border-bottom:none; }
+.dv-table tr:hover td { background:var(--surface-2); }
+.dv-table .mono  { font-family:'IBM Plex Mono',monospace; }
+.dv-table .muted { color:var(--text-muted); }
 
-    .customer-avatar {
-        width: 32px;
-        height: 32px;
-        background: linear-gradient(135deg, var(--primary-color), var(--info-color));
-        color: white;
-        border-radius: 50%;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 0.875rem;
-    }
+/* ── BADGES ────────────────────────────────────── */
+.bdg { display:inline-block; padding:2px 6px; border-radius:4px;
+  font-size:10px; font-weight:500; }
+.bdg-green  { background:var(--green-dim);  color:var(--green); }
+.bdg-red    { background:var(--red-dim);    color:var(--red); }
+.bdg-yellow { background:var(--yellow-dim); color:var(--yellow); }
+.bdg-blue   { background:var(--blue-dim);   color:var(--blue); }
+.bdg-purple { background:var(--purple-dim); color:var(--purple); }
+.bdg-grey   { background:var(--surface-3);  color:var(--text-muted); }
 
-    .loading-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(255, 255, 255, 0.9);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-        backdrop-filter: blur(4px);
-    }
+/* ── SIDE CHART ────────────────────────────────── */
+.dv-side-label { font-size:10px; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--text-muted); margin-bottom:12px; }
+.dv-side-chart { height:190px; margin-bottom:16px; }
 
-    .loading-spinner {
-        text-align: center;
-    }
+/* ── SECTION LABEL ─────────────────────────────── */
+.dv-sec { font-size:10px; text-transform:uppercase; letter-spacing:.1em;
+  color:var(--text-dim); margin-bottom:12px; padding-bottom:7px;
+  border-bottom:1px solid var(--border-soft); }
 
-    canvas {
-        max-height: 300px;
-    }
+/* ── SPINNER ───────────────────────────────────── */
+.spinner { width:15px; height:15px; border:2px solid var(--border);
+  border-top-color:var(--blue); border-radius:50%;
+  animation:spin .7s linear infinite; }
+@keyframes spin  { to { transform:rotate(360deg); } }
+@keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
 
-    .spin {
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-
-    @media (max-width: 768px) {
-        .stat-number {
-            font-size: 1.5rem;
-        }
-
-        .customer-avatar {
-            width: 28px;
-            height: 28px;
-            font-size: 0.75rem;
-        }
-    }
+/* ── RESPONSIVE ────────────────────────────────── */
+@media(max-width:1200px){
+  .dv-module-grid{grid-template-columns:repeat(3,1fr)}
+  .dv-kpi-strip  {grid-template-columns:repeat(3,1fr)} }
+@media(max-width:768px){
+  .dv-module-grid{grid-template-columns:1fr 1fr}
+  .dv-kpi-strip  {grid-template-columns:1fr 1fr}
+  .dv-panel-body {grid-template-columns:1fr}
+  .dv-body{padding:14px} }
 </style>
 {% endblock %}
 
-{% block page_header %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+{% block content %}
+<div class="dv-wrap">
+
+  <!-- HEADER -->
+  <div class="dv-header">
     <div>
-        <h1 class="h3 mb-1">
-            <i class="bi bi-speedometer2 text-primary me-2" aria-hidden="true"></i>
-            {% if company %}
-                {{ company.trading_name|default:company.name }} {% trans 'Dashboard' %}
-            {% else %}
-                {% trans 'Dashboard' %}
-            {% endif %}
-        </h1>
-        <p class="text-muted mb-0">{% trans "Welcome back! Here's an overview of your business performance." %}</p>
+      <h1>⬡ {{ company.trading_name|default:company.name|default:"Operations" }} Dashboard</h1>
+      <p>Business performance overview — all branches</p>
     </div>
-    <div class="d-flex gap-2">
-        <!-- Subscription Status Badge -->
-        {% if company and company.plan %}
-        <div class="me-3">
-            <span class="badge {% if company.status == 'ACTIVE' %}bg-success{% elif company.status == 'TRIAL' %}bg-info{% elif company.status == 'EXPIRED' %}bg-danger{% else %}bg-warning{% endif %} fs-6">
-                {{ company.plan.display_name|default:company.plan.name }}
-                {% if company.is_trial %}
-                    - {% trans "Trial" %}
-                {% endif %}
-            </span>
-        </div>
-        {% endif %}
-
-        <button class="btn btn-outline-primary"
-                onclick="refreshDashboard()"
-                id="refreshBtn"
-                aria-label="{% trans 'Refresh dashboard data' %}">
-            <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
-            <span>{% trans 'Refresh'%}</span>
-        </button>
-
-        <div class="dropdown">
-            <button class="btn btn-outline-secondary dropdown-toggle"
-                    type="button"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
-                    aria-label="{% trans 'Select time period' %}">
-                <i class="bi bi-calendar3" aria-hidden="true"></i> {% trans 'Period' %}
-            </button>
-            <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="#" onclick="changePeriod('today'); return false;">{% trans 'Today' %}</a></li>
-                <li><a class="dropdown-item" href="#" onclick="changePeriod('week'); return false;">{% trans 'Last 7 days' %}</a></li>
-                <li><a class="dropdown-item active" href="#" onclick="changePeriod('month'); return false;">{% trans 'Last 30 days' %}</a></li>
-                <li><a class="dropdown-item" href="#" onclick="changePeriod('quarter'); return false;">{% trans 'Last 90 days' %}</a></li>
-                <li><a class="dropdown-item" href="#" onclick="changePeriod('year'); return false;">{% trans 'Last year' %}</a></li>
-            </ul>
-        </div>
+    <div class="dv-header-right">
+      {% if company.plan %}
+        <span class="dv-badge dv-badge-plan">{{ company.plan.display_name|default:company.plan.name }}</span>
+      {% endif %}
+      <span class="dv-badge dv-badge-date">{{ today|date:"D, d M Y" }}</span>
+      <button class="dv-refresh-btn" onclick="location.href='?refresh=1'">↺ Refresh</button>
     </div>
-</div>
+  </div>
 
-<!-- Subscription/System Alerts -->
-{% if subscription_warning %}
-<div class="alert alert-{{ subscription_warning.type }} alert-dismissible fade show" role="alert">
-    <div class="d-flex align-items-center">
-        <i class="bi bi-exclamation-triangle-fill me-2 fs-4" aria-hidden="true"></i>
-        <div class="flex-grow-1">
-            <strong>{{ subscription_warning.title }}</strong>
-            <p class="mb-0">{{ subscription_warning.message }}</p>
-            {% if subscription_warning.action_url %}
-                <a href="{{ subscription_warning.action_url }}" class="btn btn-sm btn-{{ subscription_warning.type }} mt-2">
-                    {{ subscription_warning.action_text }}
-                </a>
-            {% endif %}
-        </div>
+  <div class="dv-body">
+
+    <!-- ALERTS -->
+    {% if subscription_warning %}
+    <div class="dv-alert dv-alert-{{ subscription_warning.type }}">
+      ⚠ <strong>{{ subscription_warning.title }}</strong> — {{ subscription_warning.message }}
+      <a href="{{ subscription_warning.action_url }}" style="margin-left:10px;color:inherit;text-decoration:underline;">
+        {{ subscription_warning.action_text }}
+      </a>
     </div>
-    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="{% trans 'Close' %}"></button>
-</div>
-{% endif %}
-
-<!-- Dashboard Error -->
-{% if dashboard_error %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-    <div class="d-flex align-items-center">
-        <i class="bi bi-exclamation-octagon-fill me-2 fs-4" aria-hidden="true"></i>
-        <div class="flex-grow-1">
-            <strong>{% trans 'Dashboard Error' %}</strong>
-            <p class="mb-0">{{ dashboard_error }}</p>
-        </div>
-    </div>
-    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="{% trans 'Close' %}"></button>
-</div>
-{% endif %}
-
-<!-- System Alerts -->
-{% if alerts %}
-<div class="mb-4">
+    {% endif %}
+    {% if dashboard_error %}
+    <div class="dv-alert dv-alert-danger">⚠ Dashboard error: {{ dashboard_error }}</div>
+    {% endif %}
     {% for alert in alerts %}
-    <div class="alert alert-{{ alert.type }} alert-dismissible fade show" role="alert">
-        <div class="d-flex align-items-center">
-            <i class="{{ alert.icon }} me-2" aria-hidden="true"></i>
-            <div class="flex-grow-1">
-                <strong>{{ alert.title }}</strong> - {{ alert.message }}
-                {% if alert.action_url %}
-                <a href="{{ alert.action_url }}" class="btn btn-sm btn-outline-{{ alert.type }} ms-2">
-                    {{ alert.action_text }}
-                </a>
-                {% endif %}
-            </div>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="{% trans 'Close' %}"></button>
+    <div class="dv-alert dv-alert-{{ alert.type }}">
+      {{ alert.title }} — {{ alert.message }}
+      <a href="{{ alert.action_url }}" style="margin-left:8px;color:inherit;text-decoration:underline;">{{ alert.action_text }}</a>
     </div>
     {% endfor %}
-</div>
-{% endif %}
-{% endblock %}
 
-{% block content %}
-{% if company %}
-<!-- Key Performance Indicators -->
-<div class="row mb-4">
-    <!-- Sales Today -->
-    <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #007bff; --text-color: #ffffff;">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <div class="stat-icon mb-2">
-                            <i class="bi bi-cash-coin" aria-hidden="true"></i>
-                        </div>
-                        <h2 class="stat-number mb-1">
-                            {{ company.preferred_currency|default:"" }} {{ sales_today_total|default:0|floatformat:0|intcomma }}
-                        </h2>
-                        <p class="stat-label mb-0">{% trans 'Sales Today' %}</p>
-                        <small class="text-light opacity-75">
-                            {{ sales_today_count|default:0 }} {% trans 'transactions' %}
-                        </small>
-                    </div>
-                    <div class="stat-trend">
-                        <i class="bi bi-arrow-up-right" aria-hidden="true"></i>
-                    </div>
-                </div>
-            </div>
+    <!-- KPI STRIP -->
+    <div class="dv-kpi-strip">
+      <div class="dv-kpi k-blue">
+        <div class="dv-kpi-label">Revenue Today</div>
+        <div class="dv-kpi-value">{{ sales_today_total|floatformat:0|intcomma }}</div>
+        <div class="dv-kpi-sub">{{ company.preferred_currency|default:"UGX" }} · {{ sales_today_count }} sale{{ sales_today_count|pluralize }}</div>
+      </div>
+      <div class="dv-kpi k-green">
+        <div class="dv-kpi-label">Monthly Revenue</div>
+        <div class="dv-kpi-value">{{ sales_month_total|floatformat:0|intcomma }}</div>
+        <div class="dv-kpi-sub">
+          {% if revenue_growth >= 0 %}↑{% else %}↓{% endif %}
+          {{ revenue_growth }}% vs last month
         </div>
+      </div>
+      <div class="dv-kpi k-yellow">
+        <div class="dv-kpi-label">Stock Value</div>
+        <div class="dv-kpi-value">{{ total_stock_value|floatformat:0|intcomma }}</div>
+        <div class="dv-kpi-sub">{{ total_products }} product{{ total_products|pluralize }}</div>
+      </div>
+      <div class="dv-kpi k-purple">
+        <div class="dv-kpi-label">Customers</div>
+        <div class="dv-kpi-value">{{ total_customers|intcomma }}</div>
+        <div class="dv-kpi-sub">+{{ new_customers_month }} this month</div>
+      </div>
+      <div class="dv-kpi k-red">
+        <div class="dv-kpi-label">Low / Out of Stock</div>
+        <div class="dv-kpi-value">{{ low_stock_items }}</div>
+        <div class="dv-kpi-sub">{{ out_of_stock_items }} out of stock</div>
+      </div>
     </div>
 
-    <!-- Monthly Revenue -->
-    <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #28a745; --text-color: #ffffff;">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <div class="stat-icon mb-2">
-                            <i class="bi bi-graph-up-arrow" aria-hidden="true"></i>
-                        </div>
-                        <h2 class="stat-number mb-1">
-                            {{ company.preferred_currency|default:"" }} {{ sales_month_total|default:0|floatformat:0|intcomma }}
-                        </h2>
-                        <p class="stat-label mb-0">{% trans 'Monthly Revenue' %}</p>
-                        <small class="text-light opacity-75">
-                            <i class="bi bi-{% if revenue_growth > 0 %}arrow-up{% else %}arrow-down{% endif %}" aria-hidden="true"></i>
-                            {{ revenue_growth|default:0 }}% {% trans 'vs last month' %}
-                        </small>
-                    </div>
-                </div>
-            </div>
+    <!-- MODULE CARDS -->
+    <div class="dv-module-grid">
+
+      <!-- SALES TODAY -->
+      <div class="dv-card mod-sales" onclick="loadDetail('sales',this)" id="card-sales">
+        <div class="dv-card-header">
+          <div class="dv-card-icon ic-blue">💰</div>
+          <span class="dv-card-arrow">▼</span>
         </div>
+        <div class="dv-card-title">Sales</div>
+        <div class="dv-card-primary">{{ sales_month_count }}</div>
+        <div>
+          <div class="dv-stat-row"><span class="lbl">Today</span><span class="val ok">{{ sales_today_count }}</span></div>
+          <div class="dv-stat-row"><span class="lbl">This week</span><span class="val">{{ sales_week_count }}</span></div>
+          <div class="dv-stat-row"><span class="lbl">Avg txn</span><span class="val">{{ avg_transaction_value|floatformat:0|intcomma }}</span></div>
+          <div class="dv-stat-row"><span class="lbl">Growth</span>
+            <span class="val {% if revenue_growth >= 0 %}ok{% else %}danger{% endif %}">
+              {% if revenue_growth >= 0 %}+{% endif %}{{ revenue_growth }}%
+            </span>
+          </div>
+        </div>
+        <div class="dv-chart-wrap"><canvas id="chart-sales"></canvas></div>
+      </div>
+
+      <!-- REVENUE -->
+      <div class="dv-card mod-revenue" onclick="loadDetail('sales',this)" id="card-revenue">
+        <div class="dv-card-header">
+          <div class="dv-card-icon ic-green">📈</div>
+          <span class="dv-card-arrow">▼</span>
+        </div>
+        <div class="dv-card-title">Revenue (30d)</div>
+        <div class="dv-card-primary">{{ sales_month_total|floatformat:0|intcomma }}</div>
+        <div>
+          <div class="dv-stat-row"><span class="lbl">Today</span><span class="val">{{ sales_today_total|floatformat:0|intcomma }}</span></div>
+          <div class="dv-stat-row"><span class="lbl">This week</span><span class="val">{{ sales_week_total|floatformat:0|intcomma }}</span></div>
+          {% for pm in sales_by_payment|slice:":2" %}
+          <div class="dv-stat-row"><span class="lbl">{{ pm.payment_method }}</span><span class="val">{{ pm.count }}</span></div>
+          {% endfor %}
+        </div>
+        <div class="dv-chart-wrap"><canvas id="chart-revenue"></canvas></div>
+      </div>
+
+      <!-- INVENTORY -->
+      <div class="dv-card mod-inventory" onclick="loadDetail('inventory',this)" id="card-inventory">
+        <div class="dv-card-header">
+          <div class="dv-card-icon ic-yellow">📦</div>
+          <span class="dv-card-arrow">▼</span>
+        </div>
+        <div class="dv-card-title">Inventory</div>
+        <div class="dv-card-primary">{{ total_products }}</div>
+        <div>
+          <div class="dv-stat-row"><span class="lbl">Stock value</span><span class="val">{{ total_stock_value|floatformat:0|intcomma }}</span></div>
+          <div class="dv-stat-row"><span class="lbl">Low stock</span>
+            <span class="val {% if low_stock_items > 0 %}warn{% endif %}">{{ low_stock_items }}</span>
+          </div>
+          <div class="dv-stat-row"><span class="lbl">Out of stock</span>
+            <span class="val {% if out_of_stock_items > 0 %}danger{% endif %}">{{ out_of_stock_items }}</span>
+          </div>
+          <div class="dv-stat-row"><span class="lbl">Movements today</span><span class="val">{{ movements_today }}</span></div>
+        </div>
+        <div class="dv-chart-wrap"><canvas id="chart-inventory"></canvas></div>
+      </div>
+
+      <!-- CUSTOMERS -->
+      <div class="dv-card mod-customers" onclick="loadDetail('customers',this)" id="card-customers">
+        <div class="dv-card-header">
+          <div class="dv-card-icon ic-purple">👥</div>
+          <span class="dv-card-arrow">▼</span>
+        </div>
+        <div class="dv-card-title">Customers</div>
+        <div class="dv-card-primary">{{ total_customers }}</div>
+        <div>
+          <div class="dv-stat-row"><span class="lbl">New (30d)</span><span class="val ok">{{ new_customers_month }}</span></div>
+          <div class="dv-stat-row"><span class="lbl">Active (30d)</span><span class="val">{{ active_customers_month }}</span></div>
+          <div class="dv-stat-row"><span class="lbl">Retention</span><span class="val">{{ customer_retention_rate }}%</span></div>
+          <div class="dv-stat-row"><span class="lbl">Employees</span><span class="val">{{ total_employees }}</span></div>
+        </div>
+        <div class="dv-chart-wrap"><canvas id="chart-customers"></canvas></div>
+      </div>
+
+      <!-- STORES -->
+      <div class="dv-card mod-stores" onclick="loadDetail('stores',this)" id="card-stores">
+        <div class="dv-card-header">
+          <div class="dv-card-icon ic-orange">🏪</div>
+          <span class="dv-card-arrow">▼</span>
+        </div>
+        <div class="dv-card-title">Branches</div>
+        <div class="dv-card-primary">{{ total_branches }}</div>
+        <div>
+          <div class="dv-stat-row"><span class="lbl">Active</span><span class="val ok">{{ total_branches }}</span></div>
+          <div class="dv-stat-row"><span class="lbl">Employees</span><span class="val">{{ total_employees }}</span></div>
+          <div class="dv-stat-row"><span class="lbl">Active today</span><span class="val">{{ active_employees_today }}</span></div>
+          <div class="dv-stat-row"><span class="lbl">Movements</span><span class="val">{{ movements_today }}</span></div>
+        </div>
+        <div class="dv-chart-wrap"><canvas id="chart-stores"></canvas></div>
+      </div>
+
+    </div><!-- /module-grid -->
+
+    <!-- DETAIL PANEL -->
+    <div class="dv-panel" id="detail-panel">
+      <div class="dv-panel-toolbar">
+        <div style="display:flex;align-items:center">
+          <span class="dv-panel-title" id="detail-title">Detail</span>
+          <span class="dv-pill" id="detail-pill"></span>
+        </div>
+        <div class="dv-panel-right">
+          <input class="dv-search" type="text" placeholder="Filter…" id="detail-search" oninput="filterTable()">
+          <select class="dv-period-sel" id="period-sel" onchange="reloadDetail()">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+          <button class="dv-close" onclick="closeDetail()">✕</button>
+        </div>
+      </div>
+      <div class="dv-panel-body">
+        <div class="dv-panel-main" id="detail-main">
+          <div class="dv-loading"><div class="spinner"></div> Loading…</div>
+        </div>
+        <div class="dv-panel-side" id="detail-side"></div>
+      </div>
     </div>
 
-    <!-- Total Customers -->
-    <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #17a2b8; --text-color: #ffffff;">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <div class="stat-icon mb-2">
-                            <i class="bi bi-people" aria-hidden="true"></i>
-                        </div>
-                        <h2 class="stat-number mb-1">{{ total_customers|default:0|intcomma }}</h2>
-                        <p class="stat-label mb-0">{% trans 'Total Customers' %}</p>
-                        <small class="text-light opacity-75">
-                            {{ new_customers_month|default:0 }} {% trans 'new this month' %}
-                        </small>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+  </div><!-- /dv-body -->
+</div><!-- /dv-wrap -->
 
-    <!-- Inventory Value -->
-    <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stat-card border-0 shadow-sm h-100" style="--bg-color: #ffc107; --text-color: #000000;">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <div class="stat-icon mb-2">
-                            <i class="bi bi-box-seam" aria-hidden="true"></i>
-                        </div>
-                        <h2 class="stat-number mb-1">
-                            {{ company.preferred_currency|default:"" }} {{ total_stock_value|default:0|floatformat:0|intcomma }}
-                        </h2>
-                        <p class="stat-label mb-0">{% trans 'Inventory Value' %}</p>
-                        <small class="opacity-75">{{ total_products|default:0 }} {% trans 'products' %}</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Secondary Metrics Row -->
-<div class="row mb-4">
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-primary mb-2">
-                    <i class="bi bi-receipt fs-2" aria-hidden="true"></i>
-                </div>
-                <h4 class="mb-1">{{ sales_month_count|default:0|intcomma }}</h4>
-                <p class="text-muted mb-0 small">{% trans 'Transactions (30d)' %}</p>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-success mb-2">
-                    <i class="bi bi-cash-stack fs-2" aria-hidden="true"></i>
-                </div>
-                <h4 class="mb-1">
-                    {{ company.preferred_currency|default:"" }} {{ avg_transaction_value|default:0|floatformat:0|intcomma }}
-                </h4>
-                <p class="text-muted mb-0 small">{% trans 'Avg Transaction' %}</p>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-info mb-2">
-                    <i class="bi bi-file-earmark-text fs-2" aria-hidden="true"></i>
-                </div>
-                <h4 class="mb-1">{{ total_invoices|default:0|intcomma }}</h4>
-                <p class="text-muted mb-0 small">{% trans 'Total Invoices' %}</p>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-warning mb-2">
-                    <i class="bi bi-clock-history fs-2" aria-hidden="true"></i>
-                </div>
-                <h4 class="mb-1">{{ overdue_invoices|default:0|intcomma }}</h4>
-                <p class="text-muted mb-0 small">{% trans 'Overdue' %}</p>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-danger mb-2">
-                    <i class="bi bi-exclamation-triangle fs-2" aria-hidden="true"></i>
-                </div>
-                <h4 class="mb-1">{{ low_stock_items|default:0|intcomma }}</h4>
-                <p class="text-muted mb-0 small">{% trans 'Low Stock' %}</p>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-xl-2 col-md-4 col-6 mb-3">
-        <div class="card metric-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-secondary mb-2">
-                    <i class="bi bi-diagram-3 fs-2" aria-hidden="true"></i>
-                </div>
-                <h4 class="mb-1">{{ total_branches|default:0|intcomma }}</h4>
-                <p class="text-muted mb-0 small">{% trans 'Branches' %}</p>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Main Charts Section -->
-<div class="row mb-4">
-    <!-- Revenue Trend Chart -->
-    <div class="col-lg-8 mb-4">
-        <div class="card chart-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0 pb-0">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-graph-up text-primary me-2" aria-hidden="true"></i>
-                        {% trans 'Revenue & Sales Trend' %}
-                    </h5>
-                    <div class="btn-group btn-group-sm" role="group" aria-label="{% trans 'Select chart period' %}">
-                        <input type="radio" class="btn-check" name="revenuePeriod" id="revenue7d" value="7">
-                        <label class="btn btn-outline-primary" for="revenue7d">7D</label>
-
-                        <input type="radio" class="btn-check" name="revenuePeriod" id="revenue30d" value="30" checked>
-                        <label class="btn btn-outline-primary" for="revenue30d">30D</label>
-
-                        <input type="radio" class="btn-check" name="revenuePeriod" id="revenue90d" value="90">
-                        <label class="btn btn-outline-primary" for="revenue90d">90D</label>
-                    </div>
-                </div>
-            </div>
-            <div class="card-body">
-                <canvas id="revenueChart" height="300" role="img" aria-label="{% trans 'Revenue trend chart' %}"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <!-- Sales by Store -->
-    <div class="col-lg-4 mb-4">
-        <div class="card chart-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0 pb-0">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-shop text-primary me-2" aria-hidden="true"></i>
-                    {% trans 'Sales by Branch' %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <canvas id="storeChart" height="300" role="img" aria-label="{% trans 'Sales by branch chart' %}"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Secondary Charts Row -->
-<div class="row mb-4">
-    <!-- Top Products -->
-    <div class="col-lg-6 mb-4">
-        <div class="card chart-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0 pb-0">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-star text-primary me-2" aria-hidden="true"></i>
-                    {% trans 'Top Selling Products' %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <canvas id="topProductsChart" height="250" role="img" aria-label="{% trans 'Top products chart' %}"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <!-- Payment Methods -->
-    <div class="col-lg-6 mb-4">
-        <div class="card chart-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0 pb-0">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-credit-card text-primary me-2" aria-hidden="true"></i>
-                    {% trans 'Payment Methods Distribution' %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <canvas id="paymentChart" height="250" role="img" aria-label="{% trans 'Payment methods chart' %}"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Activity and Quick Actions -->
-<div class="row mb-4">
-    <!-- Recent Activity -->
-    <div class="col-lg-8 mb-4">
-        <div class="card activity-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0">
-                <ul class="nav nav-tabs card-header-tabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active"
-                                id="recent-sales-tab"
-                                data-bs-toggle="tab"
-                                data-bs-target="#recentSales"
-                                type="button"
-                                role="tab"
-                                aria-controls="recentSales"
-                                aria-selected="true">
-                            <i class="bi bi-receipt me-1" aria-hidden="true"></i>{% trans 'Recent Sales' %}
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link"
-                                id="recent-customers-tab"
-                                data-bs-toggle="tab"
-                                data-bs-target="#recentCustomers"
-                                type="button"
-                                role="tab"
-                                aria-controls="recentCustomers"
-                                aria-selected="false">
-                            <i class="bi bi-people me-1" aria-hidden="true"></i>{% trans 'New Customers' %}
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link"
-                                id="stock-movements-tab"
-                                data-bs-toggle="tab"
-                                data-bs-target="#stockMovements"
-                                type="button"
-                                role="tab"
-                                aria-controls="stockMovements"
-                                aria-selected="false">
-                            <i class="bi bi-arrow-left-right me-1" aria-hidden="true"></i>{% trans 'Stock Movements' %}
-                        </button>
-                    </li>
-                </ul>
-            </div>
-            <div class="card-body p-0">
-                <div class="tab-content">
-                    <!-- Recent Sales Tab -->
-                    <div class="tab-pane fade show active"
-                         id="recentSales"
-                         role="tabpanel"
-                         aria-labelledby="recent-sales-tab"
-                         tabindex="0">
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th scope="col">{% trans 'Date' %}</th>
-                                        <th scope="col">{% trans 'Document' %}</th>
-                                        <th scope="col">{% trans 'Customer' %}</th>
-                                        <th scope="col">{% trans 'Amount' %}</th>
-                                        <th scope="col">{% trans 'Status' %}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% if recent_sales %}
-                                        {% for sale in recent_sales %}
-                                        <tr>
-                                            <td><small><time datetime="{{ sale.created_at|date:'c' }}">{{ sale.created_at|date:"M d, H:i" }}</time></small></td>
-                                            <td>
-                                                <span class="badge bg-info">{{ sale.document_type }}</span>
-                                                <small class="text-muted">{{ sale.document_number }}</small>
-                                            </td>
-                                            <td>
-                                                {% if sale.customer %}
-                                                    {{ sale.customer.name|truncatechars:25 }}
-                                                {% else %}
-                                                    <span class="text-muted">{% trans 'Walk-in' %}</span>
-                                                {% endif %}
-                                            </td>
-                                            <td>
-                                                <strong>{{ company.preferred_currency|default:"" }} {{ sale.total_amount|floatformat:0|intcomma }}</strong>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-success">{{ sale.status }}</span>
-                                            </td>
-                                        </tr>
-                                        {% endfor %}
-                                    {% else %}
-                                        <tr>
-                                            <td colspan="5" class="text-center text-muted py-4">
-                                                <i class="bi bi-inbox fs-1 d-block mb-2" aria-hidden="true"></i>
-                                                {% trans 'No recent sales' %}
-                                            </td>
-                                        </tr>
-                                    {% endif %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Recent Customers Tab -->
-                    <div class="tab-pane fade"
-                         id="recentCustomers"
-                         role="tabpanel"
-                         aria-labelledby="recent-customers-tab"
-                         tabindex="0">
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th scope="col">{% trans 'Name' %}</th>
-                                        <th scope="col">{% trans 'Type' %}</th>
-                                        <th scope="col">{% trans 'Phone' %}</th>
-                                        <th scope="col">{% trans 'Joined' %}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% if recent_customers %}
-                                        {% for customer in recent_customers %}
-                                        <tr>
-                                            <td>
-                                                <div class="d-flex align-items-center">
-                                                    <div class="customer-avatar me-2" aria-hidden="true">
-                                                        {{ customer.name|first|upper }}
-                                                    </div>
-                                                    {{ customer.name|truncatechars:30 }}
-                                                </div>
-                                            </td>
-                                            <td><span class="badge bg-secondary">{{ customer.customer_type }}</span></td>
-                                            <td>{{ customer.phone|default:"-" }}</td>
-                                            <td><small><time datetime="{{ customer.created_at|date:'c' }}">{{ customer.created_at|date:"M d, Y" }}</time></small></td>
-                                        </tr>
-                                        {% endfor %}
-                                    {% else %}
-                                        <tr>
-                                            <td colspan="4" class="text-center text-muted py-4">
-                                                <i class="bi bi-inbox fs-1 d-block mb-2" aria-hidden="true"></i>
-                                                {% trans 'No recent customers' %}
-                                            </td>
-                                        </tr>
-                                    {% endif %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Stock Movements Tab -->
-                    <div class="tab-pane fade"
-                         id="stockMovements"
-                         role="tabpanel"
-                         aria-labelledby="stock-movements-tab"
-                         tabindex="0">
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th scope="col">{% trans 'Time' %}</th>
-                                        <th scope="col">{% trans 'Product' %}</th>
-                                        <th scope="col">{% trans 'Type' %}</th>
-                                        <th scope="col">{% trans 'Quantity' %}</th>
-                                        <th scope="col">{% trans 'Store' %}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% if recent_stock_movements %}
-                                        {% for movement in recent_stock_movements %}
-                                        <tr>
-                                            <td><small><time datetime="{{ movement.created_at|date:'c' }}">{{ movement.created_at|date:"H:i" }}</time></small></td>
-                                            <td>{{ movement.product.name|truncatechars:30 }}</td>
-                                            <td>
-                                                <span class="badge {% if movement.movement_type == 'IN' %}bg-success{% else %}bg-warning{% endif %}">
-                                                    {{ movement.movement_type }}
-                                                </span>
-                                            </td>
-                                            <td><strong>{{ movement.quantity }}</strong></td>
-                                            <td><small>{{ movement.store.name }}</small></td>
-                                        </tr>
-                                        {% endfor %}
-                                    {% else %}
-                                        <tr>
-                                            <td colspan="5" class="text-center text-muted py-4">
-                                                <i class="bi bi-inbox fs-1 d-block mb-2" aria-hidden="true"></i>
-                                                {% trans 'No recent movements' %}
-                                            </td>
-                                        </tr>
-                                    {% endif %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Quick Actions & Stats -->
-    <div class="col-lg-4 mb-4">
-        <div class="card actions-card border-0 shadow-sm h-100">
-            <div class="card-header bg-transparent border-0">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-lightning text-primary me-2" aria-hidden="true"></i>
-                    {% trans 'Quick Actions' %}
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="d-grid gap-3">
-                    <a href="{% url 'sales:create_sale' %}" class="btn btn-primary">
-                        <i class="bi bi-plus-circle me-2" aria-hidden="true"></i>{% trans 'New Sale' %}
-                    </a>
-                    <a href="{% url 'customers:create' %}" class="btn btn-outline-primary">
-                        <i class="bi bi-person-plus me-2" aria-hidden="true"></i>{% trans 'Add Customer' %}
-                    </a>
-                    <a href="{% url 'inventory:product_create' %}" class="btn btn-outline-success">
-                        <i class="bi bi-box-seam me-2" aria-hidden="true"></i>{% trans 'Add Product' %}
-                    </a>
-                    <a href="{% url 'sales:create_sale' %}" class="btn btn-outline-info">
-                        <i class="bi bi-file-earmark-text me-2" aria-hidden="true"></i>{% trans 'Create Invoice' %}
-                    </a>
-                </div>
-
-                <hr class="my-4">
-
-                <h6 class="text-muted mb-3">{% trans 'Business Health' %}</h6>
-
-                <!-- Collection Rate -->
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1">
-                        <small>{% trans 'Invoice Collection Rate' %}</small>
-                        <small class="text-muted">{{ collection_rate|default:0 }}%</small>
-                    </div>
-                    <div class="progress" style="height: 6px;" role="progressbar" aria-valuenow="{{ collection_rate|default:0 }}" aria-valuemin="0" aria-valuemax="100" aria-label="{% trans 'Invoice collection rate' %}">
-                        <div class="progress-bar bg-success" style="width: {{ collection_rate|default:0 }}%"></div>
-                    </div>
-                </div>
-
-                <!-- Customer Retention -->
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1">
-                        <small>{% trans 'Customer Retention' %}</small>
-                        <small class="text-muted">{{ customer_retention_rate|default:0 }}%</small>
-                    </div>
-                    <div class="progress" style="height: 6px;" role="progressbar" aria-valuenow="{{ customer_retention_rate|default:0 }}" aria-valuemin="0" aria-valuemax="100" aria-label="{% trans 'Customer retention rate' %}">
-                        <div class="progress-bar bg-info" style="width: {{ customer_retention_rate|default:0 }}%"></div>
-                    </div>
-                </div>
-
-                <!-- Stock Health -->
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1">
-                        <small>{% trans 'Stock Health' %}</small>
-                        {% if total_products > 0 and low_stock_items > 0 %}
-                            {% widthratio low_stock_items total_products 100 as low_stock_percent %}
-                            {% with stock_health=100|add:low_stock_percent|add:"-100" %}
-                                <small class="text-muted">{{ stock_health|default:100 }}%</small>
-                            {% endwith %}
-                        {% else %}
-                            <small class="text-muted">100%</small>
-                        {% endif %}
-                    </div>
-                    <div class="progress" style="height: 6px;" role="progressbar" aria-label="{% trans 'Stock health percentage' %}">
-                        {% if total_products > 0 and low_stock_items > 0 %}
-                            {% widthratio low_stock_items total_products 100 as low_stock_percent %}
-                            {% with stock_health=100|add:low_stock_percent|add:"-100" %}
-                                <div class="progress-bar {% if stock_health > 70 %}bg-success{% elif stock_health > 40 %}bg-warning{% else %}bg-danger{% endif %}"
-                                     style="width: {{ stock_health|default:100 }}%"
-                                     aria-valuenow="{{ stock_health|default:100 }}"
-                                     aria-valuemin="0"
-                                     aria-valuemax="100"></div>
-                            {% endwith %}
-                        {% else %}
-                            <div class="progress-bar bg-success" style="width: 100%" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100"></div>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <hr class="my-4">
-
-                <div class="d-grid">
-                    <a href="#" class="btn btn-outline-secondary">
-                        <i class="bi bi-file-earmark-bar-graph me-2" aria-hidden="true"></i>{% trans 'View Full Reports' %}
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% else %}
-<!-- No Company Assigned -->
-<div class="row">
-    <div class="col-12">
-        <div class="alert alert-warning" role="alert">
-            <h4 class="alert-heading">{% trans 'No Company Assigned' %}</h4>
-            <p>{% trans 'You are not assigned to any company. Please contact your administrator.' %}</p>
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<!-- Loading Overlay -->
-<div id="loadingOverlay" class="loading-overlay" style="display: none;" role="status" aria-live="polite">
-    <div class="loading-spinner">
-        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
-            <span class="visually-hidden">{% trans 'Loading...' %}</span>
-        </div>
-        <p class="mt-3">{% trans 'Refreshing dashboard...' %}</p>
-    </div>
-</div>
-{% endblock %}
-
-{% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- Chart.js must load BEFORE our script so Chart is defined -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
-'use strict';
+/* All functions on window so onclick="..." attributes can reach them */
 
-(function() {
-    // Dashboard configuration
-    const CURRENCY = '{{ company.preferred_currency|default:"" }}';
+Chart.defaults.color = '#8b949e';
+Chart.defaults.font.family = "'IBM Plex Mono', monospace";
+Chart.defaults.font.size = 10;
 
-    // Chart instances
-    let charts = {
-        revenue: null,
-        store: null,
-        products: null,
-        payment: null
-    };
+var C = { blue:'#58a6ff', green:'#3fb950', yellow:'#d29922',
+  purple:'#bc8cff', red:'#f85149', orange:'#f0883e', muted:'#484f58' };
 
-    /**
-     * Initialize dashboard on page load
-     */
-    document.addEventListener('DOMContentLoaded', function() {
-        initializeCharts();
-        setupEventListeners();
+/* ── Django-rendered data ───────────────────────────── */
+var DAILY_LABELS  = {{ daily_labels|safe }};
+var DAILY_REVENUE = {{ daily_revenue|safe }};
+var STORE_SALES   = {{ sales_by_store_json|safe }};
+var INV_OK        = parseInt('{{ inventory_summary_ok|default:0 }}', 10) || 0;
+var INV_LOW       = parseInt('{{ low_stock_items|default:0 }}', 10) || 0;
+var INV_OUT       = parseInt('{{ out_of_stock_items|default:0 }}', 10) || 0;
+var DETAIL_URL    = '{% url "companies:dashboard_detail" %}';
+
+/* ── Mini chart helpers ─────────────────────────────── */
+function mkLine(id, labels, data, color) {
+  var ctx = document.getElementById(id); if (!ctx) return;
+  new Chart(ctx, { type:'line', data:{ labels:labels,
+    datasets:[{ data:data, borderColor:color, borderWidth:2,
+      pointRadius:0, tension:.4, fill:true, backgroundColor:color+'22' }]
+  }, options:{ responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{display:false}, tooltip:{enabled:false} },
+    scales:{ x:{display:false}, y:{display:false} }, animation:{duration:600} } });
+}
+function mkDoughnut(id, labels, data, colors) {
+  var ctx = document.getElementById(id); if (!ctx) return;
+  new Chart(ctx, { type:'doughnut', data:{ labels:labels,
+    datasets:[{ data:data, backgroundColor:colors, borderColor:'#161b22', borderWidth:2 }]
+  }, options:{ responsive:true, maintainAspectRatio:false, cutout:'68%',
+    plugins:{ legend:{display:false} }, animation:{duration:600} } });
+}
+function mkBar(id, labels, data, color) {
+  var ctx = document.getElementById(id); if (!ctx) return;
+  new Chart(ctx, { type:'bar', data:{ labels:labels,
+    datasets:[{ data:data, backgroundColor:color+'66', borderColor:color, borderWidth:1, borderRadius:3 }]
+  }, options:{ responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{display:false} },
+    scales:{ x:{display:false}, y:{display:false} }, animation:{duration:600} } });
+}
+
+/* ── Render card mini-charts on load ────────────────── */
+document.addEventListener('DOMContentLoaded', function() {
+  mkLine('chart-sales',    DAILY_LABELS, DAILY_REVENUE, C.blue);
+  mkLine('chart-revenue',  DAILY_LABELS, DAILY_REVENUE, C.green);
+  mkDoughnut('chart-inventory', ['OK','Low','Out'], [INV_OK, INV_LOW, INV_OUT], [C.green, C.yellow, C.red]);
+  mkBar('chart-customers', STORE_SALES.map(function(s){return s.store_name;}), STORE_SALES.map(function(s){return s.revenue;}), C.purple);
+  mkBar('chart-stores',    STORE_SALES.map(function(s){return s.store_name;}), STORE_SALES.map(function(s){return s.count;}),   C.orange);
+});
+
+/* ── Detail panel state ─────────────────────────────── */
+var curModule = null, curCard = null, sideChart = null;
+
+var META = {
+  sales:     { title:'Sales Detail',     pill:'SALES',     cls:'pill-blue'   },
+  inventory: { title:'Inventory Detail', pill:'INVENTORY', cls:'pill-yellow' },
+  customers: { title:'Customer Detail',  pill:'CUSTOMERS', cls:'pill-purple' },
+  stores:    { title:'Branches Detail',  pill:'BRANCHES',  cls:'pill-orange' },
+  employees: { title:'Staff Detail',     pill:'STAFF',     cls:'pill-purple' },
+};
+
+/* Exposed on window so onclick attributes work */
+window.loadDetail = function(module, card) {
+  if (curModule === module) { window.closeDetail(); return; }
+  if (curCard) curCard.classList.remove('active');
+  card.classList.add('active');
+  curModule = module; curCard = card;
+
+  var m = META[module] || { title:module, pill:module.toUpperCase(), cls:'pill-blue' };
+  document.getElementById('detail-title').textContent = m.title;
+  var pill = document.getElementById('detail-pill');
+  pill.className = 'dv-pill ' + m.cls;
+  pill.textContent = m.pill;
+
+  document.getElementById('detail-main').innerHTML =
+    '<div class="dv-loading"><div class="spinner"></div> Loading data\u2026</div>';
+  document.getElementById('detail-side').innerHTML = '';
+
+  var panel = document.getElementById('detail-panel');
+  panel.classList.add('open');
+  setTimeout(function(){ panel.scrollIntoView({ behavior:'smooth', block:'start' }); }, 50);
+  fetchDetail(module);
+};
+
+function fetchDetail(module) {
+  var period = document.getElementById('period-sel').value;
+  var url = DETAIL_URL + '?module=' + module + '&period=' + period;
+  fetch(url, { headers:{ 'X-Requested-With':'XMLHttpRequest' } })
+    .then(function(r){ return r.json(); })
+    .then(function(data){ renderDetail(module, data); })
+    .catch(function(e){
+      document.getElementById('detail-main').innerHTML =
+        '<div class="dv-loading" style="color:var(--red)">\u26a0 ' + e + '</div>';
     });
+}
 
-    /**
-     * Initialize all charts
-     */
-    function initializeCharts() {
-        initRevenueChart();
-        initStoreChart();
-        initTopProductsChart();
-        initPaymentChart();
+window.reloadDetail = function() { if (curModule) fetchDetail(curModule); };
+
+window.closeDetail = function() {
+  document.getElementById('detail-panel').classList.remove('open');
+  if (curCard) curCard.classList.remove('active');
+  curModule = null; curCard = null;
+};
+
+window.filterTable = function() {
+  var q = document.getElementById('detail-search').value.toLowerCase();
+  var t = document.getElementById('detail-table');
+  if (!t) return;
+  t.querySelectorAll('tbody tr').forEach(function(row){
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+};
+
+function renderDetail(module, data) {
+  var fn = { sales:rSales, inventory:rInventory, customers:rCustomers,
+             stores:rStores, employees:rEmployees }[module];
+  if (fn) fn(data);
+  else document.getElementById('detail-main').innerHTML =
+    '<div class="dv-loading" style="color:var(--red)">\u26a0 Unknown module: ' + module + '</div>';
+}
+
+/* ── SALES ──────────────────────────────────────────── */
+function rSales(data) {
+  var rows = data.rows || [];
+  var h = '<div class="dv-sec">Recent Sales (' + rows.length + ')</div>'
+    + '<table class="dv-table" id="detail-table"><thead><tr>'
+    + '<th>Document</th><th>Store</th><th>Customer</th><th>Date</th>'
+    + '<th>Amount</th><th>Payment</th><th>Type</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    h += '<tr>'
+      + '<td class="mono" style="color:var(--blue)">' + (r.document_number||r.id) + '</td>'
+      + '<td class="muted">' + (r['store__name']||'') + '</td>'
+      + '<td class="muted">' + (r['customer__name']||'Walk-in') + '</td>'
+      + '<td class="muted">' + r.created_at + '</td>'
+      + '<td>' + Number(r.total_amount).toLocaleString() + '</td>'
+      + '<td><span class="bdg bdg-blue">' + r.payment_method + '</span></td>'
+      + '<td><span class="bdg bdg-grey">' + r.document_type + '</span></td>'
+      + '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('detail-main').innerHTML = h;
+  var top = (data.by_store||[]).slice(0,8);
+  mkSideChart('bar', top.map(function(t){return t['store__name'];}), top.map(function(t){return t.revenue;}), [C.blue], 'Revenue by Branch');
+}
+
+/* ── INVENTORY ──────────────────────────────────────── */
+function rInventory(data) {
+  var items = data.low_stock_items || [];
+  var h = '<div class="dv-sec">Low / Out of Stock (' + items.length + ')</div>'
+    + '<table class="dv-table" id="detail-table"><thead><tr>'
+    + '<th>Store</th><th>Product</th><th>SKU</th><th>Qty</th><th>Threshold</th><th>Status</th>'
+    + '</tr></thead><tbody>';
+  items.forEach(function(r) {
+    var st = r.quantity===0 ? '<span class="bdg bdg-red">Out</span>' : '<span class="bdg bdg-yellow">Low</span>';
+    h += '<tr>'
+      + '<td class="muted">' + (r['store__name']||'') + '</td>'
+      + '<td>' + (r['product__name']||'') + '</td>'
+      + '<td class="mono muted">' + (r['product__sku']||'\u2014') + '</td>'
+      + '<td style="color:' + (r.quantity===0?'var(--red)':'var(--yellow)') + '">' + r.quantity + '</td>'
+      + '<td class="muted">' + r.low_stock_threshold + '</td>'
+      + '<td>' + st + '</td>'
+      + '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('detail-main').innerHTML = h;
+  var top = (data.top_by_value||[]).slice(0,8);
+  mkSideChart('bar', top.map(function(t){return t['product__name'];}), top.map(function(t){return parseFloat(t.value||0);}), [C.yellow], 'Top Products by Value');
+}
+
+/* ── CUSTOMERS ──────────────────────────────────────── */
+function rCustomers(data) {
+  var rows = data.rows || [];
+  var h = '<div class="dv-sec">Customers (' + rows.length + ')</div>'
+    + '<table class="dv-table" id="detail-table"><thead><tr>'
+    + '<th>Name</th><th>Type</th><th>Phone</th><th>Email</th><th>Purchases</th><th>Joined</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    h += '<tr>'
+      + '<td>' + r.name + '</td>'
+      + '<td><span class="bdg bdg-purple">' + (r.customer_type||'\u2014') + '</span></td>'
+      + '<td class="muted">' + (r.phone||'\u2014') + '</td>'
+      + '<td class="muted">' + (r.email||'\u2014') + '</td>'
+      + '<td>' + Number(r.total_purchases).toLocaleString() + '</td>'
+      + '<td class="muted">' + r.created_at + '</td>'
+      + '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('detail-main').innerHTML = h;
+  var typeMap = {};
+  rows.forEach(function(r){ var k=r.customer_type||'Unknown'; typeMap[k]=(typeMap[k]||0)+1; });
+  mkSideChart('doughnut', Object.keys(typeMap), Object.values(typeMap), [C.purple,C.blue,C.green,C.orange], 'Customer Types');
+}
+
+/* ── STORES / BRANCHES ──────────────────────────────── */
+function rStores(data) {
+  var rows = data.rows || [];
+  var h = '<div class="dv-sec">Branches (' + rows.length + ')</div>'
+    + '<table class="dv-table" id="detail-table"><thead><tr>'
+    + '<th>Name</th><th>Code</th><th>Region</th><th>Type</th>'
+    + '<th>Staff</th><th>Devices</th><th>Inventory</th><th>Low Stock</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    h += '<tr>'
+      + '<td>' + r.name + '</td>'
+      + '<td class="mono muted">' + (r.code||'\u2014') + '</td>'
+      + '<td class="muted">' + (r.region||'\u2014') + '</td>'
+      + '<td><span class="bdg bdg-blue">' + (r.store_type||'\u2014') + '</span></td>'
+      + '<td>' + r.staff_count + '</td>'
+      + '<td>' + r.device_count + '</td>'
+      + '<td>' + r.inv_count + '</td>'
+      + '<td><span class="' + (r.low_count>0?'bdg bdg-yellow':'muted') + '">' + r.low_count + '</span></td>'
+      + '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('detail-main').innerHTML = h;
+  mkSideChart('bar', rows.map(function(r){return r.name;}), rows.map(function(r){return r.inv_count;}), [C.orange], 'Inventory per Branch');
+}
+
+/* ── EMPLOYEES ──────────────────────────────────────── */
+function rEmployees(data) {
+  var rows = data.rows || [];
+  var h = '<div class="dv-sec">Staff (' + rows.length + ')</div>'
+    + '<table class="dv-table" id="detail-table"><thead><tr>'
+    + '<th>Username</th><th>Name</th><th>Email</th><th>Last Login</th><th>Joined</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    h += '<tr>'
+      + '<td class="mono" style="color:var(--blue)">' + r.username + '</td>'
+      + '<td>' + (r.first_name||'') + ' ' + (r.last_name||'') + '</td>'
+      + '<td class="muted">' + (r.email||'\u2014') + '</td>'
+      + '<td class="muted">' + (r.last_login||'Never') + '</td>'
+      + '<td class="muted">' + r.date_joined + '</td>'
+      + '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('detail-main').innerHTML = h;
+  document.getElementById('detail-side').innerHTML = '';
+}
+
+/* ── Side chart helper ──────────────────────────────── */
+function mkSideChart(type, labels, data, colors, title) {
+  if (sideChart) { sideChart.destroy(); sideChart = null; }
+  var side = document.getElementById('detail-side');
+  side.innerHTML = '<div class="dv-side-label">' + title + '</div>'
+    + '<div class="dv-side-chart"><canvas id="sc"></canvas></div>';
+  var ctx = document.getElementById('sc'); if (!ctx) return;
+  var isDn = type === 'doughnut';
+  var palette = [C.blue,C.green,C.yellow,C.purple,C.orange,C.red];
+  var bg = (colors.length === 1)
+    ? data.map(function(_,i){ return palette[i%6]; })
+    : colors;
+  sideChart = new Chart(ctx, {
+    type: isDn ? 'doughnut' : 'bar',
+    data:{ labels:labels, datasets:[{
+      data:data,
+      backgroundColor: isDn ? bg : bg.map(function(c){ return c+'99'; }),
+      borderColor: isDn ? '#161b22' : bg,
+      borderWidth: isDn ? 2 : 1,
+      borderRadius: isDn ? 0 : 4,
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      cutout: isDn ? '60%' : undefined,
+      indexAxis: (!isDn && labels.length > 5) ? 'y' : 'x',
+      plugins:{ legend:{ display:isDn, position:'bottom',
+        labels:{boxWidth:9, padding:7, font:{size:10}} } },
+      scales: isDn ? {} : {
+        x:{ticks:{font:{size:9}}, grid:{color:'#21262d'}},
+        y:{ticks:{font:{size:9}}, grid:{color:'#21262d'}},
+      }
     }
-
-    /**
-     * Initialize revenue trend chart
-     */
-    function initRevenueChart() {
-        const ctx = document.getElementById('revenueChart');
-        if (!ctx) return;
-
-        try {
-            const dailySales = {{ daily_sales_trend_json|default:"[]" }};
-
-            if (!dailySales || dailySales.length === 0) {
-                showChartPlaceholder(ctx, '{% trans "No sales data available" %}');
-                return;
-            }
-
-            charts.revenue = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: dailySales.map(item => {
-                        const date = new Date(item.date);
-                        return date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-                    }),
-                    datasets: [{
-                        label: '{% trans "Revenue" %}',
-                        data: dailySales.map(item => item.revenue),
-                        borderColor: '#007bff',
-                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                        borderWidth: 3,
-                        fill: true,
-                        tension: 0.4,
-                        pointBackgroundColor: '#007bff',
-                        pointBorderColor: '#ffffff',
-                        pointBorderWidth: 2,
-                        pointRadius: 4,
-                        pointHoverRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            callbacks: {
-                                label: function(context) {
-                                    return CURRENCY + ' ' + context.parsed.y.toLocaleString();
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return CURRENCY + ' ' + value.toLocaleString();
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        } catch (error) {
-            console.error('Error creating revenue chart:', error);
-            showChartPlaceholder(ctx, '{% trans "Error loading chart" %}');
-        }
-    }
-
-    /**
-     * Initialize store distribution chart
-     */
-    function initStoreChart() {
-        const ctx = document.getElementById('storeChart');
-        if (!ctx) return;
-
-        try {
-            const salesByStore = {{ sales_by_store_json|default:"[]" }};
-
-            if (!salesByStore || salesByStore.length === 0) {
-                showChartPlaceholder(ctx, '{% trans "No store data available" %}');
-                return;
-            }
-
-            charts.store = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: salesByStore.map(item => item.store_name),
-                    datasets: [{
-                        data: salesByStore.map(item => item.revenue),
-                        backgroundColor: [
-                            '#007bff', '#28a745', '#ffc107', '#17a2b8', '#dc3545',
-                            '#6f42c1', '#fd7e14', '#20c997', '#e83e8c', '#6c757d'
-                        ],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return context.label + ': ' + CURRENCY + ' ' + context.parsed.toLocaleString();
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        } catch (error) {
-            console.error('Error creating store chart:', error);
-            showChartPlaceholder(ctx, '{% trans "Error loading chart" %}');
-        }
-    }
-
-    /**
-     * Initialize top products chart
-     */
-    function initTopProductsChart() {
-        const ctx = document.getElementById('topProductsChart');
-        if (!ctx) return;
-
-        try {
-            const topProducts = {{ top_products_json|default:"[]" }};
-
-            if (!topProducts || topProducts.length === 0) {
-                showChartPlaceholder(ctx, '{% trans "No product data available" %}');
-                return;
-            }
-
-            charts.products = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: topProducts.map(item => item.name),
-                    datasets: [{
-                        label: '{% trans "Revenue" %}',
-                        data: topProducts.map(item => item.revenue),
-                        backgroundColor: '#28a745',
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    indexAxis: 'y',
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return CURRENCY + ' ' + context.parsed.x.toLocaleString();
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return CURRENCY + ' ' + value.toLocaleString();
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        } catch (error) {
-            console.error('Error creating products chart:', error);
-            showChartPlaceholder(ctx, '{% trans "Error loading chart" %}');
-        }
-    }
-
-    /**
-     * Initialize payment methods chart
-     */
-    function initPaymentChart() {
-        const ctx = document.getElementById('paymentChart');
-        if (!ctx) return;
-
-        try {
-            const paymentDist = {{ payment_distribution_json|default:"[]" }};
-
-            if (!paymentDist || paymentDist.length === 0) {
-                showChartPlaceholder(ctx, '{% trans "No payment data available" %}');
-                return;
-            }
-
-            charts.payment = new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: paymentDist.map(item => item.method),
-                    datasets: [{
-                        data: paymentDist.map(item => item.total),
-                        backgroundColor: ['#007bff', '#28a745', '#ffc107', '#17a2b8', '#dc3545'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return context.label + ': ' + CURRENCY + ' ' + context.parsed.toLocaleString();
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        } catch (error) {
-            console.error('Error creating payment chart:', error);
-            showChartPlaceholder(ctx, '{% trans "Error loading chart" %}');
-        }
-    }
-
-    /**
-     * Show placeholder message when chart has no data
-     */
-    function showChartPlaceholder(canvas, message) {
-        const parent = canvas.parentElement;
-        parent.innerHTML = '<p class="text-center text-muted py-5">' + message + '</p>';
-    }
-
-    /**
-     * Setup event listeners
-     */
-    function setupEventListeners() {
-        // Revenue period selector
-        document.querySelectorAll('input[name="revenuePeriod"]').forEach(radio => {
-            radio.addEventListener('change', function() {
-                updateRevenuePeriod(this.value);
-            });
-        });
-    }
-
-    /**
-     * Refresh dashboard data
-     */
-    window.refreshDashboard = function() {
-        const refreshBtn = document.getElementById('refreshBtn');
-        const loadingOverlay = document.getElementById('loadingOverlay');
-
-        if (refreshBtn) {
-            refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise spin" aria-hidden="true"></i> <span>{% trans "Refreshing..." %}</span>';
-            refreshBtn.disabled = true;
-        }
-
-        if (loadingOverlay) {
-            loadingOverlay.style.display = 'flex';
-        }
-
-        // Add refresh parameter to bypass cache
-        const url = new URL(window.location.href);
-        url.searchParams.set('refresh', '1');
-        window.location.href = url.toString();
-    };
-
-    /**
-     * Change dashboard period
-     */
-    window.changePeriod = function(period) {
-        const loadingOverlay = document.getElementById('loadingOverlay');
-
-        if (loadingOverlay) {
-            loadingOverlay.style.display = 'flex';
-        }
-
-        const url = new URL(window.location.href);
-        url.searchParams.set('period', period);
-        window.location.href = url.toString();
-    };
-
-    /**
-     * Update revenue chart period (for AJAX implementation)
-     */
-    function updateRevenuePeriod(days) {
-        console.log('Update revenue chart for', days, 'days');
-        // TODO: Implement AJAX call to fetch new data
-        // For now, just log the action
-    }
-
-})();
+  });
+}
 </script>
 {% endblock %}

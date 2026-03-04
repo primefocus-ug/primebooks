@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly Expense Digest · PrimeBooks</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; padding: 32px 16px; }
+  .wrap { max-width: 580px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,.1); }
+
+  /* HEADER */
+  .header { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #2563eb 100%); padding: 32px; color: #fff; position: relative; overflow: hidden; }
+  .header::after { content: ''; position: absolute; top: -40px; right: -40px; width: 180px; height: 180px; background: rgba(255,255,255,.04); border-radius: 50%; }
+  .header-top { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  .brand-icon { width: 38px; height: 38px; background: rgba(255,255,255,.15); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 19px; }
+  .brand-name { font-size: 15px; font-weight: 700; opacity: .85; }
+  .header-title { font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
+  .header-dates { font-size: 13px; opacity: .65; margin-top: 5px; }
+
+  /* BODY */
+  .body { padding: 32px; }
+
+  .greeting { font-size: 15px; color: #374151; margin-bottom: 24px; line-height: 1.6; }
+  .greeting strong { color: #1a1a18; }
+
+  /* STAT GRID */
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 28px; }
+  .stat-box { background: #f7f7f5; border: 1px solid #e4e4e0; border-radius: 10px; padding: 14px 16px; }
+  .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: #8a8a82; font-weight: 700; margin-bottom: 6px; display: block; }
+  .stat-val { font-size: 20px; font-weight: 800; font-family: monospace; color: #1a1a18; }
+
+  /* CHANGE INDICATORS */
+  .trend-up   { color: #16a34a; font-size: 12px; font-weight: 600; margin-top: 3px; display: block; }
+  .trend-down { color: #dc2626; font-size: 12px; font-weight: 600; margin-top: 3px; display: block; }
+
+  /* SECTION */
+  .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #8a8a82; font-weight: 700; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #e4e4e0; }
+
+  /* EXPENSE TABLE */
+  table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
+  thead th { background: #f7f7f5; padding: 9px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #8a8a82; font-weight: 700; border-bottom: 1px solid #e4e4e0; }
+  tbody td { padding: 9px 12px; border-bottom: 1px solid #f0f0ee; font-size: 13px; color: #374151; vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: 0; }
+  .amount-cell { text-align: right; font-weight: 700; font-family: monospace; color: #1a1a18; }
+  .tag-pill { display: inline-block; background: #dbeafe; color: #1d4ed8; padding: 2px 7px; border-radius: 99px; font-size: 11px; font-weight: 500; }
+
+  /* BUDGET BARS */
+  .budget-row { margin-bottom: 16px; }
+  .budget-row:last-child { margin-bottom: 0; }
+  .budget-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
+  .budget-name { font-size: 13px; font-weight: 600; color: #1a1a18; }
+  .budget-pct { font-size: 13px; font-weight: 700; font-family: monospace; }
+  .progress { height: 8px; background: #e4e4e0; border-radius: 99px; overflow: hidden; margin-bottom: 4px; }
+  .progress-bar { height: 100%; border-radius: 99px; background: #16a34a; }
+  .progress-bar.warn   { background: linear-gradient(90deg, #d97706, #f59e0b); }
+  .progress-bar.danger { background: linear-gradient(90deg, #dc2626, #ef4444); }
+  .budget-sub { display: flex; justify-content: space-between; font-size: 11px; color: #8a8a82; }
+
+  /* INSIGHTS */
+  .insights { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 28px; }
+  .insight-box { background: #f0f9ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px; }
+  .insight-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #2563eb; font-weight: 700; margin-bottom: 5px; }
+  .insight-val { font-size: 16px; font-weight: 700; color: #1e3a5f; }
+
+  .divider { height: 1px; background: #e4e4e0; margin: 24px 0; }
+
+  /* CTA */
+  .cta { text-align: center; padding: 24px 0; }
+  .btn { display: inline-block; background: #2563eb; color: #fff !important; padding: 13px 28px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; letter-spacing: .01em; }
+
+  /* FOOTER */
+  .footer { background: #f7f7f5; padding: 20px 32px; font-size: 12px; color: #8a8a82; text-align: center; border-top: 1px solid #e4e4e0; }
+  .footer a { color: #2563eb; text-decoration: none; }
+
+  @media (max-width: 500px) {
+    .stat-grid, .insights { grid-template-columns: 1fr; }
+    .body { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-top">
+      <div class="brand-icon">💰</div>
+      <span class="brand-name">PrimeBooks</span>
+    </div>
+    <div class="header-title">📊 Weekly Digest</div>
+    <div class="header-dates">{{ week_start|date:"d M" }} – {{ week_end|date:"d M Y" }}</div>
+  </div>
+
+  <!-- BODY -->
+  <div class="body">
+    <p class="greeting">
+      Hi <strong>{{ user.first_name|default:user.username }}</strong>,<br>
+      Here's your spending summary for the week. Stay on top of your finances!
+    </p>
+
+    <!-- STAT GRID -->
+    <div class="section-title">This Week at a Glance</div>
+    <div class="stat-grid">
+      <div class="stat-box">
+        <span class="stat-label">Week Total</span>
+        <div class="stat-val">{{ week_total|floatformat:0 }}</div>
+        <div style="font-size:11px;color:#8a8a82;margin-top:3px">UGX</div>
+      </div>
+      <div class="stat-box">
+        <span class="stat-label">Transactions</span>
+        <div class="stat-val">{{ week_count }}</div>
+        <div style="font-size:11px;color:#8a8a82;margin-top:3px">expenses logged</div>
+      </div>
+      <div class="stat-box">
+        <span class="stat-label">Month Total</span>
+        <div class="stat-val">{{ month_total|floatformat:0 }}</div>
+        <div style="font-size:11px;color:#8a8a82;margin-top:3px">UGX this month</div>
+      </div>
+      <div class="stat-box">
+        <span class="stat-label">Daily Average</span>
+        <div class="stat-val">{{ daily_avg|floatformat:0 }}</div>
+        <div style="font-size:11px;color:#8a8a82;margin-top:3px">UGX / day</div>
+      </div>
+    </div>
+
+    <!-- INSIGHTS -->
+    {% if week_top_tag or week_largest %}
+    <div class="insights">
+      {% if week_top_tag %}
+      <div class="insight-box">
+        <div class="insight-label">🏷️ Top Category</div>
+        <div class="insight-val">{{ week_top_tag }}</div>
+      </div>
+      {% endif %}
+      {% if week_largest %}
+      <div class="insight-box">
+        <div class="insight-label">💸 Largest Expense</div>
+        <div class="insight-val">{{ week_largest|floatformat:0 }} UGX</div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- TOP EXPENSES -->
+    {% if top_expenses %}
+    <div class="section-title">Top Expenses This Week</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th>Date</th>
+          <th style="text-align:right">Amount (UGX)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in top_expenses %}
+        <tr>
+          <td>
+            {{ e.description|truncatechars:40 }}
+            {% for tag in e.tags.all|slice:":2" %}<span class="tag-pill">{{ tag.name }}</span> {% endfor %}
+          </td>
+          <td style="white-space:nowrap;color:#8a8a82">{{ e.date|date:"d M" }}</td>
+          <td class="amount-cell">{{ e.amount|floatformat:0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <!-- BUDGET STATUS -->
+    {% if budget_statuses %}
+    <div class="section-title">Budget Status</div>
+    {% for b in budget_statuses %}
+    <div class="budget-row">
+      <div class="budget-header">
+        <span class="budget-name">{{ b.name }}</span>
+        <span class="budget-pct" style="color:{% if b.percentage >= 100 %}#dc2626{% elif b.percentage >= 80 %}#d97706{% else %}#16a34a{% endif %}">
+          {{ b.percentage|floatformat:1 }}%
+        </span>
+      </div>
+      <div class="progress">
+        <div class="progress-bar {% if b.percentage >= 100 %}danger{% elif b.percentage >= 80 %}warn{% endif %}"
+          style="width:min({{ b.percentage|floatformat:0 }}%,100%)"></div>
+      </div>
+      <div class="budget-sub">
+        <span>{{ b.spent|floatformat:0 }} spent</span>
+        <span>{{ b.amount|floatformat:0 }} limit</span>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="divider"></div>
+    {% endif %}
+
+    <!-- CTA -->
+    <div class="cta">
+      <a href="{{ site_url }}/expenses/" class="btn">View Full Dashboard →</a>
+      <p style="font-size:12px;color:#8a8a82;margin-top:14px">
+        Or <a href="{{ site_url }}/expenses/analytics/" style="color:#2563eb">view your analytics</a> for deeper insights.
+      </p>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <p><strong>PrimeBooks</strong> · Weekly Digest</p>
+    <p style="margin-top:6px">
+      <a href="{{ site_url }}/settings/">Manage email preferences</a> ·
+      <a href="{{ site_url }}/expenses/">View Dashboard</a>
+    </p>
+  </div>
+</div>
+</body>
+</html>

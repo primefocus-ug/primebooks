@@ -1,906 +1,757 @@
 {% extends "base.html" %}
 {% load static %}
-{% load custom_filters %}
+{% load expense_tags %}
 
-{% block title %}Analytics - Expense Tracker{% endblock %}
+{% block title %}Analytics{% endblock %}
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'expenses:dashboard' %}">Dashboard</a></li>
+<li class="breadcrumb-item active">Analytics</li>
+{% endblock %}
 
 {% block extra_css %}
 <style>
-    .analytics-container {
-        padding: 2rem;
-        max-width: 1600px;
-        margin: 0 auto;
-    }
-    
-    .analytics-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 2rem;
-    }
-    
-    .analytics-header h1 {
-        font-size: 2rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-    
-    .period-selector {
-        display: flex;
-        gap: 0.5rem;
-        background: var(--card-bg, #1e293b);
-        padding: 0.5rem;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-    
-    .period-option {
-        padding: 0.75rem 1.5rem;
-        background: transparent;
-        color: var(--text-secondary, #94a3b8);
-        border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    
-    .period-option:hover {
-        background: rgba(102, 126, 234, 0.1);
-        color: #818cf8;
-    }
-    
-    .period-option.active {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-    }
-    
-    /* Overview Cards */
-    .overview-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 1.5rem;
-        margin-bottom: 2rem;
-    }
-    
-    .overview-card {
-        background: var(--card-bg, #1e293b);
-        border-radius: 20px;
-        padding: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        position: relative;
-        overflow: hidden;
-        transition: transform 0.3s, box-shadow 0.3s;
-    }
-    
-    .overview-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-    }
-    
-    .overview-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-        opacity: 0;
-        transition: opacity 0.3s;
-    }
-    
-    .overview-card:hover::before {
-        opacity: 1;
-    }
-    
-    .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 1.5rem;
-        position: relative;
-        z-index: 1;
-    }
-    
-    .card-icon {
-        width: 56px;
-        height: 56px;
-        border-radius: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.75rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
-    }
-    
-    .trend-badge {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        background: rgba(16, 185, 129, 0.2);
-        color: #34d399;
-        border-radius: 8px;
-        font-size: 0.875rem;
-        font-weight: 600;
-    }
-    
-    .trend-badge.down {
-        background: rgba(239, 68, 68, 0.2);
-        color: #f87171;
-    }
-    
-    .card-body {
-        position: relative;
-        z-index: 1;
-    }
-    
-    .card-label {
-        color: var(--text-secondary, #94a3b8);
-        font-size: 0.875rem;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 0.75rem;
-    }
-    
-    .card-value {
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: var(--text-primary, #f1f5f9);
-        margin-bottom: 0.5rem;
-        line-height: 1;
-    }
-    
-    .card-subtitle {
-        color: var(--text-tertiary, #64748b);
-        font-size: 0.875rem;
-    }
-    
-    /* Charts Grid */
-    .charts-section {
-        display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: 1.5rem;
-        margin-bottom: 2rem;
-    }
-    
-    @media (max-width: 1200px) {
-        .charts-section {
-            grid-template-columns: 1fr;
-        }
-    }
-    
-    .chart-card {
-        background: var(--card-bg, #1e293b);
-        border-radius: 20px;
-        padding: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-    
-    .chart-card.full-width {
-        grid-column: 1 / -1;
-    }
-    
-    .chart-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 2rem;
-    }
-    
-    .chart-title {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: var(--text-primary, #f1f5f9);
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-    
-    .chart-title-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 10px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    
-    .chart-controls {
-        display: flex;
-        gap: 0.5rem;
-    }
-    
-    .chart-btn {
-        padding: 0.5rem 1rem;
-        background: rgba(102, 126, 234, 0.1);
-        color: #818cf8;
-        border: 2px solid transparent;
-        border-radius: 8px;
-        font-size: 0.875rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    
-    .chart-btn:hover {
-        background: rgba(102, 126, 234, 0.2);
-    }
-    
-    .chart-btn.active {
-        background: #667eea;
-        color: white;
-        border-color: #667eea;
-    }
-    
-    .chart-container {
-        position: relative;
-        height: 350px;
-    }
-    
-    .chart-container.small {
-        height: 280px;
-    }
-    
-    /* Insights Section */
-    .insights-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 1.5rem;
-        margin-bottom: 2rem;
-    }
-    
-    .insight-card {
-        background: var(--card-bg, #1e293b);
-        border-radius: 16px;
-        padding: 1.5rem;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-    
-    .insight-header {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-    }
-    
-    .insight-icon {
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-    }
-    
-    .insight-title {
-        font-weight: 600;
-        color: var(--text-primary, #f1f5f9);
-    }
-    
-    .insight-list {
-        list-style: none;
-    }
-    
-    .insight-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem;
-        border-radius: 12px;
-        margin-bottom: 0.75rem;
-        background: rgba(255, 255, 255, 0.02);
-        transition: all 0.2s;
-    }
-    
-    .insight-item:hover {
-        background: rgba(102, 126, 234, 0.1);
-        transform: translateX(5px);
-    }
-    
-    .insight-item:last-child {
-        margin-bottom: 0;
-    }
-    
-    .insight-name {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        font-weight: 500;
-    }
-    
-    .insight-badge {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #667eea;
-    }
-    
-    .insight-value {
-        font-weight: 700;
-        color: var(--text-primary, #f1f5f9);
-    }
-    
-    /* Comparison Section */
-    .comparison-card {
-        background: var(--card-bg, #1e293b);
-        border-radius: 20px;
-        padding: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-    
-    .comparison-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1.5rem;
-        border-radius: 12px;
-        margin-bottom: 1rem;
-        background: rgba(255, 255, 255, 0.02);
-    }
-    
-    .comparison-info h4 {
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-    }
-    
-    .comparison-info p {
-        color: var(--text-secondary, #94a3b8);
-        font-size: 0.875rem;
-    }
-    
-    .comparison-amount {
-        text-align: right;
-    }
-    
-    .comparison-value {
-        font-size: 1.75rem;
-        font-weight: 700;
-        margin-bottom: 0.25rem;
-    }
-    
-    .comparison-change {
-        font-size: 0.875rem;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        justify-content: flex-end;
-    }
-    
-    .comparison-change.positive {
-        color: #34d399;
-    }
-    
-    .comparison-change.negative {
-        color: #f87171;
-    }
-    
-    /* Loading States */
-    .skeleton {
-        background: linear-gradient(90deg, 
-            rgba(255, 255, 255, 0.05) 0%, 
-            rgba(255, 255, 255, 0.1) 50%, 
-            rgba(255, 255, 255, 0.05) 100%);
-        background-size: 200% 100%;
-        animation: shimmer 1.5s infinite;
-        border-radius: 8px;
-    }
-    
-    @keyframes shimmer {
-        0% { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
-    }
-    
-    .skeleton-text {
-        height: 1rem;
-        margin-bottom: 0.5rem;
-    }
-    
-    .skeleton-value {
-        height: 2.5rem;
-        width: 60%;
-    }
+/* ── DARK THEME VARIABLES ── */
+:root {
+  --analytics-bg: rgba(255,255,255,0.85);
+  --analytics-border: rgba(0,0,0,0.07);
+  --analytics-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+  --analytics-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.10);
+  --analytics-accent-light: rgba(37,99,235,0.1);
+  --analytics-input-bg: rgba(0,0,0,0.02);
+}
+
+[data-theme="dark"] {
+  --analytics-bg: rgba(30,35,48,0.90);
+  --analytics-border: rgba(255,255,255,0.07);
+  --analytics-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.4);
+  --analytics-shadow-hover: 0 4px 12px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.5);
+  --analytics-accent-light: rgba(37,99,235,0.2);
+  --analytics-input-bg: rgba(255,255,255,0.05);
+}
+
+/* ── PAGE HEADER (matching dashboard) ── */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--analytics-border);
+}
+.page-header h2 {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 0.2rem;
+}
+.page-header p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── PERIOD TABS (matching dashboard) ── */
+.an-ptab-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  background: var(--analytics-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--analytics-border);
+  border-radius: var(--r-xl, 20px);
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--analytics-shadow);
+}
+
+.ptab {
+  padding: 0.3rem 1rem;
+  border-radius: var(--r-full, 9999px);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border: 1px solid var(--analytics-border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+.ptab:hover {
+  background: var(--analytics-accent-light);
+  color: var(--dash-accent, #2563eb);
+  border-color: rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .ptab:hover {
+  color: #60a5fa;
+}
+.ptab.on {
+  background: var(--dash-accent, #2563eb);
+  color: #fff;
+  border-color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .ptab.on {
+  background: #3b82f6;
+}
+
+.date-range-sep {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
+
+/* ── KPI GRID (matching dashboard stat cards) ── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+@media (max-width: 900px) {
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 560px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.kpi-card {
+  position: relative;
+  background: var(--analytics-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--analytics-border);
+  border-radius: var(--r-xl, 20px);
+  padding: 1.4rem 1.4rem 1rem;
+  overflow: hidden;
+  transition: box-shadow 0.25s, transform 0.25s;
+}
+.kpi-card:hover {
+  box-shadow: var(--analytics-shadow-hover);
+  transform: translateY(-3px);
+}
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: -20px; right: -20px;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: var(--dash-accent, #2563eb);
+  opacity: 0.1;
+  transition: opacity 0.3s;
+}
+.kpi-card:hover::before { opacity: 0.15; }
+[data-theme="dark"] .kpi-card::before { opacity: 0.15; }
+.kpi-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--dash-accent, #2563eb), #60a5fa);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+
+.kpi-lbl {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 0.3rem;
+  display: block;
+}
+
+.kpi-val {
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  color: var(--text-primary);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-sub {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
+
+/* ── ANALYTICS CARDS (matching dashboard panels) ── */
+.an-card {
+  background: var(--analytics-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--analytics-border);
+  border-radius: var(--r-xl, 20px);
+  padding: 1.4rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--analytics-shadow);
+  transition: box-shadow 0.25s;
+  height: fit-content;
+}
+.an-card:hover {
+  box-shadow: var(--analytics-shadow-hover);
+}
+
+.an-title {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+.an-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  background: linear-gradient(to bottom, var(--dash-accent, #2563eb), var(--dash-accent-2, #7c3aed));
+  border-radius: 2px;
+}
+
+/* ── GROUP TABS (for chart grouping) ── */
+.grp-tabs {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--analytics-input-bg);
+  padding: 0.25rem;
+  border-radius: var(--r-full, 9999px);
+  border: 1px solid var(--analytics-border);
+}
+.grp-tab {
+  padding: 0.2rem 0.8rem;
+  border-radius: var(--r-full, 9999px);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.68rem;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.grp-tab:hover {
+  color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .grp-tab:hover {
+  color: #60a5fa;
+}
+.grp-tab.on {
+  background: var(--dash-accent, #2563eb);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .grp-tab.on {
+  background: #3b82f6;
+}
+
+/* ── CHART WRAP ── */
+.chart-wrap {
+  position: relative;
+  height: 280px;
+  width: 100%;
+}
+
+/* ── VENDOR TABLE ── */
+.vendor-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.vendor-table th {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+  padding: 0.75rem 1rem;
+  background: var(--analytics-input-bg);
+  border-bottom: 1px solid var(--analytics-border);
+  text-align: left;
+}
+.vendor-table td {
+  padding: 0.75rem 1rem;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--analytics-border);
+}
+.vendor-table tbody tr:last-child td { border-bottom: 0; }
+.vendor-table tbody tr:hover {
+  background: var(--analytics-accent-light);
+}
+.vendor-table .fw-semibold {
+  font-weight: 600;
+}
+
+.vendor-share-bar {
+  height: 6px;
+  border-radius: var(--r-full, 9999px);
+  background: linear-gradient(90deg, var(--dash-accent, #2563eb), #60a5fa);
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── FORM CONTROLS (for date inputs) ── */
+.form-control-sm {
+  background: var(--analytics-input-bg);
+  border: 1px solid var(--analytics-border);
+  border-radius: var(--r-md, 12px);
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  transition: all 0.2s;
+}
+.form-control-sm:focus {
+  outline: none;
+  border-color: var(--dash-accent, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+[data-theme="dark"] .form-control-sm:focus {
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.2);
+  border-color: #60a5fa;
+}
+input[type=date].form-control-sm {
+  color-scheme: var(--color-scheme);
+}
+
+/* ── BUTTONS ── */
+.btn {
+  padding: 0.4rem 1.2rem;
+  border-radius: var(--r-md, 12px);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-primary {
+  background: var(--dash-accent, #2563eb);
+  color: white;
+  border-color: var(--dash-accent, #2563eb);
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .btn-primary:hover {
+  background: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59,130,246,0.5);
+}
+.btn-outline-secondary {
+  background: transparent;
+  border: 1px solid var(--analytics-border);
+  color: var(--text-secondary);
+}
+.btn-outline-secondary:hover {
+  border-color: var(--dash-accent, #2563eb);
+  color: var(--dash-accent, #2563eb);
+  background: var(--analytics-accent-light);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-outline-secondary:hover {
+  color: #60a5fa;
+  border-color: #60a5fa;
+}
+.btn-sm {
+  padding: 0.3rem 1rem;
+  font-size: 0.72rem;
+}
+
+/* ── ALERTS ── */
+.text-danger {
+  color: var(--dash-red, #dc2626) !important;
+}
+[data-theme="dark"] .text-danger {
+  color: #f87171 !important;
+}
+.d-none { display: none; }
+.small { font-size: 0.75rem; }
+
+/* ── UTILITIES ── */
+.d-flex { display: flex; }
+.align-items-center { align-items: center; }
+.justify-content-between { justify-content: space-between; }
+.flex-wrap { flex-wrap: wrap; }
+.gap-2 { gap: 0.5rem; }
+.gap-3 { gap: 1rem; }
+.mb-0 { margin-bottom: 0; }
+.mb-3 { margin-bottom: 1rem; }
+.me-1 { margin-right: 0.25rem; }
+.text-muted { color: var(--text-secondary); }
+.text-center { text-align: center; }
+.py-4 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+.row { display: flex; flex-wrap: wrap; margin: 0 -0.5rem; }
+.col-12 { flex: 0 0 100%; padding: 0 0.5rem; }
+.col-md-6 { flex: 0 0 50%; padding: 0 0.5rem; }
+.col-xl-4 { flex: 0 0 33.333%; padding: 0 0.5rem; }
+.col-xl-8 { flex: 0 0 66.667%; padding: 0 0.5rem; }
+.g-3 > * { margin-bottom: 1rem; }
+.h-100 { height: 100%; }
+.overflow-x-auto { overflow-x: auto; }
+.fw-bold { font-weight: 700; }
+.fw-semibold { font-weight: 600; }
 </style>
 {% endblock %}
 
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h2>
+      <span style="color:var(--dash-accent, #2563eb)">📊</span> Analytics
+    </h2>
+    <p>Deep dive into your spending patterns</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{% url 'expenses:export_expenses_csv' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-file-earmark-spreadsheet me-1"></i>CSV
+    </a>
+    <a href="{% url 'expenses:export_expenses_pdf' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+    </a>
+    <a href="{% url 'expenses:reports_dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-bar-chart-line me-1"></i>Reports
+    </a>
+  </div>
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="analytics-container">
-    <!-- Header -->
-    <div class="analytics-header">
-        <h1>📊 Analytics & Insights</h1>
-        <div style="display: flex; gap: 1rem; align-items: center;">
-            <div class="period-selector">
-                <button class="period-option {% if period_days == 7 %}active{% endif %}" 
-                        onclick="changePeriod(7)">7 Days</button>
-                <button class="period-option {% if period_days == 30 %}active{% endif %}" 
-                        onclick="changePeriod(30)">30 Days</button>
-                <button class="period-option {% if period_days == 90 %}active{% endif %}" 
-                        onclick="changePeriod(90)">90 Days</button>
-                <button class="period-option {% if period_days == 365 %}active{% endif %}" 
-                        onclick="changePeriod(365)">1 Year</button>
-            </div>
-            <a href="{% url 'expenses:dashboard' %}" class="btn-secondary">
-                <i class="fas fa-arrow-left"></i> Dashboard
-            </a>
+<!-- PERIOD SELECTOR (styled like dashboard tabs) -->
+<div class="an-ptab-row">
+  <div style="display:flex;gap:0.25rem;flex-wrap:wrap" id="anPeriodTabs">
+    <button class="ptab" data-p="today">Today</button>
+    <button class="ptab" data-p="week">Week</button>
+    <button class="ptab on" data-p="month">Month</button>
+    <button class="ptab" data-p="quarter">Quarter</button>
+    <button class="ptab" data-p="6months">6 Months</button>
+    <button class="ptab" data-p="year">Year</button>
+  </div>
+  <div style="display:flex;gap:0.5rem;align-items:center;margin-left:auto;flex-wrap:wrap">
+    <input type="date" id="anFrom" class="form-control-sm" style="width:135px">
+    <span class="date-range-sep">–</span>
+    <input type="date" id="anTo" class="form-control-sm" style="width:135px">
+    <button class="btn btn-primary btn-sm" id="anApply">Apply Range</button>
+    <div class="text-danger small d-none" id="anDateErr">Invalid range</div>
+  </div>
+</div>
+
+<!-- KPI GRID (matching dashboard stat cards) -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <span class="kpi-lbl">Total Spent</span>
+    <div class="kpi-val" id="anTotal">{{ month_total|default:0|floatformat:0 }}</div>
+    <div class="kpi-sub">UGX</div>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-lbl">Transactions</span>
+    <div class="kpi-val" id="anCount">{{ month_count|default:0 }}</div>
+    <div class="kpi-sub">expenses</div>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-lbl">Average</span>
+    <div class="kpi-val" id="anAvg">{{ month_avg|default:0|floatformat:0 }}</div>
+    <div class="kpi-sub">per expense</div>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-lbl">Largest</span>
+    <div class="kpi-val" id="anMax">{{ month_max|default:0|floatformat:0 }}</div>
+    <div class="kpi-sub">single expense</div>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-lbl">Approved</span>
+    <div class="kpi-val" id="anApproved">{{ month_approved|default:0 }}</div>
+    <div class="kpi-sub">expenses</div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Trend Chart -->
+  <div class="col-12 col-xl-8">
+    <div class="an-card">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <div class="an-title mb-0">📈 Spending Trend</div>
+        <div class="grp-tabs" id="anGrp">
+          <button class="grp-tab" data-g="date">Daily</button>
+          <button class="grp-tab on" data-g="week">Weekly</button>
+          <button class="grp-tab" data-g="month">Monthly</button>
         </div>
+      </div>
+      <div class="chart-wrap" style="height:280px"><canvas id="anTrend"></canvas></div>
     </div>
-    
-    <!-- Overview Cards -->
-    <div class="overview-grid">
-        <div class="overview-card">
-            <div class="card-header">
-                <div class="card-icon">💰</div>
-                <div class="trend-badge {% if trend_direction == 'down' %}down{% endif %}">
-                    <i class="fas fa-arrow-{% if trend_direction == 'up' %}up{% else %}down{% endif %}"></i>
-                    {{ trend_percentage|abs|floatformat:1 }}%
-                </div>
-            </div>
-            <div class="card-body">
-                <div class="card-label">Total Spent</div>
-                <div class="card-value">${{ total|floatformat:2 }}</div>
-                <div class="card-subtitle">
-                    Last {{ period_days }} days
-                </div>
-            </div>
-        </div>
-        
-        <div class="overview-card">
-            <div class="card-header">
-                <div class="card-icon">📈</div>
-            </div>
-            <div class="card-body">
-                <div class="card-label">Average per Day</div>
-                <div class="card-value">
-                    ${% widthratio total period_days 1 %}
-                </div>
-                <div class="card-subtitle">
-                    {{ count }} total transactions
-                </div>
-            </div>
-        </div>
-        
-        <div class="overview-card">
-            <div class="card-header">
-                <div class="card-icon">🎯</div>
-            </div>
-            <div class="card-body">
-                <div class="card-label">Average Transaction</div>
-                <div class="card-value">${{ average|floatformat:2 }}</div>
-                <div class="card-subtitle">
-                    Across all expenses
-                </div>
-            </div>
-        </div>
-        
-        <div class="overview-card">
-            <div class="card-header">
-                <div class="card-icon">📊</div>
-            </div>
-            <div class="card-body">
-                <div class="card-label">Total Transactions</div>
-                <div class="card-value">{{ count }}</div>
-                <div class="card-subtitle">
-                    In selected period
-                </div>
-            </div>
-        </div>
+  </div>
+
+  <!-- Tag Donut -->
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="an-card h-100" style="margin-bottom:0">
+      <div class="an-title">🏷️ By Tag</div>
+      <div class="chart-wrap" style="height:240px"><canvas id="anTag"></canvas></div>
     </div>
-    
-    <!-- Main Charts -->
-    <div class="charts-section">
-        <div class="chart-card">
-            <div class="chart-header">
-                <div class="chart-title">
-                    <div class="chart-title-icon">📈</div>
-                    Spending Trend
-                </div>
-            </div>
-            <div class="chart-container">
-                <canvas id="trendChart"></canvas>
-            </div>
-        </div>
-        
-        <div class="chart-card">
-            <div class="chart-header">
-                <div class="chart-title">
-                    <div class="chart-title-icon">🏷️</div>
-                    Top Tags
-                </div>
-            </div>
-            <div class="chart-container small">
-                <canvas id="tagPieChart"></canvas>
-            </div>
-        </div>
+  </div>
+
+  <!-- Payment Methods -->
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="an-card h-100" style="margin-bottom:0">
+      <div class="an-title">💳 Payment Methods</div>
+      <div class="chart-wrap" style="height:220px"><canvas id="anPay"></canvas></div>
     </div>
-    
-    <div class="charts-section">
-        <div class="chart-card">
-            <div class="chart-header">
-                <div class="chart-title">
-                    <div class="chart-title-icon">💳</div>
-                    Payment Methods
-                </div>
-            </div>
-            <div class="chart-container small">
-                <canvas id="paymentChart"></canvas>
-            </div>
-        </div>
-        
-        <div class="chart-card">
-            <div class="chart-header">
-                <div class="chart-title">
-                    <div class="chart-title-icon">📅</div>
-                    Day of Week
-                </div>
-            </div>
-            <div class="chart-container small">
-                <canvas id="dayChart"></canvas>
-            </div>
-        </div>
+  </div>
+
+  <!-- Status Breakdown -->
+  <div class="col-12 col-xl-8">
+    <div class="an-card">
+      <div class="an-title">📊 Expense Status</div>
+      <div class="chart-wrap" style="height:220px"><canvas id="anStatus"></canvas></div>
     </div>
-    
-    <!-- Insights Grid -->
-    <div class="insights-grid">
-        <div class="insight-card">
-            <div class="insight-header">
-                <div class="insight-icon">🏷️</div>
-                <div class="insight-title">Top Spending Categories</div>
-            </div>
-            <ul class="insight-list">
-                {% for item in tag_data %}
-                    {% if forloop.counter <= 5 %}
-                    <li class="insight-item">
-                        <div class="insight-name">
-                            <span class="insight-badge" style="background: {{ forloop.counter|yesno:'#667eea,#764ba2,#f093fb,#4facfe,#43e97b' }}"></span>
-                            {{ item.name }}
-                        </div>
-                        <div class="insight-value">${{ item.total|floatformat:2 }}</div>
-                    </li>
-                    {% endif %}
-                {% empty %}
-                <li style="text-align: center; padding: 2rem; color: var(--text-tertiary);">
-                    No data available
-                </li>
-                {% endfor %}
-            </ul>
-        </div>
-        
-        <div class="insight-card">
-            <div class="insight-header">
-                <div class="insight-icon">💳</div>
-                <div class="insight-title">Payment Distribution</div>
-            </div>
-            <ul class="insight-list">
-                {% for item in payment_data %}
-                <li class="insight-item">
-                    <div class="insight-name">
-                        <span class="insight-badge"></span>
-                        {{ item.method }}
-                    </div>
-                    <div class="insight-value">${{ item.total|floatformat:2 }}</div>
-                </li>
-                {% empty %}
-                <li style="text-align: center; padding: 2rem; color: var(--text-tertiary);">
-                    No data available
-                </li>
-                {% endfor %}
-            </ul>
-        </div>
-        
-        <div class="insight-card">
-            <div class="insight-header">
-                <div class="insight-icon">📅</div>
-                <div class="insight-title">Busiest Days</div>
-            </div>
-            <ul class="insight-list">
-                {% for item in day_data|slice:":5" %}
-                <li class="insight-item">
-                    <div class="insight-name">
-                        <span class="insight-badge"></span>
-                        {{ item.day }}
-                    </div>
-                    <div class="insight-value">${{ item.total|floatformat:2 }}</div>
-                </li>
-                {% empty %}
-                <li style="text-align: center; padding: 2rem; color: var(--text-tertiary);">
-                    No data available
-                </li>
-                {% endfor %}
-            </ul>
-        </div>
+  </div>
+
+  <!-- Top Vendors -->
+  <div class="col-12">
+    <div class="an-card">
+      <div class="an-title">🏪 Top Vendors</div>
+      <div class="overflow-x-auto">
+        <table class="vendor-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Vendor</th>
+              <th>Transactions</th>
+              <th>Total Spent</th>
+              <th>Average</th>
+              <th style="min-width:160px">Share</th>
+            </tr>
+          </thead>
+          <tbody id="vendorBody">
+            {% for v in top_vendors %}
+            <tr>
+              <td style="color:var(--text-secondary);font-weight:700">{{ forloop.counter }}</td>
+              <td class="fw-semibold">{{ v.vendor|default:"Unknown" }}</td>
+              <td>{{ v.count }}</td>
+              <td style="font-family:var(--ff-mono, 'JetBrains Mono');font-weight:700;color:var(--dash-accent, #2563eb)">{{ v.total|floatformat:0 }}</td>
+              <td style="font-family:var(--ff-mono, 'JetBrains Mono')">{{ v.avg|floatformat:0 }}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:0.75rem">
+                  <div style="flex:1;height:6px;background:var(--analytics-border);border-radius:var(--r-full, 9999px);overflow:hidden">
+                    <div class="vendor-share-bar" style="width:{{ v.share|floatformat:0 }}%"></div>
+                  </div>
+                  <span style="font-size:0.72rem;color:var(--text-secondary);width:35px;text-align:right;font-family:var(--ff-mono)">{{ v.share|floatformat:1 }}%</span>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-muted py-4">No vendor data available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-// Chart.js Configuration
-Chart.defaults.color = '#94a3b8';
-Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
-Chart.defaults.font.family = 'Inter';
+(function() {
+'use strict';
+const dark  = () => document.documentElement.getAttribute('data-theme') === 'dark';
+const gc    = () => dark() ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.06)';
+const tc    = () => dark() ? '#707068' : '#8a8a82';
+const PAL   = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16'];
+const fmt   = v => Number(v||0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-const dailyData = {{ daily_data|safe }};
-const tagData = {{ tag_data|safe }};
-const paymentData = {{ payment_data|safe }};
-const dayData = {{ day_data|safe }};
+const TAG_D  = {{ tag_stats|safe|default:"[]" }};
+const PAY_D  = {{ payment_stats|safe|default:"[]" }};
+const STS_D  = {{ status_stats|safe|default:"{}" }};
+const TREND  = {{ monthly_data|safe|default:"[]" }};
 
-// Gradient Helper
-function createGradient(ctx, color1, color2) {
-    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-    gradient.addColorStop(0, color1);
-    gradient.addColorStop(1, color2);
-    return gradient;
-}
+Chart.defaults.font.family = "var(--ff-sans, 'DM Sans', sans-serif)";
+Chart.defaults.font.size   = 12;
 
-// Trend Chart
-const trendCtx = document.getElementById('trendChart').getContext('2d');
-const trendGradient = createGradient(trendCtx, 'rgba(102, 126, 234, 0.3)', 'rgba(118, 75, 162, 0.05)');
-
-new Chart(trendCtx, {
+/* ── TREND CHART ── */
+let tChart;
+function buildTrend(rows) {
+  const ctx = document.getElementById('anTrend').getContext('2d');
+  if (tChart) tChart.destroy();
+  const g = ctx.createLinearGradient(0, 0, 0, 260);
+  g.addColorStop(0, 'rgba(59,130,246,.25)');
+  g.addColorStop(1, 'rgba(59,130,246,.02)');
+  tChart = new Chart(ctx, {
     type: 'line',
     data: {
-        labels: dailyData.map(d => {
-            const date = new Date(d.date);
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        }),
-        datasets: [{
-            label: 'Daily Spending',
-            data: dailyData.map(d => d.total),
-            borderColor: '#667eea',
-            backgroundColor: trendGradient,
-            borderWidth: 3,
-            fill: true,
-            tension: 0.4,
-            pointRadius: 6,
-            pointHoverRadius: 8,
-            pointBackgroundColor: '#667eea',
-            pointBorderColor: '#fff',
-            pointBorderWidth: 3,
-            pointHoverBackgroundColor: '#667eea',
-            pointHoverBorderColor: '#fff',
-        }]
+      labels: rows.map(r => r.month || r.date || r.period || ''),
+      datasets: [{
+        label: 'Spending',
+        data: rows.map(r => r.total || r.total_base || 0),
+        borderColor: '#3b82f6', backgroundColor: g,
+        tension: .42, fill: true,
+        pointBackgroundColor: '#3b82f6', pointRadius: 4,
+        pointHoverRadius: 6, borderWidth: 2.5
+      }]
     },
     options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { display: false },
-            tooltip: {
-                backgroundColor: '#1e293b',
-                titleColor: '#f1f5f9',
-                bodyColor: '#cbd5e1',
-                borderColor: '#334155',
-                borderWidth: 1,
-                padding: 15,
-                displayColors: false,
-                callbacks: {
-                    label: function(context) {
-                        return '$' + context.parsed.y.toFixed(2);
-                    }
-                }
-            }
-        },
-        scales: {
-            y: {
-                beginAtZero: true,
-                grid: {
-                    color: 'rgba(255, 255, 255, 0.05)',
-                    drawBorder: false
-                },
-                ticks: {
-                    callback: function(value) {
-                        return '$' + value;
-                    }
-                }
-            },
-            x: {
-                grid: {
-                    display: false
-                }
-            }
-        },
-        interaction: {
-            intersect: false,
-            mode: 'index'
-        }
+      responsive: true, maintainAspectRatio: false, animation: { duration: 450 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { mode: 'index', intersect: false, callbacks: { label: c => '  ' + fmt(c.parsed.y) + ' UGX' } }
+      },
+      scales: {
+        x: { grid: { color: gc() }, ticks: { color: tc(), maxRotation: 30, maxTicksLimit: 12 } },
+        y: { grid: { color: gc() }, ticks: { color: tc(), callback: v => v >= 1000 ? Math.round(v/1000)+'k' : v } }
+      }
     }
+  });
+}
+buildTrend(TREND);
+
+/* ── TAG CHART ── */
+const tagChart = new Chart(document.getElementById('anTag').getContext('2d'), {
+  type: 'doughnut',
+  data: {
+    labels: TAG_D.map(t => t.name || t.tag || ''),
+    datasets: [{ data: TAG_D.map(t => t.total || 0), backgroundColor: PAL, borderWidth: 2.5, borderColor: dark() ? '#1a1a18' : '#fff' }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, cutout: '65%',
+    plugins: { legend: { position: 'bottom', labels: { color: tc(), boxWidth: 10, padding: 8 } } }
+  }
 });
 
-// Tag Pie Chart
-if (tagData.length > 0) {
-    const tagCtx = document.getElementById('tagPieChart').getContext('2d');
-    new Chart(tagCtx, {
-        type: 'doughnut',
-        data: {
-            labels: tagData.map(t => t.name),
-            datasets: [{
-                data: tagData.map(t => t.total),
-                backgroundColor: [
-                    '#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b',
-                    '#fa709a', '#fee140', '#30cfd0', '#a8edea', '#fed6e3'
-                ],
-                borderWidth: 0,
-                hoverOffset: 15
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        padding: 15,
-                        font: { size: 11, weight: '600' },
-                        usePointStyle: true,
-                        pointStyle: 'circle'
-                    }
-                },
-                tooltip: {
-                    backgroundColor: '#1e293b',
-                    titleColor: '#f1f5f9',
-                    bodyColor: '#cbd5e1',
-                    borderColor: '#334155',
-                    borderWidth: 1,
-                    padding: 15,
-                    callbacks: {
-                        label: function(context) {
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = ((context.parsed / total) * 100).toFixed(1);
-                            return context.label + ': $' + context.parsed.toFixed(2) + ' (' + percentage + '%)';
-                        }
-                    }
-                }
-            }
-        }
+/* ── PAYMENT CHART ── */
+const payChart = new Chart(document.getElementById('anPay').getContext('2d'), {
+  type: 'doughnut',
+  data: {
+    labels: PAY_D.map(p => p.method || p.payment_method || ''),
+    datasets: [{ data: PAY_D.map(p => p.total || 0), backgroundColor: PAL.slice(2), borderWidth: 2.5, borderColor: dark() ? '#1a1a18' : '#fff' }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, cutout: '60%',
+    plugins: { legend: { position: 'bottom', labels: { color: tc(), boxWidth: 10, padding: 8 } } }
+  }
+});
+
+/* ── STATUS CHART ── */
+const stLbls  = ['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Resubmit'];
+const stKeys  = ['draft', 'submitted', 'under_review', 'approved', 'rejected', 'resubmit'];
+const stClrs  = ['#9ca3af', '#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#f97316'];
+const stsChart = new Chart(document.getElementById('anStatus').getContext('2d'), {
+  type: 'bar',
+  data: {
+    labels: stLbls,
+    datasets: [{
+      label: 'Count',
+      data: stKeys.map(k => STS_D[k] || 0),
+      backgroundColor: stClrs.map(c => c + 'cc'),
+      borderColor: stClrs,
+      borderWidth: 1.5,
+      borderRadius: 7,
+      borderSkipped: false
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: tc() } },
+      y: { grid: { color: gc() }, ticks: { color: tc(), stepSize: 1 } }
+    }
+  }
+});
+
+/* ── RE-COLOUR ON THEME SWITCH ── */
+function recolour() {
+  [tChart, tagChart, payChart, stsChart].forEach(c => {
+    if (!c) return;
+    c.options.scales && Object.values(c.options.scales).forEach(ax => {
+      ax.ticks && (ax.ticks.color = tc());
+      ax.grid  && (ax.grid.color  = gc());
     });
+    if (c.options.plugins?.legend?.labels) c.options.plugins.legend.labels.color = tc();
+    c.update('none');
+  });
+  [tagChart, payChart].forEach(c => {
+    if (c) { c.data.datasets[0].borderColor = dark() ? '#1a1a18' : '#fff'; c.update('none'); }
+  });
+}
+document.getElementById('themeToggle')?.addEventListener('change', () => setTimeout(recolour, 320));
+document.addEventListener('themechange', () => setTimeout(recolour, 320));
+
+/* ── PERIOD TABS ── */
+let period = 'month';
+document.querySelectorAll('#anPeriodTabs .ptab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#anPeriodTabs .ptab').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    period = btn.dataset.p;
+    fetchAll(period, null, null);
+  });
+});
+
+const anFrom = document.getElementById('anFrom');
+const anTo   = document.getElementById('anTo');
+document.getElementById('anApply')?.addEventListener('click', () => {
+  const f = anFrom.value, t = anTo.value;
+  if (!f || !t || f > t) { document.getElementById('anDateErr').classList.remove('d-none'); return; }
+  document.getElementById('anDateErr').classList.add('d-none');
+  document.querySelectorAll('#anPeriodTabs .ptab').forEach(b => b.classList.remove('on'));
+  fetchAll('custom', f, t);
+});
+
+document.querySelectorAll('#anGrp .grp-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#anGrp .grp-tab').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    fetchTrend(period, btn.dataset.g, anFrom.value, anTo.value);
+  });
+});
+
+function activeGrp() { return document.querySelector('#anGrp .grp-tab.on')?.dataset.g || 'week'; }
+
+function fetchTrend(p, g, f, t) {
+  let url = `/expenses/api/chart-data/?period=${p}&group_by=${g}`;
+  if (p === 'custom' && f && t) url += `&date_from=${f}&date_to=${t}`;
+  fetch(url).then(r => r.json()).then(d => buildTrend(d.monthly_trend || d.trend || [])).catch(() => {});
 }
 
-// Payment Method Chart
-if (paymentData.length > 0) {
-    const paymentCtx = document.getElementById('paymentChart').getContext('2d');
-    new Chart(paymentCtx, {
-        type: 'bar',
-        data: {
-            labels: paymentData.map(p => p.method),
-            datasets: [{
-                label: 'Amount',
-                data: paymentData.map(p => p.total),
-                backgroundColor: 'rgba(102, 126, 234, 0.8)',
-                borderColor: '#667eea',
-                borderWidth: 2,
-                borderRadius: 10,
-                barThickness: 40
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: '#1e293b',
-                    titleColor: '#f1f5f9',
-                    bodyColor: '#cbd5e1',
-                    borderColor: '#334155',
-                    borderWidth: 1,
-                    padding: 15,
-                    callbacks: {
-                        label: function(context) {
-                            return '$' + context.parsed.y.toFixed(2);
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.05)'
-                    },
-                    ticks: {
-                        callback: function(value) {
-                            return '$' + value;
-                        }
-                    }
-                },
-                x: {
-                    grid: { display: false }
-                }
-            }
-        }
-    });
+function fetchStats(p, f, t) {
+  let url = `/expenses/api/stats/?period=${p}`;
+  if (p === 'custom' && f && t) url += `&date_from=${f}&date_to=${t}`;
+  fetch(url).then(r => r.json()).then(d => {
+    const s = d.amounts || {};
+    document.getElementById('anTotal').textContent   = fmt(s.total_base || 0);
+    document.getElementById('anCount').textContent   = fmt(d.total_count || 0);
+    document.getElementById('anAvg').textContent     = fmt(s.avg || 0);
+    document.getElementById('anMax').textContent     = fmt(s.max || 0);
+    document.getElementById('anApproved').textContent = fmt(d.approved_count || 0);
+  }).catch(() => {});
 }
 
-// Day of Week Chart
-if (dayData.length > 0) {
-    const dayCtx = document.getElementById('dayChart').getContext('2d');
-    const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const sortedDayData = dayOrder.map(day => {
-        const found = dayData.find(d => d.day === day);
-        return found ? found.total : 0;
-    });
-    
-    new Chart(dayCtx, {
-        type: 'radar',
-        data: {
-            labels: dayOrder,
-            datasets: [{
-                label: 'Spending',
-                data: sortedDayData,
-                backgroundColor: 'rgba(102, 126, 234, 0.2)',
-                borderColor: '#667eea',
-                borderWidth: 3,
-                pointBackgroundColor: '#667eea',
-                pointBorderColor: '#fff',
-                pointBorderWidth: 2,
-                pointRadius: 5,
-                pointHoverRadius: 7
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: '#1e293b',
-                    titleColor: '#f1f5f9',
-                    bodyColor: '#cbd5e1',
-                    borderColor: '#334155',
-                    borderWidth: 1,
-                    padding: 15,
-                    callbacks: {
-                        label: function(context) {
-                            return '$' + context.parsed.r.toFixed(2);
-                        }
-                    }
-                }
-            },
-            scales: {
-                r: {
-                    beginAtZero: true,
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.1)'
-                    },
-                    angleLines: {
-                        color: 'rgba(255, 255, 255, 0.1)'
-                    },
-                    pointLabels: {
-                        font: {
-                            size: 11,
-                            weight: '600'
-                        }
-                    },
-                    ticks: {
-                        callback: function(value) {
-                            return '$' + value;
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
+function fetchAll(p, f, t) { fetchStats(p, f, t); fetchTrend(p, activeGrp(), f, t); }
 
-// Period Selector
-function changePeriod(days) {
-    window.location.href = `?period=${days}`;
-}
-
-// Auto-refresh every 5 minutes
-setInterval(function() {
-    location.reload();
-}, 300000);
+})();
 </script>
 {% endblock %}

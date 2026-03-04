@@ -1,0 +1,817 @@
+{% extends "expenses/base.html" %}
+{% block title %}Reports{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── DARK THEME VARIABLES ── */
+:root {
+  --reports-bg: rgba(255,255,255,0.85);
+  --reports-border: rgba(0,0,0,0.07);
+  --reports-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+  --reports-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.10);
+  --reports-accent-light: rgba(37,99,235,0.1);
+  --reports-green-light: rgba(5,150,105,0.1);
+  --reports-amber-light: rgba(215,119,6,0.1);
+  --reports-red-light: rgba(220,38,38,0.1);
+}
+
+[data-theme="dark"] {
+  --reports-bg: rgba(30,35,48,0.90);
+  --reports-border: rgba(255,255,255,0.07);
+  --reports-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.4);
+  --reports-shadow-hover: 0 4px 12px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.5);
+  --reports-accent-light: rgba(37,99,235,0.2);
+  --reports-green-light: rgba(16,185,129,0.15);
+  --reports-amber-light: rgba(245,158,11,0.15);
+  --reports-red-light: rgba(239,68,68,0.15);
+}
+
+/* ── PAGE HEADER (matching dashboard) ── */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--reports-border);
+}
+.page-header-text h1 {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 0.3rem;
+}
+.page-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── PERIOD SELECTOR (matching dashboard tabs) ── */
+.period-selector {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+  padding: 0.25rem;
+  background: var(--reports-bg);
+  border: 1px solid var(--reports-border);
+  border-radius: var(--r-full, 9999px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  width: fit-content;
+}
+@media (max-width: 700px) {
+  .period-selector {
+    border-radius: var(--r-lg, 16px);
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+.period-btn {
+  padding: 0.4rem 1.2rem;
+  border-radius: var(--r-full, 9999px);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.period-btn:hover {
+  color: var(--dash-accent, #2563eb);
+  background: var(--reports-accent-light);
+}
+[data-theme="dark"] .period-btn:hover {
+  color: #60a5fa;
+}
+.period-btn.active {
+  background: var(--dash-accent, #2563eb);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .period-btn.active {
+  background: #3b82f6;
+}
+
+/* ── STAT CARDS (matching dashboard) ── */
+.reports-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+@media (max-width: 900px) {
+  .reports-stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .reports-stat-grid { grid-template-columns: 1fr; }
+}
+
+.stat-card {
+  position: relative;
+  background: var(--reports-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--reports-border);
+  border-radius: var(--r-xl, 20px);
+  padding: 1.4rem 1.4rem 1rem;
+  overflow: hidden;
+  transition: box-shadow 0.25s, transform 0.25s;
+}
+.stat-card:hover {
+  box-shadow: var(--reports-shadow-hover);
+  transform: translateY(-3px);
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: -20px; right: -20px;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: var(--dash-accent, #2563eb);
+  opacity: 0.1;
+  transition: opacity 0.3s;
+}
+.stat-card:hover::before { opacity: 0.15; }
+[data-theme="dark"] .stat-card::before { opacity: 0.15; }
+.stat-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--dash-accent, #2563eb), #60a5fa);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+
+.stat-card-label {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 0.3rem;
+}
+
+.stat-card-value {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card-sub {
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.stat-card-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--r-full, 9999px);
+}
+.stat-card-trend.trend-up {
+  background: var(--reports-green-light);
+  color: var(--dash-green, #059669);
+}
+[data-theme="dark"] .stat-card-trend.trend-up {
+  color: #34d399;
+}
+.stat-card-trend.trend-down {
+  background: var(--reports-red-light);
+  color: var(--dash-red, #dc2626);
+}
+[data-theme="dark"] .stat-card-trend.trend-down {
+  color: #f87171;
+}
+
+.stat-card-icon {
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm, 8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  background: var(--reports-accent-light);
+  color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .stat-card-icon {
+  color: #60a5fa;
+}
+
+/* ── CARDS (matching dashboard panels) ── */
+.card {
+  background: var(--reports-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--reports-border);
+  border-radius: var(--r-xl, 20px);
+  box-shadow: var(--reports-shadow);
+  overflow: hidden;
+  transition: box-shadow 0.25s;
+  margin-bottom: 1.25rem;
+  height: fit-content;
+}
+.card:hover {
+  box-shadow: var(--reports-shadow-hover);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.4rem;
+  border-bottom: 1px solid var(--reports-border);
+}
+.card-title {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.card-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  background: linear-gradient(to bottom, var(--dash-accent, #2563eb), var(--dash-accent-2, #7c3aed));
+  border-radius: 2px;
+}
+.card-body {
+  padding: 1.25rem 1.4rem;
+}
+
+/* ── GRID LAYOUT ── */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+@media (max-width: 900px) {
+  .grid-2 { grid-template-columns: 1fr; }
+}
+
+/* ── BAR ROWS (for payment methods, tags) ── */
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--reports-border);
+}
+.bar-row:last-child { border-bottom: 0; }
+
+.bar-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-width: 110px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-wrap {
+  flex: 1;
+  height: 8px;
+  background: var(--reports-border);
+  border-radius: var(--r-full, 9999px);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: var(--r-full, 9999px);
+  background: var(--dash-accent, #2563eb);
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-theme="dark"] .bar-fill {
+  background: #3b82f6;
+}
+
+.bar-val {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 70px;
+  text-align: right;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-count {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* ── TAG ANALYSIS ROWS ── */
+.tag-analysis-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--reports-border);
+}
+.tag-analysis-row:last-child { border-bottom: 0; }
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 1rem;
+  border-radius: var(--r-full, 9999px);
+  background: var(--reports-accent-light);
+  border: 1px solid rgba(37,99,235,0.2);
+  color: var(--dash-accent, #2563eb);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s;
+  min-width: 80px;
+  white-space: nowrap;
+}
+.tag-chip:hover {
+  background: rgba(37,99,235,0.2);
+  transform: translateY(-1px);
+}
+[data-theme="dark"] .tag-chip {
+  color: #60a5fa;
+  border-color: rgba(96,165,250,0.3);
+}
+[data-theme="dark"] .tag-chip:hover {
+  background: rgba(96,165,250,0.2);
+}
+
+/* ── BUDGET PROGRESS ── */
+.budget-progress-row {
+  margin-bottom: 1.25rem;
+}
+.budget-progress-row:last-child { margin-bottom: 0; }
+
+.budget-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+.budget-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+.budget-percent {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.text-green { color: var(--dash-green, #059669); }
+.text-amber { color: var(--dash-amber, #d97706); }
+.text-red { color: var(--dash-red, #dc2626); }
+[data-theme="dark"] .text-green { color: #34d399; }
+[data-theme="dark"] .text-amber { color: #fbbf24; }
+[data-theme="dark"] .text-red { color: #f87171; }
+
+.budget-badge {
+  font-size: 0.6rem;
+  background: var(--reports-red-light);
+  color: var(--dash-red, #dc2626);
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--r-full, 9999px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+[data-theme="dark"] .budget-badge {
+  background: rgba(239,68,68,0.2);
+  color: #f87171;
+}
+
+.progress {
+  height: 6px;
+  background: var(--reports-border);
+  border-radius: var(--r-full, 9999px);
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  border-radius: var(--r-full, 9999px);
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.progress-bar.success { background: var(--dash-green, #059669); }
+.progress-bar.warning { background: var(--dash-amber, #d97706); }
+.progress-bar.danger { background: var(--dash-red, #dc2626); }
+[data-theme="dark"] .progress-bar.success { background: #10b981; }
+[data-theme="dark"] .progress-bar.warning { background: #f59e0b; }
+[data-theme="dark"] .progress-bar.danger { background: #ef4444; }
+
+.budget-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  margin-top: 0.3rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
+
+/* ── CHART WRAP ── */
+.chart-wrap {
+  position: relative;
+  height: 280px;
+  width: 100%;
+}
+
+/* ── EMPTY STATE ── */
+.empty-state {
+  text-align: center;
+  padding: 2rem 0;
+}
+.empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  opacity: 0.5;
+}
+.empty-title {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.3rem;
+}
+.empty-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  max-width: 240px;
+  margin: 0 auto 0.75rem;
+}
+
+/* ── BUTTONS ── */
+.btn {
+  padding: 0.5rem 1.1rem;
+  border-radius: var(--r-md, 12px);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-primary {
+  background: var(--dash-accent, #2563eb);
+  color: white;
+  border-color: var(--dash-accent, #2563eb);
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .btn-primary:hover {
+  background: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59,130,246,0.5);
+}
+.btn-secondary {
+  background: var(--reports-bg);
+  border: 1px solid var(--reports-border);
+  color: var(--text-secondary);
+}
+.btn-secondary:hover {
+  border-color: var(--dash-accent, #2563eb);
+  color: var(--dash-accent, #2563eb);
+  background: var(--reports-accent-light);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-secondary:hover {
+  color: #60a5fa;
+  border-color: #60a5fa;
+}
+.btn-sm {
+  padding: 0.3rem 0.9rem;
+  font-size: 0.72rem;
+}
+.btn-xs {
+  padding: 0.2rem 0.8rem;
+  font-size: 0.68rem;
+  border-radius: var(--r-sm, 8px);
+}
+
+/* ── UTILITIES ── */
+.mono { font-family: var(--ff-mono, 'JetBrains Mono', monospace); }
+.fz-xs { font-size: 0.7rem; }
+.fz-sm { font-size: 0.8rem; }
+.fw-600 { font-weight: 600; }
+.text-3 { color: var(--text-secondary); }
+.mt-1 { margin-top: 0.25rem; }
+.mb-3 { margin-bottom: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <h1>📋 Reports</h1>
+    <p class="page-subtitle">{{ start_date|date:"d M Y" }} — {{ end_date|date:"d M Y" }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{% url 'expenses:analytics' %}" class="btn btn-secondary btn-sm">
+      <i class="bi bi-bar-chart-line me-1"></i>Analytics
+    </a>
+    <a href="{% url 'expenses:export_expenses_csv' %}" class="btn btn-secondary btn-sm">
+      <i class="bi bi-file-earmark-spreadsheet me-1"></i>CSV
+    </a>
+    <a href="{% url 'expenses:export_expenses_pdf' %}" class="btn btn-secondary btn-sm">
+      <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+    </a>
+  </div>
+</div>
+
+<!-- PERIOD SELECTOR (styled like dashboard tabs) -->
+<div class="period-selector">
+  <a href="?period=7"   class="period-btn {% if period_days == 7 %}active{% endif %}">7 days</a>
+  <a href="?period=14"  class="period-btn {% if period_days == 14 %}active{% endif %}">2 weeks</a>
+  <a href="?period=30"  class="period-btn {% if period_days == 30 %}active{% endif %}">30 days</a>
+  <a href="?period=90"  class="period-btn {% if period_days == 90 %}active{% endif %}">Quarter</a>
+  <a href="?period=180" class="period-btn {% if period_days == 180 %}active{% endif %}">6 months</a>
+  <a href="?period=365" class="period-btn {% if period_days == 365 %}active{% endif %}">1 year</a>
+  <a href="?period=730" class="period-btn {% if period_days == 730 %}active{% endif %}">2 years</a>
+</div>
+
+<!-- SUMMARY STAT CARDS (matching dashboard) -->
+<div class="reports-stat-grid">
+  <div class="stat-card">
+    <div class="stat-card-label">Total Spent</div>
+    <div class="stat-card-value">{{ total|floatformat:0 }}</div>
+    <div class="stat-card-sub">{{ count }} expenses</div>
+    <div class="stat-card-icon">💰</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-label">Average</div>
+    <div class="stat-card-value">{{ average|floatformat:0 }}</div>
+    <div class="stat-card-sub">per expense</div>
+    <div class="stat-card-icon">📊</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-label">This Month</div>
+    <div class="stat-card-value">{{ current_month_total|floatformat:0 }}</div>
+    <div class="stat-card-sub">
+      <span class="stat-card-trend {% if month_change_direction == 'up' %}trend-up{% else %}trend-down{% endif %}">
+        {% if month_change_direction == 'up' %}↑{% else %}↓{% endif %} {{ month_change|floatformat:1 }}%
+      </span>
+      vs last month
+    </div>
+    <div class="stat-card-icon">📆</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-label">Last Month</div>
+    <div class="stat-card-value">{{ prev_month_total|floatformat:0 }}</div>
+    <div class="stat-card-sub">comparison period</div>
+    <div class="stat-card-icon">📅</div>
+  </div>
+</div>
+
+<!-- CHARTS ROW -->
+<div class="grid-2 mb-3">
+  <!-- Trend chart -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📈 Spending Over Period</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrap"><canvas id="report-trend-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Tag breakdown -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">🏷️ Spending by Tag</span>
+      <a href="{% url 'expenses:analytics' %}" class="btn btn-secondary btn-xs">Full Analytics</a>
+    </div>
+    <div class="card-body">
+      {% for name, stats in top_tags %}
+      <div class="tag-analysis-row">
+        <a href="{% url 'expenses:expense_list' %}?tags={{ name }}&period={{ period_days }}" class="tag-chip">{{ name }}</a>
+        <div class="bar-wrap">
+          <div class="bar-fill" style="width:{% widthratio stats.total total 100 %}%"></div>
+        </div>
+        <span class="bar-val">{{ stats.total|floatformat:0 }}</span>
+        <span class="bar-count">{{ stats.count }}x</span>
+      </div>
+      {% empty %}
+      <div class="empty-state">
+        <div class="empty-icon">🏷️</div>
+        <div class="empty-title">No tagged expenses</div>
+        <div class="empty-desc">Tag your expenses to see breakdowns here.</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="grid-2 mb-3">
+  <!-- Payment method -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">💳 Payment Methods</span>
+    </div>
+    <div class="card-body">
+      {% for pm in payment_analysis %}
+      <div class="bar-row">
+        <span class="bar-label">{{ pm.payment_method|default:"Other" }}</span>
+        <div class="bar-wrap">
+          <div class="bar-fill" style="width:{% widthratio pm.total total 100 %}%;background:var(--dash-green, #059669)"></div>
+        </div>
+        <span class="bar-val">{{ pm.total|floatformat:0 }}</span>
+        <span class="bar-count">{{ pm.count }}x</span>
+      </div>
+      {% empty %}
+      <div class="empty-state">
+        <div class="empty-icon">💳</div>
+        <div class="empty-title">No payment data</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Budget status -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">💼 Budget Status</span>
+      <a href="{% url 'expenses:budget_list' %}" class="btn btn-secondary btn-xs">Manage</a>
+    </div>
+    <div class="card-body">
+      {% for item in budget_status %}
+      <div class="budget-progress-row">
+        <div class="budget-header">
+          <span class="budget-name">{{ item.budget.name }}</span>
+          <div class="budget-percent">
+            <span class="{% if item.percentage >= 100 %}text-red{% elif item.percentage >= 80 %}text-amber{% else %}text-green{% endif %}">
+              {{ item.percentage|floatformat:1 }}%
+            </span>
+            {% if item.percentage >= 100 %}
+            <span class="budget-badge">OVER</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="progress">
+          <div class="progress-bar
+            {% if item.percentage >= 100 %}danger
+            {% elif item.percentage >= 80 %}warning
+            {% else %}success{% endif %}"
+            style="width:min({{ item.percentage|floatformat:0 }}%,100%)">
+          </div>
+        </div>
+        <div class="budget-footer">
+          <span>{{ item.spent|floatformat:0 }} spent</span>
+          <span>{{ item.budget.amount|floatformat:0 }} limit</span>
+        </div>
+      </div>
+      {% empty %}
+      <div class="empty-state">
+        <div class="empty-icon">💼</div>
+        <div class="empty-title">No budgets set up</div>
+        <a href="{% url 'expenses:budget_create' %}" class="btn btn-primary btn-sm mt-1">+ Create Budget</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Grid and tick colors for Chart.js (with dark mode support)
+function gridColor() {
+  return document.documentElement.getAttribute('data-theme') === 'dark'
+    ? 'rgba(255,255,255,0.06)'
+    : 'rgba(0,0,0,0.05)';
+}
+function tickColor() {
+  return document.documentElement.getAttribute('data-theme') === 'dark'
+    ? '#9ca3af'
+    : '#6b7280';
+}
+function cardBg() {
+  return document.documentElement.getAttribute('data-theme') === 'dark'
+    ? '#1e2130'
+    : '#ffffff';
+}
+
+// Fetch and render trend chart
+fetch(`/expenses/api/chart-data/?group_by=month&days={{ period_days }}`)
+  .then(r => r.json())
+  .then(data => {
+    if (!data.labels || !data.labels.length) return;
+
+    const ctx = document.getElementById('report-trend-chart').getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, 0, 260);
+    gradient.addColorStop(0, 'rgba(37,99,235,0.22)');
+    gradient.addColorStop(1, 'rgba(37,99,235,0)');
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: data.labels,
+        datasets: [{
+          label: 'Spending',
+          data: data.data,
+          borderColor: '#2563eb',
+          backgroundColor: gradient,
+          borderWidth: 2.5,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#2563eb',
+          tension: 0.42,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400, easing: 'easeOutQuart' },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: cardBg(),
+            borderColor: gridColor(),
+            borderWidth: 1,
+            titleColor: document.documentElement.getAttribute('data-theme') === 'dark' ? '#f3f4f6' : '#111827',
+            bodyColor: document.documentElement.getAttribute('data-theme') === 'dark' ? '#9ca3af' : '#6b7280',
+            callbacks: {
+              label: v => `  ${Number(v.raw).toLocaleString()} UGX`
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: gridColor() },
+            ticks: { color: tickColor(), maxTicksLimit: 9 }
+          },
+          y: {
+            grid: { color: gridColor() },
+            ticks: {
+              color: tickColor(),
+              callback: v => v >= 1000 ? Math.round(v/1000) + 'k' : v
+            }
+          }
+        }
+      }
+    });
+  })
+  .catch(() => {});
+
+// Reload on theme change to update chart colors
+document.addEventListener('themechange', () => {
+  // Instead of reloading, we could update chart colors, but reload is simpler
+  location.reload();
+});
+</script>
+{% endblock %}

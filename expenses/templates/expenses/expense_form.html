@@ -1,903 +1,975 @@
-{% extends "base.html" %}
-{% load static %}
-
-{% block title %}{% if expense %}Edit{% else %}Add{% endif %} Expense{% endblock %}
+{% extends "expenses/base.html" %}
+{% block title %}{% if expense %}Edit Expense{% else %}New Expense{% endif %}{% endblock %}
 
 {% block extra_css %}
 <style>
-    :root {
-        --form-card-bg: #ffffff;
-        --form-input-bg: #f8fafc;
-        --form-border: #e2e8f0;
-        --form-text-primary: #1e293b;
-        --form-text-secondary: #64748b;
-        --form-text-tertiary: #94a3b8;
-        --form-hover-bg: #f1f5f9;
-    }
-
-    [data-theme='dark'] {
-        --form-card-bg: #1e293b;
-        --form-input-bg: #0f172a;
-        --form-border: rgba(255, 255, 255, 0.1);
-        --form-text-primary: #f1f5f9;
-        --form-text-secondary: #94a3b8;
-        --form-text-tertiary: #64748b;
-        --form-hover-bg: rgba(255, 255, 255, 0.05);
-    }
-
-    .form-container {
-        padding: 2rem;
-        max-width: 900px;
-        margin: 0 auto;
-    }
-
-    .form-header {
-        text-align: center;
-        margin-bottom: 3rem;
-    }
-
-    .form-header h1 {
-        font-size: 2.5rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    .form-header p {
-        color: var(--form-text-secondary);
-        font-size: 1.125rem;
-    }
-
-    .form-card {
-        background: var(--form-card-bg);
-        border-radius: 20px;
-        padding: 2.5rem;
-        border: 1px solid var(--form-border);
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
-    }
-
-    [data-theme='dark'] .form-card {
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    }
-
-    .form-group {
-        margin-bottom: 2rem;
-    }
-
-    .form-label {
-        display: block;
-        margin-bottom: 0.75rem;
-        font-weight: 600;
-        color: var(--form-text-primary);
-        font-size: 0.875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .form-label.required::after {
-        content: " *";
-        color: #f87171;
-    }
-
-    .form-input {
-        width: 100%;
-        padding: 1rem 1.25rem;
-        background: var(--form-input-bg);
-        border: 2px solid var(--form-border);
-        border-radius: 12px;
-        color: var(--form-text-primary);
-        font-size: 1rem;
-        transition: all 0.3s;
-        font-family: 'Inter', sans-serif;
-    }
-
-    .form-input:focus {
-        outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
-        background: var(--form-input-bg);
-    }
-
-    .form-input::placeholder {
-        color: var(--form-text-tertiary);
-    }
-
-    .form-input.large {
-        font-size: 2rem;
-        font-weight: 700;
-        text-align: center;
-        padding: 1.5rem;
-    }
-
-    textarea.form-input {
-        resize: vertical;
-        min-height: 100px;
-    }
-
-    .input-icon {
-        position: relative;
-    }
-
-    .input-icon i {
-        position: absolute;
-        left: 1.25rem;
-        top: 50%;
-        transform: translateY(-50%);
-        color: var(--form-text-tertiary);
-        font-size: 1.25rem;
-    }
-
-    .input-icon .form-input {
-        padding-left: 3.5rem;
-    }
-
-    /* Tag Input */
-    .tag-input-container {
-        position: relative;
-    }
-
-    .tag-pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        margin-bottom: 0.75rem;
-    }
-
-    .tag-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border-radius: 8px;
-        font-size: 0.875rem;
-        font-weight: 500;
-    }
-
-    .tag-pill button {
-        background: none;
-        border: none;
-        color: white;
-        cursor: pointer;
-        font-size: 1rem;
-        padding: 0;
-        line-height: 1;
-        opacity: 0.7;
-        transition: opacity 0.2s;
-    }
-
-    .tag-pill button:hover {
-        opacity: 1;
-    }
-
-    .tag-suggestions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        margin-top: 0.5rem;
-    }
-
-    .tag-suggestion {
-        padding: 0.5rem 1rem;
-        background: rgba(102, 126, 234, 0.1);
-        color: #818cf8;
-        border-radius: 8px;
-        font-size: 0.875rem;
-        cursor: pointer;
-        transition: all 0.2s;
-        border: 2px solid transparent;
-    }
-
-    .tag-suggestion:hover {
-        background: rgba(102, 126, 234, 0.2);
-        border-color: #667eea;
-    }
-
-    /* File Upload */
-    .file-upload {
-        border: 2px dashed var(--form-border);
-        border-radius: 12px;
-        padding: 2rem;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.3s;
-        position: relative;
-    }
-
-    .file-upload:hover {
-        border-color: #667eea;
-        background: rgba(102, 126, 234, 0.05);
-    }
-
-    .file-upload input[type="file"] {
-        position: absolute;
-        opacity: 0;
-        cursor: pointer;
-        width: 100%;
-        height: 100%;
-        top: 0;
-        left: 0;
-    }
-
-    .file-upload-icon {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-        opacity: 0.5;
-    }
-
-    .file-upload-text {
-        color: var(--form-text-secondary);
-    }
-
-    .file-preview {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 1rem;
-        background: rgba(102, 126, 234, 0.1);
-        border-radius: 12px;
-        margin-top: 1rem;
-    }
-
-    .file-preview img {
-        width: 60px;
-        height: 60px;
-        object-fit: cover;
-        border-radius: 8px;
-    }
-
-    .file-preview-info {
-        flex: 1;
-    }
-
-    .file-preview-name {
-        font-weight: 600;
-        margin-bottom: 0.25rem;
-        color: var(--form-text-primary);
-    }
-
-    .file-preview-size {
-        font-size: 0.875rem;
-        color: var(--form-text-tertiary);
-    }
-
-    .file-preview-remove {
-        background: rgba(239, 68, 68, 0.2);
-        color: #f87171;
-        border: none;
-        width: 36px;
-        height: 36px;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-
-    .file-preview-remove:hover {
-        background: rgba(239, 68, 68, 0.3);
-    }
-
-    /* Payment Method Selector */
-    .payment-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 1rem;
-    }
-
-    .payment-option {
-        position: relative;
-    }
-
-    .payment-option input {
-        position: absolute;
-        opacity: 0;
-    }
-
-    .payment-label {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 1.5rem 1rem;
-        background: var(--form-input-bg);
-        border: 2px solid var(--form-border);
-        border-radius: 12px;
-        cursor: pointer;
-        transition: all 0.3s;
-        text-align: center;
-        color: var(--form-text-primary);
-    }
-
-    .payment-label:hover {
-        background: rgba(102, 126, 234, 0.1);
-        border-color: #667eea;
-    }
-
-    .payment-option input:checked + .payment-label {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-color: #667eea;
-        color: white;
-    }
-
-    .payment-icon {
-        font-size: 2rem;
-    }
-
-    .payment-name {
-        font-weight: 600;
-        font-size: 0.875rem;
-    }
-
-    /* Form Actions */
-    .form-actions {
-        display: flex;
-        gap: 1rem;
-        margin-top: 2.5rem;
-    }
-
-    .btn-submit {
-        flex: 1;
-        padding: 1.25rem 2rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        font-size: 1.125rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all 0.3s;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .btn-submit:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 15px 35px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-submit:active {
-        transform: translateY(0);
-    }
-
-    .btn-submit::before {
-        content: '';
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 0;
-        height: 0;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.3);
-        transform: translate(-50%, -50%);
-        transition: width 0.6s, height 0.6s;
-    }
-
-    .btn-submit:hover::before {
-        width: 300px;
-        height: 300px;
-    }
-
-    .btn-cancel {
-        padding: 1.25rem 2rem;
-        background: rgba(239, 68, 68, 0.1);
-        color: #f87171;
-        border: 2px solid #f87171;
-        border-radius: 12px;
-        font-size: 1.125rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all 0.3s;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .btn-cancel:hover {
-        background: rgba(239, 68, 68, 0.2);
-    }
-
-    /* Shortcuts Panel */
-    .shortcuts-panel {
-        position: fixed;
-        bottom: 2rem;
-        right: 2rem;
-        background: var(--form-card-bg);
-        border-radius: 12px;
-        padding: 1rem 1.5rem;
-        border: 1px solid var(--form-border);
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-        opacity: 0.8;
-        transition: opacity 0.2s;
-    }
-
-    [data-theme='dark'] .shortcuts-panel {
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-    }
-
-    .shortcuts-panel:hover {
-        opacity: 1;
-    }
-
-    .shortcuts-title {
-        font-size: 0.75rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 0.75rem;
-        color: var(--form-text-secondary);
-    }
-
-    .shortcut-item {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 0.5rem;
-        font-size: 0.875rem;
-        color: var(--form-text-primary);
-    }
-
-    .shortcut-key {
-        background: rgba(102, 126, 234, 0.2);
-        color: #818cf8;
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
-        font-family: monospace;
-        font-weight: 600;
-    }
-
-    /* Animations */
-    @keyframes slideInUp {
-        from {
-            opacity: 0;
-            transform: translateY(30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    .form-card {
-        animation: slideInUp 0.5s ease-out;
-    }
-
-    .form-group {
-        animation: slideInUp 0.5s ease-out;
-        animation-fill-mode: both;
-    }
-
-    .form-group:nth-child(1) { animation-delay: 0.1s; }
-    .form-group:nth-child(2) { animation-delay: 0.15s; }
-    .form-group:nth-child(3) { animation-delay: 0.2s; }
-    .form-group:nth-child(4) { animation-delay: 0.25s; }
-    .form-group:nth-child(5) { animation-delay: 0.3s; }
-    .form-group:nth-child(6) { animation-delay: 0.35s; }
-
-    /* Mobile Responsive */
-    @media (max-width: 768px) {
-        .form-container {
-            padding: 1rem;
-        }
-
-        .form-card {
-            padding: 1.5rem;
-        }
-
-        .form-actions {
-            flex-direction: column;
-        }
-
-        .shortcuts-panel {
-            display: none;
-        }
-
-        .payment-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
-    }
+.form-page {
+  max-width: 840px;
+  margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ── DARK THEME VARIABLES ── */
+:root {
+  --form-bg: rgba(255,255,255,0.85);
+  --form-border: rgba(0,0,0,0.07);
+  --form-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+  --form-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.10);
+  --form-input-bg: rgba(0,0,0,0.02);
+  --form-accent-light: rgba(37,99,235,0.1);
+}
+
+[data-theme="dark"] {
+  --form-bg: rgba(30,35,48,0.90);
+  --form-border: rgba(255,255,255,0.07);
+  --form-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.4);
+  --form-shadow-hover: 0 4px 12px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.5);
+  --form-input-bg: rgba(255,255,255,0.05);
+  --form-accent-light: rgba(37,99,235,0.2);
+}
+
+/* ── PAGE HEADER MATCHING DASHBOARD ── */
+.form-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--form-border);
+}
+.form-eyebrow {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dash-accent, #2563eb);
+  margin-bottom: 0.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.form-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 18px;
+  height: 2px;
+  background: var(--dash-accent, #2563eb);
+  border-radius: 2px;
+}
+.form-title {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 0.3rem;
+}
+.form-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.form-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── PANEL CARDS (matching dashboard) ── */
+.form-panel {
+  background: var(--form-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--form-border);
+  border-radius: var(--r-xl, 20px);
+  box-shadow: var(--form-shadow);
+  overflow: hidden;
+  transition: box-shadow 0.25s;
+  margin-bottom: 1.25rem;
+}
+.form-panel:hover {
+  box-shadow: var(--form-shadow-hover);
+}
+
+.form-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.4rem;
+  border-bottom: 1px solid var(--form-border);
+}
+.form-panel-title {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.form-panel-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--form-accent-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: var(--dash-accent, #2563eb);
+}
+.form-panel-body {
+  padding: 1.25rem 1.4rem;
+}
+
+/* ── AMOUNT SECTION (special treatment) ── */
+.amount-panel {
+  background: var(--form-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--form-border);
+  border-radius: var(--r-xl, 20px);
+  padding: 1.4rem 1.4rem 1rem;
+  margin-bottom: 1.25rem;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.25s;
+}
+.amount-panel:hover {
+  box-shadow: var(--form-shadow-hover);
+}
+.amount-panel::before {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: var(--dash-accent, #2563eb);
+  opacity: 0.1;
+  transition: opacity 0.3s;
+}
+[data-theme="dark"] .amount-panel::before {
+  opacity: 0.15;
+}
+.amount-panel:hover::before {
+  opacity: 0.15;
+}
+[data-theme="dark"] .amount-panel:hover::before {
+  opacity: 0.2;
+}
+.amount-panel::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--dash-accent, #2563eb), #60a5fa);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+
+.amount-label {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 0.8rem;
+}
+
+.amount-input-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  border-bottom: 2px solid var(--form-border);
+  padding-bottom: 0.5rem;
+  transition: border-color 0.2s;
+}
+.amount-input-row:focus-within {
+  border-color: var(--dash-accent, #2563eb);
+}
+
+.amount-currency {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.amount-input {
+  flex: 1;
+  font-size: 2.4rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-weight: 700;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  outline: 0;
+  min-width: 0;
+  transition: color 0.2s;
+  font-variant-numeric: tabular-nums;
+}
+.amount-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+.amount-input:focus {
+  color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .amount-input:focus {
+  color: #60a5fa;
+}
+
+.amount-words {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 0.75rem;
+  min-height: 18px;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── FORM ROW (two columns) ── */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+@media (max-width: 560px) {
+  .form-row { grid-template-columns: 1fr; }
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+.form-group:last-child { margin-bottom: 0; }
+
+.form-label {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.form-control {
+  width: 100%;
+  background: var(--form-input-bg);
+  border: 1px solid var(--form-border);
+  border-radius: var(--r-md, 12px);
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  transition: all 0.2s;
+}
+.form-control:focus {
+  outline: none;
+  border-color: var(--dash-accent, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+  background: var(--form-bg);
+}
+[data-theme="dark"] .form-control:focus {
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.2);
+  border-color: #60a5fa;
+}
+.form-control::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.5;
+  font-size: 0.8rem;
+}
+textarea.form-control {
+  resize: vertical;
+  min-height: 80px;
+}
+
+select.form-control {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 1rem;
+  padding-right: 2.5rem;
+}
+[data-theme="dark"] select.form-control {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+.form-hint {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  margin-top: 0.4rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
+
+.form-error {
+  font-size: 0.75rem;
+  color: var(--dash-red, #dc2626);
+  margin-top: 0.4rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
+
+/* ── TAG SYSTEM (enhanced) ── */
+.tag-input-wrap {
+  position: relative;
+}
+
+.tag-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  background: var(--form-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--form-border);
+  border-radius: var(--r-lg, 16px);
+  box-shadow: var(--form-shadow-hover);
+  z-index: 100;
+  max-height: 200px;
+  overflow-y: auto;
+  display: none;
+}
+.tag-suggestions.open { display: block; }
+
+.tag-suggestion {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--form-border);
+}
+.tag-suggestion:last-child { border-bottom: none; }
+.tag-suggestion:hover {
+  background: var(--form-accent-light);
+  color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .tag-suggestion:hover {
+  color: #60a5fa;
+}
+
+.tags-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  min-height: 32px;
+}
+
+.tag-chip-removable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--r-full, 9999px);
+  background: var(--form-accent-light);
+  border: 1px solid rgba(37,99,235,0.2);
+  color: var(--dash-accent, #2563eb);
+  font-size: 0.78rem;
+  font-weight: 500;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  animation: tagPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-theme="dark"] .tag-chip-removable {
+  border-color: rgba(96,165,250,0.3);
+  color: #60a5fa;
+}
+@keyframes tagPop {
+  0% { transform: scale(0.8); opacity: 0; }
+  80% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.tag-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: currentColor;
+  padding: 0;
+  line-height: 1;
+  font-size: 0.8rem;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tag-remove:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* ── OPTIONS ROW ── */
+.options-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.option-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--r-full, 9999px);
+  border: 1px solid var(--form-border);
+  background: var(--form-bg);
+  transition: all 0.2s;
+  user-select: none;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
+.option-toggle:hover {
+  border-color: var(--dash-accent, #2563eb);
+  background: var(--form-accent-light);
+}
+.option-toggle:has(input:checked) {
+  border-color: var(--dash-accent, #2563eb);
+  background: var(--form-accent-light);
+  color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .option-toggle:has(input:checked) {
+  color: #60a5fa;
+}
+.option-toggle input {
+  accent-color: var(--dash-accent, #2563eb);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+/* ── RECEIPT DROP ZONE ── */
+.receipt-drop {
+  border: 2px dashed var(--form-border);
+  border-radius: var(--r-lg, 16px);
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  background: var(--form-input-bg);
+}
+.receipt-drop:hover, .receipt-drop.drag-over {
+  border-color: var(--dash-accent, #2563eb);
+  background: var(--form-accent-light);
+}
+.receipt-drop input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+.receipt-preview {
+  max-height: 180px;
+  border-radius: var(--r-md, 12px);
+  margin-top: 1rem;
+  box-shadow: var(--form-shadow);
+}
+
+.receipt-file-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  padding: 0.5rem;
+  background: var(--form-accent-light);
+  border-radius: var(--r-md, 12px);
+}
+
+/* ── CHAR COUNTER ── */
+.char-counter {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  text-align: right;
+  margin-top: 4px;
+  transition: color 0.2s;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-variant-numeric: tabular-nums;
+}
+.char-counter.warn {
+  color: var(--dash-amber, #d97706);
+}
+.char-counter.over {
+  color: var(--dash-red, #dc2626);
+  font-weight: 600;
+}
+
+/* ── FORM FOOTER ── */
+.form-footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--form-border);
+  flex-wrap: wrap;
+}
+
+/* ── BUTTONS (matching dashboard) ── */
+.btn {
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--r-md, 12px);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-primary {
+  background: var(--dash-accent, #2563eb);
+  color: white;
+  border-color: var(--dash-accent, #2563eb);
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .btn-primary:hover {
+  background: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59,130,246,0.5);
+}
+.btn-secondary {
+  background: var(--form-bg);
+  border: 1px solid var(--form-border);
+  color: var(--text-secondary);
+}
+.btn-secondary:hover {
+  border-color: var(--dash-accent, #2563eb);
+  color: var(--dash-accent, #2563eb);
+  background: var(--form-accent-light);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-secondary:hover {
+  color: #60a5fa;
+  border-color: #60a5fa;
+}
+.btn-danger {
+  background: rgba(220,38,38,0.1);
+  border-color: rgba(220,38,38,0.2);
+  color: var(--dash-red, #dc2626);
+}
+.btn-danger:hover {
+  background: rgba(220,38,38,0.15);
+  border-color: rgba(220,38,38,0.3);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-danger {
+  background: rgba(239,68,68,0.2);
+  color: #ef4444;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.kbd-hint {
+  display: inline-block;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: rgba(255,255,255,0.18);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+[data-theme="dark"] .kbd-hint {
+  background: rgba(255,255,255,0.1);
+}
+.btn-primary .kbd-hint {
+  background: rgba(255,255,255,0.2);
+}
+
+/* ── ALERTS ── */
+.alert {
+  background: var(--form-accent-light);
+  border: 1px solid rgba(37,99,235,0.2);
+  border-radius: var(--r-lg, 16px);
+  padding: 1rem 1.4rem;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+.alert-danger {
+  background: rgba(220,38,38,0.1);
+  border-color: rgba(220,38,38,0.2);
+  color: var(--dash-red, #dc2626);
+}
+[data-theme="dark"] .alert-danger {
+  background: rgba(239,68,68,0.15);
+  border-color: rgba(239,68,68,0.3);
+  color: #ef4444;
+}
+.alert ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.5rem;
+}
+.alert li {
+  margin-bottom: 0.25rem;
+}
+
+/* ── EXISTING RECEIPT ── */
+.existing-receipt {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--form-input-bg);
+  border: 1px solid var(--form-border);
+  border-radius: var(--r-md, 12px);
+  margin-bottom: 1rem;
+}
+
+/* ── UTILITIES ── */
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.text-accent {
+  color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .text-accent {
+  color: #60a5fa;
+}
+.text-3 {
+  color: var(--text-secondary);
+}
+.fz-sm {
+  font-size: 0.85rem;
+}
+.fz-xs {
+  font-size: 0.75rem;
+}
+.fw-600 {
+  font-weight: 600;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="form-container">
-    <div class="form-header">
-        <h1>{% if expense %}✏️ Edit Expense{% else %}➕ Add New Expense{% endif %}</h1>
-        <p>{% if expense %}Update your expense details{% else %}Track your spending in seconds{% endif %}</p>
+<div class="form-page">
+  <!-- ─── FORM HEADER (matching dashboard) ─── -->
+  <div class="form-header">
+    <div>
+      <div class="form-eyebrow">Prime Books · Expense Management</div>
+      <h1 class="form-title">{% if expense %}✏️ Edit Expense{% else %}➕ New Expense{% endif %}</h1>
+      <p class="form-subtitle">
+        {% if expense %}
+          Update the details below. Changes will be reflected immediately.
+        {% else %}
+          Log a new expense. <span class="kbd-hint">Ctrl+↵ to save</span>
+        {% endif %}
+      </p>
+    </div>
+    <div class="form-header-actions">
+      <a href="{% url 'expenses:expense_list' %}" class="btn btn-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Back
+      </a>
+      {% if expense %}
+      <a href="{% url 'expenses:expense_detail' expense.pk %}" class="btn btn-secondary btn-sm">
+        <i class="bi bi-eye me-1"></i>View
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" id="expense-form" novalidate>
+    {% csrf_token %}
+
+    <!-- AMOUNT PANEL (prominent, with accent) -->
+    <div class="amount-panel">
+      <span class="amount-label">Amount (UGX) *</span>
+      <div class="amount-input-row">
+        <span class="amount-currency">UGX</span>
+        <input type="number" name="amount" id="id_amount"
+          value="{% if expense %}{{ expense.amount }}{% endif %}"
+          class="amount-input" placeholder="0.00" step="0.01" min="0.01" required
+          oninput="updateAmountPreview(this.value)" />
+      </div>
+      <div class="amount-words" id="amount-words"></div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Date *</label>
+          <input type="date" name="date" id="id_date"
+            value="{% if expense %}{{ expense.date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}"
+            class="form-control" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Payment Method</label>
+          <select name="payment_method" class="form-control">
+            {% for val,label in form.fields.payment_method.choices %}
+            {% if val %}<option value="{{ val }}" {% if expense.payment_method == val %}selected{% endif %}>{{ label }}</option>{% endif %}
+            {% endfor %}
+          </select>
+        </div>
+      </div>
     </div>
 
-    <form method="post" enctype="multipart/form-data" id="expenseForm" class="form-card">
-        {% csrf_token %}
-
-        <!-- Amount (Big and Prominent) -->
+    <!-- DESCRIPTION & TAGS & NOTES -->
+    <div class="form-panel">
+      <div class="form-panel-header">
+        <div class="form-panel-title">
+          <div class="form-panel-icon">📝</div>
+          Details
+        </div>
+      </div>
+      <div class="form-panel-body">
         <div class="form-group">
-            <label for="id_amount" class="form-label required">Amount</label>
-            <div class="input-icon">
-                <i class="fas fa-dollar-sign"></i>
-                <input type="number"
-                       name="amount"
-                       id="id_amount"
-                       class="form-input large"
-                       placeholder="0.00"
-                       step="0.01"
-                       min="0.01"
-                       value="{{ form.amount.value|default:'' }}"
-                       required
-                       autofocus>
-            </div>
+          <label class="form-label">Description *</label>
+          <input type="text" name="description" id="id_description"
+            value="{% if expense %}{{ expense.description }}{% endif %}"
+            class="form-control" placeholder="What was this for?" required autofocus
+            maxlength="200" oninput="updateCharCount(this, 'desc-counter', 200)" />
+          <div class="char-counter" id="desc-counter">{% if expense %}{{ expense.description|length }}{% else %}0{% endif %}/200</div>
+          {% if form.description.errors %}<div class="form-error">{{ form.description.errors|join:", " }}</div>{% endif %}
         </div>
 
-        <!-- Description -->
+        <!-- TAGS -->
         <div class="form-group">
-            <label for="id_description" class="form-label required">Description</label>
-            <input type="text"
-                   name="description"
-                   id="id_description"
-                   class="form-input"
-                   placeholder="e.g., Grocery shopping at Walmart"
-                   value="{{ form.description.value|default:'' }}"
-                   maxlength="500"
-                   required>
+          <label class="form-label">Tags</label>
+          <div class="tag-input-wrap">
+            <input type="text" id="tag-input" class="form-control"
+              placeholder="Type tag name and press Enter or comma…"
+              autocomplete="off" />
+            <div class="tag-suggestions" id="tag-suggestions"></div>
+          </div>
+          <div class="tags-preview" id="tags-preview"></div>
+          <input type="hidden" name="tags" id="tags-hidden"
+            value="{% if expense %}{% for tag in expense.tags.all %}{{ tag.name }}{% if not forloop.last %},{% endif %}{% endfor %}{% endif %}" />
+          <div class="form-hint">Press Enter or comma to add. Click ✕ to remove.</div>
         </div>
 
-        <!-- Date -->
         <div class="form-group">
-            <label for="id_date" class="form-label required">Date</label>
-            <input type="date"
-                   name="date"
-                   id="id_date"
-                   class="form-input"
-                   value="{{ form.date.value|default:'' }}"
-                   required>
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-control" rows="3"
+            placeholder="Additional notes, context, or references…"
+            maxlength="1000" oninput="updateCharCount(this, 'notes-counter', 1000)">{% if expense %}{{ expense.notes }}{% endif %}</textarea>
+          <div class="char-counter" id="notes-counter">{% if expense %}{{ expense.notes|length }}{% else %}0{% endif %}/1000</div>
         </div>
-
-        <!-- Tags -->
-        <div class="form-group">
-            <label for="id_tags" class="form-label">Tags</label>
-            <div class="tag-input-container">
-                <div class="tag-pills" id="tagPills">
-                    {% if expense %}
-                        {% for tag in expense.tags.all %}
-                        <span class="tag-pill">
-                            {{ tag.name }}
-                            <button type="button" onclick="removeTag('{{ tag.name }}')">×</button>
-                        </span>
-                        {% endfor %}
-                    {% endif %}
-                </div>
-                <input type="text"
-                       id="tagInput"
-                       class="form-input"
-                       placeholder="Add tags (press Enter or comma to add)"
-                       autocomplete="off">
-                <input type="hidden" name="tags" id="tagsHidden" value="{{ form.tags.value|default:'' }}">
-
-                <div class="tag-suggestions" id="tagSuggestions">
-                    {% for tag in recent_tags %}
-                    <span class="tag-suggestion" onclick="addTag('{{ tag }}')">{{ tag }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Payment Method -->
-        <div class="form-group">
-            <label class="form-label">Payment Method</label>
-            <div class="payment-grid">
-                {% for value, label in form.payment_method.field.choices %}
-                <div class="payment-option">
-                    <input type="radio"
-                           name="payment_method"
-                           value="{{ value }}"
-                           id="payment_{{ value }}"
-                           {% if form.payment_method.value == value %}checked{% endif %}>
-                    <label for="payment_{{ value }}" class="payment-label">
-                        <span class="payment-icon">{{ label|slice:":2" }}</span>
-                        <span class="payment-name">{{ label|slice:"3:" }}</span>
-                    </label>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-
-        <!-- Receipt Upload -->
-        <div class="form-group">
-            <label class="form-label">Receipt (Optional)</label>
-            {% if expense and expense.receipt %}
-            <div class="file-preview" id="existingReceipt">
-                <img src="{{ expense.receipt.url }}" alt="Receipt" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📄</text></svg>'">
-                <div class="file-preview-info">
-                    <div class="file-preview-name">Current Receipt</div>
-                    <div class="file-preview-size">Uploaded</div>
-                </div>
-                <button type="button" class="file-preview-remove" onclick="removeExistingReceipt()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            {% endif %}
-            <div class="file-upload" id="fileUpload" {% if expense and expense.receipt %}style="display:none;"{% endif %}>
-                <input type="file"
-                       name="receipt"
-                       id="id_receipt"
-                       accept="image/*,.pdf"
-                       onchange="handleFileSelect(event)">
-                <div class="file-upload-icon">📎</div>
-                <div class="file-upload-text">
-                    <strong>Click to upload</strong> or drag and drop<br>
-                    <small>PNG, JPG, PDF up to 10MB</small>
-                </div>
-            </div>
-            <div class="file-preview" id="filePreview" style="display: none;">
-                <img id="previewImage" src="" alt="Preview">
-                <div class="file-preview-info">
-                    <div class="file-preview-name" id="fileName"></div>
-                    <div class="file-preview-size" id="fileSize"></div>
-                </div>
-                <button type="button" class="file-preview-remove" onclick="removeFile()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-        </div>
-
-        <!-- Notes -->
-        <div class="form-group">
-            <label for="id_notes" class="form-label">Notes (Optional)</label>
-            <textarea name="notes"
-                      id="id_notes"
-                      class="form-input"
-                      placeholder="Add any additional notes or details..."
-                      rows="3">{{ form.notes.value|default:'' }}</textarea>
-        </div>
-
-        <!-- Quick Flags -->
-        <div class="form-group">
-            <div style="display: flex; gap: 1.5rem;">
-                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--form-text-primary);">
-                    <input type="checkbox"
-                           name="is_recurring"
-                           id="id_is_recurring"
-                           {% if form.is_recurring.value %}checked{% endif %}
-                           style="width: 20px; height: 20px; cursor: pointer;">
-                    <span>🔄 Recurring Expense</span>
-                </label>
-
-                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--form-text-primary);">
-                    <input type="checkbox"
-                           name="is_important"
-                           id="id_is_important"
-                           {% if form.is_important.value %}checked{% endif %}
-                           style="width: 20px; height: 20px; cursor: pointer;">
-                    <span>⭐ Important</span>
-                </label>
-            </div>
-        </div>
-
-        <!-- Form Actions -->
-        <div class="form-actions">
-            <button type="submit" class="btn-submit">
-                <span style="position: relative; z-index: 1;">
-                    <i class="fas fa-save"></i>
-                    {% if expense %}Update Expense{% else %}Save Expense{% endif %}
-                </span>
-            </button>
-            <a href="{% url 'expenses:expense_list' %}" class="btn-cancel">
-                <i class="fas fa-times"></i> Cancel
-            </a>
-        </div>
-    </form>
-</div>
-
-<!-- Keyboard Shortcuts Panel -->
-<div class="shortcuts-panel">
-    <div class="shortcuts-title">⌨️ Keyboard Shortcuts</div>
-    <div class="shortcut-item">
-        <span class="shortcut-key">Ctrl+S</span>
-        <span>Save</span>
+      </div>
     </div>
-    <div class="shortcut-item">
-        <span class="shortcut-key">Ctrl+Enter</span>
-        <span>Save & New</span>
+
+    <!-- OPTIONS PANEL -->
+    <div class="form-panel">
+      <div class="form-panel-header">
+        <div class="form-panel-title">
+          <div class="form-panel-icon">⚙️</div>
+          Options
+        </div>
+      </div>
+      <div class="form-panel-body">
+        <div class="options-row">
+          <label class="option-toggle">
+            <input type="checkbox" name="is_recurring" {% if expense.is_recurring %}checked{% endif %} />
+            🔁 Recurring expense
+          </label>
+          <label class="option-toggle">
+            <input type="checkbox" name="is_important" {% if expense.is_important %}checked{% endif %} />
+            ⭐ Mark as important
+          </label>
+        </div>
+      </div>
     </div>
-    <div class="shortcut-item">
-        <span class="shortcut-key">Esc</span>
-        <span>Cancel</span>
+
+    <!-- RECEIPT PANEL -->
+    <div class="form-panel">
+      <div class="form-panel-header">
+        <div class="form-panel-title">
+          <div class="form-panel-icon">📎</div>
+          Receipt / Attachment
+        </div>
+      </div>
+      <div class="form-panel-body">
+        {% if expense.receipt %}
+        <div class="existing-receipt">
+          <span style="font-size:1.4rem">📄</span>
+          <div style="flex:1;min-width:0">
+            <div class="fz-sm fw-600 truncate">{{ expense.receipt.name }}</div>
+            <a href="{{ expense.receipt.url }}" target="_blank" class="fz-xs text-accent">Open file ↗</a>
+          </div>
+          <label class="fz-xs" style="cursor:pointer;display:flex;align-items:center;gap:5px;color:var(--dash-red)">
+            <input type="checkbox" name="receipt-clear" style="accent-color:var(--dash-red)" /> Remove
+          </label>
+        </div>
+        {% endif %}
+
+        <div class="receipt-drop" id="receipt-drop">
+          <input type="file" name="receipt" id="id_receipt" accept="image/*,.pdf" onchange="previewReceipt(this)" />
+          <div id="receipt-placeholder">
+            <div style="font-size:2.5rem;margin-bottom:0.75rem">📎</div>
+            <div class="fw-600 fz-sm">Drop file here or click to browse</div>
+            <div class="fz-xs text-3 mt-1">Images (JPG, PNG) or PDF · max 10MB</div>
+          </div>
+          <img id="receipt-preview" class="receipt-preview" style="display:none" alt="Receipt preview" />
+        </div>
+      </div>
     </div>
+
+    <!-- ERRORS -->
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger">
+      <strong>❌ Please fix the following:</strong>
+      <ul>
+        {% for err in form.non_field_errors %}<li>{{ err }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <div class="form-footer">
+      <button type="submit" class="btn btn-primary" id="submit-btn">
+        {% if expense %}💾 Save Changes{% else %}✅ Add Expense{% endif %}
+        <span class="kbd-hint">Ctrl ↵</span>
+      </button>
+      <a href="{% url 'expenses:expense_list' %}" class="btn btn-secondary">
+        Cancel <span class="kbd-hint">Esc</span>
+      </a>
+      {% if expense %}
+      <a href="{% url 'expenses:expense_create' %}?clone={{ expense.pk }}" class="btn btn-secondary" style="margin-left:auto">📝 Duplicate</a>
+      <a href="{% url 'expenses:expense_delete' expense.pk %}" class="btn btn-danger" onclick="return confirm('Delete this expense?')">🗑️ Delete</a>
+      {% endif %}
+    </div>
+  </form>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// Tag Management
-let tags = new Set();
-
-{% if expense %}
-    {% for tag in expense.tags.all %}
-    tags.add('{{ tag.name }}');
-    {% endfor %}
-{% endif %}
-
-function updateTagsInput() {
-    document.getElementById('tagsHidden').value = Array.from(tags).join(',');
-}
-
-function addTag(tagName) {
-    tagName = tagName.trim().toLowerCase();
-    if (tagName && !tags.has(tagName)) {
-        tags.add(tagName);
-        renderTags();
-        updateTagsInput();
-    }
-    document.getElementById('tagInput').value = '';
-}
-
-function removeTag(tagName) {
-    tags.delete(tagName);
-    renderTags();
-    updateTagsInput();
-}
+/* ── TAG SYSTEM ── */
+const tagsHidden = document.getElementById('tags-hidden');
+let tags = tagsHidden.value ? tagsHidden.value.split(',').map(t => t.trim()).filter(Boolean) : [];
+const allTagSuggestions = {{ all_tags|safe|default:"[]" }};
 
 function renderTags() {
-    const container = document.getElementById('tagPills');
-    container.innerHTML = '';
-
-    tags.forEach(tag => {
-        const pill = document.createElement('span');
-        pill.className = 'tag-pill';
-        pill.innerHTML = `
-            ${tag}
-            <button type="button" onclick="removeTag('${tag}')">×</button>
-        `;
-        container.appendChild(pill);
-    });
+  document.getElementById('tags-preview').innerHTML = tags.map((t, i) =>
+    `<span class="tag-chip-removable">${t}<button type="button" class="tag-remove" onclick="removeTag(${i})" title="Remove tag">✕</button></span>`
+  ).join('');
+  tagsHidden.value = tags.join(',');
 }
+function addTag(val) {
+  const t = val.trim().replace(/[,]/g, '');
+  if (t && !tags.includes(t)) { tags.push(t); renderTags(); }
+  document.getElementById('tag-input').value = '';
+  document.getElementById('tag-suggestions').classList.remove('open');
+}
+function removeTag(i) { tags.splice(i, 1); renderTags(); }
+renderTags();
 
-// Tag Input Handler
-const tagInput = document.getElementById('tagInput');
-tagInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' || e.key === ',') {
-        e.preventDefault();
-        addTag(this.value);
-    }
+const tagInput = document.getElementById('tag-input');
+const tagSugs  = document.getElementById('tag-suggestions');
+tagInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(tagInput.value); }
+  if (e.key === 'Backspace' && !tagInput.value && tags.length) { removeTag(tags.length - 1); }
 });
-
-tagInput.addEventListener('blur', function() {
-    if (this.value.trim()) {
-        addTag(this.value);
-    }
-});
-
-// Tag Autocomplete
 tagInput.addEventListener('input', function() {
-    const query = this.value.toLowerCase();
-    if (query.length < 2) return;
+  const q = this.value.toLowerCase();
+  const matches = allTagSuggestions.filter(t => t.toLowerCase().includes(q) && !tags.includes(t)).slice(0, 8);
+  tagSugs.innerHTML = matches.map(t =>
+    `<div class="tag-suggestion" onclick="addTag('${t}')"><span style="font-size:.9rem">🏷️</span>${t}</div>`
+  ).join('');
+  tagSugs.classList.toggle('open', matches.length > 0 && q.length > 0);
+});
+document.addEventListener('click', e => { if (!e.target.closest('.tag-input-wrap')) tagSugs.classList.remove('open'); });
 
-    fetch(`/expenses/api/tags/?q=${encodeURIComponent(query)}`)
-        .then(response => response.json())
-        .then(data => {
-            const suggestions = document.getElementById('tagSuggestions');
-            suggestions.innerHTML = '';
-
-            data.tags.forEach(tag => {
-                if (!tags.has(tag)) {
-                    const span = document.createElement('span');
-                    span.className = 'tag-suggestion';
-                    span.textContent = tag;
-                    span.onclick = () => addTag(tag);
-                    suggestions.appendChild(span);
-                }
-            });
-        });
+/* ── RECEIPT DRAG & DROP ── */
+const drop = document.getElementById('receipt-drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) {
+    const dt = new DataTransfer(); dt.items.add(f);
+    document.getElementById('id_receipt').files = dt.files;
+    previewReceipt(document.getElementById('id_receipt'));
+  }
 });
 
-// File Upload Handler
-function handleFileSelect(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    // Show preview
-    document.getElementById('fileUpload').style.display = 'none';
-    document.getElementById('filePreview').style.display = 'flex';
-
-    // Set file info
-    document.getElementById('fileName').textContent = file.name;
-    document.getElementById('fileSize').textContent = formatFileSize(file.size);
-
-    // Show image preview
-    if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            document.getElementById('previewImage').src = e.target.result;
-        };
-        reader.readAsDataURL(file);
-    } else {
-        document.getElementById('previewImage').src = 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📄</text></svg>';
-    }
+function previewReceipt(input) {
+  if (!input.files || !input.files[0]) return;
+  const f = input.files[0];
+  const prev = document.getElementById('receipt-preview');
+  const ph = document.getElementById('receipt-placeholder');
+  if (f.type.startsWith('image/')) {
+    prev.src = URL.createObjectURL(f);
+    prev.style.display = 'block';
+    ph.style.display = 'none';
+  } else {
+    prev.style.display = 'none';
+    ph.innerHTML = `<div style="font-size:2.5rem;margin-bottom:var(--s3)">📄</div><div class="fw-600 fz-sm">${f.name}</div><div class="fz-xs text-3 mt-1">${(f.size/1024).toFixed(0)} KB</div>`;
+    ph.style.display = '';
+  }
 }
 
-function removeFile() {
-    document.getElementById('id_receipt').value = '';
-    document.getElementById('fileUpload').style.display = 'block';
-    document.getElementById('filePreview').style.display = 'none';
+/* ── AMOUNT WORDS ── */
+function updateAmountPreview(val) {
+  const n = parseFloat(val);
+  const el = document.getElementById('amount-words');
+  if (!isNaN(n) && n > 0) {
+    el.textContent = `≈ ${n.toLocaleString('en-UG', { maximumFractionDigits: 2 })} Ugandan Shillings`;
+  } else {
+    el.textContent = '';
+  }
+}
+if (document.getElementById('id_amount').value) updateAmountPreview(document.getElementById('id_amount').value);
+
+/* ── CHAR COUNTERS ── */
+function updateCharCount(el, counterId, max) {
+  const n = el.value.length;
+  const counter = document.getElementById(counterId);
+  counter.textContent = `${n}/${max}`;
+  counter.className = 'char-counter' + (n > max ? ' over' : n > max * .85 ? ' warn' : '');
 }
 
-function removeExistingReceipt() {
-    document.getElementById('existingReceipt').style.display = 'none';
-    document.getElementById('fileUpload').style.display = 'block';
-}
-
-function formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
-// Drag and Drop
-const fileUpload = document.getElementById('fileUpload');
-fileUpload.addEventListener('dragover', function(e) {
-    e.preventDefault();
-    this.style.borderColor = '#667eea';
-    this.style.background = 'rgba(102, 126, 234, 0.1)';
+/* ── SUBMIT WITH LOADING ── */
+document.getElementById('expense-form').addEventListener('submit', function() {
+  const btn = document.getElementById('submit-btn');
+  btn.textContent = '⏳ Saving…';
+  btn.disabled = true;
 });
 
-fileUpload.addEventListener('dragleave', function(e) {
-    e.preventDefault();
-    this.style.borderColor = '';
-    this.style.background = 'transparent';
+/* ── KEYBOARD ── */
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'Enter') document.getElementById('expense-form').submit();
+  if (e.key === 'Escape' && !e.target.closest('input,textarea,select')) {
+    window.location = '{% url "expenses:expense_list" %}';
+  }
 });
 
-fileUpload.addEventListener('drop', function(e) {
-    e.preventDefault();
-    this.style.borderColor = '';
-    this.style.background = 'transparent';
-
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        document.getElementById('id_receipt').files = files;
-        handleFileSelect({ target: { files: files } });
-    }
-});
-
-// Form Submission with Loading State
-const form = document.getElementById('expenseForm');
-form.addEventListener('submit', function(e) {
-    const submitBtn = this.querySelector('.btn-submit');
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-});
-
-// Keyboard Shortcuts
-document.addEventListener('keydown', function(e) {
-    // Ctrl/Cmd + S = Save
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        form.submit();
-    }
-
-    // Ctrl/Cmd + Enter = Save and New
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'save_and_new';
-        input.value = '1';
-        form.appendChild(input);
-        form.submit();
-    }
-
-    // Escape = Cancel
-    if (e.key === 'Escape') {
-        window.location.href = '{% url "expenses:expense_list" %}';
-    }
-});
-
-// Set default date to today
+/* ── SET TODAY ── */
 if (!document.getElementById('id_date').value) {
-    document.getElementById('id_date').valueAsDate = new Date();
+  document.getElementById('id_date').value = new Date().toISOString().split('T')[0];
 }
-
-// Auto-focus on amount field
-document.getElementById('id_amount').focus();
 </script>
 {% endblock %}

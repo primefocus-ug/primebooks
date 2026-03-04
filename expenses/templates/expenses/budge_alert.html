@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Budget Alert · PrimeBooks</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; padding: 32px 16px; }
+  .wrap { max-width: 580px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,.1); }
+  .header { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); padding: 32px; color: #fff; }
+  .header-top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .brand-icon { width: 36px; height: 36px; background: rgba(255,255,255,.2); border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .brand-name { font-size: 16px; font-weight: 700; opacity: .9; }
+  .header-title { font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+  .header-sub { font-size: 13px; opacity: .7; margin-top: 4px; }
+
+  .body { padding: 32px; }
+
+  .alert-banner {
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .alert-banner.warn { background: #fef3c7; border: 1px solid #d97706; }
+  .alert-banner.danger { background: #fee2e2; border: 1px solid #dc2626; }
+  .alert-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .alert-title { font-size: 14px; font-weight: 700; color: #1a1a18; }
+  .alert-msg { font-size: 13px; color: #4a4a45; margin-top: 3px; line-height: 1.5; }
+
+  .progress-section { margin-bottom: 24px; }
+  .progress-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .progress-name { font-size: 15px; font-weight: 700; color: #1a1a18; }
+  .progress-pct { font-size: 20px; font-weight: 800; font-family: monospace; }
+  .progress-pct.warn { color: #d97706; }
+  .progress-pct.danger { color: #dc2626; }
+  .progress-pct.ok { color: #16a34a; }
+  .progress-track { height: 12px; background: #e8e8e5; border-radius: 99px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 99px; background: #16a34a; transition: width .3s; }
+  .progress-fill.warn { background: linear-gradient(90deg, #d97706, #f59e0b); }
+  .progress-fill.danger { background: linear-gradient(90deg, #dc2626, #ef4444); }
+
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+  .stat-box { background: #f7f7f5; border: 1px solid #e4e4e0; border-radius: 10px; padding: 14px 16px; }
+  .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: #8a8a82; font-weight: 700; margin-bottom: 6px; }
+  .stat-val { font-size: 16px; font-weight: 800; font-family: monospace; color: #1a1a18; }
+  .stat-val.red { color: #dc2626; }
+  .stat-val.amber { color: #d97706; }
+  .stat-val.green { color: #16a34a; }
+
+  .divider { height: 1px; background: #e4e4e0; margin: 24px 0; }
+
+  .btn {
+    display: inline-block;
+    background: #2563eb;
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .01em;
+  }
+  .btn:hover { background: #1d4ed8; }
+
+  .tips { background: #f0f9ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 16px 20px; margin-top: 24px; }
+  .tips-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #2563eb; margin-bottom: 8px; }
+  .tips li { font-size: 13px; color: #374151; line-height: 1.6; margin-left: 16px; }
+
+  .footer { background: #f7f7f5; padding: 20px 32px; font-size: 12px; color: #8a8a82; text-align: center; border-top: 1px solid #e4e4e0; }
+  .footer a { color: #2563eb; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-top">
+      <div class="brand-icon">💰</div>
+      <span class="brand-name">PrimeBooks</span>
+    </div>
+    <div class="header-title">
+      {% if percentage >= 100 %}🚨 Budget Exceeded{% else %}⚠️ Budget Alert{% endif %}
+    </div>
+    <div class="header-sub">Your spending alert for {{ budget_name }}</div>
+  </div>
+
+  <!-- BODY -->
+  <div class="body">
+    <!-- Alert Banner -->
+    <div class="alert-banner {% if percentage >= 100 %}danger{% else %}warn{% endif %}">
+      <div class="alert-icon">{% if percentage >= 100 %}🚨{% else %}⚠️{% endif %}</div>
+      <div>
+        <div class="alert-title">
+          {% if percentage >= 100 %}
+            Budget Limit Exceeded!
+          {% else %}
+            Approaching Budget Limit
+          {% endif %}
+        </div>
+        <div class="alert-msg">
+          Your <strong>{{ budget_name }}</strong> budget has reached
+          <strong>{{ percentage|floatformat:1 }}%</strong> of the limit.
+          {% if percentage >= 100 %}You've exceeded your set budget for this period.
+          {% else %}You're getting close to your limit for this period.{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-section">
+      <div class="progress-label">
+        <span class="progress-name">{{ budget_name }}</span>
+        <span class="progress-pct {% if percentage >= 100 %}danger{% elif percentage >= 80 %}warn{% else %}ok{% endif %}">
+          {{ percentage|floatformat:1 }}%
+        </span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill {% if percentage >= 100 %}danger{% elif percentage >= 80 %}warn{% endif %}"
+          style="width:min({{ percentage|floatformat:0 }}%,100%)"></div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">Budget Limit</div>
+        <div class="stat-val">{{ budget_amount|floatformat:0 }}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Amount Spent</div>
+        <div class="stat-val {% if percentage >= 100 %}red{% elif percentage >= 80 %}amber{% endif %}">{{ spent|floatformat:0 }}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Remaining</div>
+        <div class="stat-val {% if remaining <= 0 %}red{% elif percentage >= 80 %}amber{% else %}green{% endif %}">
+          {% if remaining > 0 %}{{ remaining|floatformat:0 }}{% else %}{{ remaining|floatformat:0 }}{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f7f7f5;border-radius:8px;font-size:13px;margin-bottom:24px">
+      <span style="color:#8a8a82">Period</span>
+      <strong>{{ period }}</strong>
+    </div>
+
+    <a href="{{ site_url }}/expenses/budgets/" class="btn">View Budget Dashboard →</a>
+
+    <!-- Tips -->
+    <div class="tips">
+      <div class="tips-title">💡 Tips to stay on budget</div>
+      <ul>
+        <li>Review recent expenses and identify non-essential spending</li>
+        <li>Consider deferring discretionary purchases to next period</li>
+        <li>Update your budget limit if your needs have changed</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <p>You received this alert because you have budget notifications enabled in
+    <a href="{{ site_url }}">PrimeBooks</a>.</p>
+    <p style="margin-top:6px"><a href="{{ site_url }}/settings/">Manage notification preferences</a></p>
+  </div>
+</div>
+</body>
+</html>

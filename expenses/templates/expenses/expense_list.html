@@ -1,832 +1,981 @@
-{% extends "base.html" %}
-{% load static %}
-
-{% block title %}Expenses - Expense Tracker{% endblock %}
+{% extends "expenses/base.html" %}
+{% block title %}Expenses{% endblock %}
 
 {% block extra_css %}
 <style>
-    :root {
-        --list-card-bg: #ffffff;
-        --list-input-bg: #f8fafc;
-        --list-border: #e2e8f0;
-        --list-text-primary: #1e293b;
-        --list-text-secondary: #64748b;
-        --list-text-tertiary: #94a3b8;
-        --list-hover-bg: #f1f5f9;
-        --list-shadow: rgba(0, 0, 0, 0.1);
-    }
-
-    [data-theme='dark'] {
-        --list-card-bg: #1e293b;
-        --list-input-bg: #0f172a;
-        --list-border: rgba(255, 255, 255, 0.05);
-        --list-text-primary: #f1f5f9;
-        --list-text-secondary: #94a3b8;
-        --list-text-tertiary: #64748b;
-        --list-hover-bg: rgba(255, 255, 255, 0.03);
-        --list-shadow: rgba(0, 0, 0, 0.3);
-    }
-
-    .expenses-container {
-        padding: 2rem;
-        max-width: 1600px;
-        margin: 0 auto;
-    }
-
-    .page-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 2rem;
-    }
-
-    .page-header h1 {
-        font-size: 2rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    /* Filter Bar */
-    .filter-bar {
-        background: var(--list-card-bg);
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin-bottom: 2rem;
-        border: 1px solid var(--list-border);
-    }
-
-    .filter-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .filter-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .filter-label {
-        font-size: 0.875rem;
-        font-weight: 600;
-        color: var(--list-text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .filter-input {
-        width: 100%;
-        padding: 0.75rem 1rem;
-        background: var(--list-input-bg);
-        border: 2px solid var(--list-border);
-        border-radius: 12px;
-        color: var(--list-text-primary);
-        font-size: 1rem;
-        transition: all 0.2s;
-    }
-
-    .filter-input:focus {
-        outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
-    }
-
-    .filter-input::placeholder {
-        color: var(--list-text-tertiary);
-    }
-
-    .filter-tags {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-        margin-top: 0.5rem;
-    }
-
-    .filter-tag {
-        padding: 0.5rem 1rem;
-        background: rgba(102, 126, 234, 0.2);
-        color: #818cf8;
-        border-radius: 8px;
-        font-size: 0.875rem;
-        cursor: pointer;
-        transition: all 0.2s;
-        border: 2px solid transparent;
-    }
-
-    .filter-tag:hover {
-        background: rgba(102, 126, 234, 0.3);
-    }
-
-    .filter-tag.active {
-        background: #667eea;
-        color: white;
-        border-color: #667eea;
-    }
-
-    .filter-actions {
-        display: flex;
-        gap: 1rem;
-        justify-content: flex-end;
-        margin-top: 1rem;
-    }
-
-    /* Quick Period Filters */
-    .period-filters {
-        display: flex;
-        gap: 0.5rem;
-        margin-bottom: 1rem;
-    }
-
-    .period-btn {
-        padding: 0.5rem 1rem;
-        background: transparent;
-        color: var(--list-text-secondary);
-        border: 2px solid var(--list-border);
-        border-radius: 8px;
-        font-size: 0.875rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-
-    .period-btn:hover {
-        background: rgba(102, 126, 234, 0.1);
-        color: #818cf8;
-        border-color: #667eea;
-    }
-
-    .period-btn.active {
-        background: #667eea;
-        color: white;
-        border-color: #667eea;
-    }
-
-    /* Summary Bar */
-    .summary-bar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: var(--list-card-bg);
-        border-radius: 16px;
-        padding: 1.5rem;
-        margin-bottom: 2rem;
-        border: 1px solid var(--list-border);
-    }
-
-    .summary-item {
-        text-align: center;
-    }
-
-    .summary-label {
-        font-size: 0.875rem;
-        color: var(--list-text-secondary);
-        margin-bottom: 0.5rem;
-        font-weight: 500;
-    }
-
-    .summary-value {
-        font-size: 1.75rem;
-        font-weight: 700;
-        color: var(--list-text-primary);
-    }
-
-    /* Expenses Table */
-    .expenses-table {
-        background: var(--list-card-bg);
-        border-radius: 16px;
-        overflow: hidden;
-        border: 1px solid var(--list-border);
-    }
-
-    .table-header {
-        display: grid;
-        grid-template-columns: 2fr 1fr 1.5fr 1fr 0.5fr;
-        padding: 1rem 1.5rem;
-        background: rgba(102, 126, 234, 0.1);
-        border-bottom: 2px solid #667eea;
-        font-weight: 600;
-        color: var(--list-text-primary);
-        text-transform: uppercase;
-        font-size: 0.875rem;
-        letter-spacing: 0.5px;
-    }
-
-    .table-row {
-        display: grid;
-        grid-template-columns: 2fr 1fr 1.5fr 1fr 0.5fr;
-        padding: 1rem 1.5rem;
-        border-bottom: 1px solid var(--list-border);
-        transition: all 0.2s;
-        cursor: pointer;
-        align-items: center;
-    }
-
-    .table-row:hover {
-        background: var(--list-hover-bg);
-        transform: translateX(5px);
-    }
-
-    .table-row:last-child {
-        border-bottom: none;
-    }
-
-    .expense-description {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-
-    .expense-avatar {
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.25rem;
-        flex-shrink: 0;
-    }
-
-    .expense-text {
-        flex: 1;
-    }
-
-    .expense-title {
-        font-weight: 600;
-        color: var(--list-text-primary);
-        margin-bottom: 0.25rem;
-    }
-
-    .expense-notes {
-        font-size: 0.875rem;
-        color: var(--list-text-tertiary);
-    }
-
-    .expense-amount {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: var(--list-text-primary);
-    }
-
-    .expense-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-    }
-
-    .tag {
-        padding: 0.25rem 0.75rem;
-        background: rgba(102, 126, 234, 0.2);
-        color: #818cf8;
-        border-radius: 6px;
-        font-size: 0.75rem;
-        font-weight: 500;
-    }
-
-    .expense-date {
-        color: var(--list-text-secondary);
-        font-size: 0.875rem;
-    }
-
-    .receipt-indicator {
-        color: #10b981;
-        font-size: 1.25rem;
-    }
-
-    .expense-actions {
-        display: flex;
-        gap: 0.5rem;
-        opacity: 0;
-        transition: opacity 0.2s;
-    }
-
-    .table-row:hover .expense-actions {
-        opacity: 1;
-    }
-
-    .action-btn {
-        width: 36px;
-        height: 36px;
-        border-radius: 8px;
-        border: none;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.2s;
-        background: transparent;
-        color: var(--list-text-secondary);
-    }
-
-    .action-btn:hover {
-        background: rgba(102, 126, 234, 0.2);
-        color: #818cf8;
-    }
-
-    .action-btn.delete:hover {
-        background: rgba(239, 68, 68, 0.2);
-        color: #f87171;
-    }
-
-    /* Empty State */
-    .empty-state {
-        text-align: center;
-        padding: 4rem 2rem;
-        color: var(--list-text-secondary);
-    }
-
-    .empty-icon {
-        font-size: 5rem;
-        margin-bottom: 1rem;
-        opacity: 0.3;
-    }
-
-    .empty-title {
-        font-size: 1.5rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        color: var(--list-text-primary);
-    }
-
-    .empty-text {
-        margin-bottom: 2rem;
-    }
-
-    /* Pagination */
-    .pagination {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 0.5rem;
-        margin-top: 2rem;
-    }
-
-    .page-btn {
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        border: 2px solid var(--list-border);
-        background: transparent;
-        color: var(--list-text-primary);
-        cursor: pointer;
-        transition: all 0.2s;
-        font-weight: 600;
-    }
-
-    .page-btn:hover {
-        background: rgba(102, 126, 234, 0.2);
-        border-color: #667eea;
-    }
-
-    .page-btn.active {
-        background: #667eea;
-        border-color: #667eea;
-    }
-
-    /* Loading Overlay */
-    .loading-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.3s;
-    }
-
-    .loading-overlay.active {
-        opacity: 1;
-        pointer-events: all;
-    }
-
-    .spinner {
-        width: 50px;
-        height: 50px;
-        border: 4px solid rgba(255, 255, 255, 0.2);
-        border-top-color: #667eea;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
-    /* Button Styles */
-    .btn-primary {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 0.75rem 1.5rem;
-        border-radius: 12px;
-        border: none;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-secondary {
-        background: rgba(102, 126, 234, 0.1);
-        color: #667eea;
-        padding: 0.75rem 1.5rem;
-        border-radius: 12px;
-        border: 2px solid #667eea;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .btn-secondary:hover {
-        background: rgba(102, 126, 234, 0.2);
-    }
-
-    /* Mobile Responsive */
-    @media (max-width: 768px) {
-        .expenses-container {
-            padding: 1rem;
-        }
-
-        .filter-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .summary-bar {
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .table-header {
-            display: none;
-        }
-
-        .table-row {
-            grid-template-columns: 1fr;
-            gap: 1rem;
-            padding: 1.5rem;
-        }
-
-        .expense-actions {
-            opacity: 1;
-        }
-    }
+/* ── DARK THEME VARIABLES ── */
+:root {
+  --list-bg: rgba(255,255,255,0.85);
+  --list-border: rgba(0,0,0,0.07);
+  --list-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+  --list-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.10);
+  --list-accent-light: rgba(37,99,235,0.1);
+  --list-input-bg: rgba(0,0,0,0.02);
+}
+
+[data-theme="dark"] {
+  --list-bg: rgba(30,35,48,0.90);
+  --list-border: rgba(255,255,255,0.07);
+  --list-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.4);
+  --list-shadow-hover: 0 4px 12px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.5);
+  --list-accent-light: rgba(37,99,235,0.2);
+  --list-input-bg: rgba(255,255,255,0.05);
+}
+
+/* ── PAGE HEADER (matching dashboard) ── */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--list-border);
+}
+.page-header-text h1 {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 0.3rem;
+}
+.page-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── SUMMARY STRIP (matching dashboard stat cards) ── */
+.summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+@media (max-width: 700px) {
+  .summary-strip { grid-template-columns: repeat(2, 1fr); }
+}
+
+.sum-chip {
+  background: var(--list-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--list-border);
+  border-radius: var(--r-xl, 20px);
+  padding: 1.25rem 1.4rem;
+  transition: box-shadow 0.25s, transform 0.25s;
+  position: relative;
+  overflow: hidden;
+}
+.sum-chip:hover {
+  box-shadow: var(--list-shadow-hover);
+  transform: translateY(-2px);
+}
+.sum-chip::before {
+  content: '';
+  position: absolute;
+  top: -20px; right: -20px;
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: var(--dash-accent, #2563eb);
+  opacity: 0.1;
+  transition: opacity 0.3s;
+}
+.sum-chip:hover::before { opacity: 0.15; }
+[data-theme="dark"] .sum-chip::before { opacity: 0.15; }
+
+.sum-label {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 0.3rem;
+  position: relative;
+}
+.sum-val {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  position: relative;
+}
+
+/* ── FILTER PANEL (matching dashboard panels) ── */
+.filter-panel {
+  background: var(--list-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--list-border);
+  border-radius: var(--r-xl, 20px);
+  box-shadow: var(--list-shadow);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  transition: all 0.25s;
+}
+.filter-panel:hover {
+  box-shadow: var(--list-shadow-hover);
+}
+.filter-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  padding: 0.9rem 1.4rem;
+  user-select: none;
+  transition: background 0.2s;
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.filter-panel-header:hover {
+  background: var(--list-accent-light);
+}
+.filter-panel-body {
+  padding: 1.4rem;
+  border-top: 1px solid var(--list-border);
+  animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+.filter-panel.collapsed .filter-panel-body { display: none; }
+.filter-panel.collapsed .filter-panel-header { border-bottom: none; }
+
+/* ── PERIOD PILLS (matching dashboard tabs) ── */
+.period-pills {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.period-pill {
+  padding: 0.3rem 1rem;
+  border-radius: var(--r-full, 9999px);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border: 1px solid var(--list-border);
+  background: var(--list-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+.period-pill:hover {
+  background: var(--list-accent-light);
+  color: var(--dash-accent, #2563eb);
+  border-color: rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .period-pill:hover {
+  color: #60a5fa;
+}
+.period-pill.active {
+  background: var(--dash-accent, #2563eb);
+  color: #fff;
+  border-color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .period-pill.active {
+  background: #3b82f6;
+}
+
+/* ── BADGES ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: var(--r-full, 9999px);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.badge-blue {
+  background: var(--list-accent-light);
+  color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .badge-blue {
+  color: #60a5fa;
+}
+.badge-purple {
+  background: rgba(124,58,237,0.12);
+  color: var(--dash-accent-2, #7c3aed);
+}
+[data-theme="dark"] .badge-purple {
+  background: rgba(139,92,246,0.2);
+  color: #a78bfa;
+}
+.badge-amber {
+  background: rgba(215,119,6,0.12);
+  color: var(--dash-amber, #d97706);
+}
+[data-theme="dark"] .badge-amber {
+  background: rgba(245,158,11,0.2);
+  color: #fbbf24;
+}
+
+/* ── TAG CHIPS ── */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.7rem;
+  border-radius: var(--r-full, 9999px);
+  background: var(--list-accent-light);
+  border: 1px solid rgba(37,99,235,0.2);
+  color: var(--dash-accent, #2563eb);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.tag-chip:hover {
+  background: rgba(37,99,235,0.2);
+  transform: translateY(-1px);
+}
+[data-theme="dark"] .tag-chip {
+  color: #60a5fa;
+  border-color: rgba(96,165,250,0.3);
+}
+[data-theme="dark"] .tag-chip:hover {
+  background: rgba(96,165,250,0.2);
+}
+
+/* ── BULK BAR ── */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.4rem;
+  background: var(--list-accent-light);
+  border: 1px solid rgba(37,99,235,0.3);
+  border-radius: var(--r-lg, 16px);
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  animation: slideDown 0.2s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+[data-theme="dark"] .bulk-bar {
+  border-color: rgba(96,165,250,0.3);
+}
+.bulk-bar select, .bulk-bar input {
+  background: var(--list-bg);
+  border: 1px solid var(--list-border);
+  color: var(--text-primary);
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--r-md, 12px);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.8rem;
+}
+
+/* ── TABLE ── */
+.expense-table-wrap {
+  background: var(--list-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--list-border);
+  border-radius: var(--r-xl, 20px);
+  overflow: hidden;
+  box-shadow: var(--list-shadow);
+  transition: box-shadow 0.25s;
+}
+.expense-table-wrap:hover {
+  box-shadow: var(--list-shadow-hover);
+}
+
+#expense-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+#expense-table thead th {
+  background: var(--list-input-bg);
+  padding: 0.9rem 1rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--list-border);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  user-select: none;
+  text-align: left;
+}
+#expense-table thead th:last-child { text-align: right; }
+#expense-table thead th:hover {
+  background: var(--list-accent-light);
+  color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] #expense-table thead th:hover {
+  color: #60a5fa;
+}
+#expense-table thead th.sorted {
+  color: var(--dash-accent, #2563eb);
+  background: var(--list-accent-light);
+}
+[data-theme="dark"] #expense-table thead th.sorted {
+  color: #60a5fa;
+}
+
+#expense-table tbody tr {
+  border-bottom: 1px solid var(--list-border);
+  transition: background 0.15s;
+}
+#expense-table tbody tr:last-child { border-bottom: 0; }
+#expense-table tbody tr:hover {
+  background: var(--list-accent-light);
+}
+#expense-table tbody tr.selected {
+  background: rgba(37,99,235,0.15);
+}
+[data-theme="dark"] #expense-table tbody tr.selected {
+  background: rgba(96,165,250,0.15);
+}
+#expense-table td {
+  padding: 0.9rem 1rem;
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.table-check {
+  width: 40px;
+  text-align: center;
+}
+.table-check input[type=checkbox] {
+  accent-color: var(--dash-accent, #2563eb);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.amount-cell {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.desc-link {
+  color: var(--text-primary);
+  font-weight: 600;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+  transition: color 0.2s;
+  text-decoration: none;
+}
+.desc-link:hover {
+  color: var(--dash-accent, #2563eb);
+}
+.desc-note {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+  display: block;
+  margin-top: 2px;
+}
+
+.tag-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 80px;
+}
+
+.actions-cell {
+  display: flex;
+  gap: 2px;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+  justify-content: flex-end;
+}
+#expense-table tbody tr:hover .actions-cell {
+  opacity: 1;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md, 12px);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+.btn-icon:hover {
+  background: var(--list-accent-light);
+  color: var(--dash-accent, #2563eb);
+  transform: translateY(-1px);
+}
+[data-theme="dark"] .btn-icon:hover {
+  color: #60a5fa;
+}
+
+/* ── PAGINATION ── */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.4rem;
+  border-top: 1px solid var(--list-border);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.pagination-btns {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.page-btn {
+  padding: 0.3rem 0.9rem;
+  border-radius: var(--r-md, 12px);
+  border: 1px solid var(--list-border);
+  background: var(--list-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+.page-btn:hover:not(:disabled) {
+  background: var(--list-accent-light);
+  color: var(--dash-accent, #2563eb);
+  border-color: rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .page-btn:hover:not(:disabled) {
+  color: #60a5fa;
+}
+.page-btn.active {
+  background: var(--dash-accent, #2563eb);
+  color: #fff;
+  border-color: var(--dash-accent, #2563eb);
+}
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── FORM ELEMENTS ── */
+.form-group { margin-bottom: 1rem; }
+.form-label {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 0.4rem;
+}
+.form-control {
+  width: 100%;
+  background: var(--list-input-bg);
+  border: 1px solid var(--list-border);
+  border-radius: var(--r-md, 12px);
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  transition: all 0.2s;
+}
+.form-control:focus {
+  outline: none;
+  border-color: var(--dash-accent, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+  background: var(--list-bg);
+}
+[data-theme="dark"] .form-control:focus {
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.2);
+  border-color: #60a5fa;
+}
+.form-control::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+select.form-control {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 1rem;
+  padding-right: 2.5rem;
+}
+[data-theme="dark"] select.form-control {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+
+.form-row, .form-row-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+/* ── BUTTONS ── */
+.btn {
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--r-md, 12px);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-primary {
+  background: var(--dash-accent, #2563eb);
+  color: white;
+  border-color: var(--dash-accent, #2563eb);
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .btn-primary:hover {
+  background: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59,130,246,0.5);
+}
+.btn-secondary {
+  background: var(--list-bg);
+  border: 1px solid var(--list-border);
+  color: var(--text-secondary);
+}
+.btn-secondary:hover {
+  border-color: var(--dash-accent, #2563eb);
+  color: var(--dash-accent, #2563eb);
+  background: var(--list-accent-light);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-secondary:hover {
+  color: #60a5fa;
+  border-color: #60a5fa;
+}
+.btn-sm {
+  padding: 0.4rem 1rem;
+  font-size: 0.78rem;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.kbd-hint {
+  display: inline-block;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: rgba(255,255,255,0.18);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+[data-theme="dark"] .kbd-hint {
+  background: rgba(255,255,255,0.1);
+}
+.btn-primary .kbd-hint {
+  background: rgba(255,255,255,0.2);
+}
+
+/* ── EMPTY STATE ── */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+}
+.empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.5;
+}
+.empty-title {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.3rem;
+}
+.empty-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  max-width: 240px;
+  margin: 0 auto 0.75rem;
+}
+
+/* ── UTILITIES ── */
+.hidden { display: none !important; }
+.text-2 { color: var(--text-secondary); }
+.text-3 { color: var(--text-tertiary, #9ca3af); }
+.text-accent { color: var(--dash-accent, #2563eb); }
+[data-theme="dark"] .text-accent { color: #60a5fa; }
+.fz-xs { font-size: 0.75rem; }
+.fz-sm { font-size: 0.85rem; }
+.fw-600 { font-weight: 600; }
+.flex { display: flex; }
+.gap-1 { gap: 0.5rem; }
+.flex-wrap { flex-wrap: wrap; }
+.ml-auto { margin-left: auto; }
+.mt-1 { margin-top: 0.25rem; }
+.mt-2 { margin-top: 0.5rem; }
+.mb-3 { margin-bottom: 1rem; }
+
+@keyframes fadeRow {
+  to { opacity: 0; transform: scaleY(0); height: 0; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="expenses-container">
-    <!-- Page Header -->
-    <div class="page-header">
-        <h1>📋 All Expenses</h1>
-        <div style="display: flex; gap: 1rem;">
-            <a href="{% url 'expenses:dashboard' %}" class="btn-secondary">
-                <i class="fas fa-arrow-left"></i> Dashboard
-            </a>
-            <a href="{% url 'expenses:expense_create' %}" class="btn-primary">
-                <i class="fas fa-plus"></i> Add Expense
-            </a>
-        </div>
-    </div>
-
-    <!-- Filter Bar -->
-    <div class="filter-bar">
-        <form method="get" id="filterForm" action="">
-            <!-- Quick Period Filters -->
-            <div class="period-filters">
-                <button type="button" class="period-btn {% if filters.period == 'today' %}active{% endif %}" data-period="today">
-                    Today
-                </button>
-                <button type="button" class="period-btn {% if filters.period == 'week' %}active{% endif %}" data-period="week">
-                    This Week
-                </button>
-                <button type="button" class="period-btn {% if filters.period == 'month' %}active{% endif %}" data-period="month">
-                    This Month
-                </button>
-                <button type="button" class="period-btn {% if filters.period == 'quarter' %}active{% endif %}" data-period="quarter">
-                    This Quarter
-                </button>
-                <button type="button" class="period-btn {% if filters.period == 'year' %}active{% endif %}" data-period="year">
-                    This Year
-                </button>
-            </div>
-
-            <div class="filter-grid">
-                <div class="filter-group">
-                    <label class="filter-label">Search</label>
-                    <input type="text"
-                           name="search"
-                           class="filter-input"
-                           placeholder="Search expenses..."
-                           value="{{ filters.search }}"
-                           id="searchInput">
-                </div>
-
-                <div class="filter-group">
-                    <label class="filter-label">Tags</label>
-                    <input type="text"
-                           name="tags"
-                           class="filter-input"
-                           placeholder="e.g., food, travel"
-                           value="{{ filters.tags }}"
-                           id="tagsInput"
-                           list="tagSuggestions">
-                    <datalist id="tagSuggestions">
-                        {% for tag in all_tags %}
-                        <option value="{{ tag }}">
-                        {% endfor %}
-                    </datalist>
-                </div>
-
-                <div class="filter-group">
-                    <label class="filter-label">Payment Method</label>
-                    <select name="payment_method" class="filter-input">
-                        <option value="">All Methods</option>
-                        {% for value, label in payment_methods %}
-                        <option value="{{ value }}" {% if filters.payment_method == value %}selected{% endif %}>
-                            {{ label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="filter-group">
-                    <label class="filter-label">Date From</label>
-                    <input type="date"
-                           name="date_from"
-                           class="filter-input"
-                           value="{{ filters.date_from }}">
-                </div>
-
-                <div class="filter-group">
-                    <label class="filter-label">Date To</label>
-                    <input type="date"
-                           name="date_to"
-                           class="filter-input"
-                           value="{{ filters.date_to }}">
-                </div>
-
-                <div class="filter-group">
-                    <label class="filter-label">Min Amount</label>
-                    <input type="number"
-                           name="min_amount"
-                           class="filter-input"
-                           placeholder="$0.00"
-                           step="0.01"
-                           value="{{ filters.min_amount }}">
-                </div>
-
-                <div class="filter-group">
-                    <label class="filter-label">Max Amount</label>
-                    <input type="number"
-                           name="max_amount"
-                           class="filter-input"
-                           placeholder="$999,999.99"
-                           step="0.01"
-                           value="{{ filters.max_amount }}">
-                </div>
-            </div>
-
-            <div class="filter-actions">
-                <button type="button" class="btn-secondary" onclick="clearFilters()">
-                    <i class="fas fa-times"></i> Clear Filters
-                </button>
-                <button type="submit" class="btn-primary">
-                    <i class="fas fa-filter"></i> Apply Filters
-                </button>
-            </div>
-        </form>
-    </div>
-
-    <!-- Summary Bar -->
-    <div class="summary-bar">
-        <div class="summary-item">
-            <div class="summary-label">Total Expenses</div>
-            <div class="summary-value">{{ count }}</div>
-        </div>
-        <div class="summary-item">
-            <div class="summary-label">Total Amount</div>
-            <div class="summary-value">${{ total|floatformat:2 }}</div>
-        </div>
-        <div class="summary-item">
-            <div class="summary-label">Average</div>
-            <div class="summary-value">${{ average|floatformat:2 }}</div>
-        </div>
-    </div>
-
-    <!-- Expenses Table -->
-    <div class="expenses-table">
-        <div class="table-header">
-            <div>Description</div>
-            <div>Amount</div>
-            <div>Tags</div>
-            <div>Date</div>
-            <div>Actions</div>
-        </div>
-
-        {% if expenses %}
-            {% for expense in expenses %}
-            <div class="table-row" data-expense-id="{{ expense.id }}">
-                <div class="expense-description">
-                    <div class="expense-avatar">
-                        {% if expense.receipt %}
-                        📎
-                        {% else %}
-                        💰
-                        {% endif %}
-                    </div>
-                    <div class="expense-text">
-                        <div class="expense-title">{{ expense.description }}</div>
-                        {% if expense.notes %}
-                        <div class="expense-notes">{{ expense.notes|truncatewords:10 }}</div>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="expense-amount">
-                    ${{ expense.amount|floatformat:2 }}
-                </div>
-
-                <div class="expense-tags">
-                    {% for tag in expense.tags.all %}
-                    <span class="tag">{{ tag.name }}</span>
-                    {% endfor %}
-                    {% if expense.payment_method %}
-                    <span class="tag" style="background: rgba(16, 185, 129, 0.2); color: #34d399;">
-                        {{ expense.get_payment_method_display }}
-                    </span>
-                    {% endif %}
-                </div>
-
-                <div class="expense-date">
-                    {{ expense.date|date:"M d, Y" }}
-                    <br>
-                    <small style="color: var(--list-text-tertiary);">{{ expense.created_at|timesince }} ago</small>
-                </div>
-
-                <div class="expense-actions">
-                    <button class="action-btn" onclick="editExpense('{{ expense.id }}')" title="Edit">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="action-btn delete" onclick="deleteExpense('{{ expense.id }}')" title="Delete">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            </div>
-            {% endfor %}
-        {% else %}
-        <div class="empty-state">
-            <div class="empty-icon">🔍</div>
-            <h2 class="empty-title">No Expenses Found</h2>
-            <p class="empty-text">
-                {% if filters.search or filters.tags %}
-                No expenses match your current filters. Try adjusting your search criteria.
-                {% else %}
-                You haven't added any expenses yet. Start tracking your spending!
-                {% endif %}
-            </p>
-            <a href="{% url 'expenses:expense_create' %}" class="btn-primary">
-                <i class="fas fa-plus"></i> Add Your First Expense
-            </a>
-        </div>
-        {% endif %}
-    </div>
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div class="page-header-text">
+    <h1 class="page-title">Expenses</h1>
+    <p class="page-subtitle">{{ count }} result{{ count|pluralize }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{% url 'expenses:export_expenses_csv' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-secondary btn-sm">📥 CSV</a>
+    <a href="{% url 'expenses:export_expenses_pdf' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="btn btn-secondary btn-sm">📄 PDF</a>
+    <button class="btn btn-primary btn-sm" onclick="openModal('expense-modal')">➕ New <span class="kbd-hint">N E</span></button>
+  </div>
 </div>
 
-<!-- Loading Overlay -->
-<div class="loading-overlay" id="loadingOverlay">
-    <div class="spinner"></div>
+<!-- SUMMARY STRIP -->
+<div class="summary-strip">
+  <div class="sum-chip">
+    <span class="sum-label">Total</span>
+    <span class="sum-val">{{ total|floatformat:0 }}</span>
+  </div>
+  <div class="sum-chip">
+    <span class="sum-label">Count</span>
+    <span class="sum-val">{{ count }}</span>
+  </div>
+  <div class="sum-chip">
+    <span class="sum-label">Average</span>
+    <span class="sum-val">{{ average|floatformat:0 }}</span>
+  </div>
+  <div class="sum-chip">
+    <span class="sum-label">Largest</span>
+    <span class="sum-val">{{ largest|default:0|floatformat:0 }}</span>
+  </div>
+</div>
+
+<!-- FILTER PANEL -->
+<div class="filter-panel {% if not filters.search and not filters.tags and not filters.period and not filters.date_from %}collapsed{% endif %}" id="filter-panel">
+  <div class="filter-panel-header" onclick="document.getElementById('filter-panel').classList.toggle('collapsed')">
+    <span style="font-size:.875rem;font-weight:600">🔍 Filters</span>
+    {% if filters.search or filters.tags or filters.period or filters.date_from %}<span class="badge badge-blue">Active</span>{% endif %}
+    <span class="text-3 fz-xs ml-auto" id="filter-toggle-label">▾ expand</span>
+  </div>
+  <div class="filter-panel-body">
+    <form method="get" id="filter-form">
+      <div class="form-group mb-3">
+        <label class="form-label">Quick Period</label>
+        <div class="period-pills">
+          <a href="?period=today" class="period-pill {% if filters.period == 'today' %}active{% endif %}">Today</a>
+          <a href="?period=week" class="period-pill {% if filters.period == 'week' %}active{% endif %}">This Week</a>
+          <a href="?period=month" class="period-pill {% if filters.period == 'month' %}active{% endif %}">This Month</a>
+          <a href="?period=quarter" class="period-pill {% if filters.period == 'quarter' %}active{% endif %}">Quarter</a>
+          <a href="?period=year" class="period-pill {% if filters.period == 'year' %}active{% endif %}">This Year</a>
+          <a href="?" class="period-pill {% if not filters.period %}active{% endif %}">All Time</a>
+        </div>
+      </div>
+      <div class="form-row-3">
+        <div class="form-group">
+          <label class="form-label">Search</label>
+          <input type="text" name="search" value="{{ filters.search }}" class="form-control" placeholder="Description, notes…" id="search-input" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tags</label>
+          <input type="text" name="tags" value="{{ filters.tags }}" class="form-control" placeholder="food, travel…" list="tag-datalist" />
+          <datalist id="tag-datalist">{% for tag in all_tags %}<option value="{{ tag }}">{% endfor %}</datalist>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Payment Method</label>
+          <select name="payment_method" class="form-control">
+            <option value="">All Methods</option>
+            {% for val,label in payment_methods %}
+            <option value="{{ val }}" {% if filters.payment_method == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">From</label><input type="date" name="date_from" value="{{ filters.date_from }}" class="form-control" /></div>
+        <div class="form-group"><label class="form-label">To</label><input type="date" name="date_to" value="{{ filters.date_to }}" class="form-control" /></div>
+        <div class="form-group"><label class="form-label">Min Amount</label><input type="number" name="min_amount" value="{{ filters.min_amount }}" class="form-control" placeholder="0" step="0.01" /></div>
+        <div class="form-group"><label class="form-label">Max Amount</label><input type="number" name="max_amount" value="{{ filters.max_amount }}" class="form-control" placeholder="∞" step="0.01" /></div>
+      </div>
+      <div class="flex gap-1 flex-wrap">
+        <button type="submit" class="btn btn-primary btn-sm">Apply Filters</button>
+        <a href="{% url 'expenses:expense_list' %}" class="btn btn-secondary btn-sm">Clear All</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- BULK BAR -->
+<div class="bulk-bar hidden" id="bulk-bar">
+  <span id="bulk-count" class="fz-sm fw-600 text-accent">0 selected</span>
+  <form method="post" action="{% url 'expenses:expense_bulk_action' %}" id="bulk-form" style="display:contents">
+    {% csrf_token %}
+    <div id="bulk-ids-container"></div>
+    <select name="action" class="form-control" style="width:auto;font-size:.82rem;padding:5px 10px">
+      <option value="">Choose action…</option>
+      <option value="export_csv">📥 Export CSV</option>
+      <option value="tag">🏷️ Add Tag</option>
+      <option value="delete">🗑️ Delete Selected</option>
+    </select>
+    <input type="text" name="tag_name" placeholder="Tag name (for tag action)" class="form-control" style="width:150px;font-size:.82rem;padding:5px 10px" />
+    <button type="submit" class="btn btn-primary btn-sm" onclick="return confirmBulk()">Apply</button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="clearSelection()">✕ Deselect</button>
+  </form>
+</div>
+
+<!-- TABLE -->
+<div class="expense-table-wrap">
+  <table id="expense-table">
+    <thead>
+      <tr>
+        <th class="table-check">
+          <input type="checkbox" id="select-all" onchange="toggleAll(this)" title="Select all (Ctrl+A)" />
+        </th>
+        <th onclick="sortTable(1)" title="Sort by date">Date ↕</th>
+        <th onclick="sortTable(2)" title="Sort by description">Description ↕</th>
+        <th>Tags</th>
+        <th>Payment</th>
+        <th onclick="sortTable(5)" title="Sort by amount" style="text-align:right">Amount ↕</th>
+        <th style="width:80px"></th>
+      </tr>
+    </thead>
+    <tbody id="expense-tbody">
+      {% for expense in expenses %}
+      <tr data-id="{{ expense.pk }}">
+        <td class="table-check">
+          <input type="checkbox" class="row-check" value="{{ expense.pk }}" onchange="onRowCheck()" />
+        </td>
+        <td style="white-space:nowrap;font-size:.8rem;color:var(--text-2)">
+          {{ expense.date|date:"d M Y" }}
+        </td>
+        <td>
+          <a href="{% url 'expenses:expense_detail' expense.pk %}" class="desc-link">{{ expense.description }}</a>
+          {% if expense.notes %}<span class="desc-note">{{ expense.notes|truncatechars:50 }}</span>{% endif %}
+          <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px">
+            {% if expense.is_recurring %}<span class="badge badge-purple" style="font-size:.62rem">🔁 Recurring</span>{% endif %}
+            {% if expense.is_important %}<span class="badge badge-amber" style="font-size:.62rem">⭐ Important</span>{% endif %}
+          </div>
+        </td>
+        <td class="tag-cell">
+          {% for tag in expense.tags.all %}
+          <a href="?tags={{ tag.name }}" class="tag-chip" style="font-size:.72rem">{{ tag.name }}</a>
+          {% endfor %}
+        </td>
+        <td style="font-size:.8rem;color:var(--text-2);white-space:nowrap">
+          {{ expense.payment_method|default:"—" }}
+        </td>
+        <td class="amount-cell">{{ expense.amount|floatformat:2 }}</td>
+        <td>
+          <div class="actions-cell">
+            <a href="{% url 'expenses:expense_edit' expense.pk %}" class="btn-icon" title="Edit" style="width:28px;height:28px;font-size:.8rem">✏️</a>
+            <a href="{% url 'expenses:expense_detail' expense.pk %}" class="btn-icon" title="View" style="width:28px;height:28px;font-size:.8rem">👁️</a>
+            <button class="btn-icon" title="Delete" onclick="deleteExpense({{ expense.pk }},this)" style="width:28px;height:28px;font-size:.8rem;color:var(--red)">🗑️</button>
+          </div>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7">
+        <div class="empty-state" style="padding:var(--s10)">
+          <div class="empty-icon">🧾</div>
+          <div class="empty-title">No expenses found</div>
+          <div class="empty-desc">Adjust filters or add your first expense.</div>
+          <button class="btn btn-primary btn-sm mt-2" onclick="openModal('expense-modal')">+ Add Expense</button>
+        </div>
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if expenses %}
+  <div class="pagination-bar">
+    <span>Showing {{ expenses|length }} of {{ count }} results</span>
+    <div class="pagination-btns">
+      {% if page_obj.has_previous %}
+      <a href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}" class="page-btn">← Prev</a>
+      {% else %}
+      <button class="page-btn" disabled>← Prev</button>
+      {% endif %}
+      <button class="page-btn active">{{ page_obj.number|default:1 }}</button>
+      {% if page_obj.has_next %}
+      <a href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}" class="page-btn">Next →</a>
+      {% else %}
+      <button class="page-btn" disabled>Next →</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// Period filter buttons
-document.querySelectorAll('.period-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-        document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
+/* ── FILTER TOGGLE LABEL ── */
+const fp = document.getElementById('filter-panel');
+const ftl = document.getElementById('filter-toggle-label');
+fp.addEventListener('click', () => {
+  setTimeout(() => {
+    ftl.textContent = fp.classList.contains('collapsed') ? '▾ expand' : '▴ collapse';
+  }, 10);
+});
 
-        const form = document.getElementById('filterForm');
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'period';
-        input.value = this.dataset.period;
-        form.appendChild(input);
-        form.submit();
+/* ── LIVE SEARCH ── */
+let searchTimer;
+document.getElementById('search-input').addEventListener('input', function() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('#expense-tbody tr[data-id]').forEach(tr => {
+      tr.style.display = (!q || tr.textContent.toLowerCase().includes(q)) ? '' : 'none';
     });
+  }, 150);
 });
 
-// Real-time search with debounce
-let searchTimeout;
-const searchInput = document.getElementById('searchInput');
-if (searchInput) {
-    searchInput.addEventListener('input', function() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
-            // Auto-submit could be enabled here
-            // document.getElementById('filterForm').submit();
-        }, 500);
-    });
+/* ── BULK SELECTION ── */
+function toggleAll(cb) {
+  document.querySelectorAll('.row-check').forEach(c => c.checked = cb.checked);
+  onRowCheck();
+}
+function onRowCheck() {
+  const checked = [...document.querySelectorAll('.row-check:checked')];
+  document.getElementById('bulk-count').textContent = `${checked.length} selected`;
+  document.getElementById('bulk-bar').classList.toggle('hidden', !checked.length);
+  document.getElementById('bulk-ids-container').innerHTML = checked.map(c =>
+    `<input type="hidden" name="expense_ids" value="${c.value}">`
+  ).join('');
+  document.querySelectorAll('#expense-tbody tr[data-id]').forEach(tr => {
+    const isChecked = !!checked.find(c => c.value == tr.dataset.id);
+    tr.classList.toggle('selected', isChecked);
+  });
+  // Update select-all indeterminate state
+  const all = document.querySelectorAll('.row-check');
+  const sa = document.getElementById('select-all');
+  sa.indeterminate = checked.length > 0 && checked.length < all.length;
+  sa.checked = checked.length === all.length;
+}
+function clearSelection() {
+  document.querySelectorAll('.row-check, #select-all').forEach(c => { c.checked = false; c.indeterminate = false; });
+  onRowCheck();
+}
+function confirmBulk() {
+  const a = document.querySelector('[name=action]').value;
+  if (!a) { showToast('No action', 'Please choose an action.', 'warning'); return false; }
+  if (a === 'delete') return confirm('Delete selected expenses? This cannot be undone.');
+  return true;
 }
 
-// Clear filters
-function clearFilters() {
-    window.location.href = '{% url "expenses:expense_list" %}';
-}
-
-// Edit expense
-function editExpense(id) {
-    window.location.href = `/expenses/${id}/edit/`;
-}
-
-// Delete expense with confirmation
-function deleteExpense(id) {
-    if (confirm('Are you sure you want to delete this expense? This action cannot be undone.')) {
-        const overlay = document.getElementById('loadingOverlay');
-        overlay.classList.add('active');
-
-        fetch(`/expenses/${id}/delete/`, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Remove row with animation
-                const row = document.querySelector(`[data-expense-id="${id}"]`);
-                row.style.transition = 'all 0.3s ease';
-                row.style.opacity = '0';
-                row.style.transform = 'translateX(-100%)';
-
-                setTimeout(() => {
-                    row.remove();
-
-                    // Check if table is empty
-                    const remainingRows = document.querySelectorAll('.table-row').length;
-                    if (remainingRows === 0) {
-                        location.reload();
-                    }
-                }, 300);
-            } else {
-                alert('Error deleting expense');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error deleting expense');
-        })
-        .finally(() => {
-            overlay.classList.remove('active');
-        });
+/* ── KEYBOARD SHORTCUTS ── */
+document.addEventListener('keydown', e => {
+  const ed = ['input','textarea','select'].includes(e.target.tagName.toLowerCase()) || e.target.isContentEditable;
+  if (!ed) {
+    if (e.ctrlKey && e.key === 'a') {
+      e.preventDefault();
+      document.getElementById('select-all').click();
     }
-}
-
-// Keyboard shortcuts
-document.addEventListener('keydown', function(e) {
-    // Ctrl/Cmd + N = New expense
-    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-        e.preventDefault();
-        window.location.href = '{% url "expenses:expense_create" %}';
+    if (e.key === 'Delete' && document.querySelectorAll('.row-check:checked').length) {
+      if (confirm('Delete selected?')) {
+        document.querySelector('[name=action]').value = 'delete';
+        document.getElementById('bulk-form').submit();
+      }
     }
-
-    // Ctrl/Cmd + F = Focus search
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        searchInput.focus();
-    }
+  }
 });
 
-// Auto-save filter preferences to localStorage
-const form = document.getElementById('filterForm');
-form.addEventListener('submit', function() {
-    const formData = new FormData(form);
-    const filters = Object.fromEntries(formData);
-    localStorage.setItem('expenseFilters', JSON.stringify(filters));
-});
+/* ── DELETE SINGLE ── */
+function deleteExpense(id, btn) {
+  if (!confirm('Delete this expense?')) return;
+  fetch(`/expenses/${id}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': getCookie('csrftoken') } })
+    .then(() => {
+      const row = btn.closest('tr');
+      row.style.animation = 'fadeRow .3s forwards';
+      setTimeout(() => row.remove(), 300);
+      showToast('Deleted', 'Expense removed.');
+    })
+    .catch(() => showToast('Error', 'Could not delete.', 'error'));
+}
+
+/* ── SORT ── */
+let sortState = { col: null, asc: true };
+function sortTable(col) {
+  const tb = document.getElementById('expense-tbody');
+  const rows = [...tb.querySelectorAll('tr[data-id]')];
+  if (sortState.col === col) sortState.asc = !sortState.asc;
+  else { sortState.col = col; sortState.asc = true; }
+
+  document.querySelectorAll('#expense-table thead th').forEach((th, i) => {
+    th.classList.toggle('sorted', i === col);
+  });
+
+  rows.sort((a, b) => {
+    const ta = a.cells[col]?.textContent.trim() || '';
+    const tb2 = b.cells[col]?.textContent.trim() || '';
+    const na = parseFloat(ta.replace(/,/g, '')), nb = parseFloat(tb2.replace(/,/g, ''));
+    const c = (!isNaN(na) && !isNaN(nb)) ? (na - nb) : ta.localeCompare(tb2);
+    return sortState.asc ? c : -c;
+  });
+  rows.forEach(r => tb.appendChild(r));
+}
+
+/* ── AUTO-SUBMIT FILTER ON DATE CHANGE ── */
+document.querySelectorAll('[name=date_from],[name=date_to]').forEach(el =>
+  el.addEventListener('change', () => el.closest('form').submit())
+);
 </script>
+<style>
+@keyframes fadeRow { to { opacity: 0; transform: scaleY(0); height: 0; } }
+</style>
 {% endblock %}

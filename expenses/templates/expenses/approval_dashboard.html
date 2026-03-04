@@ -1,0 +1,238 @@
+{% extends "expenses/base.html" %}
+{% block title %}Approval Queue{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── STATS STRIP ─────────────────────────────────────── */
+.approval-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--s3);
+  margin-bottom: var(--s5);
+}
+@media (max-width: 700px) { .approval-stats { grid-template-columns: repeat(2, 1fr); } }
+.ap-stat {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  padding: var(--s4) var(--s5);
+  text-align: center;
+}
+.ap-stat-val {
+  font-family: var(--ff-mono);
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.ap-stat-lbl {
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-3);
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+/* ── APPROVAL CARDS GRID ─────────────────────────────── */
+.approval-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--s4);
+}
+
+.approval-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  padding: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  transition: box-shadow var(--tr), transform var(--tr);
+  position: relative;
+  overflow: hidden;
+}
+.approval-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.approval-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--amber), var(--accent));
+}
+
+.approval-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+}
+.approval-user-avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .9rem; font-weight: 700;
+  flex-shrink: 0;
+}
+.approval-desc {
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.approval-submitter {
+  font-size: .75rem;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.approval-amount {
+  font-family: var(--ff-mono);
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.approval-amount .curr { font-size: .8rem; font-weight: 400; color: var(--text-3); }
+
+.approval-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.approval-note {
+  font-size: .8rem;
+  color: var(--text-2);
+  background: var(--bg-input);
+  border-radius: var(--r2);
+  padding: var(--s3);
+  border-left: 2px solid var(--amber);
+  line-height: 1.5;
+}
+
+.approval-actions { display: flex; gap: var(--s2); margin-top: var(--s2); }
+
+/* ── MODAL ───────────────────────────────────────────── */
+/* inherited from base */
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- HEADER -->
+<div class="page-header">
+  <div class="page-header-text">
+    <h1 class="page-title">✅ Approval Queue</h1>
+    <p class="page-subtitle">{{ pending_expenses|length }} expense{{ pending_expenses|length|pluralize }} pending review</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{% url 'expenses:expense_list' %}" class="btn btn-secondary btn-sm">← All Expenses</a>
+  </div>
+</div>
+
+<!-- STATS STRIP -->
+<div class="approval-stats">
+  <div class="ap-stat">
+    <div class="ap-stat-val" style="color:var(--amber)">{{ pending_expenses|length }}</div>
+    <div class="ap-stat-lbl">Pending</div>
+  </div>
+  <div class="ap-stat">
+    <div class="ap-stat-val" style="color:var(--green)">{{ approved_today|default:0 }}</div>
+    <div class="ap-stat-lbl">Approved Today</div>
+  </div>
+  <div class="ap-stat">
+    <div class="ap-stat-val" style="color:var(--red)">{{ rejected_today|default:0 }}</div>
+    <div class="ap-stat-lbl">Rejected Today</div>
+  </div>
+  <div class="ap-stat">
+    <div class="ap-stat-val">{{ pending_total|default:0|floatformat:0 }}</div>
+    <div class="ap-stat-lbl">Total Value (UGX)</div>
+  </div>
+</div>
+
+{% if pending_expenses %}
+<div class="approval-grid">
+  {% for expense in pending_expenses %}
+  <div class="approval-card">
+    <div class="approval-card-header">
+      <div class="approval-user-avatar">{{ expense.user.username|first|upper }}</div>
+      <div style="flex:1;min-width:0">
+        <div class="approval-desc">{{ expense.description }}</div>
+        <div class="approval-submitter">
+          {{ expense.user.get_full_name|default:expense.user.username }}
+          · {{ expense.date|date:"d M Y" }}
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:var(--s2)">
+      <div class="approval-amount">
+        {{ expense.amount|floatformat:2 }}<span class="curr"> UGX</span>
+      </div>
+      <span class="badge badge-amber">Pending Review</span>
+    </div>
+
+    <div class="approval-tags">
+      {% for tag in expense.tags.all %}<span class="tag-chip">{{ tag.name }}</span>{% endfor %}
+      {% if expense.payment_method %}<span class="badge badge-neutral">{{ expense.payment_method }}</span>{% endif %}
+    </div>
+
+    {% if expense.notes %}
+    <div class="approval-note">{{ expense.notes|truncatechars:120 }}</div>
+    {% endif %}
+
+    <div class="approval-actions">
+      <form method="post" action="{% url 'expenses:expense_approve' expense.pk %}" style="flex:1">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-success btn-sm" style="width:100%" onclick="return confirm('Approve this expense?')">✅ Approve</button>
+      </form>
+      <button class="btn btn-danger btn-sm" style="flex:1" onclick="showRejectModal({{ expense.pk }})">❌ Reject</button>
+      <a href="{% url 'expenses:expense_detail' expense.pk %}" class="btn btn-secondary btn-sm" title="View details">👁️</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card card-body" style="margin-top:var(--s5)">
+  <div class="empty-state" style="padding:var(--s10)">
+    <div class="empty-icon" style="font-size:3rem">✅</div>
+    <div class="empty-title">All clear!</div>
+    <div class="empty-desc">No expenses are pending review right now.</div>
+    <a href="{% url 'expenses:expense_list' %}" class="btn btn-primary mt-2">View All Expenses</a>
+  </div>
+</div>
+{% endif %}
+
+<!-- REJECT MODAL -->
+<div id="reject-modal" class="modal-overlay" onclick="if(event.target===this)closeModal('reject-modal')">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <div class="modal-title">❌ Reject Expense</div>
+      <button class="modal-close" onclick="closeModal('reject-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="reject-form" method="post">
+        {% csrf_token %}
+        <div class="form-group">
+          <label class="form-label">Reason for rejection <span class="req">*</span></label>
+          <textarea name="comment" class="form-control" rows="4"
+            placeholder="Please provide a clear reason for rejection…" required></textarea>
+          <div class="form-hint">The submitter will see this message.</div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('reject-modal')">Cancel</button>
+      <button class="btn btn-danger" onclick="document.getElementById('reject-form').submit()">❌ Confirm Rejection</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showRejectModal(id) {
+  document.getElementById('reject-form').action = `/expenses/${id}/reject/`;
+  openModal('reject-modal');
+  setTimeout(() => document.querySelector('#reject-modal textarea').focus(), 150);
+}
+</script>
+{% endblock %}

@@ -20,6 +20,7 @@ company_patterns = [
     path('suspended/', views.company_suspended_view, name='company_suspended'),
     path('grace-period/', views.company_suspended_view, name='company_grace_period'),
     path('deactivated/', views.company_deactivated_view, name='company_deactivated'),
+    path('dashboard/detail/', views.dashboard_detail_api, name='dashboard_detail'),
 
     path('subscription/upgrade/<int:plan_id>/', SubscriptionUpgradeView.as_view(), name='subscription_upgrade'),
     path('subscription/upgrade/<int:plan_id>/cost/', SubscriptionUpgradeView.as_view(), name='upgrade_cost'),

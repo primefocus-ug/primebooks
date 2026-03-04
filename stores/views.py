@@ -43,7 +43,9 @@ try:
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
-
+from expenses.models import Expense
+from django.db.models import Avg, Max
+from django.db.models.functions import TruncMonth
 from django.http import Http404
 from accounts.models import AuditLog
 from inventory.models import Product, Stock, Category, StockMovement
@@ -56,6 +58,8 @@ from .forms import (
     StoreForm, StoreOperatingHoursForm, StoreDeviceForm,
     StoreFilterForm, BulkStoreActionForm, StoreStaffAssignmentForm, EnhancedStoreReportForm
 )
+from datetime import timedelta
+from django.utils import timezone
 from django.core.exceptions import ValidationError, PermissionDenied
 from company.decorator import check_branch_limit
 from django.utils.decorators import method_decorator
@@ -77,7 +81,7 @@ from .utils import (
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
-
+today = timezone.now().date()
 
 @login_required
 @permission_required('stores.view_devicefingerprint', raise_exception=True)
@@ -114,6 +118,624 @@ def user_sessions_view(request):
 
     return render(request, 'accounts/user_sessions.html', context)
 
+@login_required
+@permission_required('stores.view_store', raise_exception=True)
+def tenant_overview(request):
+    """
+    High-level operations overview across all tenant apps.
+    Shows summary cards + charts for Stores, Inventory, Sales,
+    Devices, and Security. Detail panels load via AJAX.
+    """
+    stores = get_user_accessible_stores(request.user)
+    active_stores = stores.filter(is_active=True)
+    now = timezone.now()
+    today = now.date()
+    thirty_days_ago = today - timedelta(days=30)
+    fourteen_days_ago = today - timedelta(days=14)
+
+    # ── STORES MODULE ──────────────────────────────────────────
+    stores_by_region = list(
+        stores.exclude(region__isnull=True).exclude(region='')
+        .values('region')
+        .annotate(count=Count('id'))
+        .order_by('-count')[:8]
+    )
+    stores_summary = {
+        'total': stores.count(),
+        'active': active_stores.count(),
+        'inactive': stores.filter(is_active=False).count(),
+        'efris_enabled': stores.filter(efris_enabled=True).count(),
+        'main_branches': stores.filter(is_main_branch=True).count(),
+        'by_region': stores_by_region,
+    }
+
+    # ── INVENTORY MODULE ───────────────────────────────────────
+    all_stock = Stock.objects.filter(store__in=active_stores)
+    low_stock_qs = all_stock.filter(quantity__lte=F('low_stock_threshold'), quantity__gt=0)
+    out_of_stock_qs = all_stock.filter(quantity=0)
+    ok_stock_count = all_stock.filter(quantity__gt=F('low_stock_threshold')).count()
+
+    inv_value = all_stock.aggregate(
+        total_value=Sum(F('quantity') * F('product__cost_price'))
+    )['total_value'] or 0
+
+    inventory_summary = {
+        'total_products': all_stock.values('product').distinct().count(),
+        'total_items': all_stock.count(),
+        'low_stock': low_stock_qs.count(),
+        'out_of_stock': out_of_stock_qs.count(),
+        'ok_stock': ok_stock_count,
+        'total_value': float(inv_value),
+    }
+
+    # ── SALES MODULE ───────────────────────────────────────────
+    sales_qs = Sale.objects.filter(store__in=active_stores)
+    sales_30d = sales_qs.filter(created_at__gte=thirty_days_ago)
+    sales_today = sales_qs.filter(created_at__gte=today)
+
+    # Daily sales for last 14 days (chart data)
+    daily_sales = list(
+        sales_qs.filter(created_at__gte=fourteen_days_ago)
+        .values('created_at')
+        .annotate(
+            revenue=Sum('total_amount'),
+            count=Count('id')
+        )
+        .order_by('created_at')
+    )
+    # Fill in missing days with zeros
+    daily_map = {str(d['created_at']): {'revenue': float(d['revenue'] or 0), 'count': d['count']} for d in daily_sales}
+    daily_labels = []
+    daily_revenue = []
+    daily_counts = []
+    for i in range(14):
+        day = fourteen_days_ago + timedelta(days=i)
+        day_str = str(day)
+        daily_labels.append(day.strftime('%d %b'))
+        daily_revenue.append(daily_map.get(day_str, {}).get('revenue', 0))
+        daily_counts.append(daily_map.get(day_str, {}).get('count', 0))
+
+    # Payment method breakdown
+    payment_breakdown = list(
+        sales_30d.values('payment_method')
+        .annotate(count=Count('id'), total=Sum('total_amount'))
+        .order_by('-count')[:5]
+    )
+
+    revenue_30d = sales_30d.aggregate(total=Sum('total_amount'))['total'] or 0
+    revenue_today = sales_today.aggregate(total=Sum('total_amount'))['total'] or 0
+
+    sales_summary = {
+        'total_today': sales_today.count(),
+        'revenue_today': float(revenue_today),
+        'total_30d': sales_30d.count(),
+        'revenue_30d': float(revenue_30d),
+        'payment_breakdown': payment_breakdown,
+        'daily_labels': daily_labels,
+        'daily_revenue': daily_revenue,
+        'daily_counts': daily_counts,
+        'payment_breakdown_json': json.dumps([
+            {
+                'payment_method': p['payment_method'],
+                'count': p['count'],
+                'total': float(p['total'] or 0),
+            }
+            for p in payment_breakdown
+        ]),
+    }
+
+    # ── DEVICES MODULE ─────────────────────────────────────────
+    devices_qs = StoreDevice.objects.filter(store__in=active_stores)
+    maintenance_cutoff = now - timedelta(days=90)
+
+    device_type_breakdown = list(
+        devices_qs.filter(is_active=True)
+        .values('device_type')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+
+    devices_summary = {
+        'total': devices_qs.count(),
+        'active': devices_qs.filter(is_active=True).count(),
+        'inactive': devices_qs.filter(is_active=False).count(),
+        'pos_devices': devices_qs.filter(device_type='POS', is_active=True).count(),
+        'needs_maintenance': devices_qs.filter(
+            last_maintenance__lt=maintenance_cutoff
+        ).count(),
+        'efris_linked': devices_qs.filter(is_efris_linked=True, is_active=True).count(),
+        'type_breakdown': device_type_breakdown,
+    }
+
+    # ── EXPENSES MODULE ────────────────────────────────────────────────────────
+    expenses_qs = Expense.objects.filter(user__in=active_stores.values('staff'))
+    # If Expense is scoped by store instead of user, adjust the filter above.
+    # Simplest approach — all expenses visible to this tenant user:
+    expenses_qs_all = Expense.objects.all()  # scope as needed for your multi-tenant setup
+    expenses_30d = expenses_qs_all.filter(date__gte=thirty_days_ago)
+
+    # Monthly trend for the sparkline card chart (last 6 months)
+    from django.db.models.functions import TruncMonth
+    import json as _json
+
+    exp_monthly_trend = list(
+        expenses_qs_all
+        .filter(date__gte=today - timedelta(days=180))
+        .annotate(month=TruncMonth('date'))
+        .values('month')
+        .annotate(total=Sum('amount'), count=Count('id'))
+        .order_by('month')
+    )
+    # Cast to plain Python types — avoids Decimal/date serialization errors in templates
+    exp_monthly_safe = [
+        {'month': row['month'].strftime('%b %Y'), 'total': float(row['total'] or 0), 'count': row['count']}
+        for row in exp_monthly_trend
+    ]
+
+    expenses_summary = {
+        'count_30d': expenses_30d.count(),
+        'total_30d': float(expenses_30d.aggregate(t=Sum('amount'))['t'] or 0),
+        'pending': expenses_qs_all.filter(status='submitted').count(),
+        'approved': expenses_qs_all.filter(status='approved').count(),
+        'rejected': expenses_qs_all.filter(status='rejected').count(),
+        'monthly_trend': exp_monthly_safe,
+        'monthly_trend_json': _json.dumps(exp_monthly_safe),  # pre-serialized for {{ |safe }}
+    }
+
+    # ── CUSTOMERS MODULE ───────────────────────────────────────────────────────
+    sales_base = Sale.objects.filter(store__in=active_stores)
+    sales_30d_all = sales_base.filter(created_at__date__gte=thirty_days_ago)
+
+    total_customers = sales_base.filter(
+        customer__isnull=False
+    ).values('customer').distinct().count()
+
+    new_customers_30d = sales_30d_all.filter(
+        customer__isnull=False
+    ).values('customer').distinct().count()
+
+    repeat_customers = (
+        sales_base.filter(customer__isnull=False)
+        .values('customer')
+        .annotate(cnt=Count('id'))
+        .filter(cnt__gt=1)
+        .count()
+    )
+
+    avg_spend = sales_30d_all.filter(customer__isnull=False) \
+                    .aggregate(avg=Avg('total_amount'))['avg'] or 0
+
+    # High value: customers whose total spend > 1,000,000 UGX (adjust threshold)
+    HIGH_VALUE_THRESHOLD = 1_000_000
+    high_value_count = (
+        sales_base.filter(customer__isnull=False)
+        .values('customer')
+        .annotate(total=Sum('total_amount'))
+        .filter(total__gte=HIGH_VALUE_THRESHOLD)
+        .count()
+    )
+
+    customers_summary = {
+        'total': total_customers,
+        'new_30d': new_customers_30d,
+        'repeat': repeat_customers,
+        'avg_spend': float(avg_spend),
+        'high_value': high_value_count,
+        'segments': {
+            'high_value': high_value_count,
+            'repeat': repeat_customers,
+            'new': new_customers_30d,
+        },
+        # Pre-serialized — no Decimal/date objects, safe for {{ |safe }} in template
+        'segments_json': _json.dumps({
+            'high_value': high_value_count,
+            'repeat': repeat_customers,
+            'new': new_customers_30d,
+        }),
+    }
+    # ── SECURITY MODULE ────────────────────────────────────────
+    alerts_qs = SecurityAlert.objects.filter(store__in=active_stores)
+    open_alerts = alerts_qs.filter(status='OPEN')
+
+    alert_severity_breakdown = list(
+        open_alerts.values('severity')
+        .annotate(count=Count('id'))
+        .order_by('-count')
+    )
+
+    sessions_qs = UserDeviceSession.objects.filter(store__in=active_stores)
+    active_sessions = sessions_qs.filter(is_active=True, expires_at__gt=now)
+
+    security_summary = {
+        'total_alerts': alerts_qs.count(),
+        'open_alerts': open_alerts.count(),
+        'critical_alerts': open_alerts.filter(severity='CRITICAL').count(),
+        'high_alerts': open_alerts.filter(severity='HIGH').count(),
+        'active_sessions': active_sessions.count(),
+        'suspicious_sessions': active_sessions.filter(is_suspicious=True).count(),
+        'new_devices_7d': sessions_qs.filter(
+            is_new_device=True,
+            created_at__gte=now - timedelta(days=7)
+        ).count(),
+        'severity_breakdown': alert_severity_breakdown,
+    }
+
+    context = {
+        'stores_summary': stores_summary,
+        'inventory_summary': inventory_summary,
+        'sales_summary': sales_summary,
+        'devices_summary': devices_summary,
+        'security_summary': security_summary,
+        'accessible_stores': stores,
+        'expenses_summary': expenses_summary,
+        'customers_summary': customers_summary,
+        'today': today,
+    }
+    return render(request, 'stores/tenant_overview.html', context)
+
+
+@login_required
+@permission_required('stores.view_store', raise_exception=True)
+def tenant_overview_detail_api(request):
+    """
+    AJAX endpoint that returns detailed data for a specific module panel.
+    Called when user clicks a module card on the overview page.
+
+    Query params:
+        module: stores | inventory | sales | devices | security
+        store_id: (optional) filter to a specific store
+        period: (optional) 7 | 30 | 90  (days, default 30)
+    """
+    module = request.GET.get('module', '')
+    store_id = request.GET.get('store_id')
+    period = int(request.GET.get('period', 30))
+
+    stores = get_user_accessible_stores(request.user)
+    active_stores = stores.filter(is_active=True)
+    now = timezone.now()
+    since = now - timedelta(days=period)
+
+    # Optionally scope to one store
+    if store_id:
+        try:
+            single_store = stores.get(pk=store_id)
+            active_stores = active_stores.filter(pk=store_id)
+        except Store.DoesNotExist:
+            return JsonResponse({'error': 'Store not found or access denied'}, status=403)
+
+    if module == 'stores':
+        data = list(
+            stores.annotate(
+                staff_count=Count('staff', filter=Q(staff__is_hidden=False, staff__is_active=True)),
+                device_count=Count('devices', filter=Q(devices__is_active=True)),
+                inventory_count=Count('inventory_items'),
+                low_stock_count=Count(
+                    'inventory_items',
+                    filter=Q(inventory_items__quantity__lte=F('inventory_items__low_stock_threshold'))
+                ),
+            ).values(
+                'id', 'name', 'code', 'region', 'store_type', 'is_active',
+                'is_main_branch', 'efris_enabled', 'manager_name',
+                'physical_address', 'phone', 'created_at',
+                'staff_count', 'device_count', 'inventory_count', 'low_stock_count'
+            ).order_by('-is_active', 'name')
+        )
+        # Serialize datetimes
+        for row in data:
+            if row.get('created_at'):
+                row['created_at'] = row['created_at'].strftime('%Y-%m-%d')
+        return JsonResponse({'module': 'stores', 'rows': data})
+
+    elif module == 'inventory':
+        low_stock_items = list(
+            Stock.objects.filter(
+                store__in=active_stores,
+                quantity__lte=F('low_stock_threshold')
+            ).select_related('product', 'store')
+            .order_by('quantity')[:50]
+            .values(
+                'id', 'store__name', 'product__name', 'product__sku',
+                'quantity', 'low_stock_threshold', 'reorder_quantity',
+                'product__cost_price'
+            )
+        )
+        # Top products by value
+        top_by_value = list(
+            Stock.objects.filter(store__in=active_stores)
+            .annotate(value=F('quantity') * F('product__cost_price'))
+            .order_by('-value')[:10]
+            .values('store__name', 'product__name', 'quantity', 'value')
+        )
+        return JsonResponse({
+            'module': 'inventory',
+            'low_stock_items': low_stock_items,
+            'top_by_value': top_by_value,
+        })
+
+
+    elif module == 'expenses':
+
+        qs = Expense.objects.all()  # scope to tenant as needed
+
+        qs = qs.filter(date__gte=since.date())
+
+        rows = list(
+
+            qs.order_by('-date')[:60]
+
+            .values(
+
+                'id', 'description', 'vendor', 'amount', 'currency',
+
+                'payment_method', 'status', 'date', 'is_recurring',
+
+                'amount_base', 'exchange_rate',
+
+            )
+
+        )
+
+        for r in rows:
+            r['date'] = str(r['date'])
+
+            r['amount'] = float(r['amount'])
+
+            r['amount_base'] = float(r['amount_base'])
+
+        # Payment method breakdown (for side chart)
+
+        payment_breakdown = list(
+
+            qs.values('payment_method')
+
+            .annotate(total_amount=Sum('amount'), count=Count('id'))
+
+            .order_by('-total_amount')
+
+        )
+
+        for p in payment_breakdown:
+            p['total_amount'] = float(p['total_amount'] or 0)
+
+        # Monthly trend (for side chart)
+
+        monthly_trend = list(
+
+            qs.filter(date__gte=today - timedelta(days=180))
+
+            .annotate(month=TruncMonth('date'))
+
+            .values('month')
+
+            .annotate(total=Sum('amount'), count=Count('id'))
+
+            .order_by('month')
+
+        )
+
+        for m in monthly_trend:
+            m['month'] = m['month'].strftime('%b %Y')
+
+            m['total'] = float(m['total'] or 0)
+
+        return JsonResponse({
+
+            'module': 'expenses',
+
+            'rows': rows,
+
+            'payment_breakdown': payment_breakdown,
+
+            'monthly_trend': monthly_trend,
+
+        })
+
+
+    elif module == 'customers':
+
+        sales_qs = Sale.objects.filter(store__in=active_stores, created_at__gte=since)
+
+        customers = list(
+
+            sales_qs.filter(customer__isnull=False)
+
+            .values('customer', 'customer__name')
+
+            .annotate(
+
+                total_purchases=Count('id'),
+
+                total_spent=Sum('total_amount'),
+
+                avg_spend=Avg('total_amount'),
+
+                last_purchase=Max('created_at__date'),
+
+            )
+
+            .order_by('-total_spent')[:50]
+
+        )
+
+        for c in customers:
+
+            c['total_spent'] = float(c['total_spent'] or 0)
+
+            c['avg_spend'] = float(c['avg_spend'] or 0)
+
+            if c.get('last_purchase'):
+                c['last_purchase'] = str(c['last_purchase'])
+
+        # Segment counts
+
+        HIGH_VALUE_THRESHOLD = 1_000_000
+
+        segments = {
+
+            'high_value': sum(1 for c in customers if c['total_spent'] >= HIGH_VALUE_THRESHOLD),
+
+            'mid_value': sum(1 for c in customers if 500_000 <= c['total_spent'] < HIGH_VALUE_THRESHOLD),
+
+            'standard': sum(1 for c in customers if c['total_spent'] < 500_000),
+
+            'new_count': sum(1 for c in customers if c['total_purchases'] == 1),
+
+        }
+
+        return JsonResponse({
+
+            'module': 'customers',
+
+            'customers': customers,
+
+            'segments': segments,
+
+        })
+
+
+    elif module == 'sale_items':
+
+        # Inline row expand for Sales panel
+
+        sale_id = request.GET.get('sale_id')
+
+        if not sale_id:
+            return JsonResponse({'error': 'sale_id required'}, status=400)
+
+        try:
+
+            sale = Sale.objects.get(pk=sale_id, store__in=active_stores)
+
+        except Sale.DoesNotExist:
+
+            return JsonResponse({'error': 'Sale not found or access denied'}, status=403)
+
+        items = list(
+
+            SaleItem.objects.filter(sale=sale)
+
+            .values(
+
+                'id',
+
+                'product__name',
+
+                'product__sku',
+
+                'quantity',
+
+                'unit_price',
+
+                'total_price',
+
+                'discount_amount',
+
+                'tax_amount',
+
+            )
+
+        )
+
+        for item in items:
+
+            for field in ('unit_price', 'total_price', 'discount_amount', 'tax_amount'):
+                item[field] = float(item[field] or 0)
+
+        return JsonResponse({'module': 'sale_items', 'items': items})
+
+    elif module == 'sales':
+        recent_sales = list(
+            Sale.objects.filter(store__in=active_stores, created_at__gte=since.date())
+            .select_related('store', 'customer')
+            .order_by( '-created_at')[:50]
+            .values(
+                'id', 'document_number', 'store__name',
+                'created_at', 'total_amount', 'payment_method',
+                'payment_status', 'transaction_type',
+                'customer__name'
+            )
+        )
+        # Serialize dates
+        for row in recent_sales:
+            if row.get('created_at'):
+                row['created_at'] = str(row['created_at'])
+
+        # Top stores by revenue this period
+        top_stores = list(
+            Sale.objects.filter(store__in=active_stores, created_at__gte=since.date())
+            .values('store__name')
+            .annotate(revenue=Sum('total_amount'), count=Count('id'))
+            .order_by('-revenue')[:10]
+        )
+        for row in top_stores:
+            row['revenue'] = float(row['revenue'] or 0)
+
+        return JsonResponse({
+            'module': 'sales',
+            'recent_sales': recent_sales,
+            'top_stores': top_stores,
+        })
+
+    elif module == 'devices':
+        devices = list(
+            StoreDevice.objects.filter(store__in=active_stores)
+            .select_related('store')
+            .order_by('-is_active', 'store__name', 'name')[:60]
+            .values(
+                'id', 'name', 'device_type', 'device_number',
+                'serial_number', 'is_active', 'is_efris_linked',
+                'store__name', 'last_maintenance', 'registered_at'
+            )
+        )
+        maintenance_cutoff = now - timedelta(days=90)
+        for d in devices:
+            lm = d.get('last_maintenance')
+            d['needs_maintenance'] = bool(lm and lm < maintenance_cutoff)
+            if lm:
+                d['last_maintenance'] = lm.strftime('%Y-%m-%d')
+            ra = d.get('registered_at')
+            if ra:
+                d['registered_at'] = ra.strftime('%Y-%m-%d')
+        return JsonResponse({'module': 'devices', 'rows': devices})
+
+    elif module == 'security':
+        open_alerts = list(
+            SecurityAlert.objects.filter(
+                store__in=active_stores,
+                status='OPEN'
+            ).order_by('-created_at')[:50]
+            .values(
+                'id', 'title', 'alert_type', 'severity',
+                'status', 'store__name', 'created_at', 'description'
+            )
+        )
+        for a in open_alerts:
+            if a.get('created_at'):
+                a['created_at'] = a['created_at'].strftime('%Y-%m-%d %H:%M')
+
+        recent_sessions = list(
+            UserDeviceSession.objects.filter(
+                store__in=active_stores,
+                created_at__gte=since
+            ).order_by('-created_at')[:30]
+            .values(
+                'id', 'user__username', 'store__name',
+                'ip_address', 'browser_name', 'os_name',
+                'is_active', 'is_suspicious', 'is_new_device',
+                'created_at', 'status'
+            )
+        )
+        for s in recent_sessions:
+            if s.get('created_at'):
+                s['created_at'] = s['created_at'].strftime('%Y-%m-%d %H:%M')
+
+        return JsonResponse({
+            'module': 'security',
+            'open_alerts': open_alerts,
+            'recent_sessions': recent_sessions,
+        })
+
+    return JsonResponse({'error': f'Unknown module: {module}'}, status=400)
 
 @login_required
 @require_http_methods(["POST"])

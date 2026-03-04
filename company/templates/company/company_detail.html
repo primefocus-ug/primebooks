@@ -1,9 +1,7 @@
 {% extends 'base.html' %}
-{% load i18n %}
-{% load static %}
-{% load custom_filters %}
+{% load i18n static custom_filters humanize %}
 
-{% block title %}{% trans "Company Details" %} - {{ company.trading_name|default:company.name }}{% endblock %}
+{% block title %}{{ company.trading_name|default:company.name }} · Detail{% endblock %}
 
 {% block breadcrumb %}
 {{ block.super }}
@@ -11,2257 +9,1080 @@
 <li class="breadcrumb-item active">{{ company.trading_name|default:company.name }}</li>
 {% endblock %}
 
-{% block page_header %}
-<div class="company-header">
-    <div class="company-header-content">
-        <div class="company-avatar">
-            {% if company.logo %}
-                <img src="{{ company.logo.url }}" alt="{{ company.name }}">
-            {% else %}
-                <div class="avatar-placeholder">{{ company.name|first|upper }}</div>
-            {% endif %}
-        </div>
-
-        <div class="company-info">
-            <h1 class="company-title">{{ company.trading_name|default:company.name }}</h1>
-            {% if company.description %}
-                <p class="company-description">{{ company.description|truncatechars:120 }}</p>
-            {% endif %}
-            <div class="company-badges">
-                <span class="status-badge {{ company.status|lower }}">
-                    {{ company.get_status_display }}
-                </span>
-                {% if company.is_verified %}
-                    <span class="feature-badge verified">
-                        <i class="bi bi-shield-check"></i> {% trans 'Verified' %}
-                    </span>
-                {% endif %}
-                {% if company.efris_enabled %}
-                    <span class="feature-badge efris">
-                        <i class="bi bi-gear"></i> {% trans 'EFRIS' %}
-                    </span>
-                {% endif %}
-            </div>
-        </div>
-
-        <div class="company-actions">
-            <button class="btn-icon" id="darkModeToggle" title="{% trans 'Toggle Dark Mode' %}">
-                <i class="bi bi-moon"></i>
-            </button>
-            {% if perms.companies.change_company %}
-                <a href="{% url 'companies:company_update' company_id=company.company_id %}" class="btn-primary">
-                    <i class="bi bi-pencil"></i> {% trans 'Edit' %}
-                </a>
-            {% endif %}
-            <div class="dropdown">
-                <button class="btn-icon" data-bs-toggle="dropdown">
-                    <i class="bi bi-three-dots"></i>
-                </button>
-                <ul class="dropdown-menu">
-                    {% if perms.companies.view_company %}
-                    <li><a class="dropdown-item" href="{% url 'companies:employee_list' company_id=company.company_id %}">
-                        <i class="bi bi-people"></i> {% trans 'Employees' %}
-                    </a></li>
-                    {% endif %}
-                    <li><hr class="dropdown-divider"></li>
-                    {% if perms.companies.add_company %}
-                    <li><a class="dropdown-item" href="{% url 'companies:company_export' %}">
-                        <i class="bi bi-download"></i> {% trans 'Export' %}
-                    </a></li>
-                    {% endif %}
-                </ul>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
-
-{% block content %}
-<!-- Key Metrics -->
-<div class="metrics-grid">
-    <div class="metric-card">
-        <div class="metric-icon branches">
-            <i class="bi bi-diagram-3"></i>
-        </div>
-        <div class="metric-content">
-            <div class="metric-value" id="total-branches">{{ total_branches|default:0 }}</div>
-            <div class="metric-label">{% trans 'Branches' %}</div>
-            <div class="metric-sub">{{ active_branches|default:0 }} {% trans 'active' %}</div>
-        </div>
-    </div>
-
-    <div class="metric-card">
-        <div class="metric-icon employees">
-            <i class="bi bi-people"></i>
-        </div>
-        <div class="metric-content">
-            <div class="metric-value" id="total-employees">{{ total_employees|default:0 }}</div>
-            <div class="metric-label">{% trans 'Employees' %}</div>
-            <div class="metric-sub">{{ company_admins|default:0 }} {% trans 'admins' %}</div>
-        </div>
-    </div>
-
-    <div class="metric-card">
-        <div class="metric-icon revenue">
-            <i class="bi bi-currency-dollar"></i>
-        </div>
-        <div class="metric-content">
-            {% if revenue_analytics %}
-                <div class="metric-value">{{ revenue_analytics.current_period.total_revenue|money }}</div>
-                <div class="metric-label">{% trans 'Revenue (30d)' %}</div>
-                {% if revenue_analytics.growth_rates.revenue_growth != 0 %}
-                    <div class="metric-growth {% if revenue_analytics.growth_rates.revenue_growth > 0 %}positive{% else %}negative{% endif %}">
-                        {{ revenue_analytics.growth_rates.revenue_growth|floatformat:1 }}%
-                    </div>
-                {% endif %}
-            {% else %}
-                <div class="metric-value">0</div>
-                <div class="metric-label">{% trans 'Revenue (30d)' %}</div>
-            {% endif %}
-        </div>
-    </div>
-
-    <div class="metric-card">
-        <div class="metric-icon performance">
-            <i class="bi bi-speedometer2"></i>
-        </div>
-        <div class="metric-content">
-            <div class="metric-value">{{ overall_performance_score|default:0 }}%</div>
-            <div class="metric-label">{% trans 'Performance' %}</div>
-            <div class="metric-progress">
-                <div class="progress-fill" style="width: {{ overall_performance_score|default:0 }}%"></div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Content Sections -->
-<div class="content-grid">
-    <!-- Left Column -->
-    <div class="content-main">
-        <!-- Company Information -->
-        <div class="info-section">
-            <div class="section-header">
-                <h2><i class="bi bi-building"></i> {% trans 'Company Information' %}</h2>
-            </div>
-            <div class="info-grid">
-                <div class="info-item">
-                    <label>{% trans 'Legal Name' %}</label>
-                    <span>{{ company.name|default:"—" }}</span>
-                </div>
-                <div class="info-item">
-                    <label>{% trans 'Trading Name' %}</label>
-                    <span>{{ company.trading_name|default:"—" }}</span>
-                </div>
-                <div class="info-item">
-                    <label>{% trans 'TIN' %}</label>
-                    <span>{{ company.tin|default:"—" }}</span>
-                </div>
-                <div class="info-item">
-                    <label>{% trans 'BRN' %}</label>
-                    <span>{{ company.brn|default:"—" }}</span>
-                </div>
-                <div class="info-item">
-                    <label>{% trans 'Email' %}</label>
-                    <span>
-                        {% if company.email %}
-                            <a href="mailto:{{ company.email }}">{{ company.email }}</a>
-                        {% else %}—{% endif %}
-                    </span>
-                </div>
-                <div class="info-item">
-                    <label>{% trans 'Phone' %}</label>
-                    <span>
-                        {% if company.phone %}
-                            <a href="tel:{{ company.phone }}">{{ company.phone }}</a>
-                        {% else %}—{% endif %}
-                    </span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Analytics Chart -->
-        <div class="chart-section">
-            <div class="section-header">
-                <h2><i class="bi bi-graph-up"></i> {% trans 'Revenue Analytics' %}</h2>
-                <div class="chart-controls">
-                    <button class="btn-filter active" data-period="7d">7D</button>
-                    <button class="btn-filter" data-period="30d">30D</button>
-                    <button class="btn-filter" data-period="90d">90D</button>
-                </div>
-            </div>
-            <div class="chart-container">
-                <canvas id="revenueChart"></canvas>
-            </div>
-        </div>
-
-        <!-- Branches Table -->
-        <div class="table-section">
-            <div class="section-header">
-                <h2><i class="bi bi-diagram-3"></i> {% trans 'Branches' %} ({{ total_branches }})</h2>
-                {% if perms.branches.add_companybranch %}
-                    <a href="{% url 'stores:store_create' %}" class="btn-primary">
-                        <i class="bi bi-plus"></i> {% trans 'Add Branch' %}
-                    </a>
-                {% endif %}
-            </div>
-
-            {% if branches %}
-                <div class="table-wrapper">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>{% trans 'Branch' %}</th>
-                                <th>{% trans 'Performance' %}</th>
-                                <th>{% trans 'Revenue' %}</th>
-                                <th>{% trans 'Status' %}</th>
-                                <th>{% trans 'Actions' %}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for branch in branches %}
-                            <tr>
-                                <td>
-                                    <div class="branch-info">
-                                        <div class="branch-name">{{ branch.name }}</div>
-                                        {% if branch.analytics.total_stores %}
-                                            <div class="branch-meta">{{ branch.analytics.total_stores }} stores</div>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                                <td>
-                                    {% if branch.analytics.performance_score %}
-                                        <div class="performance-score">{{ branch.analytics.performance_score }}%</div>
-                                    {% else %}—{% endif %}
-                                </td>
-                                <td>
-                                    <div class="revenue-amount">{{ branch.analytics.total_revenue_30d|money }}</div>
-                                </td>
-                                <td>
-                                    {% if branch.is_active %}
-                                        <span class="status-badge active">{% trans 'Active' %}</span>
-                                    {% else %}
-                                        <span class="status-badge inactive">{% trans 'Inactive' %}</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div class="action-group">
-                                        <a href="{% url 'companies:branch_detail' branch.pk %}" class="text-decoration-none">
-                                        <button class="btn-icon-sm" onclick="viewBranch({{ branch.id }})">
-                                            <i class="bi bi-eye"></i>
-                                        </button>
-                                        </a>
-                                        <button class="btn-icon-sm" onclick="showBranchAnalytics({{ branch.id }})">
-                                            <i class="bi bi-graph-up"></i>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <div class="empty-state">
-                    <i class="bi bi-diagram-3"></i>
-                    <h3>{% trans 'No branches found' %}</h3>
-                    <p>{% trans 'Add your first branch to get started' %}</p>
-                    {% if perms.branches.add_companybranch %}
-                        <a href="{% url 'stores:store_create' %}" class="btn-primary">
-                            {% trans 'Add First Branch' %}
-                        </a>
-                    {% endif %}
-                </div>
-            {% endif %}
-        </div>
-
-        <!-- Employees Table -->
-        <div class="table-section">
-            <div class="section-header">
-                <h2><i class="bi bi-people"></i> {% trans 'Employees' %} ({{ total_employees }})</h2>
-                {% if perms.accounts.add_customuser %}
-                    <a href="{% url 'user_create'  %}" class="btn-primary">
-                        <i class="bi bi-plus"></i> {% trans 'Add Employee' %}
-                    </a>
-                {% endif %}
-            </div>
-
-            {% if employees %}
-                <div class="table-wrapper">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>{% trans 'Employee' %}</th>
-                                <th>{% trans 'Role' %}</th>
-                                <th>{% trans 'Status' %}</th>
-                                <th>{% trans 'Last Activity' %}</th>
-                                <th>{% trans 'Actions' %}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for employee in employees %}
-                            <tr>
-                                <td>
-                                    <div class="employee-info">
-                                        <div class="employee-avatar">
-                                            {% if employee.avatar %}
-                                                <img src="{{ employee.avatar.url }}" alt="{{ employee.get_full_name }}">
-                                            {% else %}
-                                                <span>{{ employee.first_name|first|default:employee.username|first|upper }}</span>
-                                            {% endif %}
-                                        </div>
-                                        <div class="employee-details">
-                                            <div class="employee-name">{{ employee.get_full_name|default:employee.username }}</div>
-                                            <div class="employee-email">{{ employee.email|default:"" }}</div>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td>
-                                    {% if employee.company_admin %}
-                                        <span class="role-badge admin">{% trans 'Admin' %}</span>
-                                    {% elif employee.user_type == 'MANAGER' %}
-                                        <span class="role-badge manager">{% trans 'Manager' %}</span>
-                                    {% elif employee.user_type == 'CASHIER' %}
-                                        <span class="role-badge cashier">{% trans 'Cashier' %}</span>
-                                    {% else %}
-                                        <span class="role-badge employee">{% trans 'Employee' %}</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if employee.is_active %}
-                                        <span class="status-badge active">{% trans 'Active' %}</span>
-                                    {% else %}
-                                        <span class="status-badge inactive">{% trans 'Inactive' %}</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if employee.last_activity_at %}
-                                        <span class="activity-time">{{ employee.last_activity_at|timesince }} ago</span>
-                                    {% else %}
-                                        <span class="text-muted">{% trans 'Never' %}</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div class="action-group">
-                                        <button class="btn-icon-sm" onclick="viewEmployee({{ employee.id }})">
-                                            <i class="bi bi-eye"></i>
-                                        </button>
-                                        {% if perms.accounts.change_customuser %}
-                                            <button class="btn-icon-sm" onclick="editEmployee({{ employee.id }})">
-                                                <i class="bi bi-pencil"></i>
-                                            </button>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <div class="empty-state">
-                    <i class="bi bi-people"></i>
-                    <h3>{% trans 'No employees found' %}</h3>
-                    <p>{% trans 'Add your first employee to get started' %}</p>
-                    {% if perms.accounts.add_customuser %}
-                        <a href="{% url 'user_create' %}" class="btn-primary">
-                            {% trans 'Add First Employee' %}
-                        </a>
-                    {% endif %}
-                </div>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- Right Sidebar -->
-    <div class="content-sidebar">
-        <!-- Subscription Info -->
-        <div class="sidebar-section">
-            <div class="section-header">
-                <h3><i class="bi bi-credit-card"></i> {% trans 'Subscription' %}</h3>
-            </div>
-            <div class="subscription-card">
-                <div class="plan-info">
-                    {% if company.plan %}
-                        <div class="plan-name">{{ company.plan.display_name|default:company.plan.name }}</div>
-                        <div class="plan-price">{{ company.plan.price|default:0 }} {{ company.get_preferred_currency_display }}/month</div>
-                    {% else %}
-                        <div class="plan-name">{% trans 'No Plan' %}</div>
-                    {% endif %}
-                </div>
-                {% if company.subscription_ends_at or company.trial_ends_at %}
-                    <div class="expiry-info">
-                        <div class="expiry-date">{{ company.subscription_ends_at|default:company.trial_ends_at|date:"M d, Y" }}</div>
-                        <div class="days-left">{{ days_until_expiry }} {% trans 'days left' %}</div>
-                    </div>
-                {% endif %}
-                <div class="storage-info">
-                    <div class="storage-label">{% trans 'Storage' %}</div>
-                    <div class="storage-bar">
-                        <div class="storage-fill" style="width: {{ storage_usage|default:0 }}%"></div>
-                    </div>
-                    <div class="storage-text">{{ company.storage_used_mb }} MB {% trans 'used' %}</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Performance Overview -->
-        <div class="sidebar-section">
-            <div class="section-header">
-                <h3><i class="bi bi-speedometer2"></i> {% trans 'Performance' %}</h3>
-            </div>
-            <div class="performance-overview">
-                {% if overall_performance_score %}
-                    <div class="performance-circle" data-score="{{ overall_performance_score }}">
-                        <span>{{ overall_performance_score }}%</span>
-                    </div>
-                {% endif %}
-                <div class="performance-metrics">
-                    <div class="metric-item">
-                        <span class="metric-name">{% trans 'Top Branches' %}</span>
-                        <span class="metric-value">{{ top_performing_branches|length }}</span>
-                    </div>
-                    {% if operational_metrics.inventory %}
-                        <div class="metric-item">
-                            <span class="metric-name">{% trans 'Stock Health' %}</span>
-                            <span class="metric-value">{{ operational_metrics.inventory.stock_health_percentage }}%</span>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- System Alerts -->
-        {% if branches_needing_attention or operational_metrics.inventory.low_stock_items %}
-        <div class="sidebar-section">
-            <div class="section-header">
-                <h3><i class="bi bi-exclamation-triangle"></i> {% trans 'Alerts' %}</h3>
-            </div>
-            <div class="alerts-list">
-                {% if branches_needing_attention %}
-                    <div class="alert-item warning">
-                        <i class="bi bi-exclamation-triangle"></i>
-                        <div class="alert-content">
-                            <div class="alert-title">{% trans 'Branches Need Attention' %}</div>
-                            <div class="alert-text">{{ branches_needing_attention|length }} branch{{ branches_needing_attention|length|pluralize }}</div>
-                        </div>
-                    </div>
-                {% endif %}
-
-                {% if operational_metrics.inventory.low_stock_items %}
-                    <div class="alert-item info">
-                        <i class="bi bi-box-seam"></i>
-                        <div class="alert-content">
-                            <div class="alert-title">{% trans 'Low Stock Items' %}</div>
-                            <div class="alert-text">{{ operational_metrics.inventory.low_stock_items }} item{{ operational_metrics.inventory.low_stock_items|pluralize }}</div>
-                        </div>
-                    </div>
-                {% endif %}
-
-                {% if operational_metrics.inventory.out_of_stock_items %}
-                    <div class="alert-item danger">
-                        <i class="bi bi-x-circle"></i>
-                        <div class="alert-content">
-                            <div class="alert-title">{% trans 'Out of Stock' %}</div>
-                            <div class="alert-text">{{ operational_metrics.inventory.out_of_stock_items }} item{{ operational_metrics.inventory.out_of_stock_items|pluralize }}</div>
-                        </div>
-                    </div>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Quick Stats -->
-        <div class="sidebar-section">
-            <div class="section-header">
-                <h3><i class="bi bi-bar-chart"></i> {% trans 'Quick Stats' %}</h3>
-            </div>
-            <div class="stats-list">
-                <div class="stat-item">
-                    <span class="stat-label">{% trans 'Total Stores' %}</span>
-                    <span class="stat-value">{{ total_stores|default:0 }}</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">{% trans 'Active Employees' %}</span>
-                    <span class="stat-value">{{ active_employees|default:0 }}</span>
-                </div>
-                {% if company.domains.all %}
-                <div class="stat-item">
-                    <span class="stat-label">{% trans 'Domains' %}</span>
-                    <span class="stat-value">{{ company.domains.all|length }}</span>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- Recent Activity -->
-        {% if recent_activities %}
-        <div class="sidebar-section">
-            <div class="section-header">
-                <h3><i class="bi bi-activity"></i> {% trans 'Recent Activity' %}</h3>
-            </div>
-            <div class="activity-list">
-                {% for activity in recent_activities|slice:":5" %}
-                <div class="activity-item">
-                    <div class="activity-time">{{ activity.created_at|timesince }} ago</div>
-                    <div class="activity-text">{{ activity.description }}</div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-    </div>
-</div>
-
-<!-- Branch Analytics Modal -->
-<div class="modal fade" id="branchAnalyticsModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">{% trans 'Branch Analytics' %}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="branchAnalyticsContent">
-                <div class="loading-state">
-                    <div class="spinner"></div>
-                    <p>{% trans 'Loading analytics...' %}</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
+{% block page_header %}{% endblock %}
 
 {% block extra_css %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-    /* ===========================================
-   COMPANY DETAILS - FULLY RESPONSIVE CSS
-   =========================================== */
-
-/* CSS Variables */
+/* ═══ TOKENS ═══════════════════════════════════════════════ */
 :root {
-    --primary: #3b82f6;
-    --primary-dark: #1e40af;
-    --primary-light: #60a5fa;
-    --secondary: #64748b;
-    --success: #10b981;
-    --warning: #f59e0b;
-    --danger: #ef4444;
-    --info: #06b6d4;
+  --font: 'DM Sans', system-ui, sans-serif;
+  --mono: 'Geist Mono', 'Fira Code', monospace;
 
-    --gray-50: #f9fafb;
-    --gray-100: #f3f4f6;
-    --gray-200: #e5e7eb;
-    --gray-300: #d1d5db;
-    --gray-400: #9ca3af;
-    --gray-500: #6b7280;
-    --gray-600: #4b5563;
-    --gray-700: #374151;
-    --gray-800: #1f2937;
-    --gray-900: #111827;
+  --bg:   #f5f4f0;
+  --s0:   #ffffff;
+  --s1:   #fafaf7;
+  --s2:   #f2f1ec;
+  --s3:   #e8e6de;
+  --b0:   #e3e1d6;
+  --b1:   #ccc9bb;
 
-    --bg-primary: #ffffff;
-    --bg-secondary: var(--gray-50);
-    --text-primary: var(--gray-900);
-    --text-secondary: var(--gray-600);
-    --text-muted: var(--gray-500);
-    --border: var(--gray-200);
+  --t0:   #18181b;
+  --t1:   #3d3d42;
+  --t2:   #6b6b74;
+  --t3:   #a0a0aa;
 
-    --radius: 8px;
-    --radius-lg: 12px;
-    --shadow: 0 1px 3px rgba(0,0,0,0.1);
-    --shadow-lg: 0 10px 25px rgba(0,0,0,0.1);
-    --transition: all 0.2s ease;
+  --gr:   #16a34a;  --gr-l: #f0fdf4;  --gr-m: #bbf7d0;
+  --bl:   #2563eb;  --bl-l: #eff6ff;  --bl-m: #bfdbfe;
+  --am:   #d97706;  --am-l: #fffbeb;  --am-m: #fde68a;
+  --rd:   #dc2626;  --rd-l: #fef2f2;  --rd-m: #fecaca;
+  --vi:   #7c3aed;  --vi-l: #f5f3ff;  --vi-m: #ddd6fe;
+  --cy:   #0891b2;  --cy-l: #ecfeff;  --cy-m: #a5f3fc;
+
+  --r:    10px;
+  --r-lg: 16px;
+  --sh:   0 1px 2px rgba(0,0,0,.05), 0 1px 4px rgba(0,0,0,.04);
+  --sh-md:0 4px 14px rgba(0,0,0,.08);
+  --sh-lg:0 16px 48px rgba(0,0,0,.14);
+  --tr:   160ms ease;
 }
-
 [data-theme="dark"] {
-    --bg-primary: var(--gray-900);
-    --bg-secondary: var(--gray-800);
-    --text-primary: var(--gray-100);
-    --text-secondary: var(--gray-300);
-    --text-muted: var(--gray-400);
-    --border: var(--gray-700);
-}
-
-/* Base Reset */
-.company-details-container * {
-    box-sizing: border-box;
-}
-
-/* Company Header */
-.company-header {
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    box-shadow: var(--shadow);
-}
-
-.company-header-content {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    align-items: center;
-    text-align: center;
-}
-
-.company-avatar {
-    width: 80px;
-    height: 80px;
-    border-radius: var(--radius);
-    overflow: hidden;
-    flex-shrink: 0;
-}
-
-.company-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.avatar-placeholder {
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2rem;
-    font-weight: bold;
-}
-
-.company-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.company-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin: 0 0 0.5rem 0;
-    line-height: 1.2;
-}
-
-.company-description {
-    color: var(--text-secondary);
-    margin: 0 0 1rem 0;
-    line-height: 1.5;
-}
-
-.company-badges {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    justify-content: center;
-    margin-bottom: 1rem;
-}
-
-.company-actions {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-    flex-wrap: wrap;
-    justify-content: center;
-}
-
-/* Buttons */
-.btn-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
-    background: var(--primary);
-    color: white;
-    border: none;
-    border-radius: var(--radius);
-    font-weight: 500;
-    text-decoration: none;
-    transition: var(--transition);
-    font-size: 0.875rem;
-    cursor: pointer;
-}
-
-.btn-primary:hover {
-    background: var(--primary-dark);
-    transform: translateY(-1px);
-}
-
-.btn-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.5rem;
-    height: 2.5rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg-primary);
-    color: var(--text-secondary);
-    transition: var(--transition);
-    cursor: pointer;
-}
-
-.btn-icon:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
-
-.btn-icon-sm {
-    width: 2rem;
-    height: 2rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg-primary);
-    color: var(--text-secondary);
-    transition: var(--transition);
-    cursor: pointer;
-    font-size: 0.75rem;
-}
-
-.btn-icon-sm:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
-
-/* Badges */
-.status-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.375rem 0.75rem;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.status-badge.active {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--success);
-}
-
-.status-badge.inactive {
-    background: rgba(107, 114, 128, 0.1);
-    color: var(--gray-500);
-}
-
-.feature-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.375rem 0.75rem;
-    border-radius: var(--radius);
-    font-size: 0.75rem;
-    font-weight: 500;
-}
-
-.feature-badge.verified {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--success);
-}
-
-.feature-badge.efris {
-    background: rgba(245, 158, 11, 0.1);
-    color: var(--warning);
-}
-
-.role-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.375rem 0.75rem;
-    border-radius: var(--radius);
-    font-size: 0.75rem;
-    font-weight: 500;
-}
-
-.role-badge.admin {
-    background: rgba(239, 68, 68, 0.1);
-    color: var(--danger);
-}
-
-.role-badge.manager {
-    background: rgba(245, 158, 11, 0.1);
-    color: var(--warning);
-}
-
-.role-badge.cashier {
-    background: rgba(59, 130, 246, 0.1);
-    color: var(--primary);
-}
-
-/* Metrics Grid */
-.metrics-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-
-.metric-card {
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 1.25rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    transition: var(--transition);
-}
-
-.metric-card:hover {
-    box-shadow: var(--shadow-lg);
-    border-color: var(--primary);
-}
-
-.metric-icon {
-    width: 3rem;
-    height: 3rem;
-    border-radius: var(--radius);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.25rem;
-    flex-shrink: 0;
-}
-
-.metric-icon.branches {
-    background: rgba(59, 130, 246, 0.1);
-    color: var(--primary);
-}
-
-.metric-icon.employees {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--success);
-}
-
-.metric-icon.revenue {
-    background: rgba(245, 158, 11, 0.1);
-    color: var(--warning);
-}
-
-.metric-icon.performance {
-    background: rgba(6, 182, 212, 0.1);
-    color: var(--info);
-}
-
-.metric-content {
-    flex: 1;
-    min-width: 0;
-}
-
-.metric-value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    line-height: 1;
-    margin-bottom: 0.25rem;
-}
-
-.metric-label {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    font-weight: 500;
-    margin-bottom: 0.25rem;
-}
-
-.metric-sub {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-}
-
-.metric-growth {
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0.125rem 0.5rem;
-    border-radius: 10px;
-    display: inline-flex;
-    align-items: center;
-}
-
-.metric-growth.positive {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--success);
-}
-
-.metric-growth.negative {
-    background: rgba(239, 68, 68, 0.1);
-    color: var(--danger);
-}
-
-.metric-progress {
-    height: 4px;
-    background: var(--gray-200);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-top: 0.5rem;
-}
-
-.progress-fill {
-    height: 100%;
-    background: var(--primary);
-    transition: width 0.3s ease;
-}
-
-/* Content Layout */
-.content-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
-.content-main {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
-.content-sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
-/* Sections */
-.info-section,
-.chart-section,
-.table-section,
-.sidebar-section {
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    box-shadow: var(--shadow);
-}
-
-.section-header {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1.25rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-secondary);
-}
-
-.section-header h2,
-.section-header h3 {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 1.125rem;
-    font-weight: 600;
-    margin: 0;
-    color: var(--text-primary);
-}
-
-.section-header h3 {
-    font-size: 1rem;
-}
-
-/* Info Grid */
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.25rem;
-    padding: 1.5rem;
-}
-
-.info-item {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-}
-
-.info-item label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-secondary);
-}
-
-.info-item span {
-    font-weight: 500;
-    color: var(--text-primary);
-    word-break: break-word;
-}
-
-.info-item a {
-    color: var(--primary);
-    text-decoration: none;
-}
-
-.info-item a:hover {
-    text-decoration: underline;
-}
-
-/* Chart */
-.chart-container {
-    padding: 1.5rem;
-    height: 250px;
-    position: relative;
-}
-
-.chart-controls {
-    display: flex;
-    gap: 0.25rem;
-}
-
-.btn-filter {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border);
-    background: var(--bg-primary);
-    color: var(--text-secondary);
-    border-radius: var(--radius);
-    font-size: 0.75rem;
-    transition: var(--transition);
-    cursor: pointer;
-}
-
-.btn-filter.active,
-.btn-filter:hover {
-    background: var(--primary);
-    color: white;
-    border-color: var(--primary);
-}
-
-/* Tables */
-.table-wrapper {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-}
-
-.data-table {
-    width: 100%;
-    border-collapse: collapse;
-    min-width: 600px;
-}
-
-.data-table th {
-    padding: 1rem;
-    text-align: left;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-secondary);
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
-}
-
-.data-table td {
-    padding: 1rem;
-    border-bottom: 1px solid var(--border);
-    vertical-align: middle;
-}
-
-.data-table tr:last-child td {
-    border-bottom: none;
-}
-
-.data-table tr:hover {
-    background: rgba(59, 130, 246, 0.02);
-}
-
-/* Branch & Employee Info */
-.branch-info,
-.employee-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.branch-name,
-.employee-name {
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.branch-meta,
-.employee-email {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-}
-
-.employee-info {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.employee-avatar {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: var(--radius);
-    overflow: hidden;
-    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.employee-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.employee-avatar span {
-    color: white;
-    font-weight: 600;
-    font-size: 0.875rem;
-}
-
-.employee-details {
-    flex: 1;
-    min-width: 0;
-}
-
-.performance-score {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 3rem;
-    padding: 0.25rem 0.5rem;
-    background: var(--primary);
-    color: white;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
-}
-
-.revenue-amount {
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-.activity-time {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-}
-
-.action-group {
-    display: flex;
-    gap: 0.375rem;
-}
-
-/* Empty State */
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem 1.5rem;
-    text-align: center;
-}
-
-.empty-state i {
-    font-size: 3rem;
-    color: var(--text-muted);
-    margin-bottom: 1rem;
-    opacity: 0.5;
-}
-
-.empty-state h3 {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0 0 0.5rem 0;
-}
-
-.empty-state p {
-    color: var(--text-secondary);
-    margin: 0 0 1.5rem 0;
-    max-width: 300px;
-}
-
-/* Sidebar Components */
-.subscription-card {
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-}
-
-.plan-info {
-    text-align: center;
-}
-
-.plan-name {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 0.25rem;
-}
-
-.plan-price {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-}
-
-.expiry-info {
-    text-align: center;
-    padding: 1rem;
-    background: var(--bg-secondary);
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
-}
-
-.expiry-date {
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 0.25rem;
-}
-
-.days-left {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-}
-
-.storage-info {
-    padding: 1rem;
-    background: var(--bg-secondary);
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
-}
-
-.storage-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--text-primary);
-    margin-bottom: 0.75rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.storage-bar {
-    height: 6px;
-    background: var(--gray-200);
-    border-radius: 3px;
-    overflow: hidden;
-    margin-bottom: 0.5rem;
-}
-
-.storage-fill {
-    height: 100%;
-    background: var(--primary);
-    transition: width 0.3s ease;
-}
-
-.storage-text {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    text-align: center;
-}
-
-.performance-overview {
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1.5rem;
-}
-
-.performance-circle {
-    width: 5rem;
-    height: 5rem;
-    border-radius: 50%;
-    background: conic-gradient(var(--success) 0%, var(--success) var(--score, 0%), var(--gray-200) var(--score, 0%));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-}
-
-.performance-circle::before {
-    content: '';
-    position: absolute;
-    inset: 0.5rem;
-    border-radius: 50%;
-    background: var(--bg-primary);
-}
-
-.performance-circle span {
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    z-index: 1;
-}
-
-.performance-metrics {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.metric-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid var(--border);
-}
-
-.metric-item:last-child {
-    border-bottom: none;
-}
-
-.metric-name {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-}
-
-.metric-value {
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.alerts-list,
-.stats-list,
-.activity-list {
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-}
-
-.alert-item {
-    display: flex;
-    gap: 0.75rem;
-    padding: 1rem;
-    border-radius: var(--radius);
-    border-left: 4px solid;
-    background: var(--bg-secondary);
-}
-
-.alert-item.warning {
-    border-color: var(--warning);
-    background: rgba(245, 158, 11, 0.05);
-}
-
-.alert-item.info {
-    border-color: var(--info);
-    background: rgba(6, 182, 212, 0.05);
-}
-
-.alert-item.danger {
-    border-color: var(--danger);
-    background: rgba(239, 68, 68, 0.05);
-}
-
-.alert-content {
-    flex: 1;
-}
-
-.alert-title {
-    font-weight: 600;
-    margin-bottom: 0.25rem;
-    color: var(--text-primary);
-}
-
-.alert-text {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-}
-
-.stat-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid var(--border);
-}
-
-.stat-item:last-child {
-    border-bottom: none;
-}
-
-.stat-label {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-}
-
-.stat-value {
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.activity-item {
-    padding: 1rem;
-    background: var(--bg-secondary);
-    border-radius: var(--radius);
-    border-left: 3px solid var(--primary);
-}
-
-.activity-time {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    margin-bottom: 0.375rem;
-    font-weight: 500;
-}
-
-.activity-text {
-    font-size: 0.875rem;
-    color: var(--text-primary);
-    line-height: 1.4;
-}
-
-/* ===========================================
-   RESPONSIVE BREAKPOINTS THAT ACTUALLY WORK
-   =========================================== */
-
-/* Mobile First - Base styles are for mobile */
-
-/* Small devices (landscape phones, 576px and up) */
-@media (min-width: 576px) {
-    .company-header-content {
-        flex-direction: row;
-        text-align: left;
-        align-items: flex-start;
-    }
-
-    .company-badges {
-        justify-content: flex-start;
-    }
-
-    .company-actions {
-        justify-content: flex-end;
-        margin-top: 0;
-    }
-
-    .section-header {
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-between;
-    }
-
-    .employee-info {
-        flex-direction: row;
-        text-align: left;
-    }
-}
-
-/* Medium devices (tablets, 768px and up) */
-@media (min-width: 768px) {
-    .metrics-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1.25rem;
-    }
-
-    .content-grid {
-        flex-direction: row;
-        align-items: flex-start;
-    }
-
-    .content-main {
-        flex: 1;
-        min-width: 0;
-    }
-
-    .content-sidebar {
-        width: 320px;
-        flex-shrink: 0;
-        position: sticky;
-        top: 1rem;
-    }
-
-    .info-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .chart-container {
-        height: 300px;
-    }
-}
-
-/* Large devices (desktops, 992px and up) */
-@media (min-width: 992px) {
-    .metrics-grid {
-        grid-template-columns: repeat(4, 1fr);
-    }
-
-    .info-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
-
-    .company-header {
-        padding: 2rem;
-    }
-
-    .company-title {
-        font-size: 1.75rem;
-    }
-}
-
-/* Extra large devices (large desktops, 1200px and up) */
-@media (min-width: 1200px) {
-    .metrics-grid {
-        gap: 1.5rem;
-    }
-
-    .metric-card {
-        padding: 1.5rem;
-    }
-
-    .content-sidebar {
-        width: 350px;
-    }
-
-    .info-grid {
-        grid-template-columns: repeat(4, 1fr);
-        gap: 1.5rem;
-        padding: 2rem;
-    }
-}
-
-/* Extra small devices (phones, less than 576px) specific fixes */
-@media (max-width: 575.98px) {
-    .company-header {
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .metrics-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .metric-card {
-        padding: 1rem;
-    }
-
-    .section-header {
-        padding: 1rem;
-    }
-
-    .info-grid {
-        padding: 1rem;
-        gap: 1rem;
-    }
-
-    .chart-container {
-        padding: 1rem;
-        height: 200px;
-    }
-
-    .data-table {
-        font-size: 0.875rem;
-    }
-
-    .data-table th,
-    .data-table td {
-        padding: 0.75rem 0.5rem;
-    }
-
-    .action-group {
-        flex-wrap: wrap;
-        justify-content: center;
-    }
-}
-
-/* Touch device optimizations */
-@media (hover: none) and (pointer: coarse) {
-    .metric-card:hover,
-    .btn-primary:hover,
-    .btn-icon:hover {
-        transform: none;
-    }
-
-    .btn-primary,
-    .btn-icon,
-    .btn-icon-sm {
-        min-height: 44px;
-        min-width: 44px;
-    }
-}
-
-/* Print styles */
-@media print {
-    .company-actions,
-    .btn-primary,
-    .btn-icon,
-    .action-group,
-    .chart-controls {
-        display: none !important;
-    }
-
-    .content-sidebar {
-        display: none !important;
-    }
-
-    .content-grid {
-        flex-direction: column !important;
-    }
-}
-
-/* Dark mode transitions */
-.theme-transition * {
-    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
-}
-
-/* Utility classes for JavaScript */
-.hidden {
-    display: none !important;
-}
-
-.loading {
-    opacity: 0.6;
-    pointer-events: none;
-}
-
-/* Focus styles for accessibility */
-.btn-primary:focus,
-.btn-icon:focus,
-.btn-icon-sm:focus {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-}
-
-/* Scrollbar styling for tables */
-.table-wrapper::-webkit-scrollbar {
-    height: 6px;
-}
-
-.table-wrapper::-webkit-scrollbar-track {
-    background: var(--bg-secondary);
-}
-
-.table-wrapper::-webkit-scrollbar-thumb {
-    background: var(--gray-300);
-    border-radius: 3px;
-}
-
-.table-wrapper::-webkit-scrollbar-thumb:hover {
-    background: var(--gray-400);
-}
-
-/* Animation for updated values */
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-    100% { transform: scale(1); }
-}
-
-.metric-value.updated {
-    animation: pulse 0.5s ease-in-out;
-}
+  --bg:#0c0c10; --s0:#131318; --s1:#18181e; --s2:#1e1e26; --s3:#26262f;
+  --b0:#26262f; --b1:#36363f;
+  --t0:#f4f4f6; --t1:#d4d4d8; --t2:#8f8f99; --t3:#52525b;
+  --gr-l:#052e16; --gr-m:#14532d; --bl-l:#172554; --bl-m:#1e3a8a;
+  --am-l:#451a03; --am-m:#78350f; --rd-l:#450a0a; --rd-m:#7f1d1d;
+  --vi-l:#2e1065; --vi-m:#3b0764; --cy-l:#083344; --cy-m:#0c4a6e;
+  --sh: 0 1px 2px rgba(0,0,0,.3); --sh-md: 0 4px 14px rgba(0,0,0,.45);
+  --sh-lg: 0 16px 48px rgba(0,0,0,.65);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--t0);-webkit-font-smoothing:antialiased}
+
+/* ═══ PAGE ══════════════════════════════════════════════════ */
+.cd{max-width:1480px;margin:0 auto;padding:0 20px 80px}
+
+/* ═══ STICKY SUMBAR ═════════════════════════════════════════ */
+.cd-sumbar{
+  position:sticky;top:0;z-index:50;
+  background:rgba(255,255,255,.9);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--b0);
+  margin:0 -20px;padding:0 20px;
+  display:flex;align-items:center;gap:0;height:46px;
+  transform:translateY(-100%);opacity:0;
+  transition:transform .22s ease,opacity .22s ease;
+}
+[data-theme="dark"] .cd-sumbar{background:rgba(19,19,24,.9)}
+.cd-sumbar.show{transform:none;opacity:1}
+.cd-sb-co{display:flex;align-items:center;gap:9px;margin-right:auto;padding-right:16px;
+  border-right:1px solid var(--b0);}
+.cd-sb-logo{width:26px;height:26px;border-radius:6px;overflow:hidden;flex-shrink:0;
+  background:linear-gradient(135deg,var(--bl),var(--vi));
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700}
+.cd-sb-name{font-size:12.5px;font-weight:600}
+.cd-sbp{display:flex;align-items:center;gap:0}
+.cd-sbp-item{padding:0 14px;font-size:11px;color:var(--t2);border-right:1px solid var(--b0);
+  display:flex;align-items:center;gap:5px;height:46px;white-space:nowrap}
+.cd-sbp-item:last-child{border-right:none}
+.cd-sbp-item strong{font-size:12px;font-weight:700;font-family:var(--mono);color:var(--t0)}
+
+/* ═══ HERO ══════════════════════════════════════════════════ */
+.cd-hero{
+  background:var(--s0);border:1px solid var(--b0);border-radius:var(--r-lg);
+  padding:28px 32px;margin-bottom:18px;box-shadow:var(--sh);
+  display:grid;grid-template-columns:auto 1fr auto;gap:20px;align-items:start;
+}
+.cd-hero-logo{
+  width:72px;height:72px;border-radius:var(--r);border:1px solid var(--b0);
+  overflow:hidden;flex-shrink:0;box-shadow:var(--sh);
+}
+.cd-hero-logo img{width:100%;height:100%;object-fit:cover}
+.cd-hero-logo-ph{
+  width:100%;height:100%;
+  background:linear-gradient(135deg,var(--bl),var(--vi));
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:28px;font-weight:700;
+}
+.cd-hero-name{font-size:22px;font-weight:700;letter-spacing:-.022em;margin-bottom:5px}
+.cd-hero-desc{font-size:13px;color:var(--t2);margin-bottom:12px;line-height:1.55;max-width:560px}
+.cd-hero-tags{display:flex;gap:6px;flex-wrap:wrap}
+.cd-hero-actions{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;padding-top:2px}
+
+/* ═══ BADGE ═════════════════════════════════════════════════ */
+.bdg{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;
+  border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.02em}
+.bdg-active  {background:var(--gr-l);color:var(--gr)}
+.bdg-inactive,.bdg-suspended{background:var(--s2);color:var(--t2)}
+.bdg-trial   {background:var(--cy-l);color:var(--cy)}
+.bdg-expired {background:var(--rd-l);color:var(--rd)}
+.bdg-bl      {background:var(--bl-l);color:var(--bl)}
+.bdg-gr      {background:var(--gr-l);color:var(--gr)}
+.bdg-am      {background:var(--am-l);color:var(--am)}
+.bdg-vi      {background:var(--vi-l);color:var(--vi)}
+
+/* ═══ BUTTONS ═══════════════════════════════════════════════ */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--r);
+  font-size:13px;font-weight:500;cursor:pointer;border:none;text-decoration:none;
+  font-family:var(--font);transition:var(--tr);white-space:nowrap}
+.btn-primary{background:var(--bl);color:#fff}
+.btn-primary:hover{background:#1d4ed8;box-shadow:var(--sh-md)}
+.btn-ghost{background:transparent;color:var(--t1);border:1px solid var(--b0)}
+.btn-ghost:hover{background:var(--s2);border-color:var(--b1)}
+.btn-sq{width:34px;height:34px;padding:0;justify-content:center;
+  background:var(--s1);color:var(--t2);border:1px solid var(--b0)}
+.btn-sq:hover{background:var(--s2);color:var(--t0)}
+.btn-sm{padding:5px 11px;font-size:12px}
+.bsq{display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;border-radius:7px;background:var(--s1);
+  color:var(--t2);border:1px solid var(--b0);cursor:pointer;transition:var(--tr);
+  font-size:12px;text-decoration:none}
+.bsq:hover{background:var(--bl-l);color:var(--bl);border-color:var(--bl)}
+
+/* ═══ KPI STRIP ═════════════════════════════════════════════ */
+.cd-kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px}
+.kpi{
+  background:var(--s0);border:1px solid var(--b0);border-radius:var(--r-lg);
+  padding:18px 18px 16px;box-shadow:var(--sh);position:relative;overflow:hidden;
+  transition:box-shadow var(--tr),transform var(--tr);
+  opacity:0;animation:fadeUp .38s ease forwards;
+}
+.kpi:hover{box-shadow:var(--sh-md);transform:translateY(-1px)}
+.kpi:nth-child(1){animation-delay:.04s}.kpi:nth-child(2){animation-delay:.08s}
+.kpi:nth-child(3){animation-delay:.12s}.kpi:nth-child(4){animation-delay:.16s}
+.kpi:nth-child(5){animation-delay:.20s}.kpi:nth-child(6){animation-delay:.24s}
+.kpi::after{content:'';position:absolute;left:0;top:14px;bottom:14px;
+  width:3px;border-radius:0 2px 2px 0}
+.kpi-bl::after{background:var(--bl)}.kpi-gr::after{background:var(--gr)}
+.kpi-am::after{background:var(--am)}.kpi-vi::after{background:var(--vi)}
+.kpi-rd::after{background:var(--rd)}.kpi-cy::after{background:var(--cy)}
+.kpi-ic{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;
+  justify-content:center;font-size:14px;margin-bottom:11px}
+.kpi-bl .kpi-ic{background:var(--bl-l);color:var(--bl)}
+.kpi-gr .kpi-ic{background:var(--gr-l);color:var(--gr)}
+.kpi-am .kpi-ic{background:var(--am-l);color:var(--am)}
+.kpi-vi .kpi-ic{background:var(--vi-l);color:var(--vi)}
+.kpi-rd .kpi-ic{background:var(--rd-l);color:var(--rd)}
+.kpi-cy .kpi-ic{background:var(--cy-l);color:var(--cy)}
+.kpi-val{font-size:24px;font-weight:700;letter-spacing:-.02em;
+  color:var(--t0);line-height:1;margin-bottom:4px;font-family:var(--mono)}
+.kpi-lbl{font-size:11px;color:var(--t2);font-weight:500;margin-bottom:4px;
+  text-transform:uppercase;letter-spacing:.06em}
+.kpi-sub{font-size:11px;color:var(--t3)}
+.gp{display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:10px;
+  font-size:10px;font-weight:600}
+.gp-up{background:var(--gr-m);color:var(--gr)}.gp-dn{background:var(--rd-m);color:var(--rd)}
+.gp-fl{background:var(--s3);color:var(--t3)}
+
+/* ═══ LAYOUT ════════════════════════════════════════════════ */
+.cd-layout{display:grid;grid-template-columns:1fr 316px;gap:18px;align-items:start}
+.cd-main{display:flex;flex-direction:column;gap:16px;min-width:0}
+.cd-side{display:flex;flex-direction:column;gap:14px;position:sticky;top:52px}
+
+/* ═══ CARD ══════════════════════════════════════════════════ */
+.card{background:var(--s0);border:1px solid var(--b0);
+  border-radius:var(--r-lg);box-shadow:var(--sh);overflow:hidden}
+.card-head{padding:13px 20px;border-bottom:1px solid var(--b0);background:var(--s1);
+  display:flex;align-items:center;justify-content:space-between;gap:10px}
+.card-title{font-size:13px;font-weight:600;color:var(--t0);
+  display:flex;align-items:center;gap:7px}
+.card-title i{color:var(--t2);font-size:14px}
+.card-body{padding:20px}
+
+/* ═══ CHART TABS ════════════════════════════════════════════ */
+.ct-tabs{display:flex;gap:2px;background:var(--s2);padding:3px;border-radius:8px}
+.ct-tab{padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;
+  cursor:pointer;border:none;background:transparent;color:var(--t2);
+  transition:var(--tr);font-family:var(--font);white-space:nowrap}
+.ct-tab.on{background:var(--s0);color:var(--bl);box-shadow:var(--sh)}
+.ct-panel{display:none}.ct-panel.on{display:block}
+canvas{display:block}
+
+/* ═══ INFO GRID ══════════════════════════════════════════════ */
+.ig{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px}
+.ig-item label{display:block;font-size:10px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:3px}
+.ig-item span{font-size:13px;font-weight:500;color:var(--t0);word-break:break-word}
+.ig-item a{color:var(--bl);text-decoration:none}
+.ig-item a:hover{text-decoration:underline}
+.mono{font-family:var(--mono);font-size:12px}
+
+/* ═══ TABLE ══════════════════════════════════════════════════ */
+.xt{overflow-x:auto}
+.xt table{width:100%;border-collapse:collapse;font-size:12.5px}
+.xt th{padding:9px 14px;text-align:left;font-size:10px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.07em;color:var(--t2);
+  background:var(--s1);border-bottom:1px solid var(--b0);white-space:nowrap}
+.xt td{padding:11px 14px;border-bottom:1px solid var(--b0);vertical-align:middle}
+.xt tr:last-child td{border-bottom:none}
+.xt tr:hover td{background:var(--s1)}
+.td-p{font-weight:600;color:var(--t0)}.td-s{font-size:11px;color:var(--t3);margin-top:2px}
+.td-mu{color:var(--t2)}.td-m{font-family:var(--mono);font-size:12px}
+
+/* ═══ PERF BAR ═══════════════════════════════════════════════ */
+.pb-wrap{display:flex;align-items:center;gap:7px}
+.pb-track{flex:1;height:5px;background:var(--s3);border-radius:3px;overflow:hidden;min-width:50px}
+.pb-fill{height:100%;border-radius:3px;transition:width .5s ease}
+.pb-num{font-size:11px;font-weight:600;font-family:var(--mono);color:var(--t2);min-width:28px;text-align:right}
+
+/* ═══ USER CHIP ══════════════════════════════════════════════ */
+.u-chip{display:flex;align-items:center;gap:9px}
+.u-av{width:32px;height:32px;border-radius:8px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--bl),var(--vi));
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:12px;font-weight:700;overflow:hidden}
+.u-av img{width:100%;height:100%;object-fit:cover}
+.u-name{font-weight:600;font-size:13px;color:var(--t0)}
+.u-email{font-size:11px;color:var(--t2);margin-top:1px}
+
+/* ═══ ROLE CHIPS ═════════════════════════════════════════════ */
+.rc{padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500}
+.rc-admin{background:var(--rd-l);color:var(--rd)}
+.rc-mgr  {background:var(--am-l);color:var(--am)}
+.rc-cash {background:var(--bl-l);color:var(--bl)}
+.rc-emp  {background:var(--s2);  color:var(--t2)}
+
+/* ═══ SIDEBAR ════════════════════════════════════════════════ */
+.sr-row{display:flex;justify-content:space-between;align-items:center;
+  padding:9px 0;border-bottom:1px solid var(--b0);font-size:12.5px}
+.sr-row:last-child{border-bottom:none}
+.sr-lbl{color:var(--t2)}.sr-val{font-weight:600;font-family:var(--mono);font-size:12px}
+
+.prog{margin-bottom:10px}
+.prog-row{display:flex;justify-content:space-between;align-items:center;
+  font-size:12px;margin-bottom:4px}
+.prog-lbl{color:var(--t2);font-weight:500}
+.prog-num{font-weight:600;font-family:var(--mono)}
+.prog-bar{height:5px;background:var(--s3);border-radius:3px;overflow:hidden}
+.prog-fill{height:100%;border-radius:3px;transition:width .4s ease}
+.pf-bl{background:var(--bl)}.pf-gr{background:var(--gr)}
+.pf-am{background:var(--am)}.pf-rd{background:var(--rd)}
+
+.alrt{display:flex;gap:9px;padding:10px 12px;border-radius:var(--r);
+  margin-bottom:6px;border-left:3px solid}
+.alrt:last-child{margin-bottom:0}
+.alrt-am{background:var(--am-l);border-color:var(--am)}
+.alrt-rd{background:var(--rd-l);border-color:var(--rd)}
+.alrt-bl{background:var(--bl-l);border-color:var(--bl)}
+.alrt-gr{background:var(--gr-l);border-color:var(--gr)}
+.alrt i{font-size:13px;margin-top:1px;flex-shrink:0}
+.alrt-am i{color:var(--am)}.alrt-rd i{color:var(--rd)}
+.alrt-bl i{color:var(--bl)}.alrt-gr i{color:var(--gr)}
+.alrt-title{font-size:12px;font-weight:600;color:var(--t0)}
+.alrt-text{font-size:11px;color:var(--t2);margin-top:1px}
+
+.act-item{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--b0)}
+.act-item:last-child{border-bottom:none}
+.act-dot{width:7px;height:7px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.act-txt{font-size:12px;color:var(--t0);margin-bottom:2px;line-height:1.4}
+.act-time{font-size:10px;color:var(--t3)}
+
+/* ═══ GAUGE ══════════════════════════════════════════════════ */
+.gauge-wrap{display:flex;align-items:center;gap:14px;padding:4px 0 10px}
+.gauge{position:relative;width:68px;height:68px;flex-shrink:0}
+.gauge svg{transform:rotate(-90deg)}
+.g-bg{fill:none;stroke:var(--s3);stroke-width:6}
+.g-arc{fill:none;stroke-width:6;stroke-linecap:round;
+  transition:stroke-dashoffset .8s cubic-bezier(.4,0,.2,1)}
+.g-lbl{position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;flex-direction:column}
+.g-val{font-size:14px;font-weight:700;font-family:var(--mono);line-height:1}
+.g-sub{font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em}
+.gauge-meta{flex:1}
+.gauge-meta strong{display:block;font-size:20px;font-weight:700;font-family:var(--mono)}
+.gauge-meta span{font-size:11px;color:var(--t2)}
+
+/* ═══ PLAN BOX ═══════════════════════════════════════════════ */
+.plan-box{text-align:center;padding:16px 0 8px}
+.plan-name{font-size:16px;font-weight:700;margin-bottom:2px}
+.plan-price{font-size:12px;color:var(--t2);margin-bottom:10px}
+.plan-hr{border:none;border-top:1px solid var(--b0);margin:12px 0}
+
+/* ═══ MODAL ══════════════════════════════════════════════════ */
+.mo-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;
+  display:none;align-items:center;justify-content:center;
+  padding:20px;backdrop-filter:blur(6px)}
+.mo-bg.open{display:flex}
+.mo{background:var(--s0);border-radius:var(--r-lg);width:100%;max-width:720px;
+  max-height:88vh;overflow-y:auto;box-shadow:var(--sh-lg);animation:popIn .18s ease}
+@keyframes popIn{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:none}}
+.mo-head{padding:16px 22px;border-bottom:1px solid var(--b0);
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;background:var(--s0);z-index:1}
+.mo-title{font-size:14px;font-weight:600}
+.mo-body{padding:22px}
+
+/* ═══ EMPTY ══════════════════════════════════════════════════ */
+.cd-empty{text-align:center;padding:44px 20px;color:var(--t3)}
+.cd-empty i{font-size:30px;display:block;margin-bottom:10px;opacity:.3}
+.cd-empty p{font-size:13px;color:var(--t2)}
+
+/* ═══ PAGER ══════════════════════════════════════════════════ */
+.pager{display:flex;justify-content:center;gap:4px;padding:12px 0}
+.pager a,.pager span{display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;border-radius:7px;font-size:12px;font-weight:500;
+  text-decoration:none;border:1px solid var(--b0);color:var(--t2);transition:var(--tr)}
+.pager a:hover{border-color:var(--bl);color:var(--bl)}
+.pager span.cur{background:var(--bl);color:#fff;border-color:var(--bl)}
+
+/* ═══ ANIMATIONS ═════════════════════════════════════════════ */
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ═══ RESPONSIVE ═════════════════════════════════════════════ */
+@media(max-width:1280px){.cd-kpis{grid-template-columns:repeat(3,1fr)};.cd-layout{grid-template-columns:1fr 288px}}
+@media(max-width:1024px){.cd-layout{grid-template-columns:1fr};.cd-side{position:static}}
+@media(max-width:768px){.cd-hero{grid-template-columns:auto 1fr;padding:18px 16px};.cd-hero-actions{grid-column:1/-1}}
+@media(max-width:640px){.cd{padding:0 12px 60px};.cd-kpis{grid-template-columns:repeat(2,1fr)};.ct-tabs{overflow-x:auto;flex-wrap:nowrap};.cd-sumbar{margin:0 -12px;padding:0 12px}}
+@media(max-width:400px){.cd-kpis{grid-template-columns:1fr}}
 </style>
 {% endblock %}
 
-{% block extra_js %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+{% block content %}
+<div class="cd" id="cdWrap">
+
+<!-- ── STICKY SUMMARY BAR ──────────────────────────────────── -->
+<div class="cd-sumbar" id="cdSumbar">
+  <div class="cd-sb-co">
+    <div class="cd-sb-logo">{{ company.name|first|upper }}</div>
+    <span class="cd-sb-name">{{ company.trading_name|default:company.name }}</span>
+  </div>
+  <div class="cd-sbp">
+    <div class="cd-sbp-item">Branches <strong>{{ total_branches|default:0 }}</strong></div>
+    <div class="cd-sbp-item">Employees <strong>{{ total_employees|default:0 }}</strong></div>
+    {% if revenue_analytics %}
+    <div class="cd-sbp-item">Revenue 30d <strong>{{ revenue_analytics.current_period.total_revenue|floatformat:0|intcomma }}</strong></div>
+    <div class="cd-sbp-item">Sales <strong>{{ revenue_analytics.current_period.total_sales|default:0 }}</strong></div>
+    {% endif %}
+    <div class="cd-sbp-item">Performance <strong>{{ overall_performance_score|default:0 }}%</strong></div>
+  </div>
+</div>
+
+<!-- ── HERO ──────────────────────────────────────────────────── -->
+<div class="cd-hero" id="cdHero">
+  <div class="cd-hero-logo">
+    {% if company.logo %}
+      <img src="{{ company.logo.url }}" alt="{{ company.name }}">
+    {% else %}
+      <div class="cd-hero-logo-ph">{{ company.name|first|upper }}</div>
+    {% endif %}
+  </div>
+  <div>
+    <h1 class="cd-hero-name">{{ company.trading_name|default:company.name }}</h1>
+    {% if company.description %}
+      <p class="cd-hero-desc">{{ company.description|truncatechars:140 }}</p>
+    {% endif %}
+    <div class="cd-hero-tags">
+      <span class="bdg bdg-{{ company.status|lower }}"><span class="bdg-dot"></span> {{ company.get_status_display }}</span>
+      {% if company.is_verified %}<span class="bdg bdg-gr"><i class="bi bi-shield-check"></i> Verified</span>{% endif %}
+      {% if company.efris_enabled %}<span class="bdg bdg-am"><i class="bi bi-gear"></i> EFRIS</span>{% endif %}
+      {% if company.plan %}<span class="bdg bdg-bl">{{ company.plan.display_name|default:company.plan.name }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="cd-hero-actions">
+    {% if perms.companies.change_company %}
+      <a href="{% url 'companies:company_update' company_id=company.company_id %}" class="btn btn-primary btn-sm">
+        <i class="bi bi-pencil"></i> Edit
+      </a>
+    {% endif %}
+    <div class="dropdown">
+      <button class="btn btn-ghost btn-sm" data-bs-toggle="dropdown"><i class="bi bi-three-dots"></i></button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="{% url 'companies:employee_list' company_id=company.company_id %}"><i class="bi bi-people me-2"></i>Employees</a></li>
+        {% if perms.companies.add_company %}
+        <li><a class="dropdown-item" href="{% url 'companies:company_export' %}"><i class="bi bi-download me-2"></i>Export</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ── KPI STRIP ──────────────────────────────────────────────── -->
+<div class="cd-kpis">
+  <div class="kpi kpi-bl">
+    <div class="kpi-ic"><i class="bi bi-diagram-3"></i></div>
+    <div class="kpi-val">{{ total_branches|default:0 }}</div>
+    <div class="kpi-lbl">Branches</div>
+    <div class="kpi-sub">{{ active_branches|default:0 }} active</div>
+  </div>
+  <div class="kpi kpi-gr">
+    <div class="kpi-ic"><i class="bi bi-people"></i></div>
+    <div class="kpi-val">{{ total_employees|default:0 }}</div>
+    <div class="kpi-lbl">Employees</div>
+    <div class="kpi-sub">{{ active_employees|default:0 }} active</div>
+  </div>
+  <div class="kpi kpi-am">
+    <div class="kpi-ic"><i class="bi bi-cash-stack"></i></div>
+    {% if revenue_analytics %}
+      <div class="kpi-val">{{ revenue_analytics.current_period.total_revenue|floatformat:0|intcomma }}</div>
+      <div class="kpi-lbl">Revenue (30d)</div>
+      <div class="kpi-sub">
+        {% with g=revenue_analytics.growth_rates.revenue_growth %}
+        <span class="gp {% if g > 0 %}gp-up{% elif g < 0 %}gp-dn{% else %}gp-fl{% endif %}">
+          {% if g > 0 %}↑{% elif g < 0 %}↓{% endif %} {{ g|floatformat:1 }}%
+        </span> vs prev 30d
+        {% endwith %}
+      </div>
+    {% else %}
+      <div class="kpi-val">0</div><div class="kpi-lbl">Revenue (30d)</div>
+    {% endif %}
+  </div>
+  <div class="kpi kpi-vi">
+    <div class="kpi-ic"><i class="bi bi-receipt"></i></div>
+    <div class="kpi-val">{{ revenue_analytics.current_period.total_sales|default:0|intcomma }}</div>
+    <div class="kpi-lbl">Sales (30d)</div>
+    <div class="kpi-sub">
+      {% if revenue_analytics %}
+      {% with g=revenue_analytics.growth_rates.sales_growth %}
+      <span class="gp {% if g > 0 %}gp-up{% elif g < 0 %}gp-dn{% else %}gp-fl{% endif %}">
+        {% if g > 0 %}↑{% elif g < 0 %}↓{% endif %} {{ g|floatformat:1 }}%
+      </span>
+      {% endwith %}{% endif %}
+    </div>
+  </div>
+  <div class="kpi kpi-rd">
+    <div class="kpi-ic"><i class="bi bi-exclamation-triangle"></i></div>
+    <div class="kpi-val">{{ operational_metrics.inventory.low_stock_items|default:0 }}</div>
+    <div class="kpi-lbl">Low Stock</div>
+    <div class="kpi-sub">{{ operational_metrics.inventory.out_of_stock_items|default:0 }} out of stock</div>
+  </div>
+  <div class="kpi kpi-cy">
+    <div class="kpi-ic"><i class="bi bi-speedometer2"></i></div>
+    <div class="kpi-val">{{ overall_performance_score|default:0 }}%</div>
+    <div class="kpi-lbl">Performance</div>
+    <div class="kpi-sub">{{ top_performing_branches|length }} top branch{{ top_performing_branches|length|pluralize:"es" }}</div>
+  </div>
+</div>
+
+<!-- ── MAIN + SIDEBAR ─────────────────────────────────────────── -->
+<div class="cd-layout">
+<div class="cd-main">
+
+  <!-- CHARTS CARD -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><i class="bi bi-graph-up"></i> Analytics</div>
+      <div class="ct-tabs" id="chartTabs">
+        <button class="ct-tab on" data-tab="revenue">Revenue</button>
+        <button class="ct-tab" data-tab="payments">Payments</button>
+        <button class="ct-tab" data-tab="products">Products</button>
+        <button class="ct-tab" data-tab="inventory">Inventory</button>
+        <button class="ct-tab" data-tab="branches">Branches</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="ct-panel on" id="tab-revenue">
+        <canvas id="chRevenue" height="230"></canvas>
+      </div>
+      <div class="ct-panel" id="tab-payments">
+        <div style="display:grid;grid-template-columns:200px 1fr;gap:20px;align-items:center">
+          <canvas id="chPayDoughnut" height="200"></canvas>
+          <div id="chPayLegend" style="font-size:12px;line-height:2"></div>
+        </div>
+      </div>
+      <div class="ct-panel" id="tab-products">
+        <canvas id="chProducts" height="230"></canvas>
+      </div>
+      <div class="ct-panel" id="tab-inventory">
+        <div style="display:grid;grid-template-columns:170px 1fr;gap:20px;align-items:center">
+          <canvas id="chInvDonut" height="170"></canvas>
+          <canvas id="chInvBars" height="230"></canvas>
+        </div>
+      </div>
+      <div class="ct-panel" id="tab-branches">
+        <canvas id="chBranches" height="230"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPANY INFO -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><i class="bi bi-building"></i> Company Information</div>
+    </div>
+    <div class="card-body">
+      <div class="ig">
+        <div class="ig-item"><label>Legal Name</label><span>{{ company.name|default:"—" }}</span></div>
+        <div class="ig-item"><label>Trading Name</label><span>{{ company.trading_name|default:"—" }}</span></div>
+        <div class="ig-item"><label>TIN</label><span class="mono">{{ company.tin|default:"—" }}</span></div>
+        <div class="ig-item"><label>BRN</label><span class="mono">{{ company.brn|default:"—" }}</span></div>
+        <div class="ig-item"><label>Email</label><span>{% if company.email %}<a href="mailto:{{ company.email }}">{{ company.email }}</a>{% else %}—{% endif %}</span></div>
+        <div class="ig-item"><label>Phone</label><span>{% if company.phone %}<a href="tel:{{ company.phone }}">{{ company.phone }}</a>{% else %}—{% endif %}</span></div>
+        <div class="ig-item"><label>Currency</label><span>{{ company.get_preferred_currency_display|default:company.preferred_currency }}</span></div>
+        <div class="ig-item"><label>Schema</label><span class="mono">{{ company.schema_name }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BRANCHES TABLE -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><i class="bi bi-diagram-3"></i> Branches ({{ total_branches }})</div>
+      {% if perms.branches.add_companybranch %}
+        <a href="{% url 'stores:store_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Add</a>
+      {% endif %}
+    </div>
+    {% if branches %}
+    <div class="xt">
+      <table>
+        <thead><tr>
+          <th>Branch</th><th>Revenue 30d</th><th>Avg Sale</th>
+          <th>Performance</th><th>Low Stock</th><th>Status</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for branch in branches %}
+        <tr>
+          <td>
+            <div class="td-p">{{ branch.name }}</div>
+            <div class="td-s">{{ branch.store_type|default:"" }}{% if branch.region %} · {{ branch.region }}{% endif %}</div>
+          </td>
+          <td>
+            <div class="td-p">{{ branch.analytics.total_revenue_30d|floatformat:0|intcomma }}</div>
+            <div class="td-s">{{ branch.analytics.total_sales_30d }} txns</div>
+          </td>
+          <td class="td-mu">{{ branch.analytics.avg_sale_amount|floatformat:0|intcomma }}</td>
+          <td>
+            <div class="pb-wrap">
+              <div class="pb-track">
+                <div class="pb-fill" style="width:{{ branch.analytics.performance_score }}%;background:{% if branch.analytics.performance_score >= 70 %}var(--gr){% elif branch.analytics.performance_score >= 40 %}var(--am){% else %}var(--rd){% endif %}"></div>
+              </div>
+              <span class="pb-num">{{ branch.analytics.performance_score }}%</span>
+            </div>
+          </td>
+          <td>
+            {% if branch.analytics.low_stock_items > 0 %}
+              <span class="bdg bdg-am">{{ branch.analytics.low_stock_items }} low</span>
+            {% else %}<span class="td-mu">—</span>{% endif %}
+          </td>
+          <td>
+            <span class="bdg {% if branch.is_active %}bdg-active{% else %}bdg-inactive{% endif %}">
+              {% if branch.is_active %}Active{% else %}Inactive{% endif %}
+            </span>
+          </td>
+          <td>
+            <div style="display:flex;gap:4px">
+              <a href="{% url 'companies:branch_detail' branch.pk %}" class="bsq" title="View"><i class="bi bi-eye"></i></a>
+              <button class="bsq" onclick="showBranchModal({{ branch.id }})" title="Analytics"><i class="bi bi-graph-up"></i></button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if branches.has_other_pages %}
+    <div class="pager">
+      {% if branches.has_previous %}<a href="?branches_page={{ branches.previous_page_number }}">‹</a>{% endif %}
+      {% for n in branches.paginator.page_range %}
+        {% if branches.number == n %}<span class="cur">{{ n }}</span>
+        {% elif n|add:"-1" == branches.number or n|add:"1" == branches.number %}<a href="?branches_page={{ n }}">{{ n }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if branches.has_next %}<a href="?branches_page={{ branches.next_page_number }}">›</a>{% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="cd-empty"><i class="bi bi-diagram-3"></i><p>No branches yet</p></div>
+    {% endif %}
+  </div>
+
+  <!-- EMPLOYEES TABLE -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><i class="bi bi-people"></i> Employees ({{ total_employees }})</div>
+      {% if perms.accounts.add_customuser %}
+        <a href="{% url 'user_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Add</a>
+      {% endif %}
+    </div>
+    {% if employees %}
+    <div class="xt">
+      <table>
+        <thead><tr>
+          <th>Employee</th><th>Role</th><th>Status</th><th>Last Active</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for emp in employees %}
+        <tr>
+          <td>
+            <div class="u-chip">
+              <div class="u-av">
+                {% if emp.avatar %}<img src="{{ emp.avatar.url }}" alt="">
+                {% else %}{{ emp.first_name|first|default:emp.username|first|upper }}{% endif %}
+              </div>
+              <div>
+                <div class="u-name">{{ emp.get_full_name|default:emp.username }}</div>
+                <div class="u-email">{{ emp.email|default:"" }}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            {% if emp.company_admin %}<span class="rc rc-admin">Admin</span>
+            {% elif emp.user_type == 'MANAGER' %}<span class="rc rc-mgr">Manager</span>
+            {% elif emp.user_type == 'CASHIER' %}<span class="rc rc-cash">Cashier</span>
+            {% else %}<span class="rc rc-emp">Employee</span>{% endif %}
+          </td>
+          <td>
+            <span class="bdg {% if emp.is_active %}bdg-active{% else %}bdg-inactive{% endif %}">
+              {% if emp.is_active %}Active{% else %}Inactive{% endif %}
+            </span>
+          </td>
+          <td class="td-mu">
+            {% if emp.last_activity_at %}{{ emp.last_activity_at|timesince }} ago{% else %}Never{% endif %}
+          </td>
+          <td>
+            <div style="display:flex;gap:4px">
+              <button class="bsq" onclick="viewEmployee({{ emp.id }})" title="View"><i class="bi bi-eye"></i></button>
+              {% if perms.accounts.change_customuser %}
+              <button class="bsq" onclick="editEmployee({{ emp.id }})" title="Edit"><i class="bi bi-pencil"></i></button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if employees.has_other_pages %}
+    <div class="pager">
+      {% if employees.has_previous %}<a href="?employees_page={{ employees.previous_page_number }}">‹</a>{% endif %}
+      {% for n in employees.paginator.page_range %}
+        {% if employees.number == n %}<span class="cur">{{ n }}</span>
+        {% elif n|add:"-1" == employees.number or n|add:"1" == employees.number %}<a href="?employees_page={{ n }}">{{ n }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if employees.has_next %}<a href="?employees_page={{ employees.next_page_number }}">›</a>{% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="cd-empty"><i class="bi bi-people"></i><p>No employees yet</p></div>
+    {% endif %}
+  </div>
+
+</div><!-- /cd-main -->
+
+<!-- ── SIDEBAR ───────────────────────────────────────────────── -->
+<div class="cd-side">
+
+  <!-- SUBSCRIPTION -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><i class="bi bi-credit-card"></i> Subscription</div>
+    </div>
+    <div class="card-body" style="padding:16px 20px">
+      <div class="plan-box">
+        <div class="plan-name">{{ company.plan.display_name|default:company.plan.name|default:"No Plan" }}</div>
+        {% if company.plan %}
+        <div class="plan-price">{{ company.plan.price|default:0|intcomma }} {{ company.get_preferred_currency_display }}/mo</div>
+        {% endif %}
+        <span class="bdg bdg-{{ company.status|lower }}">{{ company.get_status_display }}</span>
+      </div>
+      {% if days_until_expiry is not None %}
+      <div class="plan-hr"></div>
+      <div class="prog">
+        <div class="prog-row"><span class="prog-lbl">Days remaining</span><span class="prog-num">{{ days_until_expiry }}</span></div>
+        <div class="prog-bar"><div class="prog-fill {% if days_until_expiry < 7 %}pf-rd{% elif days_until_expiry < 30 %}pf-am{% else %}pf-bl{% endif %}" style="width:{% if days_until_expiry > 0 %}{{ days_until_expiry|floatformat:0 }}{% else %}0{% endif %}%"></div></div>
+      </div>
+      {% endif %}
+      <div class="plan-hr"></div>
+      <div class="prog">
+        <div class="prog-row"><span class="prog-lbl">Storage</span><span class="prog-num">{{ storage_usage|default:0 }}%</span></div>
+        <div class="prog-bar"><div class="prog-fill {% if storage_usage > 80 %}pf-rd{% elif storage_usage > 60 %}pf-am{% else %}pf-bl{% endif %}" style="width:{{ storage_usage|default:0 }}%"></div></div>
+        <div style="font-size:10px;color:var(--t3);margin-top:3px">{{ company.storage_used_mb }} MB used</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PERFORMANCE GAUGE -->
+  <div class="card">
+    <div class="card-head"><div class="card-title"><i class="bi bi-speedometer2"></i> Performance</div></div>
+    <div class="card-body" style="padding:14px 20px 16px">
+      <div class="gauge-wrap">
+        <div class="gauge">
+          <svg width="68" height="68" viewBox="0 0 68 68">
+            <circle class="g-bg" cx="34" cy="34" r="28"/>
+            <circle class="g-arc" id="gaugeArc" cx="34" cy="34" r="28"
+              stroke="{% if overall_performance_score >= 70 %}var(--gr){% elif overall_performance_score >= 40 %}var(--am){% else %}var(--rd){% endif %}"
+              stroke-dasharray="175.9"
+              stroke-dashoffset="{{ 175.9|floatformat:0 }}"/>
+          </svg>
+          <div class="g-lbl">
+            <span class="g-val">{{ overall_performance_score|default:0 }}%</span>
+            <span class="g-sub">score</span>
+          </div>
+        </div>
+        <div class="gauge-meta">
+          <strong>{{ top_performing_branches|length }}</strong>
+          <span>top branches</span><br>
+          <span style="font-size:11px;color:var(--t2)">{{ operational_metrics.inventory.stock_health_percentage|default:100 }}% stock health</span>
+        </div>
+      </div>
+      <div class="sr-row"><span class="sr-lbl">Active Stores</span><span class="sr-val">{{ active_stores|default:0 }}</span></div>
+      <div class="sr-row"><span class="sr-lbl">Total Products</span><span class="sr-val">{{ operational_metrics.inventory.total_products|default:0 }}</span></div>
+      <div class="sr-row"><span class="sr-lbl">Total Devices</span><span class="sr-val">{{ operational_metrics.systems.total_devices|default:0 }}</span></div>
+      <div class="sr-row"><span class="sr-lbl">Company Admins</span><span class="sr-val">{{ company_admins|default:0 }}</span></div>
+    </div>
+  </div>
+
+  <!-- ALERTS -->
+  {% if branches_needing_attention or operational_metrics.inventory.out_of_stock_items or operational_metrics.inventory.low_stock_items %}
+  <div class="card">
+    <div class="card-head"><div class="card-title"><i class="bi bi-bell"></i> Alerts</div></div>
+    <div class="card-body" style="padding:12px">
+      {% if branches_needing_attention %}
+      <div class="alrt alrt-am">
+        <i class="bi bi-exclamation-triangle"></i>
+        <div><div class="alrt-title">Branches Need Attention</div>
+        <div class="alrt-text">{{ branches_needing_attention|length }} underperforming</div></div>
+      </div>{% endif %}
+      {% if operational_metrics.inventory.out_of_stock_items %}
+      <div class="alrt alrt-rd">
+        <i class="bi bi-x-circle"></i>
+        <div><div class="alrt-title">Out of Stock</div>
+        <div class="alrt-text">{{ operational_metrics.inventory.out_of_stock_items }} items need restocking</div></div>
+      </div>{% endif %}
+      {% if operational_metrics.inventory.low_stock_items %}
+      <div class="alrt alrt-bl">
+        <i class="bi bi-box-seam"></i>
+        <div><div class="alrt-title">Low Stock Warning</div>
+        <div class="alrt-text">{{ operational_metrics.inventory.low_stock_items }} items running low</div></div>
+      </div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- EFRIS -->
+  {% if company.efris_enabled %}
+  <div class="card">
+    <div class="card-head"><div class="card-title"><i class="bi bi-gear"></i> EFRIS Status</div></div>
+    <div class="card-body" style="padding:14px 20px">
+      {% if efris_status %}
+      <div class="sr-row"><span class="sr-lbl">Status</span>
+        <span>{% if efris_status.active %}<span class="bdg bdg-active">Active</span>{% else %}<span class="bdg bdg-inactive">Inactive</span>{% endif %}</span>
+      </div>
+      <div class="sr-row"><span class="sr-lbl">Configured</span>
+        <span class="sr-val">{% if efris_status.configured %}✓ Yes{% else %}✗ No{% endif %}</span>
+      </div>
+      <div class="sr-row"><span class="sr-lbl">EFRIS Branches</span>
+        <span class="sr-val">{{ operational_metrics.systems.efris_enabled_stores|default:0 }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- RECENT ACTIVITY -->
+  {% if recent_activities %}
+  <div class="card">
+    <div class="card-head"><div class="card-title"><i class="bi bi-activity"></i> Recent Activity</div></div>
+    <div class="card-body" style="padding:14px 20px">
+      {% for act in recent_activities|slice:":6" %}
+      <div class="act-item">
+        <div class="act-dot" style="background:{% cycle 'var(--bl)' 'var(--gr)' 'var(--vi)' 'var(--am)' %}"></div>
+        <div>
+          <div class="act-txt">{{ act.description }}</div>
+          <div class="act-time">{{ act.created_at|timesince }} ago</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div><!-- /cd-side -->
+</div><!-- /cd-layout -->
+</div><!-- /cd -->
+
+<!-- ── BRANCH MODAL ──────────────────────────────────────────── -->
+<div class="mo-bg" id="branchMo">
+  <div class="mo">
+    <div class="mo-head">
+      <span class="mo-title" id="moTitle">Branch Analytics</span>
+      <button class="btn btn-sq" onclick="closeMo()" style="width:28px;height:28px;font-size:12px"><i class="bi bi-x"></i></button>
+    </div>
+    <div class="mo-body" id="moBody">
+      <div class="cd-empty"><i class="bi bi-hourglass-split" style="animation:spin .8s linear infinite;animation-name:fadeUp;opacity:.5"></i><p>Loading…</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── ALL SCRIPTS INLINE IN CONTENT BLOCK ──────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
-// Initialize when DOM is loaded
+/* ── Chart data from Django (all pre-serialized as mark_safe JSON) ── */
+var cjL   = {{ cj_labels|safe|default:"[]" }};
+var cjV   = {{ cj_values|safe|default:"[]" }};
+var cjPL  = {{ cj_pay_labels|safe|default:"[]" }};
+var cjPV  = {{ cj_pay_values|safe|default:"[]" }};
+var cjPro = {{ cj_prod_labels|safe|default:"[]" }};
+var cjPrV = {{ cj_prod_values|safe|default:"[]" }};
+var cjIS  = {{ cj_inv_stores|safe|default:"[]" }};
+var cjIOk = {{ cj_inv_ok|safe|default:"[]" }};
+var cjILo = {{ cj_inv_low|safe|default:"[]" }};
+var cjIOt = {{ cj_inv_out|safe|default:"[]" }};
+var cjIT  = {{ cj_inv_totals|safe|default:"[0,0,0]" }};
+var cjSL  = {{ cj_store_labels|safe|default:"[]" }};
+var cjSR  = {{ cj_store_rev|safe|default:"[]" }};
+var cjSC  = {{ cj_store_cnt|safe|default:"[]" }};
+
+/* Legacy weekly_trend — still used by revenue chart if cjV is empty */
+var legacyTrend = {{ revenue_analytics.weekly_trend|safe|default:"[]" }};
+if (!cjL.length && legacyTrend.length) {
+  cjL = legacyTrend.map(function(d){ return d.display || d.date; });
+  cjV = legacyTrend.map(function(d){ return d.revenue; });
+}
+
+/* ── Palette ── */
+var P = ['#2563eb','#16a34a','#d97706','#7c3aed','#dc2626','#0891b2','#f97316','#0d9488'];
+var Pα = P.map(function(c){ return c + 'bb'; });
+
+Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+Chart.defaults.font.size = 11;
+Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--t2').trim() || '#6b6b74';
+
+var charts = {};
+
+/* ── Build all charts ── */
+function buildCharts() {
+  buildRevenue(); buildPayment(); buildProducts(); buildInventory(); buildBranches();
+}
+
+function buildRevenue() {
+  var c = document.getElementById('chRevenue'); if (!c) return;
+  if (charts.rev) charts.rev.destroy();
+  charts.rev = new Chart(c, {
+    type: 'line',
+    data: { labels: cjL, datasets: [{
+      label: 'Revenue', data: cjV,
+      borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.08)',
+      borderWidth: 2, pointRadius: 2, pointHoverRadius: 5,
+      tension: .4, fill: true
+    }]},
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins: { legend:{display:false}, tooltip:{ callbacks:{
+        label: function(c){ return ' '+Number(c.parsed.y).toLocaleString(); }
+      }}},
+      scales: {
+        x: { grid:{display:false}, ticks:{maxTicksLimit:8} },
+        y: { beginAtZero:true, grid:{color:'rgba(0,0,0,.04)'},
+          ticks:{ callback: function(v){
+            return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;
+          }}
+        }
+      }
+    }
+  });
+}
+
+function buildPayment() {
+  var c = document.getElementById('chPayDoughnut'); if (!c) return;
+  var surf = getComputedStyle(document.documentElement).getPropertyValue('--s0').trim() || '#fff';
+  if (charts.pay) charts.pay.destroy();
+  charts.pay = new Chart(c, {
+    type: 'doughnut',
+    data: { labels:cjPL, datasets:[{ data:cjPV,
+      backgroundColor:P, borderColor:surf, borderWidth:3 }] },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'64%',
+      plugins:{ legend:{display:false} } }
+  });
+  var leg = document.getElementById('chPayLegend');
+  if (leg) leg.innerHTML = cjPL.map(function(l,i){
+    var pct = cjPV.reduce(function(a,b){return a+b},0);
+    pct = pct ? ((cjPV[i]/pct)*100).toFixed(1)+'%' : '0%';
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+      +'<div style="width:11px;height:11px;border-radius:3px;background:'+P[i%P.length]+';flex-shrink:0"></div>'
+      +'<span style="flex:1;color:var(--t2)">'+l+'</span>'
+      +'<strong>'+Number(cjPV[i]).toLocaleString()+'</strong>'
+      +'<span style="color:var(--t3);font-size:10px">'+pct+'</span></div>';
+  }).join('');
+}
+
+function buildProducts() {
+  var c = document.getElementById('chProducts'); if (!c) return;
+  if (charts.prod) charts.prod.destroy();
+  charts.prod = new Chart(c, {
+    type: 'bar',
+    data: { labels:cjPro, datasets:[{ label:'Revenue', data:cjPrV,
+      backgroundColor:Pα, borderRadius:4, borderSkipped:false }] },
+    options: { indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales: {
+        x:{ beginAtZero:true, grid:{color:'rgba(0,0,0,.04)'},
+          ticks:{callback:function(v){return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;}} },
+        y:{ grid:{display:false} }
+      }
+    }
+  });
+}
+
+function buildInventory() {
+  var surf = getComputedStyle(document.documentElement).getPropertyValue('--s0').trim() || '#fff';
+  var c1 = document.getElementById('chInvDonut');
+  if (c1) {
+    if (charts.invD) charts.invD.destroy();
+    charts.invD = new Chart(c1, {
+      type:'doughnut',
+      data:{ labels:['OK','Low','Out'], datasets:[{
+        data:cjIT, backgroundColor:['#16a34a','#d97706','#dc2626'],
+        borderColor:surf, borderWidth:3
+      }]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'62%',
+        plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:8,font:{size:10}}}}}
+    });
+  }
+  var c2 = document.getElementById('chInvBars');
+  if (c2) {
+    if (charts.invB) charts.invB.destroy();
+    charts.invB = new Chart(c2, {
+      type:'bar',
+      data:{ labels:cjIS, datasets:[
+        {label:'OK',  data:cjIOk, backgroundColor:'#16a34a99', borderRadius:3},
+        {label:'Low', data:cjILo, backgroundColor:'#d9770699', borderRadius:3},
+        {label:'Out', data:cjIOt, backgroundColor:'#dc262699', borderRadius:3},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:8,font:{size:10}}}},
+        scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,beginAtZero:true,grid:{color:'rgba(0,0,0,.04)'}}}
+      }
+    });
+  }
+}
+
+function buildBranches() {
+  var c = document.getElementById('chBranches'); if (!c) return;
+  if (charts.br) charts.br.destroy();
+  charts.br = new Chart(c, {
+    type:'bar',
+    data:{ labels:cjSL, datasets:[
+      {label:'Revenue', data:cjSR, backgroundColor:'#2563ebaa', borderRadius:4, yAxisID:'y'},
+      {label:'Sales',   data:cjSC, type:'line', borderColor:'#16a34a', backgroundColor:'rgba(22,163,74,.08)',
+       pointRadius:3, borderWidth:2, fill:false, yAxisID:'y2'},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:11}}}},
+      scales:{
+        x:{grid:{display:false}},
+        y:{beginAtZero:true,position:'left',grid:{color:'rgba(0,0,0,.04)'},
+          ticks:{callback:function(v){return v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v;}}},
+        y2:{beginAtZero:true,position:'right',grid:{display:false}}
+      }
+    }
+  });
+}
+
+/* ── Chart tabs ── */
+document.querySelectorAll('.ct-tab').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.ct-tab').forEach(function(b){b.classList.remove('on')});
+    document.querySelectorAll('.ct-panel').forEach(function(p){p.classList.remove('on')});
+    this.classList.add('on');
+    var p = document.getElementById('tab-'+this.dataset.tab);
+    if (p) { p.classList.add('on'); setTimeout(function(){ Object.values(charts).forEach(function(c){if(c&&c.resize)c.resize()}); },10); }
+  });
+});
+
+/* ── Performance gauge animation ── */
+function animateGauge() {
+  var arc = document.getElementById('gaugeArc'); if (!arc) return;
+  var score = parseFloat('{{ overall_performance_score|default:0 }}') || 0;
+  var circ = 175.9;
+  var offset = circ - (score / 100) * circ;
+  setTimeout(function(){ arc.style.strokeDashoffset = offset; }, 300);
+}
+
+/* ── Sticky sumbar ── */
+(function() {
+  var hero = document.getElementById('cdHero');
+  var bar  = document.getElementById('cdSumbar');
+  if (!hero || !bar) return;
+  var obs = new IntersectionObserver(function(entries) {
+    bar.classList.toggle('show', !entries[0].isIntersecting);
+  }, { threshold: 0 });
+  obs.observe(hero);
+})();
+
+/* ── Dark mode ── */
+(function() {
+  var saved = localStorage.getItem('theme') || 'light';
+  document.documentElement.setAttribute('data-theme', saved);
+  var icon = document.querySelector('#themeToggle i');
+  if (icon) icon.className = saved === 'dark' ? 'bi bi-sun' : 'bi bi-moon';
+})();
+var themeBtn = document.getElementById('themeToggle');
+if (themeBtn) themeBtn.addEventListener('click', function() {
+  var cur  = document.documentElement.getAttribute('data-theme');
+  var next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  var icon = this.querySelector('i');
+  if (icon) icon.className = next === 'dark' ? 'bi bi-sun' : 'bi bi-moon';
+  /* Rebuild charts so colors update */
+  setTimeout(buildCharts, 150);
+});
+
+/* ── Modal ── */
+window.showBranchModal = function(id) {
+  document.getElementById('branchMo').classList.add('open');
+  document.getElementById('moTitle').textContent = 'Branch Analytics';
+  document.getElementById('moBody').innerHTML =
+    '<div class="cd-empty"><i class="bi bi-hourglass-split"></i><p>Loading…</p></div>';
+  fetch('/prime-book/branches/'+id+'/analytics/', {headers:{'X-Requested-With':'XMLHttpRequest'}})
+    .then(function(r){return r.json()})
+    .then(renderMo)
+    .catch(function(e){
+      document.getElementById('moBody').innerHTML =
+        '<div class="cd-empty" style="color:var(--rd)"><i class="bi bi-exclamation-circle"></i><p>'+e+'</p></div>';
+    });
+};
+window.closeMo = function() { document.getElementById('branchMo').classList.remove('open'); };
+document.getElementById('branchMo').addEventListener('click', function(e){ if(e.target===this) closeMo(); });
+
+function renderMo(data) {
+  var m = data.metrics || {}; var stores = data.store_details || [];
+  var fmt = function(n){ return Number(n||0).toLocaleString(); };
+  var gHtml = function(g,v) {
+    var cls = g>0?'gp-up':g<0?'gp-dn':'gp-fl';
+    return '<span class="gp '+cls+'">'+(g>0?'↑':g<0?'↓':'')+(v||g)+' '+(typeof v==='undefined'?'%':'')+'</span>';
+  };
+  var html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">';
+  var boxes = [
+    ['Revenue 30d', fmt(m.total_revenue), m.revenue_growth, 'var(--am)'],
+    ['Sales',       fmt(m.total_sales),   m.sales_growth,   'var(--bl)'],
+    ['Customers',   fmt(m.total_customers),m.customer_growth,'var(--vi)'],
+    ['Low Stock',   m.low_stock_items,    null,             'var(--rd)'],
+  ];
+  boxes.forEach(function(b) {
+    html += '<div style="background:var(--s1);border:1px solid var(--b0);border-radius:var(--r);padding:12px;text-align:center">'
+      +'<div style="font-size:19px;font-weight:700;color:'+b[3]+';font-family:var(--mono)">'+b[1]+'</div>'
+      +'<div style="font-size:11px;color:var(--t2);margin:2px 0">'+b[0]+'</div>'
+      +(b[2]!==null&&b[2]!==undefined?gHtml(b[2]):'')
+      +'</div>';
+  });
+  html += '</div>';
+  if (stores.length) {
+    html += '<div class="xt"><table>'
+      +'<thead><tr><th>Store</th><th>Revenue</th><th>Sales</th><th>Avg</th><th>Status</th></tr></thead><tbody>';
+    stores.forEach(function(s) {
+      html += '<tr><td><div class="td-p">'+s.name+'</div><div class="td-s">'+(s.code||'')+'</div></td>'
+        +'<td><div class="td-p">'+fmt(s.revenue_30d)+'</div>'
+        +'<div class="td-s" style="color:'+(s.revenue_growth>=0?'var(--gr)':'var(--rd)')+'">'+
+        (s.revenue_growth>=0?'↑':'↓')+Math.abs(s.revenue_growth||0)+'%</div></td>'
+        +'<td>'+s.sales_count+'</td>'
+        +'<td class="td-mu">'+fmt(s.avg_sale)+'</td>'
+        +'<td><span class="bdg '+(s.is_active?'bdg-active':'bdg-inactive')+'">'+(s.is_active?'Active':'Inactive')+'</span></td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  document.getElementById('moBody').innerHTML = html;
+}
+
+/* ── Navigation helpers ── */
+window.viewEmployee = function(id){ window.location.href='/accounts/users/'+id+'/'; };
+window.editEmployee = function(id){ window.location.href='/accounts/users/'+id+'/edit/'; };
+
+/* ── Init ── */
 document.addEventListener('DOMContentLoaded', function() {
-    initializeDarkMode();
-    initializeChart();
-    initializePerformanceCircles();
-    initializeTooltips();
-    initializeResponsiveBehavior();
+  buildCharts();
+  animateGauge();
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeMo(); });
 });
-
-// Dark Mode Toggle
-function initializeDarkMode() {
-    const toggle = document.getElementById('darkModeToggle');
-    const savedTheme = localStorage.getItem('theme') || 'light';
-
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    updateDarkModeIcon(savedTheme === 'dark');
-
-    toggle.addEventListener('click', function() {
-        const currentTheme = document.documentElement.getAttribute('data-theme');
-        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-
-        // Add transition class for smooth theme switching
-        document.documentElement.classList.add('theme-transition');
-
-        document.documentElement.setAttribute('data-theme', newTheme);
-        localStorage.setItem('theme', newTheme);
-        updateDarkModeIcon(newTheme === 'dark');
-
-        // Remove transition class after animation
-        setTimeout(() => {
-            document.documentElement.classList.remove('theme-transition');
-        }, 300);
-    });
-}
-
-function updateDarkModeIcon(isDark) {
-    const icon = document.querySelector('#darkModeToggle i');
-    icon.className = isDark ? 'bi bi-sun' : 'bi bi-moon';
-}
-
-// Initialize Revenue Chart
-function initializeChart() {
-    const canvas = document.getElementById('revenueChart');
-    if (!canvas || typeof Chart === 'undefined') return;
-
-    const ctx = canvas.getContext('2d');
-    const revenueData = {{ revenue_analytics.weekly_trend|safe|default:"[]" }};
-
-    const labels = revenueData.map(item => {
-        const date = new Date(item.date);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    });
-
-    const values = revenueData.map(item => item.revenue);
-
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Revenue',
-                data: values,
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                tension: 0.4,
-                fill: true,
-                pointBackgroundColor: '#3b82f6',
-                pointBorderColor: '#ffffff',
-                pointBorderWidth: 2,
-                pointRadius: 4,
-                pointHoverRadius: 6
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                x: {
-                    grid: {
-                        display: false
-                    },
-                    border: {
-                        display: false
-                    }
-                },
-                y: {
-                    beginAtZero: true,
-                    grid: {
-                        color: 'rgba(0, 0, 0, 0.1)'
-                    },
-                    border: {
-                        display: false
-                    },
-                    ticks: {
-                        callback: function(value) {
-                            return new Intl.NumberFormat('en-US', {
-                                style: 'currency',
-                                currency: 'USD',
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 0
-                            }).format(value);
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
-// Initialize Performance Circles
-function initializePerformanceCircles() {
-    const circles = document.querySelectorAll('.performance-circle');
-    circles.forEach(circle => {
-        const score = circle.dataset.score || 0;
-        circle.style.setProperty('--score', score);
-    });
-}
-
-// Initialize Tooltips
-function initializeTooltips() {
-    const tooltipElements = document.querySelectorAll('[title]');
-    tooltipElements.forEach(element => {
-        if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
-            new bootstrap.Tooltip(element);
-        }
-    });
-}
-
-// Initialize Responsive Behavior
-function initializeResponsiveBehavior() {
-    // Handle chart controls
-    const chartControls = document.querySelectorAll('.btn-filter');
-    chartControls.forEach(control => {
-        control.addEventListener('click', function() {
-            chartControls.forEach(c => c.classList.remove('active'));
-            this.classList.add('active');
-            // Add your chart update logic here
-        });
-    });
-
-    // Handle window resize
-    let resizeTimer;
-    window.addEventListener('resize', function() {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(function() {
-            // Reinitialize any responsive elements if needed
-        }, 250);
-    });
-}
-
-// Branch Analytics Modal
-/**
- * Branch Analytics and Company Dashboard Functions
- * Updated to use correct URL patterns and improved error handling
- */
-
-// Show branch analytics modal
-function showBranchAnalytics(storeId) {
-    const modal = new bootstrap.Modal(document.getElementById('branchAnalyticsModal'));
-    const content = document.getElementById('branchAnalyticsContent');
-
-    // Reset content
-    content.innerHTML = `
-        <div class="loading-state text-center py-5">
-            <div class="spinner-border text-primary mb-3" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <p class="text-muted">Loading analytics...</p>
-        </div>
-    `;
-
-    modal.show();
-
-    // Load analytics data using the correct URL pattern
-    fetch(`/prime-book/branches/${storeId}/analytics/`, {
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-            'Accept': 'application/json'
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        renderBranchAnalytics(data, content);
-    })
-    .catch(error => {
-        console.error('Error loading branch analytics:', error);
-        content.innerHTML = `
-            <div class="alert alert-danger">
-                <i class="bi bi-exclamation-triangle me-2"></i>
-                <strong>Error loading analytics</strong>
-                <p class="mb-0 mt-2">Unable to load analytics data. Please try again later.</p>
-                <small class="text-muted d-block mt-1">Error: ${error.message}</small>
-            </div>
-        `;
-    });
-}
-
-// Render branch analytics in modal
-function renderBranchAnalytics(data, container) {
-    const metrics = data.metrics;
-    const stores = data.store_details || [];
-    const revenueData = data.revenue_data || {};
-
-    container.innerHTML = `
-        <!-- Key Metrics -->
-        <div class="row mb-4">
-            <div class="col-md-3 col-6 mb-3">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="text-primary mb-2">
-                            <i class="bi bi-currency-dollar fs-1"></i>
-                        </div>
-                        <h4 class="text-primary mb-1">${formatCurrency(metrics.total_revenue)} UGX</h4>
-                        <small class="text-muted">Total Revenue (30D)</small>
-                        <div class="mt-2">
-                            <small class="${metrics.revenue_growth >= 0 ? 'text-success' : 'text-danger'}">
-                                <i class="bi bi-arrow-${metrics.revenue_growth >= 0 ? 'up' : 'down'}"></i>
-                                ${Math.abs(metrics.revenue_growth)}%
-                            </small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6 mb-3">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="text-success mb-2">
-                            <i class="bi bi-receipt fs-1"></i>
-                        </div>
-                        <h4 class="text-success mb-1">${metrics.total_sales.toLocaleString()}</h4>
-                        <small class="text-muted">Total Sales</small>
-                        <div class="mt-2">
-                            <small class="${metrics.sales_growth >= 0 ? 'text-success' : 'text-danger'}">
-                                <i class="bi bi-arrow-${metrics.sales_growth >= 0 ? 'up' : 'down'}"></i>
-                                ${Math.abs(metrics.sales_growth)}%
-                            </small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6 mb-3">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="text-info mb-2">
-                            <i class="bi bi-people fs-1"></i>
-                        </div>
-                        <h4 class="text-info mb-1">${metrics.total_customers.toLocaleString()}</h4>
-                        <small class="text-muted">Customers</small>
-                        <div class="mt-2">
-                            <small class="${metrics.customer_growth >= 0 ? 'text-success' : 'text-danger'}">
-                                <i class="bi bi-arrow-${metrics.customer_growth >= 0 ? 'up' : 'down'}"></i>
-                                ${Math.abs(metrics.customer_growth)}%
-                            </small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6 mb-3">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-body text-center">
-                        <div class="text-warning mb-2">
-                            <i class="bi bi-box-seam fs-1"></i>
-                        </div>
-                        <h4 class="text-warning mb-1">${metrics.low_stock_items}</h4>
-                        <small class="text-muted">Low Stock Items</small>
-                        <div class="mt-2">
-                            <small class="text-muted">${metrics.total_products} total products</small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Store Performance Table -->
-        ${stores.length > 0 ? `
-        <div class="card border-0 shadow-sm mb-3">
-            <div class="card-header bg-transparent">
-                <h6 class="mb-0">
-                    <i class="bi bi-shop me-2"></i>Store Performance
-                </h6>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Store</th>
-                                <th class="text-end">Revenue</th>
-                                <th class="text-end">Sales</th>
-                                <th class="text-center">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${stores.map(store => `
-                                <tr>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            ${store.logo ?
-                                                `<img src="${store.logo}" class="rounded me-2" width="24" height="24" alt="${store.name}">` :
-                                                `<div class="bg-primary text-white rounded d-flex align-items-center justify-content-center me-2" style="width: 24px; height: 24px; font-size: 10px;">
-                                                    <i class="bi bi-shop"></i>
-                                                </div>`
-                                            }
-                                            <div>
-                                                <strong>${store.name}</strong>
-                                                <br><small class="text-muted">${store.code}</small>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td class="text-end">
-                                        <strong>${formatCurrency(store.revenue_30d)}</strong>
-                                        <br><small class="text-muted ${store.revenue_growth >= 0 ? 'text-success' : 'text-danger'}">
-                                            ${store.revenue_growth >= 0 ? '+' : ''}${store.revenue_growth}%
-                                        </small>
-                                    </td>
-                                    <td class="text-end">
-                                        <strong>${store.sales_count}</strong>
-                                        <br><small class="text-muted">${formatCurrency(store.avg_sale)} avg</small>
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="badge bg-${store.is_active ? 'success' : 'secondary'}">
-                                            ${store.is_active ? 'Active' : 'Inactive'}
-                                        </span>
-                                        ${store.efris_enabled ? '<br><span class="badge bg-info mt-1">EFRIS</span>' : ''}
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        ` : ''}
-
-
-    `;
-}
-
-// Action Functions
-function viewBranch(branchId) {
-    if (!branchId) {
-        console.error('Invalid branch ID');
-        return;
-    }
-    window.location.href = `/companies/branches/${branchId}/`;
-}
-
-function editBranch(branchId) {
-    if (!branchId) {
-        console.error('Invalid branch ID');
-        return;
-    }
-    window.location.href = `/companies/branches/${branchId}/edit/`;
-}
-
-function deleteBranch(branchId, branchName) {
-    if (!branchId) {
-        console.error('Invalid branch ID');
-        return;
-    }
-
-    if (confirm(`Are you sure you want to delete "${branchName}"? This action cannot be undone.`)) {
-        window.location.href = `/companies/branches/${branchId}/delete/`;
-    }
-}
-
-function viewEmployee(employeeId) {
-    if (!employeeId) {
-        console.error('Invalid employee ID');
-        return;
-    }
-    window.location.href = `/accounts/users/${employeeId}/`;
-}
-
-function editEmployee(employeeId) {
-    if (!employeeId) {
-        console.error('Invalid employee ID');
-        return;
-    }
-    window.location.href = `/accounts/users/${employeeId}/edit/`;
-}
-
-function exportBranchAnalytics(branchId) {
-    if (!branchId) {
-        console.error('Invalid branch ID');
-        return;
-    }
-    window.open(`/companies/branches/${branchId}/export/`, '_blank');
-}
-
-// Utility function for currency formatting
-function formatCurrency(amount) {
-    return new Intl.NumberFormat('en-UG', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(amount || 0);
-}
-
-// Auto-refresh data every 5 minutes
-let metricsRefreshInterval = null;
-
-function startMetricsRefresh(companyId) {
-    if (!companyId) {
-        console.error('Company ID is required for metrics refresh');
-        return;
-    }
-
-    // Clear any existing interval
-    if (metricsRefreshInterval) {
-        clearInterval(metricsRefreshInterval);
-    }
-
-    // Set up new interval
-    metricsRefreshInterval = setInterval(function() {
-        refreshMetrics(companyId);
-    }, 300000); // 5 minutes
-}
-
-function stopMetricsRefresh() {
-    if (metricsRefreshInterval) {
-        clearInterval(metricsRefreshInterval);
-        metricsRefreshInterval = null;
-    }
-}
-
-function refreshMetrics(companyId) {
-    if (!companyId) {
-        console.error('Company ID is required');
-        return;
-    }
-
-    // Update metrics via API
-    fetch(`/companies/api/${companyId}/metrics/`, {
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-            'Accept': 'application/json'
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        updateMetricValues(data.metrics || data);
-    })
-    .catch(error => {
-        console.error('Error refreshing metrics:', error);
-        // Don't show error to user for background refresh failures
-    });
-}
-
-function updateMetricValues(metrics) {
-    const elements = {
-        '#total-branches': metrics.total_branches,
-        '#total-stores': metrics.total_stores,
-        '#total-employees': metrics.total_employees,
-        '#active-employees': metrics.active_employees,
-        '#total-revenue': metrics.total_revenue,
-        '#total-sales': metrics.total_sales
-    };
-
-    Object.entries(elements).forEach(([selector, value]) => {
-        const element = document.querySelector(selector);
-        if (element && value !== undefined && value !== null) {
-            const currentValue = element.textContent.trim();
-            const newValue = typeof value === 'number' ? value.toLocaleString() : value.toString();
-
-            if (currentValue !== newValue) {
-                element.textContent = newValue;
-                element.classList.add('updated');
-                setTimeout(() => element.classList.remove('updated'), 500);
-            }
-        }
-    });
-}
-
-// Keyboard shortcuts
-document.addEventListener('keydown', function(e) {
-    // Ctrl/Cmd + E: Edit company
-    if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
-        e.preventDefault();
-        const editBtn = document.querySelector('a[href*="company_update"], a[href*="/edit"]');
-        if (editBtn) editBtn.click();
-    }
-
-    // Ctrl/Cmd + N: New branch/store
-    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-        e.preventDefault();
-        const newBtn = document.querySelector('a[href*="branch/create"], a[href*="store/create"]');
-        if (newBtn) newBtn.click();
-    }
-
-    // Escape: Close modals
-    if (e.key === 'Escape') {
-        const modals = document.querySelectorAll('.modal.show');
-        modals.forEach(modal => {
-            const bsModal = bootstrap.Modal.getInstance(modal);
-            if (bsModal) bsModal.hide();
-        });
-    }
-});
-
-// Add CSS for updated animation
-const style = document.createElement('style');
-style.textContent = `
-    .updated {
-        animation: highlight 0.5s ease-in-out;
-    }
-
-    @keyframes highlight {
-        0%, 100% {
-            background-color: transparent;
-        }
-        50% {
-            background-color: rgba(40, 167, 69, 0.2);
-        }
-    }
-
-    .loading-state {
-        min-height: 200px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-    }
-`;
-document.head.appendChild(style);
-
-// Initialize when document is ready
-document.addEventListener('DOMContentLoaded', function() {
-    // Start metrics refresh if company ID is available
-    const companyElement = document.querySelector('[data-company-id]');
-    if (companyElement) {
-        const companyId = companyElement.dataset.companyId;
-        if (companyId) {
-            startMetricsRefresh(companyId);
-        }
-    }
-
-    // Add smooth scrolling to anchor links
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function (e) {
-            const href = this.getAttribute('href');
-            if (href !== '#' && href !== '#!') {
-                e.preventDefault();
-                const target = document.querySelector(href);
-                if (target) {
-                    target.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start'
-                    });
-                }
-            }
-        });
-    });
-
-    // Initialize tooltips if Bootstrap is available
-    if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
-        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
-        });
-    }
-
-    // Initialize popovers if Bootstrap is available
-    if (typeof bootstrap !== 'undefined' && bootstrap.Popover) {
-        const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
-        popoverTriggerList.map(function (popoverTriggerEl) {
-            return new bootstrap.Popover(popoverTriggerEl);
-        });
-    }
-});
-
-// Clean up on page unload
-window.addEventListener('beforeunload', function() {
-    stopMetricsRefresh();
-});
-
-// Export functions for use in other scripts
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        showBranchAnalytics,
-        viewBranch,
-        editBranch,
-        deleteBranch,
-        viewEmployee,
-        editEmployee,
-        exportBranchAnalytics,
-        refreshMetrics,
-        startMetricsRefresh,
-        stopMetricsRefresh,
-        formatCurrency
-    };
-}
 </script>
 {% endblock %}

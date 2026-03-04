@@ -1,233 +1,302 @@
-from datetime import datetime, timedelta
-from django.utils import timezone
-from django.db.models import Sum, Count, Avg
-from django.db.models.functions import TruncDate, TruncWeek, TruncMonth
+"""
+utils.py — Utility functions for the expenses app.
+
+Changes from original:
+  • All aggregations use amount_base for currency-correct totals.
+  • get_expense_summary also returns by_currency breakdown.
+  • generate_chart_data returns an empty list (not NameError) for unknown group_by.
+  • validate_expense_approval — new helper used by quick_approve_api.
+  • export_to_pdf / export_to_excel updated with vendor, currency, status columns.
+  • matplotlib import is deferred inside functions to avoid import-time side-effects.
+"""
+
 import io
+import logging
+from datetime import timedelta
 from decimal import Decimal
 
-# For PDF generation
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.graphics.shapes import Drawing
-from reportlab.graphics.charts.piecharts import Pie
-from reportlab.graphics.charts.barcharts import VerticalBarChart
+from django.db.models import Avg, Count, Sum
+from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
+from django.utils import timezone
 
-# For Excel generation
-import openpyxl
-from openpyxl.chart import PieChart, BarChart, Reference
-from openpyxl.styles import Font, Alignment, PatternFill
+logger = logging.getLogger(__name__)
 
-# For charts
-import matplotlib
 
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
+# ---------------------------------------------------------------------------
+# Date range helpers
+# ---------------------------------------------------------------------------
 
 def get_date_range(period):
-    """Get start and end dates based on period"""
+    """Return (start_date, end_date) for a named period, or (None, None)."""
     today = timezone.now().date()
 
-    if period == 'today':
-        return today, today
-    elif period == 'week':
-        start = today - timedelta(days=today.weekday())
-        return start, today
-    elif period == 'fortnight':
-        return today - timedelta(days=14), today
-    elif period == 'month':
-        start = today.replace(day=1)
-        return start, today
-    elif period == 'quarter':
-        quarter_month = ((today.month - 1) // 3) * 3 + 1
-        start = today.replace(month=quarter_month, day=1)
-        return start, today
-    elif period == '6months':
-        return today - timedelta(days=182), today
-    elif period == 'year':
-        start = today.replace(month=1, day=1)
-        return start, today
+    mapping = {
+        'today':     (today, today),
+        'week':      (today - timedelta(days=today.weekday()), today),
+        'fortnight': (today - timedelta(days=14), today),
+        'month':     (today.replace(day=1), today),
+        '6months':   (today - timedelta(days=182), today),
+        'year':      (today.replace(month=1, day=1), today),
+    }
 
-    return None, None
+    if period == 'quarter':
+        qm = ((today.month - 1) // 3) * 3 + 1
+        return today.replace(month=qm, day=1), today
 
+    return mapping.get(period, (None, None))
+
+
+# ---------------------------------------------------------------------------
+# Summary statistics
+# ---------------------------------------------------------------------------
 
 def get_expense_summary(expenses):
-    """Generate summary statistics"""
-    total = expenses.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    """
+    Return a dict with:
+      total, count, average  — in base currency
+      by_tag                 — {tag_name: Decimal}
+      by_currency            — {currency_code: Decimal}  (original amounts)
+    """
+    total = expenses.aggregate(total=Sum('amount_base'))['total'] or Decimal('0.00')
     count = expenses.count()
-    avg = expenses.aggregate(avg=Avg('amount'))['avg'] or Decimal('0.00')
+    avg = expenses.aggregate(avg=Avg('amount_base'))['avg'] or Decimal('0.00')
 
-    # Group by tags
-    tag_summary = {}
-    for expense in expenses:
+    by_tag: dict[str, Decimal] = {}
+    by_currency: dict[str, Decimal] = {}
+
+    for expense in expenses.prefetch_related('tags'):
         for tag in expense.tags.all():
-            if tag.name not in tag_summary:
-                tag_summary[tag.name] = Decimal('0.00')
-            tag_summary[tag.name] += expense.amount
+            by_tag[tag.name] = by_tag.get(tag.name, Decimal('0')) + expense.amount_base
 
-    # Sort by amount
-    tag_summary = dict(sorted(tag_summary.items(), key=lambda x: x[1], reverse=True))
+        key = expense.currency
+        by_currency[key] = by_currency.get(key, Decimal('0')) + expense.amount
+
+    by_tag = dict(sorted(by_tag.items(), key=lambda x: x[1], reverse=True))
 
     return {
         'total': total,
         'count': count,
         'average': avg,
-        'by_tag': tag_summary
+        'by_tag': by_tag,
+        'by_currency': by_currency,
     }
 
 
-def generate_chart_data(expenses, group_by='date'):
-    """Generate data for charts"""
-    if group_by == 'date':
-        data = expenses.annotate(
-            period=TruncDate('date')
-        ).values('period').annotate(
-            total=Sum('amount')
-        ).order_by('period')
-    elif group_by == 'week':
-        data = expenses.annotate(
-            period=TruncWeek('date')
-        ).values('period').annotate(
-            total=Sum('amount')
-        ).order_by('period')
-    elif group_by == 'month':
-        data = expenses.annotate(
-            period=TruncMonth('date')
-        ).values('period').annotate(
-            total=Sum('amount')
-        ).order_by('period')
+# ---------------------------------------------------------------------------
+# Chart data
+# ---------------------------------------------------------------------------
 
+def generate_chart_data(expenses, group_by='date'):
+    """
+    Return a list of {'period': date, 'total': Decimal} dicts.
+    Unknown group_by returns [].
+    """
+    trunc_map = {
+        'date':  TruncDate,
+        'week':  TruncWeek,
+        'month': TruncMonth,
+    }
+    trunc_fn = trunc_map.get(group_by)
+    if trunc_fn is None:
+        logger.warning("generate_chart_data: unknown group_by=%r — returning []", group_by)
+        return []
+
+    data = (
+        expenses
+        .annotate(period=trunc_fn('date'))
+        .values('period')
+        .annotate(total=Sum('amount_base'))
+        .order_by('period')
+    )
     return list(data)
 
 
-def create_pie_chart_image(tag_summary):
-    """Create pie chart for tags"""
+# ---------------------------------------------------------------------------
+# Approval validation helper
+# ---------------------------------------------------------------------------
+
+def validate_expense_approval(expense, approver) -> dict:
+    """
+    Run pre-approval checks and return {'errors': [...], 'warnings': [...]}.
+
+    Used by quick_approve_api and the approval dashboard before calling
+    ExpenseApproval.record().
+    """
+    errors = []
+    warnings = []
+
+    if not approver.has_perm('expenses.approve_expense'):
+        errors.append('You do not have permission to approve expenses.')
+
+    if expense.user_id == approver.pk:
+        errors.append('You cannot approve your own expense.')
+
+    if expense.status not in ('submitted', 'under_review'):
+        errors.append(
+            f'Expense is in "{expense.get_status_display()}" state and cannot be approved.'
+        )
+
+    if not expense.amount or expense.amount <= 0:
+        warnings.append('Expense amount appears to be zero or negative.')
+
+    return {'errors': errors, 'warnings': warnings}
+
+
+# ---------------------------------------------------------------------------
+# Chart image helpers (matplotlib — import deferred to avoid side-effects)
+# ---------------------------------------------------------------------------
+
+def create_pie_chart_image(tag_summary: dict):
+    """Return a BytesIO PNG of a pie chart, or None if tag_summary is empty."""
     if not tag_summary:
         return None
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    labels = list(tag_summary.keys())[:10]  # Top 10
-    sizes = [float(tag_summary[label]) for label in labels]
+        fig, ax = plt.subplots(figsize=(8, 6))
+        labels = list(tag_summary.keys())[:10]
+        sizes = [float(tag_summary[label]) for label in labels]
+        ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+        ax.axis('equal')
 
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
-    ax.axis('equal')
-
-    buffer = io.BytesIO()
-    plt.savefig(buffer, format='png', bbox_inches='tight')
-    buffer.seek(0)
-    plt.close()
-
-    return buffer
-
-
-def create_bar_chart_image(chart_data):
-    """Create bar chart for time-based data"""
-    if not chart_data:
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight')
+        buf.seek(0)
+        plt.close()
+        return buf
+    except ImportError:
+        logger.warning("create_pie_chart_image: matplotlib not installed")
         return None
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    dates = [item['period'].strftime('%Y-%m-%d') for item in chart_data]
-    amounts = [float(item['total']) for item in chart_data]
 
-    ax.bar(dates, amounts)
-    ax.set_xlabel('Date')
-    ax.set_ylabel('Amount ($)')
-    ax.set_title('Expenses Over Time')
-    plt.xticks(rotation=45, ha='right')
-    plt.tight_layout()
+def create_bar_chart_image(chart_data: list):
+    """Return a BytesIO PNG of a bar chart, or None if chart_data is empty."""
+    if not chart_data:
+        return None
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
 
-    buffer = io.BytesIO()
-    plt.savefig(buffer, format='png', bbox_inches='tight')
-    buffer.seek(0)
-    plt.close()
+        fig, ax = plt.subplots(figsize=(10, 6))
+        dates = [item['period'].strftime('%Y-%m-%d') for item in chart_data]
+        amounts = [float(item['total']) for item in chart_data]
+        ax.bar(dates, amounts, color='#3498db')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Amount (base currency)')
+        ax.set_title('Expenses Over Time')
+        plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
 
-    return buffer
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight')
+        buf.seek(0)
+        plt.close()
+        return buf
+    except ImportError:
+        logger.warning("create_bar_chart_image: matplotlib not installed")
+        return None
 
 
-def export_to_pdf(expenses, summary, filters):
-    """Export expenses to PDF with charts"""
+# ---------------------------------------------------------------------------
+# PDF export (ReportLab)
+# ---------------------------------------------------------------------------
+
+def export_to_pdf(expenses, summary, filters=None):
+    """
+    Build a PDF expense report using ReportLab.
+    Returns a BytesIO buffer ready to stream.
+    """
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import (
+            Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+        )
+    except ImportError:
+        raise ImportError(
+            "reportlab is required for PDF export. Install it with: pip install reportlab"
+        )
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     elements = []
     styles = getSampleStyleSheet()
 
-    # Title
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
-        fontSize=24,
+        fontSize=22,
         textColor=colors.HexColor('#2c3e50'),
-        spaceAfter=30,
+        spaceAfter=24,
     )
     elements.append(Paragraph('Expense Report', title_style))
-    elements.append(Spacer(1, 0.2 * inch))
+    elements.append(Spacer(1, 0.15 * inch))
 
-    # Summary section
+    # Summary table
     summary_data = [
-        ['Total Expenses:', f"${summary['total']:,.2f}"],
-        ['Number of Expenses:', str(summary['count'])],
-        ['Average Expense:', f"${summary['average']:,.2f}"],
+        ['Total (base currency):', f"{summary['total']:,.2f}"],
+        ['Number of Expenses:',    str(summary['count'])],
+        ['Average (base):',        f"{summary['average']:,.2f}"],
     ]
-
     summary_table = Table(summary_data, colWidths=[3 * inch, 2 * inch])
     summary_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#ecf0f1')),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#2c3e50')),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 12),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONTNAME',   (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE',   (0, 0), (-1, -1), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('GRID',       (0, 0), (-1, -1), 0.5, colors.grey),
     ]))
     elements.append(summary_table)
-    elements.append(Spacer(1, 0.3 * inch))
+    elements.append(Spacer(1, 0.25 * inch))
 
-    # Add pie chart for tags
-    if summary['by_tag']:
+    # Pie chart
+    if summary.get('by_tag'):
         elements.append(Paragraph('Expenses by Tag', styles['Heading2']))
         pie_image = create_pie_chart_image(summary['by_tag'])
         if pie_image:
             elements.append(Image(pie_image, width=5 * inch, height=3.75 * inch))
-            elements.append(Spacer(1, 0.3 * inch))
+            elements.append(Spacer(1, 0.25 * inch))
 
-    # Add bar chart for time series
+    # Bar chart
     chart_data = generate_chart_data(expenses, group_by='date')
     if chart_data:
         elements.append(Paragraph('Expenses Over Time', styles['Heading2']))
         bar_image = create_bar_chart_image(chart_data)
         if bar_image:
             elements.append(Image(bar_image, width=6 * inch, height=3.6 * inch))
-            elements.append(Spacer(1, 0.3 * inch))
+            elements.append(Spacer(1, 0.25 * inch))
 
-    # Detailed expense table
+    # Detailed table — now includes currency, vendor, status
     elements.append(Paragraph('Detailed Expenses', styles['Heading2']))
     elements.append(Spacer(1, 0.1 * inch))
 
-    expense_data = [['Date', 'Description', 'Tags', 'Amount']]
-    for expense in expenses[:100]:  # Limit to 100 for PDF
-        tags = ', '.join([tag.name for tag in expense.tags.all()])
+    expense_data = [['Date', 'Description', 'Vendor', 'Currency', 'Amount', 'Status']]
+    for expense in expenses.prefetch_related('tags')[:100]:
         expense_data.append([
             expense.date.strftime('%Y-%m-%d'),
-            expense.description[:40],
-            tags[:30],
-            f"${expense.amount:,.2f}"
+            expense.description[:35],
+            (expense.vendor or '')[:25],
+            expense.currency,
+            f"{expense.amount:,.2f}",
+            expense.get_status_display(),
         ])
 
-    expense_table = Table(expense_data, colWidths=[1 * inch, 2.5 * inch, 1.5 * inch, 1 * inch])
+    col_widths = [0.9 * inch, 2.2 * inch, 1.6 * inch, 0.7 * inch, 0.9 * inch, 0.9 * inch]
+    expense_table = Table(expense_data, colWidths=col_widths)
     expense_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('BACKGROUND',    (0, 0), (-1,  0), colors.HexColor('#3498db')),
+        ('TEXTCOLOR',     (0, 0), (-1,  0), colors.whitesmoke),
+        ('FONTNAME',      (0, 0), (-1,  0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, 0), (-1,  0), 9),
+        ('BACKGROUND',    (0, 1), (-1, -1), colors.beige),
+        ('FONTSIZE',      (0, 1), (-1, -1), 8),
+        ('GRID',          (0, 0), (-1, -1), 0.4, colors.grey),
+        ('ALIGN',         (4, 0), (4, -1), 'RIGHT'),
     ]))
     elements.append(expense_table)
 
@@ -236,112 +305,134 @@ def export_to_pdf(expenses, summary, filters):
     return buffer
 
 
-def export_to_excel(expenses, summary, filters):
-    """Export expenses to Excel with charts"""
+# ---------------------------------------------------------------------------
+# Excel export (openpyxl)
+# ---------------------------------------------------------------------------
+
+def export_to_excel(expenses, summary, filters=None):
+    """
+    Build an Excel workbook with Summary, Detailed, and Trend Analysis sheets.
+    Returns a BytesIO buffer.
+    """
+    try:
+        import openpyxl
+        from openpyxl.chart import BarChart, PieChart, Reference
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError:
+        raise ImportError(
+            "openpyxl is required for Excel export. Install it with: pip install openpyxl"
+        )
+
     wb = openpyxl.Workbook()
 
-    # Summary sheet
-    ws_summary = wb.active
-    ws_summary.title = "Summary"
+    # ------------------------------------------------------------------
+    # Sheet 1: Summary
+    # ------------------------------------------------------------------
+    ws = wb.active
+    ws.title = 'Summary'
 
-    # Headers
-    ws_summary['A1'] = 'Expense Report Summary'
-    ws_summary['A1'].font = Font(size=16, bold=True)
-    ws_summary.merge_cells('A1:B1')
+    ws['A1'] = 'Expense Report Summary'
+    ws['A1'].font = Font(size=16, bold=True)
+    ws.merge_cells('A1:C1')
 
-    ws_summary['A3'] = 'Total Expenses:'
-    ws_summary['B3'] = float(summary['total'])
-    ws_summary['A4'] = 'Number of Expenses:'
-    ws_summary['B4'] = summary['count']
-    ws_summary['A5'] = 'Average Expense:'
-    ws_summary['B5'] = float(summary['average'])
+    rows = [
+        ('Total (base currency):', float(summary['total'])),
+        ('Number of Expenses:',    summary['count']),
+        ('Average (base):',        float(summary['average'])),
+    ]
+    for i, (label, value) in enumerate(rows, start=3):
+        ws[f'A{i}'] = label
+        ws[f'A{i}'].font = Font(bold=True)
+        ws[f'B{i}'] = value
+        if isinstance(value, float):
+            ws[f'B{i}'].number_format = '#,##0.00'
 
-    # Format currency
-    ws_summary['B3'].number_format = '$#,##0.00'
-    ws_summary['B5'].number_format = '$#,##0.00'
+    # By-tag breakdown
+    ws['A7'] = 'Expenses by Tag'
+    ws['A7'].font = Font(size=13, bold=True)
+    ws['A8'] = 'Tag'
+    ws['B8'] = 'Amount (base)'
+    for cell in ws['8:8']:
+        cell.font = Font(bold=True)
 
-    # Tag breakdown
-    ws_summary['A7'] = 'Expenses by Tag'
-    ws_summary['A7'].font = Font(size=14, bold=True)
+    tag_row = 9
+    for tag, amount in summary.get('by_tag', {}).items():
+        ws[f'A{tag_row}'] = tag
+        ws[f'B{tag_row}'] = float(amount)
+        ws[f'B{tag_row}'].number_format = '#,##0.00'
+        tag_row += 1
 
-    row = 8
-    ws_summary['A8'] = 'Tag'
-    ws_summary['B8'] = 'Amount'
-    ws_summary['A8'].font = Font(bold=True)
-    ws_summary['B8'].font = Font(bold=True)
-
-    for tag, amount in summary['by_tag'].items():
-        row += 1
-        ws_summary[f'A{row}'] = tag
-        ws_summary[f'B{row}'] = float(amount)
-        ws_summary[f'B{row}'].number_format = '$#,##0.00'
-
-    # Add pie chart for tags
-    if summary['by_tag']:
+    if summary.get('by_tag') and tag_row > 9:
         pie = PieChart()
-        labels = Reference(ws_summary, min_col=1, min_row=9, max_row=row)
-        data = Reference(ws_summary, min_col=2, min_row=8, max_row=row)
+        labels = Reference(ws, min_col=1, min_row=9, max_row=tag_row - 1)
+        data = Reference(ws, min_col=2, min_row=8, max_row=tag_row - 1)
         pie.add_data(data, titles_from_data=True)
         pie.set_categories(labels)
-        pie.title = "Expenses by Tag"
-        ws_summary.add_chart(pie, "D3")
+        pie.title = 'Expenses by Tag'
+        ws.add_chart(pie, 'D3')
 
-    # Detailed expenses sheet
-    ws_detail = wb.create_sheet("Detailed Expenses")
-    headers = ['Date', 'Description', 'Tags', 'Amount', 'Notes']
+    # ------------------------------------------------------------------
+    # Sheet 2: Detailed expenses — with vendor, currency, status columns
+    # ------------------------------------------------------------------
+    ws_detail = wb.create_sheet('Detailed Expenses')
+    headers = ['Date', 'Description', 'Vendor', 'Currency', 'Amount', 'Amount (Base)', 'Status', 'Tags', 'Notes']
     ws_detail.append(headers)
 
-    # Style header row
+    header_fill = PatternFill(start_color='3498db', end_color='3498db', fill_type='solid')
     for cell in ws_detail[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill(start_color="3498db", end_color="3498db", fill_type="solid")
-        cell.alignment = Alignment(horizontal="center")
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center')
 
-    for expense in expenses:
-        tags = ', '.join([tag.name for tag in expense.tags.all()])
+    for expense in expenses.prefetch_related('tags'):
+        tags = ', '.join(expense.tags.names())
         ws_detail.append([
             expense.date,
             expense.description,
-            tags,
+            expense.vendor or '',
+            expense.currency,
             float(expense.amount),
-            expense.notes
+            float(expense.amount_base),
+            expense.get_status_display(),
+            tags,
+            expense.notes,
         ])
 
-    # Format amounts
-    for row in range(2, ws_detail.max_row + 1):
-        ws_detail[f'D{row}'].number_format = '$#,##0.00'
+    for row_idx in range(2, ws_detail.max_row + 1):
+        ws_detail[f'E{row_idx}'].number_format = '#,##0.00'
+        ws_detail[f'F{row_idx}'].number_format = '#,##0.00'
 
-    # Adjust column widths
-    ws_detail.column_dimensions['A'].width = 12
-    ws_detail.column_dimensions['B'].width = 30
-    ws_detail.column_dimensions['C'].width = 20
-    ws_detail.column_dimensions['D'].width = 12
-    ws_detail.column_dimensions['E'].width = 30
+    col_widths = {'A': 12, 'B': 32, 'C': 22, 'D': 10, 'E': 14, 'F': 14, 'G': 16, 'H': 22, 'I': 30}
+    for col, width in col_widths.items():
+        ws_detail.column_dimensions[col].width = width
 
-    # Time series chart
+    # ------------------------------------------------------------------
+    # Sheet 3: Trend analysis
+    # ------------------------------------------------------------------
     chart_data = generate_chart_data(expenses, group_by='month')
     if chart_data:
-        ws_chart = wb.create_sheet("Trend Analysis")
+        ws_chart = wb.create_sheet('Trend Analysis')
         ws_chart['A1'] = 'Period'
-        ws_chart['B1'] = 'Total Amount'
+        ws_chart['B1'] = 'Total (base)'
+        ws_chart['A1'].font = Font(bold=True)
+        ws_chart['B1'].font = Font(bold=True)
 
         for idx, item in enumerate(chart_data, start=2):
-            ws_chart[f'A{idx}'] = item['period'].strftime('%Y-%m-%d')
+            ws_chart[f'A{idx}'] = item['period'].strftime('%Y-%m')
             ws_chart[f'B{idx}'] = float(item['total'])
+            ws_chart[f'B{idx}'].number_format = '#,##0.00'
 
-        # Create bar chart
-        bar_chart = BarChart()
-        bar_chart.title = "Expenses Over Time"
-        bar_chart.x_axis.title = "Period"
-        bar_chart.y_axis.title = "Amount ($)"
+        bar = BarChart()
+        bar.title = 'Monthly Expense Trend'
+        bar.x_axis.title = 'Period'
+        bar.y_axis.title = 'Amount (base currency)'
+        data_ref = Reference(ws_chart, min_col=2, min_row=1, max_row=len(chart_data) + 1)
+        cats_ref = Reference(ws_chart, min_col=1, min_row=2, max_row=len(chart_data) + 1)
+        bar.add_data(data_ref, titles_from_data=True)
+        bar.set_categories(cats_ref)
+        ws_chart.add_chart(bar, 'D2')
 
-        data = Reference(ws_chart, min_col=2, min_row=1, max_row=len(chart_data) + 1)
-        cats = Reference(ws_chart, min_col=1, min_row=2, max_row=len(chart_data) + 1)
-        bar_chart.add_data(data, titles_from_data=True)
-        bar_chart.set_categories(cats)
-        ws_chart.add_chart(bar_chart, "D2")
-
-    buffer = io.BytesIO()
-    wb.save(buffer)
-    buffer.seek(0)
-    return buffer
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf

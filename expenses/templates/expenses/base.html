@@ -1,717 +1,1073 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}PrintTrack Pro{% endblock %}</title>
-
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-
-    <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-
-    <!-- Chart.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-
-    <style>
-        :root {
-            --bg: #0a0a0f;
-            --surface: #111118;
-            --surface2: #1a1a24;
-            --surface3: #22222e;
-            --border: rgba(255,255,255,0.06);
-            --border-hover: rgba(255,255,255,0.12);
-            --text: #f0f0f5;
-            --text-muted: #7070a0;
-            --text-dim: #404060;
-            --income: #22c55e;
-            --income-dim: rgba(34,197,94,0.12);
-            --expense: #f43f5e;
-            --expense-dim: rgba(244,63,94,0.12);
-            --transfer: #3b82f6;
-            --transfer-dim: rgba(59,130,246,0.12);
-            --gold: #f59e0b;
-            --gold-dim: rgba(245,158,11,0.12);
-            --purple: #a855f7;
-            --radius: 12px;
-            --radius-lg: 20px;
-            --shadow: 0 4px 24px rgba(0,0,0,0.4);
-        }
-
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        body {
-            font-family: 'DM Sans', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-            display: flex;
-        }
-
-        /* ── Sidebar ── */
-        .sidebar {
-            width: 240px;
-            min-height: 100vh;
-            background: var(--surface);
-            border-right: 1px solid var(--border);
-            display: flex;
-            flex-direction: column;
-            position: fixed;
-            left: 0; top: 0;
-            z-index: 100;
-        }
-
-        .sidebar-logo {
-            padding: 24px 20px 20px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .sidebar-logo h1 {
-            font-family: 'Syne', sans-serif;
-            font-size: 18px;
-            font-weight: 800;
-            letter-spacing: -0.5px;
-        }
-
-        .sidebar-logo h1 span { color: var(--gold); }
-
-        .sidebar-logo .subtitle {
-            font-size: 11px;
-            color: var(--text-muted);
-            font-family: 'DM Mono', monospace;
-            margin-top: 2px;
-        }
-
-        .sidebar-nav {
-            flex: 1;
-            padding: 16px 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .nav-section-label {
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 1.5px;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            padding: 12px 8px 6px;
-        }
-
-        .nav-link {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 12px;
-            border-radius: 10px;
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.15s;
-            position: relative;
-        }
-
-        .nav-link:hover {
-            background: var(--surface2);
-            color: var(--text);
-        }
-
-        .nav-link.active {
-            background: var(--gold-dim);
-            color: var(--gold);
-        }
-
-        .nav-link .icon { font-size: 16px; width: 20px; text-align: center; }
-
-        .sidebar-bottom {
-            padding: 16px 12px;
-            border-top: 1px solid var(--border);
-        }
-
-        /* ── Main Layout ── */
-        .main {
-            margin-left: 240px;
-            flex: 1;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* ── Top Bar ── */
-        .topbar {
-            position: sticky;
-            top: 0;
-            z-index: 50;
-            background: rgba(10,10,15,0.85);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--border);
-            padding: 0 32px;
-            height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .topbar-title {
-            font-family: 'Syne', sans-serif;
-            font-size: 16px;
-            font-weight: 700;
-        }
-
-        .topbar-actions { display: flex; gap: 10px; align-items: center; }
-
-        /* ── Page Content ── */
-        .page-content { padding: 28px 32px; flex: 1; }
-
-        /* ── Cards ── */
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 24px;
-        }
-
-        .card-sm { padding: 16px 20px; border-radius: var(--radius); }
-
-        /* ── Stat Cards ── */
-        .stat-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 22px 24px;
-            position: relative;
-            overflow: hidden;
-            transition: transform 0.2s, border-color 0.2s;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-2px);
-            border-color: var(--border-hover);
-        }
-
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0; right: 0;
-            width: 80px; height: 80px;
-            border-radius: 50%;
-            filter: blur(30px);
-            opacity: 0.4;
-        }
-
-        .stat-card.income::before { background: var(--income); }
-        .stat-card.expense::before { background: var(--expense); }
-        .stat-card.balance::before { background: var(--gold); }
-        .stat-card.transfer::before { background: var(--transfer); }
-
-        .stat-label {
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
-
-        .stat-amount {
-            font-family: 'Syne', sans-serif;
-            font-size: 26px;
-            font-weight: 800;
-            letter-spacing: -1px;
-        }
-
-        .stat-card.income .stat-amount { color: var(--income); }
-        .stat-card.expense .stat-amount { color: var(--expense); }
-        .stat-card.balance .stat-amount { color: var(--gold); }
-
-        .stat-sub {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 6px;
-        }
-
-        /* ── Buttons ── */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 9px 18px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            border: none;
-            text-decoration: none;
-            transition: all 0.15s;
-            font-family: 'DM Sans', sans-serif;
-        }
-
-        .btn-primary {
-            background: var(--gold);
-            color: #000;
-        }
-
-        .btn-primary:hover { background: #e08c00; transform: translateY(-1px); }
-
-        .btn-income {
-            background: var(--income-dim);
-            color: var(--income);
-            border: 1px solid rgba(34,197,94,0.2);
-        }
-
-        .btn-income:hover { background: rgba(34,197,94,0.2); }
-
-        .btn-expense {
-            background: var(--expense-dim);
-            color: var(--expense);
-            border: 1px solid rgba(244,63,94,0.2);
-        }
-
-        .btn-expense:hover { background: rgba(244,63,94,0.2); }
-
-        .btn-ghost {
-            background: transparent;
-            color: var(--text-muted);
-            border: 1px solid var(--border);
-        }
-
-        .btn-ghost:hover { background: var(--surface2); color: var(--text); }
-
-        .btn-sm { padding: 6px 12px; font-size: 12px; }
-        .btn-lg { padding: 13px 28px; font-size: 16px; }
-
-        /* ── Transaction List ── */
-        .tx-row {
-            display: flex;
-            align-items: center;
-            padding: 14px 0;
-            border-bottom: 1px solid var(--border);
-            gap: 14px;
-            transition: background 0.1s;
-        }
-
-        .tx-row:last-child { border-bottom: none; }
-
-        .tx-row:hover { background: var(--surface2); margin: 0 -16px; padding: 14px 16px; border-radius: 8px; border-bottom: 1px solid transparent; }
-
-        .tx-icon {
-            width: 40px; height: 40px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            flex-shrink: 0;
-        }
-
-        .tx-icon.income { background: var(--income-dim); }
-        .tx-icon.expense { background: var(--expense-dim); }
-        .tx-icon.transfer { background: var(--transfer-dim); }
-
-        .tx-info { flex: 1; min-width: 0; }
-        .tx-desc { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .tx-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-
-        .tx-amount {
-            font-family: 'DM Mono', monospace;
-            font-size: 14px;
-            font-weight: 500;
-            white-space: nowrap;
-        }
-
-        .tx-amount.income { color: var(--income); }
-        .tx-amount.expense { color: var(--expense); }
-
-        /* ── Forms ── */
-        .form-group { margin-bottom: 18px; }
-
-        .form-label {
-            display: block;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
-
-        .form-control {
-            width: 100%;
-            background: var(--surface2);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 11px 14px;
-            color: var(--text);
-            font-size: 14px;
-            font-family: 'DM Sans', sans-serif;
-            transition: border-color 0.15s;
-            outline: none;
-        }
-
-        .form-control:focus { border-color: var(--gold); }
-        .form-control option { background: var(--surface2); }
-
-        textarea.form-control { resize: vertical; min-height: 80px; }
-
-        /* ── Type Selector ── */
-        .type-selector {
-            display: flex;
-            gap: 8px;
-            background: var(--surface2);
-            padding: 6px;
-            border-radius: 12px;
-        }
-
-        .type-btn {
-            flex: 1;
-            padding: 10px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 600;
-            font-family: 'DM Sans', sans-serif;
-            transition: all 0.2s;
-            color: var(--text-muted);
-            background: transparent;
-        }
-
-        .type-btn.active-income { background: var(--income-dim); color: var(--income); }
-        .type-btn.active-expense { background: var(--expense-dim); color: var(--expense); }
-        .type-btn.active-transfer { background: var(--transfer-dim); color: var(--transfer); }
-
-        /* ── Calendar ── */
-        .calendar-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 4px;
-        }
-
-        .cal-header {
-            text-align: center;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            padding: 10px 0;
-        }
-
-        .cal-day {
-            background: var(--surface2);
-            border-radius: 10px;
-            padding: 8px 6px;
-            min-height: 80px;
-            cursor: pointer;
-            border: 1px solid transparent;
-            transition: all 0.15s;
-            position: relative;
-        }
-
-        .cal-day:hover { border-color: var(--border-hover); background: var(--surface3); }
-        .cal-day.today { border-color: var(--gold); }
-        .cal-day.empty { background: transparent; cursor: default; }
-
-        .cal-day-num {
-            font-size: 13px;
-            font-weight: 700;
-            margin-bottom: 4px;
-            font-family: 'Syne', sans-serif;
-        }
-
-        .cal-day.today .cal-day-num { color: var(--gold); }
-
-        .cal-income {
-            font-size: 10px;
-            color: var(--income);
-            font-family: 'DM Mono', monospace;
-            font-weight: 500;
-        }
-
-        .cal-expense {
-            font-size: 10px;
-            color: var(--expense);
-            font-family: 'DM Mono', monospace;
-            font-weight: 500;
-        }
-
-        /* ── Badges ── */
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 3px 8px;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-
-        .badge-income { background: var(--income-dim); color: var(--income); }
-        .badge-expense { background: var(--expense-dim); color: var(--expense); }
-        .badge-transfer { background: var(--transfer-dim); color: var(--transfer); }
-        .badge-warning { background: rgba(245,158,11,0.15); color: var(--gold); }
-        .badge-danger { background: rgba(244,63,94,0.12); color: var(--expense); }
-
-        /* ── Progress bar ── */
-        .progress-bar {
-            height: 6px;
-            background: var(--surface3);
-            border-radius: 3px;
-            overflow: hidden;
-            margin-top: 8px;
-        }
-
-        .progress-fill {
-            height: 100%;
-            border-radius: 3px;
-            transition: width 0.5s ease;
-        }
-
-        .progress-fill.success { background: var(--income); }
-        .progress-fill.warning { background: var(--gold); }
-        .progress-fill.danger { background: var(--expense); }
-
-        /* ── Grid helpers ── */
-        .grid { display: grid; gap: 16px; }
-        .grid-2 { grid-template-columns: repeat(2, 1fr); }
-        .grid-3 { grid-template-columns: repeat(3, 1fr); }
-        .grid-4 { grid-template-columns: repeat(4, 1fr); }
-        .col-span-2 { grid-column: span 2; }
-
-        /* ── Alerts ── */
-        .alert {
-            padding: 12px 16px;
-            border-radius: 10px;
-            font-size: 13px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-
-        .alert-success { background: var(--income-dim); color: var(--income); border: 1px solid rgba(34,197,94,0.2); }
-        .alert-error { background: var(--expense-dim); color: var(--expense); border: 1px solid rgba(244,63,94,0.2); }
-        .alert-warning { background: var(--gold-dim); color: var(--gold); border: 1px solid rgba(245,158,11,0.2); }
-
-        /* ── Modal ── */
-        .modal-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.7);
-            backdrop-filter: blur(4px);
-            z-index: 200;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.2s;
-        }
-
-        .modal-overlay.open { opacity: 1; pointer-events: auto; }
-
-        .modal {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 28px;
-            width: 100%;
-            max-width: 500px;
-            max-height: 90vh;
-            overflow-y: auto;
-            transform: translateY(20px);
-            transition: transform 0.2s;
-        }
-
-        .modal-overlay.open .modal { transform: translateY(0); }
-
-        .modal-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 24px;
-        }
-
-        .modal-title {
-            font-family: 'Syne', sans-serif;
-            font-size: 18px;
-            font-weight: 700;
-        }
-
-        /* ── Scrollbar ── */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
-
-        /* ── Responsive ── */
-        @media (max-width: 900px) {
-            .sidebar { display: none; }
-            .main { margin-left: 0; }
-            .grid-4 { grid-template-columns: repeat(2, 1fr); }
-            .grid-3 { grid-template-columns: repeat(2, 1fr); }
-        }
-
-        @media (max-width: 600px) {
-            .page-content { padding: 16px; }
-            .topbar { padding: 0 16px; }
-            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
-        }
-
-        /* ── Animations ── */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .fade-in { animation: fadeIn 0.3s ease forwards; }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .loading { animation: pulse 1.5s infinite; }
-
-        /* Number formatting */
-        .mono { font-family: 'DM Mono', monospace; }
-
-        /* ── Divider ── */
-        .divider { height: 1px; background: var(--border); margin: 20px 0; }
-
-        /* ── Section header ── */
-        .section-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 16px;
-        }
-
-        .section-title {
-            font-family: 'Syne', sans-serif;
-            font-size: 15px;
-            font-weight: 700;
-        }
-    </style>
-
-    {% block extra_head %}{% endblock %}
-</head>
-<body>
-
-<!-- Sidebar -->
-<nav class="sidebar">
-    <div class="sidebar-logo">
-        <h1>Print<span>Track</span></h1>
-        <div class="subtitle">Business Finance Pro</div>
+{% extends "base.html" %}
+{% load static %}
+
+{% block extra_css %}
+<style>
+/* ================================================================
+   EXPENSES MODULE — design tokens that bridge to main base.html
+   The main base.html owns: --bg-primary, --bg-secondary,
+   --bg-tertiary, --text-primary, --text-secondary, --text-muted,
+   --border-color, --primary-500/600/700, --shadow-sm/md/lg,
+   --header-height, and the data-theme toggle.
+
+   We map the expenses-specific token names onto those so every
+   component below works in light AND dark mode automatically.
+================================================================ */
+:root {
+  --exp-ff-mono: 'DM Mono', 'Fira Code', ui-monospace, monospace;
+
+  /* spacing / radius / transition — kept local, no conflict */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px;
+  --s5:20px; --s6:24px; --s8:32px; --s10:40px;
+  --r1:4px; --r2:8px; --r3:14px; --r4:20px; --r-full:999px;
+  --tr:140ms cubic-bezier(.4,0,.2,1);
+  --tr-slow:260ms cubic-bezier(.4,0,.2,1);
+}
+
+/* Bridge: point expenses tokens at the main design-system variables */
+:root,
+[data-theme="light"] {
+  --exp-bg:          var(--bg-secondary);
+  --exp-bg-card:     var(--bg-primary);
+  --exp-bg-sidebar:  var(--bg-primary);
+  --exp-bg-input:    var(--bg-tertiary);
+  --exp-bg-hover:    var(--bg-tertiary);
+  --exp-bg-active:   rgba(59,130,246,.1);
+  --exp-text:        var(--text-primary);
+  --exp-text-2:      var(--text-secondary);
+  --exp-text-3:      var(--text-muted);
+  --exp-border:      var(--border-color);
+  --exp-accent:      var(--primary-500);
+  --exp-accent-h:    var(--primary-700);
+  --exp-accent-lt:   rgba(59,130,246,.1);
+  --exp-green:       #16a34a; --exp-green-lt: #dcfce7;
+  --exp-amber:       #d97706; --exp-amber-lt: #fef3c7;
+  --exp-red:         #dc2626; --exp-red-lt:   #fee2e2;
+  --exp-purple:      #7c3aed; --exp-purple-lt:#ede9fe;
+  --exp-teal:        #0d9488; --exp-teal-lt:  #ccfbf1;
+}
+[data-theme="dark"] {
+  --exp-bg:          var(--bg-secondary);
+  --exp-bg-card:     var(--bg-primary);
+  --exp-bg-sidebar:  var(--bg-primary);
+  --exp-bg-input:    var(--bg-tertiary);
+  --exp-bg-hover:    var(--bg-tertiary);
+  --exp-bg-active:   rgba(59,130,246,.18);
+  --exp-text:        var(--text-primary);
+  --exp-text-2:      var(--text-secondary);
+  --exp-text-3:      var(--text-muted);
+  --exp-border:      var(--border-color);
+  --exp-accent:      var(--primary-500);
+  --exp-accent-h:    var(--primary-600);
+  --exp-accent-lt:   rgba(59,130,246,.18);
+  --exp-green:       #22c55e; --exp-green-lt: rgba(34,197,94,.12);
+  --exp-amber:       #f59e0b; --exp-amber-lt: rgba(245,158,11,.12);
+  --exp-red:         #ef4444; --exp-red-lt:   rgba(239,68,68,.12);
+  --exp-purple:      #a78bfa; --exp-purple-lt:rgba(167,139,250,.12);
+  --exp-teal:        #2dd4bf; --exp-teal-lt:  rgba(45,212,191,.12);
+}
+
+/* ================================================================
+   EXPENSES LAYOUT
+   Sits below the main .header and beside the main navigation.
+   Uses .main-wrapper which already accounts for sidebar offsets.
+================================================================ */
+.exp-layout {
+  display: flex;
+  min-height: calc(100vh - var(--header-height, 70px));
+  background: var(--exp-bg);
+}
+
+/* ── Module sidebar ── */
+.exp-sidebar {
+  width: 210px;
+  flex-shrink: 0;
+  background: var(--exp-bg-sidebar);
+  border-right: 1px solid var(--exp-border);
+  position: sticky;
+  top: var(--header-height, 70px);
+  height: calc(100vh - var(--header-height, 70px));
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1rem 0.6rem 2rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(59,130,246,.22) transparent;
+  transition: background var(--tr-slow), border-color var(--tr-slow);
+}
+.exp-sidebar::-webkit-scrollbar { width: 4px; }
+.exp-sidebar::-webkit-scrollbar-track { background: transparent; }
+.exp-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(59,130,246,.22); border-radius: 4px;
+}
+.exp-sidebar::-webkit-scrollbar-thumb:hover {
+  background: rgba(59,130,246,.45);
+}
+
+/* Module brand strip inside sidebar */
+.exp-brand {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.5rem 0.4rem 0.8rem;
+  border-bottom: 1px solid var(--exp-border);
+  margin-bottom: 0.4rem;
+}
+.exp-brand-icon {
+  width: 28px; height: 28px; border-radius: var(--r2);
+  background: linear-gradient(135deg, var(--exp-accent), var(--exp-accent-h));
+  display: flex; align-items: center; justify-content: center;
+  font-size: .75rem; color: #fff; flex-shrink: 0;
+}
+.exp-brand-label {
+  font-size: .75rem; font-weight: 700;
+  color: var(--exp-text); letter-spacing: .03em;
+  text-transform: uppercase; line-height: 1.1;
+}
+.exp-brand-sub {
+  font-size: .62rem; color: var(--exp-text-3); font-weight: 400;
+}
+
+/* Section headings */
+.exp-nav-section {
+  padding: .75rem .5rem .28rem;
+  font-size: .62rem; font-weight: 700;
+  color: var(--exp-text-3);
+  text-transform: uppercase; letter-spacing: .08em;
+  display: flex; align-items: center; gap: .35rem;
+  margin: 0;
+}
+.exp-nav-ul + .exp-nav-section {
+  border-top: 1px solid var(--exp-border);
+  padding-top: .75rem; margin-top: .3rem;
+}
+.exp-nav-section i { font-size: .65rem; color: var(--exp-accent); opacity: .8; }
+
+/* Nav list */
+.exp-nav-ul { list-style: none; padding: 0; margin: 0 0 .1rem; }
+
+/* Nav links */
+.exp-nav-link {
+  display: flex; align-items: center; gap: .55rem;
+  padding: .55rem .65rem;
+  border-radius: var(--r2);
+  color: var(--exp-text-2);
+  text-decoration: none; font-size: .825rem; font-weight: 500;
+  transition: background var(--tr), color var(--tr), padding-left var(--tr);
+  position: relative; margin-bottom: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exp-nav-link i {
+  font-size: .82rem; width: 15px; text-align: center;
+  flex-shrink: 0; color: var(--exp-text-3);
+  transition: color var(--tr);
+}
+.exp-nav-link:hover {
+  background: var(--exp-accent-lt);
+  color: var(--exp-accent);
+  padding-left: .9rem;
+  text-decoration: none;
+}
+.exp-nav-link:hover i { color: var(--exp-accent); }
+.exp-nav-link.active {
+  background: var(--exp-bg-active);
+  color: var(--exp-accent);
+  font-weight: 600;
+  border-left: 3px solid var(--exp-accent);
+  padding-left: calc(.65rem - 3px);
+}
+.exp-nav-link.active i { color: var(--exp-accent); }
+.exp-nav-link.active::after {
+  content: ''; position: absolute; right: .6rem; top: 50%;
+  transform: translateY(-50%);
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--exp-accent);
+}
+
+/* Quick-action buttons in sidebar */
+.exp-nav-action {
+  display: flex; align-items: center; justify-content: center; gap: .45rem;
+  width: calc(100% - .5rem); margin: .15rem .25rem;
+  padding: .5rem .65rem;
+  border-radius: var(--r2);
+  border: 1.5px dashed var(--exp-border);
+  background: transparent;
+  color: var(--exp-text-3); font-size: .78rem; font-weight: 500;
+  cursor: pointer;
+  transition: all var(--tr);
+}
+.exp-nav-action:hover {
+  border-color: var(--exp-accent);
+  color: var(--exp-accent);
+  background: var(--exp-accent-lt);
+}
+.exp-nav-action i { font-size: .75rem; }
+
+/* ── Main content pane ── */
+.exp-main {
+  flex: 1; min-width: 0;
+  padding: 1.75rem 2rem;
+  background: var(--exp-bg);
+}
+
+/* ── Page header ── */
+.exp-page-header {
+  display: flex; justify-content: space-between;
+  align-items: center; flex-wrap: wrap; gap: .75rem;
+  padding-bottom: 1rem; margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--exp-border);
+}
+.exp-page-title {
+  font-size: 1.3rem; font-weight: 700;
+  color: var(--exp-text); letter-spacing: -.02em;
+  margin: 0; display: flex; align-items: center; gap: .45rem;
+}
+.exp-page-title .title-badge {
+  font-size: .6rem; font-weight: 700;
+  padding: .18rem .5rem; border-radius: var(--r-full);
+  background: linear-gradient(135deg, var(--exp-accent), var(--exp-accent-h));
+  color: #fff; letter-spacing: .05em; text-transform: uppercase;
+  align-self: center;
+}
+
+/* ── Cards ── */
+.exp-card {
+  background: var(--exp-bg-card);
+  border: 1px solid var(--exp-border);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.06));
+  margin-bottom: 1.5rem;
+  transition: box-shadow var(--tr-slow);
+}
+.exp-card:hover { box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,.1)); }
+.exp-card .card-header {
+  background: var(--exp-bg-input);
+  border-bottom: 1px solid var(--exp-border);
+  border-radius: var(--r3) var(--r3) 0 0;
+  padding: .8rem 1.2rem;
+  font-weight: 600; font-size: .875rem;
+  color: var(--exp-text);
+  display: flex; align-items: center; gap: .45rem;
+}
+.exp-card .card-body { padding: 1.2rem; }
+
+/* ── Stat / KPI cards ── */
+.exp-kpi {
+  background: var(--exp-bg-card);
+  border: 1px solid var(--exp-border);
+  border-radius: var(--r3);
+  padding: 1.1rem 1.25rem;
+  display: flex; flex-direction: column; gap: .3rem;
+  position: relative; overflow: hidden;
+  transition: box-shadow var(--tr-slow), transform var(--tr-slow);
+}
+.exp-kpi:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.exp-kpi-label {
+  font-size: .72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--exp-text-3);
+}
+.exp-kpi-value {
+  font-size: 1.55rem; font-weight: 700;
+  color: var(--exp-text); letter-spacing: -.03em; line-height: 1;
+}
+.exp-kpi-sub {
+  font-size: .78rem; color: var(--exp-text-3);
+}
+.exp-kpi-icon {
+  position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  font-size: 2rem; opacity: .07;
+}
+.exp-kpi.accent  { border-top: 3px solid var(--exp-accent);  }
+.exp-kpi.green   { border-top: 3px solid var(--exp-green);   }
+.exp-kpi.amber   { border-top: 3px solid var(--exp-amber);   }
+.exp-kpi.red     { border-top: 3px solid var(--exp-red);     }
+.exp-kpi.purple  { border-top: 3px solid var(--exp-purple);  }
+.exp-kpi.teal    { border-top: 3px solid var(--exp-teal);    }
+
+/* ── Badges / status ── */
+.exp-badge {
+  display: inline-flex; align-items: center; gap: .28rem;
+  padding: .22rem .58rem; border-radius: var(--r-full);
+  font-size: .72rem; font-weight: 600; letter-spacing: .01em;
+}
+.exp-badge.success  { background: var(--exp-green-lt);  color: var(--exp-green);  }
+.exp-badge.warning  { background: var(--exp-amber-lt);  color: var(--exp-amber);  }
+.exp-badge.danger   { background: var(--exp-red-lt);    color: var(--exp-red);    }
+.exp-badge.info     { background: var(--exp-accent-lt); color: var(--exp-accent); }
+.exp-badge.purple   { background: var(--exp-purple-lt); color: var(--exp-purple); }
+.exp-badge.teal     { background: var(--exp-teal-lt);   color: var(--exp-teal);   }
+.exp-badge.neutral  { background: var(--exp-bg-hover);  color: var(--exp-text-3); }
+
+/* ── Buttons ── */
+.exp-btn {
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding: .5rem 1rem; border-radius: var(--r2);
+  font-size: .84rem; font-weight: 600;
+  border: 1.5px solid transparent;
+  cursor: pointer; transition: all var(--tr);
+  white-space: nowrap; font-family: inherit;
+  text-decoration: none;
+}
+.exp-btn.primary {
+  background: linear-gradient(135deg, var(--exp-accent), var(--exp-accent-h));
+  color: #fff; border-color: transparent;
+}
+.exp-btn.primary:hover {
+  box-shadow: 0 4px 12px rgba(59,130,246,.35); transform: translateY(-1px);
+}
+.exp-btn.secondary {
+  background: var(--exp-bg-card); color: var(--exp-text-2);
+  border-color: var(--exp-border);
+}
+.exp-btn.secondary:hover {
+  background: var(--exp-bg-hover); color: var(--exp-text);
+  border-color: var(--exp-border);
+}
+.exp-btn.danger {
+  background: var(--exp-red-lt); color: var(--exp-red);
+  border-color: transparent;
+}
+.exp-btn.danger:hover { background: var(--exp-red); color: #fff; }
+.exp-btn i { font-size: .82rem; }
+
+/* ── Forms ── */
+.exp-form-group { margin-bottom: 1rem; }
+.exp-form-label {
+  display: block; font-size: .8rem; font-weight: 600;
+  color: var(--exp-text-2); margin-bottom: .35rem;
+}
+.exp-form-label .req { color: var(--exp-red); margin-left: 2px; }
+.exp-form-control {
+  width: 100%; padding: .55rem .8rem;
+  background: var(--exp-bg-input);
+  border: 1.5px solid var(--exp-border);
+  border-radius: var(--r2); font-size: .875rem;
+  color: var(--exp-text); font-family: inherit;
+  transition: border-color var(--tr), box-shadow var(--tr);
+  outline: none;
+}
+.exp-form-control:focus {
+  border-color: var(--exp-accent);
+  box-shadow: 0 0 0 3px var(--exp-accent-lt);
+}
+.exp-form-hint { font-size: .74rem; color: var(--exp-text-3); margin-top: .3rem; }
+.exp-input-group { position: relative; }
+.exp-input-prefix {
+  position: absolute; left: .75rem; top: 50%; transform: translateY(-50%);
+  font-size: .8rem; font-weight: 600; color: var(--exp-text-3);
+  pointer-events: none;
+}
+.exp-input-group .exp-form-control { padding-left: 2.8rem; }
+.exp-form-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: .75rem;
+}
+@media (max-width: 480px) { .exp-form-row { grid-template-columns: 1fr; } }
+
+/* ── Tables ── */
+.exp-table-wrap { overflow-x: auto; border-radius: var(--r3); }
+.exp-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: .875rem; color: var(--exp-text);
+}
+.exp-table thead th {
+  background: var(--exp-bg-input); color: var(--exp-text-3);
+  font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; padding: .7rem 1rem;
+  border-bottom: 1px solid var(--exp-border); white-space: nowrap;
+}
+.exp-table thead th:first-child { border-radius: var(--r3) 0 0 0; }
+.exp-table thead th:last-child  { border-radius: 0 var(--r3) 0 0; }
+.exp-table tbody td {
+  padding: .75rem 1rem;
+  border-bottom: 1px solid var(--exp-border);
+  color: var(--exp-text); vertical-align: middle;
+}
+.exp-table tbody tr:last-child td { border-bottom: none; }
+.exp-table tbody tr:hover td { background: var(--exp-bg-hover); }
+.exp-table .amount-cell {
+  font-family: var(--exp-ff-mono); font-weight: 600;
+  letter-spacing: -.01em;
+}
+.exp-table .amount-cell.negative { color: var(--exp-red); }
+.exp-table .amount-cell.positive { color: var(--exp-green); }
+
+/* ── Progress bar (budget) ── */
+.exp-progress {
+  height: 6px; border-radius: var(--r-full);
+  background: var(--exp-bg-hover); overflow: hidden;
+}
+.exp-progress-bar {
+  height: 100%; border-radius: var(--r-full);
+  background: linear-gradient(90deg, var(--exp-accent), var(--exp-accent-h));
+  transition: width .5s cubic-bezier(.4,0,.2,1);
+}
+.exp-progress-bar.warning { background: linear-gradient(90deg, var(--exp-amber), #f97316); }
+.exp-progress-bar.danger  { background: linear-gradient(90deg, var(--exp-red), #f97316); }
+
+/* ── Search/filter bar ── */
+.exp-filter-bar {
+  display: flex; flex-wrap: wrap; gap: .6rem;
+  align-items: center; margin-bottom: 1.25rem;
+}
+.exp-search {
+  position: relative; flex: 1; min-width: 200px;
+}
+.exp-search i {
+  position: absolute; left: .75rem; top: 50%; transform: translateY(-50%);
+  color: var(--exp-text-3); font-size: .82rem; pointer-events: none;
+}
+.exp-search .exp-form-control { padding-left: 2.2rem; }
+
+/* ── Django messages ── */
+.exp-messages { margin-bottom: 1.25rem; }
+.exp-alert {
+  display: flex; align-items: flex-start; gap: .6rem;
+  padding: .8rem 1rem; border-radius: var(--r2);
+  font-size: .875rem; margin-bottom: .5rem;
+  border: 1px solid transparent;
+}
+.exp-alert.success {
+  background: var(--exp-green-lt); color: var(--exp-green);
+  border-color: rgba(22,163,74,.2);
+}
+.exp-alert.warning {
+  background: var(--exp-amber-lt); color: var(--exp-amber);
+  border-color: rgba(217,119,6,.2);
+}
+.exp-alert.danger,
+.exp-alert.error {
+  background: var(--exp-red-lt); color: var(--exp-red);
+  border-color: rgba(220,38,38,.2);
+}
+.exp-alert.info {
+  background: var(--exp-accent-lt); color: var(--exp-accent);
+  border-color: rgba(37,99,235,.2);
+}
+.exp-alert i { flex-shrink: 0; margin-top: 1px; }
+.exp-alert .alert-close {
+  margin-left: auto; background: none; border: none;
+  color: inherit; opacity: .6; cursor: pointer;
+  font-size: .9rem; line-height: 1; padding: 0;
+}
+.exp-alert .alert-close:hover { opacity: 1; }
+
+/* ── Toast container ── */
+#exp-toast-container {
+  position: fixed; bottom: 1.5rem; right: 1.5rem;
+  display: flex; flex-direction: column; gap: .5rem;
+  z-index: 9999; pointer-events: none;
+}
+.exp-toast {
+  display: flex; align-items: flex-start; gap: .6rem;
+  padding: .8rem 1rem; border-radius: var(--r2);
+  background: var(--exp-bg-card); color: var(--exp-text);
+  border: 1px solid var(--exp-border);
+  box-shadow: var(--shadow-lg, 0 8px 32px rgba(0,0,0,.18));
+  font-size: .855rem; min-width: 240px; max-width: 360px;
+  pointer-events: all;
+  animation: toastIn .2s cubic-bezier(.4,0,.2,1) both;
+}
+.exp-toast.removing { animation: toastOut .18s ease forwards; }
+@keyframes toastIn  { from { opacity:0; transform:translateY(8px) scale(.97); } to { opacity:1; transform:none; } }
+@keyframes toastOut { to   { opacity:0; transform:translateY(4px) scale(.97); } }
+.exp-toast-icon { font-size: 1rem; flex-shrink: 0; }
+.exp-toast-body { flex: 1; }
+.exp-toast-title { font-weight: 600; line-height: 1.2; }
+.exp-toast-msg { font-size: .78rem; color: var(--exp-text-3); margin-top: .2rem; }
+.exp-toast-close {
+  background: none; border: none; color: var(--exp-text-3);
+  cursor: pointer; font-size: .85rem; padding: 0; line-height: 1;
+  flex-shrink: 0;
+}
+.exp-toast-close:hover { color: var(--exp-text); }
+
+/* ── Modals ── */
+.exp-modal-overlay {
+  position: fixed; inset: 0; z-index: 1060;
+  background: var(--exp-bg-overlay, rgba(0,0,0,.5));
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem;
+  opacity: 0; pointer-events: none;
+  transition: opacity .18s ease;
+}
+.exp-modal-overlay.open {
+  opacity: 1; pointer-events: all;
+}
+.exp-modal {
+  background: var(--exp-bg-card);
+  border: 1px solid var(--exp-border);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-xl, 0 24px 64px rgba(0,0,0,.2));
+  width: 100%; max-width: 480px;
+  max-height: 90vh; overflow-y: auto;
+  transform: translateY(12px) scale(.98);
+  transition: transform .18s cubic-bezier(.4,0,.2,1);
+}
+.exp-modal-overlay.open .exp-modal {
+  transform: none;
+}
+.exp-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.25rem .75rem;
+  border-bottom: 1px solid var(--exp-border);
+}
+.exp-modal-title {
+  font-size: 1rem; font-weight: 700; color: var(--exp-text);
+}
+.exp-modal-close {
+  background: none; border: none; color: var(--exp-text-3);
+  font-size: 1.1rem; cursor: pointer; padding: 0; line-height: 1;
+  transition: color var(--tr);
+}
+.exp-modal-close:hover { color: var(--exp-text); }
+.exp-modal-body { padding: 1.1rem 1.25rem; }
+.exp-modal-footer {
+  display: flex; justify-content: flex-end; gap: .6rem;
+  padding: .75rem 1.25rem 1rem;
+  border-top: 1px solid var(--exp-border);
+}
+
+/* ── Command palette ── */
+.exp-cmd-overlay {
+  position: fixed; inset: 0; z-index: 1070;
+  background: var(--exp-bg-overlay, rgba(0,0,0,.5));
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 10vh;
+  opacity: 0; pointer-events: none; transition: opacity .15s ease;
+}
+.exp-cmd-overlay.open { opacity: 1; pointer-events: all; }
+.exp-cmd-palette {
+  background: var(--exp-bg-card);
+  border: 1px solid var(--exp-border);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-xl);
+  width: 100%; max-width: 560px;
+  overflow: hidden;
+  transform: translateY(-10px);
+  transition: transform .15s cubic-bezier(.4,0,.2,1);
+}
+.exp-cmd-overlay.open .exp-cmd-palette { transform: none; }
+.exp-cmd-search {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .8rem 1rem;
+  border-bottom: 1px solid var(--exp-border);
+}
+.exp-cmd-search i { color: var(--exp-text-3); font-size: .9rem; flex-shrink: 0; }
+.exp-cmd-search input {
+  flex: 1; background: none; border: none; outline: none;
+  font-size: .95rem; color: var(--exp-text); font-family: inherit;
+}
+.exp-cmd-search input::placeholder { color: var(--exp-text-3); }
+.exp-cmd-results { max-height: 340px; overflow-y: auto; padding: .4rem 0; }
+.exp-cmd-section {
+  padding: .5rem .9rem .25rem;
+  font-size: .65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--exp-text-3);
+}
+.exp-cmd-item {
+  display: flex; align-items: center; gap: .7rem;
+  padding: .6rem .9rem; cursor: pointer;
+  font-size: .875rem; color: var(--exp-text-2);
+  transition: background var(--tr), color var(--tr);
+  text-decoration: none;
+}
+.exp-cmd-item:hover, .exp-cmd-item.focused {
+  background: var(--exp-accent-lt); color: var(--exp-accent);
+}
+.exp-cmd-item i { width: 16px; text-align: center; font-size: .85rem; flex-shrink: 0; }
+.exp-cmd-item kbd {
+  margin-left: auto; font-family: var(--exp-ff-mono); font-size: .68rem;
+  background: var(--exp-bg-input); color: var(--exp-text-3);
+  padding: .1rem .4rem; border-radius: var(--r1);
+  border: 1px solid var(--exp-border);
+}
+.exp-cmd-footer {
+  padding: .5rem .9rem; border-top: 1px solid var(--exp-border);
+  font-size: .72rem; color: var(--exp-text-3);
+  display: flex; gap: 1rem;
+}
+.exp-cmd-footer kbd {
+  font-family: var(--exp-ff-mono);
+  background: var(--exp-bg-input); color: var(--exp-text-3);
+  padding: .1rem .4rem; border-radius: var(--r1);
+  border: 1px solid var(--exp-border);
+}
+
+/* ── Mobile ── */
+@media (max-width: 767.98px) {
+  .exp-layout { flex-direction: column; }
+  .exp-sidebar {
+    display: none; width: 100%; height: auto;
+    position: relative; top: 0;
+    border-right: none; border-bottom: 1px solid var(--exp-border);
+    padding: .75rem;
+  }
+  .exp-sidebar.mobile-open { display: block; }
+  .exp-main { padding: 1rem; }
+  .exp-form-row { grid-template-columns: 1fr; }
+}
+</style>
+
+{# Chart.js — only loaded within this module #}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+{% endblock %}
+
+
+{% block content %}
+<div class="exp-layout">
+
+  <!-- ══════════════════════════════════════
+       MODULE SIDEBAR
+  ══════════════════════════════════════ -->
+  <nav class="exp-sidebar" id="expSidebar" aria-label="Expenses navigation">
+
+    <!-- Brand strip -->
+    <div class="exp-brand">
+      <div class="exp-brand-icon"><i class="bi bi-wallet2"></i></div>
+      <div>
+        <div class="exp-brand-label">Expenses</div>
+        <div class="exp-brand-sub">Budget Tracker</div>
+      </div>
     </div>
 
-    <div class="sidebar-nav">
-        <span class="nav-section-label">Overview</span>
-        <a href="{% url 'dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
-            <span class="icon">📊</span> Dashboard
-        </a>
-        <a href="{% url 'calendar' %}" class="nav-link {% if request.resolver_match.url_name == 'calendar' %}active{% endif %}">
-            <span class="icon">📅</span> Calendar
-        </a>
-        <a href="{% url 'analytics' %}" class="nav-link {% if request.resolver_match.url_name == 'analytics' %}active{% endif %}">
-            <span class="icon">📈</span> Analytics
-        </a>
-        <a href="{% url 'reports' %}" class="nav-link {% if request.resolver_match.url_name == 'reports' %}active{% endif %}">
-            <span class="icon">📋</span> Reports
-        </a>
+    <!-- Quick actions -->
+    <button class="exp-nav-action" onclick="expOpenModal('exp-modal-expense')">
+      <i class="bi bi-plus-circle"></i> New Expense
+    </button>
+    <button class="exp-nav-action" onclick="expOpenModal('exp-modal-budget')" style="margin-top:.3rem">
+      <i class="bi bi-plus-circle"></i> New Budget
+    </button>
 
-        <span class="nav-section-label">Transactions</span>
-        <a href="{% url 'transaction_list' %}" class="nav-link {% if request.resolver_match.url_name == 'transaction_list' %}active{% endif %}">
-            <span class="icon">💳</span> All Transactions
+    <!-- Main -->
+    <p class="exp-nav-section"><i class="bi bi-grid"></i> Main</p>
+    <ul class="exp-nav-ul">
+      <li>
+        <a class="exp-nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
+           href="{% url 'expenses:dashboard' %}">
+          <i class="bi bi-speedometer2"></i> Dashboard
         </a>
-        <a href="{% url 'transaction_create' %}?type=income" class="nav-link">
-            <span class="icon">💚</span> Add Income
+      </li>
+      <li>
+        <a class="exp-nav-link {% if 'expense_list' in request.resolver_match.url_name or 'expense_create' in request.resolver_match.url_name %}active{% endif %}"
+           href="{% url 'expenses:expense_list' %}">
+          <i class="bi bi-receipt"></i> All Expenses
         </a>
-        <a href="{% url 'transaction_create' %}?type=expense" class="nav-link">
-            <span class="icon">❤️</span> Add Expense
+      </li>
+      <li>
+        <a class="exp-nav-link {% if 'budget' in request.resolver_match.url_name %}active{% endif %}"
+           href="{% url 'expenses:budget_list' %}">
+          <i class="bi bi-pie-chart"></i> Budgets
         </a>
+      </li>
+      <li>
+        <a class="exp-nav-link {% if 'report' in request.resolver_match.url_name %}active{% endif %}"
+           href="{% url 'expenses:reports_dashboard' %}">
+          <i class="bi bi-graph-up"></i> Reports
+        </a>
+      </li>
+    </ul>
 
-        <span class="nav-section-label">Business</span>
-        <a href="/inventory/" class="nav-link">
-            <span class="icon">📦</span> Inventory
+    <!-- Settings -->
+    <p class="exp-nav-section"><i class="bi bi-gear"></i> Settings</p>
+    <ul class="exp-nav-ul">
+      <li>
+        <a class="exp-nav-link {% if 'categor' in request.resolver_match.url_name %}active{% endif %}"
+           href="{% url 'expenses:category_list' %}">
+          <i class="bi bi-tags"></i> Categories
         </a>
-        <a href="/budgets/" class="nav-link">
-            <span class="icon">🎯</span> Budgets
+      </li>
+      <li>
+        <a class="exp-nav-link {% if 'recurring' in request.resolver_match.url_name %}active{% endif %}"
+           href="{% url 'expenses:recurring_list' %}">
+          <i class="bi bi-arrow-repeat"></i> Recurring
         </a>
-        <a href="/services/" class="nav-link">
-            <span class="icon">🖨️</span> Services
+      </li>
+      <li>
+        <a class="exp-nav-link {% if 'tag' in request.resolver_match.url_name %}active{% endif %}"
+           href="{% url 'expenses:tag_list' %}">
+          <i class="bi bi-bookmark"></i> Tags
         </a>
+      </li>
+    </ul>
+
+    {% block exp_sidebar_extra %}{% endblock %}
+
+  </nav>
+
+  <!-- ══════════════════════════════════════
+       MAIN CONTENT
+  ══════════════════════════════════════ -->
+  <main class="exp-main" id="expMain">
+
+    <!-- Page header -->
+    <div class="exp-page-header">
+      <h1 class="exp-page-title">
+        {% block exp_page_icon %}<i class="bi bi-wallet2" style="color:var(--exp-accent)"></i>{% endblock %}
+        {% block exp_page_title %}{{ page_title|default:"Expenses" }}{% endblock %}
+        <span class="title-badge">Expenses</span>
+      </h1>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        {% block page_actions %}{% endblock %}
+      </div>
     </div>
 
-    <div class="sidebar-bottom">
-        <a href="/settings/" class="nav-link">
-            <span class="icon">⚙️</span> Settings
-        </a>
-        <a href="/logout/" class="nav-link">
-            <span class="icon">🚪</span> Logout
-        </a>
-    </div>
-</nav>
-
-<!-- Main Content -->
-<div class="main">
-    <!-- Top Bar -->
-    <header class="topbar">
-        <div class="topbar-title">{% block page_title %}Dashboard{% endblock %}</div>
-        <div class="topbar-actions">
-            {% block topbar_actions %}
-            <a href="{% url 'transaction_create' %}?type=income" class="btn btn-income btn-sm">+ Income</a>
-            <a href="{% url 'transaction_create' %}?type=expense" class="btn btn-expense btn-sm">+ Expense</a>
-            {% endblock %}
-        </div>
-    </header>
-
-    <!-- Messages -->
+    <!-- Django messages -->
     {% if messages %}
-    <div style="padding: 12px 32px 0;">
-        {% for message in messages %}
-        <div class="alert alert-{% if message.tags == 'error' %}error{% elif message.tags == 'warning' %}warning{% else %}success{% endif %}">
-            {{ message }}
-        </div>
-        {% endfor %}
+    <div class="exp-messages" id="exp-messages">
+      {% for message in messages %}
+      <div class="exp-alert {% if message.tags == 'success' %}success{% elif message.tags == 'warning' %}warning{% elif message.tags == 'error' or message.tags == 'danger' %}danger{% else %}info{% endif %}">
+        <i class="bi {% if message.tags == 'success' %}bi-check-circle-fill{% elif message.tags == 'warning' %}bi-exclamation-circle-fill{% elif message.tags == 'error' or message.tags == 'danger' %}bi-x-circle-fill{% else %}bi-info-circle-fill{% endif %}"></i>
+        <span>{{ message }}</span>
+        <button class="alert-close" onclick="this.closest('.exp-alert').remove()" aria-label="Dismiss">
+          <i class="bi bi-x"></i>
+        </button>
+      </div>
+      {% endfor %}
     </div>
     {% endif %}
 
-    <!-- Page Content -->
-    <div class="page-content fade-in">
-        {% block content %}{% endblock %}
+    <!-- Page content -->
+    {% block exp_content %}{% endblock %}
+
+  </main>
+
+</div><!-- /.exp-layout -->
+
+
+<!-- ══════════════════════════════════════
+     QUICK ADD EXPENSE MODAL
+══════════════════════════════════════ -->
+<div id="exp-modal-expense" class="exp-modal-overlay"
+     onclick="if(event.target===this)expCloseModal('exp-modal-expense')">
+  <div class="exp-modal">
+    <div class="exp-modal-header">
+      <div class="exp-modal-title"><i class="bi bi-receipt me-2"></i>Quick Add Expense</div>
+      <button class="exp-modal-close" onclick="expCloseModal('exp-modal-expense')">
+        <i class="bi bi-x-lg"></i>
+      </button>
     </div>
+    <div class="exp-modal-body">
+      <form id="exp-quick-expense-form" method="post" action="{% url 'expenses:expense_create' %}">
+        {% csrf_token %}
+        <input type="hidden" name="quick" value="1" />
+        <div class="exp-form-row">
+          <div class="exp-form-group">
+            <label class="exp-form-label">Amount <span class="req">*</span></label>
+            <div class="exp-input-group">
+              <span class="exp-input-prefix">UGX</span>
+              <input id="q-amount" type="number" name="amount" class="exp-form-control"
+                     placeholder="0.00" step="0.01" min="0.01" required />
+            </div>
+          </div>
+          <div class="exp-form-group">
+            <label class="exp-form-label">Date <span class="req">*</span></label>
+            <input id="q-date" type="date" name="date" class="exp-form-control" required />
+          </div>
+        </div>
+        <div class="exp-form-group">
+          <label class="exp-form-label">Description <span class="req">*</span></label>
+          <input type="text" name="description" class="exp-form-control"
+                 placeholder="What was this for?" required />
+        </div>
+        <div class="exp-form-row">
+          <div class="exp-form-group">
+            <label class="exp-form-label">Category</label>
+            <select name="category" class="exp-form-control">
+              <option value="">— uncategorised —</option>
+              {% block exp_category_options %}{% endblock %}
+            </select>
+          </div>
+          <div class="exp-form-group">
+            <label class="exp-form-label">Tags</label>
+            <input type="text" name="tags" class="exp-form-control" placeholder="food, travel…" />
+          </div>
+        </div>
+        <div class="exp-form-group">
+          <label class="exp-form-label">Notes</label>
+          <textarea name="notes" class="exp-form-control" rows="2" placeholder="Optional notes…"></textarea>
+        </div>
+      </form>
+    </div>
+    <div class="exp-modal-footer">
+      <button class="exp-btn secondary" onclick="expCloseModal('exp-modal-expense')">Cancel</button>
+      <button class="exp-btn primary" onclick="document.getElementById('exp-quick-expense-form').submit()">
+        <i class="bi bi-plus-circle"></i> Add Expense
+      </button>
+    </div>
+  </div>
 </div>
 
+
+<!-- ══════════════════════════════════════
+     QUICK ADD BUDGET MODAL
+══════════════════════════════════════ -->
+<div id="exp-modal-budget" class="exp-modal-overlay"
+     onclick="if(event.target===this)expCloseModal('exp-modal-budget')">
+  <div class="exp-modal">
+    <div class="exp-modal-header">
+      <div class="exp-modal-title"><i class="bi bi-pie-chart me-2"></i>Quick Add Budget</div>
+      <button class="exp-modal-close" onclick="expCloseModal('exp-modal-budget')">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <div class="exp-modal-body">
+      <form id="exp-quick-budget-form" method="post" action="{% url 'expenses:budget_create' %}">
+        {% csrf_token %}
+        <input type="hidden" name="quick" value="1" />
+        <div class="exp-form-group">
+          <label class="exp-form-label">Budget Name <span class="req">*</span></label>
+          <input type="text" name="name" class="exp-form-control"
+                 placeholder="e.g. Monthly Food" required />
+        </div>
+        <div class="exp-form-row">
+          <div class="exp-form-group">
+            <label class="exp-form-label">Amount <span class="req">*</span></label>
+            <div class="exp-input-group">
+              <span class="exp-input-prefix">UGX</span>
+              <input type="number" name="amount" class="exp-form-control"
+                     placeholder="0.00" step="0.01" min="1" required />
+            </div>
+          </div>
+          <div class="exp-form-group">
+            <label class="exp-form-label">Period <span class="req">*</span></label>
+            <select name="period" class="exp-form-control" required>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly" selected>Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </div>
+        </div>
+        <div class="exp-form-group">
+          <label class="exp-form-label">Alert Threshold (%)</label>
+          <input type="number" name="alert_threshold" class="exp-form-control"
+                 value="80" min="1" max="100" />
+          <div class="exp-form-hint">Notify when spending reaches this % of budget.</div>
+        </div>
+        <div class="exp-form-group">
+          <label class="exp-form-label">Filter Tags (optional)</label>
+          <input type="text" name="tags" class="exp-form-control" placeholder="food, travel…" />
+          <div class="exp-form-hint">Leave blank to track all expenses.</div>
+        </div>
+      </form>
+    </div>
+    <div class="exp-modal-footer">
+      <button class="exp-btn secondary" onclick="expCloseModal('exp-modal-budget')">Cancel</button>
+      <button class="exp-btn primary" onclick="document.getElementById('exp-quick-budget-form').submit()">
+        <i class="bi bi-plus-circle"></i> Create Budget
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     COMMAND PALETTE
+══════════════════════════════════════ -->
+<div id="exp-cmd-overlay" class="exp-cmd-overlay"
+     onclick="if(event.target===this)expCloseCmdPalette()">
+  <div class="exp-cmd-palette">
+    <div class="exp-cmd-search">
+      <i class="bi bi-search"></i>
+      <input id="exp-cmd-input" type="text" placeholder="Search or jump to…" autocomplete="off" />
+    </div>
+    <div class="exp-cmd-results" id="exp-cmd-results">
+      <div class="exp-cmd-section">Navigate</div>
+      <a class="exp-cmd-item" href="{% url 'expenses:dashboard' %}">
+        <i class="bi bi-speedometer2"></i> Dashboard <kbd>g d</kbd>
+      </a>
+      <a class="exp-cmd-item" href="{% url 'expenses:expense_list' %}">
+        <i class="bi bi-receipt"></i> All Expenses <kbd>g e</kbd>
+      </a>
+      <a class="exp-cmd-item" href="{% url 'expenses:budget_list' %}">
+        <i class="bi bi-pie-chart"></i> Budgets <kbd>g b</kbd>
+      </a>
+      <a class="exp-cmd-item" href="{% url 'expenses:reports_dashboard' %}">
+        <i class="bi bi-graph-up"></i> Reports <kbd>g r</kbd>
+      </a>
+      <div class="exp-cmd-section">Create</div>
+      <a class="exp-cmd-item" href="{% url 'expenses:expense_create' %}">
+        <i class="bi bi-plus-circle"></i> New Expense <kbd>n e</kbd>
+      </a>
+      <a class="exp-cmd-item" href="{% url 'expenses:budget_create' %}">
+        <i class="bi bi-plus-circle"></i> New Budget <kbd>n b</kbd>
+      </a>
+      {% block exp_cmd_extra %}{% endblock %}
+    </div>
+    <div class="exp-cmd-footer">
+      <span><kbd>↵</kbd> open</span>
+      <span><kbd>↑↓</kbd> navigate</span>
+      <span><kbd>Esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     TOAST CONTAINER
+══════════════════════════════════════ -->
+<div id="exp-toast-container"></div>
+
+{% endblock %}
+
+
+{% block extra_js %}
 <script>
-    // Auto-dismiss alerts
-    document.querySelectorAll('.alert').forEach(alert => {
-        setTimeout(() => {
-            alert.style.transition = 'opacity 0.4s';
-            alert.style.opacity = '0';
-            setTimeout(() => alert.remove(), 400);
-        }, 4000);
-    });
+/* ═══════════════════════════════════════════════════════════════
+   EXPENSES MODULE JS
+   Namespaced under `EXP` to avoid conflicts with the main base.
+═══════════════════════════════════════════════════════════════ */
 
-    // Format numbers with commas
-    function formatNumber(n, decimals=0) {
-        return new Intl.NumberFormat('en-UG', {
-            minimumFractionDigits: decimals,
-            maximumFractionDigits: decimals
-        }).format(n);
-    }
+/* ── Modals ── */
+function expOpenModal(id) {
+  document.getElementById(id)?.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function expCloseModal(id) {
+  document.getElementById(id)?.classList.remove('open');
+  document.body.style.overflow = '';
+}
+window.expOpenModal  = expOpenModal;
+window.expCloseModal = expCloseModal;
+/* backwards-compat aliases used by child templates */
+window.openModal  = expOpenModal;
+window.closeModal = expCloseModal;
 
-    // HTMX loading indicator
-    document.body.addEventListener('htmx:beforeRequest', (e) => {
-        e.target.classList.add('loading');
-    });
-    document.body.addEventListener('htmx:afterRequest', (e) => {
-        e.target.classList.remove('loading');
-    });
+/* ── Command palette ── */
+function expOpenCmdPalette() {
+  document.getElementById('exp-cmd-overlay')?.classList.add('open');
+  document.getElementById('exp-cmd-input')?.focus();
+  document.body.style.overflow = 'hidden';
+}
+function expCloseCmdPalette() {
+  document.getElementById('exp-cmd-overlay')?.classList.remove('open');
+  document.body.style.overflow = '';
+}
+window.expOpenCmdPalette  = expOpenCmdPalette;
+window.expCloseCmdPalette = expCloseCmdPalette;
+
+/* cmd palette filtering */
+document.getElementById('exp-cmd-input')?.addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('#exp-cmd-results .exp-cmd-item').forEach(item => {
+    item.style.display = (!q || item.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
+});
+
+/* ── Global search (wired to main base.html search bar if present) ── */
+document.getElementById('global-search')?.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    window.location = '{% url "expenses:expense_list" %}?search=' + encodeURIComponent(this.value);
+  }
+});
+
+/* ── Keyboard shortcuts ── */
+let _expKeySeq = [], _expKeyTimer;
+document.addEventListener('keydown', function(e) {
+  const tag = e.target.tagName.toLowerCase();
+  const editing = ['input','textarea','select'].includes(tag) || e.target.isContentEditable;
+
+  /* Escape — close any open exp modal or palette */
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.exp-modal-overlay.open').forEach(m => m.classList.remove('open'));
+    expCloseCmdPalette();
+    document.body.style.overflow = '';
+  }
+
+  if (editing) return;
+
+  /* Ctrl+K → command palette */
+  if (e.ctrlKey && e.key === 'k') { e.preventDefault(); expOpenCmdPalette(); return; }
+
+  /* single-key shortcuts */
+  if (e.key === '?') { expOpenModal('exp-kbd-modal'); return; }
+
+  /* two-key nav sequences */
+  _expKeySeq.push(e.key.toLowerCase());
+  clearTimeout(_expKeyTimer);
+  _expKeyTimer = setTimeout(() => { _expKeySeq = []; }, 800);
+  if (_expKeySeq.length >= 2) {
+    const seq = _expKeySeq.slice(-2).join('');
+    const nav = {
+      'gd': '{% url "expenses:dashboard" %}',
+      'ge': '{% url "expenses:expense_list" %}',
+      'gb': '{% url "expenses:budget_list" %}',
+      'gr': '{% url "expenses:reports_dashboard" %}',
+      'ne': '{% url "expenses:expense_create" %}',
+      'nb': '{% url "expenses:budget_create" %}',
+    };
+    if (nav[seq]) { window.location = nav[seq]; _expKeySeq = []; }
+  }
+});
+
+/* Enter submits quick-expense form */
+document.getElementById('exp-modal-expense')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+    e.preventDefault();
+    document.getElementById('exp-quick-expense-form').submit();
+  }
+});
+
+/* ── Toast ── */
+function expShowToast(title, msg='', type='success') {
+  const icons = { success:'<i class="bi bi-check-circle-fill"></i>', error:'<i class="bi bi-x-circle-fill"></i>', warning:'<i class="bi bi-exclamation-circle-fill"></i>', info:'<i class="bi bi-info-circle-fill"></i>' };
+  const t = document.createElement('div');
+  t.className = 'exp-toast';
+  t.innerHTML = `<span class="exp-toast-icon">${icons[type]||icons.info}</span><div class="exp-toast-body"><div class="exp-toast-title">${title}</div>${msg?`<div class="exp-toast-msg">${msg}</div>`:''}</div><button class="exp-toast-close" onclick="this.closest('.exp-toast').remove()"><i class="bi bi-x"></i></button>`;
+  document.getElementById('exp-toast-container').appendChild(t);
+  setTimeout(() => { t.classList.add('removing'); setTimeout(() => t.remove(), 200); }, 3500);
+}
+window.expShowToast = expShowToast;
+window.showToast    = expShowToast; /* backwards-compat */
+
+/* ── Set today's date on quick form ── */
+const _qDate = document.getElementById('q-date');
+if (_qDate) _qDate.value = new Date().toISOString().split('T')[0];
+
+/* ── Auto-dismiss messages ── */
+setTimeout(() => {
+  const m = document.getElementById('exp-messages');
+  if (!m) return;
+  m.style.transition = 'opacity .4s';
+  m.style.opacity = '0';
+  setTimeout(() => m.remove(), 450);
+}, 4500);
+
+/* ── Inline edit helper ── */
+function makeInlineEditable(el, saveUrl, field) {
+  el.setAttribute('contenteditable', 'true');
+  el.focus();
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(r);
+  function save() {
+    el.removeAttribute('contenteditable');
+    fetch(saveUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+      body: JSON.stringify({ [field]: el.textContent.trim() })
+    }).then(() => expShowToast('Saved', 'Changes saved.'))
+      .catch(() => expShowToast('Error', 'Could not save.', 'error'));
+  }
+  el.addEventListener('blur', save, { once: true });
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+    if (e.key === 'Escape') { el.removeAttribute('contenteditable'); }
+  });
+}
+window.makeInlineEditable = makeInlineEditable;
+
+/* getCookie already defined in main base.html but we define a safe fallback */
+if (!window.getCookie) {
+  window.getCookie = name =>
+    document.cookie.split(';').map(c => c.trim())
+      .find(c => c.startsWith(name + '='))?.split('=')[1] || '';
+}
+
+/* ── Currency formatter ── */
+window.EXP = window.EXP || {};
+EXP.formatCurrency = (amount, currency='UGX') =>
+  new Intl.NumberFormat('en-UG', { style:'currency', currency }).format(amount);
+EXP.formatDate = dateStr =>
+  new Date(dateStr).toLocaleDateString('en-UG', { year:'numeric', month:'short', day:'numeric' });
 </script>
-
-{% block extra_js %}{% endblock %}
-</body>
-</html>
+{% endblock %}

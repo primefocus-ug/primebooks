@@ -1,553 +1,772 @@
-{% extends "base.html" %}
-{% load static %}
-
-{% block title %}{{ expense.description }} - Expense Detail{% endblock %}
+{% extends "expenses/base.html" %}
+{% block title %}{{ expense.description }}{% endblock %}
 
 {% block extra_css %}
 <style>
-    .detail-container {
-        padding: 2rem;
-        max-width: 1200px;
-        margin: 0 auto;
-    }
+/* ── DARK THEME VARIABLES ── */
+:root {
+  --detail-bg: rgba(255,255,255,0.85);
+  --detail-border: rgba(0,0,0,0.07);
+  --detail-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+  --detail-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.10);
+  --detail-accent-light: rgba(37,99,235,0.1);
+  --detail-timeline-bg: var(--bg-secondary);
+}
 
-    .detail-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 2rem;
-    }
+[data-theme="dark"] {
+  --detail-bg: rgba(30,35,48,0.90);
+  --detail-border: rgba(255,255,255,0.07);
+  --detail-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.4);
+  --detail-shadow-hover: 0 4px 12px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.5);
+  --detail-accent-light: rgba(37,99,235,0.2);
+  --detail-timeline-bg: rgba(255,255,255,0.02);
+}
 
-    .back-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.75rem 1.5rem;
-        background: rgba(102, 126, 234, 0.1);
-        color: #818cf8;
-        border-radius: 12px;
-        text-decoration: none;
-        font-weight: 600;
-        transition: all 0.2s;
-    }
+/* ── PAGE HEADER (matching dashboard) ── */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--detail-border);
+}
+.page-header-text h1 {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 0.3rem;
+}
+.page-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
 
-    .back-button:hover {
-        background: rgba(102, 126, 234, 0.2);
-        transform: translateX(-5px);
-    }
+/* ── HERO CARD (matching dashboard stat cards) ── */
+.detail-hero {
+  background: var(--detail-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--detail-border);
+  border-radius: var(--r-xl, 20px);
+  box-shadow: var(--detail-shadow);
+  padding: 1.75rem;
+  margin-bottom: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.25s;
+}
+.detail-hero:hover {
+  box-shadow: var(--detail-shadow-hover);
+}
+.detail-hero::before {
+  content: '';
+  position: absolute;
+  top: -30px; right: -30px;
+  width: 150px; height: 150px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--dash-accent, #2563eb), var(--dash-accent-2, #7c3aed));
+  opacity: 0.1;
+  transition: opacity 0.3s;
+}
+.detail-hero:hover::before { opacity: 0.15; }
+[data-theme="dark"] .detail-hero::before { opacity: 0.15; }
+.detail-hero::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--dash-accent, #2563eb), #60a5fa, var(--dash-accent-2, #7c3aed));
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
 
-    .detail-actions {
-        display: flex;
-        gap: 1rem;
-    }
+.detail-amount {
+  font-size: 3.2rem;
+  font-weight: 800;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  letter-spacing: -0.04em;
+  color: var(--text-primary);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.detail-amount .currency {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 0.5rem;
+}
 
-    .detail-grid {
-        display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: 2rem;
-        margin-bottom: 2rem;
-    }
+.detail-desc {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-top: 0.75rem;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  border-radius: var(--r-md, 12px);
+  padding: 4px 8px;
+  margin-left: -8px;
+  transition: background 0.2s;
+}
+.detail-desc:hover {
+  background: var(--detail-accent-light);
+}
+.quick-edit-btn {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  background: var(--detail-bg);
+  border: 1px solid var(--detail-border);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--r-full, 9999px);
+  transition: all 0.2s;
+  flex-shrink: 0;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
+.quick-edit-btn:hover {
+  background: var(--dash-accent, #2563eb);
+  color: #fff;
+  border-color: var(--dash-accent, #2563eb);
+}
 
-    @media (max-width: 968px) {
-        .detail-grid {
-            grid-template-columns: 1fr;
-        }
-    }
+.detail-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--detail-border);
+}
+.detail-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.detail-meta-label {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.detail-meta-val {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 
-    .detail-card {
-        background: var(--card-bg, #1e293b);
-        border-radius: 20px;
-        padding: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-    }
+/* ── BADGES (matching dashboard) ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.8rem;
+  border-radius: var(--r-full, 9999px);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--detail-accent-light);
+  border: 1px solid transparent;
+}
+.badge-amber {
+  background: rgba(215,119,6,0.12);
+  color: var(--dash-amber, #d97706);
+}
+[data-theme="dark"] .badge-amber {
+  background: rgba(245,158,11,0.2);
+  color: #fbbf24;
+}
+.badge-purple {
+  background: rgba(124,58,237,0.12);
+  color: var(--dash-accent-2, #7c3aed);
+}
+[data-theme="dark"] .badge-purple {
+  background: rgba(139,92,246,0.2);
+  color: #a78bfa;
+}
+.badge-green {
+  background: rgba(5,150,105,0.12);
+  color: var(--dash-green, #059669);
+}
+[data-theme="dark"] .badge-green {
+  background: rgba(16,185,129,0.2);
+  color: #34d399;
+}
+.badge-red {
+  background: rgba(220,38,38,0.12);
+  color: var(--dash-red, #dc2626);
+}
+[data-theme="dark"] .badge-red {
+  background: rgba(239,68,68,0.2);
+  color: #f87171;
+}
+.badge-neutral {
+  background: rgba(107,114,128,0.12);
+  color: var(--text-secondary);
+}
 
-    .card-title {
-        font-size: 1.5rem;
-        font-weight: 700;
-        margin-bottom: 2rem;
-        color: var(--text-primary, #f1f5f9);
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
+/* ── TAG CHIPS (matching dashboard) ── */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.8rem;
+  border-radius: var(--r-full, 9999px);
+  background: var(--detail-accent-light);
+  border: 1px solid rgba(37,99,235,0.2);
+  color: var(--dash-accent, #2563eb);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.tag-chip:hover {
+  background: rgba(37,99,235,0.2);
+  transform: translateY(-1px);
+}
+[data-theme="dark"] .tag-chip {
+  color: #60a5fa;
+  border-color: rgba(96,165,250,0.3);
+}
+[data-theme="dark"] .tag-chip:hover {
+  background: rgba(96,165,250,0.2);
+}
 
-    .card-title-icon {
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-    }
+/* ── CARDS (matching dashboard panels) ── */
+.card {
+  background: var(--detail-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--detail-border);
+  border-radius: var(--r-xl, 20px);
+  box-shadow: var(--detail-shadow);
+  overflow: hidden;
+  transition: box-shadow 0.25s;
+  margin-bottom: 1.25rem;
+}
+.card:hover {
+  box-shadow: var(--detail-shadow-hover);
+}
 
-    .expense-hero {
-        text-align: center;
-        padding: 3rem 2rem;
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-        border-radius: 16px;
-        margin-bottom: 2rem;
-    }
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.4rem;
+  border-bottom: 1px solid var(--detail-border);
+}
+.card-title {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.card-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  background: linear-gradient(to bottom, var(--dash-accent, #2563eb), var(--dash-accent-2, #7c3aed));
+  border-radius: 2px;
+}
+.card-body {
+  padding: 1.25rem 1.4rem;
+}
 
-    .expense-amount-large {
-        font-size: 4rem;
-        font-weight: 700;
-        color: var(--text-primary, #f1f5f9);
-        margin-bottom: 1rem;
-        line-height: 1;
-    }
+/* ── GRID LAYOUT ── */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+@media (max-width: 900px) {
+  .grid-2 { grid-template-columns: 1fr; }
+}
 
-    .expense-description-large {
-        font-size: 1.5rem;
-        color: var(--text-secondary, #94a3b8);
-        margin-bottom: 1.5rem;
-    }
+/* ── RECEIPT ── */
+.receipt-img {
+  width: 100%;
+  border-radius: var(--r-lg, 16px);
+  border: 1px solid var(--detail-border);
+  box-shadow: var(--detail-shadow);
+}
+.receipt-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: var(--detail-accent-light);
+  border: 1px solid var(--detail-border);
+  border-radius: var(--r-lg, 16px);
+}
 
-    .expense-date-large {
-        font-size: 1.125rem;
-        color: var(--text-tertiary, #64748b);
-    }
+/* ── TIMELINE (approval history) ── */
+.timeline {
+  padding-left: 1rem;
+}
+.timeline-item {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem 0;
+  padding-left: 1.25rem;
+  border-left: 2px solid var(--detail-border);
+  position: relative;
+  margin-left: 0.5rem;
+}
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 1.25rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dash-accent, #2563eb);
+  border: 2px solid var(--detail-bg);
+  transition: background 0.2s;
+}
+.timeline-item.approved::before {
+  background: var(--dash-green, #059669);
+}
+.timeline-item.rejected::before {
+  background: var(--dash-red, #dc2626);
+}
+.timeline-action {
+  font-weight: 600;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  color: var(--text-primary);
+}
+.timeline-date {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin-top: 3px;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
 
-    .detail-section {
-        margin-bottom: 2rem;
-        padding-bottom: 2rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    }
+/* ── RELATED EXPENSES ── */
+.related-link {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.4rem;
+  border-bottom: 1px solid var(--detail-border);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: background 0.2s;
+}
+.related-link:hover {
+  background: var(--detail-accent-light);
+}
+.related-link:last-child {
+  border-bottom: 0;
+}
 
-    .detail-section:last-child {
-        border-bottom: none;
-        margin-bottom: 0;
-        padding-bottom: 0;
-    }
+/* ── QUICK ACTIONS ── */
+.qa-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.qa-list hr {
+  border: none;
+  border-top: 1px solid var(--detail-border);
+  margin: 0.5rem 0;
+}
 
-    .section-title {
-        font-size: 1rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--text-secondary, #94a3b8);
-        margin-bottom: 1rem;
-    }
+/* ── BUTTONS (matching dashboard) ── */
+.btn {
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--r-md, 12px);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-primary {
+  background: var(--dash-accent, #2563eb);
+  color: white;
+  border-color: var(--dash-accent, #2563eb);
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .btn-primary:hover {
+  background: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59,130,246,0.5);
+}
+.btn-secondary {
+  background: var(--detail-bg);
+  border: 1px solid var(--detail-border);
+  color: var(--text-secondary);
+}
+.btn-secondary:hover {
+  border-color: var(--dash-accent, #2563eb);
+  color: var(--dash-accent, #2563eb);
+  background: var(--detail-accent-light);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-secondary:hover {
+  color: #60a5fa;
+  border-color: #60a5fa;
+}
+.btn-danger {
+  background: rgba(220,38,38,0.1);
+  border-color: rgba(220,38,38,0.2);
+  color: var(--dash-red, #dc2626);
+}
+.btn-danger:hover {
+  background: rgba(220,38,38,0.15);
+  border-color: rgba(220,38,38,0.3);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-danger {
+  background: rgba(239,68,68,0.15);
+  color: #ef4444;
+}
+.btn-xs {
+  padding: 0.25rem 0.8rem;
+  font-size: 0.72rem;
+}
 
-    .detail-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem;
-        background: rgba(255, 255, 255, 0.02);
-        border-radius: 12px;
-        margin-bottom: 0.75rem;
-    }
+/* ── METADATA SECTION ── */
+.metadata-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--detail-border);
+}
+.metadata-row:last-child {
+  border-bottom: none;
+}
+.metadata-label {
+  color: var(--text-secondary);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.metadata-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.mono {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
 
-    .detail-label {
-        color: var(--text-secondary, #94a3b8);
-        font-weight: 500;
-    }
+/* ── UTILITIES ── */
+.text-2 { color: var(--text-secondary); }
+.text-3 { color: var(--text-tertiary, #9ca3af); }
+.text-accent {
+  color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .text-accent {
+  color: #60a5fa;
+}
+.fz-sm { font-size: 0.85rem; }
+.fz-xs { font-size: 0.75rem; }
+.fw-600 { font-weight: 600; }
+.mb-1 { margin-bottom: 0.25rem; }
+.mt-1 { margin-top: 0.25rem; }
 
-    .detail-value {
-        color: var(--text-primary, #f1f5f9);
-        font-weight: 600;
-    }
-
-    .badge-grid {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-        margin-top: 0.5rem;
-    }
-
-    .badge {
-        padding: 0.5rem 1rem;
-        border-radius: 8px;
-        font-size: 0.875rem;
-        font-weight: 600;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .badge-tag {
-        background: rgba(102, 126, 234, 0.2);
-        color: #818cf8;
-    }
-
-    .badge-payment {
-        background: rgba(16, 185, 129, 0.2);
-        color: #34d399;
-    }
-
-    .badge-recurring {
-        background: rgba(245, 158, 11, 0.2);
-        color: #fbbf24;
-    }
-
-    .badge-important {
-        background: rgba(239, 68, 68, 0.2);
-        color: #f87171;
-    }
-
-    .receipt-preview {
-        position: relative;
-        width: 100%;
-        border-radius: 12px;
-        overflow: hidden;
-        background: rgba(255, 255, 255, 0.02);
-    }
-
-    .receipt-preview img {
-        width: 100%;
-        height: auto;
-        display: block;
-    }
-
-    .receipt-overlay {
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        padding: 1rem;
-        background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .receipt-name {
-        color: white;
-        font-weight: 600;
-    }
-
-    .receipt-download {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        background: rgba(255, 255, 255, 0.2);
-        color: white;
-        border-radius: 8px;
-        text-decoration: none;
-        font-weight: 600;
-        transition: all 0.2s;
-    }
-
-    .receipt-download:hover {
-        background: rgba(255, 255, 255, 0.3);
-    }
-
-    .notes-box {
-        padding: 1.5rem;
-        background: rgba(255, 255, 255, 0.02);
-        border-radius: 12px;
-        border: 2px dashed rgba(255, 255, 255, 0.1);
-        color: var(--text-secondary, #94a3b8);
-        line-height: 1.6;
-    }
-
-    .empty-notes {
-        text-align: center;
-        color: var(--text-tertiary, #64748b);
-        font-style: italic;
-    }
-
-    .related-expenses {
-        margin-top: 2rem;
-    }
-
-    .related-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem;
-        background: rgba(255, 255, 255, 0.02);
-        border-radius: 12px;
-        margin-bottom: 0.75rem;
-        text-decoration: none;
-        transition: all 0.2s;
-    }
-
-    .related-item:hover {
-        background: rgba(102, 126, 234, 0.1);
-        transform: translateX(5px);
-    }
-
-    .related-info {
-        flex: 1;
-    }
-
-    .related-description {
-        color: var(--text-primary, #f1f5f9);
-        font-weight: 600;
-        margin-bottom: 0.25rem;
-    }
-
-    .related-date {
-        color: var(--text-tertiary, #64748b);
-        font-size: 0.875rem;
-    }
-
-    .related-amount {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: var(--text-primary, #f1f5f9);
-    }
-
-    .timeline {
-        position: relative;
-        padding-left: 2rem;
-    }
-
-    .timeline::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: 2px;
-        background: rgba(102, 126, 234, 0.3);
-    }
-
-    .timeline-item {
-        position: relative;
-        margin-bottom: 1.5rem;
-    }
-
-    .timeline-item::before {
-        content: '';
-        position: absolute;
-        left: -2.375rem;
-        top: 0.25rem;
-        width: 12px;
-        height: 12px;
-        background: #667eea;
-        border: 3px solid var(--card-bg, #1e293b);
-        border-radius: 50%;
-    }
-
-    .timeline-label {
-        color: var(--text-tertiary, #64748b);
-        font-size: 0.875rem;
-        margin-bottom: 0.25rem;
-    }
-
-    .timeline-value {
-        color: var(--text-primary, #f1f5f9);
-        font-weight: 600;
-    }
+/* ── INLINE EDIT INPUT ── */
+.inline-edit-input {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-top: 0.75rem;
+  width: 100%;
+  background: var(--detail-bg);
+  border: 1px solid var(--dash-accent, #2563eb);
+  border-radius: var(--r-md, 12px);
+  padding: 0.5rem 1rem;
+  color: var(--text-primary);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+[data-theme="dark"] .inline-edit-input {
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.2);
+  border-color: #60a5fa;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="detail-container">
-    <!-- Header -->
-    <div class="detail-header">
-        <a href="{% url 'expenses:expense_list' %}" class="back-button">
-            <i class="fas fa-arrow-left"></i> Back to Expenses
+<!-- PAGE HEADER (matching dashboard) -->
+<div class="page-header">
+  <div class="page-header-text">
+    <h1>Expense Detail</h1>
+    <p class="page-subtitle">#{{ expense.pk }} · Added {{ expense.created_at|date:"d M Y, H:i" }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{% url 'expenses:expense_list' %}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <a href="{% url 'expenses:expense_edit' expense.pk %}" class="btn btn-secondary">
+      <i class="bi bi-pencil me-1"></i>Edit
+    </a>
+    <a href="{% url 'expenses:expense_delete' expense.pk %}" class="btn btn-danger" onclick="return confirm('Delete this expense permanently?')">
+      <i class="bi bi-trash me-1"></i>Delete
+    </a>
+  </div>
+</div>
+
+<!-- HERO CARD (enhanced with dashboard styling) -->
+<div class="detail-hero">
+  <div class="detail-amount">
+    {{ expense.amount|floatformat:2 }}<span class="currency">UGX</span>
+  </div>
+
+  <div class="detail-desc" id="inline-desc" onclick="startInlineEdit(this, {{ expense.pk }}, 'description')" title="Click to edit">
+    {{ expense.description }}
+    <button class="quick-edit-btn" tabindex="-1">✏️ edit</button>
+  </div>
+
+  <div class="detail-meta">
+    <div class="detail-meta-item">
+      <span class="detail-meta-label">Date</span>
+      <span class="detail-meta-val">{{ expense.date|date:"l, d F Y" }}</span>
+    </div>
+    <div class="detail-meta-item">
+      <span class="detail-meta-label">Payment Method</span>
+      <span class="detail-meta-val">{{ expense.payment_method|default:"—" }}</span>
+    </div>
+    <div class="detail-meta-item">
+      <span class="detail-meta-label">Status</span>
+      <span class="detail-meta-val">
+        {% if expense.is_important %}<span class="badge badge-amber">⭐ Important</span>{% endif %}
+        {% if expense.is_recurring %}<span class="badge badge-purple">🔁 Recurring</span>{% endif %}
+        {% if not expense.is_important and not expense.is_recurring %}<span class="badge badge-neutral">Normal</span>{% endif %}
+      </span>
+    </div>
+    <div class="detail-meta-item">
+      <span class="detail-meta-label">Tags</span>
+      <span class="detail-meta-val">
+        {% for tag in expense.tags.all %}
+        <a href="{% url 'expenses:expense_list' %}?tags={{ tag.name }}" class="tag-chip">{{ tag.name }}</a>
+        {% empty %}<span class="text-3">—</span>
+        {% endfor %}
+      </span>
+    </div>
+    {% if expense.vendor %}
+    <div class="detail-meta-item">
+      <span class="detail-meta-label">Vendor</span>
+      <span class="detail-meta-val">{{ expense.vendor }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if expense.notes %}
+  <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--detail-border)">
+    <div class="detail-meta-label mb-1">Notes</div>
+    <p style="font-size:0.9rem;color:var(--text-secondary);line-height:1.7;white-space:pre-wrap">{{ expense.notes }}</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- CONTENT GRID -->
+<div class="grid-2">
+  <!-- LEFT COLUMN -->
+  <div style="display:flex;flex-direction:column;gap:1.25rem">
+    <!-- Receipt Card -->
+    {% if expense.receipt %}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📎 Receipt</span>
+        <a href="{{ expense.receipt.url }}" target="_blank" class="btn btn-secondary btn-xs">Open ↗</a>
+      </div>
+      <div class="card-body">
+        {% if expense.receipt.name|lower|slice:"-4:" == ".pdf" %}
+        <div class="receipt-placeholder">
+          <span style="font-size:2rem">📄</span>
+          <div>
+            <div class="fz-sm fw-600">PDF Document</div>
+            <a href="{{ expense.receipt.url }}" target="_blank" class="fz-xs text-accent">View PDF ↗</a>
+          </div>
+        </div>
+        {% else %}
+        <img src="{{ expense.receipt.url }}" alt="Receipt" class="receipt-img" />
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Related Expenses Card -->
+    {% if related_expenses %}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🔗 Related Expenses</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        {% for rel in related_expenses %}
+        <a href="{% url 'expenses:expense_detail' rel.pk %}" class="related-link">
+          <span style="flex:1;font-size:0.875rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ rel.description }}</span>
+          <span class="mono fz-sm text-2">{{ rel.amount|floatformat:0 }}</span>
+          <span class="fz-xs text-3">{{ rel.date|date:"d M" }}</span>
         </a>
-        <div class="detail-actions">
-            <a href="{% url 'expenses:expense_edit' expense.id %}" class="btn-primary">
-                <i class="fas fa-edit"></i> Edit
-            </a>
-            <button onclick="deleteExpense()" class="btn-secondary" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border-color: #f87171;">
-                <i class="fas fa-trash"></i> Delete
-            </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div style="display:flex;flex-direction:column;gap:1.25rem">
+    <!-- Approval History Card -->
+    {% if approval_history %}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📋 Approval History</span>
+      </div>
+      <div class="card-body">
+        <div class="timeline">
+          {% for record in approval_history %}
+          <div class="timeline-item {{ record.action }}">
+            <div style="flex:1">
+              <div class="timeline-action">
+                {{ record.actor.get_full_name|default:record.actor.username }}
+                <span class="badge {% if record.action == 'approved' %}badge-green{% elif record.action == 'rejected' %}badge-red{% else %}badge-neutral{% endif %}">
+                  {{ record.action }}
+                </span>
+              </div>
+              {% if record.comment %}<div class="fz-sm text-2 mt-1">{{ record.comment }}</div>{% endif %}
+              <div class="timeline-date">{{ record.created_at|date:"d M Y, H:i" }}</div>
+            </div>
+          </div>
+          {% endfor %}
         </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Quick Actions Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">⚡ Quick Actions</span>
+      </div>
+      <div class="card-body">
+        <div class="qa-list">
+          <a href="{% url 'expenses:expense_edit' expense.pk %}" class="btn btn-secondary">
+            <i class="bi bi-pencil me-1"></i>Edit This Expense
+          </a>
+          <a href="{% url 'expenses:expense_create' %}?clone={{ expense.pk }}" class="btn btn-secondary">
+            <i class="bi bi-copy me-1"></i>Duplicate Expense
+          </a>
+          <button class="btn btn-secondary" onclick="copyDetails()">
+            <i class="bi bi-clipboard me-1"></i>Copy to Clipboard
+          </button>
+          <a href="{% url 'expenses:expense_submit' expense.pk %}" class="btn btn-secondary">
+            <i class="bi bi-send me-1"></i>Submit for Approval
+          </a>
+          <hr>
+          <a href="{% url 'expenses:expense_delete' expense.pk %}" class="btn btn-danger" onclick="return confirm('Delete this expense?')">
+            <i class="bi bi-trash me-1"></i>Delete Expense
+          </a>
+        </div>
+      </div>
     </div>
 
-    <!-- Main Grid -->
-    <div class="detail-grid">
-        <!-- Left Column -->
-        <div>
-            <!-- Hero Section -->
-            <div class="detail-card">
-                <div class="expense-hero">
-                    <div class="expense-amount-large">${{ expense.amount|floatformat:2 }}</div>
-                    <div class="expense-description-large">{{ expense.description }}</div>
-                    <div class="expense-date-large">
-                        <i class="fas fa-calendar"></i> {{ expense.date|date:"F d, Y" }}
-                    </div>
-                </div>
-
-                <!-- Badges -->
-                <div class="badge-grid">
-                    {% for tag in expense.tags.all %}
-                    <span class="badge badge-tag">
-                        <i class="fas fa-tag"></i> {{ tag.name }}
-                    </span>
-                    {% endfor %}
-
-                    {% if expense.payment_method %}
-                    <span class="badge badge-payment">
-                        <i class="fas fa-credit-card"></i> {{ expense.get_payment_method_display }}
-                    </span>
-                    {% endif %}
-
-                    {% if expense.is_recurring %}
-                    <span class="badge badge-recurring">
-                        <i class="fas fa-sync"></i> Recurring
-                    </span>
-                    {% endif %}
-
-                    {% if expense.is_important %}
-                    <span class="badge badge-important">
-                        <i class="fas fa-star"></i> Important
-                    </span>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Notes Section -->
-            <div class="detail-card" style="margin-top: 2rem;">
-                <h3 class="card-title">
-                    <div class="card-title-icon">📝</div>
-                    Notes
-                </h3>
-
-                {% if expense.notes %}
-                <div class="notes-box">{{ expense.notes }}</div>
-                {% else %}
-                <div class="notes-box empty-notes">
-                    No notes added for this expense.
-                </div>
-                {% endif %}
-            </div>
-
-            <!-- Receipt Section -->
-            {% if expense.receipt %}
-            <div class="detail-card" style="margin-top: 2rem;">
-                <h3 class="card-title">
-                    <div class="card-title-icon">📎</div>
-                    Receipt
-                </h3>
-
-                <div class="receipt-preview">
-                    <img src="{{ expense.receipt.url }}" alt="Receipt" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 400 300%22><rect width=%22400%22 height=%22300%22 fill=%22%231e293b%22/><text x=%2250%%22 y=%2250%%22 font-family=%22Arial%22 font-size=%2220%22 fill=%22%2394a3b8%22 text-anchor=%22middle%22>📄 Receipt</text></svg>'">
-                    <div class="receipt-overlay">
-                        <span class="receipt-name">Receipt</span>
-                        <a href="{{ expense.receipt.url }}" download class="receipt-download">
-                            <i class="fas fa-download"></i> Download
-                        </a>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
+    <!-- Metadata Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">ℹ️ Metadata</span>
+      </div>
+      <div class="card-body" style="padding:0.75rem 1.4rem">
+        <div class="metadata-row">
+          <span class="metadata-label">Created</span>
+          <span class="metadata-value">{{ expense.created_at|date:"d M Y, H:i" }}</span>
         </div>
-
-        <!-- Right Column -->
-        <div>
-            <!-- Details Card -->
-            <div class="detail-card">
-                <h3 class="card-title">
-                    <div class="card-title-icon">ℹ️</div>
-                    Details
-                </h3>
-
-                <div class="detail-section">
-                    <div class="section-title">Financial Information</div>
-                    <div class="detail-row">
-                        <span class="detail-label">Amount</span>
-                        <span class="detail-value">${{ expense.amount|floatformat:2 }}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Date</span>
-                        <span class="detail-value">{{ expense.date|date:"M d, Y" }}</span>
-                    </div>
-                    {% if expense.payment_method %}
-                    <div class="detail-row">
-                        <span class="detail-label">Payment Method</span>
-                        <span class="detail-value">{{ expense.get_payment_method_display }}</span>
-                    </div>
-                    {% endif %}
-                </div>
-
-                <div class="detail-section">
-                    <div class="section-title">Metadata</div>
-                    <div class="timeline">
-                        <div class="timeline-item">
-                            <div class="timeline-label">Created</div>
-                            <div class="timeline-value">{{ expense.created_at|date:"M d, Y • g:i A" }}</div>
-                        </div>
-                        {% if expense.updated_at != expense.created_at %}
-                        <div class="timeline-item">
-                            <div class="timeline-label">Last Updated</div>
-                            <div class="timeline-value">{{ expense.updated_at|date:"M d, Y • g:i A" }}</div>
-                        </div>
-                        {% endif %}
-                        <div class="timeline-item">
-                            <div class="timeline-label">Expense ID</div>
-                            <div class="timeline-value" style="font-family: monospace; font-size: 0.875rem;">
-                                {{ expense.id }}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Related Expenses -->
-            {% if related_expenses %}
-            <div class="detail-card" style="margin-top: 2rem;">
-                <h3 class="card-title">
-                    <div class="card-title-icon">🔗</div>
-                    Related Expenses
-                </h3>
-
-                <div class="related-expenses">
-                    {% for related in related_expenses %}
-                    <a href="{% url 'expenses:expense_detail' related.id %}" class="related-item">
-                        <div class="related-info">
-                            <div class="related-description">{{ related.description }}</div>
-                            <div class="related-date">{{ related.date|date:"M d, Y" }}</div>
-                        </div>
-                        <div class="related-amount">${{ related.amount|floatformat:2 }}</div>
-                    </a>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
+        <div class="metadata-row">
+          <span class="metadata-label">Last updated</span>
+          <span class="metadata-value">{{ expense.updated_at|date:"d M Y, H:i"|default:"—" }}</span>
         </div>
+        <div class="metadata-row">
+          <span class="metadata-label">Expense ID</span>
+          <span class="metadata-value mono">#{{ expense.pk }}</span>
+        </div>
+        {% if expense.user %}
+        <div class="metadata-row">
+          <span class="metadata-label">Submitted by</span>
+          <span class="metadata-value">{{ expense.user.get_full_name|default:expense.user.username }}</span>
+        </div>
+        {% endif %}
+      </div>
     </div>
+  </div>
 </div>
 {% endblock %}
-
 {% block extra_js %}
 <script>
-function deleteExpense() {
-    if (confirm('Are you sure you want to delete this expense?\n\nThis action cannot be undone.')) {
-        fetch('{% url "expenses:expense_delete" expense.id %}', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                window.location.href = '{% url "expenses:expense_list" %}';
-            } else {
-                alert('Error deleting expense');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error deleting expense');
-        });
-    }
+function startInlineEdit(el, id, field) {
+  const origText = el.childNodes[0].textContent.trim();
+  const input = document.createElement('input');
+  input.value = origText;
+  input.className = 'form-control';
+  input.style.cssText = 'font-size:1.3rem;font-weight:600;margin-top:var(--s3);width:100%';
+  el.replaceWith(input);
+  input.focus(); input.select();
+
+  function save() {
+    const val = input.value.trim();
+    if (!val || val === origText) { location.reload(); return; }
+    fetch(`/expenses/api/expense/${id}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+      body: JSON.stringify({ description: val })
+    }).then(r => r.ok ? showToast('Saved ✅', 'Description updated.') : showToast('Error', '', 'error'))
+      .finally(() => location.reload());
+  }
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { location.reload(); }
+  });
 }
 
-// Keyboard shortcuts
-document.addEventListener('keydown', function(e) {
-    // E = Edit
-    if (e.key === 'e' && !e.ctrlKey && !e.metaKey) {
-        window.location.href = '{% url "expenses:expense_edit" expense.id %}';
-    }
-
-    // Backspace = Back to list
-    if (e.key === 'Backspace' && !e.target.matches('input, textarea')) {
-        e.preventDefault();
-        window.location.href = '{% url "expenses:expense_list" %}';
-    }
-});
+function copyDetails() {
+  const text = [
+    'Expense: {{ expense.description }}',
+    'Amount: {{ expense.amount|floatformat:2 }} UGX',
+    'Date: {{ expense.date|date:"d M Y" }}',
+    'Payment: {{ expense.payment_method|default:"—" }}',
+    '{% if expense.notes %}Notes: {{ expense.notes|truncatechars:100 }}{% endif %}'
+  ].filter(Boolean).join('\n');
+  navigator.clipboard.writeText(text).then(() => showToast('Copied ✅', 'Expense details copied to clipboard.'));
+}
 </script>
 {% endblock %}

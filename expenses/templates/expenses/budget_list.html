@@ -1,532 +1,845 @@
-{% extends "base.html" %}
-{% load static %}
-{% load custom_filters %}
-
-{% block title %}Budgets - Expense Tracker{% endblock %}
+{% extends "expenses/base.html" %}
+{% block title %}Budgets{% endblock %}
 
 {% block extra_css %}
 <style>
-    .budgets-container {
-        padding: 2rem;
-        max-width: 1400px;
-        margin: 0 auto;
-    }
+/* ── DARK THEME VARIABLES ── */
+:root {
+  --budget-bg: rgba(255,255,255,0.85);
+  --budget-border: rgba(0,0,0,0.07);
+  --budget-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+  --budget-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.10);
+  --budget-accent-light: rgba(37,99,235,0.1);
+  --budget-green-light: rgba(5,150,105,0.1);
+  --budget-amber-light: rgba(215,119,6,0.1);
+  --budget-red-light: rgba(220,38,38,0.1);
+  --budget-input-bg: rgba(0,0,0,0.02);
+}
 
-    .budgets-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 2rem;
-    }
+[data-theme="dark"] {
+  --budget-bg: rgba(30,35,48,0.90);
+  --budget-border: rgba(255,255,255,0.07);
+  --budget-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.4);
+  --budget-shadow-hover: 0 4px 12px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.5);
+  --budget-accent-light: rgba(37,99,235,0.2);
+  --budget-green-light: rgba(16,185,129,0.15);
+  --budget-amber-light: rgba(245,158,11,0.15);
+  --budget-red-light: rgba(239,68,68,0.15);
+  --budget-input-bg: rgba(255,255,255,0.05);
+}
 
-    .budgets-header h1 {
-        font-size: 2rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
+/* ── PAGE HEADER (matching dashboard) ── */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--budget-border);
+}
+.page-header-text h1 {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 0.3rem;
+}
+.page-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
 
-    .budgets-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-        gap: 2rem;
-        margin-bottom: 2rem;
-    }
+/* ── BUDGET CARDS (matching dashboard stat cards) ── */
+.budgets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
 
-    .budget-card {
-        background: var(--card-bg, #1e293b);
-        border-radius: 20px;
-        padding: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        position: relative;
-        overflow: hidden;
-        transition: all 0.3s;
-    }
+.budget-card {
+  background: var(--budget-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--budget-border);
+  border-radius: var(--r-xl, 20px);
+  padding: 1.4rem;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.25s, transform 0.25s;
+  box-shadow: var(--budget-shadow);
+}
+.budget-card:hover {
+  box-shadow: var(--budget-shadow-hover);
+  transform: translateY(-3px);
+}
 
-    .budget-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-    }
+.budget-card::before {
+  content: '';
+  position: absolute;
+  top: -20px; right: -20px;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: var(--dash-accent, #2563eb);
+  opacity: 0.1;
+  transition: opacity 0.3s;
+}
+.budget-card:hover::before { opacity: 0.15; }
+[data-theme="dark"] .budget-card::before { opacity: 0.15; }
 
-    .budget-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 6px;
-        background: linear-gradient(90deg, #667eea, #764ba2);
-        border-radius: 20px 20px 0 0;
-    }
+.budget-card-accent {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 4px;
+  border-radius: var(--r-xl) 0 0 var(--r-xl);
+  background: var(--dash-green, #059669);
+  box-shadow: 0 0 8px var(--dash-green);
+}
+.budget-card.status-warning .budget-card-accent {
+  background: var(--dash-amber, #d97706);
+  box-shadow: 0 0 8px var(--dash-amber);
+}
+.budget-card.status-danger  .budget-card-accent {
+  background: var(--dash-red, #dc2626);
+  box-shadow: 0 0 8px var(--dash-red);
+}
 
-    .budget-card.success::before {
-        background: linear-gradient(90deg, #10b981, #059669);
-    }
+.budget-name {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  padding-left: 0.75rem;
+  color: var(--text-primary);
+}
 
-    .budget-card.warning::before {
-        background: linear-gradient(90deg, #f59e0b, #d97706);
-    }
+.budget-amount-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.75rem;
+  padding-left: 0.75rem;
+}
 
-    .budget-card.danger::before {
-        background: linear-gradient(90deg, #ef4444, #dc2626);
-    }
+.budget-spent {
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.text-green { color: var(--dash-green, #059669); }
+.text-amber { color: var(--dash-amber, #d97706); }
+.text-red { color: var(--dash-red, #dc2626); }
+[data-theme="dark"] .text-green { color: #34d399; }
+[data-theme="dark"] .text-amber { color: #fbbf24; }
+[data-theme="dark"] .text-red { color: #f87171; }
 
-    .budget-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 2rem;
-    }
+.budget-limit {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
 
-    .budget-info h3 {
-        font-size: 1.5rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-        color: var(--text-primary, #f1f5f9);
-    }
+/* ── PROGRESS BAR ── */
+.progress {
+  height: 8px;
+  background: var(--budget-border);
+  border-radius: var(--r-full, 9999px);
+  overflow: hidden;
+  margin-bottom: 0.3rem;
+}
+.progress-bar {
+  height: 100%;
+  border-radius: var(--r-full, 9999px);
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.progress-bar.success {
+  background: linear-gradient(90deg, var(--dash-green, #059669), #34d399);
+}
+.progress-bar.warning {
+  background: linear-gradient(90deg, var(--dash-amber, #d97706), #fbbf24);
+}
+.progress-bar.danger {
+  background: linear-gradient(90deg, var(--dash-red, #dc2626), #f87171);
+}
+[data-theme="dark"] .progress-bar.success {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+[data-theme="dark"] .progress-bar.warning {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+[data-theme="dark"] .progress-bar.danger {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
 
-    .budget-period {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        background: rgba(102, 126, 234, 0.2);
-        color: #818cf8;
-        border-radius: 8px;
-        font-size: 0.875rem;
-        font-weight: 600;
-    }
+/* ── STATUS INDICATORS ── */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--r-full, 9999px);
+  margin-left: 0.25rem;
+}
+.status-chip.exceeded {
+  background: var(--budget-red-light);
+  color: var(--dash-red, #dc2626);
+}
+.status-chip.alert {
+  background: var(--budget-amber-light);
+  color: var(--dash-amber, #d97706);
+}
+[data-theme="dark"] .status-chip.exceeded { color: #f87171; }
+[data-theme="dark"] .status-chip.alert { color: #fbbf24; }
 
-    .budget-status {
-        padding: 0.5rem 1rem;
-        border-radius: 8px;
-        font-size: 0.875rem;
-        font-weight: 600;
-    }
+/* ── BUDGET META PILLS ── */
+.budget-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
 
-    .budget-status.active {
-        background: rgba(16, 185, 129, 0.2);
-        color: #34d399;
-    }
+.budget-meta-pill {
+  font-size: 0.68rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  color: var(--text-secondary);
+  background: var(--budget-input-bg);
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--r-full, 9999px);
+  border: 1px solid var(--budget-border);
+  transition: all 0.2s;
+}
+.budget-meta-pill:hover {
+  background: var(--budget-accent-light);
+  border-color: rgba(37,99,235,0.3);
+  color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .budget-meta-pill:hover {
+  color: #60a5fa;
+}
+.budget-meta-pill.text-amber {
+  color: var(--dash-amber, #d97706);
+  background: var(--budget-amber-light);
+  border-color: rgba(215,119,6,0.2);
+}
+[data-theme="dark"] .budget-meta-pill.text-amber {
+  color: #fbbf24;
+}
 
-    .budget-status.inactive {
-        background: rgba(148, 163, 184, 0.2);
-        color: #94a3b8;
-    }
+/* ── BUDGET ACTIONS ── */
+.budget-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  align-items: center;
+}
 
-    .budget-amounts {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 1rem;
-        margin-bottom: 2rem;
-    }
+/* ── OVERVIEW CARD ── */
+.overview-card {
+  background: var(--budget-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--budget-border);
+  border-radius: var(--r-xl, 20px);
+  padding: 1.4rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--budget-shadow);
+  transition: box-shadow 0.25s;
+}
+.overview-card:hover {
+  box-shadow: var(--budget-shadow-hover);
+}
+.overview-card-title {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.overview-card-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  background: linear-gradient(to bottom, var(--dash-accent, #2563eb), var(--dash-accent-2, #7c3aed));
+  border-radius: 2px;
+}
 
-    .amount-box {
-        text-align: center;
-        padding: 1rem;
-        background: rgba(255, 255, 255, 0.02);
-        border-radius: 12px;
-    }
+/* ── EMPTY STATE ── */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+}
+.empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.5;
+}
+.empty-title {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.3rem;
+}
+.empty-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  max-width: 280px;
+  margin: 0 auto 1rem;
+}
 
-    .amount-label {
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--text-secondary, #94a3b8);
-        margin-bottom: 0.5rem;
-        font-weight: 600;
-    }
+/* ── BUTTONS ── */
+.btn {
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--r-md, 12px);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-primary {
+  background: var(--dash-accent, #2563eb);
+  color: white;
+  border-color: var(--dash-accent, #2563eb);
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .btn-primary:hover {
+  background: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59,130,246,0.5);
+}
+.btn-secondary {
+  background: var(--budget-bg);
+  border: 1px solid var(--budget-border);
+  color: var(--text-secondary);
+}
+.btn-secondary:hover {
+  border-color: var(--dash-accent, #2563eb);
+  color: var(--dash-accent, #2563eb);
+  background: var(--budget-accent-light);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-secondary:hover {
+  color: #60a5fa;
+  border-color: #60a5fa;
+}
+.btn-sm {
+  padding: 0.4rem 1rem;
+  font-size: 0.78rem;
+}
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md, 12px);
+  background: transparent;
+  border: 1px solid var(--budget-border);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+.btn-icon:hover {
+  background: var(--budget-accent-light);
+  border-color: var(--dash-accent, #2563eb);
+  color: var(--dash-accent, #2563eb);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-icon:hover {
+  color: #60a5fa;
+  border-color: #60a5fa;
+}
 
-    .amount-value {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: var(--text-primary, #f1f5f9);
-    }
+.kbd-hint {
+  display: inline-block;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: rgba(255,255,255,0.18);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+[data-theme="dark"] .kbd-hint {
+  background: rgba(255,255,255,0.1);
+}
+.btn-primary .kbd-hint {
+  background: rgba(255,255,255,0.2);
+}
 
-    .amount-value.spent {
-        color: #f87171;
-    }
+/* ── MODAL STYLES ── */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+.modal.show {
+    opacity: 1;
+}
+.modal.show .modal-content {
+    transform: translateY(0);
+}
+.modal-content {
+    background: var(--budget-bg);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    margin: 5% auto;
+    padding: 0;
+    border: 1px solid var(--budget-border);
+    border-radius: var(--r-xl, 20px);
+    width: 90%;
+    max-width: 500px;
+    box-shadow: var(--budget-shadow-hover);
+    transform: translateY(-20px);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--budget-border);
+}
+.modal-title {
+    font-family: var(--ff-display, 'Syne', sans-serif);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.modal-title::before {
+    content: '';
+    display: inline-block;
+    width: 4px;
+    height: 16px;
+    background: linear-gradient(to bottom, var(--dash-accent, #2563eb), var(--dash-accent-2, #7c3aed));
+    border-radius: 2px;
+}
+.modal-close {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: var(--text-secondary);
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--r-full, 9999px);
+    transition: all 0.2s;
+}
+.modal-close:hover {
+    background: var(--budget-accent-light);
+    color: var(--dash-accent, #2563eb);
+}
+.modal-body {
+    padding: 1.5rem;
+}
+.modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--budget-border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
 
-    .amount-value.remaining {
-        color: #34d399;
-    }
+/* ── FORM STYLES FOR MODALS ── */
+.form-group {
+    margin-bottom: 1rem;
+}
+.form-label {
+    font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    display: block;
+    margin-bottom: 0.4rem;
+}
+.form-control {
+    width: 100%;
+    background: var(--budget-input-bg);
+    border: 1px solid var(--budget-border);
+    border-radius: var(--r-md, 12px);
+    padding: 0.6rem 1rem;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+    transition: all 0.2s;
+}
+.form-control:focus {
+    outline: none;
+    border-color: var(--dash-accent, #2563eb);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+[data-theme="dark"] .form-control:focus {
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.2);
+    border-color: #60a5fa;
+}
+select.form-control {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 1rem;
+    padding-right: 2.5rem;
+}
+[data-theme="dark"] select.form-control {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+.mb-3 {
+    margin-bottom: 1rem;
+}
 
-    .budget-progress {
-        margin-bottom: 2rem;
-    }
-
-    .progress-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1rem;
-    }
-
-    .progress-label {
-        font-weight: 600;
-        color: var(--text-secondary, #94a3b8);
-    }
-
-    .progress-percentage {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: var(--text-primary, #f1f5f9);
-    }
-
-    .progress-bar-container {
-        position: relative;
-        height: 16px;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 10px;
-        overflow: hidden;
-    }
-
-    .progress-bar {
-        height: 100%;
-        background: linear-gradient(90deg, #10b981, #059669);
-        border-radius: 10px;
-        transition: width 1s ease;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .progress-bar.warning {
-        background: linear-gradient(90deg, #f59e0b, #d97706);
-    }
-
-    .progress-bar.danger {
-        background: linear-gradient(90deg, #ef4444, #dc2626);
-    }
-
-    .progress-bar::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        bottom: 0;
-        right: 0;
-        background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(255, 255, 255, 0.3),
-            transparent
-        );
-        animation: shimmer 2s infinite;
-    }
-
-    @keyframes shimmer {
-        0% { transform: translateX(-100%); }
-        100% { transform: translateX(100%); }
-    }
-
-    .budget-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        margin-bottom: 1.5rem;
-    }
-
-    .budget-tag {
-        padding: 0.5rem 1rem;
-        background: rgba(102, 126, 234, 0.2);
-        color: #818cf8;
-        border-radius: 8px;
-        font-size: 0.875rem;
-        font-weight: 500;
-    }
-
-    .budget-alert {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 1rem;
-        background: rgba(239, 68, 68, 0.1);
-        border: 2px solid rgba(239, 68, 68, 0.3);
-        border-radius: 12px;
-        margin-bottom: 1.5rem;
-        color: #f87171;
-        font-weight: 600;
-        font-size: 0.875rem;
-    }
-
-    .budget-alert.warning {
-        background: rgba(245, 158, 11, 0.1);
-        border-color: rgba(245, 158, 11, 0.3);
-        color: #fbbf24;
-    }
-
-    .budget-actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1rem;
-    }
-
-    .budget-btn {
-        padding: 0.75rem 1.5rem;
-        border: none;
-        border-radius: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s;
-        text-decoration: none;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-    }
-
-    .budget-btn.edit {
-        background: rgba(102, 126, 234, 0.2);
-        color: #818cf8;
-    }
-
-    .budget-btn.edit:hover {
-        background: rgba(102, 126, 234, 0.3);
-        transform: translateY(-2px);
-    }
-
-    .budget-btn.delete {
-        background: rgba(239, 68, 68, 0.2);
-        color: #f87171;
-    }
-
-    .budget-btn.delete:hover {
-        background: rgba(239, 68, 68, 0.3);
-        transform: translateY(-2px);
-    }
-
-    .empty-state {
-        grid-column: 1 / -1;
-        text-align: center;
-        padding: 4rem 2rem;
-        background: var(--card-bg, #1e293b);
-        border-radius: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .empty-icon {
-        font-size: 5rem;
-        margin-bottom: 1.5rem;
-        opacity: 0.3;
-    }
-
-    .empty-title {
-        font-size: 1.75rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-        color: var(--text-primary, #f1f5f9);
-    }
-
-    .empty-text {
-        color: var(--text-secondary, #94a3b8);
-        margin-bottom: 2rem;
-        font-size: 1.125rem;
-    }
-
-    @media (max-width: 768px) {
-        .budgets-container {
-            padding: 1rem;
-        }
-
-        .budgets-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .budget-amounts {
-            grid-template-columns: 1fr;
-        }
-
-        .budget-actions {
-            grid-template-columns: 1fr;
-        }
-    }
+/* ── UTILITIES ── */
+.fz-xs { font-size: 0.7rem; }
+.fw-600 { font-weight: 600; }
+.text-3 { color: var(--text-secondary); }
+.mt-2 { margin-top: 0.5rem; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="budgets-container">
-    <!-- Header -->
-    <div class="budgets-header">
-        <h1>💰 Budget Management</h1>
-        <div style="display: flex; gap: 1rem;">
-            <a href="{% url 'expenses:dashboard' %}" class="btn-secondary">
-                <i class="fas fa-arrow-left"></i> Dashboard
-            </a>
-            <a href="{% url 'expenses:budget_create' %}" class="btn-primary">
-                <i class="fas fa-plus"></i> Create Budget
-            </a>
-        </div>
+<div class="page-header">
+  <div class="page-header-text">
+    <h1>💼 Budgets</h1>
+    <p class="page-subtitle">{{ budgets|length }} active budget{{ budgets|length|pluralize }}</p>
+  </div>
+  <div class="page-header-actions">
+    <button class="btn btn-primary btn-sm" onclick="openModal('budget-modal')">
+      <i class="bi bi-plus-lg me-1"></i>New Budget
+      <span class="kbd-hint">N B</span>
+    </button>
+  </div>
+</div>
+
+{% if budgets %}
+<div class="budgets-grid">
+  {% for item in budgets %}
+  {% with pct=item.percentage status=item.status %}
+  <div class="budget-card status-{{ status }}">
+    <div class="budget-card-accent"></div>
+    <div class="budget-name">{{ item.budget.name }}</div>
+
+    <div class="budget-amount-row">
+      <span class="budget-spent {% if pct >= 100 %}text-red{% elif pct >= item.budget.alert_threshold %}text-amber{% else %}text-green{% endif %}">
+        {{ item.spent|floatformat:0 }}
+      </span>
+      <span class="budget-limit">/ {{ item.budget.amount|floatformat:0 }} UGX</span>
     </div>
 
-    <!-- Budgets Grid -->
-    <div class="budgets-grid">
-        {% if budget_data %}
-            {% for item in budget_data %}
-            <div class="budget-card {{ item.status }}">
-                <div class="budget-header">
-                    <div class="budget-info">
-                        <h3>{{ item.budget.name }}</h3>
-                        <span class="budget-period">
-                            <i class="fas fa-calendar"></i>
-                            {{ item.budget.get_period_display }}
-                        </span>
-                    </div>
-                    <span class="budget-status {% if item.budget.is_active %}active{% else %}inactive{% endif %}">
-                        {% if item.budget.is_active %}
-                            <i class="fas fa-check-circle"></i> Active
-                        {% else %}
-                            <i class="fas fa-pause-circle"></i> Inactive
-                        {% endif %}
-                    </span>
-                </div>
+    <div class="progress">
+      <div class="progress-bar
+        {% if pct >= 100 %}danger
+        {% elif pct >= item.budget.alert_threshold %}warning
+        {% else %}success{% endif %}"
+        style="width:min({{ pct|floatformat:0 }}%,100%)">
+      </div>
+    </div>
 
-                <!-- Alert if over threshold -->
-                {% if item.is_over %}
-                <div class="budget-alert {% if item.percentage >= 100 %}danger{% else %}warning{% endif %}">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    {% if item.percentage >= 100 %}
-                        Budget exceeded! You're over by ${{ item.spending|add:"-"|add:item.budget.amount|floatformat:2 }}
-                    {% else %}
-                        Alert threshold reached ({{ item.budget.alert_threshold }}%)
-                    {% endif %}
-                </div>
-                {% endif %}
-
-                <!-- Amounts -->
-                <div class="budget-amounts">
-                    <div class="amount-box">
-                        <div class="amount-label">Budget</div>
-                        <div class="amount-value">${{ item.budget.amount|floatformat:2 }}</div>
-                    </div>
-                    <div class="amount-box">
-                        <div class="amount-label">Spent</div>
-                        <div class="amount-value spent">${{ item.spending|floatformat:2 }}</div>
-                    </div>
-                    <div class="amount-box">
-                        <div class="amount-label">Remaining</div>
-                        <div class="amount-value remaining">
-                            {% if item.remaining < 0 %}
-                                -${{ item.remaining|abs|floatformat:2 }}
-                            {% else %}
-                                ${{ item.remaining|floatformat:2 }}
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Progress Bar -->
-                <div class="budget-progress">
-                    <div class="progress-header">
-                        <span class="progress-label">Progress</span>
-                        <span class="progress-percentage">{{ item.percentage }}%</span>
-                    </div>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar {{ item.status }}"
-                             style="width: {% if item.percentage > 100 %}100{% else %}{{ item.percentage }}{% endif %}%">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Tags -->
-                {% if item.budget.tags.all %}
-                <div class="budget-tags">
-                    <span style="color: var(--text-secondary); font-size: 0.875rem; font-weight: 600;">
-                        <i class="fas fa-filter"></i> Filtered by:
-                    </span>
-                    {% for tag in item.budget.tags.all %}
-                    <span class="budget-tag">{{ tag.name }}</span>
-                    {% endfor %}
-                </div>
-                {% endif %}
-
-                <!-- Actions -->
-                <div class="budget-actions">
-                    <a href="{% url 'expenses:budget_edit' item.budget.id %}" class="budget-btn edit">
-                        <i class="fas fa-edit"></i> Edit
-                    </a>
-                    <button onclick="deleteBudget('{{ item.budget.id }}', '{{ item.budget.name }}')"
-                            class="budget-btn delete">
-                        <i class="fas fa-trash"></i> Delete
-                    </button>
-                </div>
-            </div>
-            {% endfor %}
-        {% else %}
-        <div class="empty-state">
-            <div class="empty-icon">💰</div>
-            <h2 class="empty-title">No Budgets Yet</h2>
-            <p class="empty-text">
-                Create your first budget to track spending limits and receive smart alerts.
-            </p>
-            <a href="{% url 'expenses:budget_create' %}" class="btn-primary" style="display: inline-flex;">
-                <i class="fas fa-plus"></i> Create Your First Budget
-            </a>
-        </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem">
+      <span class="fz-xs fw-600 {% if pct >= 100 %}text-red{% elif pct >= item.budget.alert_threshold %}text-amber{% else %}text-green{% endif %}">
+        {{ pct|floatformat:1 }}% used
+        {% if pct >= 100 %}
+        <span class="status-chip exceeded">EXCEEDED</span>
+        {% elif pct >= item.budget.alert_threshold %}
+        <span class="status-chip alert">ALERT</span>
         {% endif %}
+      </span>
+      <span class="fz-xs text-3">{{ item.remaining|floatformat:0 }} left</span>
+    </div>
+
+    <div class="budget-meta">
+      <span class="budget-meta-pill">{{ item.budget.get_period_display }}</span>
+      {% if item.budget.tags.exists %}
+      <span class="budget-meta-pill">🏷️ {{ item.budget.tags.count }} tag{{ item.budget.tags.count|pluralize }}</span>
+      {% endif %}
+      <span class="budget-meta-pill {% if pct >= item.budget.alert_threshold %}text-amber{% endif %}">
+        ⚠️ Alert at {{ item.budget.alert_threshold }}%
+      </span>
+    </div>
+
+    <div class="budget-actions">
+      <a href="{% url 'expenses:budget_edit' item.budget.pk %}" class="btn btn-secondary btn-sm" style="flex:1">
+        <i class="bi bi-pencil me-1"></i>Edit
+      </a>
+      <a href="{% url 'expenses:expense_list' %}?period={{ item.budget.period }}" class="btn btn-secondary btn-sm" style="flex:1">
+        <i class="bi bi-list-ul me-1"></i>Expenses
+      </a>
+      <a href="{% url 'expenses:budget_delete' item.budget.pk %}" class="btn-icon" onclick="return confirm('Delete this budget?')" title="Delete">
+        <i class="bi bi-trash"></i>
+      </a>
+    </div>
+  </div>
+  {% endwith %}
+  {% endfor %}
+</div>
+
+<!-- Overview chart -->
+<div class="overview-card">
+  <div class="overview-card-title">📊 Budget Overview</div>
+  <div style="position:relative;height:300px"><canvas id="budget-chart"></canvas></div>
+</div>
+
+{% else %}
+<div class="card">
+  <div class="empty-state">
+    <div class="empty-icon">💼</div>
+    <div class="empty-title">No budgets yet</div>
+    <div class="empty-desc">Create budgets to set spending limits and get alerts when you're getting close.</div>
+    <button class="btn btn-primary mt-2" onclick="openModal('budget-modal')">
+      <i class="bi bi-plus-lg me-1"></i>Create First Budget
+    </button>
+  </div>
+</div>
+{% endif %}
+
+<!-- ─── BUDGET MODAL ───────────────────────────────────── -->
+<div id="budget-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <div class="modal-title">💼 Create New Budget</div>
+            <button class="modal-close" onclick="closeModal('budget-modal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form method="post" action="{% url 'expenses:budget_create' %}">
+                {% csrf_token %}
+                <div class="form-group mb-3">
+                    <label class="form-label">Budget Name</label>
+                    <input type="text" name="name" class="form-control" placeholder="e.g. Monthly Groceries" required>
+                </div>
+                <div class="form-group mb-3">
+                    <label class="form-label">Amount (UGX)</label>
+                    <input type="number" name="amount" class="form-control" placeholder="0.00" step="0.01" min="1" required>
+                </div>
+                <div class="form-group mb-3">
+                    <label class="form-label">Period</label>
+                    <select name="period" class="form-control" required>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly" selected>Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                    </select>
+                </div>
+                <div class="form-group mb-3">
+                    <label class="form-label">Alert Threshold (%)</label>
+                    <input type="number" name="alert_threshold" class="form-control" value="80" min="1" max="100" step="1">
+                </div>
+                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('budget-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Budget</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// Delete Budget
-function deleteBudget(id, name) {
-    if (confirm(`Are you sure you want to delete the budget "${name}"?\n\nThis action cannot be undone.`)) {
-        fetch(`/expenses/budgets/${id}/delete/`, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-        .then(response => {
-            if (response.ok) {
-                // Fade out the card
-                const card = event.target.closest('.budget-card');
-                card.style.transition = 'all 0.3s ease';
-                card.style.opacity = '0';
-                card.style.transform = 'scale(0.9)';
+// Modal functions
+window.openModal = function(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'block';
+        // Trigger reflow for animation
+        modal.offsetHeight;
+        modal.classList.add('show');
 
-                setTimeout(() => {
-                    location.reload();
-                }, 300);
-            } else {
-                alert('Error deleting budget. Please try again.');
+        // Close on escape key
+        document.addEventListener('keydown', function escHandler(e) {
+            if (e.key === 'Escape') {
+                closeModal(modalId);
+                document.removeEventListener('keydown', escHandler);
             }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error deleting budget. Please try again.');
+        });
+
+        // Close when clicking outside
+        modal.addEventListener('click', function clickHandler(e) {
+            if (e.target === modal) {
+                closeModal(modalId);
+                modal.removeEventListener('click', clickHandler);
+            }
         });
     }
+};
+
+window.closeModal = function(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('show');
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 200); // Match transition duration
+    }
+};
+
+// Chart helper functions for dark mode
+function isDark() {
+  return document.documentElement.getAttribute('data-theme') === 'dark';
+}
+function gridColor() {
+  return isDark() ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+}
+function tickColor() {
+  return isDark() ? '#9ca3af' : '#6b7280';
+}
+function cardBg() {
+  return isDark() ? '#1e2130' : '#ffffff';
 }
 
-// Animate progress bars on load
-document.addEventListener('DOMContentLoaded', function() {
-    const progressBars = document.querySelectorAll('.progress-bar');
+{% if budgets %}
+// Budget chart data
+const bLabels = [{% for item in budgets %}"{{ item.budget.name }}",{% endfor %}];
+const bSpent  = [{% for item in budgets %}{{ item.spent|floatformat:2 }},{% endfor %}];
+const bLimit  = [{% for item in budgets %}{{ item.budget.amount|floatformat:2 }},{% endfor %}];
+const bColors = [{% for item in budgets %}"{% if item.percentage >= 100 %}#ef4444{% elif item.percentage >= item.budget.alert_threshold %}#f59e0b{% else %}#22c55e{% endif %}",{% endfor %}];
 
-    progressBars.forEach((bar, index) => {
-        const targetWidth = bar.style.width;
-        bar.style.width = '0%';
-
-        setTimeout(() => {
-            bar.style.width = targetWidth;
-        }, 100 + (index * 100));
-    });
+// Create chart
+const ctx = document.getElementById('budget-chart').getContext('2d');
+const budgetChart = new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: bLabels,
+    datasets: [
+      {
+        label: 'Spent',
+        data: bSpent,
+        backgroundColor: bColors.map(c => c + 'cc'),
+        borderColor: bColors,
+        borderWidth: 1.5,
+        borderRadius: 6,
+        borderSkipped: false
+      },
+      {
+        label: 'Budget Limit',
+        data: bLimit,
+        backgroundColor: isDark() ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)',
+        borderRadius: 6,
+        borderSkipped: false
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 400, easing: 'easeOutQuart' },
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: {
+          boxWidth: 12,
+          font: { family: "'JetBrains Mono', monospace", size: 11 },
+          color: tickColor()
+        }
+      },
+      tooltip: {
+        backgroundColor: cardBg(),
+        borderColor: gridColor(),
+        borderWidth: 1,
+        titleColor: isDark() ? '#f3f4f6' : '#111827',
+        bodyColor: isDark() ? '#9ca3af' : '#6b7280',
+        callbacks: {
+          label: v => ` ${v.dataset.label}: ${Number(v.raw).toLocaleString()} UGX`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: {
+          color: tickColor(),
+          font: { family: "'JetBrains Mono', monospace", size: 10 }
+        }
+      },
+      y: {
+        grid: { color: gridColor() },
+        ticks: {
+          color: tickColor(),
+          font: { family: "'JetBrains Mono', monospace", size: 10 },
+          callback: v => v >= 1000 ? Math.round(v/1000) + 'k' : v
+        }
+      }
+    }
+  }
 });
 
-// Real-time budget updates
-setInterval(function() {
-    fetch('/expenses/api/budget-status/')
-        .then(response => response.json())
-        .then(data => {
-            data.budgets.forEach(budget => {
-                // Update DOM elements if needed
-                // This is a placeholder for real-time updates
-            });
-        })
-        .catch(error => console.error('Error fetching budget status:', error));
-}, 60000); // Update every minute
+// Update chart on theme change
+document.addEventListener('themechange', () => {
+  budgetChart.data.datasets[1].backgroundColor = isDark() ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
+
+  // Update scale colors
+  if (budgetChart.options.scales.x.ticks) {
+    budgetChart.options.scales.x.ticks.color = tickColor();
+  }
+  if (budgetChart.options.scales.y.ticks) {
+    budgetChart.options.scales.y.ticks.color = tickColor();
+    budgetChart.options.scales.y.grid.color = gridColor();
+  }
+
+  // Update legend colors
+  if (budgetChart.options.plugins.legend.labels) {
+    budgetChart.options.plugins.legend.labels.color = tickColor();
+  }
+
+  budgetChart.update('none');
+});
+{% endif %}
+
+// Keyboard shortcut: Ctrl+B to open new budget modal
+document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'b') {
+        e.preventDefault();
+        openModal('budget-modal');
+    }
+});
 </script>
 {% endblock %}

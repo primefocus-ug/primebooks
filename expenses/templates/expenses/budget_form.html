@@ -1,489 +1,596 @@
-{% extends "base.html" %}
-{% load static %}
-
-{% block title %}{% if budget %}Edit{% else %}Create{% endif %} Budget{% endblock %}
+{% extends "expenses/base.html" %}
+{% block title %}{% if budget %}Edit Budget{% else %}New Budget{% endif %}{% endblock %}
 
 {% block extra_css %}
 <style>
-    .budget-form-container {
-        padding: 2rem;
-        max-width: 800px;
-        margin: 0 auto;
-    }
+/* ── DARK THEME VARIABLES ── */
+:root {
+  --form-bg: rgba(255,255,255,0.85);
+  --form-border: rgba(0,0,0,0.07);
+  --form-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+  --form-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.10);
+  --form-accent-light: rgba(37,99,235,0.1);
+  --form-input-bg: rgba(0,0,0,0.02);
+  --form-green-light: rgba(5,150,105,0.1);
+  --form-amber-light: rgba(215,119,6,0.1);
+  --form-red-light: rgba(220,38,38,0.1);
+}
 
-    .form-header {
-        text-align: center;
-        margin-bottom: 3rem;
-    }
+[data-theme="dark"] {
+  --form-bg: rgba(30,35,48,0.90);
+  --form-border: rgba(255,255,255,0.07);
+  --form-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.4);
+  --form-shadow-hover: 0 4px 12px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.5);
+  --form-accent-light: rgba(37,99,235,0.2);
+  --form-input-bg: rgba(255,255,255,0.05);
+  --form-green-light: rgba(16,185,129,0.15);
+  --form-amber-light: rgba(245,158,11,0.15);
+  --form-red-light: rgba(239,68,68,0.15);
+}
 
-    .form-header h1 {
-        font-size: 2.5rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
+.form-page {
+  max-width: 620px;
+  margin: 0 auto;
+}
 
-    .form-header p {
-        color: var(--text-secondary, #94a3b8);
-        font-size: 1.125rem;
-    }
+/* ── PAGE HEADER (matching dashboard) ── */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--form-border);
+}
+.page-header-text h1 {
+  font-family: var(--ff-display, 'Syne', sans-serif);
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 0.3rem;
+}
+.page-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
 
-    .form-card {
-        background: var(--card-bg, #1e293b);
-        border-radius: 20px;
-        padding: 2.5rem;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    }
+/* ── FORM PANELS (matching dashboard cards) ── */
+.card {
+  background: var(--form-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--form-border);
+  border-radius: var(--r-xl, 20px);
+  box-shadow: var(--form-shadow);
+  overflow: hidden;
+  transition: box-shadow 0.25s;
+  margin-bottom: 1.25rem;
+}
+.card:hover {
+  box-shadow: var(--form-shadow-hover);
+}
 
-    .form-group {
-        margin-bottom: 2rem;
-    }
+.card-body {
+  padding: 1.4rem;
+}
 
-    .form-label {
-        display: block;
-        margin-bottom: 0.75rem;
-        font-weight: 600;
-        color: var(--text-primary, #f1f5f9);
-        font-size: 0.875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
+/* ── FORM ELEMENTS ── */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+.form-group:last-child { margin-bottom: 0; }
 
-    .form-label.required::after {
-        content: " *";
-        color: #f87171;
-    }
+.form-label {
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.req {
+  color: var(--dash-red, #dc2626);
+  font-size: 0.8rem;
+  margin-left: 2px;
+}
+[data-theme="dark"] .req {
+  color: #f87171;
+}
 
-    .form-input {
-        width: 100%;
-        padding: 1rem 1.25rem;
-        background: var(--input-bg, #0f172a);
-        border: 2px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        color: var(--text-primary, #f1f5f9);
-        font-size: 1rem;
-        transition: all 0.3s;
-        font-family: 'Inter', sans-serif;
-    }
+.form-control {
+  width: 100%;
+  background: var(--form-input-bg);
+  border: 1px solid var(--form-border);
+  border-radius: var(--r-md, 12px);
+  padding: 0.7rem 1rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  transition: all 0.2s;
+}
+.form-control:focus {
+  outline: none;
+  border-color: var(--dash-accent, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+  background: var(--form-bg);
+}
+[data-theme="dark"] .form-control:focus {
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.2);
+  border-color: #60a5fa;
+}
+.form-control::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.5;
+  font-size: 0.8rem;
+}
 
-    .form-input:focus {
-        outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
-        background: var(--input-bg, #1e293b);
-    }
+select.form-control {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 1rem;
+  padding-right: 2.5rem;
+}
+[data-theme="dark"] select.form-control {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
 
-    .period-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        gap: 1rem;
-    }
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 500px) {
+  .form-row { grid-template-columns: 1fr; }
+}
 
-    .period-option {
-        position: relative;
-    }
+.input-group {
+  display: flex;
+  align-items: center;
+  background: var(--form-input-bg);
+  border: 1px solid var(--form-border);
+  border-radius: var(--r-md, 12px);
+  overflow: hidden;
+  transition: all 0.2s;
+}
+.input-group:focus-within {
+  border-color: var(--dash-accent, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+.input-prefix {
+  padding: 0.7rem 0 0.7rem 1rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+}
+.input-group .form-control {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding-left: 0.5rem;
+}
+.input-group .form-control:focus {
+  box-shadow: none;
+}
 
-    .period-option input {
-        position: absolute;
-        opacity: 0;
-    }
+/* ── THRESHOLD PREVIEW ── */
+.threshold-preview {
+  background: var(--form-input-bg);
+  border: 1px solid var(--form-border);
+  border-radius: var(--r-lg, 16px);
+  padding: 1rem 1.2rem;
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.threshold-visual {
+  flex: 1;
+  height: 10px;
+  background: var(--form-border);
+  border-radius: var(--r-full, 9999px);
+  overflow: hidden;
+  position: relative;
+  min-width: 150px;
+}
+.threshold-bar {
+  height: 100%;
+  border-radius: var(--r-full, 9999px);
+  background: linear-gradient(90deg, var(--dash-green, #059669), var(--dash-amber, #d97706));
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.threshold-marker {
+  position: absolute;
+  top: -2px; bottom: -2px;
+  width: 3px;
+  background: var(--dash-red, #dc2626);
+  border-radius: 1.5px;
+  box-shadow: 0 0 8px var(--dash-red);
+  transition: left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+[data-theme="dark"] .threshold-marker {
+  background: #f87171;
+  box-shadow: 0 0 8px #f87171;
+}
 
-    .period-label {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 1.5rem 1rem;
-        background: var(--input-bg, #0f172a);
-        border: 2px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        cursor: pointer;
-        transition: all 0.3s;
-        text-align: center;
-    }
+/* ── RANGE SLIDER ── */
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: var(--form-border);
+  border-radius: var(--r-full, 9999px);
+  outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dash-accent, #2563eb);
+  cursor: pointer;
+  border: 2px solid var(--form-bg);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: all 0.2s;
+}
+input[type=range]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  background: #1d4ed8;
+}
+[data-theme="dark"] input[type=range]::-webkit-slider-thumb {
+  background: #3b82f6;
+}
+input[type=range]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dash-accent, #2563eb);
+  cursor: pointer;
+  border: 2px solid var(--form-bg);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: all 0.2s;
+}
 
-    .period-label:hover {
-        background: rgba(102, 126, 234, 0.1);
-        border-color: #667eea;
-    }
+/* ── OPTION CARD (checkbox) ── */
+.option-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+  background: var(--form-input-bg);
+  border: 1px solid var(--form-border);
+  border-radius: var(--r-lg, 16px);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.option-card:hover {
+  background: var(--form-accent-light);
+  border-color: rgba(37,99,235,0.3);
+}
+.option-card:has(input:checked) {
+  background: var(--form-accent-light);
+  border-color: var(--dash-accent, #2563eb);
+}
+[data-theme="dark"] .option-card:has(input:checked) {
+  border-color: #60a5fa;
+}
+.option-card input {
+  accent-color: var(--dash-accent, #2563eb);
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+.option-card .fw-600 {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+.option-card .fz-xs {
+  color: var(--text-secondary);
+}
 
-    .period-option input:checked + .period-label {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-color: #667eea;
-        color: white;
-    }
+/* ── FORM HINT ── */
+.form-hint {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  margin-top: 0.4rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
 
-    .period-icon {
-        font-size: 2rem;
-    }
+/* ── ALERT ── */
+.alert {
+  background: var(--form-red-light);
+  border: 1px solid rgba(220,38,38,0.2);
+  border-radius: var(--r-lg, 16px);
+  padding: 1rem 1.4rem;
+  color: var(--dash-red, #dc2626);
+  font-size: 0.85rem;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+}
+[data-theme="dark"] .alert {
+  background: rgba(239,68,68,0.15);
+  color: #f87171;
+}
 
-    .period-name {
-        font-weight: 600;
-        font-size: 0.875rem;
-    }
+/* ── BUTTONS ── */
+.btn {
+  padding: 0.7rem 1.4rem;
+  border-radius: var(--r-md, 12px);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-primary {
+  background: var(--dash-accent, #2563eb);
+  color: white;
+  border-color: var(--dash-accent, #2563eb);
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+}
+[data-theme="dark"] .btn-primary:hover {
+  background: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59,130,246,0.5);
+}
+.btn-secondary {
+  background: var(--form-bg);
+  border: 1px solid var(--form-border);
+  color: var(--text-secondary);
+}
+.btn-secondary:hover {
+  border-color: var(--dash-accent, #2563eb);
+  color: var(--dash-accent, #2563eb);
+  background: var(--form-accent-light);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-secondary:hover {
+  color: #60a5fa;
+  border-color: #60a5fa;
+}
+.btn-danger {
+  background: var(--form-red-light);
+  border: 1px solid rgba(220,38,38,0.2);
+  color: var(--dash-red, #dc2626);
+}
+.btn-danger:hover {
+  background: rgba(220,38,38,0.15);
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .btn-danger {
+  background: rgba(239,68,68,0.15);
+  color: #f87171;
+}
+.btn-danger:hover {
+  background: rgba(239,68,68,0.2);
+}
 
-    .slider-container {
-        padding: 1rem 0;
-    }
+.kbd-hint {
+  display: inline-block;
+  font-family: var(--ff-mono, 'JetBrains Mono', monospace);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: rgba(255,255,255,0.18);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+[data-theme="dark"] .kbd-hint {
+  background: rgba(255,255,255,0.1);
+}
+.btn-primary .kbd-hint {
+  background: rgba(255,255,255,0.2);
+}
 
-    .slider {
-        width: 100%;
-        height: 8px;
-        border-radius: 4px;
-        outline: none;
-        -webkit-appearance: none;
-        appearance: none;
-        background: linear-gradient(to right,
-            #10b981 0%,
-            #10b981 40%,
-            #f59e0b 40%,
-            #f59e0b 80%,
-            #ef4444 80%,
-            #ef4444 100%
-        );
-    }
-
-    .slider::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        appearance: none;
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        background: white;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        border: 3px solid #667eea;
-    }
-
-    .slider::-moz-range-thumb {
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        background: white;
-        cursor: pointer;
-        border: 3px solid #667eea;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    }
-
-    .slider-value {
-        text-align: center;
-        font-size: 2rem;
-        font-weight: 700;
-        color: var(--text-primary, #f1f5f9);
-        margin-top: 1rem;
-    }
-
-    .slider-labels {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 0.5rem;
-        color: var(--text-tertiary, #64748b);
-        font-size: 0.75rem;
-    }
-
-    .form-actions {
-        display: flex;
-        gap: 1rem;
-        margin-top: 2.5rem;
-    }
-
-    .btn-submit {
-        flex: 1;
-        padding: 1.25rem 2rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        font-size: 1.125rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-
-    .btn-submit:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 15px 35px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-cancel {
-        padding: 1.25rem 2rem;
-        background: rgba(239, 68, 68, 0.1);
-        color: #f87171;
-        border: 2px solid #f87171;
-        border-radius: 12px;
-        font-size: 1.125rem;
-        font-weight: 700;
-        cursor: pointer;
-        transition: all 0.3s;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .btn-cancel:hover {
-        background: rgba(239, 68, 68, 0.2);
-    }
-
-    .toggle-switch {
-        position: relative;
-        display: inline-block;
-        width: 60px;
-        height: 34px;
-    }
-
-    .toggle-switch input {
-        opacity: 0;
-        width: 0;
-        height: 0;
-    }
-
-    .toggle-slider {
-        position: absolute;
-        cursor: pointer;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: rgba(255, 255, 255, 0.1);
-        transition: 0.4s;
-        border-radius: 34px;
-    }
-
-    .toggle-slider:before {
-        position: absolute;
-        content: "";
-        height: 26px;
-        width: 26px;
-        left: 4px;
-        bottom: 4px;
-        background-color: white;
-        transition: 0.4s;
-        border-radius: 50%;
-    }
-
-    input:checked + .toggle-slider {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-
-    input:checked + .toggle-slider:before {
-        transform: translateX(26px);
-    }
-
-    .toggle-label {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        cursor: pointer;
-    }
+/* ── UTILITIES ── */
+.text-2 { color: var(--text-secondary); }
+.text-3 { color: var(--text-tertiary, #9ca3af); }
+.fw-600 { font-weight: 600; }
+.fz-sm { font-size: 0.85rem; }
+.fz-xs { font-size: 0.75rem; }
+.mt-2 { margin-top: 0.5rem; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="budget-form-container">
-    <div class="form-header">
-        <h1>{% if budget %}✏️ Edit Budget{% else %}➕ Create Budget{% endif %}</h1>
-        <p>{% if budget %}Update your budget settings{% else %}Set spending limits and smart alerts{% endif %}</p>
+<div class="form-page">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1>{% if budget %}✏️ Edit Budget{% else %}💼 New Budget{% endif %}</h1>
+      <p class="page-subtitle">Set spending limits and get alerts when you're close.</p>
+    </div>
+    <div class="page-header-actions">
+      <a href="{% url 'expenses:budget_list' %}" class="btn btn-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>Back
+      </a>
+    </div>
+  </div>
+
+  <form method="post" id="budget-form">
+    {% csrf_token %}
+
+    <div class="card">
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Budget Name <span class="req">*</span></label>
+          <input type="text" name="name"
+            value="{% if budget %}{{ budget.name }}{% endif %}"
+            class="form-control" placeholder="e.g. Monthly Groceries, Office Supplies"
+            required autofocus maxlength="100" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Amount <span class="req">*</span></label>
+            <div class="input-group">
+              <span class="input-prefix">UGX</span>
+              <input type="number" name="amount"
+                value="{% if budget %}{{ budget.amount }}{% endif %}"
+                class="form-control" placeholder="0.00" step="0.01" min="1"
+                required id="budget-amount" oninput="updatePreview()" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Period <span class="req">*</span></label>
+            <select name="period" class="form-control" required>
+              <option value="daily"       {% if budget.period == 'daily' %}selected{% endif %}>📅 Daily</option>
+              <option value="weekly"      {% if budget.period == 'weekly' %}selected{% endif %}>📅 Weekly</option>
+              <option value="fortnightly" {% if budget.period == 'fortnightly' %}selected{% endif %}>📅 Fortnightly</option>
+              <option value="monthly"     {% if budget.period == 'monthly' or not budget %}selected{% endif %}>📅 Monthly</option>
+              <option value="quarterly"   {% if budget.period == 'quarterly' %}selected{% endif %}>📅 Quarterly</option>
+              <option value="semi_annual" {% if budget.period == 'semi_annual' %}selected{% endif %}>📅 6 Months</option>
+              <option value="yearly"      {% if budget.period == 'yearly' %}selected{% endif %}>📅 Yearly</option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <form method="post" id="budgetForm" class="form-card">
-        {% csrf_token %}
-
-        <!-- Budget Name -->
+    <div class="card">
+      <div class="card-body">
         <div class="form-group">
-            <label for="id_name" class="form-label required">Budget Name</label>
-            <input type="text"
-                   name="name"
-                   id="id_name"
-                   class="form-input"
-                   placeholder="e.g., Monthly Groceries, Q1 Marketing"
-                   value="{{ form.name.value|default:'' }}"
-                   maxlength="100"
-                   required
-                   autofocus>
-        </div>
-
-        <!-- Budget Amount -->
-        <div class="form-group">
-            <label for="id_amount" class="form-label required">Budget Amount</label>
-            <div style="position: relative;">
-                <span style="position: absolute; left: 1.25rem; top: 50%; transform: translateY(-50%); font-size: 1.25rem; font-weight: 700; color: var(--text-tertiary);">$</span>
-                <input type="number"
-                       name="amount"
-                       id="id_amount"
-                       class="form-input"
-                       style="padding-left: 2.5rem; font-size: 1.5rem; font-weight: 700;"
-                       placeholder="0.00"
-                       step="0.01"
-                       min="0.01"
-                       value="{{ form.amount.value|default:'' }}"
-                       required>
+          <label class="form-label">Alert Threshold</label>
+          <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+            <input type="range" name="alert_threshold" id="threshold-slider"
+              value="{% if budget %}{{ budget.alert_threshold }}{% else %}80{% endif %}"
+              min="10" max="100" step="5"
+              style="flex:1; min-width:200px"
+              oninput="updateThresholdDisplay(this.value)" />
+            <div style="display:flex;align-items:center;gap:0.25rem">
+              <input type="number" id="threshold-num"
+                value="{% if budget %}{{ budget.alert_threshold }}{% else %}80{% endif %}"
+                min="1" max="100" class="form-control" style="width:70px"
+                oninput="document.getElementById('threshold-slider').value=this.value;updateThresholdDisplay(this.value)" />
+              <span class="text-2 fw-600">%</span>
             </div>
-        </div>
+          </div>
 
-        <!-- Period Selection -->
-        <div class="form-group">
-            <label class="form-label required">Budget Period</label>
-            <div class="period-grid">
-                {% for value, label in form.period.field.choices %}
-                <div class="period-option">
-                    <input type="radio"
-                           name="period"
-                           value="{{ value }}"
-                           id="period_{{ value }}"
-                           {% if form.period.value == value %}checked{% endif %}
-                           required>
-                    <label for="period_{{ value }}" class="period-label">
-                        <span class="period-icon">{{ label|slice:":2" }}</span>
-                        <span class="period-name">{{ label|slice:"3:" }}</span>
-                    </label>
-                </div>
-                {% endfor %}
+          <div class="threshold-preview">
+            <div class="threshold-visual">
+              <div class="threshold-bar" id="thresh-bar" style="width:{% if budget %}{{ budget.alert_threshold }}{% else %}80{% endif %}%"></div>
+              <div class="threshold-marker" id="thresh-mark" style="left:{% if budget %}{{ budget.alert_threshold }}{% else %}80{% endif %}%"></div>
             </div>
-        </div>
+            <span class="fz-sm text-2">Alert at <strong id="threshold-display">{% if budget %}{{ budget.alert_threshold }}{% else %}80{% endif %}%</strong></span>
+          </div>
 
-        <!-- Tags (Optional) -->
+          <div class="form-hint mt-2">You'll be notified when spending reaches this percentage of the budget.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
         <div class="form-group">
-            <label for="id_tags" class="form-label">Filter by Tags (Optional)</label>
-            <input type="text"
-                   name="tags"
-                   id="id_tags"
-                   class="form-input"
-                   placeholder="e.g., food, travel, business (comma-separated)"
-                   value="{{ form.tags.value|default:'' }}">
-            <p style="margin-top: 0.5rem; color: var(--text-tertiary); font-size: 0.875rem;">
-                Leave empty to track all expenses, or add tags to filter specific categories
-            </p>
+          <label class="form-label">Filter by Tags <span class="text-3">(optional)</span></label>
+          <input type="text" name="tags"
+            value="{% if budget %}{% for tag in budget.tags.all %}{{ tag.name }}{% if not forloop.last %},{% endif %}{% endfor %}{% endif %}"
+            class="form-control" placeholder="food, travel, office… (leave blank = all expenses)" />
+          <div class="form-hint">Only count expenses with these tags toward this budget.</div>
         </div>
 
-        <!-- Alert Threshold -->
-        <div class="form-group">
-            <label for="id_alert_threshold" class="form-label required">Alert Threshold</label>
-            <div class="slider-container">
-                <input type="range"
-                       name="alert_threshold"
-                       id="id_alert_threshold"
-                       class="slider"
-                       min="1"
-                       max="100"
-                       value="{{ form.alert_threshold.value|default:80 }}"
-                       oninput="updateSliderValue(this.value)">
-                <div class="slider-value" id="sliderValue">{{ form.alert_threshold.value|default:80 }}%</div>
-                <div class="slider-labels">
-                    <span>1%</span>
-                    <span>50%</span>
-                    <span>100%</span>
-                </div>
-            </div>
-            <p style="margin-top: 1rem; color: var(--text-tertiary); font-size: 0.875rem; text-align: center;">
-                You'll receive an alert when spending reaches this percentage
-            </p>
-        </div>
+        <label class="option-card mt-2">
+          <input type="checkbox" name="is_active" {% if not budget or budget.is_active %}checked{% endif %} />
+          <div>
+            <div class="fw-600 fz-sm">✅ Budget is active</div>
+            <div class="fz-xs text-3">Active budgets track spending and send alerts.</div>
+          </div>
+        </label>
+      </div>
+    </div>
 
-        <!-- Active Status -->
-        <div class="form-group">
-            <label class="toggle-label">
-                <label class="toggle-switch">
-                    <input type="checkbox"
-                           name="is_active"
-                           id="id_is_active"
-                           {% if form.is_active.value or not budget %}checked{% endif %}>
-                    <span class="toggle-slider"></span>
-                </label>
-                <div>
-                    <div style="font-weight: 600; margin-bottom: 0.25rem;">Budget is Active</div>
-                    <div style="color: var(--text-tertiary); font-size: 0.875rem;">
-                        Inactive budgets won't track spending or send alerts
-                    </div>
-                </div>
-            </label>
-        </div>
+    {% if form.non_field_errors %}
+    <div class="alert mb-2">{{ form.non_field_errors }}</div>
+    {% endif %}
 
-        <!-- Form Actions -->
-        <div class="form-actions">
-            <button type="submit" class="btn-submit">
-                <i class="fas fa-save"></i>
-                {% if budget %}Update Budget{% else %}Create Budget{% endif %}
-            </button>
-            <a href="{% url 'expenses:budget_list' %}" class="btn-cancel">
-                <i class="fas fa-times"></i> Cancel
-            </a>
-        </div>
-    </form>
+    <div style="display:flex;gap:0.75rem;margin-top:1.5rem;flex-wrap:wrap">
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-check-lg me-1"></i>
+        {% if budget %}Save Changes{% else %}Create Budget{% endif %}
+        <span class="kbd-hint">Ctrl ↵</span>
+      </button>
+      <a href="{% url 'expenses:budget_list' %}" class="btn btn-secondary">
+        <i class="bi bi-x-lg me-1"></i>Cancel
+      </a>
+      {% if budget %}
+      <a href="{% url 'expenses:budget_delete' budget.pk %}" class="btn btn-danger"
+        style="margin-left:auto" onclick="return confirm('Delete this budget permanently?')">
+        <i class="bi bi-trash me-1"></i>Delete
+      </a>
+      {% endif %}
+    </div>
+  </form>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// Slider Value Update
-function updateSliderValue(value) {
-    const slider = document.getElementById('sliderValue');
-    slider.textContent = value + '%';
+// Update threshold display and visual elements
+function updateThresholdDisplay(val) {
+  val = Math.max(1, Math.min(100, parseInt(val) || 80));
 
-    // Change color based on value
-    if (value >= 80) {
-        slider.style.color = '#ef4444';
-    } else if (value >= 50) {
-        slider.style.color = '#f59e0b';
-    } else {
-        slider.style.color = '#10b981';
-    }
+  // Update text
+  document.getElementById('threshold-display').textContent = val + '%';
+
+  // Update visual bar
+  document.getElementById('thresh-bar').style.width = val + '%';
+  document.getElementById('thresh-mark').style.left = val + '%';
+
+  // Update inputs
+  document.getElementById('threshold-slider').value = val;
+  document.getElementById('threshold-num').value = val;
 }
 
-// Initialize slider value on page load
+function updatePreview() {
+  // Live preview for future enhancements
+  const amount = document.getElementById('budget-amount').value;
+  // Could add live allocation preview here
+}
+
+// Keyboard shortcut: Ctrl+Enter to submit
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('budget-form').submit();
+  }
+});
+
+// Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
-    const slider = document.getElementById('id_alert_threshold');
-    if (slider) {
-        updateSliderValue(slider.value);
-    }
-});
-
-// Form validation
-const form = document.getElementById('budgetForm');
-form.addEventListener('submit', function(e) {
-    const amount = document.getElementById('id_amount').value;
-    const name = document.getElementById('id_name').value;
-    const period = document.querySelector('input[name="period"]:checked');
-
-    if (!amount || parseFloat(amount) <= 0) {
-        e.preventDefault();
-        alert('Please enter a valid budget amount');
-        return;
-    }
-
-    if (!name.trim()) {
-        e.preventDefault();
-        alert('Please enter a budget name');
-        return;
-    }
-
-    if (!period) {
-        e.preventDefault();
-        alert('Please select a budget period');
-        return;
-    }
-
-    // Show loading state
-    const submitBtn = this.querySelector('.btn-submit');
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-});
-
-// Keyboard shortcuts
-document.addEventListener('keydown', function(e) {
-    // Ctrl/Cmd + S = Save
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        form.submit();
-    }
-
-    // Escape = Cancel
-    if (e.key === 'Escape') {
-        window.location.href = '{% url "expenses:budget_list" %}';
-    }
+  // Ensure threshold display is correct on load
+  const slider = document.getElementById('threshold-slider');
+  if (slider) {
+    updateThresholdDisplay(slider.value);
+  }
 });
 </script>
 {% endblock %}

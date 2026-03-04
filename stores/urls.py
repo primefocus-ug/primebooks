@@ -8,7 +8,17 @@ urlpatterns = [
     # Dashboard
     path('', views.store_dashboard, name='dashboard'),
     path('dashboard/', views.store_dashboard, name='store_dashboard'),
+    path(
+        'overview/',
+        views.tenant_overview,
+        name='tenant_overview',
+    ),
 
+    path(
+        'overview/detail/',
+        views.tenant_overview_detail_api,
+        name='tenant_overview_detail',
+    ),
     # Store CRUD
     path('stores/', views.StoreListView.as_view(), name='store_list'),
     path('no-access/', views.NoStoreAccessView.as_view(), name='no_store_access'),

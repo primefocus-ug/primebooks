@@ -119,14 +119,14 @@ NAVIGATION_ITEMS = [
     NavigationItem(
         name="Create Sale",
         url_name="sales:create_sale",
-        icon="bi bi-plus-circle",
+        icon="bi bi-receipt-cutoff",
         permission="sales.add_sale",
         css_class="nav-highlight-pulse"
     ),
     NavigationItem(
         name="Quick Sale",
         url_name="sales:quick_sale",
-        icon="bi bi-plus-circle",
+        icon="bi bi-lightning-charge",
         permission="sales.add_sale",
         css_class="nav-highlight-success"
     ),
@@ -138,177 +138,35 @@ NAVIGATION_ITEMS = [
         css_class="nav-highlight-danger"
     ),
     NavigationItem(
-        name="Profile & Settings",
-        icon="bi bi-speedometer2",
+        name="Sales",
+        icon="bi bi-cart-check",
+        permission="sales.view_sale",
         children=[
             NavigationItem(
-                name="My Profile",
-                url_name="user_profile",
-                icon="bi bi-person-circle"
+                name="All Sales",
+                url_name="sales:sales_list",
+                icon="bi bi-list-check",
+                permission="sales.view_sale"
             ),
             NavigationItem(
-                name="Security Settings",
-                url_name="user_security_settings",
-                icon="bi bi-shield-lock"
+                name="Create Sale",
+                url_name="sales:create_sale",
+                icon="bi bi-plus-circle",
+                permission="sales.add_sale",
+                css_class="nav-highlight-pulse"
             ),
             NavigationItem(
-                name="Notifications",
-                url_name="notifications:notification_list",
-                icon="bi bi-bell"
+                name="Quick Sale",
+                url_name="sales:quick_sale",
+                icon="bi bi-plus-circle",
+                permission="sales.add_sale",
+                css_class="nav-highlight-success"
             ),
             NavigationItem(
-                name="Analytics",
-                url_name="user_analytics",
-                icon="bi bi-graph-up"
-            ),
-        ]
-    ),
-    NavigationItem(
-        name="User Management",
-        icon="bi bi-people",
-        permission="accounts.add_customuser",
-        children=[
-            NavigationItem(
-                name="All Users",
-                url_name="user_list",
-                icon="bi bi-people-fill",
-                permission="accounts.view_customuser"
-            ),
-            NavigationItem(
-                name="Add User",
-                url_name="invite_user",
-                icon="bi bi-person-plus",
-                permission="accounts.add_customuser"
-            ),
-            NavigationItem(
-                name="Roles",
-                url_name="role_list",
-                icon="bi bi-person-badge",
-                permission="accounts.view_role"
-            ),
-            NavigationItem(
-                name="Add Role",
-                url_name="role_create",
-                icon="bi bi-shield-plus",
-                permission="accounts.add_role"
-            ),
-            NavigationItem(
-                name="Bulk Role Assignment",
-                url_name="role_bulk_assignment",
-                icon="bi bi-shield-lock",
-                permission="accounts.add_role"
-            ),
-            NavigationItem(
-                name="User Analytics",
-                url_name="user_analytics",
+                name="Sales Analytics",
+                url_name="sales:analytics",
                 icon="bi bi-graph-up",
-                permission="accounts.view_customuser"
-            ),
-        ]
-    ),
-    NavigationItem(
-        name="Company",
-        icon="bi bi-building",
-        permission="company.view_company",
-        children=[
-            NavigationItem(
-                name="Dashboard",
-                url_name="companies:dashboard",
-                icon="bi bi-speedometer2",
-                permission="company.view_company",
-            ),
-            NavigationItem(
-                name="Subscription Plans",
-                url_name="companies:subscription_plans",
-                icon="bi bi-diagram-3",
-                permission="company.view_subscriptionplan"
-            ),
-            NavigationItem(
-            name="Billing History",
-            url_name="companies:billing_history",
-            icon="bi bi-receipt",
-            permission="company.view_subscriptionplan"
-            ),
-            NavigationItem(
-                name="Branches",
-                url_name="companies:branch_list",
-                icon="bi bi-diagram-3",
-                permission="stores.view_store"
-            ),
-            NavigationItem(
-                name="Employees",
-                icon="bi bi-people-fill",
-                permission="accounts.add_customuser",
-                children=[
-                    NavigationItem(
-                        name="All Employees",
-                        url_name="user_list",
-                        icon="bi bi-list-ul",
-                        permission="accounts.add_customuser"
-                    ),
-                    NavigationItem(
-                        name="Export Employees",
-                        url_name="companies:employee_export",
-                        icon="bi bi-download",
-                        permission="accounts.add_customuser"
-                    ),
-                ]
-            ),
-        ]
-    ),
-
-    NavigationItem(
-        name="Branch Dashboard",
-        url_name="stores:store_dashboard",
-        icon="bi bi-speedometer2",
-        permission='stores.view_store'
-    ),
-
-    NavigationItem(
-        name="Branch Management",
-        icon="bi bi-shop",
-        children=[
-            NavigationItem(
-                name="All Branches",
-                url_name="stores:store_list",
-                icon="bi bi-shop-window",
-                permission="stores.view_store"
-            ),
-            NavigationItem(
-            name="All Inventory",
-            url_name="stores:inventory_list",
-            icon="bi bi-box-seam",
-            permission="stores.view_storeinventory"
-            ),
-            NavigationItem(
-                name="Low Stock Alerts",
-                url_name="stores:low_stock_alert",
-                icon="bi bi-exclamation-circle",
-                permission="stores.view_storeinventory"
-            ),
-            NavigationItem(
-                name="Reports",
-                url_name="stores:generate_report",
-                icon="bi bi-file-earmark-text",
-                permission="stores.view_storeinventory"
-            ),
-            NavigationItem(
-                name="Device Sessions",
-                url_name="stores:device_sessions_dashboard",
-                icon="bi bi-activity",
-                permission="stores.view_storesdevice"
-            ),
-            NavigationItem(
-                name="Security Alerts",
-                url_name="stores:security_alerts",
-                icon="bi bi-exclamation-triangle",
-                permission="stores.view_securityalert"
-            ),
-            NavigationItem(
-                name="Sales Reports",
-                url_name="stores:analytics",
-                icon="bi bi-graph-up",
-                permission='stores.add_store'
+                permission="sales.view_sale"
             ),
         ]
     ),
@@ -450,56 +308,23 @@ NAVIGATION_ITEMS = [
         ]
     ),
     NavigationItem(
-            name="Services",
-            icon="bi bi-briefcase",
-            permission="inventory.view_service",
-            children=[
-                NavigationItem(
-                    name="All Services",
-                    url_name="inventory:service_list",
-                    icon="bi bi-list-task",
-                    permission="inventory.view_service",
-                ),
-                NavigationItem(
-                    name="Add Service",
-                    url_name="inventory:service_create",
-                    icon="bi bi-plus-circle",
-                    permission="inventory.add_service"
-                ),
-            ],
-        ),
-    NavigationItem(
-        name="Sales",
-        icon="bi bi-cart-check",
-        permission="sales.view_sale",
+        name="Services",
+        icon="bi bi-briefcase",
+        permission="inventory.view_service",
         children=[
             NavigationItem(
-                name="All Sales",
-                url_name="sales:sales_list",
-                icon="bi bi-list-check",
-                permission="sales.view_sale"
+                name="All Services",
+                url_name="inventory:service_list",
+                icon="bi bi-list-task",
+                permission="inventory.view_service",
             ),
             NavigationItem(
-                name="Create Sale",
-                url_name="sales:create_sale",
+                name="Add Service",
+                url_name="inventory:service_create",
                 icon="bi bi-plus-circle",
-                permission="sales.add_sale",
-                css_class="nav-highlight-pulse"
+                permission="inventory.add_service"
             ),
-            NavigationItem(
-                name="Quick Sale",
-                url_name="sales:quick_sale",
-                icon="bi bi-plus-circle",
-                permission="sales.add_sale",
-                css_class="nav-highlight-success"
-            ),
-            NavigationItem(
-                name="Sales Analytics",
-                url_name="sales:analytics",
-                icon="bi bi-graph-up",
-                permission="sales.view_sale"
-            ),
-        ]
+        ],
     ),
     NavigationItem(
         name="Finance & Expenses",
@@ -735,6 +560,181 @@ NAVIGATION_ITEMS = [
                 url_name="invoices:payments",
                 icon="bi bi-credit-card",
                 permission="invoices.view_invoicepayment"
+            ),
+        ]
+    ),
+    NavigationItem(
+        name="Company",
+        icon="bi bi-building",
+        permission="company.view_company",
+        children=[
+            NavigationItem(
+                name="Dashboard",
+                url_name="stores:tenant_overview",
+                icon="bi bi-speedometer2",
+                permission="company.view_company",
+            ),
+            NavigationItem(
+                name="Subscription Plans",
+                url_name="companies:subscription_plans",
+                icon="bi bi-diagram-3",
+                permission="company.view_subscriptionplan"
+            ),
+            NavigationItem(
+            name="Billing History",
+            url_name="companies:billing_history",
+            icon="bi bi-receipt",
+            permission="company.view_subscriptionplan"
+            ),
+            NavigationItem(
+                name="Branches",
+                url_name="companies:branch_list",
+                icon="bi bi-diagram-3",
+                permission="stores.view_store"
+            ),
+            NavigationItem(
+                name="Employees",
+                icon="bi bi-people-fill",
+                permission="accounts.add_customuser",
+                children=[
+                    NavigationItem(
+                        name="All Employees",
+                        url_name="user_list",
+                        icon="bi bi-list-ul",
+                        permission="accounts.add_customuser"
+                    ),
+                    NavigationItem(
+                        name="Export Employees",
+                        url_name="companies:employee_export",
+                        icon="bi bi-download",
+                        permission="accounts.add_customuser"
+                    ),
+                ]
+            ),
+        ]
+    ),
+
+    NavigationItem(
+        name="Branch Dashboard",
+        url_name="stores:store_dashboard",
+        icon="bi bi-speedometer2",
+        permission='stores.view_store'
+    ),
+
+    NavigationItem(
+        name="Branch Management",
+        icon="bi bi-shop",
+        children=[
+            NavigationItem(
+                name="All Branches",
+                url_name="stores:store_list",
+                icon="bi bi-shop-window",
+                permission="stores.view_store"
+            ),
+            NavigationItem(
+            name="All Inventory",
+            url_name="stores:inventory_list",
+            icon="bi bi-box-seam",
+            permission="stores.view_storeinventory"
+            ),
+            NavigationItem(
+                name="Low Stock Alerts",
+                url_name="stores:low_stock_alert",
+                icon="bi bi-exclamation-circle",
+                permission="stores.view_storeinventory"
+            ),
+            NavigationItem(
+                name="Reports",
+                url_name="stores:generate_report",
+                icon="bi bi-file-earmark-text",
+                permission="stores.view_storeinventory"
+            ),
+            NavigationItem(
+                name="Device Sessions",
+                url_name="stores:device_sessions_dashboard",
+                icon="bi bi-activity",
+                permission="stores.view_storesdevice"
+            ),
+            NavigationItem(
+                name="Security Alerts",
+                url_name="stores:security_alerts",
+                icon="bi bi-exclamation-triangle",
+                permission="stores.view_securityalert"
+            ),
+            NavigationItem(
+                name="Sales Reports",
+                url_name="stores:analytics",
+                icon="bi bi-graph-up",
+                permission='stores.add_store'
+            ),
+        ]
+    ),
+NavigationItem(
+        name="Profile & Settings",
+        icon="bi bi-speedometer2",
+        children=[
+            NavigationItem(
+                name="My Profile",
+                url_name="user_profile",
+                icon="bi bi-person-circle"
+            ),
+            NavigationItem(
+                name="Security Settings",
+                url_name="user_security_settings",
+                icon="bi bi-shield-lock"
+            ),
+            NavigationItem(
+                name="Notifications",
+                url_name="notifications:notification_list",
+                icon="bi bi-bell"
+            ),
+            NavigationItem(
+                name="Analytics",
+                url_name="user_analytics",
+                icon="bi bi-graph-up"
+            ),
+        ]
+    ),
+    NavigationItem(
+        name="User Management",
+        icon="bi bi-people",
+        permission="accounts.add_customuser",
+        children=[
+            NavigationItem(
+                name="All Users",
+                url_name="user_list",
+                icon="bi bi-people-fill",
+                permission="accounts.view_customuser"
+            ),
+            NavigationItem(
+                name="Add User",
+                url_name="invite_user",
+                icon="bi bi-person-plus",
+                permission="accounts.add_customuser"
+            ),
+            NavigationItem(
+                name="Roles",
+                url_name="role_list",
+                icon="bi bi-person-badge",
+                permission="accounts.view_role"
+            ),
+            NavigationItem(
+                name="Add Role",
+                url_name="role_create",
+                icon="bi bi-shield-plus",
+                permission="accounts.add_role"
+            ),
+            NavigationItem(
+                name="Bulk Role Assignment",
+                url_name="role_bulk_assignment",
+                icon="bi bi-shield-lock",
+                permission="accounts.add_role"
+            ),
+            NavigationItem(
+                name="User Analytics",
+                url_name="user_analytics",
+                icon="bi bi-graph-up",
+                permission="accounts.view_customuser"
             ),
         ]
     ),

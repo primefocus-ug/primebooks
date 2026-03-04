@@ -1,0 +1,1426 @@
+{% extends "base.html" %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Company Overview{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── DESIGN SYSTEM ─────────────────────────────────────── */
+  :root {
+    --bg:          #0d1117;
+    --surface:     #161b22;
+    --surface-2:   #1c2333;
+    --surface-3:   #21262d;
+    --border:      #30363d;
+    --border-soft: #21262d;
+    --text:        #e6edf3;
+    --text-muted:  #8b949e;
+    --text-dim:    #484f58;
+
+    --blue:        #58a6ff;
+    --blue-dim:    #1f3a5c;
+    --green:       #3fb950;
+    --green-dim:   #1a3a25;
+    --yellow:      #d29922;
+    --yellow-dim:  #3d2b00;
+    --red:         #f85149;
+    --red-dim:     #3d1818;
+    --purple:      #bc8cff;
+    --purple-dim:  #2e1f5e;
+    --orange:      #f0883e;
+    --orange-dim:  #3d2200;
+    --teal:        #39d3bb;
+    --teal-dim:    #0e2e2a;
+
+    --radius:      10px;
+    --radius-sm:   6px;
+    --transition:  0.2s ease;
+    --shadow:      0 4px 20px rgba(0,0,0,0.4);
+  }
+
+  /* ── BASE ────────────────────────────────────────────── */
+  .ov-wrap {
+    background: var(--bg);
+    min-height: 100vh;
+    padding: 0 0 60px;
+    font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+    color: var(--text);
+  }
+
+  /* ── HEADER ──────────────────────────────────────────── */
+  .ov-header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    gap: 12px;
+  }
+  .ov-header-left h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+    margin: 0;
+  }
+  .ov-header-left p {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 3px 0 0;
+  }
+  .ov-header-right {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .ov-tenant-badge {
+    background: var(--blue-dim);
+    border: 1px solid var(--blue);
+    color: var(--blue);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+  .ov-date-badge {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+  /* Global store filter */
+  .ov-global-store-select {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 11px;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    transition: border-color var(--transition);
+    max-width: 180px;
+  }
+  .ov-global-store-select:focus { border-color: var(--blue); }
+
+  /* ── BODY PADDING ────────────────────────────────────── */
+  .ov-body {
+    padding: 28px 32px 0;
+  }
+
+  /* ── KPI STRIP ───────────────────────────────────────── */
+  .ov-kpi-strip-wrap {
+    overflow: hidden;
+    transition: max-height 0.35s ease, opacity 0.25s ease, margin 0.3s ease;
+    max-height: 200px;
+    opacity: 1;
+    margin-bottom: 28px;
+  }
+  .ov-kpi-strip-wrap.collapsed {
+    max-height: 0;
+    opacity: 0;
+    margin-bottom: 8px;
+  }
+  .ov-kpi-strip-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 0 8px;
+    font-family: inherit;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    transition: color var(--transition);
+  }
+  .ov-kpi-strip-toggle:hover { color: var(--blue); }
+  .ov-kpi-strip-toggle .toggle-icon { transition: transform 0.25s ease; font-size: 9px; }
+  .ov-kpi-strip-wrap.collapsed ~ .ov-kpi-strip-toggle .toggle-icon { transform: rotate(-90deg); }
+
+  .ov-kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+  }
+  .ov-kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .ov-kpi::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .ov-kpi.kpi-blue::before   { background: var(--blue); }
+  .ov-kpi.kpi-green::before  { background: var(--green); }
+  .ov-kpi.kpi-yellow::before { background: var(--yellow); }
+  .ov-kpi.kpi-teal::before   { background: var(--teal); }
+  .ov-kpi.kpi-orange::before { background: var(--orange); }
+  .ov-kpi-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .ov-kpi-value {
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .ov-kpi.kpi-blue   .ov-kpi-value { color: var(--blue); }
+  .ov-kpi.kpi-green  .ov-kpi-value { color: var(--green); }
+  .ov-kpi.kpi-yellow .ov-kpi-value { color: var(--yellow); }
+  .ov-kpi.kpi-teal   .ov-kpi-value { color: var(--teal); }
+  .ov-kpi.kpi-orange .ov-kpi-value { color: var(--orange); }
+  .ov-kpi-sub {
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  /* ── MODULE GRID ─────────────────────────────────────── */
+  .ov-module-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .ov-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    cursor: pointer;
+    transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+  .ov-card:hover {
+    border-color: var(--blue);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+  }
+  .ov-card.active {
+    border-color: var(--blue);
+    background: var(--surface-2);
+  }
+  .ov-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .ov-card-icon {
+    width: 32px; height: 32px;
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .icon-blue   { background: var(--blue-dim);   color: var(--blue); }
+  .icon-green  { background: var(--green-dim);  color: var(--green); }
+  .icon-yellow { background: var(--yellow-dim); color: var(--yellow); }
+  .icon-teal   { background: var(--teal-dim);   color: var(--teal); }
+  .icon-orange { background: var(--orange-dim); color: var(--orange); }
+  .ov-card-arrow {
+    color: var(--text-dim);
+    font-size: 12px;
+    transition: color var(--transition), transform var(--transition);
+  }
+  .ov-card:hover .ov-card-arrow,
+  .ov-card.active .ov-card-arrow {
+    color: var(--blue);
+    transform: rotate(90deg);
+  }
+  .ov-card-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .ov-card-primary {
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 10px;
+  }
+  .ov-card.mod-stores    .ov-card-primary { color: var(--blue); }
+  .ov-card.mod-inventory .ov-card-primary { color: var(--green); }
+  .ov-card.mod-sales     .ov-card-primary { color: var(--yellow); }
+  .ov-card.mod-expenses  .ov-card-primary { color: var(--orange); }
+  .ov-card.mod-customers .ov-card-primary { color: var(--teal); }
+  .ov-card-stats {
+    display: flex; flex-direction: column; gap: 4px;
+    margin-bottom: 14px;
+  }
+  .ov-stat-row {
+    display: flex; justify-content: space-between; font-size: 11px;
+  }
+  .ov-stat-row .label { color: var(--text-muted); }
+  .ov-stat-row .val   { color: var(--text); font-weight: 500; }
+  .ov-stat-row .val.warn   { color: var(--yellow); }
+  .ov-stat-row .val.danger { color: var(--red); }
+  .ov-stat-row .val.ok     { color: var(--green); }
+  .ov-card-chart-wrap { height: 70px; margin-top: 4px; }
+
+  /* ── DETAIL PANEL ────────────────────────────────────── */
+  .ov-detail-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 0.4s ease, opacity 0.3s ease;
+    margin-bottom: 24px;
+  }
+  .ov-detail-panel.open { max-height: 1400px; opacity: 1; }
+  .ov-detail-panel.fullscreen {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 200;
+    max-height: 100vh !important;
+    border-radius: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .ov-detail-panel.fullscreen .ov-detail-body {
+    flex: 1;
+    overflow: hidden;
+  }
+  .ov-detail-panel.fullscreen .ov-detail-main {
+    max-height: calc(100vh - 60px);
+  }
+
+  .ov-detail-toolbar {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--surface-3);
+    flex-shrink: 0;
+  }
+  .ov-detail-toolbar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ov-detail-title {
+    font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--text);
+  }
+  .ov-module-pill {
+    font-size: 10px; padding: 2px 8px;
+    border-radius: 20px; border: 1px solid;
+  }
+  .pill-blue   { border-color: var(--blue);   color: var(--blue);   background: var(--blue-dim); }
+  .pill-green  { border-color: var(--green);  color: var(--green);  background: var(--green-dim); }
+  .pill-yellow { border-color: var(--yellow); color: var(--yellow); background: var(--yellow-dim); }
+  .pill-orange { border-color: var(--orange); color: var(--orange); background: var(--orange-dim); }
+  .pill-teal   { border-color: var(--teal);   color: var(--teal);   background: var(--teal-dim); }
+
+  .ov-detail-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ov-toolbar-filter {
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text-muted); font-size: 11px; padding: 5px 10px;
+    border-radius: var(--radius-sm); font-family: inherit; cursor: pointer; outline: none;
+  }
+  .ov-toolbar-filter:focus { border-color: var(--blue); color: var(--text); }
+
+  /* toolbar icon buttons */
+  .ov-icon-btn {
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text-muted); padding: 5px 10px;
+    border-radius: var(--radius-sm); font-size: 11px; cursor: pointer;
+    font-family: inherit; display: flex; align-items: center; gap: 5px;
+    transition: background var(--transition), color var(--transition), border-color var(--transition);
+    white-space: nowrap;
+  }
+  .ov-icon-btn:hover { background: var(--surface-3); color: var(--text); border-color: var(--blue); }
+
+  /* export split button */
+  .ov-export-group { display: flex; }
+  .ov-export-group .ov-icon-btn:first-child {
+    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    border-right: none;
+  }
+  .ov-export-group .ov-icon-btn:last-child {
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .ov-close-btn {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-muted); width: 28px; height: 28px;
+    border-radius: var(--radius-sm); font-size: 14px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background var(--transition), color var(--transition);
+  }
+  .ov-close-btn:hover { background: var(--red-dim); color: var(--red); border-color: var(--red); }
+
+  .ov-detail-body {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+  }
+  .ov-detail-main {
+    padding: 20px;
+    border-right: 1px solid var(--border);
+    overflow: auto;
+    max-height: 640px;
+  }
+  .ov-detail-side {
+    padding: 20px;
+    min-height: 300px;
+    overflow: auto;
+    max-height: 640px;
+  }
+  .ov-detail-loading {
+    display: flex; align-items: center; justify-content: center;
+    height: 200px; color: var(--text-muted); font-size: 12px; gap: 10px;
+  }
+
+  /* ── SALES TABS ──────────────────────────────────────── */
+  .ov-tabs {
+    display: flex; gap: 0; margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ov-tab {
+    font-size: 11px; padding: 7px 14px; cursor: pointer;
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--text-muted); font-family: inherit; text-transform: uppercase;
+    letter-spacing: 0.06em; transition: color var(--transition), border-color var(--transition);
+    margin-bottom: -1px;
+  }
+  .ov-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .ov-tab:hover:not(.active) { color: var(--text); }
+  .ov-tab-panel { display: none; }
+  .ov-tab-panel.active { display: block; }
+
+  /* ── EXPANDABLE SALE ROW ─────────────────────────────── */
+  .ov-row-expand {
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .ov-row-expand td {
+    padding: 0 !important;
+    border: none !important;
+  }
+  .ov-expand-inner {
+    padding: 12px 16px;
+    display: none;
+  }
+  .ov-expand-inner.open { display: block; }
+  .ov-expand-loading { color: var(--text-muted); font-size: 11px; }
+  .ov-line-items-table {
+    width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 8px;
+  }
+  .ov-line-items-table th {
+    background: var(--surface-3); color: var(--text-muted);
+    padding: 5px 10px; text-align: left;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+  }
+  .ov-line-items-table td {
+    padding: 6px 10px; border-bottom: 1px solid var(--border-soft);
+    color: var(--text);
+  }
+  .ov-expand-toggle { cursor: pointer; user-select: none; color: var(--blue); font-size: 11px; }
+
+  /* ── REPORTS PANEL ───────────────────────────────────── */
+  .ov-reports-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .ov-report-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color var(--transition), transform var(--transition);
+    text-decoration: none;
+    display: block;
+  }
+  .ov-report-card:hover {
+    border-color: var(--blue);
+    transform: translateY(-1px);
+  }
+  .ov-report-card-title {
+    font-size: 11px; font-weight: 600; color: var(--text); margin-bottom: 4px;
+  }
+  .ov-report-card-desc {
+    font-size: 10px; color: var(--text-muted); line-height: 1.5;
+  }
+  .ov-report-card-icon { font-size: 16px; margin-bottom: 8px; }
+  .ov-report-stat-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 16px;
+  }
+  .ov-report-stat {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 12px;
+    text-align: center;
+  }
+  .ov-report-stat-val { font-size: 20px; font-weight: 700; color: var(--blue); }
+  .ov-report-stat-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; }
+
+  /* ── TABLES ──────────────────────────────────────────── */
+  .ov-table {
+    width: 100%; border-collapse: collapse; font-size: 11px;
+  }
+  .ov-table th {
+    text-align: left; padding: 8px 12px;
+    background: var(--surface-3); color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+    cursor: pointer; user-select: none;
+    transition: color var(--transition);
+    position: relative;
+  }
+  .ov-table th:hover { color: var(--blue); }
+  .ov-table th.sort-asc::after  { content: ' ↑'; color: var(--blue); }
+  .ov-table th.sort-desc::after { content: ' ↓'; color: var(--blue); }
+  .ov-table td {
+    padding: 9px 12px; border-bottom: 1px solid var(--border-soft);
+    color: var(--text); vertical-align: middle;
+  }
+  .ov-table tr:last-child td { border-bottom: none; }
+  .ov-table tr:hover td { background: var(--surface-2); }
+  .ov-table .mono { font-family: 'IBM Plex Mono', monospace; }
+  .ov-table .muted { color: var(--text-muted); }
+
+  .badge {
+    display: inline-block; padding: 2px 7px;
+    border-radius: 4px; font-size: 10px; font-weight: 500;
+  }
+  .badge-green  { background: var(--green-dim);  color: var(--green); }
+  .badge-red    { background: var(--red-dim);    color: var(--red); }
+  .badge-yellow { background: var(--yellow-dim); color: var(--yellow); }
+  .badge-blue   { background: var(--blue-dim);   color: var(--blue); }
+  .badge-purple { background: var(--purple-dim); color: var(--purple); }
+  .badge-orange { background: var(--orange-dim); color: var(--orange); }
+  .badge-teal   { background: var(--teal-dim);   color: var(--teal); }
+  .badge-grey   { background: var(--surface-3);  color: var(--text-muted); }
+
+  /* ── SIDE CHART ──────────────────────────────────────── */
+  .ov-side-chart-title {
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 14px;
+  }
+  .ov-side-chart-wrap { height: 200px; margin-bottom: 16px; }
+  .ov-side-chart-wrap.tall { height: 250px; }
+
+  /* ── SEARCH ──────────────────────────────────────────── */
+  .ov-search {
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text); font-size: 11px; padding: 7px 12px;
+    border-radius: var(--radius-sm); font-family: inherit;
+    width: 180px; outline: none; transition: border-color var(--transition);
+  }
+  .ov-search:focus { border-color: var(--blue); }
+  .ov-search::placeholder { color: var(--text-dim); }
+
+  /* ── SPINNER ─────────────────────────────────────────── */
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid var(--border); border-top-color: var(--blue);
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── SECTION LABEL ───────────────────────────────────── */
+  .ov-section-label {
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--text-dim);
+    margin-bottom: 14px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  /* ── KEYBOARD HINT ───────────────────────────────────── */
+  .ov-kbd-hint {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 12px; font-size: 10px; color: var(--text-dim);
+    align-items: center;
+  }
+  .ov-kbd {
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  kbd {
+    background: var(--surface-3); border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px 5px; font-size: 10px;
+    font-family: inherit; color: var(--text-muted);
+  }
+
+  /* ── RESPONSIVE ──────────────────────────────────────── */
+  @media (max-width: 1200px) {
+    .ov-module-grid { grid-template-columns: repeat(3, 1fr); }
+    .ov-kpi-strip   { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 900px) {
+    .ov-module-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 768px) {
+    .ov-module-grid { grid-template-columns: 1fr 1fr; }
+    .ov-kpi-strip   { grid-template-columns: 1fr 1fr; }
+    .ov-detail-body { grid-template-columns: 1fr; }
+    .ov-body { padding: 16px; }
+    .ov-header { flex-wrap: wrap; }
+  }
+
+  /* ── STAGGERED ANIMATIONS ────────────────────────────── */
+  .ov-card { opacity: 0; animation: fadeUp 0.4s ease forwards; }
+  .ov-card:nth-child(1) { animation-delay: 0.05s; }
+  .ov-card:nth-child(2) { animation-delay: 0.12s; }
+  .ov-card:nth-child(3) { animation-delay: 0.19s; }
+  .ov-card:nth-child(4) { animation-delay: 0.26s; }
+  .ov-card:nth-child(5) { animation-delay: 0.33s; }
+  .ov-kpi { opacity: 0; animation: fadeUp 0.3s ease forwards; }
+  .ov-kpi:nth-child(1) { animation-delay: 0.02s; }
+  .ov-kpi:nth-child(2) { animation-delay: 0.06s; }
+  .ov-kpi:nth-child(3) { animation-delay: 0.10s; }
+  .ov-kpi:nth-child(4) { animation-delay: 0.14s; }
+  .ov-kpi:nth-child(5) { animation-delay: 0.18s; }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% load i18n %}
+
+<div class="ov-wrap">
+  <!-- HEADER -->
+  <div class="ov-header">
+    <div class="ov-header-left">
+      <h1>
+        <a href="{% url 'companies:company_detail' company_id=request.tenant.company_id %}"
+           style="color: inherit; text-decoration: none; border-bottom: 1px dashed var(--blue);">
+          ⬡ {{ company.trading_name|default:company.name }}
+        </a> Overview
+      </h1>
+      <p>Cross-Company summary — all accessible stores &nbsp;·&nbsp; Press <kbd>1</kbd>–<kbd>5</kbd> to open modules, <kbd>Esc</kbd> to close</p>
+    </div>
+    <div class="ov-header-right">
+      <!-- Global store filter -->
+      <select class="ov-global-store-select" id="global-store-filter" onchange="onGlobalStoreChange()" title="Filter all modules by store">
+        <option value="">All Stores</option>
+        {% for store in accessible_stores %}
+          <option value="{{ store.pk }}">{{ store.name }}</option>
+        {% endfor %}
+      </select>
+
+      <a href="{% url 'companies:company_detail' company_id=request.tenant.company_id %}"
+         class="ov-tenant-badge"
+         style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+        <span>⚙️</span> More Details
+      </a>
+      {% if request.tenant %}
+        <span class="ov-tenant-badge">{{ request.tenant.schema_name|upper }}</span>
+      {% endif %}
+      <span class="ov-date-badge">{{ today|date:"D, d M Y" }}</span>
+    </div>
+  </div>
+
+  <div class="ov-body">
+
+    <!-- KPI STRIP TOGGLE -->
+    <button class="ov-kpi-strip-toggle" id="kpi-toggle" onclick="toggleKpiStrip()">
+      <span class="toggle-icon">▼</span> KPI Summary
+    </button>
+
+    <!-- KPI STRIP -->
+    <div class="ov-kpi-strip-wrap" id="kpi-strip-wrap">
+      <div class="ov-kpi-strip">
+        <div class="ov-kpi kpi-blue">
+          <div class="ov-kpi-label">Active Stores</div>
+          <div class="ov-kpi-value">{{ stores_summary.active }}</div>
+          <div class="ov-kpi-sub">of {{ stores_summary.total }} total</div>
+        </div>
+        <div class="ov-kpi kpi-green">
+          <div class="ov-kpi-label">Inventory Value</div>
+          <div class="ov-kpi-value">{{ inventory_summary.total_value|floatformat:0|intcomma }}</div>
+          <div class="ov-kpi-sub">UGX — all stores</div>
+        </div>
+        <div class="ov-kpi kpi-yellow">
+          <div class="ov-kpi-label">Revenue Today</div>
+          <div class="ov-kpi-value">{{ sales_summary.revenue_today|floatformat:0|intcomma }}</div>
+          <div class="ov-kpi-sub">{{ sales_summary.total_today }} sale{{ sales_summary.total_today|pluralize }} today</div>
+        </div>
+        <div class="ov-kpi kpi-orange">
+          <div class="ov-kpi-label">Expenses (30d)</div>
+          <div class="ov-kpi-value">{{ expenses_summary.total_30d|floatformat:0|intcomma }}</div>
+          <div class="ov-kpi-sub">{{ expenses_summary.count_30d }} expenses</div>
+        </div>
+        <div class="ov-kpi kpi-teal">
+          <div class="ov-kpi-label">Customers</div>
+          <div class="ov-kpi-value">{{ customers_summary.total }}</div>
+          <div class="ov-kpi-sub">{{ customers_summary.new_30d }} new this month</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODULE CARDS -->
+    <div class="ov-module-grid">
+
+      <!-- STORES CARD -->
+      <div class="ov-card mod-stores" onclick="loadDetail('stores', this)" id="card-stores">
+        <div class="ov-card-header">
+          <div class="ov-card-icon icon-blue">🏪</div>
+          <span class="ov-card-arrow">▼</span>
+        </div>
+        <div class="ov-card-title">Stores <kbd style="margin-left:4px">1</kbd></div>
+        <div class="ov-card-primary">{{ stores_summary.total }}</div>
+        <div class="ov-card-stats">
+          <div class="ov-stat-row"><span class="label">Active</span><span class="val ok">{{ stores_summary.active }}</span></div>
+          <div class="ov-stat-row"><span class="label">Inactive</span><span class="val {% if stores_summary.inactive > 0 %}warn{% endif %}">{{ stores_summary.inactive }}</span></div>
+          <div class="ov-stat-row"><span class="label">EFRIS Enabled</span><span class="val">{{ stores_summary.efris_enabled }}</span></div>
+          <div class="ov-stat-row"><span class="label">Main Branches</span><span class="val">{{ stores_summary.main_branches }}</span></div>
+        </div>
+        <div class="ov-card-chart-wrap"><canvas id="chart-stores"></canvas></div>
+      </div>
+
+      <!-- INVENTORY CARD -->
+      <div class="ov-card mod-inventory" onclick="loadDetail('inventory', this)" id="card-inventory">
+        <div class="ov-card-header">
+          <div class="ov-card-icon icon-green">📦</div>
+          <span class="ov-card-arrow">▼</span>
+        </div>
+        <div class="ov-card-title">Inventory <kbd style="margin-left:4px">2</kbd></div>
+        <div class="ov-card-primary">{{ inventory_summary.total_items }}</div>
+        <div class="ov-card-stats">
+          <div class="ov-stat-row"><span class="label">Products</span><span class="val">{{ inventory_summary.total_products }}</span></div>
+          <div class="ov-stat-row"><span class="label">Low Stock</span><span class="val {% if inventory_summary.low_stock > 0 %}warn{% endif %}">{{ inventory_summary.low_stock }}</span></div>
+          <div class="ov-stat-row"><span class="label">Out of Stock</span><span class="val {% if inventory_summary.out_of_stock > 0 %}danger{% endif %}">{{ inventory_summary.out_of_stock }}</span></div>
+          <div class="ov-stat-row"><span class="label">OK Items</span><span class="val ok">{{ inventory_summary.ok_stock }}</span></div>
+        </div>
+        <div class="ov-card-chart-wrap"><canvas id="chart-inventory"></canvas></div>
+      </div>
+
+      <!-- SALES CARD -->
+      <div class="ov-card mod-sales" onclick="loadDetail('sales', this)" id="card-sales">
+        <div class="ov-card-header">
+          <div class="ov-card-icon icon-yellow">💰</div>
+          <span class="ov-card-arrow">▼</span>
+        </div>
+        <div class="ov-card-title">Sales (30d) <kbd style="margin-left:4px">3</kbd></div>
+        <div class="ov-card-primary">{{ sales_summary.total_30d }}</div>
+        <div class="ov-card-stats">
+          <div class="ov-stat-row"><span class="label">Revenue 30d</span><span class="val">{{ sales_summary.revenue_30d|floatformat:0|intcomma }}</span></div>
+          <div class="ov-stat-row"><span class="label">Today</span><span class="val">{{ sales_summary.total_today }}</span></div>
+          {% for pm in sales_summary.payment_breakdown|slice:":2" %}
+          <div class="ov-stat-row"><span class="label">{{ pm.payment_method }}</span><span class="val">{{ pm.count }}</span></div>
+          {% endfor %}
+        </div>
+        <div class="ov-card-chart-wrap"><canvas id="chart-sales"></canvas></div>
+      </div>
+
+      <!-- EXPENSES CARD -->
+      <div class="ov-card mod-expenses" onclick="loadDetail('expenses', this)" id="card-expenses">
+        <div class="ov-card-header">
+          <div class="ov-card-icon icon-orange">🧾</div>
+          <span class="ov-card-arrow">▼</span>
+        </div>
+        <div class="ov-card-title">Expenses <kbd style="margin-left:4px">4</kbd></div>
+        <div class="ov-card-primary">{{ expenses_summary.count_30d }}</div>
+        <div class="ov-card-stats">
+          <div class="ov-stat-row"><span class="label">Total 30d</span><span class="val">{{ expenses_summary.total_30d|floatformat:0|intcomma }}</span></div>
+          <div class="ov-stat-row"><span class="label">Pending</span><span class="val {% if expenses_summary.pending > 0 %}warn{% endif %}">{{ expenses_summary.pending }}</span></div>
+          <div class="ov-stat-row"><span class="label">Approved</span><span class="val ok">{{ expenses_summary.approved }}</span></div>
+          <div class="ov-stat-row"><span class="label">Rejected</span><span class="val {% if expenses_summary.rejected > 0 %}danger{% endif %}">{{ expenses_summary.rejected }}</span></div>
+        </div>
+        <div class="ov-card-chart-wrap"><canvas id="chart-expenses"></canvas></div>
+      </div>
+
+      <!-- CUSTOMERS CARD -->
+      <div class="ov-card mod-customers" onclick="loadDetail('customers', this)" id="card-customers">
+        <div class="ov-card-header">
+          <div class="ov-card-icon icon-teal">👥</div>
+          <span class="ov-card-arrow">▼</span>
+        </div>
+        <div class="ov-card-title">Customers <kbd style="margin-left:4px">5</kbd></div>
+        <div class="ov-card-primary">{{ customers_summary.total }}</div>
+        <div class="ov-card-stats">
+          <div class="ov-stat-row"><span class="label">New (30d)</span><span class="val ok">{{ customers_summary.new_30d }}</span></div>
+          <div class="ov-stat-row"><span class="label">Repeat</span><span class="val">{{ customers_summary.repeat }}</span></div>
+          <div class="ov-stat-row"><span class="label">Avg Spend</span><span class="val">{{ customers_summary.avg_spend|floatformat:0|intcomma }}</span></div>
+          <div class="ov-stat-row"><span class="label">High Value</span><span class="val ok">{{ customers_summary.high_value }}</span></div>
+        </div>
+        <div class="ov-card-chart-wrap"><canvas id="chart-customers"></canvas></div>
+      </div>
+
+    </div><!-- /module-grid -->
+
+    <!-- DETAIL PANEL -->
+    <div class="ov-detail-panel" id="detail-panel">
+      <div class="ov-detail-toolbar">
+        <div class="ov-detail-toolbar-left">
+          <span class="ov-detail-title" id="detail-title">Detail</span>
+          <span class="ov-module-pill" id="detail-pill"></span>
+        </div>
+        <div class="ov-detail-toolbar-right">
+          <input class="ov-search" type="text" placeholder="Filter rows…" id="detail-search" oninput="filterTable()">
+
+          <!-- Store override for this panel -->
+          <select class="ov-toolbar-filter" id="panel-store-filter" onchange="reloadDetail()" title="Override store for this panel">
+            <option value="">— store from header —</option>
+            {% for store in accessible_stores %}
+              <option value="{{ store.pk }}">{{ store.name }}</option>
+            {% endfor %}
+          </select>
+
+          <select class="ov-toolbar-filter" id="period-filter" onchange="reloadDetail()">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+
+          <!-- Export split button -->
+          <div class="ov-export-group">
+            <button class="ov-icon-btn" onclick="exportTable('csv')" title="Export as CSV">⬇ CSV</button>
+            <button class="ov-icon-btn" onclick="exportTable('xlsx')" title="Export as Excel">XLSX</button>
+          </div>
+
+          <!-- Fullscreen -->
+          <button class="ov-icon-btn" onclick="toggleFullscreen()" id="fullscreen-btn" title="Fullscreen (F)">⛶</button>
+
+          <button class="ov-close-btn" onclick="closeDetail()" title="Close (Esc)">✕</button>
+        </div>
+      </div>
+      <div class="ov-detail-body">
+        <div class="ov-detail-main" id="detail-main">
+          <div class="ov-detail-loading"><div class="spinner"></div> Loading…</div>
+        </div>
+        <div class="ov-detail-side" id="detail-side"></div>
+      </div>
+    </div>
+
+  </div><!-- /ov-body -->
+</div><!-- /ov-wrap -->
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<script>
+// ── CHART.JS DEFAULTS ─────────────────────────────────────
+Chart.defaults.color = '#8b949e';
+Chart.defaults.font.family = "'IBM Plex Mono', monospace";
+Chart.defaults.font.size = 10;
+
+const COLORS = {
+  blue:   '#58a6ff', green:  '#3fb950', yellow: '#d29922',
+  purple: '#bc8cff', red:    '#f85149', orange: '#f0883e',
+  teal:   '#39d3bb', muted:  '#484f58',
+};
+
+// ── DJANGO DATA ───────────────────────────────────────────
+const storesRegion    = {{ stores_summary.by_region|safe }};
+const invData         = { ok: {{ inventory_summary.ok_stock }}, low: {{ inventory_summary.low_stock }}, out: {{ inventory_summary.out_of_stock }} };
+const salesDaily      = { labels: {{ sales_summary.daily_labels|safe }}, revenue: {{ sales_summary.daily_revenue|safe }}, counts: {{ sales_summary.daily_counts|safe }} };
+const expensesMonthly = {{ expenses_summary.monthly_trend|safe }};
+const customerSegments = {{ customers_summary.segments|safe }};
+const paymentBreakdown = {{ sales_summary.payment_breakdown_json|safe }};
+
+// ── MINI CHART HELPERS ────────────────────────────────────
+function sparkBar(id, labels, data, color) {
+  const ctx = document.getElementById(id); if (!ctx) return;
+  new Chart(ctx, { type: 'bar', data: { labels, datasets: [{ data, backgroundColor: color+'66', borderColor: color, borderWidth:1, borderRadius:3 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{enabled:true}}, scales:{x:{display:false},y:{display:false}}, animation:{duration:600} }
+  });
+}
+function sparkDoughnut(id, labels, data, colors) {
+  const ctx = document.getElementById(id); if (!ctx) return;
+  new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data, backgroundColor: colors, borderColor: '#161b22', borderWidth:2 }] },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'68%', plugins:{legend:{display:false},tooltip:{enabled:true}}, animation:{duration:600} }
+  });
+}
+function sparkLine(id, labels, data, color) {
+  const ctx = document.getElementById(id); if (!ctx) return;
+  new Chart(ctx, { type: 'line', data: { labels, datasets: [{ data, borderColor: color, borderWidth:2, pointRadius:0, tension:0.4, fill:true, backgroundColor: color+'22' }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{enabled:false}}, scales:{x:{display:false},y:{display:false}}, animation:{duration:600} }
+  });
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  sparkBar('chart-stores', storesRegion.map(r=>r.region||'?'), storesRegion.map(r=>r.count), COLORS.blue);
+  sparkDoughnut('chart-inventory', ['OK','Low','Out'], [invData.ok, invData.low, invData.out], [COLORS.green, COLORS.yellow, COLORS.red]);
+  sparkLine('chart-sales', salesDaily.labels, salesDaily.revenue, COLORS.yellow);
+  sparkLine('chart-expenses', expensesMonthly.map(e=>e.month), expensesMonthly.map(e=>e.total), COLORS.orange);
+  sparkDoughnut('chart-customers',
+    ['High Value','Repeat','New'],
+    [customerSegments.high_value||0, customerSegments.repeat||0, customerSegments.new||0],
+    [COLORS.teal, COLORS.blue, COLORS.green]
+  );
+});
+
+// ── KPI STRIP TOGGLE ──────────────────────────────────────
+function toggleKpiStrip() {
+  const wrap = document.getElementById('kpi-strip-wrap');
+  const btn  = document.getElementById('kpi-toggle');
+  wrap.classList.toggle('collapsed');
+  const icon = btn.querySelector('.toggle-icon');
+  icon.style.transform = wrap.classList.contains('collapsed') ? 'rotate(-90deg)' : '';
+}
+
+// ── GLOBAL STORE FILTER ───────────────────────────────────
+function onGlobalStoreChange() {
+  const val = document.getElementById('global-store-filter').value;
+  // Sync panel filter only if panel store isn't overriding
+  const panelFilter = document.getElementById('panel-store-filter');
+  if (!panelFilter.value) {
+    reloadDetail();
+  }
+}
+
+function getEffectiveStoreId() {
+  const panel  = document.getElementById('panel-store-filter').value;
+  const global = document.getElementById('global-store-filter').value;
+  return panel || global || '';
+}
+
+// ── DETAIL PANEL STATE ────────────────────────────────────
+var currentModule   = null;
+var currentCard     = null;
+var detailSideChart = null;
+var detailSideChart2 = null;
+var isFullscreen    = false;
+
+const DETAIL_ENDPOINT = '{% url "stores:tenant_overview_detail" %}';
+const SALE_ITEMS_ENDPOINT = '{% url "stores:tenant_overview_detail" %}'; // uses module=sale_items
+
+const MODULE_META = {
+  stores:    { title: 'Stores Detail',    pillClass: 'pill-blue',   label: 'STORES' },
+  inventory: { title: 'Inventory Detail', pillClass: 'pill-green',  label: 'INVENTORY' },
+  sales:     { title: 'Sales Detail',     pillClass: 'pill-yellow', label: 'SALES' },
+  expenses:  { title: 'Expenses Detail',  pillClass: 'pill-orange', label: 'EXPENSES' },
+  customers: { title: 'Customers Detail', pillClass: 'pill-teal',   label: 'CUSTOMERS' },
+};
+
+const MODULE_ORDER = ['stores', 'inventory', 'sales', 'expenses', 'customers'];
+
+function loadDetail(module, cardEl) {
+  if (currentModule === module) { closeDetail(); return; }
+  if (currentCard) currentCard.classList.remove('active');
+  cardEl.classList.add('active');
+  currentModule = module;
+  currentCard   = cardEl;
+
+  const meta = MODULE_META[module];
+  document.getElementById('detail-title').textContent = meta.title;
+  const pill = document.getElementById('detail-pill');
+  pill.className = 'ov-module-pill ' + meta.pillClass;
+  pill.textContent = meta.label;
+
+  document.getElementById('detail-main').innerHTML =
+    '<div class="ov-detail-loading"><div class="spinner"></div> Loading data…</div>';
+  document.getElementById('detail-side').innerHTML = '';
+
+  document.getElementById('detail-panel').classList.add('open');
+  setTimeout(() => {
+    document.getElementById('detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, 100);
+
+  fetchDetail(module);
+}
+
+function fetchDetail(module) {
+  const period  = document.getElementById('period-filter').value;
+  const storeId = getEffectiveStoreId();
+  let url = `${DETAIL_ENDPOINT}?module=${module}&period=${period}`;
+  if (storeId) url += `&store_id=${storeId}`;
+
+  fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then(data => renderDetail(module, data))
+    .catch(err => {
+      document.getElementById('detail-main').innerHTML =
+        `<div class="ov-detail-loading" style="color:var(--red)">⚠ Error: ${err.message} <button class="ov-icon-btn" style="margin-left:12px" onclick="reloadDetail()">↺ Retry</button></div>`;
+    });
+}
+
+function reloadDetail() { if (currentModule) fetchDetail(currentModule); }
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+  if (isFullscreen) toggleFullscreen();
+  if (currentCard) currentCard.classList.remove('active');
+  currentModule = null; currentCard = null;
+}
+
+// ── FULLSCREEN ────────────────────────────────────────────
+function toggleFullscreen() {
+  const panel = document.getElementById('detail-panel');
+  isFullscreen = !isFullscreen;
+  panel.classList.toggle('fullscreen', isFullscreen);
+  document.getElementById('fullscreen-btn').textContent = isFullscreen ? '⊡' : '⛶';
+  document.body.style.overflow = isFullscreen ? 'hidden' : '';
+}
+
+// ── KEYBOARD SHORTCUTS ────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+  const n = parseInt(e.key);
+  if (n >= 1 && n <= 5) {
+    const mod = MODULE_ORDER[n - 1];
+    const card = document.getElementById(`card-${mod}`);
+    if (card) loadDetail(mod, card);
+  }
+  if (e.key === 'Escape') closeDetail();
+  if (e.key === 'f' || e.key === 'F') {
+    if (currentModule) toggleFullscreen();
+  }
+});
+
+// ── TABLE SEARCH ──────────────────────────────────────────
+function filterTable() {
+  const q = document.getElementById('detail-search').value.toLowerCase();
+  document.querySelectorAll('.ov-table[data-filterable] tbody tr:not(.ov-row-expand)').forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+// ── TABLE SORTING ─────────────────────────────────────────
+let sortState = { col: -1, dir: 1 };
+
+function attachSortHandlers(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  sortState = { col: -1, dir: 1 };
+  table.querySelectorAll('thead th').forEach((th, i) => {
+    th.addEventListener('click', () => sortTable(table, i));
+  });
+}
+
+function sortTable(table, colIndex) {
+  const isAsc = sortState.col === colIndex && sortState.dir === 1;
+  sortState = { col: colIndex, dir: isAsc ? -1 : 1 };
+
+  // Update header classes
+  table.querySelectorAll('thead th').forEach((th, i) => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (i === colIndex) th.classList.add(sortState.dir === 1 ? 'sort-asc' : 'sort-desc');
+  });
+
+  const tbody = table.querySelector('tbody');
+  const rows  = Array.from(tbody.querySelectorAll('tr:not(.ov-row-expand)'));
+  rows.sort((a, b) => {
+    const aVal = a.cells[colIndex]?.textContent.trim() || '';
+    const bVal = b.cells[colIndex]?.textContent.trim() || '';
+    const aNum = parseFloat(aVal.replace(/[^0-9.-]/g,''));
+    const bNum = parseFloat(bVal.replace(/[^0-9.-]/g,''));
+    if (!isNaN(aNum) && !isNaN(bNum)) return (aNum - bNum) * sortState.dir;
+    return aVal.localeCompare(bVal) * sortState.dir;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+// ── EXPORT ────────────────────────────────────────────────
+function exportTable(format) {
+  const table = document.querySelector('.ov-table[data-filterable]');
+  if (!table) { alert('No table to export in current panel.'); return; }
+  const filename = `${currentModule || 'export'}_${new Date().toISOString().slice(0,10)}`;
+
+  if (format === 'csv') {
+    let csv = '';
+    table.querySelectorAll('tr').forEach(row => {
+      const cells = Array.from(row.querySelectorAll('th,td'))
+        .map(c => `"${c.textContent.trim().replace(/"/g,'""')}"`);
+      csv += cells.join(',') + '\n';
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    downloadBlob(blob, filename + '.csv');
+  } else if (format === 'xlsx') {
+    const wb   = XLSX.utils.book_new();
+    const ws   = XLSX.utils.table_to_sheet(table);
+    XLSX.utils.book_append_sheet(wb, ws, currentModule || 'Data');
+    XLSX.writeFile(wb, filename + '.xlsx');
+  }
+}
+
+function downloadBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── SIDE CHART HELPERS ────────────────────────────────────
+function clearSideCharts() {
+  if (detailSideChart)  { detailSideChart.destroy();  detailSideChart  = null; }
+  if (detailSideChart2) { detailSideChart2.destroy(); detailSideChart2 = null; }
+}
+
+function renderSideChart(type, labels, data, colors, title, canvasId='side-chart-canvas') {
+  const isDonut = type === 'doughnut';
+  const bgColors = Array.isArray(colors) && colors.length === 1
+    ? data.map((_, i) => [COLORS.blue,COLORS.green,COLORS.yellow,COLORS.teal,COLORS.orange,COLORS.red][i%6])
+    : colors;
+
+  const chart = new Chart(document.getElementById(canvasId), {
+    type: isDonut ? 'doughnut' : 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: isDonut ? bgColors : bgColors.map(c=>c+'99'), borderColor: isDonut ? '#161b22' : bgColors, borderWidth: isDonut ? 2 : 1, borderRadius: isDonut ? 0 : 4 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: isDonut ? '60%' : undefined,
+      plugins: {
+        legend: { display: isDonut, position: 'bottom', labels: { boxWidth: 10, padding: 8, font: { size: 10 } } },
+        tooltip: { enabled: true }
+      },
+      scales: isDonut ? {} : {
+        x: { ticks: { font: { size: 9 } }, grid: { color: '#21262d' } },
+        y: { ticks: { font: { size: 9 } }, grid: { color: '#21262d' } }
+      },
+      indexAxis: labels.length > 5 && !isDonut ? 'y' : 'x',
+    }
+  });
+  return chart;
+}
+
+// ── RENDER DISPATCHER ─────────────────────────────────────
+function renderDetail(module, data) {
+  ({ stores: renderStores, inventory: renderInventory, sales: renderSales,
+     expenses: renderExpenses, customers: renderCustomers })[module]?.(data);
+}
+
+// ── STORES ────────────────────────────────────────────────
+function renderStores(data) {
+  const rows = data.rows || [];
+  const active = rows.filter(r=>r.is_active).length;
+  const inactive = rows.filter(r=>!r.is_active).length;
+
+  let html = `<div class="ov-section-label">All Stores (${rows.length})</div>`;
+  html += `<table class="ov-table" id="detail-table" data-filterable>
+    <thead><tr>
+      <th>Name</th><th>Code</th><th>Region</th><th>Type</th>
+      <th>Staff</th><th>Devices</th><th>Inventory</th><th>Low Stock</th>
+      <th>EFRIS</th><th>Status</th>
+    </tr></thead><tbody>`;
+  rows.forEach(r => {
+    html += `<tr>
+      <td>${r.name}</td>
+      <td class="mono muted">${r.code||'—'}</td>
+      <td class="muted">${r.region||'—'}</td>
+      <td><span class="badge badge-blue">${r.store_type||'—'}</span></td>
+      <td>${r.staff_count}</td><td>${r.device_count}</td><td>${r.inventory_count}</td>
+      <td><span class="${r.low_stock_count>0?'badge badge-yellow':'muted'}">${r.low_stock_count}</span></td>
+      <td>${r.efris_enabled?'<span class="badge badge-green">Yes</span>':'<span class="badge badge-grey">No</span>'}</td>
+      <td>${r.is_active?'<span class="badge badge-green">Active</span>':'<span class="badge badge-red">Inactive</span>'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('detail-main').innerHTML = html;
+  attachSortHandlers('detail-table');
+
+  clearSideCharts();
+  const side = document.getElementById('detail-side');
+  side.innerHTML = `<div class="ov-side-chart-title">Store Status</div><div class="ov-side-chart-wrap"><canvas id="side-chart-canvas"></canvas></div>`;
+  detailSideChart = renderSideChart('Bar', ['Active','Inactive'], [active, inactive], [COLORS.green, COLORS.red], 'Store Status');
+}
+
+// ── INVENTORY ─────────────────────────────────────────────
+function renderInventory(data) {
+  const items = data.low_stock_items || [];
+  let html = `<div class="ov-section-label">Low / Out of Stock Items (${items.length})</div>`;
+  html += `<table class="ov-table" id="detail-table" data-filterable>
+    <thead><tr><th>Store</th><th>Product</th><th>SKU</th><th>Qty</th><th>Threshold</th><th>Status</th><th>Reorder Qty</th></tr></thead><tbody>`;
+  items.forEach(r => {
+    const status = r.quantity===0 ? '<span class="badge badge-red">Out</span>' : '<span class="badge badge-yellow">Low</span>';
+    html += `<tr>
+      <td class="muted">${r['store__name']}</td>
+      <td>${r['product__name']}</td>
+      <td class="mono muted">${r['product__sku']||'—'}</td>
+      <td style="color:${r.quantity===0?'var(--red)':'var(--yellow)'}">${r.quantity}</td>
+      <td class="muted">${r.low_stock_threshold}</td>
+      <td>${status}</td>
+      <td class="muted">${r.reorder_quantity}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('detail-main').innerHTML = html;
+  attachSortHandlers('detail-table');
+
+  const top = (data.top_by_value||[]).slice(0,8);
+  clearSideCharts();
+  const side = document.getElementById('detail-side');
+  side.innerHTML = `<div class="ov-side-chart-title">Top Products by Value (UGX)</div><div class="ov-side-chart-wrap"><canvas id="side-chart-canvas"></canvas></div>`;
+  detailSideChart = renderSideChart('bar', top.map(t=>t['product__name']), top.map(t=>parseFloat(t.value||0)), [COLORS.green], 'Top by Value');
+}
+
+// ── SALES ─────────────────────────────────────────────────
+function renderSales(data) {
+  const rows = data.recent_sales || [];
+  const topStores = data.top_stores || [];
+  const payBreak  = data.payment_breakdown || [];
+  const dailyRev  = data.daily_revenue || [];
+  const dailyCnt  = data.daily_counts  || [];
+  const dailyLbl  = data.daily_labels  || [];
+
+  // Tabs
+  let html = `
+  <div class="ov-tabs">
+    <button class="ov-tab active" onclick="switchSalesTab('transactions', this)">Transactions</button>
+    <button class="ov-tab" onclick="switchSalesTab('top-stores', this)">Top Stores</button>
+  </div>
+  <div id="sales-tab-transactions" class="ov-tab-panel active">
+    <div class="ov-section-label">Recent Sales (${rows.length})</div>
+    <table class="ov-table" id="detail-table" data-filterable>
+      <thead><tr>
+        <th>Invoice</th><th>Store</th><th>Customer</th>
+        <th>Date</th><th>Amount</th><th>Payment</th><th>Status</th><th></th>
+      </tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    const statusClass = r.payment_status==='PAID'?'badge-green':r.payment_status==='PENDING'?'badge-yellow':'badge-red';
+    html += `<tr class="sale-row" data-sale-id="${r.id}">
+      <td class="mono" style="color:var(--blue)">${r.document_number||r.id}</td>
+      <td class="muted">${r['store__name']}</td>
+      <td class="muted">${r['customer__name']||'—'}</td>
+      <td class="muted">${r.created_at}</td>
+      <td>${parseFloat(r.total_amount||0).toLocaleString()}</td>
+      <td><span class="badge badge-blue">${r.payment_method}</span></td>
+      <td><span class="badge ${statusClass}">${r.payment_status}</span></td>
+      <td><span class="ov-expand-toggle" onclick="toggleSaleExpand(${r.id}, this)">▶</span></td>
+    </tr>
+    <tr class="ov-row-expand" id="expand-${r.id}">
+      <td colspan="8"><div class="ov-expand-inner" id="expand-inner-${r.id}"></div></td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>
+  <div id="sales-tab-top-stores" class="ov-tab-panel">
+    <div class="ov-section-label">Top Stores by Revenue</div>
+    <table class="ov-table" id="top-stores-table" data-filterable>
+      <thead><tr><th>Store</th><th>Revenue</th><th>Transactions</th></tr></thead><tbody>`;
+  topStores.forEach(t => {
+    html += `<tr><td>${t['store__name']}</td><td>${parseFloat(t.revenue||0).toLocaleString()}</td><td>${t.count}</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  document.getElementById('detail-main').innerHTML = html;
+  attachSortHandlers('detail-table');
+
+  // Side: dual-axis chart + payment pie
+  clearSideCharts();
+  const side = document.getElementById('detail-side');
+  side.innerHTML = `
+    <div class="ov-side-chart-title">Revenue vs Transactions (14d)</div>
+    <div class="ov-side-chart-wrap tall"><canvas id="side-chart-canvas"></canvas></div>
+    <div class="ov-side-chart-title" style="margin-top:16px">Payment Methods</div>
+    <div class="ov-side-chart-wrap"><canvas id="side-chart-canvas2"></canvas></div>`;
+
+  // Dual axis chart
+  detailSideChart = new Chart(document.getElementById('side-chart-canvas'), {
+    data: {
+      labels: dailyLbl,
+      datasets: [
+        { type: 'bar',  label: 'Revenue', data: dailyRev, backgroundColor: COLORS.yellow+'66', borderColor: COLORS.yellow, borderWidth:1, borderRadius:3, yAxisID: 'y' },
+        { type: 'line', label: 'Txns',    data: dailyCnt, borderColor: COLORS.blue, borderWidth:2, pointRadius:2, tension:0.4, fill:false, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth:10, padding:8, font:{size:9} } } },
+      scales: {
+        y:  { type:'linear', position:'left',  ticks:{font:{size:9}}, grid:{color:'#21262d'} },
+        y1: { type:'linear', position:'right', ticks:{font:{size:9}}, grid:{display:false} },
+        x:  { ticks:{font:{size:8}}, grid:{color:'#21262d'} }
+      }
+    }
+  });
+
+  // Payment pie
+  const pmLabels = payBreak.map(p=>p.payment_method);
+  const pmCounts = payBreak.map(p=>p.count);
+  const pmColors = [COLORS.blue, COLORS.green, COLORS.yellow, COLORS.orange, COLORS.teal];
+  detailSideChart2 = new Chart(document.getElementById('side-chart-canvas2'), {
+    type: 'doughnut',
+    data: { labels: pmLabels, datasets: [{ data: pmCounts, backgroundColor: pmColors.slice(0,pmLabels.length), borderColor:'#161b22', borderWidth:2 }] },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'60%',
+      plugins: { legend:{ display:true, position:'bottom', labels:{boxWidth:10,padding:6,font:{size:9}} }, tooltip:{enabled:true} }
+    }
+  });
+}
+
+function switchSalesTab(tabId, btn) {
+  document.querySelectorAll('.ov-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.ov-tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(`sales-tab-${tabId}`).classList.add('active');
+}
+
+// ── SALE ROW EXPAND ───────────────────────────────────────
+const expandedSales = new Set();
+
+function toggleSaleExpand(saleId, toggleEl) {
+  const inner = document.getElementById(`expand-inner-${saleId}`);
+  if (!inner) return;
+  const isOpen = inner.classList.contains('open');
+
+  if (isOpen) {
+    inner.classList.remove('open');
+    toggleEl.textContent = '▶';
+    expandedSales.delete(saleId);
+    return;
+  }
+
+  inner.classList.add('open');
+  toggleEl.textContent = '▼';
+  expandedSales.add(saleId);
+
+  // Only fetch if not already loaded
+  if (inner.dataset.loaded) return;
+  inner.innerHTML = '<span class="ov-expand-loading"><div class="spinner" style="display:inline-block"></div> Loading items…</span>';
+
+  const period  = document.getElementById('period-filter').value;
+  const storeId = getEffectiveStoreId();
+  let url = `${SALE_ITEMS_ENDPOINT}?module=sale_items&sale_id=${saleId}&period=${period}`;
+  if (storeId) url += `&store_id=${storeId}`;
+
+  fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(r => r.json())
+    .then(data => {
+      inner.dataset.loaded = '1';
+      const items = data.items || [];
+      if (!items.length) { inner.innerHTML = '<span class="muted" style="font-size:11px">No line items found.</span>'; return; }
+      let t = `<table class="ov-line-items-table">
+        <thead><tr><th>Product</th><th>SKU</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Tax</th><th>Total</th></tr></thead><tbody>`;
+      items.forEach(item => {
+        t += `<tr>
+          <td>${item.product__name||'—'}</td>
+          <td class="mono muted">${item.product__sku||'—'}</td>
+          <td>${item.quantity}</td>
+          <td>${parseFloat(item.unit_price||0).toLocaleString()}</td>
+          <td>${parseFloat(item.discount_amount||0).toLocaleString()}</td>
+          <td>${parseFloat(item.tax_amount||0).toLocaleString()}</td>
+          <td style="color:var(--yellow);font-weight:600">${parseFloat(item.total_price||0).toLocaleString()}</td>
+        </tr>`;
+      });
+      t += '</tbody></table>';
+      inner.innerHTML = t;
+    })
+    .catch(() => { inner.innerHTML = '<span style="color:var(--red);font-size:11px">⚠ Failed to load items.</span>'; });
+}
+
+// ── EXPENSES ──────────────────────────────────────────────
+function renderExpenses(data) {
+  const rows = data.rows || [];
+  let html = `<div class="ov-section-label">Recent Expenses (${rows.length})</div>`;
+  html += `<table class="ov-table" id="detail-table" data-filterable>
+    <thead><tr>
+      <th>Description</th><th>Vendor</th><th>Amount</th><th>Currency</th>
+      <th>Payment</th><th>Date</th><th>Status</th><th>Recurring</th>
+    </tr></thead><tbody>`;
+  rows.forEach(r => {
+    const statusMap = { approved:'badge-green', rejected:'badge-red', submitted:'badge-yellow', under_review:'badge-blue', draft:'badge-grey', resubmit:'badge-orange' };
+    const statusClass = statusMap[r.status] || 'badge-grey';
+    html += `<tr>
+      <td>${r.description}</td>
+      <td class="muted">${r.vendor||'—'}</td>
+      <td style="color:var(--orange);font-weight:600">${parseFloat(r.amount||0).toLocaleString()}</td>
+      <td><span class="badge badge-grey">${r.currency||'UGX'}</span></td>
+      <td><span class="badge badge-blue">${r.payment_method||'—'}</span></td>
+      <td class="muted">${r.date}</td>
+      <td><span class="badge ${statusClass}">${r.status}</span></td>
+      <td>${r.is_recurring?'<span class="badge badge-teal">↺ Yes</span>':'—'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('detail-main').innerHTML = html;
+  attachSortHandlers('detail-table');
+
+  // Side: payment breakdown + monthly trend
+  clearSideCharts();
+  const pmData = data.payment_breakdown || [];
+  const mData  = data.monthly_trend || [];
+  const side = document.getElementById('detail-side');
+  side.innerHTML = `
+    <div class="ov-side-chart-title">By Payment Method</div>
+    <div class="ov-side-chart-wrap"><canvas id="side-chart-canvas"></canvas></div>
+    <div class="ov-side-chart-title" style="margin-top:16px">Monthly Trend</div>
+    <div class="ov-side-chart-wrap"><canvas id="side-chart-canvas2"></canvas></div>`;
+
+  const pmColors = [COLORS.orange, COLORS.blue, COLORS.green, COLORS.yellow, COLORS.teal];
+  detailSideChart = new Chart(document.getElementById('side-chart-canvas'), {
+    type: 'doughnut',
+    data: { labels: pmData.map(p=>p.payment_method), datasets: [{ data: pmData.map(p=>parseFloat(p.total_amount||0)), backgroundColor: pmColors.slice(0,pmData.length), borderColor:'#161b22', borderWidth:2 }] },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'60%', plugins:{ legend:{display:true,position:'bottom',labels:{boxWidth:10,padding:6,font:{size:9}}}, tooltip:{enabled:true} } }
+  });
+  detailSideChart2 = new Chart(document.getElementById('side-chart-canvas2'), {
+    type: 'bar',
+    data: { labels: mData.map(m=>m.month), datasets: [{ data: mData.map(m=>parseFloat(m.total||0)), backgroundColor: COLORS.orange+'99', borderColor: COLORS.orange, borderWidth:1, borderRadius:3 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{ticks:{font:{size:8}},grid:{color:'#21262d'}},y:{ticks:{font:{size:9}},grid:{color:'#21262d'}}} }
+  });
+}
+
+// ── CUSTOMERS ─────────────────────────────────────────────
+function renderCustomers(data) {
+  const rows = data.customers || [];
+  let html = `<div class="ov-section-label">Top Customers (${rows.length})</div>`;
+  html += `<table class="ov-table" id="detail-table" data-filterable>
+    <thead><tr>
+      <th>Customer</th><th>Total Purchases</th><th>Total Spent</th>
+      <th>Avg Spend</th><th>Last Purchase</th><th>Segment</th>
+    </tr></thead><tbody>`;
+  rows.forEach(r => {
+    const spent = parseFloat(r.total_spent||0);
+    const segment = spent > 1000000 ? '<span class="badge badge-teal">High Value</span>'
+                  : spent > 500000  ? '<span class="badge badge-blue">Mid Value</span>'
+                  : '<span class="badge badge-grey">Standard</span>';
+    html += `<tr>
+      <td style="color:var(--teal)">${r['customer__name']||'Anonymous'}</td>
+      <td>${r.total_purchases||0}</td>
+      <td style="font-weight:600">${spent.toLocaleString()}</td>
+      <td class="muted">${parseFloat(r.avg_spend||0).toLocaleString()}</td>
+      <td class="muted">${r.last_purchase||'—'}</td>
+      <td>${segment}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('detail-main').innerHTML = html;
+  attachSortHandlers('detail-table');
+
+  // Side: segment doughnut + top spenders bar
+  clearSideCharts();
+  const seg = data.segments || {};
+  const side = document.getElementById('detail-side');
+  side.innerHTML = `
+    <div class="ov-side-chart-title">Customer Segments</div>
+    <div class="ov-side-chart-wrap"><canvas id="side-chart-canvas"></canvas></div>
+    <div class="ov-side-chart-title" style="margin-top:16px">Top Spenders</div>
+    <div class="ov-side-chart-wrap"><canvas id="side-chart-canvas2"></canvas></div>`;
+
+  detailSideChart = new Chart(document.getElementById('side-chart-canvas'), {
+    type: 'doughnut',
+    data: { labels:['High Value','Mid Value','Standard','New'], datasets:[{ data:[seg.high_value||0, seg.mid_value||0, seg.standard||0, seg.new_count||0], backgroundColor:[COLORS.teal,COLORS.blue,COLORS.muted,COLORS.green], borderColor:'#161b22', borderWidth:2 }] },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'60%', plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:10,padding:6,font:{size:9}}},tooltip:{enabled:true}} }
+  });
+
+  const top10 = rows.slice(0,8);
+  detailSideChart2 = new Chart(document.getElementById('side-chart-canvas2'), {
+    type: 'bar',
+    data: { labels: top10.map(r=>r['customer__name']||'Anon'), datasets:[{ data:top10.map(r=>parseFloat(r.total_spent||0)), backgroundColor: COLORS.teal+'99', borderColor: COLORS.teal, borderWidth:1, borderRadius:3 }] },
+    options: { responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{ticks:{font:{size:9}},grid:{color:'#21262d'}},y:{ticks:{font:{size:9}},grid:{display:false}}} }
+  });
+}
+</script>
+{% endblock %}

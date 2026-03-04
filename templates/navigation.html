@@ -2,6 +2,18 @@
 {% load static %}
 {% load custom_filters %}
 
+{# Apply sidebar state before paint to avoid layout flash #}
+<script>
+(function() {
+    var mini   = localStorage.getItem('sidebarMini') === 'true';
+    var pinned = localStorage.getItem('sidebarPinned') === 'true';
+    if (mini && window.innerWidth >= 768) {
+        document.body.classList.add('sidebar-mini');
+        if (pinned) document.body.classList.add('sidebar-pinned-open');
+    }
+})();
+</script>
+
 <!-- Mobile Hamburger Button -->
 
 
@@ -14,6 +26,11 @@
         <i class="bi bi-x-lg"></i>
     </button>
 
+    <!-- Pin badge (desktop, shown when sidebar is pinned open from mini) -->
+    <div class="pin-badge d-none d-md-flex" id="pinBadge" title="Click to unpin sidebar">
+        <i class="bi bi-pin-angle-fill"></i> Pinned
+    </div>
+
     <!-- Navigation Content -->
     <div class="navigation-content" id="navigationContent">
         {% for nav_item in navigation_items %}
@@ -25,18 +42,18 @@
                             data-bs-target="#{{ nav_item.name|slugify }}Collapse"
                             aria-expanded="false"
                             aria-controls="{{ nav_item.name|slugify }}Collapse"
-                            aria-label="Toggle {{ nav_item.name }} menu">
+                            aria-label="Toggle {{ nav_item.name }} menu"
+                            data-nav-tooltip="{{ nav_item.name }}">
                         {% if nav_item.icon %}
                             <i class="{{ nav_item.icon }}"></i>
                         {% else %}
                             <i class="bi bi-folder"></i>
                         {% endif %}
                         <span class="nav-text">{{ nav_item.name }}</span>
-                        <i class="bi bi-chevron-down ms-auto toggle-icon"></i>
+                        <i class="bi bi-plus-lg ms-auto toggle-icon"></i>
                     </button>
 
                     <div class="collapse{% if nav_item|is_section_active:current_section %} show{% endif %}"
-
                          id="{{ nav_item.name|slugify }}Collapse">
                         <div class="nav-children">
                             {% for child in nav_item.children %}
@@ -55,9 +72,8 @@
                                                 <i class="bi bi-folder2"></i>
                                             {% endif %}
                                             <span class="nav-text">{{ child.name }}</span>
-                                            <i class="bi bi-chevron-down ms-auto toggle-icon"></i>
+                                            <i class="bi bi-chevron-compact-down ms-auto toggle-icon"></i>
                                         </button>
-
                                         <div class="collapse{% if nav_item|is_section_active:active_section %} show{% endif %}"
                                              id="{{ child.name|slugify }}Nested">
                                             <div class="nested-children">
@@ -102,13 +118,44 @@
                             {% endfor %}
                         </div>
                     </div>
+
+                    <!-- FLYOUT PANEL: shown in mini mode on hover; click icon to pin -->
+                    <div class="nav-flyout">
+                        <div class="nav-flyout-header">
+                            {% if nav_item.icon %}<i class="{{ nav_item.icon }} me-1"></i>{% endif %}
+                            {{ nav_item.name }}
+                            <span class="flyout-pin-hint">click icon to pin</span>
+                        </div>
+                        {% for child in nav_item.children %}
+                            {% if child.children %}
+                                <div class="nav-flyout-section-label">{{ child.name }}</div>
+                                {% for nested_child in child.children %}
+                                    {% nav_item_url nested_child as nested_url %}
+                                    {% is_active_nav nested_child.url_name as is_active %}
+                                    <a href="{{ nested_url }}" class="{% if is_active %}active{% endif %}">
+                                        {% if nested_child.icon %}<i class="{{ nested_child.icon }}"></i>{% else %}<i class="bi bi-file-earmark"></i>{% endif %}
+                                        {{ nested_child.name }}
+                                    </a>
+                                {% endfor %}
+                            {% else %}
+                                {% nav_item_url child as child_url %}
+                                {% is_active_nav child.url_name as is_active %}
+                                <a href="{{ child_url }}" class="{% if is_active %}active{% endif %}">
+                                    {% if child.icon %}<i class="{{ child.icon }}"></i>{% else %}<i class="bi bi-circle"></i>{% endif %}
+                                    {{ child.name }}
+                                </a>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+
                 {% else %}
                     <!-- Single item without children -->
                     {% nav_item_url nav_item as nav_url %}
                     {% is_active_nav nav_item.url_name as is_active %}
                     <a href="{{ nav_url }}"
                        class="nav-link main-link{% if is_active %} active{% endif %} {{ nav_item.css_class }}"
-                       title="{{ nav_item.name }}">
+                       title="{{ nav_item.name }}"
+                       data-nav-tooltip="{{ nav_item.name }}">
                         {% if nav_item.icon %}
                             <i class="{{ nav_item.icon }}"></i>
                         {% else %}
@@ -221,6 +268,11 @@
 <style>
     /* CSS Variables for Theming */
 :root {
+    /* Sidebar dimensions — must match base.html */
+    --nav-sidebar-full: 260px;
+    --nav-sidebar-expanded: 260px; /* used when pinned-open from mini */
+    --nav-sidebar-mini: 64px;
+    --header-height: 70px;
     --primary-25: rgba(59, 130, 246, 0.05);
     --primary-50: rgba(59, 130, 246, 0.1);
     --primary-75: rgba(59, 130, 246, 0.15);
@@ -236,6 +288,17 @@
     --bg-tertiary: #f3f4f6;
     --border-color: #e5e7eb;
     --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    /* Tooltip theming — light mode */
+    --tt-bg: #18212f;
+    --tt-color: #f0f4f8;
+    --tt-border: #3b82f6;
+    /* Flyout theming — light mode */
+    --flyout-bg: #ffffff;
+    --flyout-border: rgba(59,130,246,0.2);
+    --flyout-shadow: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+    --flyout-header-color: #2563eb;
+    --flyout-link-hover-bg: rgba(59,130,246,0.07);
+    --flyout-link-active-bg: rgba(59,130,246,0.13);
 }
 
 [data-theme="dark"] {
@@ -250,6 +313,17 @@
     --bg-secondary: #1f2937;
     --bg-tertiary: #374151;
     --border-color: #4b5563;
+    /* Tooltip theming — dark mode */
+    --tt-bg: #f1f5f9;
+    --tt-color: #0f172a;
+    --tt-border: #3b82f6;
+    /* Flyout theming — dark mode */
+    --flyout-bg: #1e293b;
+    --flyout-border: rgba(59,130,246,0.3);
+    --flyout-shadow: 0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
+    --flyout-header-color: #93c5fd;
+    --flyout-link-hover-bg: rgba(59,130,246,0.14);
+    --flyout-link-active-bg: rgba(59,130,246,0.22);
 }
 /* Highlighted Navigation Items */
 .nav-highlight-primary {
@@ -350,13 +424,10 @@
     background: var(--primary-25);
 }
 
-/* Navigation Sidebar */
+/* Navigation Sidebar - base (no position/size - set per breakpoint) */
 .navigation-sidebar {
-    position: relative;
     background: var(--bg-primary);
     border-right: 1px solid var(--border-color);
-    height: 100%;
-    transition: all 0.3s ease;
 }
 
 .navigation-content {
@@ -384,7 +455,7 @@
     visibility: visible;
 }
 
-/* Mobile Styles - CRITICAL FIXES */
+/* Mobile Styles */
 @media (max-width: 767.98px) {
     .navigation-sidebar {
         position: fixed;
@@ -392,13 +463,10 @@
         left: -100%;
         width: 280px;
         height: 100vh;
-        background: var(--bg-primary);
         z-index: 1045;
         overflow-y: auto;
         transition: left 0.3s ease;
         box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
-        display: block !important; /* Force display */
-        visibility: visible !important;
     }
 
     .navigation-sidebar.active {
@@ -416,33 +484,21 @@
         width: 100%;
         height: 100%;
     }
-
-    /* Adjust hamvburger button when sidebar is open */
-    .hamvburger-btn.active {
-        left: 1rem;
-        z-index: 1051;
-    }
 }
 
-/* Desktop Styles */
+/* Desktop Styles - sidebar is now fully controlled by the collapsible block below */
 @media (min-width: 768px) {
     .hamvburger-btn,
     .sidebar-close,
     .sidebar-overlay {
         display: none !important;
     }
-
-    .navigation-sidebar {
-        position: relative;
-        left: 0 !important;
-        width: 100%;
-        height: auto;
-    }
 }
 
 /* Base Navigation Styles */
 .nav-section {
     margin-bottom: 0.25rem;
+    position: relative; /* needed for flyout absolute positioning */
 }
 
 .btn-toggle,
@@ -720,6 +776,303 @@
 .loading {
     animation: spin 1s linear infinite;
 }
+
+/* ===========================================
+   COLLAPSIBLE SIDEBAR (DESKTOP)
+   =========================================== */
+
+@media (min-width: 768px) {
+
+    /* ── Base sidebar ── */
+    .navigation-sidebar {
+        position: fixed !important;
+        top: var(--header-height, 70px) !important;
+        left: 0 !important;
+        width: var(--nav-sidebar-full) !important;
+        height: calc(100vh - var(--header-height, 70px)) !important;
+        overflow: hidden;
+        transition: width 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 1020;
+        display: flex !important;
+        flex-direction: column;
+    }
+
+    /* ── Mini: icon-only, 64px ── */
+    .navigation-sidebar.mini {
+        width: var(--nav-sidebar-mini) !important;
+        overflow: hidden;             /* clipped — hover expansion handles width */
+        transition: width 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* ── Hover-expanded (JS adds .sidebar-hover) — widens to full, no layout shift ──
+       .sidebar-hover is added/removed on mouseenter/mouseleave via JS.
+       This keeps the sidebar above the content (z-index) so it overlays. */
+    .navigation-sidebar.mini.sidebar-hover,
+    .navigation-sidebar.mini.sidebar-pinned {
+        width: var(--nav-sidebar-full) !important;
+        overflow: hidden;
+        z-index: 1025;                /* float above content */
+        box-shadow: 4px 0 24px rgba(0,0,0,0.10);
+    }
+
+    /* ── Pinned: persistent open, indents main content ── */
+    .navigation-sidebar.mini.sidebar-pinned {
+        z-index: 1020;                /* back to normal — content shifts */
+        box-shadow: none;
+    }
+
+    /* Main wrapper margins */
+    body:not(.sidebar-mini) .main-wrapper {
+        margin-left: var(--nav-sidebar-full);
+        transition: margin-left 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    body.sidebar-mini .main-wrapper {
+        margin-left: var(--nav-sidebar-mini);
+        transition: margin-left 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    /* When pinned from mini, shift content to full width */
+    body.sidebar-mini.sidebar-pinned-open .main-wrapper {
+        margin-left: var(--nav-sidebar-full);
+    }
+
+    /* ── Navigation content scroll ── */
+    .navigation-sidebar .navigation-content {
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding: 0.75rem 0.5rem;
+        flex: 1;
+    }
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .navigation-content {
+        padding: 0.5rem 0;
+        scrollbar-width: none;
+    }
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .navigation-content::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* ═══════════════════════════════════════
+       ICON-ONLY STATE — mini, not expanded
+       ═══════════════════════════════════════ */
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .btn-toggle,
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .nav-link {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 44px !important;
+        height: 44px !important;
+        padding: 0 !important;
+        margin: 2px auto !important;
+        gap: 0 !important;
+        border-left: none !important;
+        border-radius: 10px !important;
+        transform: none !important;
+        overflow: hidden !important;
+        transition: background-color 0.18s ease, color 0.18s ease;
+    }
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .btn-toggle i,
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .nav-link i {
+        width: auto !important;
+        font-size: 1.3rem !important;
+        flex-shrink: 0 !important;
+        margin: 0 !important;
+    }
+    /* Hide all text/chrome in icon-only mode */
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .nav-text,
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .toggle-icon,
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .active-indicator,
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .nav-divider,
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .nav-hr,
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .contextual-section,
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .collapse,
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .collapsing {
+        display: none !important;
+    }
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .nav-link.active {
+        background-color: var(--primary-100) !important;
+        border-left: none !important;
+    }
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .nav-link.active::before {
+        display: none !important;
+    }
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .btn-toggle:hover,
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .nav-link:hover {
+        background-color: var(--primary-50) !important;
+        color: var(--primary-600) !important;
+    }
+
+    /* ═══════════════════════════════════════
+       EXPANDED STATE — hover or pinned
+       Restore full-sidebar appearance
+       ═══════════════════════════════════════ */
+    .navigation-sidebar.mini.sidebar-hover .btn-toggle,
+    .navigation-sidebar.mini.sidebar-hover .nav-link,
+    .navigation-sidebar.mini.sidebar-pinned .btn-toggle,
+    .navigation-sidebar.mini.sidebar-pinned .nav-link {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        width: 100% !important;
+        height: auto !important;
+        min-height: 44px;
+        padding: 0.75rem 1rem !important;
+        margin: 0 !important;
+        gap: 0.75rem !important;
+        border-radius: 8px !important;
+        overflow: hidden;
+    }
+    .navigation-sidebar.mini.sidebar-hover .btn-toggle i,
+    .navigation-sidebar.mini.sidebar-hover .nav-link i,
+    .navigation-sidebar.mini.sidebar-pinned .btn-toggle i,
+    .navigation-sidebar.mini.sidebar-pinned .nav-link i {
+        font-size: 1.1rem !important;
+        width: 20px !important;
+        flex-shrink: 0;
+    }
+    .navigation-sidebar.mini.sidebar-hover .nav-text,
+    .navigation-sidebar.mini.sidebar-hover .toggle-icon,
+    .navigation-sidebar.mini.sidebar-hover .active-indicator,
+    .navigation-sidebar.mini.sidebar-hover .nav-divider,
+    .navigation-sidebar.mini.sidebar-hover .nav-hr,
+    .navigation-sidebar.mini.sidebar-pinned .nav-text,
+    .navigation-sidebar.mini.sidebar-pinned .toggle-icon,
+    .navigation-sidebar.mini.sidebar-pinned .active-indicator,
+    .navigation-sidebar.mini.sidebar-pinned .nav-divider,
+    .navigation-sidebar.mini.sidebar-pinned .nav-hr {
+        display: revert !important;
+    }
+    /* Only show collapse panels that Bootstrap has marked .show — rest stay hidden */
+    .navigation-sidebar.mini.sidebar-hover .collapse.show,
+    .navigation-sidebar.mini.sidebar-pinned .collapse.show {
+        display: block !important;
+    }
+    .navigation-sidebar.mini.sidebar-hover .collapse:not(.show),
+    .navigation-sidebar.mini.sidebar-pinned .collapse:not(.show) {
+        display: none !important;
+    }
+    /* Active link restoration */
+    .navigation-sidebar.mini.sidebar-hover .nav-link.active,
+    .navigation-sidebar.mini.sidebar-pinned .nav-link.active {
+        border-left: 3px solid var(--primary-500) !important;
+        background-color: var(--primary-100) !important;
+    }
+
+    /* ═══════════════════════════════════════
+       PIN BADGE — shown when sidebar is pinned
+       ═══════════════════════════════════════ */
+    .navigation-sidebar.mini.sidebar-pinned .pin-badge {
+        display: flex !important;
+    }
+    .pin-badge {
+        display: none;
+        position: absolute;
+        top: 0.5rem;
+        right: 0.6rem;
+        align-items: center;
+        gap: 0.3rem;
+        background: var(--primary-50);
+        border: 1px solid var(--primary-100);
+        border-radius: 20px;
+        padding: 0.15rem 0.5rem;
+        font-size: 0.62rem;
+        font-weight: 600;
+        color: var(--primary-600);
+        cursor: pointer;
+        z-index: 10;
+        transition: background 0.15s;
+    }
+    .pin-badge:hover {
+        background: var(--primary-100);
+    }
+    .pin-badge i { font-size: 0.65rem; }
+
+    /* ═══════════════════════════════════════
+       TOOLTIPS — theme-aware, icon-only mode only
+       (hidden when expanded)
+       ═══════════════════════════════════════ */
+    /* ── Tooltip: fast, clean, theme-aware ── */
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) [data-nav-tooltip] {
+        position: relative !important;
+        overflow: visible !important;
+    }
+
+    /* Single ::after pseudo — no arrow, cleaner look */
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) [data-nav-tooltip]::after {
+        content: attr(data-nav-tooltip);
+        position: absolute;
+        left: calc(100% + 10px);
+        top: 50%;
+        transform: translateY(-50%) scale(0.94);
+        transform-origin: left center;
+
+        /* Shape */
+        background: var(--tt-bg);
+        color: var(--tt-color);
+        padding: 0.28rem 0.72rem;
+        border-radius: 6px;
+        white-space: nowrap;
+
+        /* Typography */
+        font-size: 0.76rem;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        line-height: 1.4;
+
+        /* Invisible by default */
+        opacity: 0;
+        pointer-events: none;
+
+        /* Fast: 80ms total, no delay */
+        transition: opacity 0.08s ease, transform 0.08s ease;
+
+        /* Elevation */
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18), 0 1px 4px rgba(0, 0, 0, 0.12);
+        z-index: 10000;
+    }
+
+    /* Visible state — instant feel */
+    .navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) [data-nav-tooltip]:hover::after {
+        opacity: 1;
+        transform: translateY(-50%) scale(1);
+        /* No transition-delay — appears immediately */
+    }
+
+    /* ── Hide the old flyout panels entirely — sidebar expansion replaces them ── */
+    .nav-flyout { display: none !important; }
+
+} /* end @media (min-width: 768px) */
+
+/* Scrollbar in navigation content — accent tinted */
+.navigation-content::-webkit-scrollbar { width: 4px; }
+.navigation-content::-webkit-scrollbar-track { background: transparent; }
+.navigation-content::-webkit-scrollbar-thumb {
+    background: rgba(59,130,246,0.28);
+    border-radius: 4px;
+}
+.navigation-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(59,130,246,0.52);
+}
+.navigation-content {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(59,130,246,0.28) transparent;
+}
+
+/* Remove jitter-inducing translateX on hover (full mode) */
+.btn-toggle:hover,
+.nav-link:hover {
+    transform: none !important;
+}
+
+/* Better active state — pill + icon accent */
+.nav-link.active {
+    color: var(--primary-700);
+    background-color: var(--primary-100);
+    font-weight: 600;
+    border-left: 3px solid var(--primary-500);
+    border-radius: 8px;
+}
+.nav-link.active > i:first-child {
+    color: var(--primary-500);
+}
 </style>
 
 <script>
@@ -728,210 +1081,320 @@
             this.elements = {};
             this.isInitialized = false;
             this.resizeTimeout = null;
+            this._hoverLeaveTimer = null;   // debounce mouse-leave collapse
+            this._hoverSection = null;      // which section triggered hover-expand
 
             this.init();
         }
 
         init() {
             if (this.isInitialized) return;
-
             this.cacheElements();
-
-            // Only initialize if we have the required elements
             if (this.elements.sidebar && this.elements.hamburgerBtn) {
                 this.initMobileMenu();
                 this.initEnhancedFeatures();
                 this.bindEvents();
                 this.isInitialized = true;
-                console.log('✅ Navigation sidebar initialized with base.html button');
             } else {
                 console.warn('⚠️ Navigation sidebar elements not found');
             }
         }
 
         cacheElements() {
-            // Target the base.html button by ID and class
-            const hamburgerBtn = document.getElementById('sidebarToggle');
-
             this.elements = {
-                hamburgerBtn: hamburgerBtn,
-                sidebar: document.getElementById('navigationSidebar'),
+                hamburgerBtn: document.getElementById('sidebarToggle'),
+                sidebar:      document.getElementById('navigationSidebar'),
                 sidebarContent: document.getElementById('navigationContent'),
-                overlay: document.getElementById('sidebarOverlay'),
-                closeBtn: document.getElementById('sidebarClose'),
-                body: document.body
+                overlay:      document.getElementById('sidebarOverlay'),
+                closeBtn:     document.getElementById('sidebarClose'),
+                pinBadge:     document.getElementById('pinBadge'),
+                body:         document.body
             };
+        }
 
-            console.log('🔍 Navigation elements:', {
-                hamburgerBtn: !!this.elements.hamburgerBtn,
-                sidebar: !!this.elements.sidebar,
-                overlay: !!this.elements.overlay,
-                closeBtn: !!this.elements.closeBtn
+        // ─────────────────────────────────────────────────────────
+        // STATE HELPERS
+        // ─────────────────────────────────────────────────────────
+        get isMini()   { return this.elements.sidebar.classList.contains('mini'); }
+        get isPinned() { return this.elements.sidebar.classList.contains('sidebar-pinned'); }
+        get isHover()  { return this.elements.sidebar.classList.contains('sidebar-hover'); }
+
+        _setHover(on) {
+            this.elements.sidebar.classList.toggle('sidebar-hover', on);
+        }
+
+        _setPinned(on) {
+            const { sidebar, body, pinBadge } = this.elements;
+            sidebar.classList.toggle('sidebar-pinned', on);
+            body.classList.toggle('sidebar-pinned-open', on);
+            localStorage.setItem('sidebarPinned', on);
+            if (pinBadge) pinBadge.style.display = on ? '' : 'none';
+            // When pinned, also remove hover class (redundant)
+            if (on) this._setHover(false);
+        }
+
+        // ─────────────────────────────────────────────────────────
+        // HOVER EXPAND
+        // • Sidebar mouseenter  → widen to full width (sidebar-hover)
+        // • Nav-section hover   → open ONLY that section's collapse
+        // • Nav-section leave   → close it again (unless it was
+        //                         already open before the hover)
+        // • Sidebar mouseleave  → collapse back to mini
+        // ─────────────────────────────────────────────────────────
+        initHoverExpand() {
+            const { sidebar } = this.elements;
+
+            // ── Widen/narrow the sidebar ──
+            sidebar.addEventListener('mouseenter', () => {
+                if (!this.isMini || this.isPinned) return;
+                clearTimeout(this._hoverLeaveTimer);
+                this._setHover(true);
+            });
+
+            sidebar.addEventListener('mouseleave', () => {
+                if (!this.isMini || this.isPinned) return;
+                this._hoverLeaveTimer = setTimeout(() => {
+                    this._setHover(false);
+                    this._closeHoverSections();
+                }, 120);
+            });
+
+            // ── Per-section: open only the hovered section's collapse ──
+            sidebar.querySelectorAll('.nav-section').forEach(section => {
+                const toggle = section.querySelector('.btn-toggle');
+                if (!toggle) return;
+
+                const targetId = toggle.getAttribute('data-bs-target')?.replace('#', '');
+                if (!targetId) return;
+
+                const collapseEl = document.getElementById(targetId);
+                if (!collapseEl) return;
+
+                section.addEventListener('mouseenter', () => {
+                    if (!this.isMini || this.isPinned) return;
+                    // Track which sections we opened purely from hover
+                    if (!collapseEl.classList.contains('show')) {
+                        this._hoverOpenedIds = this._hoverOpenedIds || new Set();
+                        this._hoverOpenedIds.add(targetId);
+                        if (typeof bootstrap !== 'undefined') {
+                            bootstrap.Collapse.getOrCreateInstance(collapseEl).show();
+                        } else {
+                            collapseEl.classList.add('show');
+                        }
+                        toggle.setAttribute('aria-expanded', 'true');
+                    }
+                });
+
+                section.addEventListener('mouseleave', () => {
+                    if (!this.isMini || this.isPinned) return;
+                    // Close it again only if WE opened it (not already open before hover)
+                    if (this._hoverOpenedIds?.has(targetId)) {
+                        this._hoverOpenedIds.delete(targetId);
+                        if (typeof bootstrap !== 'undefined') {
+                            bootstrap.Collapse.getOrCreateInstance(collapseEl).hide();
+                        } else {
+                            collapseEl.classList.remove('show');
+                        }
+                        toggle.setAttribute('aria-expanded', 'false');
+                    }
+                });
             });
         }
 
-        initMobileMenu() {
-            const { hamburgerBtn, sidebar, overlay, closeBtn, body } = this.elements;
-
-            // Update hamburger icon for base.html button
-            this.updateHamburgerIcon = (isOpen) => {
-                if (!hamburgerBtn) return;
-
-                const icon = hamburgerBtn.querySelector('i');
-                if (icon) {
-                    if (isOpen) {
-                        icon.className = 'bi bi-x fs-4'; // X icon when open
-                    } else {
-                        icon.className = 'bi bi-list fs-4'; // List icon when closed
-                    }
+        // Close any sections that were opened by hover (called on sidebar mouseleave)
+        _closeHoverSections() {
+            if (!this._hoverOpenedIds) return;
+            this._hoverOpenedIds.forEach(id => {
+                const col = document.getElementById(id);
+                if (!col) return;
+                if (typeof bootstrap !== 'undefined') {
+                    bootstrap.Collapse.getOrCreateInstance(col).hide();
+                } else {
+                    col.classList.remove('show');
                 }
+                const btn = this.elements.sidebar.querySelector(`[data-bs-target="#${id}"]`);
+                if (btn) btn.setAttribute('aria-expanded', 'false');
+            });
+            this._hoverOpenedIds.clear();
+        }
+
+        _saveOpenCollapses() {
+            this._savedOpenCollapses = new Set(
+                [...this.elements.sidebar.querySelectorAll('.collapse.show')].map(c => c.id)
+            );
+        }
+
+        // ─────────────────────────────────────────────────────────
+        // CLICK-TO-PIN — clicking a parent nav item in mini mode
+        // while hovered pins the sidebar open persistently
+        // ─────────────────────────────────────────────────────────
+        initClickPin() {
+            const { sidebar } = this.elements;
+
+            // Intercept parent toggle buttons in mini mode
+            sidebar.querySelectorAll('.btn-toggle').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    if (!this.isMini) return; // full mode: normal collapse behaviour
+
+                    if (this.isHover && !this.isPinned) {
+                        // First click while hovering → PIN open
+                        e.stopPropagation();
+                        e.preventDefault();
+                        clearTimeout(this._hoverLeaveTimer);
+                        this._saveOpenCollapses();
+                        this._setPinned(true);
+                        // Now open the clicked section
+                        const targetId = btn.getAttribute('data-bs-target')?.replace('#', '');
+                        if (targetId) {
+                            const col = document.getElementById(targetId);
+                            if (col && typeof bootstrap !== 'undefined') {
+                                bootstrap.Collapse.getOrCreateInstance(col).show();
+                                btn.setAttribute('aria-expanded', 'true');
+                            }
+                        }
+                    }
+                    // If already pinned: let Bootstrap handle collapse normally (no intercept)
+                }, true); // capture
+            });
+
+            // Pin badge → unpin
+            if (this.elements.pinBadge) {
+                this.elements.pinBadge.addEventListener('click', () => {
+                    this._setPinned(false);
+                    this._setHover(false);
+                });
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────
+        // MOBILE MENU
+        // ─────────────────────────────────────────────────────────
+        initMobileMenu() {
+            const { sidebar, overlay, closeBtn, body } = this.elements;
+            let hamburgerBtn = this.elements.hamburgerBtn;
+            const isMobile = () => window.innerWidth < 768;
+
+            // Restore persisted desktop state
+            const savedMini   = localStorage.getItem('sidebarMini');
+            const savedPinned = localStorage.getItem('sidebarPinned') === 'true';
+            const startMini   = savedMini === null ? true : savedMini === 'true';
+
+            if (!isMobile()) {
+                sidebar.classList.toggle('mini', startMini);
+                body.classList.toggle('sidebar-mini', startMini);
+                if (startMini && savedPinned) {
+                    sidebar.classList.add('sidebar-pinned');
+                    body.classList.add('sidebar-pinned-open');
+                    if (this.elements.pinBadge) this.elements.pinBadge.style.display = '';
+                }
+                if (savedMini === null) localStorage.setItem('sidebarMini', 'true');
+            }
+
+            // ── Desktop hamburger: toggle mini/full ──
+            this.toggleMini = () => {
+                const goMini = !sidebar.classList.contains('mini');
+                sidebar.classList.toggle('mini', goMini);
+                body.classList.toggle('sidebar-mini', goMini);
+                localStorage.setItem('sidebarMini', goMini);
+                // Always clear pin & hover when toggling
+                this._setPinned(false);
+                this._setHover(false);
             };
 
-            // Open sidebar
+            // ── Mobile: slide-in overlay ──
             this.openSidebar = () => {
-                if (!sidebar || !overlay) return;
-
-                console.log('📱 Opening sidebar');
-
                 sidebar.classList.add('active');
-                overlay.classList.add('active');
-                hamburgerBtn.classList.add('active');
+                overlay?.classList.add('active');
                 hamburgerBtn.setAttribute('aria-expanded', 'true');
                 body.classList.add('sidebar-open');
-
-                // Update the base.html button icon
-                this.updateHamburgerIcon(true);
-
-                // Force content visibility
-                this.ensureContentVisibility();
-
-                // Focus management
+                const icon = hamburgerBtn.querySelector('i');
+                if (icon) icon.className = 'bi bi-x fs-4';
+                sidebar.style.display = 'block';
+                sidebar.offsetHeight;
                 this.focusFirstElement();
             };
 
-            // Close sidebar
             this.closeSidebar = () => {
-                if (!sidebar || !overlay) return;
-
-                console.log('📱 Closing sidebar');
-
                 sidebar.classList.remove('active');
-                overlay.classList.remove('active');
-                hamburgerBtn.classList.remove('active');
+                overlay?.classList.remove('active');
                 hamburgerBtn.setAttribute('aria-expanded', 'false');
                 body.classList.remove('sidebar-open');
-
-                // Update the base.html button icon
-                this.updateHamburgerIcon(false);
-
-                // Return focus to hamburger button
+                const icon = hamburgerBtn.querySelector('i');
+                if (icon) icon.className = 'bi bi-list fs-4';
                 hamburgerBtn.focus();
             };
 
-            // Toggle sidebar
             this.toggleSidebar = () => {
-                if (sidebar.classList.contains('active')) {
-                    this.closeSidebar();
+                if (isMobile()) {
+                    sidebar.classList.contains('active') ? this.closeSidebar() : this.openSidebar();
                 } else {
-                    this.openSidebar();
+                    this.toggleMini();
                 }
             };
 
-            // Bind mobile menu events
-            if (hamburgerBtn) {
-                // Remove any existing listeners to prevent duplicates
-                const newHamburgerBtn = hamburgerBtn.cloneNode(true);
-                hamburgerBtn.parentNode.replaceChild(newHamburgerBtn, hamburgerBtn);
+            // Re-bind hamburger (clone drops stale listeners)
+            const newBtn = hamburgerBtn.cloneNode(true);
+            hamburgerBtn.parentNode.replaceChild(newBtn, hamburgerBtn);
+            this.elements.hamburgerBtn = hamburgerBtn = newBtn;
+            newBtn.addEventListener('click', this.toggleSidebar.bind(this));
 
-                // Update reference
-                this.elements.hamburgerBtn = newHamburgerBtn;
-
-                // Add new listener
-                newHamburgerBtn.addEventListener('click', this.toggleSidebar.bind(this));
-                console.log('🎯 Hamburger button event listener attached');
-            }
-
-            if (closeBtn) {
-                closeBtn.addEventListener('click', this.closeSidebar.bind(this));
-            }
-
-            if (overlay) {
-                overlay.addEventListener('click', this.closeSidebar.bind(this));
-            }
-        }
-
-        ensureContentVisibility() {
-            const { sidebar, sidebarContent } = this.elements;
-
-            if (!sidebar || !sidebarContent) return;
-
-            // Ensure content is visible
-            sidebar.style.display = 'block';
-            sidebarContent.style.display = 'block';
-            sidebar.offsetHeight; // Trigger reflow
-
-            console.log('👀 Sidebar content verified');
+            closeBtn?.addEventListener('click', this.closeSidebar.bind(this));
+            overlay?.addEventListener('click', this.closeSidebar.bind(this));
         }
 
         focusFirstElement() {
-            const { sidebar } = this.elements;
-            if (!sidebar) return;
-
-            const firstFocusable = sidebar.querySelector('.nav-link, .btn-toggle');
-            if (firstFocusable) {
-                setTimeout(() => firstFocusable.focus(), 100);
-            }
+            const first = this.elements.sidebar.querySelector('.nav-link, .btn-toggle');
+            if (first) setTimeout(() => first.focus(), 100);
         }
 
+        // ─────────────────────────────────────────────────────────
+        // ENHANCED FEATURES
+        // ─────────────────────────────────────────────────────────
         initEnhancedFeatures() {
+            this.initHoverExpand();
+            this.initClickPin();
             this.expandActiveNavigation();
             this.enhanceCollapseAnimations();
             this.addKeyboardNavigation();
-            this.initNavigationTooltips();
             this.addLoadingStates();
+            this._saveOpenCollapses();
         }
 
         expandActiveNavigation() {
-            const activeLinks = document.querySelectorAll('.nav-link.active');
-
-            activeLinks.forEach(link => {
+            this.elements.sidebar.querySelectorAll('.nav-link.active').forEach(link => {
                 let parent = link.closest('.collapse');
                 while (parent) {
-                    const button = document.querySelector(`[data-bs-target="#${parent.id}"]`);
-                    if (button && !parent.classList.contains('show')) {
-                        if (typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
-                            const collapse = new bootstrap.Collapse(parent, { toggle: false });
-                            collapse.show();
+                    const btn = document.querySelector(`[data-bs-target="#${parent.id}"]`);
+                    if (btn && !parent.classList.contains('show')) {
+                        if (typeof bootstrap !== 'undefined') {
+                            bootstrap.Collapse.getOrCreateInstance(parent).show();
                         } else {
                             parent.classList.add('show');
                         }
-                        button.setAttribute('aria-expanded', 'true');
+                        btn.setAttribute('aria-expanded', 'true');
                     }
                     parent = parent.parentElement?.closest('.collapse');
                 }
             });
+            // After expanding active, snapshot open state
+            this._saveOpenCollapses();
         }
 
         enhanceCollapseAnimations() {
-            const collapseElements = document.querySelectorAll('.collapse');
-
-            collapseElements.forEach(element => {
-                element.addEventListener('show.bs.collapse', function() {
+            this.elements.sidebar.querySelectorAll('.collapse').forEach(el => {
+                el.addEventListener('show.bs.collapse', function() {
                     this.style.height = '0px';
                     this.style.overflow = 'hidden';
                 });
-
-                element.addEventListener('shown.bs.collapse', function() {
+                el.addEventListener('shown.bs.collapse', function() {
                     this.style.height = '';
                     this.style.overflow = '';
                 });
-
-                element.addEventListener('hide.bs.collapse', function() {
+                el.addEventListener('hide.bs.collapse', function() {
                     this.style.height = this.scrollHeight + 'px';
                     this.style.overflow = 'hidden';
                 });
-
-                element.addEventListener('hidden.bs.collapse', function() {
+                el.addEventListener('hidden.bs.collapse', function() {
                     this.style.height = '';
                     this.style.overflow = '';
                 });
@@ -939,225 +1402,120 @@
         }
 
         addKeyboardNavigation() {
-            const navElements = document.querySelectorAll('.nav-link, .btn-toggle');
-
-            navElements.forEach((element, index) => {
-                element.addEventListener('keydown', (e) => {
-                    switch(e.key) {
-                        case 'ArrowDown':
-                            e.preventDefault();
-                            const nextElement = navElements[index + 1];
-                            if (nextElement) nextElement.focus();
-                            break;
-
-                        case 'ArrowUp':
-                            e.preventDefault();
-                            const prevElement = navElements[index - 1];
-                            if (prevElement) prevElement.focus();
-                            break;
-
-                        case 'Enter':
-                        case ' ':
-                            if (element.classList.contains('btn-toggle')) {
-                                e.preventDefault();
-                                element.click();
-                            }
-                            break;
-
-                        case 'Home':
-                            e.preventDefault();
-                            navElements[0]?.focus();
-                            break;
-
-                        case 'End':
-                            e.preventDefault();
-                            navElements[navElements.length - 1]?.focus();
-                            break;
-
-                        case 'Escape':
-                            if (this.elements.sidebar.classList.contains('active')) {
-                                e.preventDefault();
-                                this.closeSidebar();
-                            }
-                            break;
+            const els = [...this.elements.sidebar.querySelectorAll('.nav-link, .btn-toggle')];
+            els.forEach((el, i) => {
+                el.addEventListener('keydown', (e) => {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); els[i + 1]?.focus(); }
+                    if (e.key === 'ArrowUp')   { e.preventDefault(); els[i - 1]?.focus(); }
+                    if (e.key === 'Home')       { e.preventDefault(); els[0]?.focus(); }
+                    if (e.key === 'End')        { e.preventDefault(); els[els.length - 1]?.focus(); }
+                    if ((e.key === 'Enter' || e.key === ' ') && el.classList.contains('btn-toggle')) {
+                        e.preventDefault(); el.click();
+                    }
+                    if (e.key === 'Escape' && this.elements.sidebar.classList.contains('active')) {
+                        e.preventDefault(); this.closeSidebar?.();
                     }
                 });
             });
         }
 
-        initNavigationTooltips() {
-            const navTexts = document.querySelectorAll('.nav-text');
-
-            navTexts.forEach(text => {
-                if (text.scrollWidth > text.clientWidth) {
-                    text.setAttribute('title', text.textContent.trim());
-                    text.setAttribute('data-bs-toggle', 'tooltip');
-                    text.setAttribute('data-bs-placement', 'right');
-                }
-            });
-
-            if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
-                const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-                [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
-            }
-        }
-
         addLoadingStates() {
-            const navLinks = document.querySelectorAll('.nav-link[href]:not([href="#"])');
-
-            navLinks.forEach(link => {
-                link.addEventListener('click', function(e) {
-                    if (this.hostname !== window.location.hostname || this.hash) {
-                        return;
-                    }
-
+            this.elements.sidebar.querySelectorAll('.nav-link[href]:not([href="#"])').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (this.hostname !== window.location.hostname || this.hash) return;
                     const icon = this.querySelector('i:not(.active-indicator):not(.toggle-icon)');
                     if (icon) {
-                        const originalClass = icon.className;
+                        const orig = icon.className;
                         icon.className = 'bi bi-arrow-clockwise loading';
-
-                        setTimeout(() => {
-                            if (icon.className.includes('loading')) {
-                                icon.className = originalClass;
-                            }
-                        }, 3000);
+                        setTimeout(() => { if (icon.className.includes('loading')) icon.className = orig; }, 3000);
                     }
-
-                    // Close mobile sidebar on navigation
-                    if (window.innerWidth < 992) {
-                        this.closeSidebar();
-                    }
+                    if (window.innerWidth < 768) this.closeSidebar?.();
                 }.bind(this));
             });
         }
 
+        // ─────────────────────────────────────────────────────────
+        // RESIZE
+        // ─────────────────────────────────────────────────────────
         bindEvents() {
-            // ESC key to close sidebar
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape' && this.elements.sidebar.classList.contains('active')) {
-                    this.closeSidebar();
+                    this.closeSidebar?.();
                 }
             });
 
-            // Close on window resize to desktop (lg breakpoint = 992px)
             window.addEventListener('resize', () => {
                 clearTimeout(this.resizeTimeout);
                 this.resizeTimeout = setTimeout(() => {
-                    if (window.innerWidth >= 992 && this.elements.sidebar.classList.contains('active')) {
-                        this.closeSidebar();
+                    const { sidebar, body } = this.elements;
+                    if (window.innerWidth >= 768) {
+                        sidebar.classList.remove('active');
+                        this.elements.overlay?.classList.remove('active');
+                        body.classList.remove('sidebar-open');
+
+                        const savedMini   = localStorage.getItem('sidebarMini') === 'true';
+                        const savedPinned = localStorage.getItem('sidebarPinned') === 'true';
+                        sidebar.classList.toggle('mini', savedMini);
+                        body.classList.toggle('sidebar-mini', savedMini);
+                        if (savedMini && savedPinned) {
+                            sidebar.classList.add('sidebar-pinned');
+                            body.classList.add('sidebar-pinned-open');
+                        } else {
+                            sidebar.classList.remove('sidebar-pinned');
+                            body.classList.remove('sidebar-pinned-open');
+                        }
+                        this._setHover(false);
+                    } else {
+                        sidebar.classList.remove('mini', 'sidebar-hover', 'sidebar-pinned');
+                        body.classList.remove('sidebar-mini', 'sidebar-pinned-open');
                     }
                 }, 250);
             });
 
-            // Close sidebar when clicking on regular nav links (mobile)
-            const navLinks = this.elements.sidebar?.querySelectorAll('.nav-link[href]');
-            if (navLinks) {
-                navLinks.forEach(link => {
-                    link.addEventListener('click', () => {
-                        if (window.innerWidth < 992) {
-                            this.closeSidebar();
-                        }
-                    });
+            // Close mobile sidebar when clicking nav links
+            this.elements.sidebar.querySelectorAll('.nav-link[href]').forEach(link => {
+                link.addEventListener('click', () => {
+                    if (window.innerWidth < 768) this.closeSidebar?.();
                 });
-            }
-        }
-
-        // Public methods
-        refresh() {
-            this.initEnhancedFeatures();
-            console.log('🔄 Navigation refreshed');
-        }
-
-        expandAll() {
-            document.querySelectorAll('.collapse').forEach(collapse => {
-                if (typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
-                    const bsCollapse = new bootstrap.Collapse(collapse, { toggle: false });
-                    bsCollapse.show();
-                } else {
-                    collapse.classList.add('show');
-                }
-                const button = document.querySelector(`[data-bs-target="#${collapse.id}"]`);
-                if (button) button.setAttribute('aria-expanded', 'true');
             });
         }
 
+        // Public API
+        refresh()     { this.initEnhancedFeatures(); }
+        expandAll()   {
+            this.elements.sidebar.querySelectorAll('.collapse').forEach(c => {
+                bootstrap?.Collapse?.getOrCreateInstance(c)?.show() || c.classList.add('show');
+            });
+        }
         collapseAll() {
-            document.querySelectorAll('.collapse').forEach(collapse => {
-                if (typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
-                    const bsCollapse = new bootstrap.Collapse(collapse, { toggle: false });
-                    bsCollapse.hide();
-                } else {
-                    collapse.classList.remove('show');
-                }
-                const button = document.querySelector(`[data-bs-target="#${collapse.id}"]`);
-                if (button) button.setAttribute('aria-expanded', 'false');
+            this.elements.sidebar.querySelectorAll('.collapse').forEach(c => {
+                bootstrap?.Collapse?.getOrCreateInstance(c)?.hide() || c.classList.remove('show');
             });
         }
-
-        destroy() {
-            if (this.elements.hamburgerBtn) {
-                this.elements.hamburgerBtn.removeEventListener('click', this.toggleSidebar);
-            }
-            if (this.elements.closeBtn) {
-                this.elements.closeBtn.removeEventListener('click', this.closeSidebar);
-            }
-            if (this.elements.overlay) {
-                this.elements.overlay.removeEventListener('click', this.closeSidebar);
-            }
-
-            this.isInitialized = false;
-            console.log('🗑️ Navigation sidebar destroyed');
-        }
+        destroy() { this.isInitialized = false; }
     }
 
-    // Initialize when DOM is ready - with retry logic
+    // ── Boot ──
     function initializeNavigation() {
-        // Check if base.html button exists
-        const baseButton = document.getElementById('sidebarToggle');
-        const navigationSidebar = document.getElementById('navigationSidebar');
-
-        if (baseButton && navigationSidebar) {
-            console.log('🚀 Initializing NavigationSidebar with base.html button');
+        if (document.getElementById('sidebarToggle') && document.getElementById('navigationSidebar')) {
             window.navigationSidebar = new NavigationSidebar();
         } else {
-            console.log('⏳ Waiting for navigation elements...');
             setTimeout(initializeNavigation, 100);
         }
     }
 
-    // Start initialization
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initializeNavigation);
     } else {
         initializeNavigation();
     }
 
-    // Global utilities
     window.NavigationUtils = {
-        expandAll: function() {
-            if (window.navigationSidebar) {
-                window.navigationSidebar.expandAll();
-            }
-        },
-        collapseAll: function() {
-            if (window.navigationSidebar) {
-                window.navigationSidebar.collapseAll();
-            }
-        },
-        refresh: function() {
-            if (window.navigationSidebar) {
-                window.navigationSidebar.refresh();
-            }
-        },
-        closeMobile: function() {
-            if (window.navigationSidebar) {
-                window.navigationSidebar.closeSidebar();
-            }
-        },
-        openMobile: function() {
-            if (window.navigationSidebar) {
-                window.navigationSidebar.openSidebar();
-            }
-        }
+        expandAll:   () => window.navigationSidebar?.expandAll(),
+        collapseAll: () => window.navigationSidebar?.collapseAll(),
+        refresh:     () => window.navigationSidebar?.refresh(),
+        closeMobile: () => window.navigationSidebar?.closeSidebar(),
+        openMobile:  () => window.navigationSidebar?.openSidebar(),
+        unpin:       () => window.navigationSidebar?._setPinned(false),
     };
 </script>
