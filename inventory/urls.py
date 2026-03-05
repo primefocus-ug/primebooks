@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 from . import importt
 from . import efris_api
+from inventory.inventory_hub import InventoryHubView
 from .serviced import (
     ServiceListView, ServiceCreateView, ServiceUpdateView,
     ServiceDeleteView, ServiceDetailView,
@@ -13,6 +14,13 @@ from .efris_api import (  # All from efris_api.py
     EFRISCategoryDetailView,
     EFRISCategoryStatsView,
 )
+from django.shortcuts import redirect
+from django.urls import reverse
+
+def _tab_redirect(tab):
+    def _view(request):
+        return redirect(reverse('inventory:product_list') + f'?_tab={tab}')
+    return _view
 
 app_name = 'inventory'
 
@@ -39,7 +47,7 @@ urlpatterns = [
     path('api/services/bulk-actions/', service_bulk_actions, name='service_bulk_actions'),
     path('api/services/<int:pk>/efris-sync/', service_efris_sync, name='service_efris_sync'),
     # Categories
-    path('categories/', views.CategoryListView.as_view(), name='category_list'),
+    path('categories/', _tab_redirect('categories'), name='category_list'),
     path('categories/add/', views.CategoryCreateView.as_view(), name='category_create'),
     path('categories/<int:pk>/edit/', views.CategoryUpdateView.as_view(), name='category_update'),
     path('categories/<int:pk>/delete/', views.CategoryDeleteView.as_view(), name='category_delete'),
@@ -74,13 +82,13 @@ urlpatterns = [
          name='efris_category_search'),
 
     # Suppliers
-    path('suppliers/', views.SupplierListView.as_view(), name='supplier_list'),
+    path('suppliers/', _tab_redirect('suppliers'),   name='supplier_list'),
     path('suppliers/add/', views.SupplierCreateView.as_view(), name='supplier_create'),
     path('suppliers/<int:pk>/edit/', views.SupplierUpdateView.as_view(), name='supplier_update'),
     path('suppliers/<int:pk>/', views.SupplierDetailView.as_view(), name='supplier_detail'),
 
     # Products
-    path('products/', views.ProductListView.as_view(), name='product_list'),
+    path('products/',InventoryHubView.as_view(), name='product_list'),
     path('products/add/', views.ProductCreateView.as_view(), name='product_create'),
     path('products/<int:pk>/', views.ProductDetailView.as_view(), name='product_detail'),
     path('products/<int:pk>/edit/', views.ProductUpdateView.as_view(), name='product_update'),
@@ -88,7 +96,7 @@ urlpatterns = [
     path('product/delete/<int:pk>/', views.ProductDeleteView.as_view(), name='product_delete'),
 
     # Stock Management
-    path('stock/', views.StockListView.as_view(), name='stock_list'),
+    path('stock/',     _tab_redirect('stock'),        name='stock_list'),
     path('stock-adjustment/', views.StockAdjustmentView.as_view(), name='stock_adjustment'),
     path('quick-adjust/<int:stock_id>/', views.QuickStockAdjustmentRedirectView.as_view(), name='quick_adjust'),
     path('stock/current/', views.current_stock_api, name='current_stock_api'),

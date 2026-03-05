@@ -166,12 +166,6 @@ NAVIGATION_ITEMS = [
                 permission="sales.add_sale",
                 css_class="nav-highlight-success"
             ),
-            NavigationItem(
-                name="Sales Analytics",
-                url_name="sales:analytics",
-                icon="bi bi-graph-up",
-                permission="sales.view_sale"
-            ),
         ]
     ),
     NavigationItem(
@@ -228,60 +222,28 @@ NAVIGATION_ITEMS = [
                 permission="inventory.add_product"
             ),
             NavigationItem(
-                name="All Categories",
-                url_name="inventory:category_list",
-                icon="bi bi-list-ul",
-                permission="inventory.view_category"
-            ),
-            NavigationItem(
                 name="Add Category",
                 url_name="inventory:category_create",
                 icon="bi bi-plus-circle",
                 permission="inventory.add_category"
             ),
             NavigationItem(
-                name="Suppliers",
-                icon="bi bi-truck",
-                permission="inventory.add_supplier",
-                children=[
-                    NavigationItem(
-                        name="All Suppliers",
-                        url_name="inventory:supplier_list",
-                        icon="bi bi-person-lines-fill",
-                        permission="inventory.view_supplier"
-                    ),
-                    NavigationItem(
-                        name="Add Supplier",
-                        url_name="inventory:supplier_create",
-                        icon="bi bi-plus-circle",
-                        permission="inventory.add_supplier"
-                    ),
-                ],
+                name="Add Supplier",
+                url_name="inventory:supplier_create",
+                icon="bi bi-plus-circle",
+                permission="inventory.add_supplier"
             ),
             NavigationItem(
-                name="Stock Management",
-                icon="bi bi-warehouse",
-                permission="inventory.view_stock",
-                children=[
-                    NavigationItem(
-                        name="Current Stock",
-                        url_name="inventory:stock_list",
-                        icon="bi bi-boxes",
-                        permission="inventory.view_stock"
-                    ),
-                    NavigationItem(
-                        name="Stock Adjustment",
-                        url_name="inventory:stock_adjustment",
-                        icon="bi bi-sliders",
-                        permission="inventory.change_stock"
-                    ),
-                    NavigationItem(
-                        name="Stock Movements",
-                        url_name="inventory:movement_list",
-                        icon="bi bi-arrow-left-right",
-                        permission="inventory.view_stockmovement"
-                    ),
-                ]
+                name="Stock Adjustment",
+                url_name="inventory:stock_adjustment",
+                icon="bi bi-sliders",
+                permission="inventory.change_stock"
+            ),
+            NavigationItem(
+                name="Stock Movements",
+                url_name="inventory:movement_list",
+                icon="bi bi-arrow-left-right",
+                permission="inventory.view_stockmovement"
             ),
             NavigationItem(
                 name="Reports",

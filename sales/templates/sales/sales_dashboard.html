@@ -1,0 +1,2017 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+{% load custom_filters %}
+{% load humanize %}
+{% load efris_tags %}
+
+{% block title %}Sales Hub | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+/* ============================================
+   SALES HUB — COMBINED DASHBOARD
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  --primary:       #2563eb;
+  --primary-dark:  #1e40af;
+  --primary-light: #dbeafe;
+  --accent:        #0ea5e9;
+  --success:       #059669;
+  --success-light: #d1fae5;
+  --warning:       #d97706;
+  --warning-light: #fef3c7;
+  --danger:        #dc2626;
+  --danger-light:  #fee2e2;
+  --purple:        #7c3aed;
+  --purple-light:  #ede9fe;
+  --teal:          #0d9488;
+  --teal-light:    #ccfbf1;
+
+  --gray-50:  #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+
+  --bg:        #ffffff;
+  --bg-alt:    #f9fafb;
+  --text:      #111827;
+  --text-sm:   #4b5563;
+  --text-xs:   #9ca3af;
+  --border:    #e5e7eb;
+
+  --radius:    8px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
+  --shadow:    0 4px 16px rgba(0,0,0,.08);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,.12);
+  --transition: all .2s ease;
+
+  --font: 'DM Sans', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+[data-theme="dark"] {
+  --bg:       #0f172a;
+  --bg-alt:   #1e293b;
+  --text:     #f1f5f9;
+  --text-sm:  #94a3b8;
+  --text-xs:  #64748b;
+  --border:   #334155;
+  --primary-light: rgba(37,99,235,.15);
+  --success-light: rgba(5,150,105,.15);
+  --warning-light: rgba(217,119,6,.15);
+  --danger-light:  rgba(220,38,38,.15);
+  --purple-light:  rgba(124,58,237,.15);
+  --teal-light:    rgba(13,148,136,.15);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { font-family: var(--font); }
+
+/* ── TABS ───────────────────────────────────── */
+.hub-nav {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1.5rem;
+  width: fit-content;
+}
+.hub-tab {
+  padding: .5rem 1.25rem;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-sm);
+  font-family: var(--font);
+  font-size: .875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+}
+.hub-tab.active {
+  background: var(--bg);
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+}
+.hub-tab:hover:not(.active) { color: var(--text); }
+
+/* ── PAGE HEADER ─────────────────────────────── */
+.page-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.page-hd h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 .25rem;
+}
+.page-hd p { color: var(--text-sm); margin: 0; font-size: .9rem; }
+
+/* ── KPI GRID ────────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.kpi-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  position: relative;
+  overflow: hidden;
+  transition: var(--transition);
+  cursor: default;
+}
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 4px 0 0 4px;
+  background: var(--kpi-color, var(--primary));
+}
+.kpi-card:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
+.kpi-icon {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  background: var(--kpi-bg, var(--primary-light));
+  color: var(--kpi-color, var(--primary));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem;
+  margin-bottom: .75rem;
+}
+.kpi-label { font-size: .75rem; font-weight: 600; color: var(--text-xs); text-transform: uppercase; letter-spacing: .07em; margin-bottom: .35rem; }
+.kpi-value { font-size: 1.6rem; font-weight: 700; color: var(--text); line-height: 1; font-family: var(--mono); }
+.kpi-sub { font-size: .75rem; color: var(--text-xs); margin-top: .35rem; }
+.kpi-badge { display: inline-flex; align-items: center; gap: .25rem; font-size: .7rem; font-weight: 600; padding: .2rem .5rem; border-radius: 20px; margin-top: .5rem; }
+.kpi-badge.up { background: var(--success-light); color: var(--success); }
+.kpi-badge.down { background: var(--danger-light); color: var(--danger); }
+
+/* ── CARD ────────────────────────────────────── */
+.card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.card-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.card-hd h6 {
+  margin: 0;
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.card-body { padding: 1.25rem; }
+
+/* ── FILTERS ─────────────────────────────────── */
+.filter-bar {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+.filter-bar .form-label { font-size: .75rem; font-weight: 600; color: var(--text-sm); text-transform: uppercase; letter-spacing: .05em; }
+.filter-bar .form-control,
+.filter-bar .form-select {
+  font-size: .875rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  padding: .5rem .75rem;
+}
+.filter-bar .form-control:focus,
+.filter-bar .form-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.08);
+  outline: none;
+}
+.quick-ranges { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .875rem; }
+.quick-ranges .btn-range {
+  padding: .3rem .75rem;
+  font-size: .75rem;
+  font-weight: 500;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text-sm);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.quick-ranges .btn-range:hover,
+.quick-ranges .btn-range.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+/* Active filters */
+.active-filters { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .75rem; }
+.filter-chip {
+  display: inline-flex; align-items: center; gap: .375rem;
+  padding: .25rem .625rem;
+  background: var(--primary-light);
+  color: var(--primary);
+  border-radius: 20px;
+  font-size: .72rem;
+  font-weight: 600;
+}
+.filter-chip button { background: none; border: none; color: inherit; cursor: pointer; padding: 0; line-height: 1; font-size: .8rem; }
+
+/* ── TABLE ───────────────────────────────────── */
+.table-wrap {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .75rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+}
+.search-box {
+  position: relative;
+  flex: 1;
+  max-width: 280px;
+}
+.search-box i { position: absolute; left: .75rem; top: 50%; transform: translateY(-50%); color: var(--text-xs); font-size: .875rem; }
+.search-box input {
+  padding: .5rem .75rem .5rem 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-size: .875rem;
+  width: 100%;
+}
+.search-box input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.08); }
+
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  padding: .875rem 1rem;
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-xs);
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+thead th:hover { color: var(--text); }
+thead th .sort-icon { opacity: .4; margin-left: .3rem; font-size: .65rem; }
+thead th.sorted-asc .sort-icon::after { content: '↑'; opacity: 1; }
+thead th.sorted-desc .sort-icon::after { content: '↓'; opacity: 1; }
+tbody td {
+  padding: .875rem 1rem;
+  font-size: .875rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: rgba(37,99,235,.025); }
+tbody tr.selected { background: rgba(37,99,235,.05); }
+
+.sale-doc { font-weight: 600; color: var(--primary); font-size: .875rem; text-decoration: none; font-family: var(--mono); }
+.sale-doc:hover { text-decoration: underline; }
+.sale-meta { font-size: .72rem; color: var(--text-xs); margin-top: .15rem; }
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  padding: .25rem .6rem;
+  border-radius: 20px;
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+.badge-primary   { background: var(--primary-light); color: var(--primary); }
+.badge-success   { background: var(--success-light); color: var(--success); }
+.badge-warning   { background: var(--warning-light); color: var(--warning); }
+.badge-danger    { background: var(--danger-light);  color: var(--danger); }
+.badge-purple    { background: var(--purple-light);  color: var(--purple); }
+.badge-teal      { background: var(--teal-light);    color: var(--teal); }
+.badge-gray      { background: var(--gray-100);      color: var(--gray-600); }
+
+/* Action buttons */
+.actions { display: flex; gap: .35rem; align-items: center; }
+.act-btn {
+  width: 30px; height: 30px;
+  border-radius: var(--radius);
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .75rem;
+  transition: var(--transition);
+  text-decoration: none;
+}
+.act-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.act-view   { background: var(--primary-light); color: var(--primary); }
+.act-print  { background: var(--success-light); color: var(--success); }
+.act-refund { background: var(--danger-light);  color: var(--danger); }
+.act-warn   { background: var(--warning-light); color: var(--warning); }
+.act-more   { background: var(--gray-100);      color: var(--gray-600); }
+
+/* Bulk bar */
+.bulk-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+  background: var(--primary);
+  color: #fff;
+  padding: .875rem 1.25rem;
+  display: none;
+}
+.bulk-bar.show { display: block; }
+.bulk-bar select { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: var(--radius); padding: .4rem .75rem; font-size: .85rem; }
+.bulk-bar select option { background: var(--primary-dark); }
+
+/* Pagination */
+.pager { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem; border-top: 1px solid var(--border); flex-wrap: wrap; gap: .5rem; }
+.pager-info { font-size: .8rem; color: var(--text-xs); }
+.page-btns { display: flex; gap: .25rem; }
+.page-btn {
+  padding: .4rem .7rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-sm);
+  border-radius: var(--radius);
+  font-size: .8rem;
+  text-decoration: none;
+  transition: var(--transition);
+  display: inline-flex; align-items: center;
+}
+.page-btn:hover { background: var(--bg-alt); }
+.page-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.page-btn.disabled { opacity: .4; pointer-events: none; }
+
+/* ── ANALYTICS SECTION ───────────────────────── */
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+.chart-full { grid-column: 1 / -1; }
+canvas { max-height: 260px; }
+
+/* Top items table */
+.top-item { display: flex; align-items: center; gap: .875rem; padding: .75rem 0; border-bottom: 1px solid var(--border); }
+.top-item:last-child { border-bottom: none; }
+.top-rank { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 700; flex-shrink: 0; }
+.top-rank.r1 { background: #fef3c7; color: #92400e; }
+.top-rank.r2 { background: var(--gray-100); color: var(--gray-600); }
+.top-rank.r3 { background: #fef3c7; color: #b45309; }
+.top-rank.rn { background: var(--bg-alt); color: var(--text-xs); }
+.top-bar { flex: 1; }
+.top-bar-inner { height: 6px; border-radius: 3px; background: var(--primary); margin-top: .3rem; transition: width .6s ease; }
+.top-revenue { font-size: .8rem; font-weight: 700; color: var(--text); font-family: var(--mono); text-align: right; white-space: nowrap; }
+
+/* Store perf */
+.store-row { display: flex; align-items: center; gap: .75rem; padding: .6rem 0; border-bottom: 1px solid var(--border); }
+.store-row:last-child { border-bottom: none; }
+.store-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); flex-shrink: 0; }
+.store-name { font-size: .8rem; font-weight: 500; color: var(--text); flex: 1; }
+.store-amount { font-size: .75rem; font-family: var(--mono); font-weight: 600; color: var(--text-sm); }
+
+/* Hourly heatmap */
+.heatmap { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; }
+.heat-cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.heat-cell:hover { transform: scale(1.2); z-index: 2; }
+.heat-cell[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--gray-900);
+  color: #fff;
+  padding: .25rem .5rem;
+  border-radius: 4px;
+  font-size: .65rem;
+  white-space: nowrap;
+  pointer-events: none;
+  margin-bottom: 4px;
+}
+.heat-labels { display: flex; justify-content: space-between; margin-top: .35rem; }
+.heat-labels span { font-size: .65rem; color: var(--text-xs); }
+
+/* Payment donut legend */
+.pm-legend { display: flex; flex-direction: column; gap: .5rem; }
+.pm-item { display: flex; align-items: center; gap: .5rem; }
+.pm-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.pm-label { font-size: .78rem; color: var(--text-sm); flex: 1; }
+.pm-pct { font-size: .78rem; font-weight: 700; color: var(--text); font-family: var(--mono); }
+
+/* Credit panel */
+.credit-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; }
+.credit-stat { background: var(--bg-alt); border-radius: var(--radius); padding: .875rem; text-align: center; }
+.credit-stat .val { font-size: 1.3rem; font-weight: 700; color: var(--text); font-family: var(--mono); }
+.credit-stat .lbl { font-size: .7rem; color: var(--text-xs); text-transform: uppercase; letter-spacing: .05em; margin-top: .2rem; }
+
+/* ── BUTTONS ─────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .55rem 1.1rem;
+  font-size: .875rem;
+  font-weight: 500;
+  font-family: var(--font);
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.btn-primary   { background: var(--primary); color: #fff; border-color: var(--primary); }
+.btn-primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+.btn-success   { background: var(--success); color: #fff; }
+.btn-success:hover { opacity: .9; }
+.btn-outline   { background: transparent; border-color: var(--border); color: var(--text-sm); }
+.btn-outline:hover { background: var(--bg-alt); color: var(--text); }
+.btn-ghost     { background: transparent; border-color: transparent; color: var(--text-sm); }
+.btn-ghost:hover { background: var(--bg-alt); }
+.btn-sm { padding: .35rem .75rem; font-size: .8rem; }
+.btn-danger    { background: var(--danger); color: #fff; }
+.btn-danger:hover { opacity: .9; }
+
+/* ── DROPDOWN ────────────────────────────────── */
+.dropdown { position: relative; display: inline-block; }
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 200;
+  min-width: 180px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: .375rem;
+  display: none;
+  margin-top: 4px;
+}
+.dropdown-menu.show { display: block; }
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem .75rem;
+  font-size: .85rem;
+  color: var(--text);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-decoration: none;
+  transition: var(--transition);
+  background: none;
+  border: none;
+  width: 100%;
+}
+.dropdown-item:hover { background: var(--bg-alt); }
+.dropdown-item.danger { color: var(--danger); }
+.dropdown-divider { border-top: 1px solid var(--border); margin: .3rem 0; }
+
+/* ── MODAL ───────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.modal-overlay.show { display: flex; }
+.modal-box {
+  background: var(--bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.modal-hd h5 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--text); }
+.modal-close { background: none; border: none; font-size: 1.25rem; color: var(--text-xs); cursor: pointer; line-height: 1; padding: 0; }
+.modal-body { padding: 1.5rem; }
+.modal-ft { padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; gap: .5rem; justify-content: flex-end; }
+
+/* ── FORM ELEMENTS ───────────────────────────── */
+.form-group { margin-bottom: 1rem; }
+.form-label { display: block; font-size: .8rem; font-weight: 600; color: var(--text-sm); margin-bottom: .4rem; text-transform: uppercase; letter-spacing: .05em; }
+.form-control, .form-select {
+  width: 100%;
+  padding: .55rem .875rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-size: .875rem;
+  font-family: var(--font);
+  transition: var(--transition);
+}
+.form-control:focus, .form-select:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37,99,235,.08);
+}
+.input-group { display: flex; }
+.input-group .form-control { border-radius: var(--radius) 0 0 var(--radius); }
+.input-addon {
+  padding: .55rem .875rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--text-xs);
+  font-size: .85rem;
+}
+
+/* Checkbox */
+.check-row { display: flex; align-items: center; gap: .5rem; }
+.check-row input[type=checkbox] {
+  width: 1.1rem; height: 1.1rem;
+  accent-color: var(--primary);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.check-row label { font-size: .875rem; color: var(--text-sm); cursor: pointer; }
+
+/* ── ALERTS ──────────────────────────────────── */
+.alert { padding: .875rem 1.25rem; border-radius: var(--radius); border-left: 4px solid; margin-bottom: 1rem; font-size: .875rem; }
+.alert-info    { background: var(--primary-light); border-color: var(--primary); color: var(--primary-dark); }
+.alert-success { background: var(--success-light); border-color: var(--success); color: var(--success); }
+.alert-warning { background: var(--warning-light); border-color: var(--warning); color: var(--warning); }
+.alert-danger  { background: var(--danger-light);  border-color: var(--danger);  color: var(--danger); }
+
+/* ── TOAST ───────────────────────────────────── */
+.toasts { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999; display: flex; flex-direction: column; gap: .5rem; }
+.toast {
+  background: var(--gray-900);
+  color: #fff;
+  padding: .875rem 1.25rem;
+  border-radius: var(--radius-lg);
+  font-size: .875rem;
+  display: flex; align-items: center; gap: .75rem;
+  box-shadow: var(--shadow-lg);
+  animation: slideUp .25s ease;
+  max-width: 340px;
+}
+.toast.success { border-left: 4px solid var(--success); }
+.toast.error   { border-left: 4px solid var(--danger); }
+.toast.info    { border-left: 4px solid var(--accent); }
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── LOADING ─────────────────────────────────── */
+.overlay-loading {
+  position: fixed; inset: 0;
+  background: rgba(255,255,255,.7);
+  z-index: 9998;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+[data-theme="dark"] .overlay-loading { background: rgba(0,0,0,.5); }
+.overlay-loading.show { display: flex; }
+.spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── EMPTY STATE ─────────────────────────────── */
+.empty-state { text-align: center; padding: 3rem 1rem; }
+.empty-state i { font-size: 3rem; color: var(--text-xs); margin-bottom: 1rem; }
+.empty-state h5 { color: var(--text-sm); font-weight: 600; margin-bottom: .5rem; }
+.empty-state p { color: var(--text-xs); font-size: .875rem; }
+
+/* ── RESPONSIVE ──────────────────────────────── */
+@media (max-width: 768px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .charts-grid { grid-template-columns: 1fr; }
+  .charts-grid .chart-full { grid-column: 1; }
+  .table-toolbar { flex-direction: column; align-items: stretch; }
+  .search-box { max-width: 100%; }
+  .page-hd { flex-direction: column; }
+  .hub-nav { flex-wrap: wrap; width: 100%; }
+}
+@media (max-width: 480px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  .pager { flex-direction: column; }
+}
+
+/* ── PRINT ───────────────────────────────────── */
+@media print {
+  .hub-nav, .filter-bar, .table-toolbar, .bulk-bar, .actions, .pager { display: none !important; }
+  .table-wrap { border: 1px solid #ccc !important; box-shadow: none !important; }
+}
+
+/* ── DARK OVERRIDES ──────────────────────────── */
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .search-box input { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
+[data-theme="dark"] thead th { background: var(--bg-alt); }
+[data-theme="dark"] .act-more { background: var(--bg-alt); color: var(--text-xs); }
+[data-theme="dark"] .quick-ranges .btn-range { background: var(--bg-alt); border-color: var(--border); color: var(--text-sm); }
+[data-theme="dark"] .overlay-loading { background: rgba(15,23,42,.7); }
+
+/* Analytics iframe-like section */
+#tab-analytics { animation: fadeIn .3s ease; }
+#tab-sales { animation: fadeIn .3s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="salesHub">
+
+  <!-- ── PAGE HEADER ─────────────────────────── -->
+  <div class="page-hd">
+    <div>
+      <h1>{% trans "Sales Hub" %}</h1>
+      <p>{% trans "Unified sales management & analytics" %} &mdash; <span id="periodLabel">All time</span></p>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+      {% if perms.sales.add_sale %}
+      <a href="{% url 'sales:create_sale' %}" class="btn btn-primary"><i class="fas fa-plus"></i> New Sale</a>
+      <a href="{% url 'sales:quick_sale' %}" class="btn btn-outline"><i class="fas fa-bolt"></i> Quick Sale</a>
+      {% endif %}
+      <div class="dropdown">
+        <button class="btn btn-outline" onclick="toggleDropdown('exportDrop')"><i class="fas fa-download"></i> Export <i class="fas fa-chevron-down" style="font-size:.65rem;"></i></button>
+        <div class="dropdown-menu" id="exportDrop">
+          <a class="dropdown-item" href="#" onclick="exportData('csv');closeDropdowns();return false;"><i class="fas fa-file-csv"></i> CSV</a>
+          <a class="dropdown-item" href="#" onclick="exportData('excel');closeDropdowns();return false;"><i class="fas fa-file-excel"></i> Excel</a>
+          <a class="dropdown-item" href="#" onclick="exportData('pdf');closeDropdowns();return false;"><i class="fas fa-file-pdf"></i> PDF</a>
+          <div class="dropdown-divider"></div>
+          <a class="dropdown-item" href="#" onclick="window.print();return false;"><i class="fas fa-print"></i> Print</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB NAV ─────────────────────────────── -->
+  <nav class="hub-nav">
+    <button class="hub-tab active" data-tab="tab-overview" onclick="switchTab(this)">
+      <i class="fas fa-tachometer-alt"></i> Overview
+    </button>
+    <button class="hub-tab" data-tab="tab-sales" onclick="switchTab(this)">
+      <i class="fas fa-list"></i> Sales List
+    </button>
+    <button class="hub-tab" data-tab="tab-analytics" onclick="switchTab(this)">
+      <i class="fas fa-chart-bar"></i> Analytics
+    </button>
+    {% if credit_stats.total_credit_invoices > 0 %}
+    <button class="hub-tab" data-tab="tab-credit" onclick="switchTab(this)">
+      <i class="fas fa-credit-card"></i> Credit
+      <span class="badge badge-warning" style="font-size:.6rem; padding:.1rem .4rem;">{{ credit_stats.overdue_count }}</span>
+    </button>
+    {% endif %}
+  </nav>
+
+  <!-- ── GLOBAL FILTERS ──────────────────────── -->
+  <div class="filter-bar">
+    <form method="get" id="filterForm">
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr auto auto; gap:.75rem; align-items:end; flex-wrap:wrap;">
+        <div>
+          <label class="form-label">Search</label>
+          <div class="input-group">
+            <input type="text" name="search" value="{{ request.GET.search }}" class="form-control" placeholder="Doc #, customer, phone…">
+            <span class="input-addon"><i class="fas fa-search"></i></span>
+          </div>
+        </div>
+        <div>
+          <label class="form-label">Date From</label>
+          <input type="date" name="date_from" class="form-control" value="{{ request.GET.date_from|default:date_from|date:'Y-m-d' }}">
+        </div>
+        <div>
+          <label class="form-label">Date To</label>
+          <input type="date" name="date_to" class="form-control" value="{{ request.GET.date_to|default:date_to|date:'Y-m-d' }}">
+        </div>
+        <div>
+          <label class="form-label">Branch</label>
+          {{ search_form.store }}
+        </div>
+        <div>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-filter"></i> Filter</button>
+        </div>
+        <div>
+          <a href="{% url 'sales:sales_list' %}" class="btn btn-outline"><i class="fas fa-times"></i> Clear</a>
+        </div>
+      </div>
+
+      <!-- Row 2: advanced filters (collapsible) -->
+      <div id="advFilters" style="display:none; margin-top:.875rem;">
+        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:.75rem;">
+          <div>
+            <label class="form-label">Payment Method</label>
+            {{ search_form.payment_method }}
+          </div>
+          <div>
+            <label class="form-label">Doc Type</label>
+            {{ search_form.document_type }}
+          </div>
+          <div>
+            <label class="form-label">Payment Status</label>
+            {{ search_form.payment_status }}
+          </div>
+          <div>
+            <label class="form-label">Status</label>
+            {{ search_form.status }}
+          </div>
+          <div>
+            <label class="form-label">Transaction</label>
+            {{ search_form.transaction_type }}
+          </div>
+          <div>
+            <label class="form-label">Min Amount</label>
+            {{ search_form.min_amount }}
+          </div>
+          <div>
+            <label class="form-label">Max Amount</label>
+            {{ search_form.max_amount }}
+          </div>
+          {% if efris_enabled %}
+          <div>
+            <label class="form-label">Fiscalized</label>
+            {{ search_form.is_fiscalized }}
+          </div>
+          {% endif %}
+          <div>
+            <label class="form-label">Credit Status</label>
+            {{ search_form.credit_status }}
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:.625rem; flex-wrap:wrap; gap:.5rem;">
+        <div class="quick-ranges">
+          <span style="font-size:.72rem; color:var(--text-xs); margin-right:.25rem;">Quick:</span>
+          <button type="button" class="btn-range" onclick="setRange('today')">Today</button>
+          <button type="button" class="btn-range" onclick="setRange('week')">Week</button>
+          <button type="button" class="btn-range" onclick="setRange('month')">Month</button>
+          <button type="button" class="btn-range" onclick="setRange('quarter')">Quarter</button>
+          <button type="button" class="btn-range" onclick="setRange('year')">Year</button>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="toggleAdv()">
+          <i class="fas fa-sliders-h"></i> <span id="advLabel">More filters</span>
+        </button>
+      </div>
+
+      <!-- Active filter chips -->
+      <div class="active-filters" id="filterChips"></div>
+    </form>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       TAB: OVERVIEW
+  ══════════════════════════════════════════════ -->
+  <div id="tab-overview" class="tab-pane active">
+
+    <!-- KPI Cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card" style="--kpi-color:var(--primary); --kpi-bg:var(--primary-light);">
+        <div class="kpi-icon"><i class="fas fa-shopping-cart"></i></div>
+        <div class="kpi-label">Total Sales</div>
+        <div class="kpi-value">{{ stats.total_sales|intcomma }}</div>
+        <div class="kpi-sub">{{ period_days|default:30 }} day period</div>
+        <span class="kpi-badge up"><i class="fas fa-arrow-up"></i> {{ sales_growth }}</span>
+      </div>
+
+      <div class="kpi-card" style="--kpi-color:var(--success); --kpi-bg:var(--success-light);">
+        <div class="kpi-icon"><i class="fas fa-coins"></i></div>
+        <div class="kpi-label">Total Revenue</div>
+        <div class="kpi-value" style="font-size:1.25rem;">UGX {{ total_revenue|floatformat:0|intcomma }}</div>
+        <div class="kpi-sub">Avg: UGX {{ avg_sale_value|floatformat:0|intcomma }}</div>
+      </div>
+
+      <div class="kpi-card" style="--kpi-color:var(--warning); --kpi-bg:var(--warning-light);">
+        <div class="kpi-icon"><i class="fas fa-credit-card"></i></div>
+        <div class="kpi-label">Credit Sales</div>
+        <div class="kpi-value" style="font-size:1.25rem;">UGX {{ stats.total_credit_amount|floatformat:0|intcomma }}</div>
+        <div class="kpi-sub">{{ credit_stats.total_credit_invoices }} invoices</div>
+        {% if credit_stats.overdue_count > 0 %}
+        <span class="kpi-badge down"><i class="fas fa-exclamation-triangle"></i> {{ credit_stats.overdue_count }} overdue</span>
+        {% endif %}
+      </div>
+
+      <div class="kpi-card" style="--kpi-color:var(--accent); --kpi-bg:rgba(14,165,233,.1);">
+        <div class="kpi-icon"><i class="fas fa-users"></i></div>
+        <div class="kpi-label">Customers</div>
+        <div class="kpi-value">{{ total_customers|intcomma }}</div>
+        <div class="kpi-sub">{{ new_customers }} new this period</div>
+      </div>
+
+      <div class="kpi-card" style="--kpi-color:var(--teal); --kpi-bg:var(--teal-light);">
+        <div class="kpi-icon"><i class="fas fa-file-invoice"></i></div>
+        <div class="kpi-label">Receipts</div>
+        <div class="kpi-value">{{ stats.receipt_count|intcomma }}</div>
+        <div class="kpi-sub">{{ stats.invoice_count }} invoices · {{ stats.proforma_count }} proformas</div>
+      </div>
+
+      {% if efris_enabled %}
+      <div class="kpi-card" style="--kpi-color:var(--purple); --kpi-bg:var(--purple-light);">
+        <div class="kpi-icon"><i class="fas fa-stamp"></i></div>
+        <div class="kpi-label">Fiscalized</div>
+        <div class="kpi-value">{{ stats.fiscalized_count|intcomma }}</div>
+        <div class="kpi-sub">EFRIS compliant</div>
+      </div>
+      {% endif %}
+
+      <div class="kpi-card" style="--kpi-color:var(--danger); --kpi-bg:var(--danger-light);">
+        <div class="kpi-icon"><i class="fas fa-undo"></i></div>
+        <div class="kpi-label">Return Rate</div>
+        <div class="kpi-value">{{ return_rate }}</div>
+        <div class="kpi-sub">Refunds this period</div>
+      </div>
+    </div>
+
+    <!-- Mini charts row -->
+    <div class="charts-grid">
+      <div class="card chart-full">
+        <div class="card-hd">
+          <h6><i class="fas fa-chart-area" style="color:var(--primary);"></i> Revenue Trend</h6>
+          <div style="display:flex; gap:.5rem;">
+            <button class="btn btn-ghost btn-sm" onclick="toggleChartType('revenueChart','line')">Line</button>
+            <button class="btn btn-ghost btn-sm" onclick="toggleChartType('revenueChart','bar')">Bar</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <canvas id="revenueChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hd"><h6><i class="fas fa-chart-pie" style="color:var(--warning);"></i> Payment Methods</h6></div>
+        <div class="card-body" style="display:flex; gap:1.25rem; align-items:center;">
+          <canvas id="paymentChart" style="max-width:160px;"></canvas>
+          <div class="pm-legend" id="pmLegend"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hd"><h6><i class="fas fa-trophy" style="color:var(--warning);"></i> Top Items</h6></div>
+        <div class="card-body" style="padding-top:.5rem;">
+          <div id="topItemsList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="card">
+        <div class="card-hd"><h6><i class="fas fa-clock" style="color:var(--accent);"></i> Sales by Hour</h6></div>
+        <div class="card-body">
+          <div class="heatmap" id="hourHeatmap"></div>
+          <div class="heat-labels">
+            <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hd"><h6><i class="fas fa-store" style="color:var(--teal);"></i> Branch Performance</h6></div>
+        <div class="card-body" id="storePerf"></div>
+      </div>
+    </div>
+
+    <!-- Document type breakdown -->
+    <div class="card" style="margin-bottom:1.25rem;">
+      <div class="card-hd"><h6><i class="fas fa-layer-group" style="color:var(--purple);"></i> Document Distribution</h6></div>
+      <div class="card-body">
+        <canvas id="docTypeChart" style="max-height:180px;"></canvas>
+      </div>
+    </div>
+
+  </div><!-- /tab-overview -->
+
+  <!-- ══════════════════════════════════════════
+       TAB: SALES LIST
+  ══════════════════════════════════════════════ -->
+  <div id="tab-sales" class="tab-pane" style="display:none;">
+    <div class="table-wrap">
+      <!-- Toolbar -->
+      <div class="table-toolbar">
+        <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;">
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" id="quickSearch" placeholder="Quick search…">
+          </div>
+          <div class="check-row">
+            <input type="checkbox" id="selectAll">
+            <label for="selectAll">Select all</label>
+          </div>
+        </div>
+        <div style="display:flex; gap:.5rem; flex-wrap:wrap; align-items:center;">
+          <span style="font-size:.78rem; color:var(--text-xs);">
+            Showing <strong id="showCount">{{ sales|length }}</strong> of <strong>{{ paginator.count|default:stats.total_sales }}</strong>
+          </span>
+          <div class="dropdown">
+            <button class="btn btn-outline btn-sm" onclick="toggleDropdown('colsDrop')"><i class="fas fa-columns"></i> Columns</button>
+            <div class="dropdown-menu" id="colsDrop">
+              <label class="dropdown-item"><input type="checkbox" checked data-col="2"> Date</label>
+              <label class="dropdown-item"><input type="checkbox" checked data-col="3"> Customer</label>
+              <label class="dropdown-item"><input type="checkbox" checked data-col="4"> Store</label>
+              <label class="dropdown-item"><input type="checkbox" checked data-col="5"> Payment</label>
+              <label class="dropdown-item"><input type="checkbox" checked data-col="6"> Amount</label>
+              <label class="dropdown-item"><input type="checkbox" checked data-col="7"> Status</label>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="location.reload()"><i class="fas fa-sync-alt"></i></button>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div style="overflow-x:auto;">
+        <table id="salesTable">
+          <thead>
+            <tr>
+              <th width="40"><input type="checkbox" id="selectAllRows"></th>
+              <th data-col="1" onclick="sortTable(1)">Doc # <span class="sort-icon"></span></th>
+              <th data-col="2" onclick="sortTable(2)">Date <span class="sort-icon"></span></th>
+              <th data-col="3">Customer</th>
+              <th data-col="4">Branch</th>
+              <th data-col="5">Payment</th>
+              <th data-col="6" onclick="sortTable(6)">Amount <span class="sort-icon"></span></th>
+              <th data-col="7">Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="salesBody">
+            {% for sale in sales %}
+            <tr class="sale-row" data-id="{{ sale.id }}"
+                data-search="{{ sale.document_number|lower }} {{ sale.transaction_id|lower }} {% if sale.customer %}{{ sale.customer.name|lower }} {{ sale.customer.phone|lower }}{% endif %}">
+              <td>
+                <input type="checkbox" class="row-select" value="{{ sale.id }}">
+              </td>
+              <td>
+                <a href="{% url 'sales:sale_detail' sale.pk %}" class="sale-doc">{{ sale.document_number|default:sale.invoice_number }}</a>
+                {% if sale.transaction_type == 'REFUND' %}
+                  <span class="badge badge-warning" style="margin-top:.25rem; display:block;">REFUND</span>
+                {% endif %}
+                <div class="sale-meta">{{ sale.transaction_id }}</div>
+              </td>
+              <td>
+                <div style="font-size:.85rem; font-weight:500;">{{ sale.created_at|date:"M d, Y" }}</div>
+                <div class="sale-meta">{{ sale.created_at|time:"g:i A" }}</div>
+              </td>
+              <td>
+                {% if sale.customer %}
+                  <div style="font-weight:500; font-size:.85rem;">{{ sale.customer.name }}</div>
+                  <div class="sale-meta">{{ sale.customer.phone }}</div>
+                {% else %}
+                  <span class="badge badge-gray">Walk-in</span>
+                {% endif %}
+              </td>
+              <td>
+                <span style="font-size:.82rem; color:var(--text-sm);"><i class="fas fa-store" style="color:var(--primary); margin-right:.3rem;"></i>{{ sale.store.name }}</span>
+              </td>
+              <td>
+                {% with pm=sale.get_payment_method_display %}
+                {% if pm == 'Cash' %}<span class="badge badge-success">{{ pm }}</span>
+                {% elif pm == 'Credit' %}<span class="badge badge-warning">{{ pm }}</span>
+                {% elif 'Card' in pm %}<span class="badge badge-primary">{{ pm }}</span>
+                {% else %}<span class="badge badge-gray">{{ pm }}</span>
+                {% endif %}
+                {% endwith %}
+              </td>
+              <td>
+                <span style="font-weight:700; font-size:.9rem; color:{% if sale.transaction_type == 'REFUND' %}var(--danger){% else %}var(--success){% endif %}; font-family:var(--mono);">
+                  {% if sale.transaction_type == 'REFUND' %}&minus;{% endif %}{{ sale.total_amount|money }}
+                </span>
+              </td>
+              <td>
+                <div style="display:flex; flex-direction:column; gap:.3rem;">
+                  {% if efris_enabled %}
+                    {% if sale.is_fiscalized %}
+                      <span class="badge badge-teal"><i class="fas fa-check-circle"></i> Fiscalized</span>
+                    {% else %}
+                      <span class="badge badge-warning">Not Fiscalized</span>
+                    {% endif %}
+                  {% endif %}
+                  {% if sale.is_refunded %}
+                    <span class="badge badge-danger">Refunded</span>
+                  {% elif sale.is_voided %}
+                    <span class="badge badge-gray">Voided</span>
+                  {% elif sale.payment_status == 'OVERDUE' %}
+                    <span class="badge badge-danger">Overdue</span>
+                  {% elif sale.payment_status == 'PARTIALLY_PAID' %}
+                    <span class="badge badge-warning">Partial</span>
+                  {% elif sale.payment_status == 'PAID' %}
+                    <span class="badge badge-success">Paid</span>
+                  {% else %}
+                    <span class="badge badge-primary">{{ sale.get_status_display }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <div class="actions">
+                  <a href="{% url 'sales:sale_detail' sale.pk %}" class="act-btn act-view" title="View"><i class="fas fa-eye"></i></a>
+                  <button class="act-btn act-print" title="Print" onclick="printReceipt({{ sale.id }})"><i class="fas fa-print"></i></button>
+                  {% if efris_enabled and not sale.is_fiscalized %}
+                  <button class="act-btn act-warn" title="Fiscalize" onclick="fiscalizeSale({{ sale.id }})"><i class="fas fa-stamp"></i></button>
+                  {% endif %}
+                  {% if sale.transaction_type == 'SALE' and not sale.is_refunded and not sale.is_voided %}
+                  <a href="{% url 'sales:process_refund' sale.pk %}" class="act-btn act-refund" title="Refund"><i class="fas fa-undo"></i></a>
+                  {% endif %}
+                  <div class="dropdown">
+                    <button class="act-btn act-more" onclick="toggleDropdown('more-{{ sale.id }}')"><i class="fas fa-ellipsis-v"></i></button>
+                    <div class="dropdown-menu" id="more-{{ sale.id }}">
+                      <a class="dropdown-item" href="{% url 'sales:sale_detail' sale.pk %}"><i class="fas fa-eye"></i> View Details</a>
+                      <a class="dropdown-item" href="{% url 'sales:duplicate_sale' sale.pk %}"><i class="fas fa-copy"></i> Duplicate</a>
+                      <a class="dropdown-item" href="#" onclick="emailReceipt({{ sale.id }});return false;"><i class="fas fa-envelope"></i> Email Receipt</a>
+                      {% if not sale.is_voided and sale.transaction_type == 'SALE' %}
+                      <div class="dropdown-divider"></div>
+                      <a class="dropdown-item danger" href="{% url 'sales:void_sale' sale.pk %}"><i class="fas fa-ban"></i> Void Sale</a>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="9">
+                <div class="empty-state">
+                  <i class="fas fa-inbox"></i>
+                  <h5>No sales found</h5>
+                  <p>Try adjusting your filters or date range</p>
+                  {% if perms.sales.add_sale %}
+                  <a href="{% url 'sales:create_sale' %}" class="btn btn-primary">Create First Sale</a>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Bulk bar -->
+      <div class="bulk-bar" id="bulkBar">
+        <form method="post" action="{% url 'sales:bulk_actions' %}" id="bulkForm">
+          {% csrf_token %}
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem;">
+            <div style="display:flex; align-items:center; gap:.875rem; flex-wrap:wrap;">
+              <span id="selCount" style="font-weight:600; font-size:.9rem;">0 selected</span>
+              <select name="action" class="form-select" style="width:auto; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.3); color:#fff; border-radius:var(--radius); padding:.4rem .875rem; font-size:.85rem;">
+                <option value="">Choose action…</option>
+                {% if efris_enabled %}<option value="fiscalize">Fiscalize Selected</option>{% endif %}
+                <option value="print_receipts">Print Receipts</option>
+                <option value="export_csv">Export CSV</option>
+                <option value="export_excel">Export Excel</option>
+              </select>
+              <button type="submit" class="btn btn-primary btn-sm">Execute</button>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,.7);" onclick="clearSelection()">Clear</button>
+          </div>
+          <input type="hidden" name="selected_sales" id="selectedSales">
+        </form>
+      </div>
+
+      <!-- Pagination -->
+      {% if is_paginated %}
+      <div class="pager">
+        <span class="pager-info">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ paginator.count }}</span>
+        <div class="page-btns">
+          {% if page_obj.has_previous %}
+          <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page=1"><i class="fas fa-angle-double-left"></i></a>
+          <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}"><i class="fas fa-angle-left"></i></a>
+          {% endif %}
+          {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+              <span class="page-btn active">{{ num }}</span>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+              <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ num }}">{{ num }}</a>
+            {% endif %}
+          {% endfor %}
+          {% if page_obj.has_next %}
+          <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}"><i class="fas fa-angle-right"></i></a>
+          <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.paginator.num_pages }}"><i class="fas fa-angle-double-right"></i></a>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div><!-- /tab-sales -->
+
+  <!-- ══════════════════════════════════════════
+       TAB: ANALYTICS
+  ══════════════════════════════════════════════ -->
+  <div id="tab-analytics" class="tab-pane" style="display:none;">
+
+    <!-- Secondary KPIs -->
+    <div class="kpi-grid" style="margin-bottom:1.25rem;">
+      <div class="kpi-card" style="--kpi-color:var(--primary); --kpi-bg:var(--primary-light);">
+        <div class="kpi-icon"><i class="fas fa-arrow-trend-up"></i></div>
+        <div class="kpi-label">Revenue Growth</div>
+        <div class="kpi-value" style="color:{% if '-' in sales_growth %}var(--danger){% else %}var(--success){% endif %}">{{ sales_growth }}</div>
+        <div class="kpi-sub">vs previous period</div>
+      </div>
+      <div class="kpi-card" style="--kpi-color:var(--teal); --kpi-bg:var(--teal-light);">
+        <div class="kpi-icon"><i class="fas fa-receipt"></i></div>
+        <div class="kpi-label">Avg Sale Value</div>
+        <div class="kpi-value" style="font-size:1.2rem;">UGX {{ avg_sale_value|floatformat:0|intcomma }}</div>
+        <div class="kpi-sub">per transaction</div>
+      </div>
+      <div class="kpi-card" style="--kpi-color:var(--purple); --kpi-bg:var(--purple-light);">
+        <div class="kpi-icon"><i class="fas fa-user-plus"></i></div>
+        <div class="kpi-label">New Customers</div>
+        <div class="kpi-value">{{ new_customers }}</div>
+        <div class="kpi-sub">this period</div>
+      </div>
+      <div class="kpi-card" style="--kpi-color:var(--danger); --kpi-bg:var(--danger-light);">
+        <div class="kpi-icon"><i class="fas fa-percent"></i></div>
+        <div class="kpi-label">Return Rate</div>
+        <div class="kpi-value">{{ return_rate }}</div>
+        <div class="kpi-sub">refunds / revenue</div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <!-- Daily revenue + volume dual axis -->
+      <div class="card chart-full">
+        <div class="card-hd">
+          <h6><i class="fas fa-chart-line" style="color:var(--primary);"></i> Daily Sales Performance</h6>
+          <div style="display:flex;gap:.4rem;">
+            <span class="badge badge-primary" style="font-size:.65rem;"><i class="fas fa-circle" style="font-size:.5rem;"></i> Revenue</span>
+            <span class="badge badge-gray" style="font-size:.65rem;"><i class="fas fa-circle" style="font-size:.5rem;"></i> Volume</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <canvas id="dailyDetailChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Payment breakdown -->
+      <div class="card">
+        <div class="card-hd"><h6><i class="fas fa-wallet" style="color:var(--success);"></i> Payment Breakdown</h6></div>
+        <div class="card-body">
+          <canvas id="paymentBreakChart"></canvas>
+          <div style="margin-top:1rem;">
+            {% for pm in payment_methods %}
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:.4rem 0; border-bottom:1px solid var(--border); font-size:.8rem;">
+              <span style="color:var(--text-sm);">{{ pm.payment_method_display }}</span>
+              <div style="text-align:right;">
+                <span style="font-weight:700; font-family:var(--mono); color:var(--text);">{{ pm.percentage }}%</span>
+                <div style="font-size:.7rem; color:var(--text-xs);">UGX {{ pm.total|floatformat:0|intcomma }}</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Top items detailed -->
+      <div class="card">
+        <div class="card-hd"><h6><i class="fas fa-star" style="color:var(--warning);"></i> Top Products & Services</h6></div>
+        <div class="card-body" id="topItemsDetailed"></div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <!-- Hourly bar chart -->
+      <div class="card">
+        <div class="card-hd"><h6><i class="fas fa-clock" style="color:var(--accent);"></i> Hourly Traffic</h6></div>
+        <div class="card-body">
+          <canvas id="hourlyBarChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Store performance table -->
+      <div class="card">
+        <div class="card-hd"><h6><i class="fas fa-building" style="color:var(--teal);"></i> Branch Leaderboard</h6></div>
+        <div class="card-body">
+          <canvas id="storeChart" style="max-height:200px; margin-bottom:1rem;"></canvas>
+          <div id="storePerfTable"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Item type breakdown -->
+    {% if item_type_breakdown %}
+    <div class="card" style="margin-bottom:1.25rem;">
+      <div class="card-hd"><h6><i class="fas fa-boxes" style="color:var(--purple);"></i> Products vs Services</h6></div>
+      <div class="card-body" style="display:flex; gap:2rem; flex-wrap:wrap;">
+        {% for item in item_type_breakdown %}
+        <div style="text-align:center; min-width:140px;">
+          <div style="font-size:2rem; font-weight:700; color:var(--text); font-family:var(--mono);">{{ item.total_revenue|floatformat:0|intcomma }}</div>
+          <div style="font-size:.75rem; color:var(--text-xs); text-transform:uppercase; letter-spacing:.07em;">{{ item.item_type }}</div>
+          <div style="margin-top:.5rem; font-size:.8rem; color:var(--text-sm);">{{ item.total_quantity }} units · {{ item.count }} items</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Payment status -->
+    <div class="card" style="margin-bottom:1.25rem;">
+      <div class="card-hd"><h6><i class="fas fa-tasks" style="color:var(--warning);"></i> Payment Status Distribution</h6></div>
+      <div class="card-body">
+        <div style="display:flex; flex-wrap:wrap; gap:1rem;">
+          {% for ps in payment_status_stats %}
+          <div style="flex:1; min-width:120px; background:var(--bg-alt); border-radius:var(--radius); padding:.875rem; text-align:center;">
+            <div style="font-size:1.4rem; font-weight:700; color:var(--text); font-family:var(--mono);">{{ ps.count }}</div>
+            <div style="font-size:.72rem; color:var(--text-xs); text-transform:uppercase; letter-spacing:.06em;">{{ ps.status_display }}</div>
+            <div style="font-size:.75rem; color:var(--text-sm); margin-top:.25rem;">UGX {{ ps.total|floatformat:0|intcomma }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tab-analytics -->
+
+  <!-- ══════════════════════════════════════════
+       TAB: CREDIT
+  ══════════════════════════════════════════════ -->
+  {% if credit_stats.total_credit_invoices > 0 %}
+  <div id="tab-credit" class="tab-pane" style="display:none;">
+    <div class="card" style="margin-bottom:1.25rem;">
+      <div class="card-hd"><h6><i class="fas fa-credit-card" style="color:var(--warning);"></i> Credit Invoice Summary</h6></div>
+      <div class="card-body">
+        <div class="credit-panel">
+          <div class="credit-stat">
+            <div class="val">{{ credit_stats.total_credit_invoices }}</div>
+            <div class="lbl">Total Invoices</div>
+          </div>
+          <div class="credit-stat" style="--c:var(--warning);">
+            <div class="val" style="color:var(--warning);">UGX {{ credit_stats.total_credit_amount|floatformat:0|intcomma }}</div>
+            <div class="lbl">Total Value</div>
+          </div>
+          <div class="credit-stat">
+            <div class="val" style="color:var(--danger);">{{ credit_stats.overdue_count }}</div>
+            <div class="lbl">Overdue</div>
+          </div>
+          <div class="credit-stat">
+            <div class="val" style="color:var(--danger);">UGX {{ credit_stats.overdue_amount|floatformat:0|intcomma }}</div>
+            <div class="lbl">Overdue Amount</div>
+          </div>
+          <div class="credit-stat">
+            <div class="val" style="color:var(--warning);">{{ credit_stats.pending_count }}</div>
+            <div class="lbl">Pending</div>
+          </div>
+          <div class="credit-stat">
+            <div class="val" style="color:var(--success);">{{ credit_stats.paid_count }}</div>
+            <div class="lbl">Fully Paid</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if top_credit_customers %}
+    <div class="card">
+      <div class="card-hd"><h6><i class="fas fa-users" style="color:var(--primary);"></i> Top Credit Customers</h6></div>
+      <div class="card-body" style="padding:0;">
+        <table>
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Phone</th>
+              <th>Invoices</th>
+              <th>Total Credit</th>
+              <th>Outstanding</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in top_credit_customers %}
+            <tr>
+              <td><strong style="font-size:.875rem;">{{ c.customer__name }}</strong></td>
+              <td><span class="sale-meta">{{ c.customer__phone }}</span></td>
+              <td>{{ c.invoice_count }}</td>
+              <td><span style="font-family:var(--mono); font-weight:600;">UGX {{ c.total_credit|floatformat:0|intcomma }}</span></td>
+              <td>
+                {% if c.outstanding_count > 0 %}
+                <span class="badge badge-warning">{{ c.outstanding_count }} outstanding</span>
+                {% else %}
+                <span class="badge badge-success">Cleared</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div><!-- /salesHub -->
+
+<!-- ── MODALS ─────────────────────────────────── -->
+<div class="modal-overlay" id="refundModal">
+  <div class="modal-box">
+    <div class="modal-hd">
+      <h5><i class="fas fa-undo" style="color:var(--danger); margin-right:.5rem;"></i>Process Refund</h5>
+      <button class="modal-close" onclick="closeModal('refundModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="refundForm">
+        {% csrf_token %}
+        <div class="form-group">
+          <label class="form-label">Reason for Refund</label>
+          <textarea class="form-control" name="reason" rows="3" required></textarea>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+          <div class="form-group">
+            <label class="form-label">Amount</label>
+            <input type="number" class="form-control" name="refund_amount" step="0.01" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Method</label>
+            <select class="form-select" name="refund_method" required>
+              <option value="CASH">Cash</option>
+              <option value="CARD">Credit Card</option>
+              <option value="MOBILE_MONEY">Mobile Money</option>
+              <option value="BANK_TRANSFER">Bank Transfer</option>
+            </select>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-outline" onclick="closeModal('refundModal')">Cancel</button>
+      <button class="btn btn-danger" onclick="processRefund()">Process Refund</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toasts container -->
+<div class="toasts" id="toasts"></div>
+
+<!-- Loading overlay -->
+<div class="overlay-loading" id="loadingOverlay"><div class="spinner"></div></div>
+
+<!-- Hidden export form -->
+<form id="exportForm" method="POST" style="display:none;">
+  {% csrf_token %}
+  <input type="hidden" name="action" id="exportAction">
+  <input type="hidden" name="selected_sales" id="exportSelected">
+  {% for key, value in request.GET.items %}
+  <input type="hidden" name="{{ key }}" value="{{ value }}">
+  {% endfor %}
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+/* ============================================
+   SALES HUB JS
+   ============================================ */
+
+// ── Data from Django ──────────────────────────
+const HUB = {
+  dailySales:       {{ daily_sales|default:"[]"|safe }},
+  paymentMethods:   {{ payment_methods|default:"[]"|safe }},
+  hourlyData:       {{ hourly_sales|default:"[]"|safe }},
+  topItems:         {{ top_items|default:"[]"|safe }},
+  storePerformance: {{ store_performance|default:"[]"|safe }},
+  itemTypeBreakdown:{{ item_type_breakdown|default:"[]"|safe }},
+  currency: 'UGX',
+};
+
+const COLORS = ['#2563eb','#0ea5e9','#059669','#d97706','#7c3aed','#0d9488','#dc2626','#64748b'];
+const isDark = () => document.documentElement.getAttribute('data-theme') === 'dark';
+
+const fmtMoney = v => 'UGX ' + parseFloat(v || 0).toLocaleString();
+const fmtNum   = v => parseFloat(v || 0).toLocaleString();
+
+Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+Chart.defaults.font.size   = 12;
+
+// ── Tab switching ─────────────────────────────
+function switchTab(btn) {
+  document.querySelectorAll('.hub-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => { p.style.display = 'none'; });
+  btn.classList.add('active');
+  const pane = document.getElementById(btn.dataset.tab);
+  if (pane) pane.style.display = 'block';
+
+  // Lazy init charts for analytics tab
+  if (btn.dataset.tab === 'tab-analytics' && !window._analyticsInited) {
+    window._analyticsInited = true;
+    initAnalyticsCharts();
+  }
+}
+
+// ── Dropdown helpers ──────────────────────────
+function toggleDropdown(id) {
+  const el = document.getElementById(id);
+  const wasOpen = el.classList.contains('show');
+  closeDropdowns();
+  if (!wasOpen) el.classList.add('show');
+}
+function closeDropdowns() {
+  document.querySelectorAll('.dropdown-menu.show').forEach(d => d.classList.remove('show'));
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.dropdown')) closeDropdowns();
+});
+
+// ── Modal helpers ─────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+// ── Loading ───────────────────────────────────
+function showLoading() { document.getElementById('loadingOverlay').classList.add('show'); }
+function hideLoading() { document.getElementById('loadingOverlay').classList.remove('show'); }
+
+// ── Toast ─────────────────────────────────────
+function toast(msg, type = 'info') {
+  const container = document.getElementById('toasts');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  const icon = { success:'check-circle', error:'times-circle', info:'info-circle', warning:'exclamation-triangle' }[type] || 'info-circle';
+  t.innerHTML = `<i class="fas fa-${icon}"></i><span>${msg}</span>`;
+  container.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+// ── Date ranges ───────────────────────────────
+function setRange(range) {
+  const form = document.getElementById('filterForm');
+  const dFrom = form.querySelector('[name="date_from"]');
+  const dTo   = form.querySelector('[name="date_to"]');
+  const today = new Date();
+  const fmt = d => d.toISOString().split('T')[0];
+  let from = today;
+
+  document.querySelectorAll('.btn-range').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  switch(range) {
+    case 'today':   from = today; break;
+    case 'week':    from = new Date(today - 6*864e5); break;
+    case 'month':   from = new Date(today.getFullYear(), today.getMonth(), 1); break;
+    case 'quarter': from = new Date(today.getFullYear(), Math.floor(today.getMonth()/3)*3, 1); break;
+    case 'year':    from = new Date(today.getFullYear(), 0, 1); break;
+  }
+  dFrom.value = fmt(from);
+  dTo.value   = fmt(today);
+  form.submit();
+}
+
+// ── Advanced filters toggle ───────────────────
+function toggleAdv() {
+  const el = document.getElementById('advFilters');
+  const lbl = document.getElementById('advLabel');
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'grid';
+  lbl.textContent  = open ? 'More filters' : 'Less filters';
+}
+
+// ── Filter chips ──────────────────────────────
+function buildFilterChips() {
+  const params = new URLSearchParams(window.location.search);
+  const ignore = ['page'];
+  const container = document.getElementById('filterChips');
+  container.innerHTML = '';
+  params.forEach((val, key) => {
+    if (!val || ignore.includes(key)) return;
+    const chip = document.createElement('span');
+    chip.className = 'filter-chip';
+    chip.innerHTML = `<span>${key}: ${val}</span><button onclick="removeFilter('${key}')">&times;</button>`;
+    container.appendChild(chip);
+  });
+}
+
+function removeFilter(key) {
+  const params = new URLSearchParams(window.location.search);
+  params.delete(key);
+  window.location.search = params.toString();
+}
+buildFilterChips();
+
+// ── Quick search ──────────────────────────────
+document.getElementById('quickSearch').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  let count = 0;
+  document.querySelectorAll('.sale-row').forEach(row => {
+    const text = row.dataset.search || row.textContent.toLowerCase();
+    const show = text.includes(q);
+    row.style.display = show ? '' : 'none';
+    if (show) count++;
+  });
+  document.getElementById('showCount').textContent = count;
+});
+
+// ── Row selection ─────────────────────────────
+let selectedIds = new Set();
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  const cnt = document.getElementById('selCount');
+  cnt.textContent = `${selectedIds.size} selected`;
+  bar.classList.toggle('show', selectedIds.size > 0);
+  document.getElementById('selectedSales').value = JSON.stringify([...selectedIds]);
+}
+
+document.querySelectorAll('.row-select').forEach(cb => {
+  cb.addEventListener('change', function() {
+    this.checked ? selectedIds.add(this.value) : selectedIds.delete(this.value);
+    updateBulkBar();
+    syncSelectAll();
+  });
+});
+
+['selectAll','selectAllRows'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', function() {
+    document.querySelectorAll('.row-select').forEach(cb => {
+      cb.checked = this.checked;
+      this.checked ? selectedIds.add(cb.value) : selectedIds.delete(cb.value);
+    });
+    updateBulkBar();
+  });
+});
+
+function syncSelectAll() {
+  const all = document.querySelectorAll('.row-select');
+  const checked = document.querySelectorAll('.row-select:checked');
+  ['selectAll','selectAllRows'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.checked = all.length > 0 && all.length === checked.length;
+  });
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  document.querySelectorAll('.row-select').forEach(cb => cb.checked = false);
+  ['selectAll','selectAllRows'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.checked = false;
+  });
+  updateBulkBar();
+}
+
+// ── Sort table ────────────────────────────────
+let sortState = { col: null, dir: 'desc' };
+function sortTable(colIdx) {
+  const tbody = document.getElementById('salesBody');
+  const rows  = [...tbody.querySelectorAll('tr.sale-row')];
+  if (sortState.col === colIdx) {
+    sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortState.col = colIdx;
+    sortState.dir = 'desc';
+  }
+  rows.sort((a, b) => {
+    const aT = a.cells[colIdx]?.textContent.trim() || '';
+    const bT = b.cells[colIdx]?.textContent.trim() || '';
+    const aNum = parseFloat(aT.replace(/[^0-9.-]/g,''));
+    const bNum = parseFloat(bT.replace(/[^0-9.-]/g,''));
+    let cmp = isNaN(aNum) ? aT.localeCompare(bT) : aNum - bNum;
+    return sortState.dir === 'asc' ? cmp : -cmp;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+  document.querySelectorAll('thead th').forEach((th,i) => {
+    th.classList.remove('sorted-asc','sorted-desc');
+    if (i === colIdx) th.classList.add(`sorted-${sortState.dir}`);
+  });
+}
+
+// ── Column toggle ─────────────────────────────
+document.querySelectorAll('#colsDrop input[type=checkbox]').forEach(cb => {
+  cb.addEventListener('change', function() {
+    const col = parseInt(this.dataset.col);
+    document.querySelectorAll(`#salesTable td:nth-child(${col+1}), #salesTable th:nth-child(${col+1})`).forEach(cell => {
+      cell.style.display = this.checked ? '' : 'none';
+    });
+  });
+});
+
+// ── Export ────────────────────────────────────
+function exportData(format) {
+  const form = document.getElementById('exportForm');
+  document.getElementById('exportAction').value = `export_${format}`;
+  document.getElementById('exportSelected').value = JSON.stringify([...selectedIds]);
+  form.submit();
+  toast(`Preparing ${format.toUpperCase()} export…`, 'info');
+}
+
+// ── CSRF ──────────────────────────────────────
+function getCsrf() {
+  return document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('csrftoken='))?.split('=')[1]
+      || document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+}
+
+// ── Sale actions ──────────────────────────────
+function printReceipt(id) {
+  const w = window.open(`/sales/${id}/print-receipt/`, '_blank');
+  if (w) w.onload = () => setTimeout(() => w.print(), 500);
+  else toast('Please allow popups to print', 'warning');
+}
+
+function fiscalizeSale(id) {
+  if (!confirm('Fiscalize this sale?')) return;
+  showLoading();
+  fetch(`/sales/${id}/fiscalize/`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/x-www-form-urlencoded'},
+    body: `csrfmiddlewaretoken=${getCsrf()}`
+  }).then(r => r.json()).then(data => {
+    hideLoading();
+    toast('Sale fiscalized!', 'success');
+    setTimeout(() => location.reload(), 1200);
+  }).catch(() => { hideLoading(); toast('Fiscalization failed', 'error'); });
+}
+
+function emailReceipt(id) {
+  const email = prompt('Email address:');
+  if (!email) return;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('Invalid email', 'error'); return; }
+  showLoading();
+  fetch(`/sales/${id}/send-receipt/`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/x-www-form-urlencoded'},
+    body: `csrfmiddlewaretoken=${getCsrf()}&email=${encodeURIComponent(email)}`
+  }).then(r => r.json()).then(() => { hideLoading(); toast('Receipt sent!', 'success'); })
+    .catch(() => { hideLoading(); toast('Failed to send', 'error'); });
+}
+
+let refundSaleId = null;
+function processRefund() {
+  if (!refundSaleId) return;
+  const form = document.getElementById('refundForm');
+  const data = new FormData(form);
+  data.append('csrfmiddlewaretoken', getCsrf());
+  showLoading();
+  fetch(`/sales/${refundSaleId}/refund/`, { method: 'POST', body: data })
+    .then(r => r.json()).then(() => {
+      hideLoading(); closeModal('refundModal');
+      toast('Refund processed!', 'success');
+      setTimeout(() => location.reload(), 1200);
+    }).catch(() => { hideLoading(); toast('Refund failed', 'error'); });
+}
+
+// ── Chart helpers ─────────────────────────────
+const gridColor  = () => isDark() ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.05)';
+const tickColor  = () => isDark() ? '#64748b' : '#9ca3af';
+const chartOpts  = () => ({
+  responsive: true,
+  plugins: { legend: { display: false }, tooltip: { backgroundColor: isDark() ? '#1e293b' : '#111827', titleColor:'#fff', bodyColor:'rgba(255,255,255,.8)', padding:10, cornerRadius:8 } },
+  scales: { x: { grid:{color:gridColor()}, ticks:{color:tickColor()} }, y: { grid:{color:gridColor()}, ticks:{color:tickColor()} } }
+});
+
+let charts = {};
+
+function mkChart(id, type, data, extraOpts = {}) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id)?.getContext('2d');
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, { type, data, options: { ...chartOpts(), ...extraOpts } });
+  return charts[id];
+}
+
+function toggleChartType(id, type) {
+  if (!charts[id]) return;
+  charts[id].config.type = type;
+  charts[id].update();
+}
+
+// ── Overview charts ───────────────────────────
+function initOverviewCharts() {
+  const days = HUB.dailySales;
+
+  // Revenue trend
+  mkChart('revenueChart', 'line', {
+    labels: days.map(d => new Date(d.day).toLocaleDateString('en-UG', {month:'short', day:'numeric'})),
+    datasets: [{
+      label: 'Revenue',
+      data: days.map(d => parseFloat(d.total)),
+      borderColor: '#2563eb',
+      backgroundColor: 'rgba(37,99,235,.1)',
+      tension: .4,
+      fill: true,
+      pointRadius: 3,
+      pointHoverRadius: 6,
+      borderWidth: 2,
+    }]
+  }, {
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => fmtMoney(ctx.raw) } }
+    },
+    scales: {
+      x: { grid:{color:gridColor()}, ticks:{color:tickColor(), maxTicksLimit:10} },
+      y: { grid:{color:gridColor()}, ticks:{color:tickColor(), callback: v => 'UGX '+v.toLocaleString()} }
+    }
+  });
+
+  // Payment donut
+  const pms = HUB.paymentMethods;
+  if (pms.length) {
+    mkChart('paymentChart', 'doughnut', {
+      labels: pms.map(p => p.payment_method_display),
+      datasets: [{ data: pms.map(p => p.percentage), backgroundColor: COLORS, borderWidth: 0, hoverOffset: 8 }]
+    }, {
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw}%` } }
+      },
+      cutout: '70%',
+      scales: {}
+    });
+    // Legend
+    const legend = document.getElementById('pmLegend');
+    if (legend) {
+      legend.innerHTML = pms.map((p, i) => `
+        <div class="pm-item">
+          <span class="pm-dot" style="background:${COLORS[i%COLORS.length]};"></span>
+          <span class="pm-label">${p.payment_method_display}</span>
+          <span class="pm-pct">${p.percentage}%</span>
+        </div>`).join('');
+    }
+  }
+
+  // Top items mini list
+  const topEl = document.getElementById('topItemsList');
+  if (topEl && HUB.topItems.length) {
+    const maxRev = HUB.topItems[0]?.revenue || 1;
+    topEl.innerHTML = HUB.topItems.slice(0, 5).map((item, i) => {
+      const rankClass = ['r1','r2','r3'][i] || 'rn';
+      const pct = ((item.revenue / maxRev) * 100).toFixed(1);
+      const typeColor = item.item_type === 'PRODUCT' ? '#059669' : '#7c3aed';
+      return `<div class="top-item">
+        <div class="top-rank ${rankClass}">${i+1}</div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:.82rem; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name}</div>
+          <span style="font-size:.65rem; font-weight:700; color:${typeColor}; text-transform:uppercase; letter-spacing:.05em;">${item.item_type}</span>
+          <div class="top-bar"><div class="top-bar-inner" style="width:${pct}%; background:${typeColor};"></div></div>
+        </div>
+        <div class="top-revenue">${fmtMoney(item.revenue)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Hourly heatmap
+  const hmEl = document.getElementById('hourHeatmap');
+  if (hmEl && HUB.hourlyData.length) {
+    const maxCnt = Math.max(...HUB.hourlyData.map(h => h.count)) || 1;
+    hmEl.innerHTML = HUB.hourlyData.map(h => {
+      const intensity = h.count / maxCnt;
+      const bg = intensity > 0
+        ? `rgba(37,99,235,${Math.min(0.15 + intensity * 0.75, 0.9)})`
+        : 'var(--border)';
+      return `<div class="heat-cell" style="background:${bg};" data-tip="${h.hour}:00 — ${h.count} sales"></div>`;
+    }).join('');
+  }
+
+  // Store performance
+  const storeEl = document.getElementById('storePerf');
+  if (storeEl && HUB.storePerformance.length) {
+    const maxAmt = Math.max(...HUB.storePerformance.map(s => parseFloat(s.total_amount || s.total_revenue || 0))) || 1;
+    storeEl.innerHTML = HUB.storePerformance.slice(0,6).map((s, i) => {
+      const amt = parseFloat(s.total_amount || s.total_revenue || 0);
+      const pct = ((amt / maxAmt) * 100).toFixed(0);
+      return `<div class="store-row">
+        <div class="store-dot" style="background:${COLORS[i%COLORS.length]};"></div>
+        <div style="flex:1;">
+          <div style="font-size:.82rem; font-weight:600; color:var(--text);">${s.store__name}</div>
+          <div style="height:4px; background:var(--border); border-radius:2px; margin-top:.3rem;">
+            <div style="height:4px; background:${COLORS[i%COLORS.length]}; border-radius:2px; width:${pct}%;"></div>
+          </div>
+        </div>
+        <div class="store-amount">UGX ${amt.toLocaleString()}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Doc type bar
+  const docStats = {{ document_type_stats|default:"[]"|safe }};
+  if (docStats.length) {
+    mkChart('docTypeChart', 'bar', {
+      labels: docStats.map(d => d.type_display),
+      datasets: [{
+        label: 'Count',
+        data: docStats.map(d => d.count),
+        backgroundColor: COLORS,
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
+    }, {
+      indexAxis: 'y',
+      plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => `${ctx.raw} sales` } } },
+      scales: { x:{ grid:{color:gridColor()}, ticks:{color:tickColor()} }, y:{ grid:{color:'transparent'}, ticks:{color:tickColor()} } }
+    });
+  }
+}
+
+// ── Analytics charts ──────────────────────────
+function initAnalyticsCharts() {
+  const days = HUB.dailySales;
+
+  // Dual-axis daily chart
+  const dailyCtx = document.getElementById('dailyDetailChart')?.getContext('2d');
+  if (dailyCtx && days.length) {
+    if (charts.dailyDetailChart) charts.dailyDetailChart.destroy();
+    charts.dailyDetailChart = new Chart(dailyCtx, {
+      type: 'bar',
+      data: {
+        labels: days.map(d => new Date(d.day).toLocaleDateString('en-UG', {month:'short',day:'numeric'})),
+        datasets: [
+          {
+            type: 'line',
+            label: 'Revenue',
+            data: days.map(d => parseFloat(d.total)),
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37,99,235,.0)',
+            yAxisID: 'yRevenue',
+            tension: .4,
+            pointRadius: 3,
+            borderWidth: 2,
+            order: 1,
+          },
+          {
+            type: 'bar',
+            label: 'Volume',
+            data: days.map(d => d.count),
+            backgroundColor: 'rgba(14,165,233,.25)',
+            yAxisID: 'yVolume',
+            borderRadius: 4,
+            order: 2,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: true, labels: { color: tickColor() } },
+          tooltip: { backgroundColor:'#1e293b', titleColor:'#fff', bodyColor:'rgba(255,255,255,.8)', padding:10 }
+        },
+        scales: {
+          x: { grid:{color:gridColor()}, ticks:{color:tickColor(), maxTicksLimit:12} },
+          yRevenue: { position:'left', grid:{color:gridColor()}, ticks:{color:'#2563eb', callback:v=>'UGX '+v.toLocaleString()} },
+          yVolume:  { position:'right', grid:{display:false}, ticks:{color:'#0ea5e9'} }
+        }
+      }
+    });
+  }
+
+  // Payment breakdown horizontal bar
+  const pms = HUB.paymentMethods;
+  if (pms.length) {
+    mkChart('paymentBreakChart', 'bar', {
+      labels: pms.map(p => p.payment_method_display),
+      datasets: [{
+        data: pms.map(p => parseFloat(p.total)),
+        backgroundColor: COLORS,
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
+    }, {
+      indexAxis: 'y',
+      plugins: { legend:{display:false}, tooltip:{ callbacks:{ label: ctx => fmtMoney(ctx.raw) } } },
+      scales: { x:{ grid:{color:gridColor()}, ticks:{color:tickColor(), callback:v=>'UGX '+v.toLocaleString()} }, y:{ grid:{color:'transparent'}, ticks:{color:tickColor()} } }
+    });
+  }
+
+  // Top items detailed
+  const detEl = document.getElementById('topItemsDetailed');
+  if (detEl && HUB.topItems.length) {
+    const maxRev = HUB.topItems[0]?.revenue || 1;
+    detEl.innerHTML = HUB.topItems.map((item, i) => {
+      const pct = ((item.revenue / maxRev) * 100).toFixed(1);
+      const typeColor = item.item_type === 'PRODUCT' ? '#059669' : '#7c3aed';
+      const rankClass = ['r1','r2','r3'][i] || 'rn';
+      return `<div class="top-item">
+        <div class="top-rank ${rankClass}">${i+1}</div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:.85rem; font-weight:600; color:var(--text);">${item.name}</div>
+          <div style="font-size:.72rem; color:var(--text-xs); margin:.1rem 0;">${item.code||''} · ${item.sale_count} sales · ${fmtNum(item.quantity_sold)} units</div>
+          <div style="height:5px; background:var(--border); border-radius:3px; margin-top:.35rem;">
+            <div style="height:5px; background:${typeColor}; border-radius:3px; width:${pct}%;"></div>
+          </div>
+        </div>
+        <div style="text-align:right; min-width:100px;">
+          <div class="top-revenue">${fmtMoney(item.revenue)}</div>
+          <span style="font-size:.65rem; font-weight:700; color:${typeColor};">${item.item_type}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Hourly bar chart
+  mkChart('hourlyBarChart', 'bar', {
+    labels: HUB.hourlyData.map(h => h.hour + ':00'),
+    datasets: [{
+      label: 'Sales',
+      data: HUB.hourlyData.map(h => h.count),
+      backgroundColor: HUB.hourlyData.map(h => {
+        const intensity = h.count / (Math.max(...HUB.hourlyData.map(x=>x.count)) || 1);
+        return `rgba(37,99,235,${0.2 + intensity * 0.7})`;
+      }),
+      borderRadius: 4,
+      borderSkipped: false,
+    }]
+  });
+
+  // Store chart
+  const sp = HUB.storePerformance;
+  if (sp.length) {
+    mkChart('storeChart', 'bar', {
+      labels: sp.map(s => s.store__name),
+      datasets: [{
+        data: sp.map(s => parseFloat(s.total_amount || s.total_revenue || 0)),
+        backgroundColor: COLORS,
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
+    }, {
+      indexAxis: 'y',
+      plugins: { legend:{display:false}, tooltip:{ callbacks:{ label:ctx=>fmtMoney(ctx.raw) } } },
+      scales: { x:{grid:{color:gridColor()}, ticks:{color:tickColor(), callback:v=>'UGX '+v.toLocaleString()}}, y:{grid:{color:'transparent'}, ticks:{color:tickColor()}} }
+    });
+
+    // Store table below chart
+    const spTable = document.getElementById('storePerfTable');
+    if (spTable) {
+      spTable.innerHTML = sp.map((s,i) => `
+        <div class="store-row">
+          <div class="store-dot" style="background:${COLORS[i%COLORS.length]};"></div>
+          <div style="flex:1;">
+            <span style="font-size:.8rem; font-weight:600; color:var(--text);">${s.store__name}</span>
+          </div>
+          <span style="font-size:.75rem; font-family:'JetBrains Mono',monospace; color:var(--text-sm);">${(s.sales_count||0)} txns</span>
+          <span style="font-size:.75rem; font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--text); margin-left:.75rem;">UGX ${parseFloat(s.total_amount||s.total_revenue||0).toLocaleString()}</span>
+        </div>`).join('');
+    }
+  }
+}
+
+// ── Init ──────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initOverviewCharts();
+
+  // Tooltips for action buttons
+  document.querySelectorAll('[title]').forEach(el => {
+    el.addEventListener('mouseenter', function() {
+      const tip = document.createElement('div');
+      tip.className = 'toast info';
+      tip.style.cssText = 'position:fixed;z-index:9999;font-size:.72rem;padding:.25rem .6rem;pointer-events:none;';
+      tip.textContent = this.title;
+      // Simple tooltip — use title attribute natively
+    });
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,968 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load humanize %}
+{% load custom_filters %}
+{% load i18n %}
+
+{% block title %}Inventory Hub | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item">
+  <a href="{% url 'inventory:dashboard' %}"><i class="fas fa-home"></i> Dashboard</a>
+</li>
+<li class="breadcrumb-item active"><i class="fas fa-boxes"></i> Inventory Hub</li>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+:root {
+  --p:#2563eb;--pdk:#1e40af;--plt:#dbeafe;
+  --s:#059669;--slt:#d1fae5;
+  --w:#d97706;--wlt:#fef3c7;
+  --d:#dc2626;--dlt:#fee2e2;
+  --pu:#7c3aed;--pult:#ede9fe;
+  --t:#0d9488;--tlt:#ccfbf1;
+  --bg:#fff;--bg2:#f9fafb;
+  --tx:#111827;--tx2:#4b5563;--tx3:#9ca3af;
+  --br:#e5e7eb;--r:8px;--rlg:14px;
+  --sh0:0 1px 3px rgba(0,0,0,.07);
+  --sh:0 4px 16px rgba(0,0,0,.08);
+  --shlg:0 12px 40px rgba(0,0,0,.12);
+  --fn:'DM Sans',system-ui,sans-serif;
+  --mn:'JetBrains Mono',monospace;
+}
+[data-theme="dark"]{
+  --bg:#0f172a;--bg2:#1e293b;
+  --tx:#f1f5f9;--tx2:#94a3b8;--tx3:#64748b;
+  --br:#334155;
+  --plt:rgba(37,99,235,.15);--slt:rgba(5,150,105,.15);
+  --wlt:rgba(217,119,6,.15);--dlt:rgba(220,38,38,.15);
+  --pult:rgba(124,58,237,.15);--tlt:rgba(13,148,136,.15);
+}
+*,*::before,*::after{box-sizing:border-box}
+body{font-family:var(--fn)}
+.hub-wrap{padding:1.5rem;max-width:1440px;margin:0 auto}
+/* HEADER */
+.phd{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--br)}
+.phd h1{font-size:1.6rem;font-weight:700;color:var(--tx);margin:0 0 .25rem;display:flex;align-items:center;gap:.6rem}
+.phd p{color:var(--tx2);margin:0;font-size:.875rem}
+/* TABS */
+.hnav{display:flex;gap:4px;padding:5px;background:var(--bg2);border:1px solid var(--br);border-radius:var(--rlg);margin-bottom:1.5rem;flex-wrap:wrap}
+.htab{padding:.5rem 1.1rem;border-radius:10px;border:none;background:transparent;color:var(--tx2);font-family:var(--fn);font-size:.875rem;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:.5rem;transition:all .18s}
+.htab.active{background:var(--bg);color:var(--p);box-shadow:var(--sh0);font-weight:600}
+.htab:hover:not(.active){color:var(--tx)}
+.tcount{font-size:.6rem;padding:.1rem .4rem;border-radius:20px;font-weight:700;background:var(--plt);color:var(--p)}
+.tcount.d{background:var(--dlt);color:var(--d)}
+.tpane{animation:fu .22s ease}
+@keyframes fu{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+/* KPI */
+.kgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:1rem;margin-bottom:1.5rem}
+.kcard{background:var(--bg);border:1px solid var(--br);border-radius:var(--rlg);padding:1.25rem 1.5rem;position:relative;overflow:hidden;transition:all .18s}
+.kcard::before{content:'';position:absolute;inset:0 auto 0 0;width:4px;border-radius:4px 0 0 4px;background:var(--kc,var(--p))}
+.kcard:hover{box-shadow:var(--sh);transform:translateY(-2px)}
+.kico{width:38px;height:38px;border-radius:10px;background:var(--kb,var(--plt));color:var(--kc,var(--p));display:flex;align-items:center;justify-content:center;font-size:1rem;margin-bottom:.75rem}
+.klbl{font-size:.68rem;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem}
+.kval{font-size:1.55rem;font-weight:700;color:var(--tx);line-height:1;font-family:var(--mn)}
+.ksub{font-size:.7rem;color:var(--tx3);margin-top:.35rem}
+/* CARD */
+.ic{background:var(--bg);border:1px solid var(--br);border-radius:var(--rlg);overflow:hidden;margin-bottom:1.25rem}
+.ich{display:flex;justify-content:space-between;align-items:center;padding:.875rem 1.25rem;border-bottom:1px solid var(--br);background:var(--bg2)}
+.ich h6{margin:0;font-size:.875rem;font-weight:600;color:var(--tx);display:flex;align-items:center;gap:.5rem}
+.icb{padding:1.25rem}
+/* FILTER */
+.fbar{background:var(--bg);border:1px solid var(--br);border-radius:var(--rlg);padding:1.25rem;margin-bottom:1.25rem}
+.fl{font-size:.68rem;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:.4rem}
+.srw{position:relative}
+.srw i{position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--tx3)}
+.srw input{padding-left:2.2rem}
+.form-control,.form-select{width:100%;padding:.5rem .875rem;border:1px solid var(--br);border-radius:var(--r);background:var(--bg);color:var(--tx);font-family:var(--fn);font-size:.875rem}
+.form-control:focus,.form-select:focus{border-color:var(--p);outline:none;box-shadow:0 0 0 3px rgba(37,99,235,.08)}
+[data-theme="dark"] .form-control,[data-theme="dark"] .form-select{background:var(--bg2)}
+/* TABLE */
+.tw{background:var(--bg);border:1px solid var(--br);border-radius:var(--rlg);overflow:hidden}
+.ttb{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;padding:.875rem 1.25rem;background:var(--bg2);border-bottom:1px solid var(--br)}
+.qs{position:relative;flex:1;max-width:260px}
+.qs i{position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--tx3)}
+.qs input{padding:.45rem .75rem .45rem 2.2rem;border:1px solid var(--br);border-radius:var(--r);background:var(--bg);color:var(--tx);font-size:.875rem;width:100%}
+.qs input:focus{border-color:var(--p);outline:none}
+table{width:100%;border-collapse:collapse}
+thead th{padding:.8rem 1rem;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--tx3);background:var(--bg2);border-bottom:1px solid var(--br);white-space:nowrap}
+tbody td{padding:.8rem 1rem;font-size:.875rem;border-bottom:1px solid var(--br);color:var(--tx);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:rgba(37,99,235,.02)}
+.pc{display:flex;align-items:center;gap:.875rem}
+.pt{width:42px;height:42px;border-radius:var(--r);overflow:hidden;border:1px solid var(--br);flex-shrink:0;background:var(--bg2);display:flex;align-items:center;justify-content:center;color:var(--tx3);font-size:1.1rem}
+.pt img{width:100%;height:100%;object-fit:cover}
+.pn{font-weight:600;font-size:.875rem;color:var(--tx)}
+.pm{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.2rem}
+/* BADGES */
+.bx{display:inline-flex;align-items:center;gap:.25rem;padding:.2rem .55rem;border-radius:20px;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+.bp{background:var(--plt);color:var(--p)}
+.bs{background:var(--slt);color:var(--s)}
+.bw{background:var(--wlt);color:var(--w)}
+.bd{background:var(--dlt);color:var(--d)}
+.bpu{background:var(--pult);color:var(--pu)}
+.bt{background:var(--tlt);color:var(--t)}
+.bg{background:var(--bg2);color:var(--tx2);border:1px solid var(--br)}
+/* STATUS PILL */
+.sp{display:inline-flex;align-items:center;gap:.35rem;padding:.28rem .65rem;border-radius:6px;font-size:.76rem;font-weight:600}
+.sp.critical{background:rgba(220,38,38,.1);color:#dc2626;border:1px solid rgba(220,38,38,.22)}
+.sp.low{background:rgba(217,119,6,.1);color:#d97706;border:1px solid rgba(217,119,6,.22)}
+.sp.medium{background:rgba(37,99,235,.1);color:#2563eb;border:1px solid rgba(37,99,235,.22)}
+.sp.good{background:rgba(5,150,105,.1);color:#059669;border:1px solid rgba(5,150,105,.22)}
+/* PROGRESS */
+.pb{height:4px;border-radius:3px;background:var(--br);margin-top:.3rem;overflow:hidden;width:72px}
+.pbf{height:100%;border-radius:3px}
+.pbf.d{background:var(--d)}.pbf.w{background:var(--w)}.pbf.s{background:var(--s)}
+/* CATEGORY AVATAR */
+.cav{width:36px;height:36px;border-radius:9px;background:var(--plt);color:var(--p);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem;flex-shrink:0}
+[data-theme="dark"] .cav{background:#374151;color:#f8fafc}
+/* ACTION BUTTONS */
+.ar{display:flex;gap:.3rem;align-items:center}
+.ab{width:28px;height:28px;border-radius:var(--r);border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;text-decoration:none;transition:all .15s}
+.ab:hover{transform:translateY(-1px);box-shadow:var(--sh0)}
+.abv{background:var(--plt);color:var(--p)}
+.abe{background:var(--slt);color:var(--s)}
+.abs{background:var(--tlt);color:var(--t)}
+.abd{background:var(--dlt);color:var(--d)}
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.5rem 1rem;font-size:.875rem;font-weight:500;font-family:var(--fn);border-radius:var(--r);border:1px solid transparent;cursor:pointer;text-decoration:none;transition:all .15s;white-space:nowrap}
+.btnp{background:var(--p);color:#fff;border-color:var(--p)}.btnp:hover{background:var(--pdk)}
+.btns{background:var(--s);color:#fff}.btns:hover{filter:brightness(.9)}
+.btno{background:transparent;border-color:var(--br);color:var(--tx2)}.btno:hover{background:var(--bg2);color:var(--tx)}
+.btng{background:transparent;border:none;color:var(--tx2)}.btng:hover{background:var(--bg2)}
+.btnd{background:var(--d);color:#fff}
+.bsm{padding:.33rem .75rem;font-size:.8rem}
+/* DROPDOWN */
+.dd{position:relative;display:inline-block}
+.ddm{position:absolute;top:calc(100% + 4px);right:0;z-index:200;min-width:180px;background:var(--bg);border:1px solid var(--br);border-radius:var(--rlg);box-shadow:var(--shlg);padding:.35rem;display:none}
+.ddm.show{display:block}
+.ddi{display:flex;align-items:center;gap:.5rem;padding:.45rem .75rem;font-size:.85rem;color:var(--tx);border-radius:var(--r);cursor:pointer;text-decoration:none;background:none;border:none;width:100%}
+.ddi:hover{background:var(--bg2)}
+.ddi.red{color:var(--d)}
+.dddiv{border-top:1px solid var(--br);margin:.3rem 0}
+/* PAGER */
+.pgr{display:flex;justify-content:space-between;align-items:center;padding:.875rem 1.25rem;border-top:1px solid var(--br);flex-wrap:wrap;gap:.5rem}
+.pgri{font-size:.78rem;color:var(--tx3)}
+.pgbs{display:flex;gap:.25rem}
+.pg{padding:.38rem .7rem;border:1px solid var(--br);background:var(--bg);color:var(--tx2);border-radius:var(--r);font-size:.78rem;text-decoration:none;display:inline-flex;align-items:center;transition:all .15s}
+.pg:hover{background:var(--bg2)}
+.pg.active{background:var(--p);color:#fff;border-color:var(--p)}
+/* EMPTY STATE */
+.es{text-align:center;padding:3rem 1rem}
+.es i{font-size:2.75rem;color:var(--tx3);margin-bottom:1rem;display:block}
+.es h5{color:var(--tx2);margin-bottom:.5rem}
+.es p{color:var(--tx3);font-size:.875rem;margin-bottom:1rem}
+/* BULK BAR */
+.bb{position:sticky;bottom:0;z-index:50;background:var(--p);color:#fff;padding:.8rem 1.25rem;display:none;border-radius:0 0 var(--rlg) var(--rlg)}
+.bb.show{display:block}
+/* CHARTS */
+.ch2{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem}
+canvas{max-height:230px}
+/* ALERTS */
+.alc{background:var(--bg);border:1px solid var(--br);border-left:4px solid var(--w);border-radius:var(--r);padding:.8rem 1rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.875rem;transition:all .15s}
+.alc.cr{border-left-color:var(--d)}
+.alc:hover{box-shadow:var(--sh0)}
+/* MODALS */
+.mov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:none;align-items:center;justify-content:center;padding:1rem}
+.mov.show{display:flex}
+.mbox{background:var(--bg);border-radius:var(--rlg);box-shadow:var(--shlg);width:100%;max-width:520px;max-height:90vh;overflow-y:auto}
+.mhd{display:flex;justify-content:space-between;align-items:center;padding:1.1rem 1.5rem;border-bottom:1px solid var(--br)}
+.mhd h5{margin:0;font-size:.95rem;font-weight:600;color:var(--tx)}
+.mcl{background:none;border:none;font-size:1.2rem;color:var(--tx3);cursor:pointer}
+.mbd{padding:1.5rem}
+.mft{padding:.875rem 1.5rem;border-top:1px solid var(--br);display:flex;gap:.5rem;justify-content:flex-end}
+.fg{margin-bottom:.875rem}
+.fg label{display:block;font-size:.7rem;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem}
+/* TOASTS */
+.toasts{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem}
+.tn{background:var(--tx);color:#fff;padding:.8rem 1.1rem;border-radius:var(--rlg);font-size:.875rem;display:flex;align-items:center;gap:.75rem;box-shadow:var(--shlg);animation:su .22s ease;max-width:320px}
+.tn.success{border-left:4px solid var(--s)}.tn.error{border-left:4px solid var(--d)}.tn.info{border-left:4px solid var(--p)}
+@keyframes su{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+/* SPINNER */
+.ov{position:fixed;inset:0;background:rgba(255,255,255,.65);z-index:9998;display:none;align-items:center;justify-content:center}
+[data-theme="dark"] .ov{background:rgba(0,0,0,.55)}
+.ov.show{display:flex}
+.spin{width:38px;height:38px;border:3px solid var(--br);border-top-color:var(--p);border-radius:50%;animation:rot .65s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+/* RESPONSIVE */
+@media(max-width:992px){.ch2{grid-template-columns:1fr}}
+@media(max-width:768px){.kgrid{grid-template-columns:repeat(2,1fr)}.hnav{flex-wrap:wrap}.phd,.ttb{flex-direction:column}.qs{max-width:100%}}
+@media(max-width:480px){.kgrid{grid-template-columns:1fr}}
+@media print{.hnav,.fbar,.ttb,.bb,.ar,.pgr,.btn,.ov,.toasts{display:none!important}}
+[data-theme="dark"] .tw,[data-theme="dark"] .ic,[data-theme="dark"] .fbar{background:var(--bg);border-color:var(--br)}
+[data-theme="dark"] thead th,[data-theme="dark"] .ttb,[data-theme="dark"] .ich{background:var(--bg2)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hub-wrap">
+
+<!-- HEADER -->
+<div class="phd">
+  <div>
+    <h1><i class="fas fa-boxes" style="color:var(--p);"></i> Inventory Hub</h1>
+    <p>Products, stock, categories and suppliers — all in one place</p>
+  </div>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+    {% if perms.inventory.add_product %}
+    <a href="{% url 'inventory:product_create' %}" class="btn btnp"><i class="fas fa-plus"></i> Add Product</a>
+    {% endif %}
+    <div class="dd">
+      <button class="btn btno" onclick="dd('moreDD')"><i class="fas fa-ellipsis-h"></i> More</button>
+      <div class="ddm" id="moreDD">
+        {% if perms.inventory.add_product %}
+        <a class="ddi" href="{% url 'inventory:bulk_import' %}"><i class="fas fa-file-import"></i> Bulk Import</a>
+        <a class="ddi" href="{% url 'inventory:export_products_selection' %}"><i class="fas fa-file-export"></i> Export Products</a>
+        {% endif %}
+        {% if perms.inventory.add_stock %}
+        <div class="dddiv"></div>
+        <a class="ddi" href="{% url 'inventory:stock_adjustment' %}"><i class="fas fa-sliders-h"></i> Stock Adjustment</a>
+        {% endif %}
+        {% if perms.inventory.add_category %}
+        <div class="dddiv"></div>
+        <a class="ddi" href="{% url 'inventory:category_create' %}"><i class="fas fa-tag"></i> Add Category</a>
+        {% endif %}
+        {% if perms.inventory.add_supplier %}
+        <a class="ddi" href="{% url 'inventory:supplier_create' %}"><i class="fas fa-truck"></i> Add Supplier</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TABS -->
+<nav class="hnav" id="hubNav">
+  <button class="htab active" data-tab="tab-ov" onclick="sw(this)"><i class="fas fa-tachometer-alt"></i> Overview</button>
+  <button class="htab" data-tab="tab-prod" onclick="sw(this)">
+    <i class="fas fa-boxes"></i> Products <span class="tcount">{{ total_products }}</span>
+  </button>
+  <button class="htab" data-tab="tab-stk" onclick="sw(this)">
+    <i class="fas fa-warehouse"></i> Stock
+    {% if out_of_stock_count > 0 %}<span class="tcount d">{{ out_of_stock_count }}</span>{% endif %}
+  </button>
+  <button class="htab" data-tab="tab-cat" onclick="sw(this)"><i class="fas fa-tags"></i> Categories</button>
+  <button class="htab" data-tab="tab-sup" onclick="sw(this)"><i class="fas fa-truck"></i> Suppliers</button>
+</nav>
+
+
+<!-- ═══ TAB: OVERVIEW ══════════════════════════════════════════════ -->
+<div id="tab-ov" class="tpane">
+  <div class="kgrid">
+    <div class="kcard" style="--kc:var(--p);--kb:var(--plt);">
+      <div class="kico"><i class="fas fa-boxes"></i></div>
+      <div class="klbl">Total Products</div>
+      <div class="kval">{{ total_products|intcomma }}</div>
+      <div class="ksub">{{ total_categories }} categories · {{ total_suppliers }} suppliers</div>
+    </div>
+    <div class="kcard" style="--kc:var(--s);--kb:var(--slt);">
+      <div class="kico"><i class="fas fa-coins"></i></div>
+      <div class="klbl">Cost Value</div>
+      <div class="kval" style="font-size:1.1rem;">UGX {{ total_cost_value|floatformat:0|intcomma }}</div>
+      <div class="ksub">{{ total_stock_records }} stock records</div>
+    </div>
+    <div class="kcard" style="--kc:var(--t);--kb:var(--tlt);">
+      <div class="kico"><i class="fas fa-chart-line"></i></div>
+      <div class="klbl">Selling Value</div>
+      <div class="kval" style="font-size:1.1rem;">UGX {{ total_selling_value|floatformat:0|intcomma }}</div>
+      <div class="ksub">Profit: UGX {{ potential_profit|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="kcard" style="--kc:var(--d);--kb:var(--dlt);">
+      <div class="kico"><i class="fas fa-times-circle"></i></div>
+      <div class="klbl">Out of Stock</div>
+      <div class="kval">{{ out_of_stock_count }}</div>
+      <div class="ksub">Items with 0 qty</div>
+    </div>
+    <div class="kcard" style="--kc:var(--w);--kb:var(--wlt);">
+      <div class="kico"><i class="fas fa-exclamation-triangle"></i></div>
+      <div class="klbl">Low Stock</div>
+      <div class="kval">{{ low_stock_count }}</div>
+      <div class="ksub">Below threshold</div>
+    </div>
+    <div class="kcard" style="--kc:var(--pu);--kb:var(--pult);">
+      <div class="kico"><i class="fas fa-check-circle"></i></div>
+      <div class="klbl">Good Stock</div>
+      <div class="kval">{{ good_stock_count }}</div>
+      <div class="ksub">{{ medium_stock_count }} medium</div>
+    </div>
+  </div>
+
+  <div class="ch2">
+    <div class="ic">
+      <div class="ich"><h6><i class="fas fa-chart-pie" style="color:var(--p);"></i> Stock Status</h6></div>
+      <div class="icb"><canvas id="distChart"></canvas></div>
+    </div>
+    <div class="ic">
+      <div class="ich"><h6><i class="fas fa-chart-bar" style="color:var(--t);"></i> Top Categories</h6></div>
+      <div class="icb"><canvas id="catChart"></canvas></div>
+    </div>
+  </div>
+
+  {% if stock_alerts %}
+  <div class="ic">
+    <div class="ich">
+      <h6><i class="fas fa-bell" style="color:var(--d);"></i> Stock Alerts</h6>
+      <button class="btn btng bsm" onclick="swById('tab-stk')">View all stock &rarr;</button>
+    </div>
+    <div style="padding:.5rem 1.25rem;">
+      {% for al in stock_alerts %}
+      <div class="alc {% if al.quantity == 0 %}cr{% endif %}">
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:.875rem;">{{ al.product.name }}</div>
+          <div style="font-size:.72rem;color:var(--tx3);">{{ al.store.name }} · {{ al.product.sku|default:"" }}</div>
+        </div>
+        <span class="sp {% if al.quantity == 0 %}critical{% else %}low{% endif %}">
+          <i class="fas fa-{% if al.quantity == 0 %}times{% else %}exclamation{% endif %}-circle"></i>
+          {{ al.quantity|floatformat:0 }} {% if al.quantity == 0 %}Out{% else %}Low{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if recent_movements %}
+  <div class="ic">
+    <div class="ich">
+      <h6><i class="fas fa-exchange-alt" style="color:var(--s);"></i> Recent Movements</h6>
+      <a href="{% url 'inventory:movement_list' %}" class="btn btng bsm">View all &rarr;</a>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>Date</th><th>Product</th><th>Type</th><th>Qty</th><th>Reference</th></tr></thead>
+        <tbody>
+          {% for mv in recent_movements %}
+          <tr>
+            <td><small style="color:var(--tx3);">{{ mv.created_at|date:"M d, H:i" }}</small></td>
+            <td><span style="font-weight:500;">{{ mv.product.name }}</span></td>
+            <td><span class="bx bp">{{ mv.get_movement_type_display }}</span></td>
+            <td><span style="font-family:var(--mn);font-weight:600;">{{ mv.quantity|floatformat:2 }}</span></td>
+            <td><small style="color:var(--tx3);">{{ mv.reference|truncatewords:5 }}</small></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+
+<!-- ═══ TAB: PRODUCTS ═══════════════════════════════════════════════ -->
+<div id="tab-prod" class="tpane" style="display:none;">
+  <div class="fbar">
+    <form method="get" id="prodForm">
+      <input type="hidden" name="_tab" value="products">
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto auto;gap:.75rem;align-items:end;flex-wrap:wrap;">
+        <div><label class="fl">Search</label>
+          <div class="srw"><i class="fas fa-search"></i>{{ filter_form.search }}</div></div>
+        <div><label class="fl">Category</label>{{ filter_form.category }}</div>
+        <div><label class="fl">Supplier</label>{{ filter_form.supplier }}</div>
+        <div><label class="fl">Status</label>{{ filter_form.is_active }}</div>
+        <div><button type="submit" class="btn btnp bsm"><i class="fas fa-filter"></i> Filter</button></div>
+        <div><a href="{% url 'inventory:product_list' %}" class="btn btno bsm"><i class="fas fa-times"></i> Clear</a></div>
+      </div>
+      <div style="display:flex;gap:1rem;margin-top:.75rem;flex-wrap:wrap;align-items:flex-end;">
+        <div style="display:flex;align-items:center;gap:.5rem;">
+          <label class="fl" style="margin:0;white-space:nowrap;">Price:</label>
+          {{ filter_form.min_price }}<span style="color:var(--tx3);font-size:.75rem;">–</span>{{ filter_form.max_price }}
+        </div>
+        {% if filter_form.tax_rate %}<div style="display:flex;align-items:center;gap:.5rem;"><label class="fl" style="margin:0;">Tax:</label>{{ filter_form.tax_rate }}</div>{% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="tw">
+    <div class="ttb">
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+        <div class="qs"><i class="fas fa-search"></i><input type="text" id="pQS" placeholder="Quick search…"></div>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--tx2);cursor:pointer;">
+          <input type="checkbox" id="pSA" style="accent-color:var(--p);"> Select all
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+        <span style="font-size:.75rem;color:var(--tx3);">{{ products|length }} of {{ total_products }}</span>
+        <div class="dd">
+          <button class="btn btno bsm" onclick="dd('pExpDD')"><i class="fas fa-download"></i> Export</button>
+          <div class="ddm" id="pExpDD">
+            <a class="ddi" href="{% url 'inventory:export_products_selection' %}?format=excel"><i class="fas fa-file-excel"></i> Excel</a>
+            <a class="ddi" href="{% url 'inventory:export_products_selection' %}?format=csv"><i class="fas fa-file-csv"></i> CSV</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table id="prodTable">
+        <thead>
+          <tr>
+            <th width="36"><input type="checkbox" id="pSAR" style="accent-color:var(--p);"></th>
+            <th>Product</th><th>Category</th><th>Pricing</th><th>Stock</th><th>Status</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="prodBody">
+          {% for product in products %}
+          <tr class="pr" data-id="{{ product.id }}" data-s="{{ product.name|lower }} {{ product.sku|lower }}{% if product.barcode %} {{ product.barcode|lower }}{% endif %}">
+            <td><input type="checkbox" class="pcb" value="{{ product.id }}" style="accent-color:var(--p);"></td>
+            <td>
+              <div class="pc">
+                <div class="pt">{% if product.image %}<img src="{{ product.image.url }}" alt="">{% else %}<i class="fas fa-box"></i>{% endif %}</div>
+                <div>
+                  <div class="pn">{{ product.name }}</div>
+                  <div class="pm">
+                    <span class="bx bs">{{ product.sku }}</span>
+                    {% if product.barcode %}<span class="bx bp">{{ product.barcode }}</span>{% endif %}
+                  </div>
+                </div>
+              </div>
+            </td>
+            <td>
+              {% if product.category %}<span class="bx bpu"><i class="fas fa-tag"></i> {{ product.category.name }}</span>
+              {% else %}<span style="color:var(--tx3);">—</span>{% endif %}
+            </td>
+            <td>
+              <div style="font-weight:700;font-family:var(--mn);font-size:.875rem;">UGX {{ product.selling_price|money }}</div>
+              <div style="font-size:.72rem;color:var(--tx3);">Cost: UGX {{ product.cost_price|money }}</div>
+              {% if product.discount_percentage > 0 %}<span class="bx bw">{{ product.discount_percentage }}% off</span>{% endif %}
+            </td>
+            <td>
+              <div style="font-weight:600;color:{% if product.total_stock|default:0 < 10 %}var(--d){% else %}var(--tx){% endif %};">{{ product.total_stock|default:"0" }}</div>
+              <div class="pb"><div class="pbf {% if product.total_stock|default:0 < 10 %}d{% elif product.total_stock|default:0 < 30 %}w{% else %}s{% endif %}" style="width:{{ product.total_stock|default:0 }}%;max-width:100%;"></div></div>
+            </td>
+            <td>
+              {% if product.is_active %}<span class="bx bs"><i class="fas fa-check-circle"></i> Active</span>
+              {% else %}<span class="bx bd"><i class="fas fa-ban"></i> Inactive</span>{% endif %}
+            </td>
+            <td>
+              <div class="ar">
+                {% if perms.inventory.view_product %}<a href="{% url 'inventory:product_detail' product.pk %}" class="ab abv" title="View"><i class="fas fa-eye"></i></a>{% endif %}
+                {% if perms.inventory.change_product %}<a href="{% url 'inventory:product_update' product.pk %}" class="ab abe" title="Edit"><i class="fas fa-edit"></i></a>{% endif %}
+                {% if perms.inventory.add_stockmovement %}
+                <button class="ab abs qs-btn" data-product-id="{{ product.id }}" data-product-name="{{ product.name }}" title="Quick Stock" onclick="openSM(this)"><i class="fas fa-cubes"></i></button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7"><div class="es"><i class="fas fa-box-open"></i><h5>No Products Found</h5><p>Adjust your filters or add a product.</p>{% if perms.inventory.add_product %}<a href="{% url 'inventory:product_create' %}" class="btn btnp bsm"><i class="fas fa-plus"></i> Add Product</a>{% endif %}</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="bb" id="pBB">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;">
+        <div style="display:flex;align-items:center;gap:.75rem;">
+          <span id="pSC" style="font-weight:600;">0 selected</span>
+          <select id="pBA" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:var(--r);padding:.33rem .7rem;font-size:.82rem;">
+            <option value="">Action…</option>
+            <option value="activate">Activate</option>
+            <option value="deactivate">Deactivate</option>
+            <option value="export">Export</option>
+            <option value="delete">Delete</option>
+          </select>
+          <button class="btn bsm" style="background:rgba(255,255,255,.2);color:#fff;border:none;" onclick="exBulk()">Go</button>
+        </div>
+        <button class="btn btng bsm" style="color:rgba(255,255,255,.7);" onclick="clrP()">Clear</button>
+      </div>
+    </div>
+
+    {% if is_paginated %}
+    <div class="pgr">
+      <span class="pgri">{{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ paginator.count }}</span>
+      <div class="pgbs">
+        {% if page_obj.has_previous %}
+        <a class="pg" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v }}&{% endif %}{% endfor %}page=1"><i class="fas fa-angle-double-left"></i></a>
+        <a class="pg" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}"><i class="fas fa-angle-left"></i></a>
+        {% endif %}
+        {% for num in page_obj.paginator.page_range %}{% if page_obj.number == num %}<span class="pg active">{{ num }}</span>{% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}<a class="pg" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v }}&{% endif %}{% endfor %}page={{ num }}">{{ num }}</a>{% endif %}{% endfor %}
+        {% if page_obj.has_next %}
+        <a class="pg" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}"><i class="fas fa-angle-right"></i></a>
+        <a class="pg" href="?{% for k,v in request.GET.items %}{% if k != 'page' %}{{ k }}={{ v }}&{% endif %}{% endfor %}page={{ page_obj.paginator.num_pages }}"><i class="fas fa-angle-double-right"></i></a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+
+<!-- ═══ TAB: STOCK ══════════════════════════════════════════════════ -->
+<div id="tab-stk" class="tpane" style="display:none;">
+  <div class="fbar">
+    <form method="get" id="stkForm">
+      <input type="hidden" name="_tab" value="stock">
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr auto auto;gap:.75rem;align-items:end;flex-wrap:wrap;">
+        <div><label class="fl">Search</label>
+          <div class="srw"><i class="fas fa-search"></i><input type="text" name="search" class="form-control" value="{{ stock_filters.search }}" placeholder="Product, SKU, store…"></div></div>
+        <div><label class="fl">Status</label>
+          <select name="status" class="form-select">
+            <option value="">All</option>
+            <option value="critical" {% if stock_filters.status == 'critical' %}selected{% endif %}>Out of Stock</option>
+            <option value="low_stock" {% if stock_filters.status == 'low_stock' %}selected{% endif %}>Low Stock</option>
+            <option value="medium_stock" {% if stock_filters.status == 'medium_stock' %}selected{% endif %}>Medium</option>
+            <option value="good_stock" {% if stock_filters.status == 'good_stock' %}selected{% endif %}>Good</option>
+          </select></div>
+        <div><label class="fl">Branch</label>
+          <select name="store" class="form-select">
+            <option value="">All</option>
+            {% for st in stores %}<option value="{{ st.id }}" {% if stock_filters.store == st.id|stringformat:"s" %}selected{% endif %}>{{ st.name }}</option>{% endfor %}
+          </select></div>
+        <div><label class="fl">Category</label>
+          <select name="category" class="form-select">
+            <option value="">All</option>
+            {% for cat in categories %}<option value="{{ cat.id }}" {% if stock_filters.category == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>{% endfor %}
+          </select></div>
+        <div><label class="fl">Sort</label>
+          <select name="sort" class="form-select">
+            <option value="name" {% if stock_filters.sort == 'name' %}selected{% endif %}>Name A–Z</option>
+            <option value="name_desc" {% if stock_filters.sort == 'name_desc' %}selected{% endif %}>Name Z–A</option>
+            <option value="quantity" {% if stock_filters.sort == 'quantity' %}selected{% endif %}>Qty Low–High</option>
+            <option value="quantity_desc" {% if stock_filters.sort == 'quantity_desc' %}selected{% endif %}>Qty High–Low</option>
+            <option value="updated" {% if stock_filters.sort == 'updated' %}selected{% endif %}>Recently Updated</option>
+            <option value="value_desc" {% if stock_filters.sort == 'value_desc' %}selected{% endif %}>Value High–Low</option>
+          </select></div>
+        <div><button type="submit" class="btn btnp bsm"><i class="fas fa-filter"></i> Apply</button></div>
+        <div><a href="{% url 'inventory:stock_list' %}" class="btn btno bsm"><i class="fas fa-times"></i> Clear</a></div>
+      </div>
+      <div style="display:flex;gap:.75rem;margin-top:.75rem;flex-wrap:wrap;align-items:center;">
+        <label class="fl" style="margin:0;">Date:</label>
+        <input type="date" name="date_from" class="form-control" style="width:auto;" value="{{ stock_filters.date_from }}">
+        <span style="color:var(--tx3);font-size:.8rem;">–</span>
+        <input type="date" name="date_to" class="form-control" style="width:auto;" value="{{ stock_filters.date_to }}">
+        <div class="dd" style="margin-left:auto;">
+          <button type="button" class="btn btno bsm" onclick="dd('stkExpDD')"><i class="fas fa-download"></i> Export</button>
+          <div class="ddm" id="stkExpDD">
+            <a class="ddi" href="{% url 'inventory:stock_export' %}?format=excel&{{ request.GET.urlencode }}"><i class="fas fa-file-excel"></i> Excel</a>
+            <a class="ddi" href="{% url 'inventory:stock_export' %}?format=csv&{{ request.GET.urlencode }}"><i class="fas fa-file-csv"></i> CSV</a>
+            <a class="ddi" href="{% url 'inventory:stock_export' %}?format=pdf&{{ request.GET.urlencode }}"><i class="fas fa-file-pdf"></i> PDF</a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <div class="tw">
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr><th>Product</th><th>Branch</th><th>Category</th><th>Qty</th><th>Status</th><th style="text-align:right;">Cost</th><th style="text-align:right;">Sell</th><th>Updated</th><th style="text-align:center;">Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for stk in stock_items %}
+          <tr>
+            <td>
+              <div class="pc">
+                <div class="pt">{% if stk.product.image %}<img src="{{ stk.product.image.url }}" alt="">{% else %}<i class="fas fa-box"></i>{% endif %}</div>
+                <div>
+                  <a href="{% url 'inventory:product_detail' stk.product.pk %}" style="font-weight:600;font-size:.875rem;color:var(--tx);text-decoration:none;">{{ stk.product.name }}</a>
+                  <div class="pm">{% if stk.product.sku %}<span style="font-size:.72rem;color:var(--tx3);">{{ stk.product.sku }}</span>{% endif %}</div>
+                </div>
+              </div>
+            </td>
+            <td><span style="font-size:.82rem;color:var(--tx2);"><i class="fas fa-store" style="color:var(--p);font-size:.7rem;margin-right:.3rem;"></i>{{ stk.store.name }}</span></td>
+            <td>{% if stk.product.category %}<span class="bx bg">{{ stk.product.category.name }}</span>{% else %}<span style="color:var(--tx3);">—</span>{% endif %}</td>
+            <td>
+              <div style="font-size:1.1rem;font-weight:700;font-family:var(--mn);">{{ stk.quantity|floatformat:2 }}</div>
+              {% if stk.product.unit %}<small style="color:var(--tx3);">{{ stk.product.unit }}</small>{% endif %}
+            </td>
+            <td><span class="sp {{ stk.status_class }}"><i class="{{ stk.status_icon }}"></i> {{ stk.status_text }}</span></td>
+            <td style="text-align:right;">
+              <div style="font-weight:600;font-family:var(--mn);">{{ stk.total_cost|floatformat:0|default:"0" }}</div>
+              <small style="color:var(--tx3);">@ {{ stk.product.cost_price|floatformat:0 }}</small>
+            </td>
+            <td style="text-align:right;">
+              <div style="font-weight:600;font-family:var(--mn);">{{ stk.total_selling_value|floatformat:0|default:"0" }}</div>
+              <small style="color:var(--tx3);">@ {{ stk.product.selling_price|floatformat:0 }}</small>
+            </td>
+            <td><small style="color:var(--tx3);">{{ stk.last_updated|date:"M d, Y" }}<br>{{ stk.last_updated|time:"h:i A" }}</small></td>
+            <td style="text-align:center;">
+              <div class="ar" style="justify-content:center;">
+                <a href="{% url 'inventory:quick_adjust' stk.pk %}" class="ab abs" title="Adjust"><i class="fas fa-sliders-h"></i></a>
+                <button class="ab abv" onclick="vSD({{ stk.pk }})" title="Details"><i class="fas fa-eye"></i></button>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="9"><div class="es"><i class="fas fa-warehouse"></i><h5>No Stock Records</h5><p>Try adjusting your filters.</p></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if stock_paginated %}
+    <div class="pgr">
+      <span class="pgri">{{ stock_page.start_index }}–{{ stock_page.end_index }} of {{ stock_paginator.count }}</span>
+      <div class="pgbs">
+        {% if stock_page.has_previous %}<a class="pg" href="?{{ request.GET.urlencode }}&stock_page=1"><i class="fas fa-angle-double-left"></i></a><a class="pg" href="?{{ request.GET.urlencode }}&stock_page={{ stock_page.previous_page_number }}"><i class="fas fa-angle-left"></i></a>{% endif %}
+        {% for num in stock_page.paginator.page_range %}{% if stock_page.number == num %}<span class="pg active">{{ num }}</span>{% elif num > stock_page.number|add:'-3' and num < stock_page.number|add:'3' %}<a class="pg" href="?{{ request.GET.urlencode }}&stock_page={{ num }}">{{ num }}</a>{% endif %}{% endfor %}
+        {% if stock_page.has_next %}<a class="pg" href="?{{ request.GET.urlencode }}&stock_page={{ stock_page.next_page_number }}"><i class="fas fa-angle-right"></i></a><a class="pg" href="?{{ request.GET.urlencode }}&stock_page={{ stock_page.paginator.num_pages }}"><i class="fas fa-angle-double-right"></i></a>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+
+<!-- ═══ TAB: CATEGORIES ═════════════════════════════════════════════ -->
+<div id="tab-cat" class="tpane" style="display:none;">
+  <div class="fbar">
+    <form method="get" id="catForm">
+      <input type="hidden" name="_tab" value="categories">
+      <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;"><label class="fl">Search</label>
+          <div class="srw"><i class="fas fa-search"></i><input type="text" name="cat_search" class="form-control" value="{{ cat_search }}" placeholder="Name, code, description…"></div></div>
+        <div><label class="fl">Status</label>
+          <select name="cat_status" class="form-select" style="width:140px;">
+            <option value="">All</option>
+            <option value="active" {% if cat_status == 'active' %}selected{% endif %}>Active</option>
+            <option value="inactive" {% if cat_status == 'inactive' %}selected{% endif %}>Inactive</option>
+          </select></div>
+        <button type="submit" class="btn btnp bsm"><i class="fas fa-filter"></i> Filter</button>
+        <a href="{% url 'inventory:category_list' %}" class="btn btno bsm"><i class="fas fa-times"></i> Clear</a>
+        {% if perms.inventory.add_category %}<a href="{% url 'inventory:category_create' %}" class="btn btns bsm" style="margin-left:auto;"><i class="fas fa-plus"></i> Add Category</a>{% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="tw">
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th width="36"><input type="checkbox" id="cSA" style="accent-color:var(--p);"></th>
+            <th>Name</th><th>Code</th><th>Description</th><th>Products</th><th>Status</th><th>Created</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cat in categories_list %}
+          <tr>
+            <td><input type="checkbox" class="ccb" value="{{ cat.id }}" style="accent-color:var(--p);"></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:.75rem;">
+                <div class="cav">{{ cat.name|slice:":2"|upper }}</div>
+                <div>
+                  <div style="font-weight:600;font-size:.875rem;">{{ cat.name }}</div>
+                  {% if cat.parent %}<small style="color:var(--tx3);">↳ {{ cat.parent.name }}</small>{% endif %}
+                </div>
+              </div>
+            </td>
+            <td>{% if cat.code %}<code style="background:var(--bg2);padding:.2rem .5rem;border-radius:4px;font-size:.78rem;">{{ cat.code }}</code>{% else %}<span style="color:var(--tx3);">—</span>{% endif %}</td>
+            <td><span style="font-size:.82rem;color:var(--tx2);">{{ cat.description|default:"—"|truncatewords:8 }}</span></td>
+            <td><span class="bx bp"><i class="fas fa-boxes"></i> {{ cat.products.count }}</span></td>
+            <td>{% if cat.is_active %}<span class="bx bs"><i class="fas fa-check-circle"></i> Active</span>{% else %}<span class="bx bd"><i class="fas fa-ban"></i> Inactive</span>{% endif %}</td>
+            <td><small style="color:var(--tx3);">{{ cat.created_at|date:"M d, Y" }}</small></td>
+            <td>
+              <div class="ar">
+                {% if perms.inventory.view_category %}<a href="{% url 'inventory:category_detail' cat.pk %}" class="ab abv" title="View"><i class="fas fa-eye"></i></a>{% endif %}
+                {% if perms.inventory.change_category %}<a href="{% url 'inventory:category_update' cat.pk %}" class="ab abe" title="Edit"><i class="fas fa-edit"></i></a>{% endif %}
+                {% if perms.inventory.delete_category %}<button class="ab abd" onclick="dCat({{ cat.pk }},'{{ cat.name|escapejs }}')" title="Delete"><i class="fas fa-trash"></i></button>{% endif %}
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8"><div class="es"><i class="fas fa-tags"></i><h5>No Categories</h5>{% if perms.inventory.add_category %}<a href="{% url 'inventory:category_create' %}" class="btn btnp bsm"><i class="fas fa-plus"></i> Add Category</a>{% endif %}</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="bb" id="cBB">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;">
+        <div style="display:flex;align-items:center;gap:.75rem;">
+          <span id="cSC" style="font-weight:600;">0 selected</span>
+          <button class="btn bsm" style="background:rgba(255,255,255,.2);color:#fff;border:none;" onclick="cBulk('activate')"><i class="fas fa-check"></i> Activate</button>
+          <button class="btn bsm" style="background:rgba(255,255,255,.2);color:#fff;border:none;" onclick="cBulk('deactivate')"><i class="fas fa-pause"></i> Deactivate</button>
+          <button class="btn bsm" style="background:rgba(220,38,38,.35);color:#fff;border:none;" onclick="cBulk('delete')"><i class="fas fa-trash"></i> Delete</button>
+        </div>
+        <button class="btn btng bsm" style="color:rgba(255,255,255,.7);" onclick="clrC()">Clear</button>
+      </div>
+    </div>
+
+    {% if cat_paginated %}
+    <div class="pgr">
+      <span class="pgri">{{ cat_page.start_index }}–{{ cat_page.end_index }} of {{ cat_paginator.count }}</span>
+      <div class="pgbs">
+        {% if cat_page.has_previous %}<a class="pg" href="?{{ request.GET.urlencode }}&cat_page=1"><i class="fas fa-angle-double-left"></i></a><a class="pg" href="?{{ request.GET.urlencode }}&cat_page={{ cat_page.previous_page_number }}"><i class="fas fa-angle-left"></i></a>{% endif %}
+        {% for num in cat_page.paginator.page_range %}{% if cat_page.number == num %}<span class="pg active">{{ num }}</span>{% elif num > cat_page.number|add:'-3' and num < cat_page.number|add:'3' %}<a class="pg" href="?{{ request.GET.urlencode }}&cat_page={{ num }}">{{ num }}</a>{% endif %}{% endfor %}
+        {% if cat_page.has_next %}<a class="pg" href="?{{ request.GET.urlencode }}&cat_page={{ cat_page.next_page_number }}"><i class="fas fa-angle-right"></i></a><a class="pg" href="?{{ request.GET.urlencode }}&cat_page={{ cat_page.paginator.num_pages }}"><i class="fas fa-angle-double-right"></i></a>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+
+<!-- ═══ TAB: SUPPLIERS ══════════════════════════════════════════════ -->
+<div id="tab-sup" class="tpane" style="display:none;">
+  <div class="fbar">
+    <form method="get" id="supForm">
+      <input type="hidden" name="_tab" value="suppliers">
+      <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;"><label class="fl">Search</label>
+          <div class="srw"><i class="fas fa-search"></i><input type="text" name="supp_search" class="form-control" value="{{ supp_search }}" placeholder="Name, TIN, contact…"></div></div>
+        <div><label class="fl">Status</label>
+          <select name="supp_status" class="form-select" style="width:140px;">
+            <option value="">All</option>
+            <option value="active" {% if supp_status == 'active' %}selected{% endif %}>Active</option>
+            <option value="inactive" {% if supp_status == 'inactive' %}selected{% endif %}>Inactive</option>
+          </select></div>
+        <button type="submit" class="btn btnp bsm"><i class="fas fa-filter"></i> Filter</button>
+        <a href="{% url 'inventory:supplier_list' %}" class="btn btno bsm"><i class="fas fa-times"></i> Clear</a>
+        {% if perms.inventory.add_supplier %}<a href="{% url 'inventory:supplier_create' %}" class="btn btns bsm" style="margin-left:auto;"><i class="fas fa-plus"></i> Add Supplier</a>{% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="tw">
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr><th>Supplier</th><th>Contact</th><th>Email</th><th>TIN</th><th>Products</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for sup in suppliers %}
+          <tr>
+            <td><div style="font-weight:600;font-size:.875rem;">{{ sup.name }}</div></td>
+            <td>
+              {% if sup.contact_person %}<div style="font-size:.82rem;color:var(--tx2);"><i class="fas fa-user" style="color:var(--p);font-size:.7rem;margin-right:.3rem;"></i>{{ sup.contact_person }}</div>{% endif %}
+              {% if sup.phone %}<div style="font-size:.78rem;color:var(--tx3);"><i class="fas fa-phone" style="font-size:.65rem;margin-right:.3rem;"></i>{{ sup.phone }}</div>{% endif %}
+            </td>
+            <td>{% if sup.email %}<a href="mailto:{{ sup.email }}" style="font-size:.82rem;color:var(--p);text-decoration:none;">{{ sup.email }}</a>{% else %}<span style="color:var(--tx3);">—</span>{% endif %}</td>
+            <td>{% if sup.tin %}<span class="bx bg">{{ sup.tin }}</span>{% else %}<span style="color:var(--tx3);">—</span>{% endif %}</td>
+            <td><span class="bx bt"><i class="fas fa-boxes"></i> {{ sup.products.count }}</span></td>
+            <td>{% if sup.is_active %}<span class="bx bs"><i class="fas fa-check-circle"></i> Active</span>{% else %}<span class="bx bd"><i class="fas fa-ban"></i> Inactive</span>{% endif %}</td>
+            <td>
+              <div class="ar">
+                {% if perms.inventory.view_supplier %}<a href="{% url 'inventory:supplier_detail' sup.pk %}" class="ab abv" title="View"><i class="fas fa-eye"></i></a>{% endif %}
+                {% if perms.inventory.change_supplier %}<a href="{% url 'inventory:supplier_update' sup.pk %}" class="ab abe" title="Edit"><i class="fas fa-edit"></i></a>{% endif %}
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7"><div class="es"><i class="fas fa-truck"></i><h5>No Suppliers</h5>{% if perms.inventory.add_supplier %}<a href="{% url 'inventory:supplier_create' %}" class="btn btnp bsm"><i class="fas fa-plus"></i> Add Supplier</a>{% endif %}</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if supp_paginated %}
+    <div class="pgr">
+      <span class="pgri">{{ supp_page.start_index }}–{{ supp_page.end_index }} of {{ supp_paginator.count }}</span>
+      <div class="pgbs">
+        {% if supp_page.has_previous %}<a class="pg" href="?{{ request.GET.urlencode }}&supp_page=1"><i class="fas fa-angle-double-left"></i></a><a class="pg" href="?{{ request.GET.urlencode }}&supp_page={{ supp_page.previous_page_number }}"><i class="fas fa-angle-left"></i></a>{% endif %}
+        {% for num in supp_page.paginator.page_range %}{% if supp_page.number == num %}<span class="pg active">{{ num }}</span>{% elif num > supp_page.number|add:'-3' and num < supp_page.number|add:'3' %}<a class="pg" href="?{{ request.GET.urlencode }}&supp_page={{ num }}">{{ num }}</a>{% endif %}{% endfor %}
+        {% if supp_page.has_next %}<a class="pg" href="?{{ request.GET.urlencode }}&supp_page={{ supp_page.next_page_number }}"><i class="fas fa-angle-right"></i></a><a class="pg" href="?{{ request.GET.urlencode }}&supp_page={{ supp_page.paginator.num_pages }}"><i class="fas fa-angle-double-right"></i></a>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+
+<!-- MODALS -->
+<!-- Quick Stock -->
+<div class="mov" id="smModal">
+  <div class="mbox">
+    <div class="mhd"><h5><i class="fas fa-cubes" style="color:var(--t);margin-right:.4rem;"></i> Quick Stock Adjustment</h5><button class="mcl" onclick="cM('smModal')">&times;</button></div>
+    <form id="smForm">{% csrf_token %}
+      <div class="mbd">
+        <div class="fg"><label>Product</label><input type="text" class="form-control" id="smPN" readonly><input type="hidden" id="smPI"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div class="fg"><label>Store *</label>
+            <select class="form-select" id="smSt" required><option value="">Select store</option>{% for st in stores %}<option value="{{ st.id }}">{{ st.name }}</option>{% endfor %}</select></div>
+          <div class="fg"><label>Current Stock</label><input type="text" class="form-control" id="smCS" readonly></div>
+        </div>
+        <div class="fg"><label>Type</label>
+          <div style="display:flex;gap:.5rem;">
+            <label style="flex:1;display:flex;align-items:center;gap:.4rem;padding:.45rem .75rem;border:1px solid var(--br);border-radius:var(--r);cursor:pointer;font-weight:500;font-size:.85rem;text-transform:none;letter-spacing:0;"><input type="radio" name="at" value="increase" checked style="accent-color:var(--s);"><i class="fas fa-plus" style="color:var(--s);font-size:.75rem;"></i> Add</label>
+            <label style="flex:1;display:flex;align-items:center;gap:.4rem;padding:.45rem .75rem;border:1px solid var(--br);border-radius:var(--r);cursor:pointer;font-weight:500;font-size:.85rem;text-transform:none;letter-spacing:0;"><input type="radio" name="at" value="decrease" style="accent-color:var(--d);"><i class="fas fa-minus" style="color:var(--d);font-size:.75rem;"></i> Remove</label>
+            <label style="flex:1;display:flex;align-items:center;gap:.4rem;padding:.45rem .75rem;border:1px solid var(--br);border-radius:var(--r);cursor:pointer;font-weight:500;font-size:.85rem;text-transform:none;letter-spacing:0;"><input type="radio" name="at" value="set" style="accent-color:var(--p);"><i class="fas fa-equals" style="color:var(--p);font-size:.75rem;"></i> Set</label>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div class="fg"><label>Quantity *</label><input type="number" class="form-control" id="smQ" step="0.001" min="0" required></div>
+          <div class="fg"><label>Reason *</label>
+            <select class="form-select" id="smR" required>
+              <option value="">Select reason</option>
+              <option value="delivery">Delivery Received</option>
+              <option value="return">Customer Return</option>
+              <option value="damage">Damaged Goods</option>
+              <option value="theft">Theft / Loss</option>
+              <option value="correction">Inventory Correction</option>
+              <option value="other">Other</option>
+            </select></div>
+        </div>
+        <div class="fg" id="smNW" style="display:none;"><label>Notes</label><textarea class="form-control" id="smN" rows="2" placeholder="Details…"></textarea></div>
+      </div>
+      <div class="mft"><button type="button" class="btn btno" onclick="cM('smModal')">Cancel</button><button type="submit" class="btn btnp">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Stock Details -->
+<div class="mov" id="sdModal">
+  <div class="mbox" style="max-width:600px;">
+    <div class="mhd"><h5><i class="fas fa-info-circle" style="color:var(--p);margin-right:.4rem;"></i> Stock Details</h5><button class="mcl" onclick="cM('sdModal')">&times;</button></div>
+    <div class="mbd" id="sdContent"><div style="text-align:center;padding:2rem;"><div class="spin" style="margin:auto;"></div></div></div>
+  </div>
+</div>
+
+<!-- Delete Category -->
+<div class="mov" id="dcModal">
+  <div class="mbox" style="max-width:420px;">
+    <div class="mhd"><h5><i class="fas fa-trash" style="color:var(--d);margin-right:.4rem;"></i> Delete Category</h5><button class="mcl" onclick="cM('dcModal')">&times;</button></div>
+    <div class="mbd"><p style="color:var(--tx2);">Delete <strong id="dcName"></strong>? Products will become uncategorised. Cannot be undone.</p></div>
+    <div class="mft"><button class="btn btno" onclick="cM('dcModal')">Cancel</button><button class="btn btnd" id="dcConf">Delete</button></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<div class="ov" id="ov"><div class="spin"></div></div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+const CD={dist:{{ chart_data.stock_distribution|safe }},cats:{{ category_chart_data|safe }}};
+const PAL=['#dc2626','#d97706','#2563eb','#059669','#7c3aed','#0d9488','#ea580c','#64748b'];
+const dk=()=>document.documentElement.getAttribute('data-theme')==='dark';
+const gc=()=>dk()?'rgba(255,255,255,.05)':'rgba(0,0,0,.05)';
+const tc=()=>dk()?'#64748b':'#9ca3af';
+Chart.defaults.font.family="'DM Sans',system-ui,sans-serif";
+Chart.defaults.font.size=12;
+let ch={};
+
+function sw(btn){
+  document.querySelectorAll('.htab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tpane').forEach(p=>p.style.display='none');
+  btn.classList.add('active');
+  const p=document.getElementById(btn.dataset.tab);
+  if(p)p.style.display='block';
+  if(btn.dataset.tab==='tab-ov'&&!window._oi){window._oi=true;setTimeout(initC,60);}
+}
+function swById(id){const b=document.querySelector(`.htab[data-tab="${id}"]`);if(b)sw(b);}
+(function(){
+  const t=new URLSearchParams(location.search).get('_tab');
+  const m={products:'tab-prod',stock:'tab-stk',categories:'tab-cat',suppliers:'tab-sup'};
+  if(t&&m[t]){const b=document.querySelector(`.htab[data-tab="${m[t]}"]`);if(b){sw(b);return;}}
+  initC();
+})();
+
+function dd(id){const e=document.getElementById(id);const w=e.classList.contains('show');document.querySelectorAll('.ddm.show').forEach(d=>d.classList.remove('show'));if(!w)e.classList.add('show');}
+document.addEventListener('click',e=>{if(!e.target.closest('.dd'))document.querySelectorAll('.ddm.show').forEach(d=>d.classList.remove('show'));});
+
+function oM(id){document.getElementById(id).classList.add('show');}
+function cM(id){document.getElementById(id).classList.remove('show');}
+function sLd(){document.getElementById('ov').classList.add('show');}
+function hLd(){document.getElementById('ov').classList.remove('show');}
+function tst(msg,type='info'){
+  const c=document.getElementById('toasts');const t=document.createElement('div');t.className=`tn ${type}`;
+  const i={success:'check-circle',error:'times-circle',info:'info-circle',warning:'exclamation-triangle'};
+  t.innerHTML=`<i class="fas fa-${i[type]||'info-circle'}"></i><span>${msg}</span>`;c.appendChild(t);setTimeout(()=>t.remove(),4200);
+}
+function csrf(){return document.cookie.split(';').map(c=>c.trim()).find(c=>c.startsWith('csrftoken='))?.split('=')[1]||document.querySelector('[name=csrfmiddlewaretoken]')?.value||'';}
+
+document.getElementById('pQS')?.addEventListener('input',function(){
+  const q=this.value.toLowerCase();
+  document.querySelectorAll('.pr').forEach(r=>r.style.display=(r.dataset.s||r.textContent.toLowerCase()).includes(q)?'':'none');
+});
+
+let pSel=new Set();
+function upP(){document.getElementById('pSC').textContent=`${pSel.size} selected`;document.getElementById('pBB').classList.toggle('show',pSel.size>0);}
+document.querySelectorAll('.pcb').forEach(cb=>{cb.addEventListener('change',function(){this.checked?pSel.add(this.value):pSel.delete(this.value);upP();});});
+['pSA','pSAR'].forEach(id=>{document.getElementById(id)?.addEventListener('change',function(){document.querySelectorAll('.pcb').forEach(cb=>{cb.checked=this.checked;this.checked?pSel.add(cb.value):pSel.delete(cb.value);});upP();});});
+function clrP(){pSel.clear();document.querySelectorAll('.pcb,#pSA,#pSAR').forEach(e=>e.checked=false);upP();}
+function exBulk(){const a=document.getElementById('pBA').value;if(!a||!pSel.size){tst('Select items and action','warning');return;}if(a==='delete'&&!confirm(`Delete ${pSel.size} product(s)?`))return;tst(`Running ${a} on ${pSel.size} items…`,'info');}
+
+let cSel=new Set();
+function upC(){document.getElementById('cSC').textContent=`${cSel.size} selected`;document.getElementById('cBB').classList.toggle('show',cSel.size>0);}
+document.querySelectorAll('.ccb').forEach(cb=>{cb.addEventListener('change',function(){this.checked?cSel.add(this.value):cSel.delete(this.value);upC();});});
+document.getElementById('cSA')?.addEventListener('change',function(){document.querySelectorAll('.ccb').forEach(cb=>{cb.checked=this.checked;this.checked?cSel.add(cb.value):cSel.delete(cb.value);});upC();});
+function clrC(){cSel.clear();document.querySelectorAll('.ccb,#cSA').forEach(e=>e.checked=false);upC();}
+function cBulk(action){
+  if(!cSel.size){tst('Select categories first','warning');return;}
+  if(!confirm(`${action} ${cSel.size} categories?`))return;
+  sLd();
+  fetch('{% url "inventory:bulk_actions" %}',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({action,selected_items:[...cSel]})})
+  .then(r=>r.json()).then(d=>{hLd();if(d.success){tst(d.message||'Done','success');setTimeout(()=>location.reload(),900);}else tst(d.error||'Error','error');})
+  .catch(()=>{hLd();tst('Request failed','error');});
+}
+
+function openSM(btn){
+  const id=btn.dataset.productId,name=btn.dataset.productName;
+  document.getElementById('smPI').value=id;document.getElementById('smPN').value=name;
+  document.getElementById('smQ').value='';document.getElementById('smR').value='';
+  document.getElementById('smSt').value='';document.getElementById('smCS').value='Loading…';
+  document.getElementById('smNW').style.display='none';
+  if(document.getElementById('smN'))document.getElementById('smN').value='';
+  fetch(`/api/v1/stock/?product=${id}`).then(r=>r.json()).then(d=>{const i=Array.isArray(d)?d:(d.results||[]);document.getElementById('smCS').value=i.length?i.map(s=>`${s.store_name||s.store}: ${s.quantity}`).join(' | '):'No records';}).catch(()=>{document.getElementById('smCS').value='Failed';});
+  oM('smModal');
+}
+document.getElementById('smSt')?.addEventListener('change',function(){
+  const pid=document.getElementById('smPI').value,sid=this.value;if(!pid||!sid)return;
+  fetch(`/api/v1/stock/?product=${pid}&store=${sid}`).then(r=>r.json()).then(d=>{const i=Array.isArray(d)?d:(d.results||[]);const s=i.find(x=>String(x.store)===String(sid)||String(x.store_id)===String(sid));document.getElementById('smCS').value=s?`${s.quantity} units`:'0 units (new)';});
+});
+document.getElementById('smR')?.addEventListener('change',function(){document.getElementById('smNW').style.display=this.value==='other'?'block':'none';});
+document.getElementById('smForm')?.addEventListener('submit',function(e){
+  e.preventDefault();
+  const pid=document.getElementById('smPI').value,sid=document.getElementById('smSt').value;
+  const adj=document.querySelector('input[name="at"]:checked')?.value;
+  const qty=document.getElementById('smQ').value,rsn=document.getElementById('smR').value;
+  const nt=(document.getElementById('smN')?.value)||'';
+  if(!sid||!qty||!rsn){tst('Fill required fields','error');return;}
+  if(parseFloat(qty)<=0){tst('Quantity must be > 0','error');return;}
+  const btn=this.querySelector('[type="submit"]');const org=btn.innerHTML;btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Saving…';btn.disabled=true;
+  const m={increase:'add',decrease:'remove',set:'set'};
+  fetch('{% url "inventory:bulk_stock_adjustment_api" %}',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({adjustments:[{product_id:parseInt(pid),store_id:parseInt(sid),adjustment_type:m[adj]||'add',quantity:parseFloat(qty),reason:rsn+(nt?' – '+nt:'')}]})})
+  .then(()=>{cM('smModal');tst('Stock adjusted!','success');}).catch(()=>tst('Adjustment failed','error')).finally(()=>{btn.innerHTML=org;btn.disabled=false;});
+});
+
+function vSD(id){
+  const c=document.getElementById('sdContent');c.innerHTML='<div style="text-align:center;padding:2rem;"><div class="spin" style="margin:auto;"></div></div>';oM('sdModal');
+  fetch(`/inventory/ajax/stock-details/${id}/`).then(r=>{if(!r.headers.get('content-type')?.includes('application/json'))throw new Error();return r.json();})
+  .then(d=>{if(!d.success){c.innerHTML=`<p style="color:var(--d)">${d.error}</p>`;return;}
+    c.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1rem;">
+      <div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--tx3);margin-bottom:.6rem;">Product</div>
+        <table style="width:100%;font-size:.85rem;border-collapse:collapse;">
+          <tr><td style="color:var(--tx3);padding:.25rem 0;width:40%;">Name</td><td style="font-weight:600;">${d.product_name}</td></tr>
+          <tr><td style="color:var(--tx3);padding:.25rem 0;">SKU</td><td>${d.product_sku||'—'}</td></tr>
+          <tr><td style="color:var(--tx3);padding:.25rem 0;">Category</td><td>${d.category||'—'}</td></tr>
+          <tr><td style="color:var(--tx3);padding:.25rem 0;">Store</td><td>${d.store}</td></tr>
+        </table></div>
+      <div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--tx3);margin-bottom:.6rem;">Stock</div>
+        <table style="width:100%;font-size:.85rem;border-collapse:collapse;">
+          <tr><td style="color:var(--tx3);padding:.25rem 0;width:40%;">Qty</td><td style="font-weight:700;font-family:var(--mn);">${d.quantity}</td></tr>
+          <tr><td style="color:var(--tx3);padding:.25rem 0;">Threshold</td><td>${d.low_stock_threshold}</td></tr>
+          <tr><td style="color:var(--tx3);padding:.25rem 0;">Status</td><td><span class="sp ${d.status_class}">${d.status_text}</span></td></tr>
+          <tr><td style="color:var(--tx3);padding:.25rem 0;">Updated</td><td>${d.last_updated}</td></tr>
+        </table></div></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1rem;">
+        <div style="background:var(--bg2);border-radius:var(--r);padding:.875rem;text-align:center;"><div style="font-weight:700;font-family:var(--mn);font-size:.95rem;">${d.total_cost}</div><div style="font-size:.68rem;color:var(--tx3);margin-top:.2rem;">Cost Value</div></div>
+        <div style="background:var(--bg2);border-radius:var(--r);padding:.875rem;text-align:center;"><div style="font-weight:700;font-family:var(--mn);font-size:.95rem;">${d.total_selling_value}</div><div style="font-size:.68rem;color:var(--tx3);margin-top:.2rem;">Sell Value</div></div>
+        <div style="background:var(--slt);border-radius:var(--r);padding:.875rem;text-align:center;"><div style="font-weight:700;font-family:var(--mn);font-size:.95rem;color:var(--s);">${d.potential_profit}</div><div style="font-size:.68rem;color:var(--tx3);margin-top:.2rem;">Profit</div></div>
+      </div>
+      <div style="text-align:right;">${(d.stock_id||d.id) ? `<a href="{% url 'inventory:movement_create' %}?stock=${d.stock_id||d.id}" class="btn btns bsm"><i class="fas fa-plus"></i> Adjust</a>` : `<button class="btn btns bsm" disabled title="Stock ID unavailable"><i class="fas fa-plus"></i> Adjust</button>`}</div>`;
+  }).catch(()=>{c.innerHTML='<p style="color:var(--d);padding:1rem;">Could not load details.</p>';});
+}
+
+let _dcId=null;
+function dCat(id,name){_dcId=id;document.getElementById('dcName').textContent=name;oM('dcModal');}
+document.getElementById('dcConf')?.addEventListener('click',function(){
+  if(!_dcId)return;sLd();
+  fetch(`{% url 'inventory:category_delete' 0 %}`.replace('0',_dcId),{method:'DELETE',headers:{'X-CSRFToken':csrf()}})
+  .then(r=>{hLd();cM('dcModal');if(r.ok){tst('Category deleted','success');setTimeout(()=>location.reload(),800);}else tst('Error deleting','error');})
+  .catch(()=>{hLd();tst('Error','error');});
+});
+
+function initC(){
+  const dc=document.getElementById('distChart')?.getContext('2d');
+  if(dc&&CD.dist){if(ch.d)ch.d.destroy();ch.d=new Chart(dc,{type:'doughnut',data:{labels:CD.dist.labels,datasets:[{data:CD.dist.data,backgroundColor:['#dc2626','#d97706','#2563eb','#059669'],borderWidth:0,hoverOffset:8}]},options:{responsive:true,cutout:'65%',plugins:{legend:{display:true,position:'bottom',labels:{color:tc(),padding:12,font:{size:11}}},tooltip:{backgroundColor:'#1e293b',titleColor:'#fff',bodyColor:'rgba(255,255,255,.8)',padding:10}},scales:{}}});}
+  const cc=document.getElementById('catChart')?.getContext('2d');
+  if(cc&&CD.cats?.labels?.length){if(ch.c)ch.c.destroy();ch.c=new Chart(cc,{type:'bar',data:{labels:CD.cats.labels,datasets:[{data:CD.cats.data,backgroundColor:PAL,borderRadius:5,borderSkipped:false}]},options:{responsive:true,indexAxis:'y',plugins:{legend:{display:false},tooltip:{backgroundColor:'#1e293b',bodyColor:'rgba(255,255,255,.8)',padding:10}},scales:{x:{grid:{color:gc()},ticks:{color:tc()}},y:{grid:{color:'transparent'},ticks:{color:tc()}}}}});}
+}
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();document.getElementById('pQS')?.focus();}if((e.ctrlKey||e.metaKey)&&e.key==='n'){e.preventDefault();location.href='{% url "inventory:product_create" %}';}});
+</script>
+{% endblock %}

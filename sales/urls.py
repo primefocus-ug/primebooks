@@ -2,13 +2,16 @@ from django.urls import path
 from . import views
 from . import view
 from . import pos
+from sales.sales_hub import SalesHubView
+
+
 from .view import drafts_list
 
 app_name = 'sales'
 
 urlpatterns = [
     # Main Views
-    path('', views.SalesListView.as_view(), name='sales_list'),
+    path('', SalesHubView.as_view(), name='sales_list'),
     path('create/', views.create_sale, name='create_sale'),
     path('email-draft/', view.email_draft, name='email_draft'),
     path('recent-customers/', views.recent_customers_api, name='recent_customers'),
