@@ -49,6 +49,14 @@
         }
         /* Apply background immediately so there is no white/wrong-color flash */
         html, body { background-color: var(--bg-secondary); color: var(--text-primary); }
+        /* Bootstrap collapse — must be inline so nav children are hidden before Bootstrap CSS loads */
+        .collapse:not(.show) { display: none !important; }
+        .collapsing { height: 0; overflow: hidden; }
+        /* Nav links must not render as raw blue anchor tags before CSS loads */
+        .nav-link, .btn-toggle { text-decoration: none; display: flex; align-items: center; }
+        /* Flyout panels must stay hidden */
+        .nav-flyout { display: none !important; }
+
     </style>
     <meta name="language" content="en">
     <meta name="theme-color" content="#0d6efd">
@@ -1533,148 +1541,238 @@
     }
 }
 
-/* Base Navigation Styles */
+/* ===========================================
+   BASE NAVIGATION STYLES
+   =========================================== */
+
+/* Section wrapper — adds breathing room between groups */
 .nav-section {
-    margin-bottom: 0.25rem;
-    position: relative; /* needed for flyout absolute positioning */
+    position: relative;
+    margin-bottom: 0.125rem;
 }
 
+/* Section divider — visually separates major nav groups */
+.nav-section-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 0.5rem 0.75rem;
+    opacity: 0.6;
+}
+
+/* Parent toggle buttons & top-level links */
 .btn-toggle,
 .nav-link {
     display: flex;
     align-items: center;
-    padding: 0.875rem 1rem;
-    color: var(--text-secondary);
-    background-color: transparent;
-    border: none;
-    border-radius: 0.5rem;
-    text-decoration: none;
-    transition: all 0.3s ease;
-    position: relative;
+    gap: 0.7rem;
+    padding: 0.6rem 0.75rem;
     width: 100%;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
     text-align: left;
-    font-size: 0.9rem;
-    gap: 0.75rem;
-    min-height: 44px; /* Minimum touch target */
     cursor: pointer;
+    min-height: 40px;
+    position: relative;
+    /* No transform on hover — prevents jitter */
+    transition: background-color 0.18s ease, color 0.18s ease;
 }
 
 .btn-toggle:hover,
 .nav-link:hover {
-    color: var(--primary-600);
     background-color: var(--primary-50);
+    color: var(--primary-600);
     text-decoration: none;
-    transform: translateX(2px);
+    transform: none;
 }
 
+/* Active nav link — full pill with icon accent */
 .nav-link.active {
-    color: var(--primary-700);
     background-color: var(--primary-100);
+    color: var(--primary-700);
     font-weight: 600;
     border-left: 3px solid var(--primary-500);
+    border-radius: 0 8px 8px 0;
+    padding-left: calc(0.75rem - 3px); /* compensate for border */
 }
 
-/* Icon Styles */
-.btn-toggle i,
-.nav-link i {
-    font-size: 1.1rem;
-    width: 20px;
+/* Active icon gets primary colour too */
+.nav-link.active > i:first-child {
+    color: var(--primary-500);
+}
+
+/* Dark mode active */
+[data-theme="dark"] .nav-link.active {
+    background-color: rgba(59,130,246,0.18);
+    color: #93c5fd;
+    border-left-color: #3b82f6;
+}
+[data-theme="dark"] .nav-link.active > i:first-child {
+    color: #60a5fa;
+}
+
+/* Open parent gets a subtle tint so you know it's expanded */
+.btn-toggle[aria-expanded="true"] {
+    color: var(--primary-600);
+    background-color: var(--primary-50);
+}
+[data-theme="dark"] .btn-toggle[aria-expanded="true"] {
+    color: #93c5fd;
+    background-color: rgba(59,130,246,0.12);
+}
+
+/* ===========================================
+   ICONS
+   =========================================== */
+
+/* Parent-level icons — slightly larger, fixed width so text always aligns */
+.btn-toggle > i:first-child,
+.nav-link > i:first-child {
+    font-size: 1.05rem;
+    width: 22px;
+    min-width: 22px;
     text-align: center;
     flex-shrink: 0;
+    line-height: 1;
+    transition: color 0.18s ease;
 }
 
-/* Navigation Text */
+/* ===========================================
+   NAV TEXT & CHEVRON
+   =========================================== */
+
 .nav-text {
     flex: 1;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    letter-spacing: 0.01em;
 }
 
-/* Toggle Icons */
+/* Chevron toggle icon — replaces plus so it clearly shows open/closed */
 .toggle-icon {
-    font-size: 0.75rem;
-    transition: transform 0.3s ease;
-    opacity: 0.7;
+    font-size: 0.7rem;
+    opacity: 0.5;
+    transition: transform 0.22s cubic-bezier(0.4,0,0.2,1), opacity 0.18s ease;
+    flex-shrink: 0;
 }
 
 .btn-toggle[aria-expanded="true"] .toggle-icon {
     transform: rotate(180deg);
+    opacity: 0.8;
 }
 
-/* Active Indicator */
+/* ===========================================
+   ACTIVE INDICATOR DOT
+   =========================================== */
+
 .active-indicator {
-    color: var(--primary-500);
-    font-size: 1.2rem;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--primary-500);
+    flex-shrink: 0;
     margin-left: auto;
-    animation: pulse 2s infinite;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.25);
 }
 
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-}
+/* ===========================================
+   CHILD LINKS
+   =========================================== */
 
-/* Child Navigation Styles */
 .nav-children {
+    margin: 0.125rem 0 0.25rem 0;
+    padding-left: 0;
+    /* Left border track line */
+    border-left: 2px solid var(--border-color);
+    margin-left: 1.55rem;
     padding-left: 0.5rem;
-    margin-top: 0.25rem;
+}
+
+[data-theme="dark"] .nav-children {
+    border-left-color: var(--gray-700);
 }
 
 .child-link {
-    padding: 0.75rem 1rem 0.75rem 2.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.845rem;
+    font-weight: 400;
+    color: var(--text-secondary);
+    border-radius: 6px;
+    /* No dot pseudo-element — icon handles the visual */
+}
+
+.child-link > i:first-child {
     font-size: 0.9rem;
-    position: relative;
+    width: 18px;
+    min-width: 18px;
+    color: var(--text-muted);
+    transition: color 0.18s ease;
 }
 
-.child-link::before {
-    content: '';
-    position: absolute;
-    left: 1.75rem;
-    top: 50%;
-    width: 4px;
-    height: 4px;
-    background: var(--text-muted);
-    border-radius: 50%;
-    transform: translateY(-50%);
-    transition: background-color 0.3s ease;
+.child-link:hover > i:first-child {
+    color: var(--primary-500);
 }
 
-.child-link:hover::before,
-.child-link.active::before {
-    background: var(--primary-500);
+.child-link.active {
+    color: var(--primary-700);
+    font-weight: 600;
+    background-color: var(--primary-100);
+    border-left: 2px solid var(--primary-500);
+    border-radius: 0 6px 6px 0;
+    padding-left: calc(0.75rem - 2px);
+}
+.child-link.active > i:first-child {
+    color: var(--primary-500);
+}
+[data-theme="dark"] .child-link.active {
+    background-color: rgba(59,130,246,0.15);
+    color: #93c5fd;
+    border-left-color: #3b82f6;
+}
+[data-theme="dark"] .child-link.active > i:first-child {
+    color: #60a5fa;
 }
 
-/* Nested Navigation Styles */
+/* ===========================================
+   NESTED (3RD LEVEL) LINKS
+   =========================================== */
+
 .nested-toggle {
-    padding: 0.625rem 1rem 0.625rem 2.5rem;
-    font-size: 0.85rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.845rem;
+    font-weight: 400;
     color: var(--text-secondary);
 }
 
 .nested-children {
-    padding-left: 1rem;
+    border-left: 2px solid var(--border-color);
+    margin-left: 1.1rem;
+    padding-left: 0.4rem;
+}
+
+[data-theme="dark"] .nested-children {
+    border-left-color: var(--gray-700);
 }
 
 .nested-link {
-    padding: 0.625rem 1rem 0.625rem 3.5rem;
-    font-size: 0.85rem;
+    padding: 0.44rem 0.75rem;
+    font-size: 0.82rem;
     color: var(--text-muted);
-    position: relative;
+    border-radius: 5px;
 }
 
-.nested-link::before {
-    content: '';
-    position: absolute;
-    left: 3rem;
-    top: 50%;
-    width: 3px;
-    height: 3px;
-    background: var(--text-muted);
-    border-radius: 50%;
-    transform: translateY(-50%);
-    transition: background-color 0.3s ease;
+.nested-link > i:first-child {
+    font-size: 0.82rem;
+    width: 16px;
+    min-width: 16px;
+    color: var(--text-muted);
+    transition: color 0.18s ease;
 }
 
 .nested-link:hover,
@@ -1683,51 +1781,88 @@
     background-color: var(--primary-50);
 }
 
-.nested-link:hover::before,
-.nested-link.active::before {
-    background: var(--primary-500);
+.nested-link:hover > i:first-child,
+.nested-link.active > i:first-child {
+    color: var(--primary-500);
 }
 
-/* Contextual Navigation Styles */
+.nested-link.active {
+    font-weight: 600;
+    border-left: 2px solid var(--primary-400);
+    border-radius: 0 5px 5px 0;
+    padding-left: calc(0.75rem - 2px);
+}
+
+/* ===========================================
+   LOGOUT ITEM — special danger styling
+   =========================================== */
+
+.nav-link-logout {
+    color: #ef4444;
+    margin-top: 0.25rem;
+}
+.nav-link-logout > i:first-child {
+    color: #ef4444;
+}
+.nav-link-logout:hover {
+    background-color: rgba(239,68,68,0.08);
+    color: #dc2626;
+}
+.nav-link-logout:hover > i:first-child {
+    color: #dc2626;
+}
+[data-theme="dark"] .nav-link-logout {
+    color: #fca5a5;
+}
+[data-theme="dark"] .nav-link-logout > i:first-child {
+    color: #fca5a5;
+}
+[data-theme="dark"] .nav-link-logout:hover {
+    background-color: rgba(239,68,68,0.15);
+    color: #f87171;
+}
+
+/* ===========================================
+   CONTEXTUAL NAVIGATION
+   =========================================== */
+
 .nav-divider {
-    margin: 1.5rem 0 1rem 0;
-    padding: 0 1rem;
+    margin: 0.75rem 0 0.5rem 0;
+    padding: 0 0.75rem;
 }
 
 .nav-hr {
     border-color: var(--border-color);
-    margin: 0.5rem 0;
+    margin: 0.25rem 0;
 }
 
 .contextual-section {
     background-color: var(--bg-secondary);
-    border-radius: 0.5rem;
-    margin: 0.75rem 0;
-    padding: 0.5rem 0;
+    border-radius: 8px;
+    margin: 0.5rem 0;
+    padding: 0.375rem 0;
     border: 1px solid var(--border-color);
 }
 
 .contextual-header {
     display: flex;
     align-items: center;
-    padding: 0.75rem 1rem;
+    padding: 0.6rem 0.75rem;
     color: var(--text-primary);
     font-weight: 600;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     gap: 0.5rem;
     border-bottom: 1px solid var(--border-color);
     margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .contextual-link {
     background-color: transparent;
     margin: 0 0.25rem;
 }
-
-.contextual-link:hover {
-    background-color: var(--primary-25);
-}
-
+.contextual-link:hover { background-color: var(--primary-25); }
 .contextual-link.active {
     background-color: var(--primary-75);
     border-left: 3px solid var(--primary-500);
@@ -1740,39 +1875,40 @@
     color: var(--text-muted);
 }
 
-/* Focus States for Accessibility */
-.nav-link:focus,
-.btn-toggle:focus {
+/* ===========================================
+   FOCUS & ACCESSIBILITY
+   =========================================== */
+
+.nav-link:focus-visible,
+.btn-toggle:focus-visible {
     outline: 2px solid var(--primary-500);
-    outline-offset: -2px;
+    outline-offset: 1px;
     z-index: 1;
 }
 
-/* Collapse Animation Improvements */
-.collapse {
-    transition: height 0.35s ease;
-}
+/* ===========================================
+   COLLAPSE ANIMATION
+   =========================================== */
 
-.collapsing {
-    transition: height 0.35s ease;
-}
+.collapse { transition: height 0.28s ease; }
+.collapsing { transition: height 0.28s ease; }
 
-/* Scrollbar Styling */
-.navigation-content::-webkit-scrollbar {
-    width: 6px;
-}
+/* ===========================================
+   SCROLLBAR — works on webkit AND firefox
+   =========================================== */
 
-.navigation-content::-webkit-scrollbar-track {
-    background: var(--bg-secondary);
+.navigation-content {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(59,130,246,0.25) transparent;
 }
-
+.navigation-content::-webkit-scrollbar { width: 4px; }
+.navigation-content::-webkit-scrollbar-track { background: transparent; }
 .navigation-content::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 3px;
+    background: rgba(59,130,246,0.25);
+    border-radius: 4px;
 }
-
 .navigation-content::-webkit-scrollbar-thumb:hover {
-    background: var(--text-muted);
+    background: rgba(59,130,246,0.5);
 }
 
 /* Reduced Motion Support */
@@ -2079,38 +2215,7 @@
 
 } /* end @media (min-width: 768px) */
 
-/* Scrollbar in navigation content — accent tinted */
-.navigation-content::-webkit-scrollbar { width: 4px; }
-.navigation-content::-webkit-scrollbar-track { background: transparent; }
-.navigation-content::-webkit-scrollbar-thumb {
-    background: rgba(59,130,246,0.28);
-    border-radius: 4px;
-}
-.navigation-content::-webkit-scrollbar-thumb:hover {
-    background: rgba(59,130,246,0.52);
-}
-.navigation-content {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(59,130,246,0.28) transparent;
-}
-
-/* Remove jitter-inducing translateX on hover (full mode) */
-.btn-toggle:hover,
-.nav-link:hover {
-    transform: none !important;
-}
-
-/* Better active state — pill + icon accent */
-.nav-link.active {
-    color: var(--primary-700);
-    background-color: var(--primary-100);
-    font-weight: 600;
-    border-left: 3px solid var(--primary-500);
-    border-radius: 8px;
-}
-.nav-link.active > i:first-child {
-    color: var(--primary-500);
-}
+/* All hover/active/icon overrides now live in the base nav styles block above */
 </style>
 
     {% block extra_css %}{% endblock %}

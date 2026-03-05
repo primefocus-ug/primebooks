@@ -1,9 +1,7 @@
-
-
 class NavigationItem:
     def __init__(self, name, url_name=None, url=None, icon=None, permission=None,
                  children=None, visible_func=None, css_class="", url_params=None,
-                 url_kwargs_func=None, requires_efris=False):
+                 url_kwargs_func=None, requires_efris=False, is_divider=False):
         self.name = name
         self.url_name = url_name
         self.url = url
@@ -15,6 +13,7 @@ class NavigationItem:
         self.url_params = url_params or []
         self.url_kwargs_func = url_kwargs_func
         self.requires_efris = requires_efris
+        self.is_divider = is_divider
 
     def is_efris_enabled(self, request):
         """Check if EFRIS is enabled for current tenant/company"""
@@ -40,6 +39,10 @@ class NavigationItem:
 
     def is_visible(self, user, request=None):
         """Check if navigation item should be visible"""
+        # Dividers are always visible
+        if self.is_divider:
+            return True
+
         # Check EFRIS requirement first
         if self.requires_efris and not self.is_efris_enabled(request):
             return False
@@ -137,6 +140,7 @@ NAVIGATION_ITEMS = [
         permission="expenses.expense_create",
         css_class="nav-highlight-danger"
     ),
+    NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="Sales",
         icon="bi bi-cart-check",
@@ -307,6 +311,7 @@ NAVIGATION_ITEMS = [
             ),
         ]
     ),
+    NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="Services",
         icon="bi bi-briefcase",
@@ -326,6 +331,7 @@ NAVIGATION_ITEMS = [
             ),
         ],
     ),
+    NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="Finance & Expenses",
         icon="bi bi-cash-stack",
@@ -364,6 +370,7 @@ NAVIGATION_ITEMS = [
 
 
         ],),
+    NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="Customers",
         icon="bi bi-people",
@@ -407,6 +414,7 @@ NAVIGATION_ITEMS = [
             ),
         ]
     ),
+    NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="EFRIS",
         requires_efris=True,
@@ -526,6 +534,7 @@ NAVIGATION_ITEMS = [
             ),
         ]
     ),
+    NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="Invoices",
         icon="bi bi-receipt",
@@ -614,6 +623,7 @@ NAVIGATION_ITEMS = [
         ]
     ),
 
+    NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="Branch Dashboard",
         url_name="stores:store_dashboard",
@@ -669,6 +679,7 @@ NAVIGATION_ITEMS = [
             ),
         ]
     ),
+NavigationItem(name="--", is_divider=True),
 NavigationItem(
         name="Profile & Settings",
         icon="bi bi-speedometer2",
@@ -738,6 +749,7 @@ NavigationItem(
             ),
         ]
     ),
+    NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="Sessions & Security",
         icon="bi bi-shield-lock",
@@ -809,6 +821,7 @@ NavigationItem(
             ),
         ]
     ),
+    NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="Logout",
         url_name="custom_logout",
@@ -842,11 +855,12 @@ def get_navigation_for_user(user, request=None, **context_kwargs):
                     css_class=item.css_class,
                     url_params=item.url_params,
                     url_kwargs_func=item.url_kwargs_func,
-                    requires_efris=item.requires_efris
+                    requires_efris=item.requires_efris,
+                    is_divider=item.is_divider
                 )
 
-                # Only include if has children or has its own URL
-                if filtered_children or item.url_name or item.url:
+                # Only include if has children, has its own URL, or is a divider
+                if filtered_children or item.url_name or item.url or item.is_divider:
                     visible_items.append(filtered_item)
 
         return visible_items

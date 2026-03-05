@@ -18,7 +18,7 @@
 
 
 <!-- Navigation Sidebar -->
-<div class="navigation-sidebar" id="navigationSidebar">
+<div class="navigation-sidebar" id="navigationSidebar" style="visibility:hidden;transition:none">
     <!-- Close button for mobile -->
     <button class="sidebar-close d-md-none"
             id="sidebarClose"
@@ -34,6 +34,9 @@
     <!-- Navigation Content -->
     <div class="navigation-content" id="navigationContent">
         {% for nav_item in navigation_items %}
+            {% if nav_item.is_divider %}
+                <div class="nav-section-divider"></div>
+            {% else %}
             <div class="nav-section">
                 {% if nav_item.children %}
                     <!-- Parent item with collapsible children -->
@@ -50,7 +53,7 @@
                             <i class="bi bi-folder"></i>
                         {% endif %}
                         <span class="nav-text">{{ nav_item.name }}</span>
-                        <i class="bi bi-plus-lg ms-auto toggle-icon"></i>
+                        <i class="bi bi-chevron-down ms-auto toggle-icon"></i>
                     </button>
 
                     <div class="collapse{% if nav_item|is_section_active:current_section %} show{% endif %}"
@@ -153,7 +156,7 @@
                     {% nav_item_url nav_item as nav_url %}
                     {% is_active_nav nav_item.url_name as is_active %}
                     <a href="{{ nav_url }}"
-                       class="nav-link main-link{% if is_active %} active{% endif %} {{ nav_item.css_class }}"
+                       class="nav-link main-link{% if is_active %} active{% endif %} {{ nav_item.css_class }}{% if nav_item.name == 'Logout' %} nav-link-logout{% endif %}"
                        title="{{ nav_item.name }}"
                        data-nav-tooltip="{{ nav_item.name }}">
                         {% if nav_item.icon %}
@@ -168,6 +171,7 @@
                     </a>
                 {% endif %}
             </div>
+            {% endif %}
         {% empty %}
             <!-- Empty state for no navigation items -->
             <div class="nav-section">
@@ -287,6 +291,11 @@
                 this.initEnhancedFeatures();
                 this.bindEvents();
                 this.isInitialized = true;
+                // Reveal sidebar now that all classes/styles are applied — no flash
+                if (this.elements.sidebar) {
+                    this.elements.sidebar.style.visibility = '';
+                    this.elements.sidebar.style.transition = '';
+                }
             } else {
                 console.warn('⚠️ Navigation sidebar elements not found');
             }
