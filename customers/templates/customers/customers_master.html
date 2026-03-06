@@ -594,7 +594,7 @@ body { background: var(--cu-bg); color: var(--cu-text); }
     <div class="cu-stat-value totall">{{ inactive_customers|default:0 }}</div><div class="cu-stat-label">Inactive</div></div>
   </div>
 </div>
-{% if efris_enabled %}
+{% if efris_enabled %}{# eFRIS stats band + charts only #}
 {# ── eFRIS stats band ── #}
 <div class="row mb-4">
   <div class="col-12">
@@ -707,6 +707,9 @@ body { background: var(--cu-bg); color: var(--cu-text); }
     </div>
   </div>
 
+{% endif %}{# /efris_enabled — eFRIS charts #}
+
+<div class="row g-3">
   {# Recent customers — full columns #}
   <div class="col-lg-8">
     <div class="cu-card">
@@ -721,7 +724,7 @@ body { background: var(--cu-bg); color: var(--cu-text); }
         {% if recent_customers %}
         <div class="table-responsive">
           <table class="cu-table">
-            <thead><tr><th>Name</th><th>Type</th><th>Credit Status</th><th>eFRIS Status</th><th>Contact</th><th>Created</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Type</th><th>Credit Status</th>{% if efris_enabled %}<th>eFRIS Status</th>{% endif %}<th>Contact</th><th>Created</th><th>Actions</th></tr></thead>
             <tbody>
               {% for c in recent_customers %}
               <tr>
@@ -745,8 +748,10 @@ body { background: var(--cu-bg); color: var(--cu-text); }
                   {% else %}<span class="cu-badge cu-badge-secondary">No Credit</span>{% endif %}
                 </td>
                 <td>
+                  {% if efris_enabled %}
                   <span class="cu-badge cu-badge-{% if c.efris_status == 'REGISTERED' %}success{% elif c.efris_status == 'FAILED' %}danger{% else %}warning{% endif %}">{{ c.get_efris_status_display }}</span>
                   {% if c.efris_customer_id %}<div class="text-cu-muted" style="font-size:.72rem">{{ c.efris_customer_id|truncatechars:10 }}</div>{% endif %}
+                  {% endif %}
                 </td>
                 <td class="small">
                   {% if c.phone %}<div><i class="bi bi-telephone-fill text-cu-muted me-1"></i>{{ c.phone }}</div>{% endif %}
@@ -756,9 +761,9 @@ body { background: var(--cu-bg); color: var(--cu-text); }
                 <td>
                   <div class="btn-group btn-group-sm">
                     <a href="{% url 'customers:detail' c.pk %}" class="btn btn-outline-primary"><i class="bi bi-eye"></i></a>
-                    {% if c.can_sync_to_efris and not c.is_efris_registered %}
+                    {% if efris_enabled %}{% if c.can_sync_to_efris and not c.is_efris_registered %}
                     <button class="btn btn-outline-info" title="Sync to eFRIS" onclick="if(confirm('Sync {{ c.name|escapejs }} to eFRIS?')) fetch('/api/customers/{{ c.pk }}/sync_to_efris/',{method:'POST',headers:{'X-CSRFToken':document.cookie.match(/csrftoken=([^;]+)/)?.[1]||'','Content-Type':'application/json'}}).then(r=>r.json()).then(d=>{ if(d.success){location.reload();}else{alert('Failed: '+d.error);}})"><i class="bi bi-sync"></i></button>
-                    {% endif %}
+                    {% endif %}{% endif %}{# /efris_enabled #}
                   </div>
                 </td>
               </tr>
@@ -799,6 +804,7 @@ body { background: var(--cu-bg); color: var(--cu-text); }
             </a>
           </div>
           {% endif %}
+          {% if efris_enabled %}
           <div class="col-6">
             <a href="{% url 'customers:efris_dashboard' %}" class="cu-card text-center p-3 text-decoration-none d-block">
               <i class="bi bi-sync text-warning fs-4 d-block mb-1"></i>
@@ -806,6 +812,7 @@ body { background: var(--cu-bg); color: var(--cu-text); }
               <div class="text-cu-muted" style="font-size:.72rem">Manage sync</div>
             </a>
           </div>
+          {% endif %}
           <div class="col-6">
             <a href="{% url 'customers:credit_report' %}" class="cu-card text-center p-3 text-decoration-none d-block">
               <i class="bi bi-credit-card text-danger fs-4 d-block mb-1"></i>
@@ -840,7 +847,6 @@ body { background: var(--cu-bg); color: var(--cu-text); }
     </div>
   </div>
 </div>
-{% endif %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof Chart === 'undefined') return;
