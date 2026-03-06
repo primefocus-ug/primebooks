@@ -539,7 +539,7 @@ class QuickSaleForm(StoreRestrictedModelForm):
         return payment_method
 
 
-class SaleSearchForm(StoreRestrictedModelForm):
+class SaleSearchForm(forms.Form):
     """Advanced search form for sales - UPDATED"""
 
     search = forms.CharField(
