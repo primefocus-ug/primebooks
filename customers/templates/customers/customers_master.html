@@ -1,0 +1,3187 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+{% load custom_filters %}
+{% load efris_tags %}
+{% load crispy_forms_tags %}
+
+{% block title %}
+  {% if active_tab == 'detail' %}{{ customer.name }} — Customer Details
+  {% elif active_tab == 'create' %}New Customer
+  {% elif active_tab == 'edit' %}Edit — {{ customer.name }}
+  {% elif active_tab == 'import' %}Import Customers
+  {% elif active_tab == 'groups' %}Customer Groups
+  {% elif active_tab == 'delete' %}Delete Customer
+  {% elif active_tab == 'group_delete' %}Delete Group
+  {% elif active_tab == 'group_form' %}{% if object %}Edit Group{% else %}Create Group{% endif %}
+  {% elif active_tab == 'dashboard' %}Customer Dashboard
+  {% else %}Customer Management
+  {% endif %}
+  | {{ company.trading_name|default:company.name }} | {{ block.super }}
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+/* =========================================================
+   MASTER CUSTOMER CSS — light + dark support
+   ========================================================= */
+
+/* ── CSS Variables ── */
+:root {
+  --cu-primary:       #4f46e5;
+  --cu-primary-dark:  #3730a3;
+  --cu-primary-light: #eef2ff;
+  --cu-success:       #10b981;
+  --cu-warning:       #f59e0b;
+  --cu-danger:        #ef4444;
+  --cu-info:          #06b6d4;
+  --cu-radius:        10px;
+  --cu-radius-sm:     6px;
+  --cu-shadow:        0 2px 14px rgba(0,0,0,.08);
+  --cu-shadow-hover:  0 8px 24px rgba(0,0,0,.14);
+  --cu-transition:    all .22s ease;
+
+  /* Light theme surfaces */
+  --cu-bg:            #f8fafc;
+  --cu-surface:       #ffffff;
+  --cu-surface-alt:   #f1f5f9;
+  --cu-border:        #e2e8f0;
+  --cu-text:          #0f172a;
+  --cu-text-muted:    #64748b;
+  --cu-input-bg:      #ffffff;
+}
+
+[data-bs-theme="dark"],
+[data-theme="dark"] {
+  --cu-bg:          #0d1117;
+  --cu-surface:     #161b22;
+  --cu-surface-alt: #21262d;
+  --cu-border:      #30363d;
+  --cu-text:        #e6edf3;
+  --cu-text-muted:  #8b949e;
+  --cu-input-bg:    #0d1117;
+  --cu-primary-light: rgba(79,70,229,.15);
+  --cu-shadow:      0 2px 14px rgba(0,0,0,.35);
+  --cu-shadow-hover:0 8px 24px rgba(0,0,0,.5);
+}
+
+/* ── Master page shell ── */
+body { background: var(--cu-bg); color: var(--cu-text); }
+
+/* ── Top view-switcher nav ── */
+.cu-app-nav {
+  display: flex;
+  gap: .25rem;
+  background: var(--cu-surface);
+  border: 1px solid var(--cu-border);
+  border-radius: var(--cu-radius);
+  padding: .375rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  box-shadow: var(--cu-shadow);
+}
+.cu-app-nav a {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .45rem .9rem;
+  border-radius: var(--cu-radius-sm);
+  font-size: .875rem;
+  font-weight: 500;
+  color: var(--cu-text-muted);
+  text-decoration: none;
+  transition: var(--cu-transition);
+  white-space: nowrap;
+}
+.cu-app-nav a:hover { background: var(--cu-surface-alt); color: var(--cu-primary); }
+.cu-app-nav a.active { background: var(--cu-primary); color: #fff; }
+.cu-app-nav a .badge-pill {
+  background: rgba(255,255,255,.25);
+  border-radius: 20px;
+  padding: 0 .45rem;
+  font-size: .72rem;
+}
+.cu-app-nav a:not(.active) .badge-pill { background: var(--cu-primary-light); color: var(--cu-primary); }
+
+/* ── Cards ── */
+.cu-card {
+  background: var(--cu-surface);
+  border: 1px solid var(--cu-border);
+  border-radius: var(--cu-radius);
+  box-shadow: var(--cu-shadow);
+  transition: var(--cu-transition);
+  overflow: hidden;
+}
+.cu-card:hover { box-shadow: var(--cu-shadow-hover); }
+.cu-card-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--cu-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--cu-surface);
+}
+.cu-card-header h5, .cu-card-header h6 { margin: 0; font-weight: 600; }
+.cu-card-body { padding: 1.25rem; }
+
+/* ── Stat cards ── */
+.cu-stat {
+  background: var(--cu-surface);
+  border: 1px solid var(--cu-border);
+  border-radius: var(--cu-radius);
+  padding: 1.25rem;
+  text-align: center;
+  transition: var(--cu-transition);
+}
+.cu-stat:hover { transform: translateY(-4px); box-shadow: var(--cu-shadow-hover); }
+.cu-stat-icon {
+  width: 52px; height: 52px;
+  border-radius: var(--cu-radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem;
+  margin: 0 auto .75rem;
+}
+.cu-stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.cu-stat-label { font-size: .8rem; color: var(--cu-text-muted); margin-top: .2rem; }
+
+/* ── Avatar ── */
+.cu-avatar {
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--cu-primary), var(--cu-primary-dark));
+  color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; flex-shrink: 0;
+}
+.cu-avatar-lg { width: 80px; height: 80px; font-size: 2rem; }
+.cu-avatar-md { width: 46px; height: 46px; font-size: 1.1rem; }
+.cu-avatar-sm { width: 34px; height: 34px; font-size: .85rem; }
+
+/* ── Badges ── */
+.cu-badge {
+  display: inline-flex; align-items: center;
+  padding: .2rem .6rem;
+  border-radius: 20px;
+  font-size: .74rem; font-weight: 600;
+}
+.cu-badge-primary   { background: var(--cu-primary-light); color: var(--cu-primary); }
+.cu-badge-success   { background: #dcfce7; color: #166534; }
+.cu-badge-warning   { background: #fef9c3; color: #854d0e; }
+.cu-badge-danger    { background: #fee2e2; color: #991b1b; }
+.cu-badge-info      { background: #cffafe; color: #155e75; }
+.cu-badge-secondary { background: var(--cu-surface-alt); color: var(--cu-text-muted); border: 1px solid var(--cu-border); }
+
+[data-bs-theme="dark"] .cu-badge-success   { background: rgba(16,185,129,.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .cu-badge-warning   { background: rgba(245,158,11,.18); color: #fcd34d; }
+[data-bs-theme="dark"] .cu-badge-danger    { background: rgba(239,68,68,.18);  color: #fca5a5; }
+[data-bs-theme="dark"] .cu-badge-info      { background: rgba(6,182,212,.18);  color: #67e8f9; }
+[data-bs-theme="dark"] .cu-badge-primary   { background: rgba(79,70,229,.2);   color: #a5b4fc; }
+
+/* ── Detail tabs ── */
+.cu-tabs { border-bottom: 2px solid var(--cu-border); margin-bottom: 0; display: flex; flex-wrap: wrap; gap: .1rem; }
+.cu-tabs .nav-link {
+  border: none; border-bottom: 3px solid transparent;
+  padding: .65rem 1rem; margin-bottom: -2px;
+  color: var(--cu-text-muted); font-weight: 500; font-size: .875rem;
+  border-radius: var(--cu-radius-sm) var(--cu-radius-sm) 0 0;
+  transition: var(--cu-transition);
+}
+.cu-tabs .nav-link:hover { color: var(--cu-primary); background: var(--cu-primary-light); }
+.cu-tabs .nav-link.active {
+  color: var(--cu-primary);
+  border-bottom-color: var(--cu-primary);
+  background: var(--cu-surface);
+}
+.cu-tab-content {
+  background: var(--cu-surface);
+  border: 1px solid var(--cu-border);
+  border-top: none;
+  border-radius: 0 0 var(--cu-radius) var(--cu-radius);
+  padding: 1.5rem;
+}
+
+/* ── Quick stat (inside tabs) ── */
+.cu-quick-stat {
+  background: var(--cu-surface-alt);
+  border: 1px solid var(--cu-border);
+  border-radius: var(--cu-radius-sm);
+  padding: 1rem;
+  text-align: center;
+}
+.cu-quick-stat .val { font-size: 1.25rem; font-weight: 700; color: var(--cu-primary); }
+.cu-quick-stat .lbl { font-size: .78rem; color: var(--cu-text-muted); }
+
+/* ── Activity timeline ── */
+.cu-timeline-item {
+  padding-left: 1.1rem;
+  border-left: 3px solid var(--cu-border);
+  margin-bottom: 1.1rem;
+  transition: var(--cu-transition);
+}
+.cu-timeline-item:hover { border-left-color: var(--cu-primary); }
+
+/* ── Note item ── */
+.cu-note {
+  background: var(--cu-surface-alt);
+  border: 1px solid var(--cu-border);
+  border-radius: var(--cu-radius-sm);
+  padding: .9rem 1rem;
+  margin-bottom: .75rem;
+}
+
+/* ── ID badge ── */
+.cu-id-badge {
+  display: inline-block;
+  background: var(--cu-surface-alt);
+  border: 1px solid var(--cu-border);
+  border-radius: var(--cu-radius-sm);
+  padding: .2rem .55rem;
+  font-size: .75rem;
+  font-family: 'Courier New', monospace;
+  color: var(--cu-text);
+  margin: .15rem;
+}
+
+/* ── Tables ── */
+.cu-table { width: 100%; }
+.cu-table th {
+  background: var(--cu-surface-alt);
+  color: var(--cu-text-muted);
+  font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  padding: .65rem .85rem; border-bottom: 1px solid var(--cu-border);
+}
+.cu-table td { padding: .75rem .85rem; border-bottom: 1px solid var(--cu-border); vertical-align: middle; }
+.cu-table tr:last-child td { border-bottom: none; }
+.cu-table tbody tr:hover { background: var(--cu-surface-alt); }
+
+/* ── Form sections ── */
+.cu-form-section {
+  background: var(--cu-surface);
+  border: 1px solid var(--cu-border);
+  border-radius: var(--cu-radius);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.cu-form-section-header {
+  display: flex; align-items: center; gap: .65rem;
+  margin-bottom: 1.1rem; padding-bottom: .75rem;
+  border-bottom: 2px solid var(--cu-primary);
+}
+.cu-form-section-header i { color: var(--cu-primary); font-size: 1.1rem; }
+.cu-form-section-header h3 { font-size: 1rem; font-weight: 600; margin: 0; }
+
+/* Customer type selector */
+.cu-type-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .85rem; }
+.cu-type-opt input { position: absolute; opacity: 0; }
+.cu-type-label {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 1rem; border: 2px solid var(--cu-border);
+  border-radius: var(--cu-radius); cursor: pointer;
+  transition: var(--cu-transition); text-align: center;
+  background: var(--cu-surface);
+}
+.cu-type-label i { font-size: 1.75rem; color: var(--cu-text-muted); margin-bottom: .4rem; }
+.cu-type-label span { font-size: .82rem; font-weight: 600; color: var(--cu-text); }
+.cu-type-label small { font-size: .72rem; color: var(--cu-text-muted); }
+.cu-type-opt input:checked + .cu-type-label {
+  border-color: var(--cu-primary);
+  background: var(--cu-primary-light);
+}
+.cu-type-opt input:checked + .cu-type-label i { color: var(--cu-primary); }
+
+/* ── Import styles ── */
+.cu-import-zone {
+  border: 2.5px dashed var(--cu-border);
+  border-radius: var(--cu-radius);
+  padding: 3rem 2rem; text-align: center;
+  background: var(--cu-surface-alt);
+  cursor: pointer; transition: var(--cu-transition);
+}
+.cu-import-zone:hover, .cu-import-zone.drag-over {
+  border-color: var(--cu-primary);
+  background: var(--cu-primary-light);
+}
+.cu-step-bar { display: flex; gap: 1.5rem; margin-bottom: 2rem; }
+.cu-step { flex: 1; text-align: center; }
+.cu-step-num {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: var(--cu-surface-alt);
+  border: 2px solid var(--cu-border);
+  color: var(--cu-text-muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; margin-bottom: .4rem; font-size: .9rem;
+  transition: var(--cu-transition);
+}
+.cu-step.active .cu-step-num { background: var(--cu-primary); border-color: var(--cu-primary); color: #fff; }
+.cu-step.done .cu-step-num   { background: var(--cu-success); border-color: var(--cu-success); color: #fff; }
+.cu-step-lbl { font-size: .78rem; color: var(--cu-text-muted); }
+.cu-step.active .cu-step-lbl { color: var(--cu-text); font-weight: 600; }
+.cu-download-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+.cu-dl-card {
+  border: 2px solid var(--cu-border);
+  border-radius: var(--cu-radius-sm);
+  padding: 1.25rem; cursor: pointer;
+  transition: var(--cu-transition);
+  display: flex; align-items: center; gap: .9rem;
+  background: var(--cu-surface);
+}
+.cu-dl-card:hover { border-color: var(--cu-primary); transform: translateY(-2px); box-shadow: var(--cu-shadow-hover); }
+.cu-dl-icon {
+  width: 44px; height: 44px; flex-shrink: 0;
+  background: var(--cu-primary-light);
+  border-radius: var(--cu-radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--cu-primary); font-size: 1.3rem;
+}
+
+/* ── Dashboard charts area ── */
+.cu-chart-wrap { height: 260px; position: relative; }
+
+/* ── Delete confirm card ── */
+.cu-delete-card {
+  border: 2px solid var(--cu-danger);
+  border-radius: var(--cu-radius);
+  overflow: hidden;
+}
+.cu-delete-header { background: var(--cu-danger); color: #fff; padding: 1rem 1.25rem; }
+.cu-impact-list { list-style: none; padding: 0; }
+.cu-impact-list li {
+  padding: .35rem 0; font-size: .875rem;
+  display: flex; align-items: center; gap: .5rem;
+}
+
+/* ── Credit utilization bar ── */
+.cu-util-bar { height: 10px; border-radius: 5px; background: var(--cu-surface-alt); overflow: hidden; }
+.cu-util-fill {
+  height: 100%; border-radius: 5px;
+  background: var(--cu-success);
+  transition: width .6s ease;
+}
+.cu-util-fill.warn { background: var(--cu-warning); }
+.cu-util-fill.danger { background: var(--cu-danger); }
+
+/* ── Misc helpers ── */
+.text-cu-muted { color: var(--cu-text-muted); }
+.cu-divider { border: none; border-top: 1px solid var(--cu-border); margin: 1rem 0; }
+.cu-section-title { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--cu-text-muted); margin-bottom: .75rem; }
+
+/* ── Buttons ── */
+.btn-cu-primary { background: var(--cu-primary); color: #fff; border: none; }
+.btn-cu-primary:hover { background: var(--cu-primary-dark); color: #fff; }
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .cu-app-nav { overflow-x: auto; flex-wrap: nowrap; }
+  .cu-app-nav a span { display: none; }
+  .cu-download-grid { grid-template-columns: 1fr; }
+  .cu-type-grid { grid-template-columns: 1fr 1fr; }
+  .cu-stat-value { font-size: 1.25rem; }
+}
+
+/* ── Print ── */
+@media print {
+  .cu-app-nav, .btn, .modal, .cu-no-print { display: none !important; }
+  body { background: #fff; color: #000; }
+}
+</style>
+{% endblock %}
+
+{% block page_header %}
+{# ── Page header adapts to active_tab ── #}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+
+  {# Left: title + subtitle #}
+  <div>
+    {% if active_tab == 'detail' %}
+      <div class="d-flex align-items-center gap-3">
+        <div class="cu-avatar cu-avatar-lg">{{ customer.name|first|upper }}</div>
+        <div>
+          <h1 class="h4 mb-1 fw-bold">{{ customer.name }}</h1>
+          <div class="d-flex flex-wrap gap-2 mb-1">
+            <span class="cu-badge cu-badge-primary">{{ customer.get_customer_type_display }}</span>
+            {% if customer.is_vat_registered %}<span class="cu-badge cu-badge-info">VAT</span>{% endif %}
+            {% if customer.is_active %}<span class="cu-badge cu-badge-success">Active</span>
+            {% else %}<span class="cu-badge cu-badge-danger">Inactive</span>{% endif %}
+            {% if customer.allow_credit %}
+              <span class="cu-badge cu-badge-{% if customer.credit_status == 'GOOD' %}success{% elif customer.credit_status == 'BLOCKED' %}danger{% else %}warning{% endif %}">
+                Credit: {{ customer.get_credit_status_display }}
+              </span>
+            {% endif %}
+            {% if efris_enabled %}
+            <span class="cu-badge cu-badge-{% if customer.efris_status == 'REGISTERED' %}success{% elif customer.efris_status == 'FAILED' %}danger{% else %}warning{% endif %}">
+              EFRIS: {{ customer.get_efris_status_display }}
+            </span>
+            {% endif %}
+          </div>
+          <small class="text-cu-muted">ID: {{ customer.customer_id }} · {{ customer.store.name }}</small>
+        </div>
+      </div>
+    {% elif active_tab == 'create' %}
+      <h1 class="h4 fw-bold mb-1"><i class="bi bi-person-plus me-2 text-primary"></i>New Customer</h1>
+      <p class="text-cu-muted mb-0">Fill in the details to add a customer</p>
+    {% elif active_tab == 'edit' %}
+      <h1 class="h4 fw-bold mb-1"><i class="bi bi-pencil-square me-2 text-warning"></i>Edit — {{ customer.name }}</h1>
+      <p class="text-cu-muted mb-0">Update customer information</p>
+    {% elif active_tab == 'import' %}
+      <h1 class="h4 fw-bold mb-1"><i class="bi bi-upload me-2 text-primary"></i>Import Customers</h1>
+      <p class="text-cu-muted mb-0">Upload CSV or Excel file to bulk-import customers</p>
+    {% elif active_tab == 'groups' %}
+      <h1 class="h4 fw-bold mb-1"><i class="bi bi-collection me-2 text-primary"></i>Customer Groups</h1>
+      <p class="text-cu-muted mb-0">Manage groups and segmentation</p>
+    {% elif active_tab == 'group_form' %}
+      <h1 class="h4 fw-bold mb-1">
+        {% if object %}<i class="bi bi-pencil-square me-2 text-warning"></i>Edit Group — {{ object.name }}
+        {% else %}<i class="bi bi-plus-circle me-2 text-primary"></i>Create Group{% endif %}
+      </h1>
+    {% elif active_tab == 'delete' %}
+      <h1 class="h4 fw-bold mb-1 text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Delete Customer</h1>
+      <p class="text-cu-muted mb-0">Confirm deletion of {{ customer.name }}</p>
+    {% elif active_tab == 'group_delete' %}
+      <h1 class="h4 fw-bold mb-1 text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Delete Group</h1>
+    {% elif active_tab == 'efris_dash' %}
+    {% if efris_enabled %}
+      <h1 class="h4 fw-bold mb-1"><i class="bi bi-sync me-2 text-warning"></i>EFRIS Dashboard</h1>
+      <p class="text-cu-muted mb-0">Monitor eFRIS registration status and sync activity</p>
+    {% endif %}
+    {% elif active_tab == 'credit' %}
+      <h1 class="h4 fw-bold mb-1"><i class="bi bi-credit-card me-2 text-danger"></i>Credit Customers</h1>
+      <p class="text-cu-muted mb-0">Overview of customer credit limits, balances and standing</p>
+    {% else %} {# dashboard / list #}
+      <h1 class="h4 fw-bold mb-1"><i class="bi bi-people-fill me-2 text-primary"></i>Customer Management</h1>
+      <p class="text-cu-muted mb-0">Manage your customer database and analytics</p>
+    {% endif %}
+  </div>
+
+  {# Right: action buttons #}
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    {% if active_tab == 'detail' %}
+      {% if perms.customers.change_customer %}
+      <a href="{% url 'customers:update' customer.pk %}" class="btn btn-sm btn-outline-warning">
+        <i class="bi bi-pencil me-1"></i>Edit
+      </a>
+      {% endif %}
+    {% if efris_enabled %}
+      {% if customer.can_sync_to_efris and not customer.is_efris_registered %}
+      <button class="btn btn-sm btn-outline-info" onclick="cuSyncEfris()">
+        <i class="bi bi-cloud-upload me-1"></i>Sync eFRIS
+      </button>
+      {% elif customer.is_efris_registered %}
+      <button class="btn btn-sm btn-outline-warning" onclick="cuSyncEfris()">
+        <i class="bi bi-arrow-repeat me-1"></i>Update eFRIS
+      </button>
+      {% endif %}
+    {% endif %}
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="bi bi-gear me-1"></i>Actions
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#addNoteModal"><i class="bi bi-chat-left-text me-2"></i>Add Note</a></li>
+          <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#creditAdjustmentModal"><i class="bi bi-sliders me-2"></i>Adjust Credit</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="#" onclick="cuPrint()"><i class="bi bi-printer me-2"></i>Print</a></li>
+          <li><a class="dropdown-item" href="#" onclick="cuExportCSV()"><i class="bi bi-download me-2"></i>Export</a></li>
+          {% if perms.customers.delete_customer %}
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item text-danger" href="{% url 'customers:delete' customer.pk %}"><i class="bi bi-trash me-2"></i>Delete</a></li>
+          {% endif %}
+        </ul>
+      </div>
+      <a href="{% url 'customers:customer_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+
+    {% elif active_tab in 'create,edit,group_form,import' %}
+      <a href="{% url 'customers:customer_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+
+    {% elif active_tab == 'groups' %}
+      {% if perms.customers.add_customergroup %}
+      <a href="{% url 'customers:group_create' %}" class="btn btn-sm btn-primary"><i class="bi bi-plus me-1"></i>New Group</a>
+      {% endif %}
+      <a href="{% url 'customers:customer_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Customers</a>
+
+    {% elif active_tab == 'efris_dash' %}
+    {% if efris_enabled %}
+      <a href="{% url 'customers:efris_status_api' %}" class="btn btn-sm btn-outline-info" target="_blank"><i class="bi bi-activity me-1"></i>API Status</a>
+    {% endif %}
+      <a href="{% url 'customers:customer_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Customers</a>
+
+    {% elif active_tab == 'credit' %}
+      <a href="{% url 'customers:export_credit_report' %}" class="btn btn-sm btn-outline-success"><i class="bi bi-file-earmark-excel me-1"></i>Export CSV</a>
+      <a href="{% url 'customers:customer_list' %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Customers</a>
+
+    {% else %} {# dashboard / list #}
+      {% if perms.customers.add_customer %}
+      <a href="{% url 'customers:create' %}" class="btn btn-sm btn-primary"><i class="bi bi-plus me-1"></i>Add Customer</a>
+      <a href="{% url 'customers:customer_import' %}" class="btn btn-sm btn-outline-primary"><i class="bi bi-upload me-1"></i>Import</a>
+      {% endif %}
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="{% url 'customers:export_excel' %}"><i class="bi bi-file-earmark-excel me-2 text-success"></i>Excel</a></li>
+          <li><a class="dropdown-item" href="{% url 'customers:export_csv' %}"><i class="bi bi-filetype-csv me-2 text-info"></i>CSV</a></li>
+          <li><a class="dropdown-item" href="{% url 'customers:export_pdf' %}"><i class="bi bi-file-earmark-pdf me-2 text-danger"></i>PDF</a></li>
+        </ul>
+      </div>
+      {% if perms.customers.view_customer %}
+    {% if efris_enabled %}
+      <a href="{% url 'customers:efris_dashboard' %}" class="btn btn-sm btn-outline-warning"><i class="bi bi-sync me-1"></i>EFRIS</a>
+    {% endif %}
+      <a href="{% url 'customers:credit_report' %}" class="btn btn-sm btn-outline-danger"><i class="bi bi-credit-card me-1"></i>Credit</a>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+
+<nav class="cu-app-nav cu-no-print">
+  <a href="{% url 'customers:dashboard' %}" class="{% if active_tab == 'dashboard' %}active{% endif %}">
+    <i class="bi bi-speedometer2"></i><span>Dashboard</span>
+  </a>
+  <a href="{% url 'customers:customer_list' %}" class="{% if active_tab == 'list' %}active{% endif %}">
+    <i class="bi bi-people"></i><span>All Customers</span>
+    {% if stats.total %}<span class="badge-pill">{{ stats.total }}</span>{% endif %}
+  </a>
+  <a href="{% url 'customers:credit_report' %}" class="{% if active_tab == 'credit' %}active{% endif %}">
+    <i class="bi bi-credit-card"></i><span>Credit Customers</span>
+  </a>
+  {% if perms.customers.add_customer %}
+  <a href="{% url 'customers:create' %}" class="{% if active_tab == 'create' %}active{% endif %}">
+    <i class="bi bi-person-plus"></i><span>New Customer</span>
+  </a>
+  {% endif %}
+  <a href="{% url 'customers:group_list' %}" class="{% if active_tab == 'groups' or active_tab == 'group_form' %}active{% endif %}">
+    <i class="bi bi-collection"></i><span>Groups</span>
+  </a>
+  {% if efris_enabled %}
+  <a href="{% url 'customers:efris_dashboard' %}" class="{% if active_tab == 'efris_dash' %}active{% endif %}">
+    <i class="bi bi-sync"></i><span>EFRIS</span>
+  </a>
+  {% endif %}
+   <a href="{% url 'customers:customer_import' %}" class="{% if active_tab == 'import' %}active{% endif %}">
+    <i class="bi bi-upload"></i><span>Import</span>
+  </a>
+</nav>
+
+{% if active_tab == 'dashboard' %}
+
+{# ── 6 stat cards ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="cu-stat"><div class="cu-stat-icon bg-primary bg-opacity-10 text-primary"><i class="bi bi-people-fill"></i></div>
+    <div class="cu-stat-value totall">{{ total_customers|default:0 }}</div><div class="cu-stat-label">Total</div></div>
+  </div>
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="cu-stat"><div class="cu-stat-icon bg-success bg-opacity-10 text-success"><i class="bi bi-person-check-fill"></i></div>
+    <div class="cu-stat-value totall">{{ active_customers|default:0 }}</div><div class="cu-stat-label">Active</div></div>
+  </div>
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="cu-stat"><div class="cu-stat-icon bg-info bg-opacity-10 text-info"><i class="bi bi-building"></i></div>
+    <div class="cu-stat-value totall">{{ vat_registered|default:0 }}</div><div class="cu-stat-label">VAT Registered</div></div>
+  </div>
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="cu-stat"><div class="cu-stat-icon bg-warning bg-opacity-10 text-warning"><i class="bi bi-credit-card"></i></div>
+    <div class="cu-stat-value totall">{{ credit_enabled|default:0 }}</div><div class="cu-stat-label">Credit Enabled</div></div>
+  </div>
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="cu-stat"><div class="cu-stat-icon bg-danger bg-opacity-10 text-danger"><i class="bi bi-clock-history"></i></div>
+    <div class="cu-stat-value totall">{{ with_overdue|default:0 }}</div><div class="cu-stat-label">With Overdue</div></div>
+  </div>
+  <div class="col-6 col-md-4 col-xl-2">
+    <div class="cu-stat"><div class="cu-stat-icon bg-secondary bg-opacity-10 text-secondary"><i class="bi bi-person-x-fill"></i></div>
+    <div class="cu-stat-value totall">{{ inactive_customers|default:0 }}</div><div class="cu-stat-label">Inactive</div></div>
+  </div>
+</div>
+{% if efris_enabled %}
+{# ── eFRIS stats band ── #}
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="cu-card">
+      <div class="cu-card-header"><h6><i class="bi bi-sync me-2 text-warning"></i>EFRIS Integration Status</h6>
+        <a href="{% url 'customers:efris_dashboard' %}" class="btn btn-sm btn-outline-warning">Full Dashboard</a>
+      </div>
+      <div class="cu-card-body">
+        <div class="row text-center g-3">
+          <div class="col-6 col-md-3">
+            <div class="cu-stat-value totall text-success" style="font-size:2rem">{{ efris_stats.registered|default:0 }}</div>
+            <div class="cu-stat-label">eFRIS Registered</div>
+            <div class="cu-util-bar mt-2"><div class="cu-util-fill" style="width:{{ efris_sync_percentage|default:0 }}%"></div></div>
+            <div class="small text-cu-muted">{{ efris_sync_percentage|default:0 }}% of total</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="cu-stat-value totall text-warning" style="font-size:2rem">{{ efris_stats.pending|default:0 }}</div>
+            <div class="cu-stat-label">Pending Registration</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="cu-stat-value totall text-danger" style="font-size:2rem">{{ efris_stats.failed|default:0 }}</div>
+            <div class="cu-stat-label">Sync Failed</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="cu-stat-value totall text-info" style="font-size:2rem">{{ ready_for_sync|default:0 }}</div>
+            <div class="cu-stat-label">Ready for Sync</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  {# Chart 1: eFRIS Registration Status — doughnut #}
+  <div class="col-lg-4">
+    <div class="cu-card h-100">
+      <div class="cu-card-header">
+        <h6><i class="bi bi-pie-chart me-2 text-warning"></i>eFRIS Registration Status</h6>
+      </div>
+      <div class="cu-card-body">
+        <div style="height:200px;position:relative"><canvas id="efrisStatusChart"></canvas></div>
+        <div class="mt-3 d-flex flex-column gap-1">
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="d-flex align-items-center gap-2"><span style="width:12px;height:12px;border-radius:2px;background:#28a745;display:inline-block"></span><span class="small">Registered</span></span>
+            <span class="fw-bold small">{{ efris_stats.registered|default:0 }}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="d-flex align-items-center gap-2"><span style="width:12px;height:12px;border-radius:2px;background:#ffc107;display:inline-block"></span><span class="small">Pending / Not Registered</span></span>
+            <span class="fw-bold small">{{ efris_stats.pending|default:0 }}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="d-flex align-items-center gap-2"><span style="width:12px;height:12px;border-radius:2px;background:#dc3545;display:inline-block"></span><span class="small">Failed</span></span>
+            <span class="fw-bold small">{{ efris_stats.failed|default:0 }}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="d-flex align-items-center gap-2"><span style="width:12px;height:12px;border-radius:2px;background:#17a2b8;display:inline-block"></span><span class="small">Updated</span></span>
+            <span class="fw-bold small">{{ efris_stats.updated|default:0 }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Chart 2: Customer Type vs eFRIS — grouped bar #}
+  <div class="col-lg-4">
+    <div class="cu-card h-100">
+      <div class="cu-card-header">
+        <h6><i class="bi bi-bar-chart me-2 text-primary"></i>Type vs eFRIS Registration</h6>
+      </div>
+      <div class="cu-card-body">
+        <div style="height:200px;position:relative"><canvas id="typeEfrisChart"></canvas></div>
+        <div class="mt-3">
+          {% for ct in customer_types %}
+          <div class="mb-1">
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="fw-medium">{{ ct.customer_type|title }}</span>
+              <span class="text-cu-muted">{{ ct.efris_registered }}/{{ ct.total_count }} registered</span>
+            </div>
+            <div class="cu-util-bar">
+              <div class="cu-util-fill" style="width:{% if ct.total_count %}{{ ct.efris_registered|divide:ct.total_count|multiply:100|floatformat:0 }}{% else %}0{% endif %}%"></div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Chart 3: Recent sync results — horizontal bar by status #}
+  <div class="col-lg-4">
+    <div class="cu-card h-100">
+      <div class="cu-card-header">
+        <h6><i class="bi bi-activity me-2 text-success"></i>Recent Sync Results</h6>
+        <a href="{% url 'customers:efris_dashboard' %}" class="btn btn-sm btn-outline-primary">View All</a>
+      </div>
+      <div class="cu-card-body">
+        <div style="height:200px;position:relative"><canvas id="syncResultsChart"></canvas></div>
+        <div class="mt-3 d-flex flex-column gap-1 small text-cu-muted">
+          {% for sync in recent_syncs|slice:":5" %}
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="fw-medium">{{ sync.customer.name|truncatechars:18 }}</span>
+            <span class="cu-badge cu-badge-{% if sync.status == 'SUCCESS' %}success{% elif sync.status == 'FAILED' %}danger{% else %}warning{% endif %}">{{ sync.get_status_display }}</span>
+          </div>
+          {% empty %}
+          <div class="text-center py-3"><i class="bi bi-sync d-block mb-1" style="opacity:.3;font-size:1.5rem"></i>No recent syncs</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Recent customers — full columns #}
+  <div class="col-lg-8">
+    <div class="cu-card">
+      <div class="cu-card-header">
+        <h6><i class="bi bi-people me-2 text-primary"></i>Recent Customers</h6>
+        <div class="d-flex gap-2">
+          <a href="{% url 'customers:customer_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+          <a href="{% url 'customers:export' %}?recent=true" class="btn btn-sm btn-outline-success"><i class="bi bi-download me-1"></i>Export</a>
+        </div>
+      </div>
+      <div class="cu-card-body p-0">
+        {% if recent_customers %}
+        <div class="table-responsive">
+          <table class="cu-table">
+            <thead><tr><th>Name</th><th>Type</th><th>Credit Status</th><th>eFRIS Status</th><th>Contact</th><th>Created</th><th>Actions</th></tr></thead>
+            <tbody>
+              {% for c in recent_customers %}
+              <tr>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="cu-avatar cu-avatar-sm">{{ c.name|first|upper|default:"C" }}</div>
+                    <div>
+                      <div class="fw-medium small">{{ c.name|truncatechars:20 }}</div>
+                      <div class="text-cu-muted" style="font-size:.72rem">{{ c.customer_id|truncatechars:10 }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="cu-badge cu-badge-secondary">{{ c.get_customer_type_display }}</span>
+                  {% if c.is_vat_registered %}<span class="cu-badge cu-badge-info ms-1">VAT</span>{% endif %}
+                </td>
+                <td>
+                  {% if c.allow_credit %}
+                  <span class="cu-badge cu-badge-{% if c.credit_status == 'GOOD' %}success{% elif c.credit_status == 'BLOCKED' %}danger{% else %}warning{% endif %}">{{ c.get_credit_status_display }}</span>
+                  <div class="small text-cu-muted">{{ c.credit_available|money }} avail.</div>
+                  {% else %}<span class="cu-badge cu-badge-secondary">No Credit</span>{% endif %}
+                </td>
+                <td>
+                  <span class="cu-badge cu-badge-{% if c.efris_status == 'REGISTERED' %}success{% elif c.efris_status == 'FAILED' %}danger{% else %}warning{% endif %}">{{ c.get_efris_status_display }}</span>
+                  {% if c.efris_customer_id %}<div class="text-cu-muted" style="font-size:.72rem">{{ c.efris_customer_id|truncatechars:10 }}</div>{% endif %}
+                </td>
+                <td class="small">
+                  {% if c.phone %}<div><i class="bi bi-telephone-fill text-cu-muted me-1"></i>{{ c.phone }}</div>{% endif %}
+                  {% if c.email %}<div class="text-cu-muted">{{ c.email|truncatechars:16 }}</div>{% endif %}
+                </td>
+                <td class="small text-cu-muted">{{ c.created_at|date:"M d" }}</td>
+                <td>
+                  <div class="btn-group btn-group-sm">
+                    <a href="{% url 'customers:detail' c.pk %}" class="btn btn-outline-primary"><i class="bi bi-eye"></i></a>
+                    {% if c.can_sync_to_efris and not c.is_efris_registered %}
+                    <button class="btn btn-outline-info" title="Sync to eFRIS" onclick="if(confirm('Sync {{ c.name|escapejs }} to eFRIS?')) fetch('/api/customers/{{ c.pk }}/sync_to_efris/',{method:'POST',headers:{'X-CSRFToken':document.cookie.match(/csrftoken=([^;]+)/)?.[1]||'','Content-Type':'application/json'}}).then(r=>r.json()).then(d=>{ if(d.success){location.reload();}else{alert('Failed: '+d.error);}})"><i class="bi bi-sync"></i></button>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-cu-muted">
+          <i class="bi bi-person-plus fs-1 d-block mb-2" style="opacity:.3"></i>
+          <h6>No recent customers</h6>
+          {% if perms.customers.add_customer %}<a href="{% url 'customers:create' %}" class="btn btn-sm btn-primary mt-2">Add First Customer</a>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# Quick Actions + Credit Overview sidebar #}
+  <div class="col-lg-4">
+    <div class="cu-card mb-3">
+      <div class="cu-card-header"><h6><i class="bi bi-lightning me-2 text-primary"></i>Quick Actions</h6></div>
+      <div class="cu-card-body">
+        <div class="row g-2">
+          {% if perms.customers.add_customer %}
+          <div class="col-6">
+            <a href="{% url 'customers:create' %}" class="cu-card text-center p-3 text-decoration-none d-block" style="cursor:pointer">
+              <i class="bi bi-plus-lg text-primary fs-4 d-block mb-1"></i>
+              <div class="fw-medium small">Add Customer</div>
+              <div class="text-cu-muted" style="font-size:.72rem">Create new</div>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'customers:customer_import' %}" class="cu-card text-center p-3 text-decoration-none d-block">
+              <i class="bi bi-upload text-success fs-4 d-block mb-1"></i>
+              <div class="fw-medium small">Import</div>
+              <div class="text-cu-muted" style="font-size:.72rem">Bulk import</div>
+            </a>
+          </div>
+          {% endif %}
+          <div class="col-6">
+            <a href="{% url 'customers:efris_dashboard' %}" class="cu-card text-center p-3 text-decoration-none d-block">
+              <i class="bi bi-sync text-warning fs-4 d-block mb-1"></i>
+              <div class="fw-medium small">eFRIS Dashboard</div>
+              <div class="text-cu-muted" style="font-size:.72rem">Manage sync</div>
+            </a>
+          </div>
+          <div class="col-6">
+            <a href="{% url 'customers:credit_report' %}" class="cu-card text-center p-3 text-decoration-none d-block">
+              <i class="bi bi-credit-card text-danger fs-4 d-block mb-1"></i>
+              <div class="fw-medium small">Credit Report</div>
+              <div class="text-cu-muted" style="font-size:.72rem">Credit analytics</div>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cu-card">
+      <div class="cu-card-header"><h6><i class="bi bi-credit-card-2-back me-2 text-primary"></i>Credit Overview</h6></div>
+      <div class="cu-card-body">
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-1"><small>Total Credit Limit</small><small class="fw-bold">{{ total_credit_limit|money|default:"UGX 0" }}</small></div>
+          <div class="cu-util-bar"><div class="cu-util-fill" style="width:100%"></div></div>
+        </div>
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-1"><small>Credit Utilized</small><small class="fw-bold">{{ total_credit_balance|money|default:"UGX 0" }}</small></div>
+          <div class="cu-util-bar"><div class="cu-util-fill warn" style="width:{{ credit_utilization_percentage|default:0 }}%"></div></div>
+          <div class="small text-cu-muted">{{ credit_utilization_percentage|default:0 }}% utilization</div>
+        </div>
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-1"><small>Overdue Amount</small><small class="fw-bold text-danger">{{ total_overdue|money|default:"UGX 0" }}</small></div>
+          <div class="cu-util-bar"><div class="cu-util-fill danger" style="width:{{ overdue_percentage|default:0 }}%"></div></div>
+        </div>
+        <div class="alert alert-light py-2 mb-0">
+          <div class="d-flex justify-content-between"><span class="small">Available Credit:</span><span class="fw-bold text-success small">{{ total_credit_available|money|default:"UGX 0" }}</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof Chart === 'undefined') return;
+
+  const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--cu-border').trim() || 'rgba(0,0,0,0.1)';
+  const textColor = getComputedStyle(document.documentElement).getPropertyValue('--cu-text').trim() || '#333';
+
+  // Chart 1 — eFRIS Registration Status doughnut
+  const efrisCtx = document.getElementById('efrisStatusChart');
+  if (efrisCtx) {
+    new Chart(efrisCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Registered', 'Pending / Not Registered', 'Failed', 'Updated'],
+        datasets: [{
+          data: [
+            {{ efris_stats.registered|default:0 }},
+            {{ efris_stats.pending|default:0 }},
+            {{ efris_stats.failed|default:0 }},
+            {{ efris_stats.updated|default:0 }}
+          ],
+          backgroundColor: ['#28a745','#ffc107','#dc3545','#17a2b8'],
+          borderWidth: 2,
+          borderColor: 'transparent'
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw}` } }
+        }
+      }
+    });
+  }
+
+  // Chart 2 — Customer Type vs eFRIS grouped bar
+  const typeCtx = document.getElementById('typeEfrisChart');
+  if (typeCtx) {
+    const typeLabels = [{% for ct in customer_types %}'{{ ct.customer_type|title }}',{% endfor %}];
+    const totalCounts = [{% for ct in customer_types %}{{ ct.total_count|default:0 }},{% endfor %}];
+    const efrisCounts = [{% for ct in customer_types %}{{ ct.efris_registered|default:0 }},{% endfor %}];
+    new Chart(typeCtx, {
+      type: 'bar',
+      data: {
+        labels: typeLabels,
+        datasets: [
+          { label: 'Total', data: totalCounts, backgroundColor: 'rgba(79,101,255,0.5)', borderColor: '#4f65ff', borderWidth: 1 },
+          { label: 'eFRIS Registered', data: efrisCounts, backgroundColor: 'rgba(40,167,69,0.6)', borderColor: '#28a745', borderWidth: 1 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } },
+          y: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor }, beginAtZero: true }
+        },
+        plugins: { legend: { labels: { color: textColor, font: { size: 11 }, padding: 12, usePointStyle: true } } }
+      }
+    });
+  }
+
+  // Chart 3 — Recent sync results horizontal bar (success vs failed vs other)
+  const syncCtx = document.getElementById('syncResultsChart');
+  if (syncCtx) {
+    const syncLabels = [{% for s in recent_syncs %}'{{ s.customer.name|truncatechars:12|escapejs }}',{% endfor %}];
+    const syncSuccess = [{% for s in recent_syncs %}{% if s.status == 'SUCCESS' %}1{% else %}0{% endif %},{% endfor %}];
+    const syncFailed  = [{% for s in recent_syncs %}{% if s.status == 'FAILED' %}1{% else %}0{% endif %},{% endfor %}];
+    const syncOther   = [{% for s in recent_syncs %}{% if s.status != 'SUCCESS' and s.status != 'FAILED' %}1{% else %}0{% endif %},{% endfor %}];
+    new Chart(syncCtx, {
+      type: 'bar',
+      data: {
+        labels: syncLabels,
+        datasets: [
+          { label: 'Success', data: syncSuccess, backgroundColor: '#28a745', stack: 'sync' },
+          { label: 'Failed',  data: syncFailed,  backgroundColor: '#dc3545', stack: 'sync' },
+          { label: 'Pending', data: syncOther,   backgroundColor: '#ffc107', stack: 'sync' }
+        ]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          x: { stacked: true, max: 1, ticks: { display: false }, grid: { color: gridColor } },
+          y: { stacked: true, ticks: { color: textColor, font: { size: 10 } }, grid: { display: false } }
+        },
+        plugins: {
+          legend: { labels: { color: textColor, font: { size: 11 }, usePointStyle: true } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}` } }
+        }
+      }
+    });
+  }
+});
+</script>
+
+
+
+{% elif active_tab == 'list' %}
+
+{# Stats row #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="cu-stat"><div class="cu-stat-icon bg-primary bg-opacity-10 text-primary"><i class="bi bi-people-fill"></i></div>
+    <div class="cu-stat-value totall">{{ stats.total }}</div><div class="cu-stat-label">Total</div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="cu-stat"><div class="cu-stat-icon bg-success bg-opacity-10 text-success"><i class="bi bi-person-check-fill"></i></div>
+    <div class="cu-stat-value totall">{{ stats.active }}</div><div class="cu-stat-label">Active</div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="cu-stat"><div class="cu-stat-icon bg-info bg-opacity-10 text-info"><i class="bi bi-receipt-cutoff"></i></div>
+    <div class="cu-stat-value totall">{{ stats.vat_registered }}</div><div class="cu-stat-label">VAT Registered</div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="cu-stat"><div class="cu-stat-icon bg-warning bg-opacity-10 text-warning"><i class="bi bi-building"></i></div>
+    <div class="cu-stat-value totall">{{ stats.business }}</div><div class="cu-stat-label">Business</div></div>
+  </div>
+</div>
+
+{# Search #}
+<div class="cu-card mb-3">
+  <div class="cu-card-body">
+    <form method="get">{% crispy search_form %}</form>
+  </div>
+</div>
+
+{# Table #}
+<div class="cu-card">
+  <div class="cu-card-header">
+    <h6 class="mb-0">Customers <span class="cu-badge cu-badge-primary ms-1">{{ customers|length }}</span></h6>
+    <div class="d-flex gap-2 align-items-center">
+      <button class="btn btn-sm btn-outline-secondary" onclick="cuSelectAll()"><i class="bi bi-check-square me-1"></i>All</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="cuClearSel()"><i class="bi bi-square me-1"></i>Clear</button>
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-gear me-1"></i>Bulk</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="#" onclick="cuBulk('activate')"><i class="bi bi-check-circle me-2 text-success"></i>Activate</a></li>
+          <li><a class="dropdown-item" href="#" onclick="cuBulk('deactivate')"><i class="bi bi-x-circle me-2 text-secondary"></i>Deactivate</a></li>
+          <li><a class="dropdown-item" href="#" onclick="cuBulk('enable_credit')"><i class="bi bi-credit-card me-2 text-info"></i>Enable Credit</a></li>
+          <li><a class="dropdown-item" href="#" onclick="cuBulk('sync_to_efris')"><i class="bi bi-sync me-2 text-warning"></i>Sync eFRIS</a></li>
+          <li><a class="dropdown-item" href="#" onclick="openBulkCreditModal()"><i class="bi bi-cash-stack me-2"></i>Update Credit Limit</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="#" onclick="cuBulk('export')"><i class="bi bi-download me-2"></i>Export</a></li>
+          <li><a class="dropdown-item text-danger" href="#" onclick="cuBulk('delete')"><i class="bi bi-trash me-2"></i>Delete</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="cu-card-body p-0">
+    {% if customers %}
+    <div class="table-responsive">
+      <table class="cu-table">
+        <thead>
+          <tr>
+            <th style="width:36px"><input type="checkbox" id="cuSelectAllBox" class="form-check-input" onchange="cuToggleAll(this)"></th>
+            <th>Customer</th><th>Type</th><th>Contact</th><th>Location</th><th>Status</th><th>eFRIS</th><th>Created</th><th style="width:120px">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in customers %}
+          <tr>
+            <td><input type="checkbox" value="{{ c.id }}" class="form-check-input cu-chk"></td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="cu-avatar cu-avatar-sm">{{ c.name|first|upper }}</div>
+                <div>
+                  <div class="fw-medium small">{{ c.name }}</div>
+                  <div class="text-cu-muted" style="font-size:.72rem">{{ c.customer_id }}</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="cu-badge cu-badge-secondary">{{ c.get_customer_type_display }}</span>
+              {% if c.is_vat_registered %}<span class="cu-badge cu-badge-info ms-1">VAT</span>{% endif %}
+            </td>
+            <td>
+              {% if c.phone %}<div class="small"><i class="bi bi-telephone-fill text-cu-muted me-1"></i>{{ c.phone }}</div>{% endif %}
+              {% if c.email %}<div class="small text-cu-muted"><i class="bi bi-envelope-fill me-1"></i>{{ c.email|truncatechars:22 }}</div>{% endif %}
+            </td>
+            <td class="small text-cu-muted">{{ c.district|title|default:"—" }}</td>
+            <td>
+              {% if c.is_active %}<span class="cu-badge cu-badge-success">Active</span>
+              {% else %}<span class="cu-badge cu-badge-danger">Inactive</span>{% endif %}
+            </td>
+            <td>
+              <span class="cu-badge cu-badge-{% if c.efris_status == 'REGISTERED' %}success{% elif c.efris_status == 'FAILED' %}danger{% else %}warning{% endif %}">
+                {{ c.get_efris_status_display }}
+              </span>
+            </td>
+            <td class="small text-cu-muted">{{ c.created_at|date:"M d, Y" }}</td>
+            <td>
+              <div class="btn-group btn-group-sm">
+                {% if perms.customers.view_customer %}<a href="{% url 'customers:detail' c.pk %}" class="btn btn-outline-primary" title="View"><i class="bi bi-eye"></i></a>{% endif %}
+                {% if perms.sales.add_sale %}<a href="{% url 'sales:create_sale' %}?customer_id={{ c.id }}" class="btn btn-outline-success" title="Sale"><i class="bi bi-cart-plus"></i></a>{% endif %}
+                {% if perms.customers.change_customer %}<a href="{% url 'customers:update' c.pk %}" class="btn btn-outline-warning" title="Edit"><i class="bi bi-pencil"></i></a>{% endif %}
+                {% if perms.customers.delete_customer %}<a href="{% url 'customers:delete' c.pk %}" class="btn btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></a>{% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Pagination #}
+    {% if is_paginated %}
+    <div class="p-3 border-top d-flex justify-content-center">
+      <ul class="pagination pagination-sm mb-0">
+        {% if page_obj.has_previous %}
+          <li class="page-item"><a class="page-link" href="?page=1">«</a></li>
+          <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">‹</a></li>
+        {% endif %}
+        <li class="page-item active"><span class="page-link">{{ page_obj.number }} / {{ paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+          <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">›</a></li>
+          <li class="page-item"><a class="page-link" href="?page={{ paginator.num_pages }}">»</a></li>
+        {% endif %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="text-center py-5">
+      <i class="bi bi-people text-cu-muted" style="font-size:3.5rem;opacity:.4"></i>
+      <h5 class="mt-3">No Customers Found</h5>
+      <p class="text-cu-muted">No customers match your search or none have been added yet.</p>
+      {% if perms.customers.add_customer %}<a href="{% url 'customers:create' %}" class="btn btn-primary">Add First Customer</a>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# Hidden bulk form #}
+<form id="cuBulkForm" method="post" action="{% url 'customers:bulk_action' %}" class="d-none">
+  {% csrf_token %}
+  <input type="hidden" name="action" id="cuBulkAction">
+  <input type="hidden" name="selected_customers" id="cuBulkIds">
+</form>
+
+{# Bulk Credit Modal #}
+<div class="modal fade" id="bulkCreditModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--cu-surface);border-color:var(--cu-border)">
+      <div class="modal-header" style="border-color:var(--cu-border)">
+        <h5 class="modal-title"><i class="bi bi-cash-stack me-2"></i>Bulk Credit Limit Update</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">New Credit Limit (UGX)</label>
+          <div class="input-group"><span class="input-group-text">UGX</span>
+          <input type="number" class="form-control" id="bulkCreditLimit" min="0" style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)"></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Reason</label>
+          <textarea class="form-control" id="bulkCreditReason" rows="2" style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--cu-border)">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" onclick="cuApplyBulkCredit()">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+{% elif active_tab == 'detail' %}
+
+<ul class="nav cu-tabs" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#cuOverview"><i class="bi bi-house-door me-1"></i>Overview</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cuSales"><i class="bi bi-cart3 me-1"></i>Sales <span class="cu-badge cu-badge-primary ms-1">{{ customer_sales_count }}</span></button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cuContact"><i class="bi bi-telephone me-1"></i>Contact</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cuFinance"><i class="bi bi-credit-card me-1"></i>Financial</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cuEfris"><i class="bi bi-sync me-1"></i>eFRIS</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cuActivity"><i class="bi bi-clock-history me-1"></i>Activity</button></li>
+</ul>
+
+<div class="cu-tab-content tab-content">
+
+  {# — Overview Tab — #}
+  <div class="tab-pane fade show active" id="cuOverview">
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3"><div class="cu-quick-stat"><div class="val">{{ customer.total_outstanding|money }}</div><div class="lbl">Outstanding</div></div></div>
+      <div class="col-6 col-md-3"><div class="cu-quick-stat"><div class="val">{{ customer.total_paid_amount|money }}</div><div class="lbl">Total Paid</div></div></div>
+      <div class="col-6 col-md-3"><div class="cu-quick-stat"><div class="val text-danger">{{ customer.overdue_amount|money }}</div><div class="lbl">Overdue</div></div></div>
+      <div class="col-6 col-md-3"><div class="cu-quick-stat"><div class="val text-success">{{ customer.credit_available|money }}</div><div class="lbl">Credit Available</div></div></div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-lg-8">
+        {# Credit info #}
+        <div class="cu-card mb-3">
+          <div class="cu-card-header"><h6><i class="bi bi-credit-card me-2 text-primary"></i>Credit Information</h6>
+            {% if perms.customers.change_customer %}
+            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#creditAdjustmentModal"><i class="bi bi-sliders me-1"></i>Adjust</button>
+            {% endif %}
+          </div>
+          <div class="cu-card-body">
+            <div class="row">
+              <div class="col-sm-4 mb-3">
+                <div class="cu-section-title">Credit Status</div>
+                <span class="cu-badge cu-badge-{% if customer.credit_status == 'GOOD' %}success{% elif customer.credit_status == 'BLOCKED' %}danger{% else %}warning{% endif %}">
+                  {{ customer.get_credit_status_display }}
+                </span>
+                <span class="cu-badge cu-badge-{% if customer.allow_credit %}success{% else %}secondary{% endif %} ms-1">
+                  {% if customer.allow_credit %}Enabled{% else %}Disabled{% endif %}
+                </span>
+              </div>
+              <div class="col-sm-4 mb-3">
+                <div class="cu-section-title">Credit Limit</div>
+                <div class="fw-bold">{{ customer.credit_limit|money }}</div>
+              </div>
+              <div class="col-sm-4 mb-3">
+                <div class="cu-section-title">Credit Days</div>
+                <div class="fw-bold">{{ customer.credit_days }} days</div>
+              </div>
+              <div class="col-sm-4 mb-3">
+                <div class="cu-section-title">Last Credit Review</div>
+                <div class="fw-bold">{{ customer.last_credit_review|date:"M d, Y"|default:"Never" }}</div>
+              </div>
+            </div>
+            <div class="cu-section-title">Utilization</div>
+            {% with customer.credit_balance|divide:customer.credit_limit|multiply:100|floatformat:0 as util %}
+            <div class="cu-util-bar mb-1">
+              <div class="cu-util-fill {% if util|add:'0' > 80 %}danger{% elif util|add:'0' > 60 %}warn{% endif %}" style="width:{{ util|default:0 }}%"></div>
+            </div>
+            <div class="d-flex justify-content-between small text-cu-muted">
+              <span>{{ customer.credit_balance|money }} used</span>
+              <span>{{ customer.credit_limit|money }} limit</span>
+            </div>
+            {% endwith %}
+            {% if customer.has_overdue_invoices %}
+            <div class="mt-3 d-flex gap-2">
+              {% if perms.customers.change_customer %}
+              <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#creditAdjustmentModal"><i class="bi bi-sliders me-1"></i>Adjust Credit</button>
+              {% endif %}
+              <a href="/sales/invoices/?customer={{ customer.pk }}&status=OVERDUE" class="btn btn-sm btn-outline-danger"><i class="bi bi-exclamation-triangle me-1"></i>View Overdue</a>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Notes #}
+        <div class="cu-card">
+          <div class="cu-card-header"><h6><i class="bi bi-chat-left-text me-2 text-primary"></i>Notes</h6>
+            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addNoteModal"><i class="bi bi-plus me-1"></i>Add</button>
+          </div>
+          <div class="cu-card-body">
+            {% for note in notes %}
+            <div class="cu-note">
+              <div class="d-flex justify-content-between mb-1">
+                <div class="small fw-medium">
+                  <i class="bi bi-person-circle me-1"></i>{{ note.author.get_full_name|default:note.author.username }}
+                  {% if note.category != 'GENERAL' %}<span class="cu-badge cu-badge-primary ms-1">{{ note.get_category_display }}</span>{% endif %}
+                  {% if note.is_important %}<span class="cu-badge cu-badge-warning ms-1">⭐ Important</span>{% endif %}
+                </div>
+                <small class="text-cu-muted">{{ note.created_at|timesince }} ago</small>
+              </div>
+              <p class="mb-0 small">{{ note.note }}</p>
+            </div>
+            {% empty %}
+            <div class="text-center py-4 text-cu-muted">
+              <i class="bi bi-chat-left-text fs-2 d-block mb-2" style="opacity:.3"></i>No notes yet
+              <div class="mt-2"><button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addNoteModal">Add First Note</button></div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        {# Customer info #}
+        <div class="cu-card mb-3">
+          <div class="cu-card-header"><h6><i class="bi bi-info-circle me-2 text-primary"></i>Info</h6></div>
+          <div class="cu-card-body">
+            <div class="row g-2">
+              <div class="col-6"><div class="cu-section-title">Since</div><div class="small">{{ customer.created_at|date:"M d, Y" }}</div></div>
+              <div class="col-6"><div class="cu-section-title">Store</div><div class="small">{{ customer.store.name }}</div></div>
+              <div class="col-6"><div class="cu-section-title">Created By</div><div class="small">{{ customer.created_by.get_full_name|default:"System" }}</div></div>
+              <div class="col-6"><div class="cu-section-title">Updated</div><div class="small">{{ customer.updated_at|date:"M d, Y" }}</div></div>
+            </div>
+          </div>
+        </div>
+
+        {# ID docs #}
+        <div class="cu-card mb-3">
+          <div class="cu-card-header"><h6><i class="bi bi-card-checklist me-2 text-primary"></i>Identification</h6></div>
+          <div class="cu-card-body">
+            {% if customer.tin or customer.nin or customer.brn or customer.passport_number or customer.driving_license %}
+              {% if customer.tin %}<span class="cu-id-badge">TIN: {{ customer.tin }}</span>{% endif %}
+              {% if customer.nin %}<span class="cu-id-badge">NIN: {{ customer.nin }}</span>{% endif %}
+              {% if customer.brn %}<span class="cu-id-badge">BRN: {{ customer.brn }}</span>{% endif %}
+              {% if customer.passport_number %}<span class="cu-id-badge">PP: {{ customer.passport_number }}</span>{% endif %}
+              {% if customer.driving_license %}<span class="cu-id-badge">DL: {{ customer.driving_license }}</span>{% endif %}
+              {% if customer.voter_id %}<span class="cu-id-badge">Voter: {{ customer.voter_id }}</span>{% endif %}
+              {% if customer.alien_id %}<span class="cu-id-badge">Alien: {{ customer.alien_id }}</span>{% endif %}
+            {% else %}<p class="text-cu-muted small mb-0">No ID documents</p>{% endif %}
+          </div>
+        </div>
+
+        {# Groups #}
+        {% if customer.groups.exists %}
+        <div class="cu-card mb-3">
+          <div class="cu-card-header"><h6><i class="bi bi-collection me-2 text-primary"></i>Groups</h6></div>
+          <div class="cu-card-body">
+            {% for g in customer.groups.all %}
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="small fw-medium">{{ g.name }}</span>
+              {% if g.discount_percentage %}<span class="cu-badge cu-badge-success">{{ g.discount_percentage }}%</span>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# Recent activity sidebar #}
+        <div class="cu-card">
+          <div class="cu-card-header"><h6><i class="bi bi-clock-history me-2 text-primary"></i>Recent Activity</h6></div>
+          <div class="cu-card-body">
+            <div class="cu-timeline-item">
+              <small class="text-cu-muted">{{ customer.created_at|timesince }} ago</small>
+              <div class="small fw-medium">Customer created</div>
+            </div>
+            {% if customer.updated_at != customer.created_at %}
+            <div class="cu-timeline-item">
+              <small class="text-cu-muted">{{ customer.updated_at|timesince }} ago</small>
+              <div class="small fw-medium">Profile updated</div>
+            </div>
+            {% endif %}
+            {% for s in efris_syncs|slice:":3" %}
+            <div class="cu-timeline-item">
+              <small class="text-cu-muted">{{ s.created_at|timesince }} ago</small>
+              <div class="small fw-medium">eFRIS {{ s.get_sync_type_display|lower }}</div>
+              <span class="cu-badge cu-badge-{% if s.status == 'SUCCESS' %}success{% elif s.status == 'FAILED' %}danger{% else %}warning{% endif %}">{{ s.get_status_display }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# — Sales Tab — #}
+  <div class="tab-pane fade" id="cuSales">
+    <div class="row g-3 mb-3">
+      <div class="col-6 col-md-3"><div class="cu-quick-stat"><div class="val">{{ customer_sales_stats.total_sales }}</div><div class="lbl">Total Sales</div></div></div>
+      <div class="col-6 col-md-3"><div class="cu-quick-stat"><div class="val">{{ customer_sales_stats.total_amount|money }}</div><div class="lbl">Total Amount</div></div></div>
+      <div class="col-6 col-md-3"><div class="cu-quick-stat"><div class="val">{{ customer_sales_stats.pending_invoices }}</div><div class="lbl">Pending Invoices</div></div></div>
+      <div class="col-6 col-md-3"><div class="cu-quick-stat"><div class="val">{{ customer_sales_stats.last_purchase|date:"M d"|default:"Never" }}</div><div class="lbl">Last Purchase</div></div></div>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="mb-0 fw-bold">Transactions</h6>
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-filter me-1"></i>Filter</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="?sales_filter=all">All</a></li>
+          <li><a class="dropdown-item" href="?sales_filter=receipts">Receipts</a></li>
+          <li><a class="dropdown-item" href="?sales_filter=invoices">Invoices</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="?sales_filter=pending">Pending</a></li>
+          <li><a class="dropdown-item" href="?sales_filter=paid">Paid</a></li>
+          <li><a class="dropdown-item" href="?sales_filter=overdue">Overdue</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="cu-card">
+      <div class="cu-card-body p-0">
+        {% if customer_sales %}
+        <div class="table-responsive">
+          <table class="cu-table">
+            <thead><tr><th>Date</th><th>Sale #</th><th>Type</th><th>Items</th><th class="text-end">Amount</th><th>Payment</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+              {% for sale in customer_sales %}
+              <tr>
+                <td>
+                  <div class="small fw-medium">{{ sale.created_at|date:"M d, Y" }}</div>
+                  <div class="text-cu-muted" style="font-size:.72rem">{{ sale.created_at|time:"H:i" }}</div>
+                </td>
+                <td>
+                  <a href="{% url 'sales:sale_detail' sale.pk %}" class="fw-medium text-decoration-none">{{ sale.sale_number|default:sale.id }}</a>
+                  {% if sale.efris_verified %}<i class="bi bi-patch-check-fill text-success ms-1" title="eFRIS Verified"></i>{% endif %}
+                </td>
+                <td><span class="cu-badge cu-badge-{% if sale.document_type == 'INVOICE' %}info{% else %}secondary{% endif %}">{{ sale.get_document_type_display }}</span></td>
+                <td><span class="cu-badge cu-badge-secondary">{{ sale.items.count }} items</span></td>
+                <td class="text-end">
+                  <div class="fw-bold">{{ sale.total_amount|money }}</div>
+                  {% if sale.discount_amount > 0 %}<div class="text-cu-muted" style="font-size:.72rem">-{{ sale.discount_amount|money }} off</div>{% endif %}
+                </td>
+                <td><span class="cu-badge cu-badge-secondary">{{ sale.get_payment_method_display }}</span></td>
+                <td>
+                  {% if sale.payment_status == 'PAID' %}<span class="cu-badge cu-badge-success">Paid</span>
+                  {% elif sale.payment_status == 'PENDING' %}<span class="cu-badge cu-badge-warning">Pending</span>
+                  {% elif sale.payment_status == 'PARTIALLY_PAID' %}<span class="cu-badge cu-badge-info">Partial</span>
+                  {% elif sale.payment_status == 'OVERDUE' %}<span class="cu-badge cu-badge-danger">Overdue</span>
+                  {% elif sale.payment_status == 'VOIDED' %}<span class="cu-badge cu-badge-secondary">Voided</span>
+                  {% else %}<span class="cu-badge cu-badge-secondary">{{ sale.payment_status }}</span>{% endif %}
+                  {% if sale.is_voided %}<span class="cu-badge cu-badge-danger ms-1">Voided</span>{% endif %}
+                </td>
+                <td>
+                  <div class="btn-group btn-group-sm">
+                    <a href="{% url 'sales:sale_detail' sale.pk %}" class="btn btn-outline-primary"><i class="bi bi-eye"></i></a>
+                    {% if not sale.is_voided %}
+                    <a href="{% url 'sales:print_receipt' sale.pk %}" class="btn btn-outline-secondary" target="_blank"><i class="bi bi-printer"></i></a>
+                    {% if sale.document_type == 'INVOICE' and sale.payment_status in 'PENDING,PARTIALLY_PAID' %}
+                    <button class="btn btn-outline-success" title="Add Payment" onclick="cuShowAddPayment({{ sale.id }}, {{ sale.total_amount }}, {{ sale.amount_paid }})"><i class="bi bi-cash"></i></button>
+                    {% endif %}
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if is_sales_paginated %}
+        <div class="p-3 border-top d-flex justify-content-center">
+          <ul class="pagination pagination-sm mb-0">
+            {% if sales_page.has_previous %}<li class="page-item"><a class="page-link" href="?sales_page={{ sales_page.previous_page_number }}">‹</a></li>{% endif %}
+            <li class="page-item active"><span class="page-link">{{ sales_page.number }} / {{ sales_paginator.num_pages }}</span></li>
+            {% if sales_page.has_next %}<li class="page-item"><a class="page-link" href="?sales_page={{ sales_page.next_page_number }}">›</a></li>{% endif %}
+          </ul>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="text-center py-5 text-cu-muted">
+          <i class="bi bi-cart-x fs-1 d-block mb-2" style="opacity:.3"></i><h6>No Sales Found</h6>
+          {% if perms.sales.add_sale %}<a href="{% url 'sales:create_sale' %}?customer_id={{ customer.id }}" class="btn btn-sm btn-primary mt-2">Create Sale</a>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# — Contact Tab — #}
+  <div class="tab-pane fade" id="cuContact">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="cu-card h-100">
+          <div class="cu-card-header"><h6><i class="bi bi-telephone-fill me-2 text-primary"></i>Contact</h6></div>
+          <div class="cu-card-body">
+            <div class="mb-3">
+              <div class="cu-section-title">Phone</div>
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="fw-bold">{{ customer.phone|default:"Not provided" }}</span>
+                {% if customer.phone %}
+                <a href="tel:{{ customer.phone }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-telephone me-1"></i>Call</a>
+                <a href="https://wa.me/{{ customer.phone|slice:'1:' }}" class="btn btn-sm btn-outline-success" target="_blank"><i class="bi bi-whatsapp me-1"></i>WhatsApp</a>
+                {% endif %}
+              </div>
+            </div>
+            <div>
+              <div class="cu-section-title">Email</div>
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="fw-bold">{{ customer.email|default:"Not provided" }}</span>
+                {% if customer.email %}<a href="mailto:{{ customer.email }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-envelope me-1"></i>Email</a>{% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="cu-card h-100">
+          <div class="cu-card-header"><h6><i class="bi bi-geo-alt-fill me-2 text-primary"></i>Address</h6></div>
+          <div class="cu-card-body">
+            <div class="mb-3">
+              <div class="cu-section-title">Physical Address</div>
+              <div>{{ customer.physical_address|default:"Not provided"|linebreaks }}</div>
+              {% if customer.physical_address %}<a href="https://maps.google.com/?q={{ customer.physical_address|urlencode }}" class="btn btn-sm btn-outline-primary mt-1" target="_blank"><i class="bi bi-map me-1"></i>Map</a>{% endif %}
+            </div>
+            <div class="row g-2">
+              <div class="col-6"><div class="cu-section-title">Postal</div><div class="small">{{ customer.postal_address|default:"—" }}</div></div>
+              <div class="col-6"><div class="cu-section-title">District</div><div class="small">{{ customer.district|title|default:"—" }}</div></div>
+              <div class="col-12"><div class="cu-section-title">Country</div><div class="small">{{ customer.country|default:"Uganda" }}</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# — Financial Tab — #}
+  <div class="tab-pane fade" id="cuFinance">
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="cu-card mb-3">
+          <div class="cu-card-header"><h6><i class="bi bi-cash-stack me-2 text-primary"></i>Credit Transactions</h6></div>
+          <div class="cu-card-body p-0">
+            {% if credit_statements %}
+            <div class="table-responsive">
+              <table class="cu-table">
+                <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Before</th><th>After</th><th>Reference</th><th>Description</th></tr></thead>
+                <tbody>
+                  {% for st in credit_statements %}
+                  <tr>
+                    <td class="small">{{ st.created_at|date:"M d, Y" }}</td>
+                    <td><span class="cu-badge cu-badge-secondary">{{ st.get_transaction_type_display }}</span></td>
+                    <td class="fw-medium {% if st.transaction_type == 'PAYMENT' %}text-success{% else %}text-danger{% endif %}">{{ st.amount|money }}</td>
+                    <td class="small text-cu-muted">{{ st.balance_before|money }}</td>
+                    <td class="small">{{ st.balance_after|money }}</td>
+                    <td class="small">
+                      {% if st.sale %}
+                        <a href="{% url 'sales:sale_detail' st.sale.pk %}" class="text-decoration-none fw-medium">{{ st.reference_number|default:st.sale.sale_number|default:"—" }}</a>
+                      {% else %}
+                        <span class="text-cu-muted">{{ st.reference_number|default:"—" }}</span>
+                      {% endif %}
+                    </td>
+                    <td class="small text-cu-muted">{{ st.description|truncatechars:45 }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4 text-cu-muted"><i class="bi bi-cash fs-2 d-block mb-2" style="opacity:.3"></i>No credit transactions</div>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if customer.has_overdue_invoices %}
+        <div class="cu-card border-danger">
+          <div class="cu-card-header"><h6 class="text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Overdue Invoices</h6></div>
+          <div class="cu-card-body">
+            <div class="alert alert-warning py-2 mb-3"><i class="bi bi-exclamation-triangle me-2"></i>{{ overdue_invoices|length }} overdue invoice(s) — {{ customer.overdue_amount|money }} total</div>
+            <div class="table-responsive">
+              <table class="cu-table">
+                <thead><tr><th>Invoice</th><th>Date</th><th>Amount</th><th>Days Overdue</th><th>Status</th></tr></thead>
+                <tbody>
+                  {% for inv in overdue_invoices %}
+                  <tr>
+                    <td class="fw-medium small">{{ inv.invoice_number|default:inv.id }}</td>
+                    <td class="small text-cu-muted">{{ inv.created_at|date:"M d, Y" }}</td>
+                    <td class="fw-bold text-danger">{{ inv.total_amount|money }}</td>
+                    <td>
+                      {% with inv.get_days_overdue as days %}
+                      <span class="cu-badge cu-badge-danger">{{ days }} days</span>
+                      {% endwith %}
+                    </td>
+                    <td><span class="cu-badge cu-badge-danger">OVERDUE</span></td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="col-lg-4">
+        <div class="cu-card mb-3" style="background:linear-gradient(135deg,var(--cu-primary),var(--cu-primary-dark));color:#fff;">
+          <div class="cu-card-body text-center">
+            <i class="bi bi-graph-up-arrow fs-1 mb-2 d-block"></i>
+            <div class="fw-bold mb-3">Financial Summary</div>
+            <div class="row g-2">
+              <div class="col-6"><div class="fw-bold">{{ customer.total_outstanding|money }}</div><small>Outstanding</small></div>
+              <div class="col-6"><div class="fw-bold">{{ customer.total_paid_amount|money }}</div><small>Paid</small></div>
+              <div class="col-6"><div class="fw-bold">{{ customer.overdue_amount|money }}</div><small>Overdue</small></div>
+              <div class="col-6"><div class="fw-bold">{{ customer.credit_available|money }}</div><small>Available</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="cu-card">
+          <div class="cu-card-header"><h6><i class="bi bi-shield-check me-2 text-primary"></i>Credit Standing</h6></div>
+          <div class="cu-card-body">
+            {% with customer.can_purchase_on_credit as ci %}
+            <div class="alert {% if ci.0 %}alert-success{% else %}alert-danger{% endif %} py-2 mb-3">
+              <i class="bi bi-{% if ci.0 %}check-circle{% else %}x-circle{% endif %} me-2"></i>
+              <strong>{% if ci.0 %}Credit Allowed{% else %}Not Allowed{% endif %}</strong><br>
+              <small>{{ ci.1 }}</small>
+            </div>
+            {% endwith %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# — eFRIS Tab — #}
+  <div class="tab-pane fade" id="cuEfris">
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="cu-card mb-3">
+          <div class="cu-card-header">
+            <h6><i class="bi bi-sync me-2 text-primary"></i>eFRIS Status</h6>
+            <div class="d-flex gap-2">
+              {% if customer.can_sync_to_efris and not customer.is_efris_registered %}
+              <button class="btn btn-sm btn-outline-info" onclick="cuSyncEfris()"><i class="bi bi-cloud-upload me-1"></i>Register</button>
+              {% elif customer.is_efris_registered %}
+              <button class="btn btn-sm btn-outline-warning" onclick="cuSyncEfris()"><i class="bi bi-arrow-repeat me-1"></i>Update</button>
+              {% endif %}
+            </div>
+          </div>
+          <div class="cu-card-body">
+            <div class="row g-3">
+              <div class="col-sm-6"><div class="cu-section-title">eFRIS Status</div>
+                <span class="cu-badge cu-badge-{% if customer.efris_status == 'REGISTERED' %}success{% elif customer.efris_status == 'FAILED' %}danger{% else %}warning{% endif %}">{{ customer.get_efris_status_display }}</span>
+              </div>
+              <div class="col-sm-6"><div class="cu-section-title">eFRIS Customer ID</div><code class="small">{{ customer.efris_customer_id|default:"Not registered" }}</code></div>
+              <div class="col-sm-6"><div class="cu-section-title">Last Sync</div><div class="small">{{ customer.efris_last_sync|date:"M d, Y H:i"|default:"Never" }}</div></div>
+              <div class="col-sm-6"><div class="cu-section-title">Registered At</div><div class="small">{{ customer.efris_registered_at|date:"M d, Y H:i"|default:"Not registered" }}</div></div>
+              <div class="col-sm-6"><div class="cu-section-title">eFRIS Reference No.</div><div class="small"><code>{{ customer.efris_reference_no|default:"—" }}</code></div></div>
+            </div>
+            {% if customer.efris_sync_error %}
+            <div class="alert alert-danger mt-3 py-2"><h6 class="alert-heading mb-1"><i class="bi bi-exclamation-triangle me-2"></i>Last Sync Error</h6><p class="mb-0 small">{{ customer.efris_sync_error }}</p></div>
+            {% endif %}
+            {% if efris_status.can_sync %}
+            <div class="alert alert-success mt-3 py-2"><h6 class="alert-heading mb-1"><i class="bi bi-check-circle me-2"></i>Ready for eFRIS Sync</h6><p class="mb-0 small">This customer meets all requirements for eFRIS registration.</p></div>
+            {% else %}
+            <div class="alert alert-warning mt-3 py-2">
+              <h6 class="alert-heading mb-1"><i class="bi bi-exclamation-triangle me-2"></i>Missing Requirements</h6>
+              <p class="mb-1 small">This customer cannot be synced to eFRIS due to missing information:</p>
+              <ul class="mb-0 small">
+                {% if not customer.name %}<li>Customer name is required</li>{% endif %}
+                {% if not customer.phone %}<li>Phone number is required</li>{% endif %}
+                {% if customer.customer_type == 'BUSINESS' and not customer.tin and not customer.brn %}<li>TIN or BRN is required for business customers</li>{% endif %}
+                {% if customer.customer_type == 'INDIVIDUAL' and not customer.nin and not customer.passport_number %}<li>NIN or Passport is required for individual customers</li>{% endif %}
+              </ul>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="cu-card">
+          <div class="cu-card-header"><h6><i class="bi bi-clock-history me-2 text-primary"></i>Sync History</h6></div>
+          <div class="cu-card-body p-0">
+            {% if efris_syncs %}
+            <div class="table-responsive">
+              <table class="cu-table">
+                <thead><tr><th>Created</th><th>Processed</th><th>Type</th><th>Status</th><th>Reference</th><th>Retries</th><th>Retry</th></tr></thead>
+                <tbody>
+                  {% for s in efris_syncs %}
+                  <tr>
+                    <td class="small text-cu-muted">{{ s.created_at|date:"M d, Y H:i" }}</td>
+                    <td class="small text-cu-muted">{{ s.processed_at|date:"M d, Y H:i"|default:"—" }}</td>
+                    <td><span class="cu-badge cu-badge-secondary">{{ s.get_sync_type_display }}</span></td>
+                    <td><span class="cu-badge cu-badge-{% if s.status == 'SUCCESS' %}success{% elif s.status == 'FAILED' %}danger{% elif s.status == 'RETRY' %}warning{% else %}secondary{% endif %}">{{ s.get_status_display }}</span></td>
+                    <td class="small">{{ s.efris_reference|default:"—" }}</td>
+                    <td class="small text-cu-muted">{{ s.retry_count }}/{{ s.max_retries }}</td>
+                    <td>{% if s.can_retry %}<a href="{% url 'customers:retry_efris_sync' s.id %}" class="btn btn-xs btn-outline-warning btn-sm py-0 px-2"><i class="bi bi-arrow-repeat"></i></a>{% endif %}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4 text-cu-muted"><i class="bi bi-sync fs-2 d-block mb-2" style="opacity:.3"></i>No sync history</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="cu-card mb-3">
+          <div class="cu-card-header"><h6><i class="bi bi-info-circle me-2 text-primary"></i>Tax Details</h6></div>
+          <div class="cu-card-body">
+            <div class="cu-section-title">Customer Type</div><div class="mb-2">{{ customer.tax_details.customer_type }}</div>
+            <div class="cu-section-title">eFRIS Customer Type</div><div class="mb-2">{{ customer.get_efris_customer_type_display|default:"Not set" }}</div>
+            <div class="cu-section-title">TIN</div><div class="mb-2"><code>{{ customer.tax_details.tin|default:"Not provided" }}</code></div>
+            <div class="cu-section-title">BRN</div><div><code>{{ customer.tax_details.brn|default:"Not provided" }}</code></div>
+          </div>
+        </div>
+        <div class="cu-card mb-3">
+          <div class="cu-card-header"><h6><i class="bi bi-code-square me-2 text-primary"></i>eFRIS Payload Preview</h6></div>
+          <div class="cu-card-body p-2">
+            <pre style="font-size:.72rem;max-height:180px;overflow:auto;background:var(--cu-surface-alt);border-radius:6px;padding:.75rem;margin:0;color:var(--cu-text)">{{ customer.get_efris_payload|pprint }}</pre>
+            <div class="alert alert-info py-1 mt-2 small mb-0"><i class="bi bi-info-circle me-1"></i>eFRIS requires valid TIN/NIN and physical address.</div>
+          </div>
+        </div>
+        <div class="cu-card">
+          <div class="cu-card-header"><h6><i class="bi bi-lightning me-2 text-primary"></i>Quick Actions</h6></div>
+          <div class="cu-card-body d-grid gap-2">
+            {% if customer.is_efris_registered %}
+            <button class="btn btn-outline-primary btn-sm" onclick="alert('Download cert coming soon')"><i class="bi bi-download me-2"></i>Download Certificate</button>
+            <button class="btn btn-outline-warning btn-sm" onclick="alert('Verifying status...')"><i class="bi bi-shield-check me-2"></i>Verify Status</button>
+            {% endif %}
+            <button class="btn btn-outline-secondary btn-sm" onclick="alert('Viewing logs...')"><i class="bi bi-file-text me-2"></i>View Logs</button>
+            <button class="btn btn-outline-info btn-sm" onclick="alert('Testing connection...')"><i class="bi bi-plug me-2"></i>Test Connection</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# — Activity Tab — #}
+  <div class="tab-pane fade" id="cuActivity">
+    <div class="cu-card">
+      <div class="cu-card-header"><h6><i class="bi bi-activity me-2 text-primary"></i>Activity Timeline</h6></div>
+      <div class="cu-card-body">
+        <div class="cu-timeline-item">
+          <small class="text-cu-muted">{{ customer.created_at|date:"M d, Y H:i" }}</small>
+          <div class="fw-medium">Customer created</div>
+          <small class="text-cu-muted">By {{ customer.created_by.get_full_name|default:"System" }}</small>
+        </div>
+        {% if customer.updated_at != customer.created_at %}
+        <div class="cu-timeline-item">
+          <small class="text-cu-muted">{{ customer.updated_at|date:"M d, Y H:i" }}</small>
+          <div class="fw-medium">Profile updated</div>
+        </div>
+        {% endif %}
+        {% for s in efris_syncs %}
+        <div class="cu-timeline-item">
+          <small class="text-cu-muted">{{ s.created_at|date:"M d, Y H:i" }}</small>
+          <div class="fw-medium">eFRIS {{ s.get_sync_type_display|lower }} — <span class="cu-badge cu-badge-{% if s.status == 'SUCCESS' %}success{% elif s.status == 'FAILED' %}danger{% else %}warning{% endif %}">{{ s.get_status_display }}</span></div>
+          {% if s.error_message %}<small class="text-danger">{{ s.error_message|truncatechars:80 }}</small>{% endif %}
+        </div>
+        {% endfor %}
+        {% for st in credit_statements|slice:":5" %}
+        <div class="cu-timeline-item">
+          <small class="text-cu-muted">{{ st.created_at|date:"M d, Y H:i" }}</small>
+          <div class="fw-medium">{{ st.get_transaction_type_display }} — {{ st.amount|money }}</div>
+          <small class="text-cu-muted">{{ st.description|truncatechars:80 }}</small>
+        </div>
+        {% endfor %}
+        {% for note in notes|slice:":3" %}
+        <div class="cu-timeline-item">
+          <small class="text-cu-muted">{{ note.created_at|date:"M d, Y H:i" }}</small>
+          <div class="fw-medium">Note by {{ note.author.get_full_name|default:note.author.username }}</div>
+          <small class="text-cu-muted">{{ note.note|truncatechars:80 }}</small>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Modals for detail view ── #}
+{# Add Note Modal #}
+<div class="modal fade" id="addNoteModal" tabindex="-1" aria-labelledby="addNoteModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background:var(--cu-surface);border-color:var(--cu-border)">
+      <div class="modal-header" style="border-color:var(--cu-border)">
+        <h5 class="modal-title" id="addNoteModalLabel"><i class="bi bi-chat-left-text me-2"></i>Add Customer Note</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{% url 'customers:add_note' customer.pk %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label for="{{ note_form.category.id_for_label }}" class="form-label fw-medium">Category</label>
+              {{ note_form.category }}
+              {% if note_form.category.help_text %}<small class="text-cu-muted">{{ note_form.category.help_text }}</small>{% endif %}
+              {% if note_form.category.errors %}<div class="invalid-feedback d-block">{{ note_form.category.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-6 mb-3">
+              <div class="form-check mt-4">
+                {{ note_form.is_important }}
+                <label class="form-check-label fw-medium" for="{{ note_form.is_important.id_for_label }}">Mark as Important</label>
+                {% if note_form.is_important.help_text %}<small class="text-cu-muted d-block">{{ note_form.is_important.help_text }}</small>{% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label for="{{ note_form.note.id_for_label }}" class="form-label fw-medium">Note <span class="text-danger">*</span></label>
+            {{ note_form.note }}
+            {% if note_form.note.help_text %}<small class="text-cu-muted">{{ note_form.note.help_text }}</small>{% endif %}
+            {% if note_form.note.errors %}<div class="invalid-feedback d-block">{{ note_form.note.errors }}</div>{% endif %}
+          </div>
+          <div class="alert alert-info py-2 small">
+            <h6 class="alert-heading mb-1">Note Categories</h6>
+            <ul class="mb-0">
+              <li><strong>General:</strong> General notes about the customer</li>
+              <li><strong>eFRIS:</strong> Notes related to eFRIS registration or issues</li>
+              <li><strong>Tax:</strong> Tax-related information or queries</li>
+              <li><strong>Payment:</strong> Payment history or issues</li>
+              <li><strong>Support:</strong> Customer support issues or requests</li>
+            </ul>
+          </div>
+        </div>
+        <div class="modal-footer" style="border-color:var(--cu-border)">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Add Note</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof $ !== 'undefined' && $.fn.select2) {
+    $('#{{ note_form.category.id_for_label }}').select2({
+      theme: 'bootstrap-5',
+      placeholder: 'Select category...',
+      dropdownParent: $('#addNoteModal')
+    });
+  }
+  const noteTA = document.getElementById('{{ note_form.note.id_for_label }}');
+  if (noteTA) {
+    noteTA.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = this.scrollHeight + 'px';
+    });
+  }
+});
+</script>
+
+{# Credit Adjustment Modal #}
+<div class="modal fade" id="creditAdjustmentModal" tabindex="-1" aria-labelledby="creditAdjustmentModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--cu-surface);border-color:var(--cu-border)">
+      <div class="modal-header" style="border-color:var(--cu-border)">
+        <h5 class="modal-title" id="creditAdjustmentModalLabel"><i class="bi bi-sliders me-2"></i>Adjust Credit Settings</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{% url 'customers:adjust_customer_credit' customer.pk %}" id="creditAdjustForm">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="alert alert-info py-2 small mb-3">
+            <div class="d-flex justify-content-between">
+              <div><strong>Current Status:</strong>
+                <span class="cu-badge cu-badge-{% if customer.credit_status == 'GOOD' %}success{% elif customer.credit_status == 'BLOCKED' %}danger{% else %}warning{% endif %} ms-1">{{ customer.get_credit_status_display }}</span>
+              </div>
+              <div><strong>Available:</strong> <span class="text-success fw-bold">{{ customer.credit_available|money }}</span></div>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="enableCreditToggle" name="allow_credit" {% if customer.allow_credit %}checked{% endif %}>
+              <label class="form-check-label fw-bold" for="enableCreditToggle">Allow Credit Purchases</label>
+              <small class="text-cu-muted d-block">Enable or disable credit for this customer</small>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label for="cuCreditLimit" class="form-label fw-medium">Credit Limit (UGX)</label>
+              <div class="input-group">
+                <span class="input-group-text">UGX</span>
+                <input type="number" class="form-control" id="cuCreditLimit" name="credit_limit"
+                       value="{{ customer.credit_limit|default:'0' }}" min="0" step="1000"
+                       {% if not customer.allow_credit %}disabled{% endif %}
+                       style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)">
+              </div>
+              <small class="text-cu-muted">Maximum amount customer can owe</small>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label for="cuCreditDays" class="form-label fw-medium">Credit Days</label>
+              <div class="input-group">
+                <input type="number" class="form-control" id="cuCreditDays" name="credit_days"
+                       value="{{ customer.credit_days|default:'30' }}" min="0" max="365"
+                       {% if not customer.allow_credit %}disabled{% endif %}
+                       style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)">
+                <span class="input-group-text">days</span>
+              </div>
+              <small class="text-cu-muted">Payment period for credit purchases</small>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="cuCreditStatus" class="form-label fw-medium">Credit Status</label>
+            <select class="form-select" id="cuCreditStatus" name="credit_status"
+                    {% if not customer.allow_credit %}disabled{% endif %}
+                    style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)">
+              <option value="GOOD" {% if customer.credit_status == 'GOOD' %}selected{% endif %}>Good Standing</option>
+              <option value="WARNING" {% if customer.credit_status == 'WARNING' %}selected{% endif %}>Payment Warning</option>
+              <option value="SUSPENDED" {% if customer.credit_status == 'SUSPENDED' %}selected{% endif %}>Credit Suspended</option>
+              <option value="BLOCKED" {% if customer.credit_status == 'BLOCKED' %}selected{% endif %}>Blocked</option>
+            </select>
+            <small class="text-cu-muted">Current credit standing of the customer</small>
+          </div>
+
+          <div class="mb-3">
+            <label for="cuAdjReason" class="form-label fw-medium">Adjustment Reason <span class="text-danger">*</span></label>
+            <textarea class="form-control" id="cuAdjReason" name="adjustment_reason" rows="2"
+                      placeholder="Provide reason for credit adjustment..."
+                      {% if not customer.allow_credit %}disabled{% endif %}
+                      style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)"></textarea>
+            <small class="text-cu-muted">Required for audit purposes</small>
+          </div>
+
+          <div id="cuCreditWarn" class="alert alert-warning py-2 small d-none"></div>
+        </div>
+        <div class="modal-footer" style="border-color:var(--cu-border)">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="cuSaveCreditBtn"><i class="bi bi-save me-1"></i>Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  const toggle   = document.getElementById('enableCreditToggle');
+  const limitIn  = document.getElementById('cuCreditLimit');
+  const daysIn   = document.getElementById('cuCreditDays');
+  const statusSel= document.getElementById('cuCreditStatus');
+  const reasonTA = document.getElementById('cuAdjReason');
+  const warnDiv  = document.getElementById('cuCreditWarn');
+  const saveBtn  = document.getElementById('cuSaveCreditBtn');
+  const curBal   = parseFloat('{{ customer.credit_balance|default:0 }}');
+  const oldLimit = parseFloat('{{ customer.credit_limit|default:0 }}');
+
+  function fmt(n) {
+    return new Intl.NumberFormat('en-UG',{style:'currency',currency:'UGX',minimumFractionDigits:0}).format(n);
+  }
+
+  if (toggle) {
+    toggle.addEventListener('change', function() {
+      const on = this.checked;
+      [limitIn, daysIn, statusSel, reasonTA].forEach(el => { if (el) el.disabled = !on; });
+    });
+  }
+
+  if (limitIn) {
+    limitIn.addEventListener('input', function() {
+      const newLimit = parseFloat(this.value) || 0;
+      if (newLimit < curBal) {
+        warnDiv.classList.remove('d-none');
+        warnDiv.textContent = `Warning: New limit (${fmt(newLimit)}) is less than current balance (${fmt(curBal)}). Available credit will become 0.`;
+      } else if (newLimit < oldLimit * 0.5 && oldLimit > 0) {
+        warnDiv.classList.remove('d-none');
+        warnDiv.textContent = 'Warning: Credit limit is being reduced by more than 50%.';
+      } else {
+        warnDiv.classList.add('d-none');
+      }
+    });
+  }
+
+  const form = document.getElementById('creditAdjustForm');
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      const reason = reasonTA ? reasonTA.value.trim() : '';
+      const isEnabled = toggle ? toggle.checked : false;
+      if (isEnabled && !reason) {
+        e.preventDefault();
+        alert('Please provide a reason for the credit adjustment.');
+        if (reasonTA) reasonTA.focus();
+        return false;
+      }
+      const newLimit = parseFloat(limitIn ? limitIn.value : 0) || 0;
+      if (newLimit < curBal) {
+        if (!confirm('Credit limit is less than current balance. This may affect new purchases. Continue?')) {
+          e.preventDefault();
+          return false;
+        }
+      }
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Saving...'; }
+    });
+  }
+})();
+</script>
+
+{# Add Payment Modal (used in Sales tab) #}
+<div class="modal fade" id="addPaymentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--cu-surface);border-color:var(--cu-border)">
+      <div class="modal-header" style="border-color:var(--cu-border)">
+        <h5 class="modal-title"><i class="bi bi-cash me-2"></i>Add Payment</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="cuPaymentSaleId">
+        <div class="alert alert-info py-2 small mb-3">
+          <div class="d-flex justify-content-between"><span>Total:</span><strong id="cuPayTotalAmt"></strong></div>
+          <div class="d-flex justify-content-between"><span>Already Paid:</span><strong id="cuPayAlreadyPaid"></strong></div>
+          <div class="d-flex justify-content-between"><span>Balance Due:</span><strong id="cuPayBalanceDue"></strong></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-medium">Payment Amount <span class="text-danger">*</span></label>
+          <div class="input-group"><span class="input-group-text">UGX</span>
+          <input type="number" class="form-control" id="cuPayAmount" min="0" step="100" style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)"></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-medium">Payment Method <span class="text-danger">*</span></label>
+          <select class="form-select" id="cuPayMethod" style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)">
+            <option value="CASH">Cash</option>
+            <option value="MOBILE_MONEY">Mobile Money</option>
+            <option value="BANK_TRANSFER">Bank Transfer</option>
+            <option value="CARD">Card</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-medium">Reference Number</label>
+          <input type="text" class="form-control" id="cuPayReference" placeholder="Transaction reference..." style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-medium">Notes</label>
+          <textarea class="form-control" id="cuPayNotes" rows="2" style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--cu-border)">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" onclick="cuSubmitPayment()"><i class="bi bi-check-circle me-1"></i>Add Payment</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+{% elif active_tab == 'create' or active_tab == 'edit' %}
+
+<form method="post" id="cuCustomerForm">
+  {% csrf_token %}
+  <div class="row g-3">
+    <div class="col-lg-8">
+
+      {# Type selector #}
+      <div class="cu-form-section">
+        <div class="cu-form-section-header"><i class="bi bi-person-badge"></i><h3>Customer Type</h3></div>
+        <div class="cu-type-grid">
+          {% for val, label in form.customer_type.field.choices %}
+          <div class="cu-type-opt position-relative">
+            <input type="radio" name="customer_type" id="ct_{{ val }}" value="{{ val }}"
+              {% if form.customer_type.value == val or form.initial.customer_type == val %}checked{% endif %}>
+            <label for="ct_{{ val }}" class="cu-type-label">
+              {% if val == 'INDIVIDUAL' %}<i class="bi bi-person-fill"></i>
+              {% elif val == 'BUSINESS' %}<i class="bi bi-building"></i>
+              {% elif val == 'GOVERNMENT' %}<i class="bi bi-bank"></i>
+              {% else %}<i class="bi bi-heart-fill"></i>{% endif %}
+              <span>{{ label }}</span>
+              {% if val in 'BUSINESS,GOVERNMENT,NGO' %}<small>TIN required</small>{% else %}<small>Name + phone</small>{% endif %}
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# Basic info #}
+      <div class="cu-form-section">
+        <div class="cu-form-section-header"><i class="bi bi-info-circle"></i><h3>Basic Information</h3></div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label fw-medium">Full Name <span class="text-danger">*</span></label>
+            {{ form.name }}{% if form.name.errors %}<div class="text-danger small mt-1">{{ form.name.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-medium">Phone <span class="text-danger">*</span></label>
+            {{ form.phone }}{% if form.phone.errors %}<div class="text-danger small mt-1">{{ form.phone.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-medium">Email</label>
+            {{ form.email }}{% if form.email.errors %}<div class="text-danger small mt-1">{{ form.email.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-medium">Store <span class="text-danger">*</span></label>
+            {{ form.store }}{% if form.store.errors %}<div class="text-danger small mt-1">{{ form.store.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-md-6 d-flex align-items-center gap-3 mt-1">
+            <div class="form-check">{{ form.is_vat_registered }}
+              <label class="form-check-label" for="{{ form.is_vat_registered.id_for_label }}">VAT Registered</label>
+            </div>
+            <div class="form-check">{{ form.is_active }}
+              <label class="form-check-label" for="{{ form.is_active.id_for_label }}">Active</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# Identification #}
+      <div class="cu-form-section">
+        <div class="cu-form-section-header"><i class="bi bi-card-checklist"></i><h3>Identification Numbers</h3></div>
+        <div class="row g-3">
+          <div class="col-md-4" id="tinField">
+            <label class="form-label fw-medium">TIN <span class="text-danger cuTinRequired d-none">*</span></label>
+            {{ form.tin }}{% if form.tin.errors %}<div class="text-danger small mt-1">{{ form.tin.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-medium">NIN</label>
+            {{ form.nin }}{% if form.nin.errors %}<div class="text-danger small mt-1">{{ form.nin.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-medium">BRN</label>
+            {{ form.brn }}{% if form.brn.errors %}<div class="text-danger small mt-1">{{ form.brn.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-medium">Passport</label>
+            {{ form.passport_number }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-medium">Driving License</label>
+            {{ form.driving_license }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-medium">Voter ID</label>
+            {{ form.voter_id }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-medium">Alien ID <small class="text-cu-muted">(non-citizen residents)</small></label>
+            {{ form.alien_id }}
+          </div>
+        </div>
+      </div>
+
+      {# Address #}
+      <div class="cu-form-section">
+        <div class="cu-form-section-header"><i class="bi bi-geo-alt"></i><h3>Address</h3></div>
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label fw-medium">Physical Address</label>
+            {{ form.physical_address }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-medium">Postal Address</label>
+            {{ form.postal_address }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-medium">District</label>
+            {{ form.district }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-medium">Country</label>
+            {{ form.country }}
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    {# Sidebar #}
+    <div class="col-lg-4">
+      {# Credit #}
+      <div class="cu-form-section">
+        <div class="cu-form-section-header"><i class="bi bi-credit-card"></i><h3>Credit Settings</h3></div>
+        <div class="mb-3">
+          <div class="form-check form-switch">{{ form.allow_credit }}
+            <label class="form-check-label fw-medium" for="{{ form.allow_credit.id_for_label }}">Allow Credit</label>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-medium">Credit Limit (UGX)</label>
+          <div class="input-group"><span class="input-group-text">UGX</span>{{ form.credit_limit }}</div>
+        </div>
+        <div>
+          <label class="form-label fw-medium">Credit Days</label>
+          <div class="input-group">{{ form.credit_days }}<span class="input-group-text">days</span></div>
+        </div>
+        <div class="mt-3">
+          <label class="form-label fw-medium">Last Credit Review</label>
+          {{ form.last_credit_review }}
+        </div>
+      </div>
+
+      {# eFRIS #}
+      <div class="cu-form-section">
+        <div class="cu-form-section-header"><i class="bi bi-sync"></i><h3>eFRIS Settings</h3></div>
+        <div class="mb-3">
+          <label class="form-label fw-medium">eFRIS Customer Type</label>
+          {{ form.efris_customer_type }}
+        </div>
+        <div class="alert alert-info py-2 small"><i class="bi bi-info-circle me-1"></i>eFRIS type is auto-set from customer type if left empty.</div>
+      </div>
+
+      {# Submit #}
+      <div class="d-grid gap-2">
+        <button type="submit" class="btn btn-primary btn-lg">
+          <i class="bi bi-check-lg me-2"></i>{% if active_tab == 'edit' %}Save Changes{% else %}Create Customer{% endif %}
+        </button>
+        <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </div>
+  </div>
+</form>
+
+
+{% elif active_tab == 'import' %}
+
+<div class="cu-card mb-4">
+  <div class="cu-card-body">
+
+    {# 4-step bar #}
+    <div class="cu-step-bar mb-4">
+      <div class="cu-step active" id="cuStep1"><div class="cu-step-num">1</div><div class="cu-step-lbl">Download Template</div></div>
+      <div class="cu-step" id="cuStep2"><div class="cu-step-num">2</div><div class="cu-step-lbl">Upload File</div></div>
+      <div class="cu-step" id="cuStep3"><div class="cu-step-num">3</div><div class="cu-step-lbl">Configure Import</div></div>
+      <div class="cu-step" id="cuStep4"><div class="cu-step-num">4</div><div class="cu-step-lbl">Process & Review</div></div>
+    </div>
+
+    {# Step 1: Template downloads #}
+    <div class="mb-4" id="cuDownloadSection">
+      <h6 class="fw-bold mb-3"><i class="bi bi-download me-2 text-primary"></i>Step 1 — Download Sample Template</h6>
+      <div class="alert alert-info py-2 small mb-3"><i class="bi bi-info-circle me-2"></i>Download the template, fill in customer data, then upload to import. Existing records matched by phone number.</div>
+      <div class="cu-download-grid">
+        <a href="{% url 'customers:download_sample_csv' %}" class="cu-dl-card text-decoration-none" style="color:var(--cu-text)">
+          <div class="cu-dl-icon"><i class="bi bi-filetype-csv text-success"></i></div>
+          <div>
+            <div class="fw-medium">Customer Import — CSV</div>
+            <div class="text-cu-muted small">Lightweight with sample data</div>
+            <span class="text-primary small fw-semibold">Download CSV →</span>
+          </div>
+        </a>
+        <a href="{% url 'customers:download_sample_excel' %}" class="cu-dl-card text-decoration-none" style="color:var(--cu-text)">
+          <div class="cu-dl-icon"><i class="bi bi-file-earmark-excel" style="color:#1d6f42!important"></i></div>
+          <div>
+            <div class="fw-medium">Customer Import — Excel</div>
+            <div class="text-cu-muted small">Instructions, reference data & eFRIS fields (Recommended)</div>
+            <span class="text-primary small fw-semibold">Download Excel →</span>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <hr class="cu-divider">
+
+    {# Step 2: Upload #}
+    {% if messages %}
+    <div class="mb-3">
+      {% for msg in messages %}
+      <div class="alert alert-{% if msg.tags == 'error' %}danger{% elif msg.tags == 'warning' %}warning{% elif msg.tags == 'success' %}success{% else %}info{% endif %} py-2">{{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" id="cuImportForm" action="{% url 'customers:customer_import' %}">
+      {% csrf_token %}
+
+      <h6 class="fw-bold mb-3"><i class="bi bi-upload me-2 text-primary"></i>Step 2 — Upload Your File</h6>
+      <div class="cu-import-zone mb-3" id="cuDropZone" onclick="document.getElementById('cuImportFile').click()" style="cursor:pointer">
+        <div id="cuDropPrompt">
+          <div style="width:64px;height:64px;background:var(--cu-primary-light);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto .75rem;">
+            <i class="bi bi-cloud-upload text-primary fs-2"></i>
+          </div>
+          <div class="fw-bold mb-1">Drop file here or click to browse</div>
+          <div class="text-cu-muted small">Supports: CSV, XLSX, XLS · Max 10MB</div>
+        </div>
+        <div id="cuFileSelectedBadge" class="d-none mt-3">
+          <div class="d-flex align-items-center justify-content-center gap-3">
+            <span class="cu-badge cu-badge-success py-2 px-3"><i class="bi bi-check-circle me-2"></i><span id="cuFileName"></span> — <span id="cuFileSize"></span></span>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="event.stopPropagation();cuClearFile()"><i class="bi bi-x-lg"></i> Remove</button>
+          </div>
+        </div>
+      </div>
+      <input type="file" id="cuImportFile" name="import_file" accept=".csv,.xlsx,.xls" class="d-none" required>
+
+      {# Step 3: Options (shown after file selected) #}
+      <div id="cuOptionsSection" class="d-none">
+        <h6 class="fw-bold mb-3 mt-4"><i class="bi bi-gear me-2 text-primary"></i>Step 3 — Configure Import Options</h6>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <div class="cu-card p-3" style="background:var(--cu-surface-alt)">
+              <div class="fw-medium mb-2">Conflict Resolution</div>
+              <div class="d-flex flex-column gap-2">
+                <label class="d-flex align-items-start gap-2 p-2 rounded" style="cursor:pointer">
+                  <input type="radio" name="conflict_resolution" value="overwrite" checked class="mt-1">
+                  <div>
+                    <div class="fw-medium small">Update Existing</div>
+                    <div class="text-cu-muted" style="font-size:.75rem">Update customers that already exist (matched by phone)</div>
+                  </div>
+                </label>
+                <label class="d-flex align-items-start gap-2 p-2 rounded" style="cursor:pointer">
+                  <input type="radio" name="conflict_resolution" value="skip" class="mt-1">
+                  <div>
+                    <div class="fw-medium small">Skip Existing</div>
+                    <div class="text-cu-muted" style="font-size:.75rem">Keep existing data, only import new customers</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="cu-card p-3" style="background:var(--cu-surface-alt)">
+              <div class="fw-medium mb-2">eFRIS Integration</div>
+              <label class="d-flex align-items-start gap-2 p-2 rounded" style="background:var(--cu-surface);cursor:pointer">
+                <input type="checkbox" name="auto_sync_efris" id="cuAutoSync" class="mt-1">
+                <div>
+                  <div class="fw-medium small">Auto-sync to eFRIS</div>
+                  <div class="text-cu-muted" style="font-size:.75rem">Automatically register eligible customers after import</div>
+                </div>
+              </label>
+              <div class="alert alert-info py-1 mt-2 small mb-0"><i class="bi bi-info-circle me-1"></i>Only customers with valid TIN/NIN/BRN will be synced.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert alert-warning py-2 small mb-3" id="cuOverwriteWarning">
+          <i class="bi bi-exclamation-triangle me-2"></i><strong>Warning:</strong> Existing customers will be updated. Contact details, addresses, and tax information will be overwritten.
+        </div>
+
+        {% if stores %}
+        <div class="mb-3">
+          <label class="form-label fw-medium">Assign to Store <span class="text-cu-muted small fw-normal">(optional)</span></label>
+          <select name="store_id" class="form-select" style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)">
+            <option value="">— Use default store —</option>
+            {% for store in stores %}
+            <option value="{{ store.pk }}">{{ store.name }}</option>
+            {% endfor %}
+          </select>
+          <small class="text-cu-muted">Imported customers will be assigned to this store</small>
+        </div>
+        {% endif %}
+
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary" onclick="cuClearFile()"><i class="bi bi-arrow-left me-1"></i>Back</button>
+          <button type="button" class="btn btn-outline-info" onclick="cuValidateImport()"><i class="bi bi-shield-check me-1"></i>Validate Data</button>
+          <button type="submit" class="btn btn-primary" id="cuImportBtn"><i class="bi bi-upload me-1"></i><span id="cuImportBtnText">Import Customers</span></button>
+        </div>
+      </div>
+    </form>
+
+    {# Requirements #}
+    <hr class="cu-divider mt-4">
+    <h6 class="fw-bold mb-2">Requirements by Customer Type</h6>
+    <div class="row g-2 small text-cu-muted">
+      <div class="col-sm-6 col-md-3"><span class="cu-badge cu-badge-primary me-1">INDIVIDUAL</span>Name + Phone only</div>
+      <div class="col-sm-6 col-md-3"><span class="cu-badge cu-badge-info me-1">BUSINESS</span>Name + Phone + TIN</div>
+      <div class="col-sm-6 col-md-3"><span class="cu-badge cu-badge-warning me-1">GOVERNMENT</span>Name + Phone + TIN</div>
+      <div class="col-sm-6 col-md-3"><span class="cu-badge cu-badge-success me-1">NGO</span>Name + Phone + TIN</div>
+    </div>
+  </div>
+</div>
+
+{# Validation results area #}
+<div id="cuValidationResults" class="d-none">
+  <div class="cu-card mb-4">
+    <div class="cu-card-header"><h6><i class="bi bi-shield-check me-2 text-info"></i>Validation Results</h6></div>
+    <div class="cu-card-body" id="cuValidationBody"></div>
+  </div>
+</div>
+
+{# Session import errors (from previous failed import) #}
+{% if request.session.import_errors %}
+<div class="cu-card mb-4">
+  <div class="cu-card-header"><h6 class="text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Import Errors</h6></div>
+  <div class="cu-card-body p-0">
+    <div class="p-3">
+      {% for error in request.session.import_errors %}
+      <div class="alert alert-danger py-2 mb-2">
+        <div class="fw-semibold small">Row {{ error.row }}</div>
+        <ul class="mb-0 small">
+          {% for err in error.errors %}<li>{{ err }}</li>{% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+(function() {
+  const dropZone  = document.getElementById('cuDropZone');
+  const fileInput = document.getElementById('cuImportFile');
+  const prompt    = document.getElementById('cuDropPrompt');
+  const badge     = document.getElementById('cuFileSelectedBadge');
+  const opts      = document.getElementById('cuOptionsSection');
+  const warn      = document.getElementById('cuOverwriteWarning');
+
+  function cuSetStep(n) {
+    for (let i=1;i<=4;i++) {
+      const s = document.getElementById('cuStep'+i);
+      if (!s) continue;
+      s.classList.remove('active','completed');
+      if (i < n) s.classList.add('completed');
+      else if (i === n) s.classList.add('active');
+    }
+  }
+
+  function cuHandleFile() {
+    const f = fileInput.files[0];
+    if (!f) return;
+    const ext = '.'+f.name.split('.').pop().toLowerCase();
+    if (!['.csv','.xlsx','.xls'].includes(ext)) { alert('Please upload a CSV or Excel file'); cuClearFile(); return; }
+    if (f.size > 10*1024*1024) { alert('File must be under 10MB'); cuClearFile(); return; }
+    document.getElementById('cuFileName').textContent = f.name;
+    document.getElementById('cuFileSize').textContent = f.size < 1048576 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1048576).toFixed(1)+' MB';
+    prompt.classList.add('d-none');
+    badge.classList.remove('d-none');
+    opts.classList.remove('d-none');
+    cuSetStep(2);
+  }
+
+  window.cuClearFile = function() {
+    fileInput.value = '';
+    prompt.classList.remove('d-none');
+    badge.classList.add('d-none');
+    opts.classList.add('d-none');
+    document.getElementById('cuValidationResults').classList.add('d-none');
+    cuSetStep(1);
+  };
+
+  fileInput.addEventListener('change', cuHandleFile);
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor='var(--cu-primary)'; });
+  dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor=''; });
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.style.borderColor='';
+    if (e.dataTransfer.files.length) { const dt = new DataTransfer(); dt.items.add(e.dataTransfer.files[0]); fileInput.files = dt.files; cuHandleFile(); }
+  });
+
+  document.querySelectorAll('input[name="conflict_resolution"]').forEach(r => {
+    r.addEventListener('change', () => { warn.style.display = r.value === 'overwrite' ? 'block' : 'none'; });
+  });
+
+  document.getElementById('cuImportForm').addEventListener('submit', function() {
+    const btn = document.getElementById('cuImportBtn');
+    btn.disabled = true;
+    document.getElementById('cuImportBtnText').textContent = 'Processing...';
+    cuSetStep(4);
+  });
+
+  window.cuValidateImport = async function() {
+    if (!fileInput.files[0]) { alert('Please select a file first'); return; }
+    const fd = new FormData();
+    fd.append('validate_file', fileInput.files[0]);
+    try {
+      const r = await fetch('{% url "customers:validate_import" %}', {method:'POST', headers:{'X-CSRFToken':'{{ csrf_token }}'}, body:fd});
+      const d = await r.json();
+      if (d.success) cuShowValidation(d.validation);
+      else alert('Validation error: ' + d.error);
+    } catch(e) { alert('Failed to validate: '+e.message); }
+  };
+
+  function cuShowValidation(v) {
+    const body = document.getElementById('cuValidationBody');
+    const res  = document.getElementById('cuValidationResults');
+    let html = `<div class="row g-3 mb-3">
+      <div class="col-4 text-center"><div class="cu-stat-value" style="color:var(--cu-primary)">${v.total_rows}</div><div class="cu-stat-label">Total Rows</div></div>
+      <div class="col-4 text-center"><div class="cu-stat-value text-success">${v.valid_rows}</div><div class="cu-stat-label">Valid</div></div>
+      <div class="col-4 text-center"><div class="cu-stat-value text-danger">${v.invalid_rows}</div><div class="cu-stat-label">Invalid</div></div>
+    </div>`;
+    if (v.warnings && v.warnings.length) {
+      html += '<div class="alert alert-warning py-2 small"><strong>Warnings:</strong><ul class="mb-0 mt-1">';
+      v.warnings.slice(0,10).forEach(w => html += `<li>Row ${w.row}: ${w.warning}</li>`);
+      if (v.warnings.length>10) html += `<li>…and ${v.warnings.length-10} more</li>`;
+      html += '</ul></div>';
+    }
+    if (v.errors && v.errors.length) {
+      html += '<div class="alert alert-danger py-2 small"><strong>Errors:</strong><ul class="mb-0 mt-1">';
+      v.errors.slice(0,10).forEach(e => html += `<li>Row ${e.row}: ${Array.isArray(e.errors)?e.errors.join(', '):e.errors}</li>`);
+      if (v.errors.length>10) html += `<li>…and ${v.errors.length-10} more</li>`;
+      html += '</ul></div>';
+    }
+    if (v.valid_rows === v.total_rows) html += '<div class="alert alert-success py-2 small"><i class="bi bi-check-all me-1"></i><strong>All rows valid!</strong> You can proceed with the import.</div>';
+    body.innerHTML = html;
+    res.classList.remove('d-none');
+    cuSetStep(3);
+  }
+})();
+</script>
+
+{% elif active_tab == 'groups' %}
+
+<div class="cu-card">
+  <div class="cu-card-body p-0">
+    {% if groups %}
+    <div class="table-responsive">
+      <table class="cu-table">
+        <thead><tr><th>Group Name</th><th>Description</th><th>Members</th><th>Discount</th><th>eFRIS</th><th>Created</th><th style="width:120px">Actions</th></tr></thead>
+        <tbody>
+          {% for g in groups %}
+          <tr>
+            <td class="fw-medium">{{ g.name }}</td>
+            <td class="text-cu-muted small">{{ g.description|default:"—"|truncatechars:50 }}</td>
+            <td><span class="cu-badge cu-badge-primary">{{ g.customers.count }}</span></td>
+            <td>{% if g.discount_percentage %}<span class="cu-badge cu-badge-success">{{ g.discount_percentage }}% off</span>{% else %}<span class="text-cu-muted small">None</span>{% endif %}</td>
+            <td>
+              <span class="cu-badge cu-badge-success">{{ g.efris_registered_count }} reg.</span>
+              <span class="cu-badge cu-badge-warning ms-1">{{ g.efris_pending_count }} pending</span>
+            </td>
+            <td class="small text-cu-muted">{{ g.created_at|date:"M d, Y" }}</td>
+            <td>
+              <div class="btn-group btn-group-sm">
+                {% if perms.customers.change_customergroup %}<a href="{% url 'customers:group_update' g.pk %}" class="btn btn-outline-warning"><i class="bi bi-pencil"></i></a>{% endif %}
+                {% if perms.customers.delete_customergroup %}<a href="{% url 'customers:group_delete' g.pk %}" class="btn btn-outline-danger"><i class="bi bi-trash"></i></a>{% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if is_paginated %}
+    <div class="p-3 border-top d-flex justify-content-center">
+      <ul class="pagination pagination-sm mb-0">
+        {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">‹</a></li>{% endif %}
+        <li class="page-item active"><span class="page-link">{{ page_obj.number }} / {{ paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">›</a></li>{% endif %}
+      </ul>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="text-center py-5 text-cu-muted">
+      <i class="bi bi-collection fs-1 d-block mb-3" style="opacity:.3"></i>
+      <h5>No Groups Yet</h5><p>Create groups to segment your customers.</p>
+      {% if perms.customers.add_customergroup %}<a href="{% url 'customers:group_create' %}" class="btn btn-primary">Create First Group</a>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+
+{% elif active_tab == 'group_form' %}
+
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="cu-card">
+      <div class="cu-card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="cu-form-section mb-3">
+            <div class="cu-form-section-header"><i class="bi bi-info-circle"></i><h3>Group Info</h3></div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label fw-medium">Name <span class="text-danger">*</span></label>
+                {{ form.name }}{% if form.name.errors %}<div class="text-danger small mt-1">{{ form.name.errors.0 }}</div>{% endif %}
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-medium">Discount %</label>
+                <div class="input-group">{{ form.discount_percentage }}<span class="input-group-text">%</span></div>
+              </div>
+              <div class="col-12">
+                <label class="form-label fw-medium">Description</label>
+                {{ form.description }}
+              </div>
+              <div class="col-12">
+                <div class="form-check form-switch">{{ form.auto_sync_to_efris }}
+                  <label class="form-check-label" for="{{ form.auto_sync_to_efris.id_for_label }}">Auto-sync new members to eFRIS</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="cu-form-section">
+            <div class="cu-form-section-header"><i class="bi bi-people"></i><h3>Members</h3></div>
+            <div class="border rounded p-2" style="max-height:400px;overflow-y:auto;background:var(--cu-surface-alt);border-color:var(--cu-border)!important">
+              {{ form.customers }}
+            </div>
+            <div class="form-text text-cu-muted mt-1">Hold Ctrl/Cmd to select multiple</div>
+          </div>
+
+          <div class="d-flex gap-2 justify-content-end mt-3">
+            <a href="{% url 'customers:group_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>{% if object %}Update{% else %}Create{% endif %} Group</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+{% elif active_tab == 'delete' %}
+
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="cu-delete-card mb-4">
+      <div class="cu-delete-header">
+        <h5 class="mb-0 fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>Confirm Deletion</h5>
+      </div>
+      <div class="p-4" style="background:var(--cu-surface)">
+        <div class="alert alert-danger py-2 mb-4">
+          <strong>⚠ This cannot be undone.</strong> All customer data will be permanently removed.
+        </div>
+
+        {# Customer preview #}
+        <div class="d-flex align-items-center gap-3 p-3 rounded mb-4" style="background:var(--cu-surface-alt);border:1px solid var(--cu-border)">
+          <div class="cu-avatar cu-avatar-md" style="background:linear-gradient(135deg,#ef4444,#991b1b)">{{ customer.name|first|upper }}</div>
+          <div>
+            <div class="fw-bold">{{ customer.name }}</div>
+            <div class="text-cu-muted small">{{ customer.customer_id }} · {{ customer.get_customer_type_display }}</div>
+            {% if customer.phone %}<div class="small">{{ customer.phone }}</div>{% endif %}
+          </div>
+          <div class="ms-auto">
+            {% if customer.is_active %}<span class="cu-badge cu-badge-success">Active</span>
+            {% else %}<span class="cu-badge cu-badge-secondary">Inactive</span>{% endif %}
+          </div>
+        </div>
+
+        {# Impact list #}
+        <h6 class="text-warning mb-2"><i class="bi bi-exclamation-triangle-fill me-1"></i>What will be deleted:</h6>
+        <ul class="cu-impact-list mb-4">
+          <li><i class="bi bi-x-circle text-danger"></i>Customer profile and contact info</li>
+          <li><i class="bi bi-x-circle text-danger"></i>Tax IDs (TIN, NIN, BRN)</li>
+          <li><i class="bi bi-x-circle text-danger"></i>Address and location data</li>
+          <li><i class="bi bi-x-circle text-danger"></i>Notes and history</li>
+          <li><i class="bi bi-x-circle text-danger"></i>Group memberships</li>
+          <li><i class="bi bi-exclamation-triangle text-warning"></i>Associated transaction records</li>
+        </ul>
+
+        <form method="post">
+          {% csrf_token %}
+          <div class="form-check mb-4">
+            <input class="form-check-input" type="checkbox" id="cuDeleteConfirm">
+            <label class="form-check-label text-danger fw-medium" for="cuDeleteConfirm">
+              I understand this is permanent and cannot be reversed.
+            </label>
+          </div>
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{% url 'customers:detail' customer.pk %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-danger" id="cuDeleteBtn" disabled>
+              <i class="bi bi-trash me-1"></i>Delete Permanently
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {# Alternatives #}
+    <div class="cu-card">
+      <div class="cu-card-body">
+        <h6 class="fw-bold mb-2"><i class="bi bi-lightbulb me-2 text-warning"></i>Alternatives to deletion</h6>
+        <div class="d-flex gap-2 flex-wrap">
+          {% if perms.customers.change_customer %}
+          <a href="{% url 'customers:update' customer.pk %}" class="btn btn-outline-warning btn-sm"><i class="bi bi-person-x me-1"></i>Deactivate Instead</a>
+          <a href="{% url 'customers:update' customer.pk %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil me-1"></i>Edit Customer</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+{% elif active_tab == 'group_delete' %}
+
+<div class="row justify-content-center">
+  <div class="col-lg-5">
+    <div class="cu-delete-card">
+      <div class="cu-delete-header"><h5 class="mb-0 fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>Delete Group</h5></div>
+      <div class="p-4" style="background:var(--cu-surface)">
+        <div class="alert alert-warning py-2 mb-3"><i class="bi bi-info-circle me-2"></i>Customers in this group will <strong>not</strong> be deleted.</div>
+        <div class="p-3 rounded mb-4" style="background:var(--cu-surface-alt);border:1px solid var(--cu-border)">
+          <div class="fw-bold mb-1">{{ object.name }}</div>
+          {% if object.description %}<div class="text-cu-muted small mb-2">{{ object.description }}</div>{% endif %}
+          <div class="d-flex gap-3 small">
+            <span><strong>{{ object.customers.count }}</strong> members</span>
+            {% if object.discount_percentage %}<span><strong>{{ object.discount_percentage }}%</strong> discount</span>{% endif %}
+          </div>
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{% url 'customers:group_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-danger"><i class="bi bi-trash me-1"></i>Delete Group</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+{% elif active_tab == 'efris_dash' %}
+
+{# ── Stats row ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="cu-stat">
+      <div class="cu-stat-icon bg-primary bg-opacity-10 text-primary"><i class="bi bi-people-fill"></i></div>
+      <div class="cu-stat-value totall">{{ total_customers|default:0 }}</div>
+      <div class="cu-stat-label">Total Customers</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="cu-stat">
+      <div class="cu-stat-icon bg-success bg-opacity-10 text-success"><i class="bi bi-check-circle-fill"></i></div>
+      <div class="cu-stat-value totall">{{ efris_stats.registered|default:0 }}</div>
+      <div class="cu-stat-label">Registered</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="cu-stat">
+      <div class="cu-stat-icon bg-warning bg-opacity-10 text-warning"><i class="bi bi-hourglass-split"></i></div>
+      <div class="cu-stat-value totall">{{ efris_stats.pending|default:0 }}</div>
+      <div class="cu-stat-label">Pending / Unregistered</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="cu-stat">
+      <div class="cu-stat-icon bg-danger bg-opacity-10 text-danger"><i class="bi bi-x-circle-fill"></i></div>
+      <div class="cu-stat-value totall">{{ efris_stats.failed|default:0 }}</div>
+      <div class="cu-stat-label">Failed</div>
+    </div>
+  </div>
+</div>
+
+{# ── Sync rate progress ── #}
+<div class="cu-card mb-4">
+  <div class="cu-card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="fw-semibold">Overall eFRIS Registration Rate</span>
+      <span class="cu-badge cu-badge-primary">{{ sync_percentage|default:0 }}%</span>
+    </div>
+    <div class="cu-util-bar" style="height:14px">
+      <div class="cu-util-fill {% if sync_percentage < 50 %}danger{% elif sync_percentage < 80 %}warn{% endif %}" style="width:{{ sync_percentage|default:0 }}%"></div>
+    </div>
+    <div class="d-flex justify-content-between small text-cu-muted mt-1">
+      <span>{{ efris_stats.registered }} registered</span>
+      <span>{{ total_customers }} total</span>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+
+  {# ── Ready for sync ── #}
+  <div class="col-lg-6">
+    <div class="cu-card h-100">
+      <div class="cu-card-header">
+        <h6><i class="bi bi-cloud-upload me-2 text-info"></i>Ready for Sync <span class="cu-badge cu-badge-info ms-1">{{ ready_count|default:0 }}</span></h6>
+      </div>
+      <div class="cu-card-body p-0">
+        {% if ready_for_sync %}
+        <div class="table-responsive">
+          <table class="cu-table">
+            <thead><tr><th>Customer</th><th>Type</th><th>Actions</th></tr></thead>
+            <tbody>
+              {% for c in ready_for_sync %}
+              <tr>
+                <td>
+                  <div class="fw-medium small">{{ c.name }}</div>
+                  <div class="text-cu-muted" style="font-size:.72rem">{{ c.phone }}</div>
+                </td>
+                <td><span class="cu-badge cu-badge-secondary">{{ c.get_customer_type_display }}</span></td>
+                <td>
+                  <a href="{% url 'customers:detail' c.pk %}" class="btn btn-xs btn-sm btn-outline-primary py-0 px-2"><i class="bi bi-eye"></i></a>
+                  <a href="{% url 'customers:sync_efris' c.pk %}" class="btn btn-xs btn-sm btn-outline-info py-0 px-2" onclick="return confirm('Sync {{ c.name }} to eFRIS?')"><i class="bi bi-cloud-upload"></i></a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-cu-muted">
+          <i class="bi bi-check-all fs-1 d-block mb-2" style="opacity:.3"></i>
+          <h6>All eligible customers are registered!</h6>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ── Failed syncs ── #}
+  <div class="col-lg-6">
+    <div class="cu-card h-100">
+      <div class="cu-card-header">
+        <h6><i class="bi bi-exclamation-triangle me-2 text-danger"></i>Failed Syncs (Retryable) <span class="cu-badge cu-badge-danger ms-1">{{ failed_count|default:0 }}</span></h6>
+      </div>
+      <div class="cu-card-body p-0">
+        {% if failed_syncs %}
+        <div class="table-responsive">
+          <table class="cu-table">
+            <thead><tr><th>Customer</th><th>Error</th><th>Retries</th><th>Action</th></tr></thead>
+            <tbody>
+              {% for s in failed_syncs %}
+              <tr>
+                <td>
+                  <div class="fw-medium small">{{ s.customer.name }}</div>
+                  <div class="text-cu-muted" style="font-size:.72rem">{{ s.created_at|timesince }} ago</div>
+                </td>
+                <td class="small text-danger">{{ s.error_message|truncatechars:40|default:"—" }}</td>
+                <td class="small text-cu-muted">{{ s.retry_count }}/{{ s.max_retries }}</td>
+                <td>
+                  {% if s.can_retry %}
+                  <a href="{% url 'customers:retry_efris_sync' s.id %}" class="btn btn-xs btn-sm btn-outline-warning py-0 px-2"><i class="bi bi-arrow-repeat me-1"></i>Retry</a>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-cu-muted">
+          <i class="bi bi-check-circle fs-1 d-block mb-2" style="opacity:.3"></i>
+          <h6>No retryable failures</h6>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Recent sync activity ── #}
+<div class="cu-card">
+  <div class="cu-card-header">
+    <h6><i class="bi bi-clock-history me-2 text-primary"></i>Recent Sync Activity (last 20)</h6>
+  </div>
+  <div class="cu-card-body p-0">
+    <div class="table-responsive">
+      <table class="cu-table">
+        <thead><tr><th>Customer</th><th>Type</th><th>Status</th><th>Reference</th><th>Retries</th><th>Date</th></tr></thead>
+        <tbody>
+          {% for s in recent_syncs %}
+          <tr>
+            <td>
+              <a href="{% url 'customers:detail' s.customer.pk %}" class="fw-medium small text-decoration-none">{{ s.customer.name }}</a>
+            </td>
+            <td><span class="cu-badge cu-badge-secondary">{{ s.get_sync_type_display }}</span></td>
+            <td>
+              <span class="cu-badge cu-badge-{% if s.status == 'SUCCESS' %}success{% elif s.status == 'FAILED' %}danger{% elif s.status == 'RETRY' %}warning{% else %}secondary{% endif %}">
+                {{ s.get_status_display }}
+              </span>
+            </td>
+            <td class="small text-cu-muted">{{ s.efris_reference|default:"—" }}</td>
+            <td class="small text-cu-muted">{{ s.retry_count }}/{{ s.max_retries }}</td>
+            <td class="small text-cu-muted">{{ s.created_at|timesince }} ago</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="text-center text-cu-muted py-4">No sync activity yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+
+
+{% elif active_tab == 'credit' %}
+
+{# ── Filter form ── #}
+<div class="cu-card mb-4">
+  <div class="cu-card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label fw-medium small">Filter by Store</label>
+        <select name="store_id" class="form-select form-select-sm" style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)">
+          <option value="">All Stores</option>
+          {% for c in customers %}{% if forloop.first %}{% endif %}{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label fw-medium small">Credit Status</label>
+        <select name="credit_status" class="form-select form-select-sm" style="background:var(--cu-input-bg);color:var(--cu-text);border-color:var(--cu-border)">
+          <option value="">All Statuses</option>
+          <option value="GOOD" {% if filter_status == 'GOOD' %}selected{% endif %}>Good Standing</option>
+          <option value="WARNING" {% if filter_status == 'WARNING' %}selected{% endif %}>Payment Warning</option>
+          <option value="SUSPENDED" {% if filter_status == 'SUSPENDED' %}selected{% endif %}>Suspended</option>
+          <option value="BLOCKED" {% if filter_status == 'BLOCKED' %}selected{% endif %}>Blocked</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel me-1"></i>Filter</button>
+        <a href="{% url 'customers:credit_report' %}" class="btn btn-sm btn-outline-secondary ms-1">Reset</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Stats ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="cu-stat">
+      <div class="cu-stat-icon bg-primary bg-opacity-10 text-primary"><i class="bi bi-people-fill"></i></div>
+      <div class="cu-stat-value totall">{{ stats.total_customers|default:0 }}</div>
+      <div class="cu-stat-label">Credit Customers</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="cu-stat">
+      <div class="cu-stat-icon bg-info bg-opacity-10 text-info"><i class="bi bi-cash-stack"></i></div>
+      <div class="cu-stat-value" style="font-size:1.1rem">{{ stats.total_credit_limit|money }}</div>
+      <div class="cu-stat-label">Total Credit Extended</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="cu-stat">
+      <div class="cu-stat-icon bg-warning bg-opacity-10 text-warning"><i class="bi bi-graph-up-arrow"></i></div>
+      <div class="cu-stat-value" style="font-size:1.1rem">{{ stats.total_credit_balance|money }}</div>
+      <div class="cu-stat-label">Total Outstanding</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="cu-stat">
+      <div class="cu-stat-icon bg-danger bg-opacity-10 text-danger"><i class="bi bi-exclamation-triangle-fill"></i></div>
+      <div class="cu-stat-value totall">{{ stats.customers_with_overdue|default:0 }}</div>
+      <div class="cu-stat-label">With Overdue Invoices</div>
+    </div>
+  </div>
+</div>
+
+{# ── Credit customers table ── #}
+<div class="cu-card">
+  <div class="cu-card-header">
+    <h6 class="mb-0">Credit Customers <span class="cu-badge cu-badge-primary ms-1">{{ customers|length }}</span></h6>
+    <a href="{% url 'customers:export_credit_report' %}{% if filter_status or filter_store %}?{% if filter_store %}store_id={{ filter_store }}{% endif %}{% if filter_status %}&credit_status={{ filter_status }}{% endif %}{% endif %}" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+  <div class="cu-card-body p-0">
+    {% if customers %}
+    <div class="table-responsive">
+      <table class="cu-table">
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th>Store</th>
+            <th>Credit Limit</th>
+            <th>Balance Used</th>
+            <th>Available</th>
+            <th>Utilization</th>
+            <th>Status</th>
+            <th>Overdue</th>
+            <th>Last Review</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in customers %}
+          {% with util=c.credit_balance|divide:c.credit_limit|multiply:100|floatformat:0 %}
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="cu-avatar cu-avatar-sm">{{ c.name|first|upper }}</div>
+                <div>
+                  <div class="fw-medium small">{{ c.name }}</div>
+                  <div class="text-cu-muted" style="font-size:.72rem">{{ c.phone }}</div>
+                </div>
+              </div>
+            </td>
+            <td class="small text-cu-muted">{{ c.store.name }}</td>
+            <td class="fw-medium small">{{ c.credit_limit|money }}</td>
+            <td class="small {% if c.credit_balance > c.credit_limit %}text-danger fw-bold{% endif %}">{{ c.credit_balance|money }}</td>
+            <td class="small text-success fw-medium">{{ c.credit_available|money }}</td>
+            <td style="min-width:100px">
+              <div class="cu-util-bar mb-1">
+                <div class="cu-util-fill {% if util|add:'0' > 80 %}danger{% elif util|add:'0' > 60 %}warn{% endif %}" style="width:{{ util|default:0 }}%"></div>
+              </div>
+              <div class="text-cu-muted" style="font-size:.7rem">{{ util|default:0 }}%</div>
+            </td>
+            <td>
+              <span class="cu-badge cu-badge-{% if c.credit_status == 'GOOD' %}success{% elif c.credit_status == 'BLOCKED' %}danger{% elif c.credit_status == 'SUSPENDED' %}danger{% else %}warning{% endif %}">
+                {{ c.get_credit_status_display }}
+              </span>
+            </td>
+            <td>
+              {% if c.has_overdue_invoices %}
+                <span class="cu-badge cu-badge-danger"><i class="bi bi-exclamation-triangle me-1"></i>{{ c.overdue_amount|money }}</span>
+              {% else %}
+                <span class="cu-badge cu-badge-success">None</span>
+              {% endif %}
+            </td>
+            <td class="small text-cu-muted">{{ c.last_credit_review|date:"M d, Y"|default:"Never" }}</td>
+            <td>
+              <div class="btn-group btn-group-sm">
+                <a href="{% url 'customers:detail' c.pk %}" class="btn btn-outline-primary" title="View"><i class="bi bi-eye"></i></a>
+                {% if perms.customers.change_customer %}
+                <a href="{% url 'customers:update' c.pk %}" class="btn btn-outline-warning" title="Edit"><i class="bi bi-pencil"></i></a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endwith %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-cu-muted">
+      <i class="bi bi-credit-card fs-1 d-block mb-3" style="opacity:.3"></i>
+      <h5>No Credit Customers Found</h5>
+      <p>No customers with credit enabled match the current filters.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+
+
+{% endif %}
+
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+/* =========================================================
+   CUSTOMERS MASTER JAVASCRIPT
+   ========================================================= */
+
+// ── Helpers ──
+function cuCsrf() {
+  let v = null;
+  document.cookie.split(';').forEach(c => {
+    const t = c.trim();
+    if (t.startsWith('csrftoken=')) v = decodeURIComponent(t.slice(10));
+  });
+  return v;
+}
+
+function cuToast(msg, type='success') {
+  const wrap = document.getElementById('cuToastWrap') || (() => {
+    const el = document.createElement('div');
+    el.id = 'cuToastWrap';
+    el.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem;';
+    document.body.appendChild(el);
+    return el;
+  })();
+  const colors = {success:'#10b981',danger:'#ef4444',warning:'#f59e0b',info:'#06b6d4'};
+  const t = document.createElement('div');
+  t.style.cssText = `background:${colors[type]||colors.info};color:#fff;padding:.75rem 1.1rem;border-radius:8px;font-size:.875rem;font-weight:500;box-shadow:0 4px 14px rgba(0,0,0,.2);max-width:340px;animation:cuToastIn .25s ease;`;
+  t.innerHTML = `<i class="bi bi-${type === 'success' ? 'check-circle' : type === 'danger' ? 'x-circle' : 'info-circle'} me-2"></i>${msg}`;
+  wrap.appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+
+// ── Bulk customer actions ──
+function cuSelectAll() { document.querySelectorAll('.cu-chk').forEach(c => c.checked = true); }
+function cuClearSel()  { document.querySelectorAll('.cu-chk').forEach(c => c.checked = false); }
+function cuToggleAll(src) { document.querySelectorAll('.cu-chk').forEach(c => c.checked = src.checked); }
+
+function cuGetSelected() {
+  return Array.from(document.querySelectorAll('.cu-chk:checked')).map(c => c.value);
+}
+
+function cuBulk(action) {
+  const ids = cuGetSelected();
+  if (!ids.length) { cuToast('No customers selected', 'warning'); return; }
+  if (action === 'delete' && !confirm(`Delete ${ids.length} customer(s)? This cannot be undone.`)) return;
+  document.getElementById('cuBulkAction').value = action;
+  document.getElementById('cuBulkIds').value = ids.join(',');
+  document.getElementById('cuBulkForm').submit();
+}
+
+function openBulkCreditModal() {
+  const ids = cuGetSelected();
+  if (!ids.length) { cuToast('Select customers first', 'warning'); return; }
+  new bootstrap.Modal(document.getElementById('bulkCreditModal')).show();
+}
+
+function cuApplyBulkCredit() {
+  const ids = cuGetSelected();
+  const limit = document.getElementById('bulkCreditLimit').value;
+  const reason = document.getElementById('bulkCreditReason').value;
+  if (!limit) { cuToast('Enter a credit limit', 'warning'); return; }
+  if (!reason.trim()) { cuToast('Reason is required', 'warning'); return; }
+
+  fetch('{% url "customers:bulk_update_credit_limits" %}', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','X-CSRFToken':cuCsrf()},
+    body: JSON.stringify({updates: ids.map(id => ({customer_id: id, new_limit: parseFloat(limit), reason}))})
+  })
+  .then(r => r.json())
+  .then(d => {
+    bootstrap.Modal.getInstance(document.getElementById('bulkCreditModal')).hide();
+    cuToast(`Updated ${d.success?.length || 0} customers`, 'success');
+    if (d.failed?.length) cuToast(`${d.failed.length} failed`, 'warning');
+    setTimeout(() => location.reload(), 1800);
+  })
+  .catch(() => cuToast('Request failed', 'danger'));
+}
+
+// ── eFRIS sync ──
+function cuSyncEfris() {
+  if (!confirm('Sync this customer to eFRIS?')) return;
+  fetch(`{% if active_tab == 'detail' %}{% url 'customers:sync_efris' customer.pk %}{% else %}#{% endif %}`, {
+    method: 'POST', headers: {'X-CSRFToken': cuCsrf()}
+  })
+  .then(r => r.json())
+  .then(d => {
+    cuToast(d.success ? 'Synced to eFRIS!' : 'Sync failed: ' + d.error, d.success ? 'success' : 'danger');
+    if (d.success) setTimeout(() => location.reload(), 1600);
+  })
+  .catch(() => cuToast('Sync error', 'danger'));
+}
+
+// ── Print & Export ──
+function cuPrint() {
+  {% if active_tab == 'detail' %}
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>Customer - {{ customer.name }}</title>
+  <style>body{font-family:Arial,sans-serif;margin:20px;color:#333}h1{border-bottom:2px solid #333;padding-bottom:10px}.section{margin-bottom:20px}.section h3{color:#333;border-bottom:1px solid #ccc;padding-bottom:5px}.row{display:flex;justify-content:space-between;margin:6px 0}.label{font-weight:bold}.badge{background:#007bff;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px}</style>
+  </head><body>
+  <h1>{{ customer.name }}</h1>
+  <p>Customer ID: {{ customer.customer_id }} | Created: {{ customer.created_at|date:"M d, Y" }} | Store: {{ customer.store.name|default:"Not assigned" }}</p>
+  <div class="section"><h3>Basic Info</h3>
+    <div class="row"><span class="label">Type:</span><span>{{ customer.get_customer_type_display }}</span></div>
+    <div class="row"><span class="label">VAT Registered:</span><span>{{ customer.is_vat_registered|yesno:"Yes,No" }}</span></div>
+    <div class="row"><span class="label">Status:</span><span>{{ customer.is_active|yesno:"Active,Inactive" }}</span></div>
+  </div>
+  <div class="section"><h3>Contact</h3>
+    <div class="row"><span class="label">Phone:</span><span>{{ customer.phone|default:"Not provided" }}</span></div>
+    <div class="row"><span class="label">Email:</span><span>{{ customer.email|default:"Not provided" }}</span></div>
+  </div>
+  <div class="section"><h3>Identification</h3>
+    <div class="row"><span class="label">TIN:</span><span>{{ customer.tin|default:"N/A" }}</span></div>
+    <div class="row"><span class="label">NIN:</span><span>{{ customer.nin|default:"N/A" }}</span></div>
+    <div class="row"><span class="label">BRN:</span><span>{{ customer.brn|default:"N/A" }}</span></div>
+  </div>
+  <div class="section"><h3>Address</h3>
+    <div class="row"><span class="label">Physical:</span><span>{{ customer.physical_address|default:"Not provided" }}</span></div>
+    <div class="row"><span class="label">District:</span><span>{{ customer.district|default:"N/A" }}</span></div>
+    <div class="row"><span class="label">Country:</span><span>{{ customer.country|default:"Uganda" }}</span></div>
+  </div>
+  <div class="section"><h3>Financial</h3>
+    <div class="row"><span class="label">Credit Limit:</span><span>{{ customer.credit_limit|money }}</span></div>
+    <div class="row"><span class="label">Credit Balance:</span><span>{{ customer.credit_balance|money }}</span></div>
+    <div class="row"><span class="label">Available Credit:</span><span>{{ customer.credit_available|money }}</span></div>
+  </div>
+  <div class="section"><h3>eFRIS</h3>
+    <div class="row"><span class="label">Status:</span><span>{{ customer.get_efris_status_display }}</span></div>
+    <div class="row"><span class="label">eFRIS ID:</span><span>{{ customer.efris_customer_id|default:"Not registered" }}</span></div>
+  </div>
+  <p style="text-align:center;color:#666;font-size:11px;margin-top:40px">Generated on ${new Date().toLocaleString()}</p>
+  </body></html>`);
+  w.document.close();
+  w.print();
+  {% else %}
+  window.print();
+  {% endif %}
+}
+
+function cuExportCSV() {
+  {% if active_tab == 'detail' %}
+  const rows = [
+    ['Field','Value'],
+    ['Customer ID','{{ customer.customer_id }}'],
+    ['Name','{{ customer.name }}'],
+    ['Type','{{ customer.get_customer_type_display }}'],
+    ['Phone','{{ customer.phone|default:"" }}'],
+    ['Email','{{ customer.email|default:"" }}'],
+    ['TIN','{{ customer.tin|default:"" }}'],
+    ['NIN','{{ customer.nin|default:"" }}'],
+    ['BRN','{{ customer.brn|default:"" }}'],
+    ['Physical Address','{{ customer.physical_address|default:"" }}'],
+    ['District','{{ customer.district|default:"" }}'],
+    ['Country','{{ customer.country|default:"" }}'],
+    ['VAT Registered','{{ customer.is_vat_registered|yesno:"Yes,No" }}'],
+    ['Credit Limit','{{ customer.credit_limit|default:0 }}'],
+    ['Credit Balance','{{ customer.credit_balance|default:0 }}'],
+    ['Available Credit','{{ customer.credit_available|default:0 }}'],
+    ['eFRIS Status','{{ customer.get_efris_status_display }}'],
+    ['eFRIS Customer ID','{{ customer.efris_customer_id|default:"" }}'],
+    ['Active','{{ customer.is_active|yesno:"Yes,No" }}'],
+    ['Created','{{ customer.created_at|date:"Y-m-d H:i:s" }}'],
+  ];
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = 'customer_{{ customer.customer_id }}_{{ customer.name|slugify }}.csv';
+  a.click();
+  {% endif %}
+}
+
+function cuShowAddPayment(saleId, total, paid) {
+  document.getElementById('cuPaymentSaleId').value = saleId;
+  const fmt = n => new Intl.NumberFormat('en-UG',{style:'currency',currency:'UGX',minimumFractionDigits:0}).format(n);
+  document.getElementById('cuPayTotalAmt').textContent = fmt(total);
+  document.getElementById('cuPayAlreadyPaid').textContent = fmt(paid);
+  document.getElementById('cuPayBalanceDue').textContent = fmt(total - paid);
+  document.getElementById('cuPayAmount').value = total - paid;
+  new bootstrap.Modal(document.getElementById('addPaymentModal')).show();
+}
+
+async function cuSubmitPayment() {
+  const saleId = document.getElementById('cuPaymentSaleId').value;
+  const amount = document.getElementById('cuPayAmount').value;
+  if (!amount || amount <= 0) { alert('Enter a valid amount'); return; }
+  try {
+    const resp = await fetch(`/sales/${saleId}/add-payment/`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || ''},
+      body: JSON.stringify({
+        amount, payment_method: document.getElementById('cuPayMethod').value,
+        reference_number: document.getElementById('cuPayReference').value,
+        notes: document.getElementById('cuPayNotes').value
+      })
+    });
+    const data = await resp.json();
+    if (data.success) { bootstrap.Modal.getInstance(document.getElementById('addPaymentModal')).hide(); location.reload(); }
+    else alert('Error: ' + (data.error || 'Failed to add payment'));
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// ── Delete confirmation toggle ──
+const delCb  = document.getElementById('cuDeleteConfirm');
+const delBtn = document.getElementById('cuDeleteBtn');
+if (delCb && delBtn) {
+  delCb.addEventListener('change', () => { delBtn.disabled = !delCb.checked; });
+  delBtn.addEventListener('click', e => {
+    if (!confirm('Permanently delete this customer?')) e.preventDefault();
+  });
+}
+
+// ── Customer type form (create/edit) — show/hide TIN required marker ──
+document.querySelectorAll('input[name="customer_type"]').forEach(radio => {
+  radio.addEventListener('change', function() {
+    const bizTypes = ['BUSINESS','GOVERNMENT','NGO'];
+    document.querySelectorAll('.cuTinRequired').forEach(el =>
+      el.classList.toggle('d-none', !bizTypes.includes(this.value))
+    );
+  });
+});
+
+// ── Import: drag-drop ──
+const dropZone = document.getElementById('cuDropZone');
+const fileInput = document.getElementById('cuImportFile');
+if (dropZone && fileInput) {
+  ['dragenter','dragover'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.add('drag-over'); }));
+  ['dragleave','drop'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.remove('drag-over'); }));
+  dropZone.addEventListener('drop', ev => {
+    const f = ev.dataTransfer.files[0];
+    if (f) { fileInput.files = ev.dataTransfer.files; showFile(f); }
+  });
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) showFile(fileInput.files[0]); });
+
+  function showFile(f) {
+    document.getElementById('cuFileSelected').classList.remove('d-none');
+    document.getElementById('cuFileName').textContent = f.name + ' (' + (f.size/1024).toFixed(1) + ' KB)';
+  }
+}
+
+function cuPreviewImport() {
+  const file = fileInput?.files[0];
+  if (!file) { cuToast('Select a file first', 'warning'); return; }
+  const fd = new FormData();
+  fd.append('preview_file', file);
+  fd.append('csrfmiddlewaretoken', cuCsrf());
+  fetch('{% url "customers:preview_import" %}', {method:'POST', body:fd})
+    .then(r => r.json())
+    .then(d => {
+      const wrap = document.getElementById('cuPreviewResults');
+      const body = document.getElementById('cuPreviewBody');
+      if (d.success) {
+        const rows = d.preview_data.map(r =>
+          `<tr><td class="small">${r.row_number}</td><td><span class="cu-badge cu-badge-${r.is_valid ? 'success':'danger'}">${r.is_valid ? '✓ Valid':'✗ Error'}</span></td><td class="small text-cu-muted">${r.errors.join(', ')||'—'}</td></tr>`
+        ).join('');
+        body.innerHTML = `<div class="p-3 small text-cu-muted">Showing ${d.preview_data.length} of ${d.total_rows} rows — ${d.mapped_columns ? Object.keys(d.mapped_columns).length : 0} columns mapped</div><div class="table-responsive"><table class="cu-table"><thead><tr><th>#</th><th>Status</th><th>Errors</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        wrap.classList.remove('d-none');
+      } else { cuToast('Preview failed: ' + d.error, 'danger'); }
+    })
+    .catch(() => cuToast('Preview request failed', 'danger'));
+}
+
+function cuValidateImport() {
+  const file = fileInput?.files[0];
+  if (!file) { cuToast('Select a file first', 'warning'); return; }
+  const fd = new FormData();
+  fd.append('validate_file', file);
+  fd.append('csrfmiddlewaretoken', cuCsrf());
+  fetch('{% url "customers:validate_import" %}', {method:'POST', body:fd})
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        const v = d.validation;
+        cuToast(`${v.valid_rows} valid, ${v.invalid_rows} invalid of ${v.total_rows} rows`, v.invalid_rows ? 'warning' : 'success');
+      } else { cuToast('Validation failed: ' + d.error, 'danger'); }
+    })
+    .catch(() => cuToast('Validation failed', 'danger'));
+}
+
+// ── Toast animation keyframe ──
+const ks = document.createElement('style');
+ks.textContent = '@keyframes cuToastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}';
+document.head.appendChild(ks);
+</script>
+{% endblock %}

@@ -281,7 +281,6 @@ class CustomUser(OfflineIDMixin,AbstractBaseUser, PermissionsMixin):
     @property
     def all_roles(self):
         """Get all roles assigned to this user"""
-        from .models import Role  # Avoid circular import
         return Role.objects.filter(group__in=self.groups.all())
 
     @property
@@ -353,7 +352,6 @@ class CustomUser(OfflineIDMixin,AbstractBaseUser, PermissionsMixin):
 
     def assign_role(self, role):
         """Assign a role to this user"""
-        from .models import RoleHistory
 
         if not role.is_active:
             raise ValidationError(f"Cannot assign inactive role: {role.group.name}")
@@ -376,7 +374,6 @@ class CustomUser(OfflineIDMixin,AbstractBaseUser, PermissionsMixin):
 
     def remove_role(self, role):
         """Remove a role from this user"""
-        from .models import RoleHistory
 
         self.groups.remove(role.group)
 
@@ -410,7 +407,7 @@ class CustomUser(OfflineIDMixin,AbstractBaseUser, PermissionsMixin):
         my_priority = self.highest_role_priority
         target_priority = target_user.highest_role_priority
 
-        return my_priority >= target_priority
+        return my_priority > target_priority
 
     def get_manageable_users(self):
         """Get queryset of users this user can manage"""
@@ -433,11 +430,11 @@ class CustomUser(OfflineIDMixin,AbstractBaseUser, PermissionsMixin):
         if my_priority > 0:
             from django.db.models import Max, Q
 
-            # Get users whose highest role priority is <= mine
+            # Get users whose highest role priority is strictly less than mine
             queryset = queryset.annotate(
                 max_role_priority=Max('groups__role__priority')
             ).filter(
-                Q(max_role_priority__lte=my_priority) | Q(max_role_priority__isnull=True)
+                Q(max_role_priority__lt=my_priority) | Q(max_role_priority__isnull=True)
             )
 
         return queryset.select_related('company').prefetch_related('groups__role')
@@ -665,6 +662,7 @@ class CustomUser(OfflineIDMixin,AbstractBaseUser, PermissionsMixin):
         """Record login attempt"""
         if success:
             self.failed_login_attempts = 0
+            self.locked_until = None
             self.login_count += 1
             self.last_activity_at = timezone.now()
             if ip_address:
@@ -672,11 +670,11 @@ class CustomUser(OfflineIDMixin,AbstractBaseUser, PermissionsMixin):
         else:
             self.failed_login_attempts += 1
             if self.failed_login_attempts >= 5:
-                self.lock_account()
+                self.locked_until = timezone.now() + timedelta(minutes=30)
 
         self.save(update_fields=[
             'failed_login_attempts', 'login_count',
-            'last_activity_at', 'last_login_ip'
+            'last_activity_at', 'last_login_ip', 'locked_until',
         ])
 
     def can_fiscalize(self, store):
@@ -802,6 +800,8 @@ class RoleManager(models.Manager):
 
 
 class Role(OfflineIDMixin, models.Model):
+    """Extended Group model for company-specific roles with metadata."""
+
     sync_id = models.UUIDField(
         default=uuid.uuid4,
         unique=True,
@@ -809,7 +809,6 @@ class Role(OfflineIDMixin, models.Model):
         editable=False,
         null=True, blank=True
     )
-    """Extended Group model for company-specific roles with metadata."""
     group = models.OneToOneField(
         Group,
         on_delete=models.CASCADE,
@@ -861,10 +860,9 @@ class Role(OfflineIDMixin, models.Model):
         return reverse('role_detail', kwargs={'pk': self.pk})
 
     def clean(self):
-        # ⚙️ Only enforce this in the public schema (shared/global context)
-        if connection.schema_name == 'public':
-            if self.is_system_role and self.company:
-                raise ValidationError("System roles cannot be company-specific")
+        # System roles must never be tied to a specific company, in any schema
+        if self.is_system_role and self.company:
+            raise ValidationError("System roles cannot be company-specific")
 
         if self.max_users and self.max_users < 1:
             raise ValidationError("Maximum users must be at least 1")
@@ -1021,7 +1019,7 @@ class RoleHistory(OfflineIDMixin, models.Model):
         return f"{self.role.group.name} - {self.get_action_display()} by {self.user}"
 
 
-class AuditLogManager(OfflineIDMixin, models.Manager):
+class AuditLogManager(models.Manager):
     """Custom manager for AuditLog with filtering methods"""
 
     def for_user(self, user):
@@ -1543,3 +1541,194 @@ class DataExportLog(OfflineIDMixin, models.Model):
 
     def __str__(self):
         return f"{self.user.username} exported {self.resource_type} at {self.timestamp}"
+
+
+class APIToken(OfflineIDMixin, models.Model):
+    """API tokens for programmatic access to the system."""
+
+    TOKEN_TYPE_CHOICES = [
+        ('read', _('Read Only')),
+        ('write', _('Read & Write')),
+        ('admin', _('Admin')),
+    ]
+
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='api_tokens',
+        verbose_name=_("User")
+    )
+
+    name = models.CharField(
+        max_length=100,
+        verbose_name=_("Token Name"),
+        help_text=_("A label to identify this token")
+    )
+
+    token = models.CharField(
+        max_length=64,
+        unique=True,
+        db_index=True,
+        verbose_name=_("Token")
+    )
+
+    token_type = models.CharField(
+        max_length=20,
+        choices=TOKEN_TYPE_CHOICES,
+        default='read',
+        verbose_name=_("Token Type")
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name=_("Is Active")
+    )
+
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Expires At")
+    )
+
+    last_used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Last Used At")
+    )
+
+    last_used_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name=_("Last Used IP")
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("Created At")
+    )
+
+    class Meta:
+        verbose_name = _("API Token")
+        verbose_name_plural = _("API Tokens")
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['token']),
+            models.Index(fields=['user', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.name}"
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            import secrets
+            self.token = secrets.token_hex(32)
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self):
+        if self.expires_at:
+            return timezone.now() > self.expires_at
+        return False
+
+    @property
+    def is_valid(self):
+        return self.is_active and not self.is_expired
+
+
+class UserSession(OfflineIDMixin, models.Model):
+    """Tracks active user sessions across devices."""
+
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='sessions',
+        verbose_name=_("User")
+    )
+
+    session_key = models.CharField(
+        max_length=100,
+        unique=True,
+        db_index=True,
+        verbose_name=_("Session Key")
+    )
+
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name=_("IP Address")
+    )
+
+    user_agent = models.TextField(
+        blank=True,
+        verbose_name=_("User Agent")
+    )
+
+    browser = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name=_("Browser")
+    )
+
+    os = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name=_("Operating System")
+    )
+
+    device_type = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name=_("Device Type")
+    )
+
+    location = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name=_("Location")
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name=_("Is Active")
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("Created At")
+    )
+
+    last_activity = models.DateTimeField(
+        auto_now=True,
+        verbose_name=_("Last Activity")
+    )
+
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Expires At")
+    )
+
+    class Meta:
+        verbose_name = _("User Session")
+        verbose_name_plural = _("User Sessions")
+        ordering = ['-last_activity']
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['session_key']),
+            models.Index(fields=['last_activity']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.session_key[:8]}... ({self.ip_address})"
+
+    @property
+    def is_expired(self):
+        if self.expires_at:
+            return timezone.now() > self.expires_at
+        return False
+
+    def terminate(self):
+        """Terminate this session."""
+        self.is_active = False
+        self.save(update_fields=['is_active'])

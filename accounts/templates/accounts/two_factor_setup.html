@@ -645,42 +645,18 @@
                 }, 5000);
             }
 
-            async handleSubmit(e) {
+            handleSubmit(e) {
+                // 2FA was already fully enabled in verifyCode() (Step 3).
+                // This button just confirms the user has saved their backup codes
+                // and redirects them to their profile.
                 e.preventDefault();
-                const form = e.target;
-                const submitBtn = form.querySelector('button[type="submit"]');
-
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Enabling 2FA...';
+                const submitBtn = e.target.querySelector('button[type="submit"]');
+                submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>All done! Redirecting...';
                 submitBtn.disabled = true;
-
-                try {
-                    const response = await fetch('{% url "enable_2fa" %}', {
-                        method: 'POST',
-                        headers: {
-                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-                        },
-                        body: new FormData(form)
-                    });
-
-                    const data = await response.json();
-
-                    if (data.success) {
-                        document.querySelector('.setup-card').classList.add('success-animation');
-                        this.showSuccess(data.message);
-                        setTimeout(() => {
-                            window.location.href = '{% url "user_profile" %}';
-                        }, 2000);
-                    } else {
-                        this.showError(data.error || 'Failed to enable 2FA');
-                        submitBtn.innerHTML = '<i class="fas fa-shield-check me-2"></i>{% trans "Enable Two-Factor Auth" %}';
-                        submitBtn.disabled = false;
-                    }
-                } catch (error) {
-                    this.showError('Error enabling 2FA');
-                    submitBtn.innerHTML = '<i class="fas fa-shield-check me-2"></i>{% trans "Enable Two-Factor Auth" %}';
-                    submitBtn.disabled = false;
-                    console.error(error);
-                }
+                document.querySelector('.setup-card').classList.add('success-animation');
+                setTimeout(() => {
+                    window.location.href = '{% url "user_profile" %}';
+                }, 1000);
             }
         }
 

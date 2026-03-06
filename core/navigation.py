@@ -140,6 +140,12 @@ NAVIGATION_ITEMS = [
         permission="expenses.expense_create",
         css_class="nav-highlight-danger"
     ),
+    NavigationItem(
+        name="Customers",
+        icon="bi bi-people",
+        url_name="customers:dashboard",
+        permission="customers.view_customer",
+    ),
     NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="Sales",
@@ -180,9 +186,10 @@ NAVIGATION_ITEMS = [
                 permission="inventory.view_product"
             ),
             NavigationItem(
-                name="Stock Dashboard",
-                url_name="efris:stock_management_dashboard",
-                icon="bi bi-speedometer2",
+                name="Low Stock Report",
+                url_name="stores:low_stock_alert",
+                icon="bi bi-exclamation-triangle",
+                css_class="text-warning",
                 permission="inventory.view_stock"
             ),
             NavigationItem(
@@ -238,38 +245,6 @@ NAVIGATION_ITEMS = [
                 url_name="inventory:stock_adjustment",
                 icon="bi bi-sliders",
                 permission="inventory.change_stock"
-            ),
-            NavigationItem(
-                name="Stock Movements",
-                url_name="inventory:movement_list",
-                icon="bi bi-arrow-left-right",
-                permission="inventory.view_stockmovement"
-            ),
-            NavigationItem(
-                name="Reports",
-                icon="bi bi-graph-up",
-                permission="inventory.view_product",
-                children=[
-                    NavigationItem(
-                        name="Low Stock Report",
-                        url_name="stores:low_stock_alert",
-                        icon="bi bi-exclamation-triangle",
-                        css_class="text-warning",
-                        permission="inventory.view_stock"
-                    ),
-                    NavigationItem(
-                        name="Inventory Valuation",
-                        url_name="inventory:valuation_report",
-                        icon="bi bi-calculator",
-                        permission="inventory.view_stock"
-                    ),
-                    NavigationItem(
-                        name="Movement Analytics",
-                        url_name="inventory:movement_analytics",
-                        icon="bi bi-graph-up-arrow",
-                        permission="inventory.view_stock"
-                    ),
-                ]
             ),
         ]
     ),
@@ -332,50 +307,6 @@ NAVIGATION_ITEMS = [
 
 
         ],),
-    NavigationItem(name="--", is_divider=True),
-    NavigationItem(
-        name="Customers",
-        icon="bi bi-people",
-        permission="customers.view_customer",
-        children=[
-            NavigationItem(
-                name="Customers Dashboard",
-                url_name="customers:dashboard",
-                icon="bi bi-graph-up",
-                permission="customers.view_customer"
-            ),
-            NavigationItem(
-                name="All Customers",
-                url_name="customers:customer_list",
-                icon="bi bi-people-fill",
-                permission="customers.view_customer"
-            ),
-            NavigationItem(
-                name="Customer Groups",
-                url_name="customers:group_list",
-                icon="bi bi-collection",
-                permission="customers.view_customergroup"
-            ),
-            NavigationItem(
-                name="Add Customer",
-                url_name="customers:create",
-                icon="bi bi-person-plus",
-                permission="customers.add_customer"
-            ),
-            NavigationItem(
-                name="Add Group",
-                url_name="customers:group_create",
-                icon="bi bi-people-fill",
-                permission="customers.add_customergroup"
-            ),
-            NavigationItem(
-                name="Import Customers",
-                url_name="customers:customer_import",
-                icon="bi bi-upload",
-                permission="customers.add_customer"
-            ),
-        ]
-    ),
     NavigationItem(name="--", is_divider=True),
     NavigationItem(
         name="EFRIS",

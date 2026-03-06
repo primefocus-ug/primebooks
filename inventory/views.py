@@ -63,7 +63,7 @@ from .forms import (
     CategoryForm, SupplierForm, ProductForm,  StockMovementForm,
      ProductFilterForm, StockAdjustmentForm, BulkActionForm
 )
-
+from stores.mixins import StoreQuerysetMixin
 from .models import Category, Supplier, Product, Stock, StockMovement, ImportSession, ImportLog, ImportResult, \
     StockTransfer
 
@@ -93,7 +93,7 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-class QuickStockAdjustmentRedirectView(LoginRequiredMixin, PermissionRequiredMixin, View):
+class QuickStockAdjustmentRedirectView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, View):
     """Redirect to stock adjustment form with pre-filled data from stock ID"""
     permission_required = 'inventory.add_stockmovement'
 
@@ -443,7 +443,7 @@ class StockRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated, DjangoModelPermissions]
 
 
-class StockMovementListCreateView(generics.ListCreateAPIView):
+class StockMovementListCreateView(StoreQuerysetMixin,generics.ListCreateAPIView):
     queryset = StockMovement.objects.select_related('product', 'store', 'created_by').all()
     serializer_class = StockMovementSerializer
     permission_classes = [IsAuthenticated, DjangoModelPermissions]
@@ -478,7 +478,7 @@ class StockMovementListCreateView(generics.ListCreateAPIView):
         return queryset
 
 
-class StockMovementRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+class StockMovementRetrieveUpdateDestroyView(StoreQuerysetMixin,generics.RetrieveUpdateDestroyAPIView):
     queryset = StockMovement.objects.select_related('product', 'store', 'created_by').all()
     serializer_class = StockMovementSerializer
     permission_classes = [IsAuthenticated, DjangoModelPermissions]
@@ -3490,7 +3490,7 @@ class StockListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         }
 
 
-class StockCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class StockCreateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     """Create new stock record for a product in a specific store"""
     model = Stock
     form_class = StockForm
@@ -3577,7 +3577,7 @@ class StockCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
         return super().form_invalid(form)
 
 
-class StockUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class StockUpdateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     """Update existing stock record"""
     model = Stock
     form_class = StockForm

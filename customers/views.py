@@ -16,6 +16,7 @@ from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.db.models import Sum, Count, Q
 from decimal import Decimal
 import logging
+from stores.mixins import StoreQuerysetMixin
 from django.views.generic import (
     ListView, DetailView, CreateView, UpdateView, DeleteView, TemplateView
 )
@@ -165,7 +166,7 @@ def get_store_customers(request):
 
 
 
-class CustomerViewSet(viewsets.ModelViewSet):
+class CustomerViewSet(StoreQuerysetMixin,viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
 
@@ -359,9 +360,10 @@ def export_credit_report(request):
 
     return response
 
-class CustomerListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class CustomerListView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """Advanced customer list view with search, filtering, and eFRIS integration"""
     model = Customer
+    store_field = 'store'
     template_name = 'customers/customer_list.html'
     context_object_name = 'customers'
     permission_required = 'customers.view_customer'
@@ -434,7 +436,7 @@ class CustomerListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return context
 
 
-class CustomerDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class CustomerDetailView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     """Detailed customer view with related information, eFRIS status, and sales history"""
     model = Customer
     permission_required = 'customers.view_customer'
@@ -846,10 +848,11 @@ def bulk_update_credit_limits(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
-class CustomerCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class CustomerCreateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     """Create new customer with validation"""
     model = Customer
     form_class = CustomerForm
+    store_field = 'store'
     permission_required = 'customers.add_customer'
     template_name = 'customers/customer_form.html'
     success_url = reverse_lazy('customers:customer_list')
@@ -871,7 +874,7 @@ class CustomerCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView
         return super().form_invalid(form)
 
 
-class CustomerUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class CustomerUpdateView(StoreQuerysetMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     """Update existing customer"""
     model = Customer
     form_class = CustomerForm
@@ -1395,7 +1398,7 @@ def export_customers(request, customers=None):
     return response
 
 
-class EFRISCustomerDashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class EFRISCustomerDashboardView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
     """eFRIS Customer dashboard with analytics"""
     template_name = 'customers/efris_dashboard.html'
     permission_required = 'customers.view_customer'
@@ -1720,7 +1723,7 @@ def validate_customer_field(request):
         'message': _('This %(field)s is already in use.') % {'field': field_name} if exists else ''
     })
 
-class CustomerDeleteView(LoginRequiredMixin,PermissionRequiredMixin, DeleteView):
+class CustomerDeleteView(StoreQuerysetMixin,LoginRequiredMixin,PermissionRequiredMixin, DeleteView):
     """Delete customer with confirmation"""
     model = Customer
     permission_required = 'customers.delete_customer'
@@ -1773,7 +1776,7 @@ class CustomerGroupListView(LoginRequiredMixin, PermissionRequiredMixin, ListVie
         return context
 
 
-class CustomerDashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class CustomerDashboardView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
     """Enhanced customer dashboard with eFRIS analytics"""
     template_name = 'customers/dashboard.html'
     permission_required = 'customers.view_customer'

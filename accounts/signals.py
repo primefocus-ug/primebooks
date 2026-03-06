@@ -1,4 +1,4 @@
-from django.db.models.signals import post_save, post_migrate
+from django.db.models.signals import post_save, post_migrate, post_delete
 from django.conf import settings
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
@@ -9,7 +9,6 @@ from .models import AuditLog, LoginHistory
 from .utils import get_client_ip, parse_user_agent
 
 import logging
-from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
 from django.utils import timezone
@@ -561,7 +560,6 @@ def get_default_roles_config():
 
                 # Store Management (View inventory-related)
                 'stores.store': ['view'],
-                'stores.storeaccess': ['view', ],
 
                 # Reports (Inventory reports only)
                 'reports.savedreport': ['add', 'change', 'view'],
@@ -895,24 +893,31 @@ def _do_create_roles(instance):
 
     for role_name, config in roles_config.items():
         group, group_created = Group.objects.get_or_create(name=role_name)
+
+        # System roles are schema-wide (company=None).
+        # Only non-system roles are tied to the specific tenant company.
+        is_system = config.get('is_system_role', True)
+        role_company = None if is_system else instance
+
         role, role_created = Role.objects.get_or_create(
             group=group,
-            company=instance,
+            company=role_company,
             defaults={
                 'description': config['description'],
                 'color_code': config['color_code'],
                 'priority': config['priority'],
-                'is_system_role': config.get('is_system_role', True),
+                'is_system_role': is_system,
                 'is_active': True,
             }
         )
 
         if role_created:
-            if config['permissions'] == 'all':
+            permissions_config = config.get('permissions', {})
+            if permissions_config == 'all':
                 group.permissions.set(Permission.objects.all())
-            else:
+            elif isinstance(permissions_config, dict):
                 permissions_to_add = []
-                for model_path, actions in config['permissions'].items():
+                for model_path, actions in permissions_config.items():
                     app_label, model_name = model_path.split('.')
                     try:
                         content_type = ContentType.objects.get(
@@ -936,6 +941,8 @@ def _do_create_roles(instance):
 
                 if permissions_to_add:
                     group.permissions.add(*permissions_to_add)
+            else:
+                logger.warning(f"Role '{role_name}' has no permissions config — skipping permission assignment")
 
             created_roles.append(role_name)
             logger.info(f"✓ Created role: {role_name} (priority: {config['priority']})")
@@ -952,6 +959,227 @@ def _do_create_roles(instance):
         NotificationService.seed_default_templates(instance.schema_name)
     except Exception as e:
         logger.warning(f"Could not seed notification templates for {instance.schema_name}: {e}")
+
+
+
+# ============================================================================
+# STORE ACCESS AUTO-GRANT
+# ============================================================================
+
+# Roles whose holders should automatically get full access to ALL stores in
+# their company — no manual StoreAccess rows required.
+HIGH_ACCESS_ROLES = {'SaaS Admin', 'Company Admin', 'Super Admin', 'Manager'}
+
+# Roles whose holders should automatically get view/staff access to all stores.
+STANDARD_ACCESS_ROLES = {'Accountant', 'HR Manager', 'Auditor'}
+
+
+def _get_access_level_for_role(role_name):
+    """
+    Return the StoreAccess level that a role warrants, or None if no
+    automatic grant should be made.
+    """
+    if role_name in HIGH_ACCESS_ROLES:
+        return 'admin' if role_name in ('SaaS Admin', 'Company Admin') else 'manager'
+    if role_name in STANDARD_ACCESS_ROLES:
+        return 'view'
+    return None  # Cashier, Stock Manager, etc. need explicit store assignment
+
+
+def _grant_store_access_for_user(user, stores, access_level, granted_by=None):
+    """
+    Ensure `user` has an active StoreAccess record at `access_level` for
+    every store in `stores`. Creates missing records; reactivates soft-deleted
+    ones; upgrades access level if the new level is higher.
+    """
+    from stores.models import StoreAccess
+
+    LEVEL_RANK = {'view': 0, 'staff': 1, 'manager': 2, 'admin': 3}
+    new_rank = LEVEL_RANK.get(access_level, 0)
+
+    for store in stores:
+        try:
+            existing = StoreAccess.objects.filter(user=user, store=store).first()
+
+            if existing:
+                changed = False
+                if not existing.is_active:
+                    existing.is_active = True
+                    existing.revoked_at = None
+                    changed = True
+                if LEVEL_RANK.get(existing.access_level, 0) < new_rank:
+                    existing.access_level = access_level
+                    changed = True
+                if changed:
+                    existing.save(update_fields=['is_active', 'revoked_at', 'access_level'])
+            else:
+                StoreAccess.objects.create(
+                    user=user,
+                    store=store,
+                    access_level=access_level,
+                    granted_by=granted_by,
+                    can_view_sales=True,
+                    can_create_sales=access_level in ('staff', 'manager', 'admin'),
+                    can_view_inventory=True,
+                    can_manage_inventory=access_level in ('manager', 'admin'),
+                    can_view_reports=access_level in ('manager', 'admin', 'view'),
+                    can_fiscalize=access_level in ('manager', 'admin'),
+                    can_manage_staff=access_level == 'admin',
+                )
+        except Exception as e:
+            logger.error(
+                f"Could not grant store access to {user} for store {store}: {e}"
+            )
+
+
+def sync_store_access_for_user(user):
+    """
+    Called whenever a user's role changes or a new store is created.
+    Resolves the correct store access from the user's current role and
+    ensures StoreAccess rows exist accordingly.
+
+    This is the bridge between the Django-permissions role system and the
+    StoreAccess row-level access system.
+    """
+    if not table_exists('stores_storeaccess') or not table_exists('stores_store'):
+        return
+
+    try:
+        from stores.models import Store, StoreAccess
+
+        # SaaS admins bypass everything — they see all stores already
+        if getattr(user, 'is_saas_admin', False):
+            return
+
+        company = getattr(user, 'company', None)
+        if not company:
+            return
+
+        # Determine the highest-priority role this user has
+        role_name = None
+        if hasattr(user, 'role') and user.role:
+            role_name = user.role.group.name if hasattr(user.role, 'group') else str(user.role)
+        elif hasattr(user, 'groups') and user.groups.exists():
+            # Fall back to Django groups if no explicit role FK
+            role_name = user.groups.order_by().first().name
+
+        if not role_name:
+            return
+
+        access_level = _get_access_level_for_role(role_name)
+
+        if access_level is None:
+            # Role doesn't get automatic access — leave explicit grants alone
+            return
+
+        # Sync access to every active store in the company
+        company_stores = Store.objects.filter(company=company, is_active=True)
+        _grant_store_access_for_user(user, company_stores, access_level)
+
+        logger.info(
+            f"Synced store access for {user} (role={role_name}, "
+            f"level={access_level}, stores={company_stores.count()})"
+        )
+
+    except Exception as e:
+        logger.error(f"sync_store_access_for_user failed for {user}: {e}", exc_info=True)
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+@safe_schema_context
+def on_user_saved_sync_store_access(sender, instance, created, **kwargs):
+    """
+    Whenever a user is created or updated, make sure their store access
+    reflects their current role.
+
+    Triggers:
+    - New user created with a role already set
+    - Existing user's role changed (e.g. promoted to Company Admin)
+    - User re-activated (is_active flipped back to True)
+
+    NOTE: We only act if the role-relevant fields changed, to avoid
+    hammering the DB on every profile update.
+    """
+    if not table_exists('stores_storeaccess'):
+        return
+
+    # Only sync when something role/access-relevant changed
+    update_fields = kwargs.get('update_fields')
+    role_fields = {'role', 'role_id', 'is_active', 'company', 'company_id',
+                   'is_company_owner', 'company_admin'}
+
+    if update_fields is not None and not role_fields.intersection(update_fields):
+        # Explicit partial save that doesn't touch role fields — skip
+        return
+
+    if not instance.is_active:
+        return
+
+    sync_store_access_for_user(instance)
+
+
+@receiver(post_save)
+@safe_schema_context
+def on_store_created_grant_access_to_admins(sender, instance, created, **kwargs):
+    """
+    When a new Store is created, immediately grant access to all users in
+    the company whose role warrants automatic store access.
+
+    Without this, existing Company Admins and Managers would have no access
+    to a brand-new store until they manually added themselves.
+    """
+    if not created:
+        return
+
+    # Only react to Store saves
+    if sender.__name__ != 'Store':
+        return
+
+    if not table_exists('stores_storeaccess') or not table_exists('accounts_customuser'):
+        return
+
+    try:
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        company = getattr(instance, 'company', None)
+        if not company:
+            return
+
+        # Find all active users in this company who have an auto-grant role
+        users = User.objects.filter(
+            company=company,
+            is_active=True
+        ).select_related('role__group')
+
+        for user in users:
+            role_name = None
+            if hasattr(user, 'role') and user.role:
+                role_name = (
+                    user.role.group.name
+                    if hasattr(user.role, 'group')
+                    else str(user.role)
+                )
+            elif user.groups.exists():
+                role_name = user.groups.order_by().first().name
+
+            if not role_name:
+                continue
+
+            access_level = _get_access_level_for_role(role_name)
+            if access_level:
+                _grant_store_access_for_user(user, [instance], access_level)
+
+        logger.info(
+            f"Granted store access for new store '{instance.name}' "
+            f"to eligible users in company {company}"
+        )
+
+    except Exception as e:
+        logger.error(
+            f"on_store_created_grant_access_to_admins failed for store {instance}: {e}",
+            exc_info=True
+        )
 
 
 def create_default_roles_on_migrate(sender, **kwargs):
@@ -975,7 +1203,7 @@ def create_default_roles_on_migrate(sender, **kwargs):
 
         # Create roles
         logger.info(f"Creating default roles during migration for {tenant.schema_name}")
-        create_default_roles_for_tenant(Company, tenant, created=True)
+        _do_create_roles(tenant)
 
 
 @receiver(user_logged_in)
@@ -1091,6 +1319,10 @@ def log_failed_login(sender, credentials, request, **kwargs):
 def log_user_logout(sender, request, user, **kwargs):
     """Log user logout"""
     if not table_exists('accounts_loginhistory') or not table_exists('accounts_auditlog'):
+        return
+
+    # user can be None for anonymous sessions — nothing to log
+    if user is None:
         return
 
     ip_address = get_client_ip(request)

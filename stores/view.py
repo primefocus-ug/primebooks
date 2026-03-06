@@ -15,9 +15,11 @@ from accounts.models import AuditLog
 def store_create(request):
     """Create a new store with proper access control"""
 
-
-    # Get user's company
-    company = request.user.company
+    # Guard: user must belong to a company
+    company = getattr(request.user, 'company', None)
+    if not company:
+        messages.error(request, _('You must belong to a company to create a store.'))
+        return redirect('stores:store_list')
 
     if request.method == 'POST':
         form = StoreForm(request.POST, request.FILES, user=request.user, tenant=company)
@@ -167,12 +169,16 @@ def store_update(request, pk):
                                 }
                             )
                     elif not store.accessible_by_all and old_accessible_by_all:
-                        # Remove view-only access granted by accessible_by_all
-                        StoreAccess.objects.filter(
+                        # Revoke (soft-delete) view-only access that was auto-granted by accessible_by_all.
+                        # Use revoke() instead of delete() to preserve the audit trail.
+                        view_only_access = StoreAccess.objects.filter(
                             store=store,
                             access_level='view',
-                            granted_by=request.user
-                        ).delete()
+                            granted_by=request.user,
+                            is_active=True
+                        )
+                        for access in view_only_access:
+                            access.revoke(revoked_by=request.user)
 
                     # Log the action
                     AuditLog.log(

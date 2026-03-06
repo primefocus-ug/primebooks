@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import CustomerViewSet, CustomerGroupViewSet, CustomerNoteViewSet
 # Import everything from views.py with an alias
-from . import views as customers_views
+from . import views_master as customers_views
 # Import everything from view.py with an alias
 from . import view as import_export_views
 
@@ -28,11 +28,9 @@ urlpatterns = [
          name='adjust_customer_credit'),
 
     # Update existing customers_views
-    path('<int:pk>/update-credit-status/', customers_views.CustomerViewSet.as_view({'post': 'update_credit_status'}),
-         name='customer_update_credit_status'),
-    path('<int:pk>/check-credit/', customers_views.CustomerViewSet.as_view({'post': 'check_credit'}),
-         name='customer_check_credit'),
-    path('credit-report-api/', customers_views.CustomerViewSet.as_view({'get': 'credit_report'}), name='credit_report_api'),
+    path('<int:pk>/update-credit-status/', CustomerViewSet.as_view({'post': 'update_credit_status'}), name='customer_update_credit_status'),
+    path('<int:pk>/check-credit/', CustomerViewSet.as_view({'post': 'check_credit'}), name='customer_check_credit'),
+    path('credit-report-api/', CustomerViewSet.as_view({'get': 'credit_report'}), name='credit_report_api'),
     path('<int:pk>/', customers_views.CustomerDetailView.as_view(), name='detail'),
     path('<int:pk>/edit/', customers_views.CustomerUpdateView.as_view(), name='update'),
     path('<int:pk>/delete/', customers_views.CustomerDeleteView.as_view(), name='delete'),

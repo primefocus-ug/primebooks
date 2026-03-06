@@ -7,7 +7,6 @@ from django.shortcuts import redirect
 from django.contrib import messages
 from django.utils.deprecation import MiddlewareMixin
 from django.contrib.auth import get_user_model
-from django.utils.functional import SimpleLazyObject
 from django_tenants.utils import get_tenant_model, get_public_schema_name
 from django.db import connection
 import time
@@ -30,22 +29,33 @@ class RolePermissionMiddleware:
 
         if schema_name != 'public':
             if hasattr(request, 'user') and request.user.is_authenticated:
-                request.user = SimpleLazyObject(lambda: self._get_user_with_perms(request.user))
+                # Refresh the user object in place so all existing references
+                # (including request.user itself) see up-to-date permissions.
+                # Avoid replacing request.user with a SimpleLazyObject, which
+                # creates stale-reference hazards for code that cached the old object.
+                self._refresh_user_in_place(request)
 
         response = self.get_response(request)
         return response
 
-    def _get_user_with_perms(self, user):
+    def _refresh_user_in_place(self, request):
         try:
-            User = get_user_model()
-            fresh_user = User.objects.select_related('company').prefetch_related(
-                'groups__permissions',
-                'user_permissions'
-            ).get(pk=user.pk)
-            return fresh_user
+            fresh_user = (
+                get_user_model()
+                .objects
+                .select_related('company')
+                .prefetch_related('groups__permissions', 'user_permissions')
+                .get(pk=request.user.pk)
+            )
+            # Copy freshly-fetched permission state onto the existing user
+            # object so all callers that hold a reference to request.user
+            # automatically see the updated data.
+            request.user.__dict__.update(fresh_user.__dict__)
+            # Clear any stale permission caches carried over from the session
+            for cache_attr in ('_perm_cache', '_user_perm_cache', '_group_perm_cache'):
+                request.user.__dict__.pop(cache_attr, None)
         except Exception as e:
             logger.error(f"Error refreshing user permissions: {e}")
-            return user
 
 
 class SaaSAdminAccessMiddleware(MiddlewareMixin):
@@ -180,14 +190,22 @@ class SaaSAdminContextMiddleware(MiddlewareMixin):
         # ✅ CHECK SCHEMA
         schema_name = getattr(connection, 'schema_name', 'public')
 
+        if not hasattr(request, 'user') or not request.user.is_authenticated:
+            return response
+
+        extra = {
+            'is_saas_admin': getattr(request.user, 'is_saas_admin', False),
+            'can_access_all_companies': getattr(request.user, 'can_access_all_companies', False),
+            'saas_admin_context': getattr(request, 'saas_admin_context', {}),
+            'current_schema': schema_name,
+        }
+
+        # TemplateResponse (class-based views) stores context in context_data
         if hasattr(response, 'context_data') and response.context_data is not None:
-            if hasattr(request, 'user') and request.user.is_authenticated:
-                response.context_data.update({
-                    'is_saas_admin': getattr(request.user, 'is_saas_admin', False),
-                    'can_access_all_companies': getattr(request.user, 'can_access_all_companies', False),
-                    'saas_admin_context': getattr(request, 'saas_admin_context', {}),
-                    'current_schema': schema_name,
-                })
+            response.context_data.update(extra)
+        # render() / render_to_response() stores context in context dict
+        elif hasattr(response, 'context') and isinstance(response.context, dict):
+            response.context.update(extra)
 
         return response
 
@@ -206,21 +224,28 @@ class AuditMiddleware(MiddlewareMixin):
 
 
 class RefreshPermissionsMiddleware:
-    """Ensure user permissions are fresh on each request"""
+    """Ensure user permissions are fresh after state-mutating requests"""
+
+    # Only clear caches after requests that could change permissions
+    MUTATING_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        # ✅ CHECK SCHEMA
+        response = self.get_response(request)
+
+        # ✅ CHECK SCHEMA — only applies to tenant schemas
         schema_name = getattr(connection, 'schema_name', 'public')
 
-        if schema_name != 'public':
-            if hasattr(request, 'user') and request.user.is_authenticated:
-                # Clear permission cache
-                for cache_attr in ['_perm_cache', '_user_perm_cache', '_group_perm_cache']:
-                    if hasattr(request.user, cache_attr):
-                        delattr(request.user, cache_attr)
+        if (
+            schema_name != 'public'
+            and request.method in self.MUTATING_METHODS
+            and hasattr(request, 'user')
+            and request.user.is_authenticated
+        ):
+            # Clear permission cache so the next request sees fresh data
+            for cache_attr in ['_perm_cache', '_user_perm_cache', '_group_perm_cache']:
+                request.user.__dict__.pop(cache_attr, None)
 
-        response = self.get_response(request)
         return response

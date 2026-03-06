@@ -15,18 +15,28 @@ class RoleBasedAuthBackend(ModelBackend):
         """
         Standard authentication - only works in tenant schemas.
         Public schema uses PublicIdentifierBackend instead.
+        Accepts either an email address or a username as the identifier.
         """
         # Skip authentication if we're in public schema
         if connection.schema_name == 'public':
             return None
 
-        if username is None:
-            username = kwargs.get(User.USERNAME_FIELD)
+        # Support callers that pass email= directly
+        identifier = username or kwargs.get('email') or kwargs.get(User.USERNAME_FIELD)
+        if identifier is None:
+            return None
 
+        # Try email first (primary USERNAME_FIELD), then fall back to username
+        user = None
         try:
-            user = User.objects.get(**{User.USERNAME_FIELD: username})
-        except (User.DoesNotExist, Exception):
-            # Catch any database errors (like missing table in public schema)
+            user = User.objects.get(email=identifier)
+        except User.DoesNotExist:
+            try:
+                user = User.objects.get(username=identifier)
+            except User.DoesNotExist:
+                return None
+        except Exception:
+            # Catch unexpected DB errors (e.g. missing table in wrong schema)
             return None
 
         if user.check_password(password) and self.user_can_authenticate(user):
@@ -82,5 +92,9 @@ class RoleBasedAuthBackend(ModelBackend):
 
         try:
             return User.objects.get(pk=user_id)
-        except (User.DoesNotExist, Exception):
+        except User.DoesNotExist:
+            return None
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Unexpected error in get_user({user_id}): {e}")
             return None

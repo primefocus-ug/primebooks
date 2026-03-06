@@ -591,7 +591,7 @@ SHARED_APPS = [
     "crispy_bootstrap5",
     'corsheaders',
 ]
-
+LOCAL_DEV_PORT = 8000
 # Add web-specific apps only for web mode
 if not IS_DESKTOP:
     SHARED_APPS.insert(1, 'daphne')  # ASGI server for channels

@@ -1,5 +1,4 @@
 from decimal import Decimal
-from django.http import request
 from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib import messages
@@ -11,7 +10,7 @@ from django.db.models import Sum, F, Avg, Count, Q
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required, permission_required
-from django.http import HttpResponse, JsonResponse, request
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from datetime import datetime, timedelta
@@ -81,7 +80,6 @@ from .utils import (
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
-today = timezone.now().date()
 
 @login_required
 @permission_required('stores.view_devicefingerprint', raise_exception=True)
@@ -478,6 +476,7 @@ def tenant_overview_detail_api(request):
     if store_id:
         try:
             stores.get(pk=store_id)
+            stores = stores.filter(pk=store_id)
             active_stores = active_stores.filter(pk=store_id)
         except Store.DoesNotExist:
             return JsonResponse({'error': 'Store not found or access denied'}, status=403)
@@ -974,6 +973,7 @@ def api_extend_session(request, session_id):
     })
 
 
+@login_required
 def device_sessions_dashboard(request):
     """Dashboard for viewing all device sessions across stores"""
     # Get accessible stores
@@ -1636,60 +1636,69 @@ def pos_create_sale(request):
         if not data.get('payment_method'):
             return JsonResponse({'success': False, 'error': 'Payment method is required'}, status=400)
 
-        sale = Sale.objects.create(
-            store=store,
-            user=request.user,
-            customer_id=data.get('customer_id'),
-            payment_method=data['payment_method'],
-            transaction_type=data.get('transaction_type', 'SALE'),
-            document_type=data.get('document_type', 'RECEIPT'),
-            currency=data.get('currency', 'UGX'),
-            discount_amount=float(data.get('discount_amount', 0)),
-            notes=data.get('notes', ''),
-            payment_amount=float(data.get('payment_amount', 0)),
-            payment_reference=data.get('payment_reference', '')
-        )
-
-        total_amount = 0
-        total_tax = 0
-        for item_data in data['items']:
-            product = get_object_or_404(Product, id=item_data['product_id'])
-            quantity = float(item_data['quantity'])
-            unit_price = float(item_data['unit_price'])
-            discount = float(item_data.get('discount', 0))
-            tax_rate = item_data.get('tax_rate', 'A')
-            tax_percentage = 18 if tax_rate == 'A' else (12 if tax_rate == 'B' else 0)
-
-            line_total = quantity * unit_price
-            tax_amount = line_total * (tax_percentage / 100)
-            item_total = line_total + tax_amount - discount
-
-            SaleItem.objects.create(
-                sale=sale,
-                product=product,
-                quantity=quantity,
-                unit_price=unit_price,
-                tax_rate=tax_rate,
-                tax_amount=tax_amount,
-                discount=discount,
-                total_amount=item_total
-            )
-
-            total_amount += item_total
-            total_tax += tax_amount
-
-            stock, created = Stock.objects.get_or_create(
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            sale = Sale.objects.create(
                 store=store,
-                product=product,
-                defaults={'quantity': 0, 'low_stock_threshold': 5, 'reorder_quantity': 10}
+                user=request.user,
+                customer_id=data.get('customer_id'),
+                payment_method=data['payment_method'],
+                transaction_type=data.get('transaction_type', 'SALE'),
+                document_type=data.get('document_type', 'RECEIPT'),
+                currency=data.get('currency', 'UGX'),
+                discount_amount=float(data.get('discount_amount', 0)),
+                notes=data.get('notes', ''),
+                payment_amount=float(data.get('payment_amount', 0)),
+                payment_reference=data.get('payment_reference', '')
             )
-            stock.quantity -= quantity
-            stock.save()
 
-        sale.subtotal = total_amount - total_tax
-        sale.tax_amount = total_tax
-        sale.total_amount = total_amount - float(data.get('discount_amount', 0))
-        sale.save()
+            total_amount = 0
+            total_tax = 0
+            for item_data in data['items']:
+                product = get_object_or_404(Product, id=item_data['product_id'])
+                quantity = float(item_data['quantity'])
+                unit_price = float(item_data['unit_price'])
+                discount = float(item_data.get('discount', 0))
+                tax_rate = item_data.get('tax_rate', 'A')
+                tax_percentage = 18 if tax_rate == 'A' else (12 if tax_rate == 'B' else 0)
+
+                line_total = quantity * unit_price
+                tax_amount = line_total * (tax_percentage / 100)
+                item_total = line_total + tax_amount - discount
+
+                SaleItem.objects.create(
+                    sale=sale,
+                    product=product,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    tax_rate=tax_rate,
+                    tax_amount=tax_amount,
+                    discount=discount,
+                    total_amount=item_total
+                )
+
+                total_amount += item_total
+                total_tax += tax_amount
+
+                # FIX: select_for_update to prevent race conditions, and check
+                # stock availability before reducing — never go negative.
+                stock, created = Stock.objects.select_for_update().get_or_create(
+                    store=store,
+                    product=product,
+                    defaults={'quantity': 0, 'low_stock_threshold': 5, 'reorder_quantity': 10}
+                )
+                if stock.quantity < quantity:
+                    raise ValueError(
+                        f"Insufficient stock for '{product.name}': "
+                        f"available {stock.quantity}, requested {quantity}"
+                    )
+                stock.quantity -= quantity
+                stock.save()
+
+            sale.subtotal = total_amount - total_tax
+            sale.tax_amount = total_tax
+            sale.total_amount = total_amount - float(data.get('discount_amount', 0))
+            sale.save()
 
         change_amount = float(data.get('payment_amount', 0)) - sale.total_amount
 
@@ -3487,7 +3496,7 @@ def store_details_api(request, store_id):
         # Get recent sales (if user has permission)
         recent_sales = []
         if request.user.has_perm('sales.view_sale'):
-            recent_sales = store.sales.order_by('-date')[:5].values(
+            recent_sales = store.sales.order_by('-created_at')[:5].values(
                 'id', 'invoice_number', 'date', 'total_amount', 'payment_status'
             )
 
@@ -4326,4 +4335,3 @@ def _add_pdf_comprehensive_report(story, stores, styles):
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8)
     ]))
     story.append(summary_table)
-

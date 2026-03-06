@@ -1,5 +1,5 @@
 from decimal import Decimal
-
+from stores.mixins import StoreQuerysetMixin
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
@@ -41,7 +41,7 @@ def get_user_company(user):
     return getattr(user, 'company', None)
 
 
-class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class InvoiceListView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, ListView):
     model = Invoice
     template_name = 'invoices/invoice_list.html'
     context_object_name = 'invoices'
@@ -438,7 +438,7 @@ def allocate_payment(request, payment_id):
         return redirect('invoices:payment_reconciliation')
 
 
-class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class InvoiceDetailView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = Invoice
     template_name = 'invoices/invoice_detail.html'
     context_object_name = 'invoice'
@@ -1692,7 +1692,7 @@ def efris_status_dashboard(request):
     return render(request, 'invoices/efris_status_dashboard.html', context)
 
 
-class InvoiceCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class InvoiceCreateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Invoice
     form_class = InvoiceForm
     template_name = 'invoices/invoice_form.html'
@@ -1783,7 +1783,7 @@ class InvoiceCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView)
         return reverse('invoices:detail', kwargs={'pk': self.object.pk})
 
 
-class InvoiceUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class InvoiceUpdateView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     """Update existing invoice"""
     model = Invoice
     form_class = InvoiceForm

@@ -1,101 +1,87 @@
-from django.core.files.base import ContentFile
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login, logout, update_session_auth_hash
+from collections import defaultdict
+from datetime import datetime, timedelta
+from io import BytesIO, StringIO
+import base64
+import csv
+import hashlib
+import io
+import json
+import logging
+import pyotp
+import qrcode
+import secrets
+import string
+import zipfile
+
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import login, logout, update_session_auth_hash, authenticate
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from django.contrib import messages
-from django.http import  HttpResponse, Http404
-from django.core.paginator import Paginator
-from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.contrib.sites.shortcuts import get_current_site
 from django.core.cache import cache
-from django.db.models import Count
-from django.http import JsonResponse, HttpResponseRedirect
-from django.shortcuts import get_object_or_404
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.files.base import ContentFile
+from django.core.mail import send_mail
+from django.core.paginator import Paginator
+from django.db import connection, models, transaction
+from django.db.models import Count, Q, Avg, Max
+from django.http import HttpResponse, Http404, JsonResponse, HttpResponseRedirect
+from django.shortcuts import render, redirect, get_object_or_404
+from django.template.loader import render_to_string
 from django.urls import reverse_lazy, reverse
 from django.utils import timezone
-from django.http import JsonResponse
-from django.contrib.auth import authenticate, login
-from django_otp.plugins.otp_totp.models import TOTPDevice
-from django.views.decorators.csrf import csrf_exempt
-import io, pyotp, qrcode
+from django.utils.decorators import method_decorator
+from django.utils.encoding import force_str
+from django.utils.translation import gettext as _
+from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_protect, csrf_exempt
+from django.views.decorators.http import require_http_methods, require_POST
 from django.views.generic import (
     ListView, DetailView, CreateView, UpdateView, DeleteView, FormView
 )
 
-from django.utils.translation import gettext as _
-from .utils import (
-    require_saas_admin,
-    export_audit_logs,
-    get_client_ip,
-    parse_user_agent,
-    get_location_from_ip
-)
-from django.views.decorators.http import require_http_methods, require_POST
-from django.core.mail import send_mail
-from django.conf import settings
-import qrcode
-from django.contrib.auth import logout
-from django.template.loader import render_to_string
-from django.contrib.sessions.models import Session
-from django.db.models import Q, Avg
-import json
-import secrets
-import zipfile
-from io import BytesIO, StringIO
-from datetime import datetime
-from .utils import (
-    get_visible_users,
-    export_audit_logs,
-    get_company_user_count,
-    can_access_company,
-    get_accessible_companies,
-    require_saas_admin,
-    require_company_access
-)
-from django.core.exceptions import ValidationError
-from django.contrib.sites.shortcuts import get_current_site
-from django_tenants.utils import schema_context
-from django.db import transaction
-from django.core.exceptions import PermissionDenied
-from django.contrib import messages
-from django.shortcuts import render, redirect, get_object_or_404
-import secrets, string, logging
-from django.utils.encoding import force_str
-from company.decorator import check_user_limit
-from django.utils.decorators import method_decorator
-# Models for API tokens and sessions
-from django.db import models
-from django.db import connection
-from django_tenants.utils import tenant_context
+from django_otp.plugins.otp_totp.models import TOTPDevice
+from django_tenants.utils import schema_context, tenant_context
+
 # For PDF generation
 from reportlab.lib import colors
+from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.lib.colors import HexColor
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 
 # For Excel export
 import openpyxl
 from openpyxl.styles import Font, PatternFill
 
-# For CSV export
-import csv
-from datetime import timedelta
-import logging
+from PIL import Image as PILImage
 
-from .models import CustomUser, UserSignature,Role, RoleHistory, AuditLog, LoginHistory, DataExportLog
-from django.views.decorators.csrf import csrf_protect
-from django.views.decorators.cache import never_cache
-from company.models import Company, SubscriptionPlan
+from company.decorator import check_user_limit
 from company.email import send_tenant_email
+from company.models import Company, SubscriptionPlan
+
+from .models import CustomUser, UserSignature, Role, RoleHistory, AuditLog, LoginHistory, DataExportLog, APIToken, UserSession
 from .forms import (
-    CustomUserCreationForm, CustomUserChangeForm, CustomAuthenticationForm,UserRoleAssignForm,
-    UserProfileForm, PasswordChangeForm, UserSignatureForm, UserSearchForm,UserNotificationForm,UserPreferencesForm,
-    BulkUserActionForm, TwoFactorSetupForm,RoleForm, BulkRoleAssignmentForm,BulkUserRoleAssignForm, RoleFilterForm
+    CustomUserCreationForm, CustomUserChangeForm, CustomAuthenticationForm, UserRoleAssignForm,
+    UserProfileForm, PasswordChangeForm, UserSignatureForm, UserSearchForm,
+    UserNotificationForm, UserPreferencesForm, BulkUserActionForm, TwoFactorSetupForm,
+    RoleForm, BulkRoleAssignmentForm, BulkUserRoleAssignForm, RoleFilterForm,
+    ReviewAuditLogForm,
 )
-from django_otp.plugins.otp_totp.models import TOTPDevice
+from .utils import (
+    require_saas_admin,
+    export_audit_logs,
+    get_client_ip,
+    parse_user_agent,
+    get_location_from_ip,
+    get_visible_users,
+    get_company_user_count,
+    can_access_company,
+    get_accessible_companies,
+    require_company_access,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +102,85 @@ def get_client_ip(request):
     else:
         ip = request.META.get('REMOTE_ADDR')
     return ip
+
+
+# ============================================================
+# RATE LIMITING HELPERS
+# All limits use Django's cache backend — no extra packages.
+# ============================================================
+
+def _rl_key(scope, identifier):
+    """Build a namespaced cache key for rate limiting."""
+    h = hashlib.sha256(f"{scope}:{identifier}".encode()).hexdigest()[:16]
+    return f"rl:{scope}:{h}"
+
+
+def _is_rate_limited(scope, identifier, max_attempts, window_seconds):
+    """
+    Return True when `identifier` has exceeded `max_attempts` within
+    the rolling `window_seconds` window for the given `scope`.
+    """
+    key = _rl_key(scope, identifier)
+    attempts = cache.get(key, 0)
+    return attempts >= max_attempts
+
+
+def _increment_rate_limit(scope, identifier, window_seconds):
+    """Atomically increment the attempt counter and (re)set the TTL."""
+    key = _rl_key(scope, identifier)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, timeout=window_seconds)
+
+
+def _clear_rate_limit(scope, identifier):
+    """Clear the rate limit counter after a successful action."""
+    cache.delete(_rl_key(scope, identifier))
+
+
+def _rate_limit_response(request, message, is_ajax=False):
+    """Return the appropriate response when rate limit is hit."""
+    if is_ajax or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse(
+            {'success': False, 'error_type': 'rate_limited', 'error_message': message},
+            status=429
+        )
+    messages.error(request, message)
+    return None  # caller should redirect
+
+
+# ============================================================
+# INVITATION TOKEN HELPERS
+# Tokens are signed with HMAC so they can't be forged or reused
+# without a matching DB record.
+# ============================================================
+
+def _generate_invitation_token():
+    """Return a URL-safe 48-char token."""
+    return secrets.token_urlsafe(36)
+
+
+def _build_setup_url(request, user, token):
+    """Build the full password-setup URL for an invited user."""
+    path = reverse('accept_invitation', kwargs={'token': token})
+    scheme = 'https' if request.is_secure() else 'http'
+
+    # Build host from tenant schema + BASE_DOMAIN from settings.
+    # settings.BASE_DOMAIN is already correct for each environment:
+    #   dev:  'localhost:8000'  → host = 'rem.localhost:8000'
+    #   prod: 'primebooks.sale' → host = 'rem.primebooks.sale'
+    # This avoids relying on tenant.domain_url (no port) or request.get_host()
+    # (stripped by middleware) — both of which lose the port on local dev.
+    tenant = getattr(connection, 'tenant', None)
+    base_domain = getattr(settings, 'BASE_DOMAIN', None)
+    if tenant and base_domain:
+        host = f"{tenant.schema_name}.{base_domain}"
+    else:
+        # Last resort fallback
+        host = request.get_host()
+
+    return f"{scheme}://{host}{path}"
 
 
 def get_dashboard_url(user):
@@ -139,12 +204,35 @@ def custom_login(request):
     if request.user.is_authenticated:
         return redirect(get_dashboard_url(request.user))
 
-    # Handle AJAX requests
-    if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        return _handle_ajax_login(request)
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
-    # Handle regular form submission
     if request.method == 'POST':
+        ip = get_client_ip(request)
+        # 10 attempts per IP per 10 minutes; 20 per email per 15 minutes
+        email_attempt = request.POST.get('email', '').lower().strip()
+
+        if _is_rate_limited('login_ip', ip, max_attempts=10, window_seconds=600):
+            resp = _rate_limit_response(
+                request,
+                'Too many login attempts from this IP. Please wait 10 minutes.',
+                is_ajax=is_ajax
+            )
+            if resp:
+                return resp
+            return redirect('login')
+
+        if email_attempt and _is_rate_limited('login_email', email_attempt, max_attempts=20, window_seconds=900):
+            resp = _rate_limit_response(
+                request,
+                'Too many login attempts for this account. Please wait 15 minutes.',
+                is_ajax=is_ajax
+            )
+            if resp:
+                return resp
+            return redirect('login')
+
+        if is_ajax:
+            return _handle_ajax_login(request)
         return _handle_regular_login(request)
 
     # GET request - show login form
@@ -169,19 +257,23 @@ def custom_login(request):
 
 def _handle_ajax_login(request):
     """Handle AJAX login requests with 2FA enforcement"""
-    # Check if this is a 2FA verification request
     pending_user_id = request.session.get('pending_2fa_user_id')
     code = request.POST.get('code', '').strip()
 
     if pending_user_id and code:
-        # This is a 2FA verification attempt
         return _handle_2fa_verification_ajax(request, pending_user_id, code)
 
-    # This is initial credential submission
     form = CustomAuthenticationForm(request, data=request.POST)
 
     if not form.is_valid():
-        logger.warning(f"Form validation failed: {form.errors}")
+        # Count failed attempts against IP and submitted email
+        ip = get_client_ip(request)
+        email_attempt = request.POST.get('email', '').lower().strip()
+        _increment_rate_limit('login_ip', ip, window_seconds=600)
+        if email_attempt:
+            _increment_rate_limit('login_email', email_attempt, window_seconds=900)
+
+        logger.warning(f"Form validation failed from {ip}: {form.errors}")
         error_messages = {}
         for field, errors in form.errors.items():
             if field == '__all__':
@@ -196,27 +288,24 @@ def _handle_ajax_login(request):
             'field_errors': error_messages,
         }, status=400)
 
-    # Get authenticated user from form
     user = form.get_user()
 
     if not user:
+        ip = get_client_ip(request)
+        _increment_rate_limit('login_ip', ip, window_seconds=600)
         return JsonResponse({
             'success': False,
             'error_type': 'authentication_failed',
             'error_message': 'Invalid credentials'
         }, status=401)
 
-    # Check if 2FA is enabled for this user
     two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
 
     if two_factor_enabled:
-        # Store user ID in session for 2FA verification
         request.session['pending_2fa_user_id'] = user.id
         request.session['pending_2fa_email'] = user.email
         request.session['pending_2fa_remember'] = form.cleaned_data.get('remember_me', False)
-
         logger.info(f"2FA required for user: {user.email}")
-
         return JsonResponse({
             'success': False,
             'two_factor_required': True,
@@ -224,7 +313,6 @@ def _handle_ajax_login(request):
             'message': 'Please enter your 6-digit authentication code'
         }, status=200)
 
-    # No 2FA required - complete login
     return _complete_login_ajax(request, user, form.cleaned_data.get('remember_me', False))
 
 
@@ -278,32 +366,35 @@ def _handle_regular_login(request):
         user = form.get_user()
 
         if not user:
+            ip = get_client_ip(request)
+            _increment_rate_limit('login_ip', ip, window_seconds=600)
             messages.error(request, 'Invalid credentials.')
             return render(request, 'accounts/login.html', {
                 'form': form,
                 'show_2fa': False,
             })
 
-        # Check if 2FA is enabled
         two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
 
         if two_factor_enabled:
-            # Store user in session and show 2FA form
             request.session['pending_2fa_user_id'] = user.id
             request.session['pending_2fa_email'] = user.email
             request.session['pending_2fa_remember'] = form.cleaned_data.get('remember_me', False)
-
             messages.info(request, 'Please enter your 6-digit authentication code.')
-
             return render(request, 'accounts/login.html', {
                 'form': form,
                 'show_2fa': True,
             })
 
-        # No 2FA - complete login
         return _complete_login_regular(request, user, form.cleaned_data.get('remember_me', False))
 
-    # Form has errors
+    # Form has errors — count against IP and email
+    ip = get_client_ip(request)
+    email_attempt = request.POST.get('email', '').lower().strip()
+    _increment_rate_limit('login_ip', ip, window_seconds=600)
+    if email_attempt:
+        _increment_rate_limit('login_email', email_attempt, window_seconds=900)
+
     for field, errors in form.errors.items():
         for error in errors:
             if field == '__all__':
@@ -364,17 +455,20 @@ def _handle_2fa_verification_ajax(request, pending_user_id, code):
 
 def _complete_login_ajax(request, user, remember_me):
     """Complete the login process for AJAX requests"""
-    # Use backend parameter to avoid authentication issues
-    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    backend = getattr(user, 'backend', 'django.contrib.auth.backends.ModelBackend')
+    login(request, user, backend=backend)
 
-    # Set session expiry
+    # Clear rate limits on successful login
+    ip = get_client_ip(request)
+    _clear_rate_limit('login_ip', ip)
+    _clear_rate_limit('login_email', user.email.lower())
+
     if remember_me:
-        request.session.set_expiry(60 * 60 * 24 * 30)  # 30 days
+        request.session.set_expiry(60 * 60 * 24 * 30)
     else:
         request.session.set_expiry(0)
 
-    # Record successful login
-    user.record_login_attempt(success=True, ip_address=get_client_ip(request))
+    user.record_login_attempt(success=True, ip_address=ip)
     user.last_activity_at = timezone.now()
     user.save(update_fields=['last_activity_at'])
 
@@ -384,9 +478,7 @@ def _complete_login_ajax(request, user, remember_me):
         if getattr(user, 'is_saas_admin', False)
         else f'Welcome back, {user.get_short_name()}!'
     )
-
     logger.info(f"Successful login for user: {user.email}")
-
     return JsonResponse({
         'success': True,
         'two_factor_required': False,
@@ -397,46 +489,71 @@ def _complete_login_ajax(request, user, remember_me):
 
 def _complete_login_regular(request, user, remember_me):
     """Complete login for regular requests"""
-    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    backend = getattr(user, 'backend', 'django.contrib.auth.backends.ModelBackend')
+    login(request, user, backend=backend)
 
-    # Set session expiry
+    # Clear rate limits on successful login
+    ip = get_client_ip(request)
+    _clear_rate_limit('login_ip', ip)
+    _clear_rate_limit('login_email', user.email.lower())
+
     if remember_me:
         request.session.set_expiry(60 * 60 * 24 * 30)
     else:
         request.session.set_expiry(0)
 
-    # Record login
-    user.record_login_attempt(success=True, ip_address=get_client_ip(request))
+    user.record_login_attempt(success=True, ip_address=ip)
     user.last_activity_at = timezone.now()
     user.save(update_fields=['last_activity_at'])
 
-    # Success message
     if getattr(user, 'is_saas_admin', False):
         messages.success(request, f'Welcome SaaS Admin: {user.get_short_name()}!')
     else:
         messages.success(request, f'Welcome back, {user.get_short_name()}!')
 
-    # Redirect
     next_url = request.GET.get('next') or get_dashboard_url(user)
     logger.info(f"Successful login for user: {user.email}")
-
     return redirect(next_url)
 
 
-# 2FA Helper Functions (FIXED - removed duplicate)
+# 2FA Helper Functions
 def _verify_2fa_code(user, code):
-    """Verify 2FA code"""
+    """
+    Verify a 2FA code at login time.
+    Accepts either a 6-digit TOTP code or an 8-char backup code.
+    Backup codes are single-use: the matching code is removed on success.
+    """
+    code = code.strip()
+
+    # Try TOTP first (django-otp device, preferred)
     try:
         device = TOTPDevice.objects.get(user=user, confirmed=True)
-        is_valid = device.verify_token(code)
-        logger.info(f"2FA verification for {user.email}: {'success' if is_valid else 'failed'}")
-        return is_valid
+        if device.verify_token(code):
+            logger.info(f"2FA TOTP verification succeeded for {user.email}")
+            return True
     except TOTPDevice.DoesNotExist:
-        logger.error(f"No confirmed TOTP device for user: {user.email}")
-        return False
-    except Exception as e:
-        logger.error(f"Error verifying 2FA code for {user.email}: {str(e)}")
-        return False
+        pass  # No django-otp device — fall through to metadata-based TOTP
+
+    # Fallback: metadata-based TOTP secret (set by enable_two_factor)
+    secret = (user.metadata or {}).get('totp_secret')
+    if secret:
+        totp = pyotp.TOTP(secret)
+        if totp.verify(code, valid_window=1):
+            logger.info(f"2FA metadata TOTP verification succeeded for {user.email}")
+            return True
+
+    # Check backup codes (case-insensitive, single-use)
+    backup_codes = list(user.backup_codes or [])
+    code_upper = code.upper()
+    if code_upper in backup_codes:
+        backup_codes.remove(code_upper)
+        user.backup_codes = backup_codes
+        user.save(update_fields=['backup_codes'])
+        logger.info(f"2FA backup code used for {user.email}. {len(backup_codes)} codes remaining.")
+        return True
+
+    logger.warning(f"2FA verification failed for {user.email}")
+    return False
 
 
 def _is_2fa_rate_limited(user):
@@ -2286,7 +2403,7 @@ def process_avatar_image(image_file):
     """
     try:
         # Open and process the image
-        img = Image.open(image_file)
+        img = PILImage.open(image_file)
 
         # Convert RGBA to RGB if necessary
         if img.mode in ("RGBA", "P"):
@@ -2294,7 +2411,7 @@ def process_avatar_image(image_file):
 
         # Resize image to standard avatar size
         max_size = (400, 400)
-        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        img.thumbnail(max_size, PILImage.Resampling.LANCZOS)
 
         # Create a square image (crop to center if needed)
         width, height = img.size
@@ -2308,7 +2425,6 @@ def process_avatar_image(image_file):
             img = img.crop((left, top, right, bottom))
 
         # Save processed image to BytesIO
-        from io import BytesIO
         output = BytesIO()
         img.save(output, format='JPEG', quality=85, optimize=True)
         output.seek(0)
@@ -2316,7 +2432,7 @@ def process_avatar_image(image_file):
         return ContentFile(output.getvalue())
 
     except Exception as e:
-        print(f"Error processing avatar image: {e}")
+        logger.error(f"Error processing avatar image: {e}")
         return None
 
 
@@ -2499,30 +2615,6 @@ def delete_avatar(request):
 
 
 @login_required
-def user_security_settings(request):
-    """
-    Handle user security settings
-    """
-    if request.method == 'POST':
-        form = UserSecurityForm(request.POST, instance=request.user)
-        if form.is_valid():
-            form.save()
-            messages.success(request, 'Security settings updated successfully!')
-            return redirect('user_security_settings')
-    else:
-        form = UserSecurityForm(instance=request.user)
-
-    context = {
-        'form': form,
-        'user': request.user,
-        'active_sessions': get_user_active_sessions(request.user),
-        'recent_logins': get_recent_login_attempts(request.user),
-    }
-
-    return render(request, 'accounts/security_settings.html', context)
-
-
-@login_required
 def user_notification_settings(request):
     """
     Handle user notification preferences
@@ -2673,9 +2765,11 @@ def verify_email(request):
         return redirect('user_profile')
 
     # Check expiration
-    from datetime import datetime
     if expires:
         expire_time = datetime.fromisoformat(expires)
+        # Make aware if stored as naive ISO string
+        if timezone.is_naive(expire_time):
+            expire_time = timezone.make_aware(expire_time)
         if timezone.now() > expire_time:
             messages.error(request, 'Verification link has expired.')
             return redirect('user_profile')
@@ -2714,9 +2808,11 @@ def verify_phone(request):
         }, status=400)
 
     # Check expiration
-    from datetime import datetime
     if expires:
         expire_time = datetime.fromisoformat(expires)
+        # Make aware if stored as naive ISO string
+        if timezone.is_naive(expire_time):
+            expire_time = timezone.make_aware(expire_time)
         if timezone.now() > expire_time:
             return JsonResponse({
                 'success': False,
@@ -2738,48 +2834,65 @@ def verify_phone(request):
 @login_required
 def enable_two_factor(request):
     """
-    Step 1: Generate QR and verify TOTP to enable 2FA.
+    GET  — generate a new TOTP secret, return QR code and manual key.
+    POST — verify the submitted code and activate 2FA.
+
+    The secret lives in the session only until POST verification succeeds,
+    at which point it is moved to user.metadata and the session copy removed.
     """
-    import io, pyotp, qrcode
     import base64
     user = request.user
 
-    # If already enabled
     if user.two_factor_enabled:
-        return JsonResponse({'success': False, 'error': 'Two-factor authentication is already enabled'}, status=400)
+        return JsonResponse(
+            {'success': False, 'error': 'Two-factor authentication is already enabled'},
+            status=400
+        )
 
     if request.method == 'POST':
-        totp_code = request.POST.get('totp_code')
+        totp_code = request.POST.get('totp_code', '').strip()
         secret_key = request.session.get('temp_2fa_secret')
 
-        if not secret_key or not totp_code:
-            return JsonResponse({'success': False, 'error': 'Missing secret or code'}, status=400)
+        if not secret_key:
+            return JsonResponse(
+                {'success': False, 'error': 'Setup session expired. Please refresh and try again.'},
+                status=400
+            )
+        if not totp_code:
+            return JsonResponse({'success': False, 'error': 'Please enter the 6-digit code.'}, status=400)
 
         totp = pyotp.TOTP(secret_key)
         if not totp.verify(totp_code, valid_window=1):
-            return JsonResponse({'success': False, 'error': 'Invalid or expired authentication code'}, status=400)
+            return JsonResponse(
+                {'success': False, 'error': 'Invalid or expired code. Please try again.'},
+                status=400
+            )
 
-        # Mark as enabled
-        user.two_factor_enabled = True
+        # Persist the secret and mark 2FA as enabled
+        if not user.metadata:
+            user.metadata = {}
         user.metadata['totp_secret'] = secret_key
+        user.two_factor_enabled = True
         user.backup_codes = [secrets.token_hex(4).upper() for _ in range(10)]
         user.save()
 
+        # Remove the temporary session secret
         request.session.pop('temp_2fa_secret', None)
 
+        logger.info(f"2FA enabled for user: {user.email}")
         return JsonResponse({
             'success': True,
             'message': 'Two-factor authentication enabled successfully!',
-            'backup_codes': user.backup_codes
+            'backup_codes': user.backup_codes,
         })
 
-    # GET — Generate secret & QR code
+    # GET — generate secret and QR code
     secret_key = pyotp.random_base32()
     request.session['temp_2fa_secret'] = secret_key
 
-    totp_uri = pyotp.totp.TOTP(secret_key).provisioning_uri(
+    totp_uri = pyotp.TOTP(secret_key).provisioning_uri(
         name=user.email or user.username,
-        issuer_name="PrimeBooks"
+        issuer_name=getattr(settings, 'TWO_FACTOR_ISSUER', 'PrimeBooks')
     )
 
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
@@ -2795,100 +2908,70 @@ def enable_two_factor(request):
         'success': True,
         'qr_code': f"data:image/png;base64,{qr_code_data}",
         'manual_entry_key': secret_key,
-        'message': 'Scan the QR code using your authenticator app.'
+        'message': 'Scan the QR code with your authenticator app, then enter the 6-digit code to confirm.',
     })
 
-
-@login_required
-def verify_2fa(request):
-    """Step 3: Verify 6-digit code from authenticator."""
-    if request.method == "POST":
-        code = request.POST.get('code')
-        user = request.user
-        totp = pyotp.TOTP(user.two_factor_secret)
-        if totp.verify(code):
-            # Generate backup codes
-            import secrets
-            user.two_factor_enabled = True
-            user.backup_codes = [secrets.token_hex(4).upper() for _ in range(6)]
-            user.save(update_fields=['two_factor_enabled', 'backup_codes'])
-            return JsonResponse({"success": True, "backup_codes": user.backup_codes})
-        else:
-            return JsonResponse({"success": False, "error": _("Invalid code")})
-    return JsonResponse({"error": "Invalid request"}, status=400)
 
 @login_required
 @require_POST
 def disable_two_factor(request):
     """
-    Disable 2FA after verifying password.
+    Disable 2FA after verifying the user's current password.
+    Clears the TOTP secret, backup codes, and any confirmed TOTPDevice records.
     """
     user = request.user
 
     if not user.two_factor_enabled:
-        return JsonResponse({'success': False, 'error': 'Two-factor authentication is not enabled'}, status=400)
+        return JsonResponse(
+            {'success': False, 'error': 'Two-factor authentication is not currently enabled'},
+            status=400
+        )
 
-    current_password = request.POST.get('current_password')
+    current_password = request.POST.get('current_password', '')
     if not current_password or not user.check_password(current_password):
         return JsonResponse({'success': False, 'error': 'Incorrect password'}, status=400)
 
+    # Clear all 2FA state
     user.two_factor_enabled = False
     user.backup_codes = []
-    user.metadata.pop('totp_secret', None)
+    if user.metadata:
+        user.metadata.pop('totp_secret', None)
     user.save()
 
-    return JsonResponse({'success': True, 'message': 'Two-factor authentication has been disabled'})
+    # Also remove any django-otp TOTP devices so login flow stays consistent
+    TOTPDevice.objects.filter(user=user).delete()
+
+    logger.info(f"2FA disabled for user: {user.email}")
+    return JsonResponse({'success': True, 'message': 'Two-factor authentication has been disabled.'})
 
 
 @login_required
+@require_POST
 def generate_backup_codes(request):
-    """
-    Regenerate 2FA backup codes.
-    """
+    """Regenerate 2FA backup codes. Requires 2FA to be active."""
     user = request.user
 
     if not user.two_factor_enabled:
-        return JsonResponse({'success': False, 'error': 'Two-factor authentication is not enabled'}, status=400)
+        return JsonResponse(
+            {'success': False, 'error': 'Two-factor authentication is not enabled'},
+            status=400
+        )
 
     user.backup_codes = [secrets.token_hex(4).upper() for _ in range(10)]
-    user.save()
+    user.save(update_fields=['backup_codes'])
 
+    logger.info(f"Backup codes regenerated for user: {user.email}")
     return JsonResponse({
         'success': True,
         'backup_codes': user.backup_codes,
-        'message': 'New backup codes generated successfully!'
+        'message': 'New backup codes generated. Store them somewhere safe.',
     })
 
 
-@require_POST
-def verify_two_factor_login(request):
-    """
-    Verify a user's TOTP or backup code at login.
-    """
-    from django.contrib.auth import authenticate, login
+# verify_2fa is no longer used — enable_two_factor handles verification inline.
+# verify_two_factor_login is no longer used — _handle_2fa_verification_ajax /
+# _handle_regular_login handle 2FA during the login flow.
 
-    username = request.POST.get('username')
-    password = request.POST.get('password')
-    code = request.POST.get('code')
-
-    user = authenticate(request, username=username, password=password)
-    if not user:
-        return JsonResponse({'success': False, 'error': 'Invalid credentials'}, status=400)
-
-    if user.two_factor_enabled:
-        secret = user.metadata.get('totp_secret')
-        totp = pyotp.TOTP(secret)
-
-        # Check TOTP or backup code
-        if not totp.verify(code, valid_window=1):
-            if code not in user.backup_codes:
-                return JsonResponse({'success': False, 'error': 'Invalid 2FA code'}, status=400)
-            # Consume backup code once used
-            user.backup_codes.remove(code)
-            user.save()
-
-    login(request, user)
-    return JsonResponse({'success': True, 'message': 'Login successful'})
 
 
 
@@ -2987,18 +3070,6 @@ def two_factor_setup(request):
         form = TwoFactorSetupForm()
 
     return render(request, 'accounts/two_factor_setup.html', {'form': form})
-
-
-@login_required
-def disable_two_factor(request):
-    """Disable two-factor authentication"""
-    if request.method == 'POST':
-        request.user.two_factor_enabled = False
-        request.user.backup_codes = []
-        request.user.save(update_fields=['two_factor_enabled', 'backup_codes'])
-        messages.success(request, 'Two-factor authentication has been disabled!')
-
-    return redirect('user_profile')
 
 
 @login_required
@@ -3226,11 +3297,11 @@ def _user_has_management_access(current_user, target_user):
     if current_user.company_id != target_user.company_id:
         return False
 
-    # Check role hierarchy
+    # Check role hierarchy — must be strictly higher priority, not equal
     current_priority = current_user.highest_role_priority
     target_priority = target_user.highest_role_priority
 
-    return current_priority >= target_priority
+    return current_priority > target_priority
 
 @require_saas_admin
 @login_required
@@ -3376,7 +3447,7 @@ class UserDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        user_profile = self.get_object()
+        user_profile = self.object  # Already fetched by DetailView — avoids a second DB query
         current_user = self.request.user
 
         # Get user's roles
@@ -3500,11 +3571,13 @@ class UserUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
         return reverse('user_detail', kwargs={'pk': self.object.pk})
 
     def form_valid(self, form):
+        # Capture old roles BEFORE super().form_valid() writes the new state to the DB
+        old_roles = set(self.object.all_roles) if 'roles' in form.changed_data else None
+
         response = super().form_valid(form)
 
         # Log role changes if roles were modified
-        if 'roles' in form.changed_data:
-            old_roles = set(self.object.all_roles)
+        if old_roles is not None:
             new_roles = set(form.cleaned_data.get('roles', []))
 
             # Log removed roles
@@ -3547,11 +3620,10 @@ class UserDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
 
     def _user_has_access(self, target_user):
         current_user = self.request.user
-        if current_user.primary_role and current_user.primary_role.priority >= 90:
-            return True
+        # Never allow a user to delete themselves via this admin view
         if current_user == target_user:
-            return True
-        if current_user.primary_role and current_user.primary_role.priority >= 100 and current_user.company == target_user.company:
+            return False
+        if current_user.primary_role and current_user.primary_role.priority >= 90:
             return True
         return False
 
@@ -3572,48 +3644,8 @@ class UserDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
         return redirect(self.success_url)
 
 
-class APIToken(models.Model):
-    """Model for user API tokens"""
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='api_tokens')
-    name = models.CharField(max_length=100, help_text="Descriptive name for this token")
-    token = models.CharField(max_length=64, unique=True)
-    permissions = models.JSONField(default=list, help_text="List of permissions for this token")
-    expires_at = models.DateTimeField(null=True, blank=True, help_text="Token expiration date")
-    last_used = models.DateTimeField(null=True, blank=True)
-    last_used_ip = models.GenericIPAddressField(null=True, blank=True)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"{self.name} - {self.user.email}"
-
-    def is_expired(self):
-        if self.expires_at:
-            return timezone.now() > self.expires_at
-        return False
-
-
-class UserSession(models.Model):
-    """Model to track user sessions"""
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='user_sessions')
-    session_key = models.CharField(max_length=40, unique=True)
-    ip_address = models.GenericIPAddressField()
-    user_agent = models.TextField()
-    device_info = models.JSONField(default=dict)
-    location = models.CharField(max_length=100, blank=True)
-    is_current = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    last_activity = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-last_activity']
-
-    def __str__(self):
-        return f"{self.user.email} - {self.ip_address}"
+# NOTE: APIToken and UserSession models have been moved to models.py where they belong.
+# They are imported at the top of this file via the standard .models import.
 
 
 @login_required
@@ -3852,8 +3884,8 @@ def export_all_data(request):
             # 2. API tokens as CSV
             api_tokens = APIToken.objects.filter(user=request.user)
             if api_tokens.exists():
-                csv_buffer = BytesIO()
-                csv_writer = csv.writer(csv_buffer.getvalue().decode() if csv_buffer.getvalue() else StringIO())
+                csv_buffer = StringIO()
+                csv_writer = csv.writer(csv_buffer)
                 csv_writer.writerow(['Name', 'Created', 'Last Used', 'Expires', 'Status'])
 
                 for token in api_tokens:
@@ -4256,18 +4288,10 @@ def bulk_invite_users(request, company_id):
                             error_count += 1
                             continue
                         else:
-                            # Update existing user's company
                             existing_user.company = company
                             existing_user.save()
                     else:
-                        # Create new user
-                        import secrets
-                        import string
-
-                        temporary_password = ''.join(
-                            secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
-
-                        # Generate username
+                        # Create account with unusable password — user sets it via setup link
                         base_username = email.split('@')[0]
                         username = base_username
                         counter = 1
@@ -4278,13 +4302,65 @@ def bulk_invite_users(request, company_id):
                         new_user = CustomUser.objects.create_user(
                             email=email,
                             username=username,
-                            password=temporary_password,
+                            password=None,
                             company=company,
                             first_name=row.get('first_name', ''),
                             last_name=row.get('last_name', ''),
                             phone_number=row.get('phone_number', ''),
-                            is_active=True
+                            is_active=True,
                         )
+                        new_user.set_unusable_password()
+
+                        # Generate invitation token (72-hour expiry)
+                        token = _generate_invitation_token()
+                        expiry = timezone.now() + timedelta(hours=72)
+                        if not new_user.metadata:
+                            new_user.metadata = {}
+                        new_user.metadata['invitation_token'] = token
+                        new_user.metadata['invitation_expires'] = expiry.isoformat()
+                        new_user.save()
+
+                        setup_url = _build_setup_url(request, new_user, token)
+                        first_name = row.get('first_name', '')
+
+                        plain_message = (
+                            f"Hello {first_name or 'there'},\n\n"
+                            f"You've been invited to join {company.name}.\n\n"
+                            f"Click the link below to set your password:\n{setup_url}\n\n"
+                            f"This link expires in 72 hours.\n\n"
+                            f"Best regards,\nThe {company.name} Team"
+                        )
+
+                        html_message = f"""<!DOCTYPE html>
+<html><body style="font-family:Arial,sans-serif;background:#f6f9fc;margin:0;padding:0;">
+  <div style="max-width:600px;margin:0 auto;background:#fff;padding:40px 30px;">
+    <h2 style="color:#667eea;">You've been invited to {company.name}</h2>
+    <p>Hello <strong>{first_name or 'there'}</strong>,</p>
+    <p>Click below to set your password and activate your account:</p>
+    <div style="text-align:center;margin:30px 0;">
+      <a href="{setup_url}"
+         style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;
+                padding:14px 30px;text-decoration:none;border-radius:5px;font-weight:600;">
+        Set My Password
+      </a>
+    </div>
+    <p style="color:#718096;font-size:13px;">Link expires in 72 hours.</p>
+    <p style="color:#a0aec0;font-size:12px;">
+      If you weren't expecting this, you can safely ignore this email.
+    </p>
+  </div>
+</body></html>"""
+
+                        try:
+                            send_tenant_email(
+                                subject=f"You've been invited to {company.name} — set up your account",
+                                message=plain_message,
+                                recipient_list=[email],
+                                html_message=html_message,
+                                tenant=getattr(connection, 'tenant', None),
+                            )
+                        except Exception as email_err:
+                            logger.error(f"Failed to send invitation email to {email}: {email_err}")
 
                     # Assign role if specified
                     role_id = row.get('role_id')
@@ -4292,10 +4368,8 @@ def bulk_invite_users(request, company_id):
                         try:
                             role = Role.objects.get(id=role_id)
                             if role in Role.objects.accessible_by_user(request.user):
-                                if existing_user:
-                                    existing_user.groups.add(role.group)
-                                else:
-                                    new_user.groups.add(role.group)
+                                target = existing_user if existing_user else new_user
+                                target.groups.add(role.group)
                         except (Role.DoesNotExist, ValueError):
                             pass
 
@@ -4315,7 +4389,7 @@ def bulk_invite_users(request, company_id):
                 if len(errors) > 10:
                     messages.info(request, f'... and {len(errors) - 10} more errors.')
 
-            return redirect('company_user_list', company_id=company_id)
+            return redirect('user_list')
 
         except Exception as e:
             messages.error(request, f'Error processing CSV file: {str(e)}')
@@ -4366,15 +4440,7 @@ def revoke_session(request, session_id):
         }, status=404)
 
 
-# Utility function
-def get_client_ip(request):
-    """Get client IP address from request"""
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(',')[0]
-    else:
-        ip = request.META.get('REMOTE_ADDR')
-    return ip
+# Utility functions (get_client_ip is imported from .utils above)
 
 @login_required
 @permission_required('accounts.change_customuser')
@@ -4571,33 +4637,38 @@ def switch_company(request, company_id):
 def invite_user(request):
     """
     Invite a new user to the current tenant's company.
-    Uses tenant-aware email backend.
+    Creates the account in an unusable-password state and emails a
+    one-time setup link. The user sets their own password on first visit.
     """
     tenant = getattr(connection, 'tenant', None)
     if not tenant or tenant.schema_name == 'public':
         raise PermissionDenied("You must be in a tenant schema to invite users.")
 
-    # Get company from tenant
-    company = getattr(tenant, 'company', None) or Company.objects.first()
+    # Always resolve company from the logged-in user — this guarantees the
+    # correct company is used in the invitation email regardless of DB order.
+    # getattr(tenant, 'company') can return None or the wrong company when
+    # multiple companies exist and the tenant relationship isn't set.
+    company = request.user.company
+    if not company:
+        # Fallback: try the tenant relationship, but never use .first()
+        company = getattr(tenant, 'company', None)
     if not company:
         raise PermissionDenied("No company associated with this tenant.")
 
-    # Check subscription limit
     if hasattr(company, 'can_add_employee') and not company.can_add_employee():
         messages.error(request, 'Company has reached the maximum user limit.')
         return redirect('company_user_list')
 
-    # Get available roles WITHIN tenant context
     with tenant_context(tenant):
         available_roles = Role.objects.accessible_by_user(request.user)
 
     if request.method == 'POST':
-        email = request.POST.get('email')
+        email = request.POST.get('email', '').strip().lower()
         role_id = request.POST.get('role')
         is_admin = request.POST.get('is_admin') == 'on'
-        first_name = request.POST.get('first_name', '')
-        last_name = request.POST.get('last_name', '')
-        phone_number = request.POST.get('phone_number', '')
+        first_name = request.POST.get('first_name', '').strip()
+        last_name = request.POST.get('last_name', '').strip()
+        phone_number = request.POST.get('phone_number', '').strip()
 
         if not email:
             messages.error(request, 'Email is required.')
@@ -4607,7 +4678,6 @@ def invite_user(request):
             existing_user = CustomUser.objects.filter(email=email).first()
 
             if existing_user:
-                # Update or skip
                 if existing_user.company == company:
                     messages.error(request, 'User already belongs to this company.')
                 else:
@@ -4616,7 +4686,6 @@ def invite_user(request):
                     existing_user.last_name = last_name or existing_user.last_name
                     existing_user.phone_number = phone_number or existing_user.phone_number
                     existing_user.company_admin = is_admin
-
                     if role_id:
                         try:
                             role = Role.objects.get(id=role_id)
@@ -4624,13 +4693,11 @@ def invite_user(request):
                                 existing_user.groups.add(role.group)
                         except Role.DoesNotExist:
                             pass
-
                     existing_user.save()
                     messages.success(request, f"User {existing_user.email} added to company.")
                 return redirect('company_user_list')
 
-            # Create new user
-            temporary_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+            # Create account with unusable password — user sets it via the setup link
             try:
                 with transaction.atomic():
                     base_username = email.split('@')[0]
@@ -4643,7 +4710,7 @@ def invite_user(request):
                     new_user = CustomUser.objects.create_user(
                         email=email,
                         username=username,
-                        password=temporary_password,
+                        password=None,          # unusable password until setup link used
                         company=company,
                         first_name=first_name,
                         last_name=last_name,
@@ -4651,6 +4718,8 @@ def invite_user(request):
                         company_admin=is_admin,
                         is_active=True,
                     )
+                    new_user.set_unusable_password()
+                    new_user.save(update_fields=['password'])
 
                     if role_id:
                         try:
@@ -4662,152 +4731,168 @@ def invite_user(request):
                                     action='assigned',
                                     user=request.user,
                                     affected_user=new_user,
-                                    notes='Role assigned during invitation'
+                                    notes='Role assigned during invitation',
                                 )
                         except Role.DoesNotExist:
                             pass
 
-                    # Generate tenant-aware login URL
-                    if hasattr(tenant, 'domain_url') and tenant.domain_url:
-                        # Domain-based tenancy
-                        scheme = 'https' if request.is_secure() else 'http'
-                        login_url = f"{scheme}://{tenant.domain_url}{reverse('login')}"
-                    else:
-                        # Path-based tenancy or fallback
-                        current_site = get_current_site(request)
-                        scheme = 'https' if request.is_secure() else 'http'
-                        base_url = f"{scheme}://{current_site.domain}"
-                        login_url = f"{base_url}{reverse('login')}"
+                    # Generate a one-time setup token (expires in 72 h)
+                    token = _generate_invitation_token()
+                    expiry = timezone.now() + timedelta(hours=72)
+                    if not new_user.metadata:
+                        new_user.metadata = {}
+                    new_user.metadata['invitation_token'] = token
+                    new_user.metadata['invitation_expires'] = expiry.isoformat()
+                    new_user.save(update_fields=['metadata'])
 
-                    # Send tenant-aware email invitation with professional design
-                    subject = f"Welcome to {company.name} PrimeBooks - Your Account is Ready!"
+                    setup_url = _build_setup_url(request, new_user, token)
 
-                    plain_message = f"""
-Hello {first_name or 'there'},
+                    # Build login URL for the email footer
+                    scheme = 'https' if request.is_secure() else 'http'
+                    # Reuse _build_setup_url's host logic so port is included on local dev
+                    _dummy = _build_setup_url(request, new_user, 'x')
+                    _base = _dummy.rsplit('/invite/', 1)[0]
+                    login_url = f"{_base}{reverse('login')}"
 
-You've been invited to join {company.name} PrimeBooks!
+                    subject = f"You've been invited to {company.name} — set up your account"
 
-YOUR LOGIN CREDENTIALS:
-Email: {email}
-Temporary Password: {temporary_password}
+                    plain_message = (
+                        f"Hello {first_name or 'there'},\n\n"
+                        f"You've been invited to join {company.name}.\n\n"
+                        f"Click the link below to set your password and activate your account:\n"
+                        f"{setup_url}\n\n"
+                        f"This link expires in 72 hours.\n\n"
+                        f"If you weren't expecting this invitation, you can safely ignore this email.\n\n"
+                        f"Best regards,\nThe {company.name} Team"
+                    )
 
-GET STARTED:
-Login URL: {login_url}
-
-SECURITY NOTES:
-• Please change your password immediately after logging in
-• Keep your credentials secure
-• Do not share your password with anyone
-
-If you have any questions, please contact your company administrator.
-
-Best regards,
-The {company.name}  Team | PrimeBooks - Prime Focus Ug Ltd
-"""
-
-                    html_message = f"""
-<!DOCTYPE html>
+                    html_message = f"""<!DOCTYPE html>
 <html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to {company.name} PrimeBooks - Prime Focus Ug Ltd</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f6f9fc;">
-    <div style="max-width: 600px; margin: 0 auto; background: #ffffff;">
-        <!-- Header -->
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center; color: white;">
-            <h1 style="margin: 0; font-size: 28px; font-weight: 300;">Welcome to {company.name} PrimeBooks - PFU ltd</h1>
-            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Your account has been created</p>
-        </div>
-
-        <!-- Content -->
-        <div style="padding: 40px 30px;">
-            <p style="margin: 0 0 20px 0;">Hello <strong>{first_name or 'there'}</strong>,</p>
-
-            <p style="margin: 0 0 25px 0;">You've been invited to join <strong style="color: #667eea;">{company.name}</strong>. We're excited to have you on board!</p>
-
-            <!-- Credentials Card -->
-            <div style="background: #f8f9fa; border-left: 4px solid #667eea; padding: 20px; margin: 25px 0; border-radius: 4px;">
-                <h3 style="margin: 0 0 15px 0; color: #2d3748; font-size: 18px;">🔐 Your Login Credentials</h3>
-                <table style="width: 100%; border-collapse: collapse;">
-                    <tr>
-                        <td style="padding: 8px 0; width: 120px; font-weight: 600; color: #4a5568;">Email:</td>
-                        <td style="padding: 8px 0; font-family: monospace; color: #2d3748;">{email}</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 8px 0; font-weight: 600; color: #4a5568;">Password:</td>
-                        <td style="padding: 8px 0; font-family: monospace; color: #2d3748;">{temporary_password}</td>
-                    </tr>
-                </table>
-            </div>
-
-            <!-- Action Button -->
-            <div style="text-align: center; margin: 35px 0;">
-                <a href="{login_url}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 35px; text-decoration: none; border-radius: 5px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);">
-                    Get Started - Login Now
-                </a>
-            </div>
-
-            <!-- Alternative Link -->
-            <div style="text-align: center; margin: 20px 0;">
-                <p style="margin: 0; color: #718096; font-size: 14px;">
-                    Or copy and paste this link in your browser:<br>
-                    <code style="background: #f7fafc; padding: 8px 12px; border-radius: 3px; font-size: 12px; word-break: break-all;">{login_url}</code>
-                </p>
-            </div>
-
-            <!-- Security Notice -->
-            <div style="background: #fff5f5; border: 1px solid #fed7d7; padding: 15px; border-radius: 6px; margin: 25px 0;">
-                <h4 style="margin: 0 0 10px 0; color: #c53030; font-size: 14px;">⚠️ Security Notice</h4>
-                <ul style="margin: 0; padding-left: 20px; color: #744210; font-size: 13px;">
-                    <li>Change your password immediately after first login</li>
-                    <li>Keep your login credentials confidential</li>
-                    <li>Do not share your password with anyone</li>
-                </ul>
-            </div>
-        </div>
-
-        <!-- Footer -->
-        <div style="background: #f8f9fa; padding: 25px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
-            <p style="margin: 0 0 10px 0; color: #718096; font-size: 14px;">
-                If you have any questions, please contact your company administrator.
-            </p>
-            <p style="margin: 0; color: #a0aec0; font-size: 13px;">
-                Best regards,<br>
-                <strong>The {company.name} Team</strong>
-            </p>
-            <p style="margin: 0; color: #a0aec0; font-size: 13px;">
-                Prime Focus Uganda Limited,<br>
-                <strong>PRIMEBOOKS Team</strong>
-            </p>
-        </div>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f6f9fc;color:#333;">
+  <div style="max-width:600px;margin:0 auto;background:#fff;">
+    <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:40px 20px;text-align:center;color:#fff;">
+      <h1 style="margin:0;font-size:26px;font-weight:300;">Welcome to {company.name}</h1>
+      <p style="margin:10px 0 0;font-size:15px;opacity:.9;">Your account is ready — set your password to get started</p>
     </div>
+    <div style="padding:40px 30px;">
+      <p>Hello <strong>{first_name or 'there'}</strong>,</p>
+      <p>You've been invited to join <strong style="color:#667eea;">{company.name}</strong>.</p>
+      <p>Click the button below to set your password and activate your account:</p>
+      <div style="text-align:center;margin:35px 0;">
+        <a href="{setup_url}"
+           style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+                  color:#fff;padding:14px 35px;text-decoration:none;border-radius:5px;
+                  font-weight:600;font-size:16px;">
+          Set My Password &amp; Activate Account
+        </a>
+      </div>
+      <p style="color:#718096;font-size:13px;text-align:center;">
+        Or copy this link into your browser:<br>
+        <code style="background:#f7fafc;padding:6px 10px;border-radius:3px;font-size:11px;word-break:break-all;">{setup_url}</code>
+      </p>
+      <div style="background:#fffbeb;border:1px solid #f6e05e;padding:14px;border-radius:6px;margin:25px 0;">
+        <p style="margin:0;font-size:13px;color:#744210;">
+          ⏰ This link expires in <strong>72 hours</strong>. After that, ask your administrator to resend the invitation.
+        </p>
+      </div>
+      <p style="color:#718096;font-size:13px;">
+        If you weren't expecting this invitation you can safely ignore this email.
+      </p>
+    </div>
+    <div style="background:#f8f9fa;padding:20px 30px;text-align:center;border-top:1px solid #e2e8f0;">
+      <p style="margin:0;color:#a0aec0;font-size:12px;">
+        Best regards, <strong>The {company.name} Team</strong>
+      </p>
+    </div>
+  </div>
 </body>
-</html>
-"""
+</html>"""
 
                     send_tenant_email(
                         subject=subject,
                         message=plain_message,
                         recipient_list=[email],
                         html_message=html_message,
-                        tenant=tenant
+                        tenant=tenant,
                     )
 
-                    messages.success(request, f"Invitation sent to {email} successfully.")
+                    log_action = AuditLog.log if hasattr(AuditLog, 'log') else None
+                    if log_action:
+                        try:
+                            log_action(
+                                action='user_invited',
+                                user=request.user,
+                                description=f"Invitation sent to {email}",
+                            )
+                        except Exception:
+                            pass
+
+                    messages.success(request, f"Invitation sent to {email}. They'll receive a setup link valid for 72 hours.")
                     return redirect('company_user_list')
 
             except Exception as e:
-                messages.error(request, f"Error creating user: {e}")
+                logger.error(f"Error creating invited user {email}: {e}")
+                messages.error(request, f"Error sending invitation: {e}")
                 return redirect('invite_user')
 
     context = {
         'company': company,
         'available_roles': available_roles,
     }
-
     return render(request, 'accounts/invite_user.html', context)
+
+
+def accept_invitation(request, token):
+    """
+    Password-setup view reached via the one-time link emailed to new invitees.
+    On GET: show the set-password form.
+    On POST: validate, set password, mark account active, log user in.
+    """
+    # Find the user whose invitation token matches
+    try:
+        user = CustomUser.objects.get(
+            metadata__invitation_token=token,
+            is_active=True,
+        )
+    except CustomUser.DoesNotExist:
+        messages.error(request, 'This invitation link is invalid or has already been used.')
+        return redirect('login')
+
+    # Check expiry
+    expiry_str = (user.metadata or {}).get('invitation_expires')
+    if expiry_str:
+        expiry = datetime.fromisoformat(expiry_str)
+        if timezone.is_naive(expiry):
+            expiry = timezone.make_aware(expiry)
+        if timezone.now() > expiry:
+            messages.error(request, 'This invitation link has expired. Please ask your administrator to resend it.')
+            return redirect('login')
+
+    if request.method == 'POST':
+        password1 = request.POST.get('password1', '')
+        password2 = request.POST.get('password2', '')
+
+        if not password1:
+            messages.error(request, 'Please enter a password.')
+        elif password1 != password2:
+            messages.error(request, 'Passwords do not match.')
+        elif len(password1) < 8:
+            messages.error(request, 'Password must be at least 8 characters.')
+        else:
+            user.set_password(password1)
+            # Clear invitation token so the link can't be reused
+            user.metadata.pop('invitation_token', None)
+            user.metadata.pop('invitation_expires', None)
+            user.save()
+
+            # Log the user in automatically
+            backend = 'django.contrib.auth.backends.ModelBackend'
+            login(request, user, backend=backend)
+            messages.success(request, f'Welcome to {user.company.name if user.company else "the platform"}! Your account is now active.')
+            return redirect(get_dashboard_url(user))
+
+    return render(request, 'accounts/accept_invitation.html', {'invited_user': user})
 
 
 @login_required

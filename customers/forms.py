@@ -7,11 +7,12 @@ from crispy_forms.layout import Layout, Fieldset, Row, Column, Submit, Reset, HT
 from crispy_forms.bootstrap import InlineRadios, PrependedText, AppendedText
 from .models import Customer, CustomerGroup, CustomerNote, EFRISCustomerSync
 from stores.models import Store
+from stores.mixins import StoreRestrictedModelForm
 
 User = get_user_model()
 
 
-class CustomerForm(forms.ModelForm):
+class CustomerForm(StoreRestrictedModelForm):
     """Advanced Customer Form with conditional fields and validation"""
 
     confirm_email = forms.EmailField(

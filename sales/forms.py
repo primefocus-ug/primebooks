@@ -3,14 +3,14 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from decimal import Decimal
 import json
-
+from stores.mixins import StoreRestrictedModelForm
 from .models import Sale, SaleItem, Payment, Cart, CartItem, Receipt
 from inventory.models import Product, Stock
 from customers.models import Customer
 from stores.models import Store
 
 
-class SaleForm(forms.ModelForm):
+class SaleForm(StoreRestrictedModelForm):
     """Enhanced Sale form with document type selection and validation"""
 
     customer_search = forms.CharField(
@@ -306,7 +306,7 @@ class SaleItemForm(forms.ModelForm):
         return price
 
 
-class PaymentForm(forms.ModelForm):
+class PaymentForm(StoreRestrictedModelForm):
     """Enhanced Payment form with method-specific fields"""
 
     # ==================== NEW: Payment Type Field ====================
@@ -353,7 +353,7 @@ class PaymentForm(forms.ModelForm):
         return amount
 
 
-class CartForm(forms.ModelForm):
+class CartForm(StoreRestrictedModelForm):
     """Enhanced Cart form with document type selection"""
 
     customer_search = forms.CharField(
@@ -459,7 +459,7 @@ class CartItemForm(forms.ModelForm):
         return quantity
 
 
-class QuickSaleForm(forms.Form):
+class QuickSaleForm(StoreRestrictedModelForm):
     """Quick sale form for fast transactions - UPDATED"""
 
     products_data = forms.CharField(widget=forms.HiddenInput())
@@ -539,7 +539,7 @@ class QuickSaleForm(forms.Form):
         return payment_method
 
 
-class SaleSearchForm(forms.Form):
+class SaleSearchForm(StoreRestrictedModelForm):
     """Advanced search form for sales - UPDATED"""
 
     search = forms.CharField(
@@ -667,7 +667,7 @@ class RefundForm(forms.Form):
             raise ValidationError("Invalid refund items data.")
 
 
-class ReceiptForm(forms.ModelForm):
+class ReceiptForm(StoreRestrictedModelForm):
     """Form for receipt generation and reprinting"""
 
     class Meta:

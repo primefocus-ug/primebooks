@@ -1,40 +1,64 @@
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required, permission_required
-from django.contrib import messages
-from django.http import JsonResponse
-from django.db.models import Q, Count
-from django.contrib.auth.models import Permission
-from django.contrib.contenttypes.models import ContentType
 from collections import defaultdict
-from .models import Role, CustomUser
-from .forms import RoleForm, RolePermissionForm
-from django.shortcuts import render, redirect
-from django.contrib.auth import login, authenticate, logout
-from django.contrib.auth.decorators import login_required
-from django.contrib import messages
-from django.urls import reverse
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.utils.encoding import force_bytes, force_str
-from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
-from django.template.loader import render_to_string
+import hashlib
+import logging
+
 from django.conf import settings
-from django.http import HttpResponse
-from .models import CustomUser
+from django.contrib import messages
+from django.contrib.auth import login, authenticate, logout
+from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.models import Permission
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.contenttypes.models import ContentType
+from django.core.cache import cache
+from django.core.mail import send_mail
+from django.db import connection
+from django.db.models import Q, Count
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render, redirect, get_object_or_404
+from django.template.loader import render_to_string
+from django.urls import reverse
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+
+from django_tenants.utils import tenant_context
+
+from company.email import send_tenant_email, send_password_reset_email
+from .models import Role, CustomUser
 from .forms import (
+    RoleForm,
+    RolePermissionForm,
     PasswordResetRequestForm,
     SetPasswordForm,
-    UserProfileForm
+    UserProfileForm,
 )
-import logging
 
 logger = logging.getLogger(__name__)
 
-from django.db import connection
-from django_tenants.utils import tenant_context
-from company.email import send_tenant_email, send_password_reset_email
-from django.http import JsonResponse
-from django.contrib.auth.decorators import login_required
+
+# ----------------------------------------------------------------
+# Lightweight cache-based rate limiting for unauthenticated views
+# ----------------------------------------------------------------
+
+def _get_reset_client_ip(request):
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR', '')
+
+
+def _rl_key_view(scope, identifier):
+    h = hashlib.sha256(f"{scope}:{identifier}".encode()).hexdigest()[:16]
+    return f"rl:{scope}:{h}"
+
+
+def _is_reset_rate_limited(scope, identifier, max_attempts, window):
+    return cache.get(_rl_key_view(scope, identifier), 0) >= max_attempts
+
+
+def _increment_reset_rate_limit(scope, identifier, window):
+    key = _rl_key_view(scope, identifier)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, timeout=window)
 
 
 @login_required
@@ -65,6 +89,25 @@ def password_reset_request(request):
         form = PasswordResetRequestForm(request.POST)
         if form.is_valid():
             email = form.cleaned_data['email']
+            ip = _get_reset_client_ip(request)
+
+            # Rate limit: 5 attempts per IP per hour, 3 per email per hour
+            if _is_reset_rate_limited('reset_ip', ip, max_attempts=5, window=3600):
+                messages.success(
+                    request,
+                    'If that email exists, password reset instructions have been sent.'
+                )
+                return redirect('login')
+
+            if _is_reset_rate_limited('reset_email', email.lower(), max_attempts=3, window=3600):
+                messages.success(
+                    request,
+                    'If that email exists, password reset instructions have been sent.'
+                )
+                return redirect('login')
+
+            _increment_reset_rate_limit('reset_ip', ip, window=3600)
+            _increment_reset_rate_limit('reset_email', email.lower(), window=3600)
 
             try:
                 # Get the current tenant
@@ -104,10 +147,6 @@ def password_reset_request(request):
                             tenant=tenant
                         )
 
-                        messages.success(
-                            request,
-                            'Password reset instructions have been sent to your email.'
-                        )
                         logger.info(f"Password reset email sent to {email} for tenant {tenant.name}")
                 else:
                     # Fallback to regular user lookup and email sending
@@ -142,20 +181,18 @@ def password_reset_request(request):
                         fail_silently=False,
                     )
 
-                    messages.success(
-                        request,
-                        'Password reset instructions have been sent to your email.'
-                    )
                     logger.info(f"Password reset email sent to {email} (no tenant context)")
 
             except CustomUser.DoesNotExist:
-                # Don't reveal if email exists or not (security)
-                messages.success(
-                    request,
-                    'If that email exists, password reset instructions have been sent.'
-                )
-                logger.warning(f"Password reset requested for non-existent email: {email}")
+                # Don't reveal if email exists or not (security) — log quietly
+                logger.info(f"Password reset requested for unknown email (not revealed to user)")
 
+            # Always show the same message and redirect, regardless of whether the
+            # email exists, to prevent user-enumeration via response differences.
+            messages.success(
+                request,
+                'If that email exists, password reset instructions have been sent.'
+            )
             return redirect('login')
     else:
         form = PasswordResetRequestForm()
@@ -178,7 +215,7 @@ def password_reset_confirm(request, uidb64, token):
             with tenant_context(tenant):
                 user = CustomUser.objects.get(pk=uid)
 
-                if user is not None and default_token_generator.check_token(user, token):
+                if default_token_generator.check_token(user, token):
                     if request.method == 'POST':
                         form = SetPasswordForm(user, request.POST)
                         if form.is_valid():
@@ -214,7 +251,7 @@ def password_reset_confirm(request, uidb64, token):
             # Fallback without tenant context
             user = CustomUser.objects.get(pk=uid)
 
-            if user is not None and default_token_generator.check_token(user, token):
+            if default_token_generator.check_token(user, token):
                 if request.method == 'POST':
                     form = SetPasswordForm(user, request.POST)
                     if form.is_valid():
@@ -257,70 +294,9 @@ def password_reset_confirm(request, uidb64, token):
         })
 
 
-# Alternative simplified version using the helper function
-def password_reset_request_simple(request):
-    """
-    Simplified password reset request using the helper function
-    """
-    if request.method == 'POST':
-        form = PasswordResetRequestForm(request.POST)
-        if form.is_valid():
-            email = form.cleaned_data['email']
-
-            try:
-                # Get the current tenant
-                tenant = getattr(request, 'tenant', None) or getattr(connection, 'tenant', None)
-
-                if tenant:
-                    with tenant_context(tenant):
-                        user = CustomUser.objects.get(email=email, is_active=True)
-                else:
-                    user = CustomUser.objects.get(email=email, is_active=True)
-
-                # Generate password reset token
-                token = default_token_generator.make_token(user)
-                uid = urlsafe_base64_encode(force_bytes(user.pk))
-
-                # Build reset URL
-                reset_url = request.build_absolute_uri(
-                    reverse('password_reset_confirm', kwargs={
-                        'uidb64': uid,
-                        'token': token
-                    })
-                )
-
-                # Use the simplified password reset email function
-                from company.email import send_password_reset_email
-                send_password_reset_email(
-                    user_email=user.email,
-                    reset_url=reset_url,
-                    tenant=tenant
-                )
-
-                messages.success(
-                    request,
-                    'Password reset instructions have been sent to your email.'
-                )
-                logger.info(f"Password reset email sent to {email}")
-
-            except CustomUser.DoesNotExist:
-                # Don't reveal if email exists or not (security)
-                messages.success(
-                    request,
-                    'If that email exists, password reset instructions have been sent.'
-                )
-                logger.warning(f"Password reset requested for non-existent email: {email}")
-
-            return redirect('login')
-    else:
-        form = PasswordResetRequestForm()
-
-    return render(request, 'accounts/password_reset_request.html', {'form': form})
-
 @login_required
 @permission_required('accounts.view_role', raise_exception=True)
 def role_list(request):
-    """Display all roles with statistics"""
     company = request.tenant
 
     roles = Role.objects.filter(
@@ -446,13 +422,6 @@ def role_edit(request, pk):
     return render(request, 'accounts/role_form.html', context)
 
 
-from collections import defaultdict
-from django.contrib.auth.decorators import login_required, permission_required
-from django.contrib.auth.models import Permission
-from django.shortcuts import get_object_or_404, redirect, render
-from django.contrib import messages
-from django.conf import settings
-
 RBAC_ALLOWED_APPS = {
     'accounts',
     'company',
@@ -496,7 +465,13 @@ def role_permissions(request, pk):
     if request.method == 'POST':
         selected_permissions = request.POST.getlist('permissions')
 
-        permission_ids = [int(p) for p in selected_permissions]
+        # Guard against non-integer values submitted by a malicious or broken client
+        permission_ids = []
+        for p in selected_permissions:
+            try:
+                permission_ids.append(int(p))
+            except (ValueError, TypeError):
+                pass
 
         # IMPORTANT: restrict permissions again on POST
         permissions = Permission.objects.filter(
@@ -668,6 +643,11 @@ def role_delete(request, pk):
 def role_check_capacity(request, pk):
     """Check if role can accept more users (AJAX)"""
     role = get_object_or_404(Role, pk=pk)
+
+    # Restrict to roles belonging to the current tenant or system roles
+    company = getattr(request, 'tenant', None)
+    if company and role.company and role.company != company:
+        return JsonResponse({'error': 'Access denied'}, status=403)
 
     can_assign, message = role.can_assign_to_user()
 

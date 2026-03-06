@@ -2,14 +2,14 @@ from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.utils.translation import gettext_lazy as _
-from .models import CustomUser, UserSignature
+from .models import CustomUser, UserSignature, Role, RoleHistory, APIToken, UserSession
 
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True)
-    
+
     class Meta:
         model = CustomUser
         fields = [
@@ -122,7 +122,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
 class UserSignatureSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
-    
+
     class Meta:
         model = UserSignature
         fields = [
@@ -143,7 +143,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     """Serializer for user's own profile"""
     full_name = serializers.CharField(source='get_full_name', read_only=True)
     signature = UserSignatureSerializer(read_only=True)
-    
+
     class Meta:
         model = CustomUser
         fields = [
@@ -158,7 +158,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 class UserListSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='get_full_name', read_only=True)
-    
+
     class Meta:
         model = CustomUser
         fields = [
@@ -166,3 +166,81 @@ class UserListSerializer(serializers.ModelSerializer):
             'is_active', 'date_joined'
         ]
         read_only_fields = fields
+
+
+class RoleSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='group.name', read_only=True)
+
+    class Meta:
+        model = Role
+        fields = ['id', 'name', 'description', 'color_code', 'priority', 'is_active', 'is_system_role']
+        read_only_fields = fields
+
+
+class APITokenSerializer(serializers.ModelSerializer):
+    """Serializer for APIToken — token value only shown on creation."""
+
+    is_expired = serializers.BooleanField(read_only=True)
+    is_valid = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = APIToken
+        fields = [
+            'id', 'name', 'token', 'token_type',
+            'is_active', 'expires_at', 'last_used_at', 'last_used_ip',
+            'created_at', 'is_expired', 'is_valid',
+        ]
+        read_only_fields = ['id', 'token', 'last_used_at', 'last_used_ip', 'created_at', 'is_expired', 'is_valid']
+        extra_kwargs = {
+            # Only expose the raw token value immediately after creation
+            'token': {'write_only': False},
+        }
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Hide the raw token in list/retrieve responses; only show it on creation
+        request = self.context.get('request')
+        if request and request.method != 'POST':
+            data['token'] = f"{instance.token[:8]}{'*' * 24}"
+        return data
+
+
+class APITokenCreateSerializer(serializers.ModelSerializer):
+    """Used only for creation — returns full token once."""
+
+    class Meta:
+        model = APIToken
+        fields = ['id', 'name', 'token_type', 'expires_at', 'token', 'created_at']
+        read_only_fields = ['id', 'token', 'created_at']
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            validated_data['user'] = request.user
+        return super().create(validated_data)
+
+
+class UserSessionSerializer(serializers.ModelSerializer):
+    """Serializer for UserSession."""
+
+    is_expired = serializers.BooleanField(read_only=True)
+    session_duration = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserSession
+        fields = [
+            'id', 'session_key', 'ip_address', 'user_agent',
+            'browser', 'os', 'device_type', 'location',
+            'is_active', 'created_at', 'last_activity', 'expires_at',
+            'is_expired', 'session_duration',
+        ]
+        read_only_fields = fields
+
+    def get_session_duration(self, obj):
+        if obj.last_activity and obj.created_at:
+            delta = obj.last_activity - obj.created_at
+            total_seconds = int(delta.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            return f"{hours}h {minutes}m"
+        return None

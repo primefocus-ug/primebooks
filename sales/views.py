@@ -1,4 +1,5 @@
 import uuid
+from stores.mixins import StoreQuerysetMixin
 from channels.layers import get_channel_layer
 from django.urls import reverse
 from django.shortcuts import render, get_object_or_404, redirect
@@ -621,7 +622,7 @@ def search_services(request):
         return JsonResponse({'error': 'Search failed'}, status=500)
 
 
-class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class SalesListView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """Enhanced sales list with advanced filtering, pagination, and credit invoice support"""
     model = Sale
     template_name = 'sales/sales_list.html'
@@ -1125,7 +1126,7 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
         return context
 
-class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class SaleDetailView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     """Enhanced sale detail view with comprehensive information, EFRIS integration, and credit details"""
     model = Sale
     template_name = 'sales/sales_detail.html'

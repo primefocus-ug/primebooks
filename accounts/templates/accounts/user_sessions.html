@@ -36,7 +36,7 @@
  {% endblock %}
 {% block breadcrumb_items %}
 {% if perms.accounts.view_customuser %}
-<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'user_profile' %}">{% trans "Dashboard" %}</a></li>
 {% endif %}
 <li class="breadcrumb-item active">{% trans "My Sessions" %}</li>
 {% endblock %}
@@ -60,12 +60,9 @@
         <div class="card shadow-sm">
             <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-display me-2"></i>{% trans "Active Sessions" %}</h5>
-                <form method="post" action="{% url 'stores:terminate_all_sessions' %}" class="d-inline">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-sm btn-outline-light" onclick="return confirm('{% trans "Are you sure you want to terminate all other sessions?" %}')">
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="terminateAllSessions()">
                         <i class="bi bi-power me-1"></i>{% trans "End All Other Sessions" %}
                     </button>
-                </form>
             </div>
             <div class="card-body">
                 {% if active_sessions %}
@@ -116,7 +113,7 @@
                                         </div>
                                         <div>
                                             {% if session.id != request.session.device_session_id %}
-                                            <form method="post" action="{% url 'stores:terminate_session' session.id %}" class="d-inline">
+                                            <form method="post" action="{% url 'revoke_session' session.id %}" class="d-inline">
                                                 {% csrf_token %}
                                                 <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('{% trans "Terminate this session?" %}')">
                                                     <i class="bi bi-x-circle"></i> {% trans "End" %}
@@ -265,16 +262,14 @@
                                 </div>
                                 <div class="btn-group-vertical btn-group-sm">
                                     {% if not device.is_trusted %}
-                                    <form method="post" action="{% url 'stores:trust_device' device.id %}" class="d-inline">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-outline-success btn-sm">
-                                            <i class="bi bi-shield-check"></i>
-                                        </button>
-                                    </form>
+                                    <span class="btn btn-outline-success btn-sm disabled" title="{% trans 'Trust via security settings' %}">
+                                        <i class="bi bi-shield-check"></i>
+                                    </span>
                                     {% endif %}
-                                    <form method="post" action="{% url 'stores:remove_device' device.id %}" class="d-inline">
+                                    <form method="post" action="{% url 'revoke_session' device.id %}" class="d-inline">
                                         {% csrf_token %}
-                                        <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Remove this device?" %}')">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm"
+                                            onclick="return confirm('{% trans "Remove this device?" %}')">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </form>
@@ -312,7 +307,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Auto-refresh active sessions every 30 seconds
     setInterval(function() {
-        fetch("{% url 'stores:api_active_sessions' %}")
+        fetch("{% url 'user_quick_stats' %}")
             .then(response => response.json())
             .then(data => {
                 // Update badge

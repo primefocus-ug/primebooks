@@ -1,25 +1,19 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm, AuthenticationForm
+from django.contrib.auth.forms import SetPasswordForm as DjangoSetPasswordForm
 from django.contrib.auth import authenticate
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from django.core.validators import FileExtensionValidator
-import pytz
 from django.contrib.auth.models import Group, Permission
 from django.db.models import Q
-from company.models import Company
-from .models import CustomUser, UserSignature,Role, RoleHistory
+import pytz
 import re
-from django.contrib.auth.forms import SetPasswordForm as DjangoSetPasswordForm
-from .models import Role, CustomUser
-from django.core.exceptions import ValidationError
 import logging
-from django import forms
 from django_otp.plugins.otp_totp.models import TOTPDevice
-from django.contrib.auth.models import Group, Permission
-from .models import Role
-from django.core.exceptions import ValidationError
+from company.models import Company
+from .models import CustomUser, UserSignature, Role, RoleHistory, APIToken, UserSession
 
 logger = logging.getLogger(__name__)
 
@@ -363,9 +357,14 @@ class CustomUserCreationForm(UserCreationForm):
             'placeholder': 'Enter first name'
         })
     )
-    company= forms.Select(attrs={
-        'class':'form-select',
-    })
+    company = forms.ModelChoiceField(
+        queryset=Company.objects.all(),
+        required=False,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        }),
+        help_text='Company this user belongs to (SaaS admins only)'
+    )
     last_name = forms.CharField(
         max_length=50,
         required=True,
@@ -1452,3 +1451,116 @@ class TwoFactorSetupForm(forms.Form):
         if not code.isdigit():
             raise ValidationError(_('Verification code must contain only numbers.'))
         return code
+
+class APITokenForm(forms.ModelForm):
+    """Form for creating and editing API tokens"""
+
+    class Meta:
+        model = APIToken
+        fields = ['name', 'token_type', 'expires_at']
+        widgets = {
+            'name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g., Mobile App Token, CI/CD Integration',
+            }),
+            'token_type': forms.Select(attrs={
+                'class': 'form-select',
+            }),
+            'expires_at': forms.DateTimeInput(attrs={
+                'class': 'form-control',
+                'type': 'datetime-local',
+            }),
+        }
+        help_texts = {
+            'name': 'A descriptive label so you can identify this token later.',
+            'token_type': 'Controls what operations this token can perform.',
+            'expires_at': 'Leave blank for a token that never expires.',
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+    def save(self, commit=True):
+        token = super().save(commit=False)
+        if self.user:
+            token.user = self.user
+        if commit:
+            token.save()
+        return token
+
+
+class UserSessionFilterForm(forms.Form):
+    """Form for filtering/searching user sessions"""
+
+    search = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Search by IP address or device...',
+        }),
+    )
+    is_active = forms.ChoiceField(
+        required=False,
+        choices=[('', 'All Sessions'), ('true', 'Active Only'), ('false', 'Inactive Only')],
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+    device_type = forms.ChoiceField(
+        required=False,
+        choices=[
+            ('', 'All Devices'),
+            ('desktop', 'Desktop'),
+            ('mobile', 'Mobile'),
+            ('tablet', 'Tablet'),
+        ],
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+
+
+class ReviewAuditLogForm(forms.Form):
+    """Form for reviewing a flagged audit log entry."""
+
+    ACTION_CHOICES = [
+        ('', _('No Action')),
+        ('acknowledge', _('Acknowledge — noted, no further action needed')),
+        ('investigate', _('Investigate — mark for further investigation')),
+        ('escalate', _('Escalate — escalate to senior administrator')),
+        ('dismiss', _('Dismiss — false positive, dismiss the flag')),
+    ]
+
+    notes = forms.CharField(
+        required=False,
+        label=_('Review Notes'),
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 4,
+            'placeholder': 'Add your review notes, observations, or any follow-up actions taken...',
+            'maxlength': '2000',
+        }),
+        max_length=2000,
+        help_text=_('Optional notes about this audit log entry (max 2000 characters).')
+    )
+
+    action = forms.ChoiceField(
+        required=False,
+        label=_('Review Action'),
+        choices=ACTION_CHOICES,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        }),
+        help_text=_('Select an action to take on this audit log entry.')
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        action = cleaned_data.get('action')
+        notes = cleaned_data.get('notes', '').strip()
+
+        # Require notes when escalating or investigating
+        if action in ('investigate', 'escalate') and not notes:
+            raise ValidationError(
+                _('Please provide review notes when marking an entry for investigation or escalation.')
+            )
+
+        cleaned_data['notes'] = notes
+        return cleaned_data

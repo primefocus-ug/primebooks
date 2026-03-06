@@ -9,6 +9,7 @@ from stores.models import Store
 from company.models import EFRISCommodityCategory
 from django.utils.translation import gettext_lazy as _
 import logging
+from stores.mixins import StoreRestrictedModelForm
 from django.forms import inlineformset_factory
 from stores.models import StockStore
 from .models import (
@@ -1567,7 +1568,7 @@ class ProductImportForm(forms.Form):
 
         return file
 
-class StockMovementForm(forms.ModelForm):
+class StockMovementForm(StoreRestrictedModelForm):
     class Meta:
         model = StockMovement
         fields = [

@@ -1,0 +1,3312 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+{% load custom_filters %}
+{% load humanize %}
+{% load math_extras %}
+{% load efris_tags %}
+
+{% block title %}
+  {% if active_tab == 'dashboard' %}Inventory Dashboard
+  {% elif active_tab == 'realtime' %}Live Dashboard
+  {% elif active_tab == 'stock_dashboard' %}Stock Dashboard
+  {% elif active_tab == 'enhanced_dashboard' %}Enhanced Stock Dashboard
+  {% elif active_tab == 'inventory_report' %}Inventory Report
+  {% elif active_tab == 'low_stock' %}Low Stock Report
+  {% elif active_tab == 'movement_report' %}Stock Movement Report
+  {% elif active_tab == 'valuation' %}Valuation Report
+  {% elif active_tab == 'movement_analytics' %}Movement Analytics
+  {% else %}Inventory
+  {% endif %}
+  | {{ company.trading_name|default:company.name }} | {{ block.super }}
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+/* =========================================================
+   INVENTORY MASTER — v2 Enhanced
+   Dark/light adaptive · refined geometric aesthetic
+   ========================================================= */
+
+/* ── Google Font ── */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+/* ── CSS Variables ── */
+:root {
+  --inv-primary:        #4f46e5;
+  --inv-primary-dark:   #3730a3;
+  --inv-primary-light:  #eef2ff;
+  --inv-success:        #10b981;
+  --inv-warning:        #f59e0b;
+  --inv-danger:         #ef4444;
+  --inv-info:           #06b6d4;
+  --inv-purple:         #8b5cf6;
+  --inv-pink:           #ec4899;
+  --inv-orange:         #f97316;
+  --inv-radius:         14px;
+  --inv-radius-sm:      9px;
+  --inv-radius-xs:      6px;
+  --inv-shadow:         0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06);
+  --inv-shadow-hover:   0 8px 32px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.08);
+  --inv-shadow-card:    0 0 0 1px rgba(0,0,0,.05), 0 4px 20px rgba(0,0,0,.07);
+  --inv-transition:     all .2s cubic-bezier(.4,0,.2,1);
+  --inv-gradient-primary: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  --inv-gradient-success: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  --inv-gradient-warning: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  --inv-gradient-danger:  linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  --inv-gradient-info:    linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+  --inv-gradient-purple:  linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+
+  /* Light theme */
+  --inv-bg:           #f4f6fb;
+  --inv-surface:      #ffffff;
+  --inv-surface-alt:  #f8fafc;
+  --inv-surface-2:    #f1f5f9;
+  --inv-border:       #e4e9f0;
+  --inv-border-light: #f0f4f8;
+  --inv-text:         #0f172a;
+  --inv-text-muted:   #64748b;
+  --inv-text-xs:      #94a3b8;
+  --inv-input-bg:     #ffffff;
+  --inv-accent-line:  rgba(79,70,229,.12);
+}
+
+[data-bs-theme="dark"],
+[data-theme="dark"] {
+  --inv-bg:           #0a0d14;
+  --inv-surface:      #111827;
+  --inv-surface-alt:  #161d2e;
+  --inv-surface-2:    #1e2636;
+  --inv-border:       #1f2937;
+  --inv-border-light: #1a2233;
+  --inv-text:         #e2e8f0;
+  --inv-text-muted:   #94a3b8;
+  --inv-text-xs:      #64748b;
+  --inv-input-bg:     #0f1623;
+  --inv-primary-light: rgba(79,70,229,.18);
+  --inv-shadow:       0 1px 3px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+  --inv-shadow-hover: 0 8px 32px rgba(0,0,0,.5);
+  --inv-shadow-card:  0 0 0 1px rgba(255,255,255,.04), 0 4px 20px rgba(0,0,0,.3);
+  --inv-accent-line:  rgba(79,70,229,.2);
+}
+
+/* ── Base ── */
+body {
+  background: var(--inv-bg);
+  color: var(--inv-text);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 14px;
+}
+
+/* ── Top navigation ── */
+.inv-app-nav {
+  display: flex;
+  gap: .2rem;
+  background: var(--inv-surface);
+  border: 1px solid var(--inv-border);
+  border-radius: var(--inv-radius);
+  padding: .3rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  box-shadow: var(--inv-shadow);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+.inv-app-nav a {
+  display: flex; align-items: center; gap: .4rem;
+  padding: .45rem 1rem;
+  border-radius: var(--inv-radius-sm);
+  font-size: .82rem; font-weight: 500;
+  color: var(--inv-text-muted);
+  text-decoration: none;
+  transition: var(--inv-transition);
+  white-space: nowrap;
+  letter-spacing: .01em;
+}
+.inv-app-nav a:hover  { background: var(--inv-surface-alt); color: var(--inv-primary); }
+.inv-app-nav a.active {
+  background: var(--inv-gradient-primary);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(79,70,229,.35);
+}
+.inv-app-nav .badge-pill {
+  background: rgba(255,255,255,.25);
+  border-radius: 20px; padding: .05rem .45rem; font-size: .7rem;
+  font-family: 'DM Mono', monospace;
+}
+.inv-app-nav a:not(.active) .badge-pill { background: var(--inv-primary-light); color: var(--inv-primary); }
+
+/* ── Cards ── */
+.inv-card {
+  background: var(--inv-surface);
+  border: 1px solid var(--inv-border);
+  border-radius: var(--inv-radius);
+  box-shadow: var(--inv-shadow-card);
+  transition: var(--inv-transition);
+  overflow: hidden;
+}
+.inv-card:hover { box-shadow: var(--inv-shadow-hover); }
+.inv-card-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--inv-border);
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--inv-surface);
+}
+.inv-card-header h5, .inv-card-header h6 { margin: 0; font-weight: 600; font-size: .9rem; }
+.inv-card-body { padding: 1.25rem; }
+
+/* ── Enhanced Stat cards ── */
+.inv-stat {
+  background: var(--inv-surface);
+  border: 1px solid var(--inv-border);
+  border-radius: var(--inv-radius);
+  padding: 1.5rem;
+  transition: var(--inv-transition);
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--inv-shadow-card);
+}
+.inv-stat::after {
+  content: '';
+  position: absolute; bottom: -20px; right: -20px;
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  opacity: .06;
+}
+.inv-stat.primary::after { background: var(--inv-primary); }
+.inv-stat.success::after { background: var(--inv-success); }
+.inv-stat.warning::after { background: var(--inv-warning); }
+.inv-stat.danger::after  { background: var(--inv-danger); }
+.inv-stat.info::after    { background: var(--inv-info); }
+.inv-stat.purple::after  { background: var(--inv-purple); }
+.inv-stat::before {
+  content: '';
+  position: absolute; top: 0; left: 0;
+  width: 4px; height: 100%;
+  border-radius: 2px 0 0 2px;
+}
+.inv-stat.primary::before { background: var(--inv-gradient-primary); }
+.inv-stat.success::before { background: var(--inv-gradient-success); }
+.inv-stat.warning::before { background: var(--inv-gradient-warning); }
+.inv-stat.danger::before  { background: var(--inv-gradient-danger); }
+.inv-stat.info::before    { background: var(--inv-gradient-info); }
+.inv-stat.purple::before  { background: var(--inv-gradient-purple); }
+.inv-stat:hover { transform: translateY(-3px); box-shadow: var(--inv-shadow-hover); }
+.inv-stat-icon {
+  width: 48px; height: 48px;
+  border-radius: var(--inv-radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; flex-shrink: 0;
+}
+.inv-stat-value {
+  font-size: 1.75rem; font-weight: 700; line-height: 1.1;
+  font-family: 'DM Mono', monospace;
+  letter-spacing: -.02em;
+}
+.inv-stat-label { font-size: .75rem; color: var(--inv-text-muted); margin-top: .3rem; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+.inv-stat-change {
+  font-size: .75rem; margin-top: .6rem;
+  display: flex; align-items: center; gap: .3rem;
+  font-weight: 500;
+}
+.inv-stat-change.positive { color: var(--inv-success); }
+.inv-stat-change.negative { color: var(--inv-danger); }
+.inv-stat-change.neutral  { color: var(--inv-text-muted); }
+.inv-stat-change.warning  { color: var(--inv-warning); }
+
+/* ── KPI sparkline mini charts ── */
+.inv-sparkline { height: 36px; margin-top: .5rem; }
+
+/* ── Badges ── */
+.inv-badge {
+  display: inline-flex; align-items: center;
+  padding: .18rem .6rem; border-radius: 20px;
+  font-size: .72rem; font-weight: 600; letter-spacing: .01em;
+}
+.inv-badge-primary   { background: var(--inv-primary-light); color: var(--inv-primary); }
+.inv-badge-success   { background: #dcfce7; color: #166534; }
+.inv-badge-warning   { background: #fef3c7; color: #92400e; }
+.inv-badge-danger    { background: #fee2e2; color: #991b1b; }
+.inv-badge-info      { background: #cffafe; color: #155e75; }
+.inv-badge-purple    { background: #ede9fe; color: #5b21b6; }
+.inv-badge-secondary { background: var(--inv-surface-2); color: var(--inv-text-muted); border: 1px solid var(--inv-border); }
+
+[data-bs-theme="dark"] .inv-badge-success, [data-theme="dark"] .inv-badge-success { background: rgba(16,185,129,.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .inv-badge-warning, [data-theme="dark"] .inv-badge-warning { background: rgba(245,158,11,.18); color: #fcd34d; }
+[data-bs-theme="dark"] .inv-badge-danger,  [data-theme="dark"] .inv-badge-danger  { background: rgba(239,68,68,.18);  color: #fca5a5; }
+[data-bs-theme="dark"] .inv-badge-info,    [data-theme="dark"] .inv-badge-info    { background: rgba(6,182,212,.18);  color: #67e8f9; }
+[data-bs-theme="dark"] .inv-badge-primary, [data-theme="dark"] .inv-badge-primary { background: rgba(79,70,229,.2);   color: #a5b4fc; }
+[data-bs-theme="dark"] .inv-badge-purple,  [data-theme="dark"] .inv-badge-purple  { background: rgba(139,92,246,.2); color: #c4b5fd; }
+
+/* ── Tables ── */
+.inv-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.inv-table th {
+  background: var(--inv-surface-alt);
+  color: var(--inv-text-muted);
+  font-size: .72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: .7rem 1rem; border-bottom: 1px solid var(--inv-border);
+  white-space: nowrap;
+}
+.inv-table td {
+  padding: .8rem 1rem;
+  border-bottom: 1px solid var(--inv-border-light);
+  vertical-align: middle;
+  font-size: .875rem;
+}
+.inv-table tr:last-child td { border-bottom: none; }
+.inv-table tbody tr:hover { background: var(--inv-surface-alt); }
+.inv-table .inv-table-num {
+  font-family: 'DM Mono', monospace;
+  font-size: .82rem;
+}
+
+/* ── Charts ── */
+.inv-chart-wrap    { height: 280px; position: relative; }
+.inv-chart-wrap-sm { height: 210px; position: relative; }
+.inv-chart-wrap-lg { height: 340px; position: relative; }
+.inv-chart-wrap-xs { height: 150px; position: relative; }
+
+/* ── Section header ── */
+.inv-section-header {
+  padding: 1.25rem 0 .75rem;
+  border-bottom: 2px solid var(--inv-primary);
+  margin-bottom: 1.5rem;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.inv-section-header h4 { margin: 0; font-weight: 700; font-size: 1rem; }
+
+/* ── Filter bar ── */
+.inv-filter-bar {
+  background: var(--inv-surface);
+  border: 1px solid var(--inv-border);
+  border-radius: var(--inv-radius);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--inv-shadow-card);
+}
+.inv-filter-bar .form-control,
+.inv-filter-bar .form-select {
+  background: var(--inv-input-bg);
+  border-color: var(--inv-border);
+  color: var(--inv-text);
+  font-size: .875rem;
+  border-radius: var(--inv-radius-xs);
+}
+.inv-filter-bar .form-control:focus,
+.inv-filter-bar .form-select:focus {
+  border-color: var(--inv-primary);
+  box-shadow: 0 0 0 3px rgba(79,70,229,.12);
+}
+.inv-filter-bar .form-label {
+  font-size: .72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--inv-text-muted);
+  margin-bottom: .35rem;
+}
+
+/* ── Activity feed ── */
+.inv-activity-item {
+  padding: .7rem 0;
+  border-bottom: 1px solid var(--inv-border-light);
+  display: flex; align-items: flex-start; gap: .75rem;
+}
+.inv-activity-item:last-child { border-bottom: none; }
+.inv-activity-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 5px;
+}
+.inv-activity-line {
+  display: flex; align-items: flex-start; gap: .75rem;
+  padding: .65rem 0;
+  border-bottom: 1px solid var(--inv-border-light);
+  position: relative;
+}
+.inv-activity-line:last-child { border-bottom: none; }
+.inv-timeline-dot {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: .75rem;
+}
+
+/* ── Alert items ── */
+.inv-alert-item {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .7rem .85rem;
+  background: var(--inv-surface-alt);
+  border-radius: var(--inv-radius-sm);
+  border-left: 3px solid var(--inv-danger);
+  margin-bottom: .4rem;
+  transition: var(--inv-transition);
+  font-size: .82rem;
+}
+.inv-alert-item:hover { transform: translateX(2px); box-shadow: var(--inv-shadow); }
+.inv-alert-item.warning { border-left-color: var(--inv-warning); }
+.inv-alert-item.info    { border-left-color: var(--inv-info); }
+
+/* ── activity-item / alert-item components (used by live API renderers) ── */
+.activity-item {
+  display: flex; align-items: center;
+  padding: .75rem 1.25rem;
+  border-bottom: 1px solid var(--inv-border-light);
+  transition: background .15s;
+}
+.activity-item:hover { background: var(--inv-surface-alt); }
+.activity-item:last-child { border-bottom: none; }
+.activity-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .875rem; margin-right: .9rem; flex-shrink: 0;
+}
+.activity-icon.in         { background: rgba(16,185,129,.14); color:#10b981; }
+.activity-icon.out        { background: rgba(239,68,68,.14);  color:#ef4444; }
+.activity-icon.adjustment { background: rgba(59,130,246,.14); color:#3b82f6; }
+.activity-content { flex:1; min-width:0; }
+.activity-product { font-weight:600; color:var(--inv-text); font-size:.88rem; margin-bottom:.2rem; white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.activity-meta    { font-size:.75rem; color:var(--inv-text-muted); display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+.activity-quantity {
+  font-weight:700; font-size:.8rem;
+  padding:.2rem .65rem; border-radius:20px; margin-left:.5rem; flex-shrink:0;
+}
+.activity-quantity.positive { background:rgba(16,185,129,.14); color:#10b981; }
+.activity-quantity.negative { background:rgba(239,68,68,.14);  color:#ef4444; }
+.activity-quantity.neutral  { background:rgba(100,116,139,.12); color:var(--inv-text-muted); }
+
+.alert-item {
+  display: flex; align-items: center;
+  padding: .85rem 1.25rem;
+  border-bottom: 1px solid var(--inv-border-light);
+  transition: background .15s;
+}
+.alert-item:hover { background: var(--inv-surface-alt); }
+.alert-item:last-child { border-bottom: none; }
+.alert-icon {
+  width: 34px; height: 34px; border-radius: 8px;
+  display:flex; align-items:center; justify-content:center;
+  font-size: .85rem; margin-right:.9rem; flex-shrink:0;
+}
+.alert-icon.critical { background:rgba(239,68,68,.14); color:#ef4444; }
+.alert-icon.low      { background:rgba(245,158,11,.14); color:#f59e0b; }
+.alert-content  { flex:1; min-width:0; }
+.alert-product  { font-weight:600; color:var(--inv-text); font-size:.88rem; margin-bottom:.2rem; }
+.alert-details  { font-size:.75rem; color:var(--inv-text-muted); }
+.alert-status   {
+  margin-left:auto; padding:.2rem .65rem; border-radius:20px;
+  font-size:.72rem; font-weight:700; text-transform:uppercase; flex-shrink:0;
+}
+.alert-status.critical { background:rgba(239,68,68,.14); color:#ef4444; }
+.alert-status.low      { background:rgba(245,158,11,.14); color:#f59e0b; }
+.inv-stat-change { font-size:.82rem; font-weight:600; display:flex; align-items:center; gap:.3rem; }
+
+/* ── Quick actions ── */
+.inv-quick-action {
+  background: var(--inv-surface);
+  border: 1.5px solid var(--inv-border);
+  border-radius: var(--inv-radius);
+  padding: 1.25rem .75rem;
+  text-align: center;
+  text-decoration: none;
+  color: var(--inv-text);
+  display: block;
+  transition: var(--inv-transition);
+}
+.inv-quick-action:hover {
+  border-color: var(--inv-primary);
+  color: var(--inv-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--inv-shadow-hover);
+  background: var(--inv-primary-light);
+}
+.inv-quick-action i { font-size: 1.6rem; margin-bottom: .5rem; display: block; }
+.inv-quick-action span { font-size: .8rem; font-weight: 600; display: block; }
+.inv-quick-action small { font-size: .7rem; color: var(--inv-text-muted); }
+
+/* ── Dashboard hero header ── */
+.inv-dash-header {
+  background: var(--inv-surface);
+  border: 1px solid var(--inv-border);
+  border-radius: var(--inv-radius);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--inv-shadow-card);
+  position: relative;
+  overflow: hidden;
+}
+.inv-dash-header::before {
+  content: '';
+  position: absolute; right: 0; top: 0;
+  width: 300px; height: 100%;
+  background: linear-gradient(135deg, transparent 0%, var(--inv-primary-light) 100%);
+  pointer-events: none;
+}
+
+/* ── Gradient hero (reports) ── */
+.inv-hero {
+  border-radius: var(--inv-radius);
+  padding: 2rem 2rem;
+  margin-bottom: 1.5rem;
+  position: relative; overflow: hidden;
+  color: #fff;
+}
+.inv-hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 80"><circle cx="60" cy="40" r="60" fill="white" fill-opacity="0.05"/><circle cx="320" cy="40" r="45" fill="white" fill-opacity="0.05"/><circle cx="200" cy="80" r="35" fill="white" fill-opacity="0.04"/></svg>') no-repeat center/cover;
+}
+.inv-hero::after {
+  content: '';
+  position: absolute; right: -30px; bottom: -30px;
+  width: 160px; height: 160px; border-radius: 50%;
+  background: rgba(255,255,255,.06);
+}
+.inv-hero-primary { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #6d28d9 100%); }
+.inv-hero-danger  { background: linear-gradient(135deg, #dc2626 0%, #b91c1c 60%, #9f1239 100%); }
+.inv-hero-success { background: linear-gradient(135deg, #059669 0%, #047857 60%, #065f46 100%); }
+.inv-hero h2, .inv-hero h3 { position: relative; z-index:1; font-weight: 700; margin: 0 0 .25rem; }
+.inv-hero p { position: relative; z-index:1; opacity: .88; margin: 0; font-size: .9rem; }
+.inv-hero .hero-stat { position: relative; z-index:1; }
+.inv-hero .hero-stat-value { font-size: 1.5rem; font-weight: 700; font-family: 'DM Mono', monospace; }
+.inv-hero .hero-stat-label { font-size: .72rem; opacity: .8; text-transform: uppercase; letter-spacing: .05em; }
+
+/* ── Progress bars ── */
+.inv-progress { height: 7px; border-radius: 4px; background: var(--inv-surface-2); overflow: hidden; }
+.inv-progress-fill { height: 100%; border-radius: 4px; transition: width .8s cubic-bezier(.4,0,.2,1); }
+.inv-progress-fill.primary { background: var(--inv-gradient-primary); }
+.inv-progress-fill.success { background: var(--inv-gradient-success); }
+.inv-progress-fill.warning { background: var(--inv-gradient-warning); }
+.inv-progress-fill.danger  { background: var(--inv-gradient-danger); }
+.inv-progress-fill.info    { background: var(--inv-gradient-info); }
+
+/* ── Insight rows ── */
+.inv-insight-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .65rem 0; border-bottom: 1px solid var(--inv-border-light);
+}
+.inv-insight-item:last-child { border-bottom: none; }
+.inv-insight-name  { font-weight: 500; font-size: .85rem; }
+.inv-insight-sub   { font-size: .72rem; color: var(--inv-text-muted); }
+.inv-insight-value { font-weight: 700; font-size: .85rem; color: var(--inv-primary); font-family: 'DM Mono', monospace; }
+
+/* ── Recommendation cards ── */
+.inv-rec-card {
+  background: var(--inv-surface-alt);
+  border: 1px solid var(--inv-border);
+  border-radius: var(--inv-radius-sm);
+  padding: .875rem 1rem;
+  margin-bottom: .5rem;
+  border-left: 3px solid var(--inv-primary);
+  transition: var(--inv-transition);
+}
+.inv-rec-card:hover { transform: translateX(2px); }
+.inv-rec-card.danger  { border-left-color: var(--inv-danger); }
+.inv-rec-card.warning { border-left-color: var(--inv-warning); }
+.inv-rec-card.success { border-left-color: var(--inv-success); }
+
+/* ── Live badge ── */
+.inv-live-badge {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: #dcfce7; color: #166534;
+  border-radius: 20px; padding: .2rem .65rem;
+  font-size: .76rem; font-weight: 600;
+}
+[data-bs-theme="dark"] .inv-live-badge,
+[data-theme="dark"] .inv-live-badge { background: rgba(16,185,129,.2); color: #6ee7b7; }
+.inv-live-badge .pulse-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--inv-success);
+  animation: invPulse 1.8s ease-in-out infinite;
+}
+@keyframes invPulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .4; transform: scale(.7); }
+}
+
+/* ── Scrollable areas ── */
+.inv-scroll-400 { max-height: 400px; overflow-y: auto; }
+.inv-scroll-400::-webkit-scrollbar { width: 4px; }
+.inv-scroll-400::-webkit-scrollbar-track { background: transparent; }
+.inv-scroll-400::-webkit-scrollbar-thumb { background: var(--inv-border); border-radius: 4px; }
+
+/* ── Product thumb ── */
+.inv-product-thumb {
+  width: 34px; height: 34px;
+  background: var(--inv-primary-light);
+  border-radius: var(--inv-radius-xs);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--inv-primary); font-size: .8rem; flex-shrink: 0;
+}
+
+/* ── Row highlight states ── */
+.inv-stock-row-danger  { background: rgba(239,68,68,.04); }
+.inv-stock-row-warning { background: rgba(245,158,11,.04); }
+
+/* ── Number font ── */
+.num { font-family: 'DM Mono', monospace; }
+
+/* ── Page header ── */
+.inv-page-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 1.25rem; flex-wrap: wrap; gap: .75rem;
+}
+.inv-page-title {
+  font-size: 1.15rem; font-weight: 700; margin: 0;
+  display: flex; align-items: center; gap: .5rem;
+}
+.inv-page-title-icon {
+  width: 36px; height: 36px; border-radius: var(--inv-radius-xs);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .95rem;
+}
+.inv-breadcrumb {
+  font-size: .75rem; color: var(--inv-text-muted);
+  display: flex; align-items: center; gap: .35rem; margin-top: .2rem;
+}
+
+/* ── Summary row (compact) ── */
+.inv-summary-row {
+  display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem;
+}
+.inv-summary-pill {
+  background: var(--inv-surface);
+  border: 1px solid var(--inv-border);
+  border-radius: 20px;
+  padding: .35rem .9rem;
+  font-size: .78rem; font-weight: 500;
+  display: flex; align-items: center; gap: .4rem;
+}
+.inv-summary-pill strong { font-family: 'DM Mono', monospace; }
+
+/* ── Gauge ring ── */
+.inv-gauge { position: relative; width: 120px; height: 120px; margin: 0 auto; }
+.inv-gauge svg { transform: rotate(-90deg); }
+.inv-gauge-text {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; text-align: center;
+}
+.inv-gauge-value { font-size: 1.4rem; font-weight: 700; font-family: 'DM Mono', monospace; line-height: 1; }
+.inv-gauge-label { font-size: .65rem; color: var(--inv-text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+
+/* ── Heat cell (for store heatmap) ── */
+.inv-heat-cell {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 32px; border-radius: 5px;
+  font-size: .75rem; font-weight: 600; font-family: 'DM Mono', monospace;
+}
+.inv-heat-0  { background: rgba(239,68,68,.15); color: #dc2626; }
+.inv-heat-1  { background: rgba(245,158,11,.15); color: #d97706; }
+.inv-heat-2  { background: rgba(234,179,8,.15);  color: #ca8a04; }
+.inv-heat-3  { background: rgba(132,204,22,.15); color: #65a30d; }
+.inv-heat-4  { background: rgba(16,185,129,.15); color: #059669; }
+
+/* ── Trend chips ── */
+.inv-trend-chip {
+  display: inline-flex; align-items: center; gap: .2rem;
+  padding: .15rem .5rem; border-radius: 20px;
+  font-size: .7rem; font-weight: 600;
+}
+.inv-trend-up   { background: #dcfce7; color: #166534; }
+.inv-trend-down { background: #fee2e2; color: #991b1b; }
+.inv-trend-flat { background: var(--inv-surface-2); color: var(--inv-text-muted); }
+[data-bs-theme="dark"] .inv-trend-up,   [data-theme="dark"] .inv-trend-up   { background: rgba(16,185,129,.15); color: #6ee7b7; }
+[data-bs-theme="dark"] .inv-trend-down, [data-theme="dark"] .inv-trend-down { background: rgba(239,68,68,.15); color: #fca5a5; }
+
+/* ── Section tabs ── */
+.inv-section-tabs {
+  display: flex; gap: .25rem;
+  background: var(--inv-surface-2);
+  border-radius: var(--inv-radius-sm);
+  padding: .25rem;
+  width: fit-content;
+}
+.inv-section-tab {
+  padding: .35rem .85rem; border-radius: var(--inv-radius-xs);
+  font-size: .78rem; font-weight: 500; color: var(--inv-text-muted);
+  cursor: pointer; transition: var(--inv-transition); border: none;
+  background: transparent;
+}
+.inv-section-tab.active { background: var(--inv-surface); color: var(--inv-primary); box-shadow: var(--inv-shadow); }
+
+/* ── Print ── */
+@media print {
+  .no-print, .inv-app-nav { display: none !important; }
+  .inv-card { box-shadow: none; border: 1px solid #ddd; }
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .inv-stat-value { font-size: 1.4rem; }
+  .inv-chart-wrap { height: 220px; }
+  .inv-chart-wrap-lg { height: 260px; }
+  .inv-hero { padding: 1.25rem; }
+}
+
+/* ── Entry animations ── */
+@keyframes invFadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes invFadeIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.inv-animate { animation: invFadeUp .4s ease both; }
+.inv-animate-1 { animation-delay: .05s; }
+.inv-animate-2 { animation-delay: .10s; }
+.inv-animate-3 { animation-delay: .15s; }
+.inv-animate-4 { animation-delay: .20s; }
+
+/* ── Utility ── */
+.fw-600 { font-weight: 600; }
+.text-inv-muted { color: var(--inv-text-muted) !important; }
+.text-inv-xs    { color: var(--inv-text-xs) !important; }
+.inv-section-title { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--inv-text-muted); }
+
+/* ── Store distribution bar ── */
+.inv-store-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 1px; }
+.inv-store-bar-seg { height: 100%; transition: width .7s ease; }
+
+/* ── Insight number (large) ── */
+.inv-big-num { font-size: 2.2rem; font-weight: 700; font-family: 'DM Mono', monospace; letter-spacing: -.04em; line-height: 1; }
+
+/* ── Tabs (Bootstrap override) ── */
+.nav-tabs .nav-link { font-size: .82rem; font-weight: 500; color: var(--inv-text-muted); border: none; border-bottom: 2px solid transparent; padding: .65rem 1rem; }
+.nav-tabs .nav-link.active { color: var(--inv-primary); border-bottom-color: var(--inv-primary); background: none; }
+.nav-tabs { border-bottom: 1px solid var(--inv-border); }
+
+/* ── Compact table header ── */
+.inv-table-compact th { padding: .5rem .85rem; }
+.inv-table-compact td { padding: .6rem .85rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-3 px-md-4">
+
+  {# ── Navigation ── #}
+  <nav class="inv-app-nav no-print">
+    <a href="{% url 'inventory:dashboard' %}" class="{% if active_tab == 'dashboard' or active_tab == 'realtime' or active_tab == 'stock_dashboard' or active_tab == 'enhanced_dashboard' %}active{% endif %}">
+      <i class="fas fa-tachometer-alt"></i> Dashboard
+      {% if low_stock_count %}<span class="badge-pill">{{ low_stock_count }}</span>{% endif %}
+    </a>
+    <a href="{% url 'inventory:inventory_report' %}" class="{% if active_tab == 'inventory_report' %}active{% endif %}">
+      <i class="fas fa-warehouse"></i> Inventory
+    </a>
+    <a href="{% url 'inventory:low_stock_report' %}" class="{% if active_tab == 'low_stock' %}active{% endif %}">
+      <i class="fas fa-exclamation-triangle"></i> Low Stock
+      {% if low_stock_count %}<span class="badge-pill">{{ low_stock_count }}</span>{% endif %}
+    </a>
+    <a href="{% url 'inventory:stock_movement_report' %}" class="{% if active_tab == 'movement_report' %}active{% endif %}">
+      <i class="fas fa-exchange-alt"></i> Movements
+    </a>
+    <a href="{% url 'inventory:valuation_report' %}" class="{% if active_tab == 'valuation' %}active{% endif %}">
+      <i class="fas fa-coins"></i> Valuation
+    </a>
+    <a href="{% url 'inventory:movement_analytics' %}" class="{% if active_tab == 'movement_analytics' %}active{% endif %}">
+      <i class="fas fa-chart-bar"></i> Analytics
+    </a>
+  </nav>
+
+  {# ── Page header ── #}
+  <div class="inv-page-header no-print">
+    <div>
+      <h1 class="inv-page-title">
+        <div class="inv-page-title-icon
+          {% if active_tab == 'low_stock' %}bg-danger bg-opacity-10 text-danger
+          {% elif active_tab == 'valuation' %}bg-primary bg-opacity-10 text-primary
+          {% elif active_tab == 'movement_report' or active_tab == 'movement_analytics' %}bg-info bg-opacity-10 text-info
+          {% else %}bg-primary bg-opacity-10 text-primary{% endif %}">
+          {% if active_tab == 'dashboard' or active_tab == 'realtime' or active_tab == 'stock_dashboard' or active_tab == 'enhanced_dashboard' %}<i class="fas fa-tachometer-alt"></i>
+          {% elif active_tab == 'inventory_report' %}<i class="fas fa-warehouse"></i>
+          {% elif active_tab == 'low_stock' %}<i class="fas fa-exclamation-triangle"></i>
+          {% elif active_tab == 'movement_report' %}<i class="fas fa-exchange-alt"></i>
+          {% elif active_tab == 'valuation' %}<i class="fas fa-coins"></i>
+          {% elif active_tab == 'movement_analytics' %}<i class="fas fa-chart-bar"></i>
+          {% else %}<i class="fas fa-boxes"></i>{% endif %}
+        </div>
+        {% if active_tab == 'dashboard' or active_tab == 'realtime' or active_tab == 'stock_dashboard' %}Inventory Dashboard
+        {% elif active_tab == 'inventory_report' %}Inventory Report
+        {% elif active_tab == 'low_stock' %}Low Stock Report
+        {% elif active_tab == 'movement_report' %}Stock Movement Report
+        {% elif active_tab == 'valuation' %}Valuation Report
+        {% elif active_tab == 'movement_analytics' %}Movement Analytics
+        {% else %}Inventory{% endif %}
+      </h1>
+      <div class="inv-breadcrumb">
+        <span>{{ company.trading_name|default:company.name }}</span>
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <span>Inventory</span>
+        {% if active_tab != 'dashboard' %}
+        <i class="fas fa-chevron-right" style="font-size:.6rem"></i>
+        <span>
+          {% if active_tab == 'inventory_report' %}Report
+          {% elif active_tab == 'low_stock' %}Low Stock
+          {% elif active_tab == 'movement_report' %}Movements
+          {% elif active_tab == 'valuation' %}Valuation
+          {% elif active_tab == 'movement_analytics' %}Analytics
+          {% endif %}
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      {% if active_tab == 'dashboard' or active_tab == 'realtime' or active_tab == 'stock_dashboard' or active_tab == 'enhanced_dashboard' %}
+        <span class="inv-live-badge no-print">
+          <span class="pulse-dot"></span> Live
+        </span>
+        {% if perms.inventory.add_stock %}
+        <a href="{% url 'inventory:stock_import' %}" class="btn btn-sm btn-outline-secondary no-print">
+          <i class="fas fa-file-import me-1"></i>Import
+        </a>
+        {% endif %}
+        {% if perms.inventory.view_stock %}
+        <a href="{% url 'inventory:stock_export' %}?format=excel" class="btn btn-sm btn-outline-secondary no-print">
+          <i class="fas fa-file-export me-1"></i>Export
+        </a>
+        {% endif %}
+        {% if efris_enabled %}
+        <a href="{% url 'efris:bulk_stock_sync' %}" class="btn btn-sm btn-outline-warning no-print">
+          <i class="fas fa-sync-alt me-1"></i>EFRIS Sync
+        </a>
+        {% endif %}
+        <button class="btn btn-sm btn-outline-secondary no-print" data-bs-toggle="modal" data-bs-target="#settingsModal">
+          <i class="fas fa-cog me-1"></i>Settings
+        </button>
+      {% elif active_tab == 'low_stock' %}
+        <button class="btn btn-sm btn-outline-success" id="bulkReorderBtn" disabled onclick="bulkReorder()">
+          <i class="fas fa-shopping-cart me-1"></i>Bulk Reorder
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+          <i class="fas fa-print me-1"></i>Print
+        </button>
+      {% elif active_tab in 'inventory_report,movement_report,valuation' %}
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+            <i class="fas fa-download me-1"></i>Export
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="?format=excel{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}"><i class="fas fa-file-excel me-2 text-success"></i>Excel (.xlsx)</a></li>
+            <li><a class="dropdown-item" href="?format=pdf{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}"><i class="fas fa-file-pdf me-2 text-danger"></i>PDF Report</a></li>
+            <li><a class="dropdown-item" href="?format=csv{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}"><i class="fas fa-file-csv me-2 text-info"></i>CSV Data</a></li>
+          </ul>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+          <i class="fas fa-print me-1"></i>Print
+        </button>
+      {% elif active_tab == 'movement_analytics' %}
+        {% if perms.inventory.view_stockmovement %}
+        <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary">
+          <i class="fas fa-list me-1"></i>All Movements
+        </a>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+
+
+  {% if active_tab == 'dashboard' or active_tab == 'realtime' or active_tab == 'stock_dashboard' or active_tab == 'enhanced_dashboard' %}
+
+  {# Period filter #}
+  <div class="inv-card mb-4 no-print">
+    <div class="inv-card-body py-2">
+      <div class="d-flex align-items-center gap-3 flex-wrap">
+        <span class="inv-section-title mb-0">Period:</span>
+        <div class="btn-group btn-group-sm">
+          <input type="radio" class="btn-check" name="periodFilter" id="ptToday" value="today" autocomplete="off">
+          <label class="btn btn-outline-primary" for="ptToday">Today</label>
+          <input type="radio" class="btn-check" name="periodFilter" id="ptWeek" value="week" autocomplete="off" {% if selected_period == 'week' or not selected_period %}checked{% endif %}>
+          <label class="btn btn-outline-primary" for="ptWeek">Week</label>
+          <input type="radio" class="btn-check" name="periodFilter" id="ptMonth" value="month" autocomplete="off" {% if selected_period == 'month' %}checked{% endif %}>
+          <label class="btn btn-outline-primary" for="ptMonth">Month</label>
+          <input type="radio" class="btn-check" name="periodFilter" id="ptQuarter" value="quarter" autocomplete="off" {% if selected_period == 'quarter' %}checked{% endif %}>
+          <label class="btn btn-outline-primary" for="ptQuarter">Quarter</label>
+          <input type="radio" class="btn-check" name="periodFilter" id="ptYear" value="year" autocomplete="off" {% if selected_period == 'year' %}checked{% endif %}>
+          <label class="btn btn-outline-primary" for="ptYear">Year</label>
+        </div>
+        <div class="ms-auto d-flex align-items-center gap-2 text-inv-muted" style="font-size:.78rem">
+          <i class="fas fa-clock"></i>
+          <span id="lastUpdated">Updated just now</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Primary KPI row #}
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3 inv-animate inv-animate-1">
+      <div class="inv-stat primary">
+        <div class="d-flex align-items-start justify-content-between">
+          <div>
+            <div class="inv-stat-label">Total Products</div>
+            <div class="inv-stat-value mt-1" id="totalProducts">{{ total_products|default:0 }}</div>
+          </div>
+          <div class="inv-stat-icon bg-primary bg-opacity-10 text-primary"><i class="fas fa-box"></i></div>
+        </div>
+        <div class="inv-stat-change neutral mt-2"><i class="fas fa-layer-group me-1"></i>{{ total_categories|default:0 }} categories</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3 inv-animate inv-animate-2">
+      <div class="inv-stat success">
+        <div class="d-flex align-items-start justify-content-between">
+          <div>
+            <div class="inv-stat-label">Stock Value</div>
+            <div class="inv-stat-value mt-1" style="font-size:1.35rem" id="stockValue">{{ total_stock_value|money|default:"UGX 0" }}</div>
+          </div>
+          <div class="inv-stat-icon bg-success bg-opacity-10 text-success"><i class="fas fa-coins"></i></div>
+        </div>
+        <div class="inv-stat-change positive mt-2"><i class="fas fa-chart-line me-1"></i>+{{ potential_profit|money|default:"UGX 0" }} potential profit</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3 inv-animate inv-animate-3">
+      <div class="inv-stat danger">
+        <div class="d-flex align-items-start justify-content-between">
+          <div>
+            <div class="inv-stat-label">Out of Stock</div>
+            <div class="inv-stat-value mt-1" id="outOfStock">{{ out_of_stock|default:0 }}</div>
+          </div>
+          <div class="inv-stat-icon bg-danger bg-opacity-10 text-danger"><i class="fas fa-times-circle"></i></div>
+        </div>
+        <div class="inv-stat-change negative mt-2"><i class="fas fa-exclamation-circle me-1"></i>Immediate attention</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3 inv-animate inv-animate-4">
+      <div class="inv-stat warning">
+        <div class="d-flex align-items-start justify-content-between">
+          <div>
+            <div class="inv-stat-label">Low Stock Items</div>
+            <div class="inv-stat-value mt-1" id="lowStock">{{ low_stock|default:0 }}</div>
+          </div>
+          <div class="inv-stat-icon bg-warning bg-opacity-10 text-warning"><i class="fas fa-exclamation-triangle"></i></div>
+        </div>
+        <div class="inv-stat-change warning mt-2"><i class="fas fa-arrow-up me-1"></i>Reorder soon</div>
+      </div>
+    </div>
+  </div>
+
+  {# Secondary metrics row #}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="inv-card p-3 d-flex align-items-center gap-3 inv-animate inv-animate-1">
+        <div class="inv-stat-icon bg-info bg-opacity-10 text-info flex-shrink-0"><i class="fas fa-exchange-alt"></i></div>
+        <div>
+          <div class="inv-section-title mb-0">Movements Today</div>
+          <div class="fw-bold num mt-1" style="font-size:1.4rem" id="movementsToday">{{ movements_today|default:0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-card p-3 d-flex align-items-center gap-3 inv-animate inv-animate-2">
+        <div class="inv-stat-icon bg-purple bg-opacity-10 flex-shrink-0" style="background:rgba(139,92,246,.1);color:#8b5cf6"><i class="fas fa-store"></i></div>
+        <div>
+          <div class="inv-section-title mb-0">Active Stores</div>
+          <div class="fw-bold num mt-1" style="font-size:1.4rem" id="totalStores">{{ total_stores|default:0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-card p-3 d-flex align-items-center gap-3 inv-animate inv-animate-3">
+        <div class="inv-stat-icon bg-success bg-opacity-10 text-success flex-shrink-0"><i class="fas fa-truck"></i></div>
+        <div>
+          <div class="inv-section-title mb-0">Suppliers</div>
+          <div class="fw-bold num mt-1" style="font-size:1.4rem" id="totalSuppliers">{{ total_suppliers|default:0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-card p-3 d-flex align-items-center gap-3 inv-animate inv-animate-4">
+        <div class="inv-stat-icon bg-warning bg-opacity-10 text-warning flex-shrink-0"><i class="fas fa-sync-alt"></i></div>
+        <div>
+          <div class="inv-section-title mb-0">Turnover Rate</div>
+          <div class="fw-bold num mt-1" style="font-size:1.4rem">{{ inventory_turnover|default:0 }}x</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if efris_enabled %}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="inv-stat info">
+        <div class="d-flex align-items-start justify-content-between">
+          <div>
+            <div class="inv-stat-label">eFRIS Products</div>
+            <div class="inv-stat-value num mt-1" id="efrisProducts">{{ efris_products|default:0 }}</div>
+          </div>
+          <div class="inv-stat-icon bg-info bg-opacity-10 text-info"><i class="fas fa-cloud-upload-alt"></i></div>
+        </div>
+        <div class="inv-stat-change positive mt-2"><i class="fas fa-cloud me-1"></i>Uploaded to eFRIS</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat warning">
+        <div class="d-flex align-items-start justify-content-between">
+          <div>
+            <div class="inv-stat-label">Needs eFRIS Sync</div>
+            <div class="inv-stat-value num mt-1" id="stocksNeedingSync">{{ stocks_needing_sync|default:0 }}</div>
+          </div>
+          <div class="inv-stat-icon bg-warning bg-opacity-10 text-warning"><i class="fas fa-sync"></i></div>
+        </div>
+        <div class="inv-stat-change {% if stocks_needing_sync > 0 %}negative{% else %}positive{% endif %} mt-2">
+          {% if stocks_needing_sync > 0 %}
+            <i class="fas fa-exclamation-circle me-1"></i>
+            <a href="{% url 'efris:bulk_stock_sync' %}" class="text-warning text-decoration-none fw-bold">Sync now →</a>
+          {% else %}
+            <i class="fas fa-check-circle me-1"></i>All synced
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── EFRIS Quick Actions card ── #}
+  <div class="inv-card mb-4 inv-animate no-print">
+    <div class="inv-card-header">
+      <h6><i class="fas fa-bolt me-2 text-warning"></i>eFRIS Quick Actions</h6>
+    </div>
+    <div class="inv-card-body">
+      <div class="row g-2">
+        <div class="col-6 col-md-3">
+          <button type="button" class="btn btn-outline-success w-100" data-bs-toggle="modal" data-bs-target="#increaseStockModal">
+            <i class="fas fa-plus-circle me-1"></i>{% trans "Increase Stock" %}
+          </button>
+        </div>
+        <div class="col-6 col-md-3">
+          <button type="button" class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#decreaseStockModal">
+            <i class="fas fa-minus-circle me-1"></i>{% trans "Decrease Stock" %}
+          </button>
+        </div>
+        <div class="col-6 col-md-3">
+          <button type="button" class="btn btn-outline-info w-100" data-bs-toggle="modal" data-bs-target="#queryStockModal">
+            <i class="fas fa-search me-1"></i>{% trans "Query Stock" %}
+          </button>
+        </div>
+        <div class="col-6 col-md-3">
+          <a href="{% url 'efris:stock_transfer' %}" class="btn btn-outline-primary w-100">
+            <i class="fas fa-exchange-alt me-1"></i>{% trans "Transfer" %}
+          </a>
+        </div>
+        <div class="col-6 col-md-3">
+          <a href="{% url 'efris:bulk_stock_sync' %}" class="btn btn-outline-warning w-100">
+            <i class="fas fa-sync-alt me-1"></i>{% trans "EFRIS Sync" %}
+          </a>
+        </div>
+        <div class="col-6 col-md-3">
+          <a href="{% url 'efris:stock_records_query' %}" class="btn btn-outline-secondary w-100">
+            <i class="fas fa-database me-1"></i>{% trans "Query Records" %}
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Charts row 1: Status + Trends #}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-4 inv-animate">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-chart-donut me-2 text-primary"></i>Stock Health</h6>
+          <div class="inv-section-tabs">
+            <button class="inv-section-tab active" id="chartDoughnutBtn" onclick="switchChart('doughnut')">Ring</button>
+            <button class="inv-section-tab" id="chartBarBtn" onclick="switchChart('bar')">Bar</button>
+          </div>
+        </div>
+        <div class="inv-card-body">
+          <div class="inv-chart-wrap">
+            <canvas id="stockStatusChart"></canvas>
+          </div>
+          <div class="row mt-3 g-0 text-center">
+            <div class="col-3 border-end" style="border-color:var(--inv-border)!important">
+              <div class="fw-bold text-danger num" id="criticalPct">0%</div>
+              <div class="text-inv-xs mt-1" style="font-size:.68rem">Critical</div>
+            </div>
+            <div class="col-3 border-end" style="border-color:var(--inv-border)!important">
+              <div class="fw-bold text-warning num" id="lowStockPct">0%</div>
+              <div class="text-inv-xs mt-1" style="font-size:.68rem">Low</div>
+            </div>
+            <div class="col-3 border-end" style="border-color:var(--inv-border)!important">
+              <div class="fw-bold text-info num" id="mediumPct">0%</div>
+              <div class="text-inv-xs mt-1" style="font-size:.68rem">Medium</div>
+            </div>
+            <div class="col-3">
+              <div class="fw-bold text-success num" id="inStockPct">0%</div>
+              <div class="text-inv-xs mt-1" style="font-size:.68rem">Good</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-8 inv-animate">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-chart-area me-2 text-success"></i>Movement Trends</h6>
+          <span class="text-inv-muted" style="font-size:.75rem">{{ start_date|date:"M d" }} – {{ end_date|date:"M d, Y" }}</span>
+        </div>
+        <div class="inv-card-body">
+          <div class="inv-chart-wrap-lg">
+            <canvas id="movementTrendsChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Charts row 2: Category + Store distribution #}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-5 inv-animate">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-layer-group me-2 text-primary"></i>Category Distribution</h6>
+        </div>
+        <div class="inv-card-body">
+          <div class="inv-chart-wrap">
+            <canvas id="categoryDistributionChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-7 inv-animate">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-store me-2 text-info"></i>Store Performance</h6>
+        </div>
+        <div class="inv-card-body p-0">
+          <table class="inv-table inv-table-compact">
+            <thead>
+              <tr>
+                <th>Store</th>
+                <th>Products</th>
+                <th>Stock Value</th>
+                <th>Low Stock</th>
+                <th>Health</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for store in store_distribution|slice:":7" %}
+              <tr>
+                <td>
+                  <div class="fw-600" style="font-size:.82rem">{{ store.store_name|truncatechars:22 }}</div>
+                </td>
+                <td class="num">{{ store.product_count }}</td>
+                <td class="num text-success">UGX {{ store.total_value|floatformat:0|intcomma }}</td>
+                <td>
+                  {% if store.low_stock_count > 0 %}
+                  <span class="inv-badge inv-badge-warning">{{ store.low_stock_count }}</span>
+                  {% else %}
+                  <span class="inv-badge inv-badge-success">OK</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if store.out_of_stock_count == 0 and store.low_stock_count == 0 %}
+                    <span class="inv-trend-chip inv-trend-up"><i class="fas fa-check"></i> Good</span>
+                  {% elif store.out_of_stock_count > 0 %}
+                    <span class="inv-trend-chip inv-trend-down"><i class="fas fa-times"></i> Critical</span>
+                  {% else %}
+                    <span class="inv-trend-chip inv-trend-flat"><i class="fas fa-minus"></i> Fair</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-inv-muted py-4">No store data</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Alerts + Activity + Top Products #}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-4 inv-animate">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-bell me-2 text-danger"></i>Stock Alerts</h6>
+          <span class="inv-badge inv-badge-danger" id="alertCount">{{ low_stock|add:out_of_stock|default:0 }}</span>
+        </div>
+        <div class="inv-card-body p-0">
+          <div class="inv-scroll-400 p-3" id="stockAlerts">
+            <div class="text-center py-4">
+              <div class="spinner-border spinner-border-sm text-primary"></div>
+              <p class="text-inv-muted mt-2 small">Loading alerts...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4 inv-animate">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-history me-2 text-info"></i>Recent Activity</h6>
+          <span class="inv-badge inv-badge-info">{{ recent_movements|length|default:0 }}</span>
+        </div>
+        <div class="inv-card-body p-0">
+          <div class="inv-scroll-400 p-3">
+            {% for movement in recent_movements|slice:":12" %}
+            <div class="inv-activity-line">
+              <div class="inv-timeline-dot {% if movement.quantity > 0 %}bg-success bg-opacity-15 text-success{% else %}bg-danger bg-opacity-15 text-danger{% endif %}">
+                {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'TRANSFER_IN' %}
+                  <i class="fas fa-arrow-down"></i>
+                {% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}
+                  <i class="fas fa-arrow-up"></i>
+                {% else %}
+                  <i class="fas fa-arrows-alt"></i>
+                {% endif %}
+              </div>
+              <div class="flex-grow-1 min-w-0">
+                <div class="fw-600" style="font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ movement.product.name|truncatechars:26 }}</div>
+                <div class="text-inv-muted" style="font-size:.73rem">
+                  <span class="inv-badge inv-badge-secondary" style="font-size:.67rem">{{ movement.movement_type }}</span>
+                  <span class="{% if movement.quantity > 0 %}text-success{% else %}text-danger{% endif %} fw-bold ms-1">
+                    {% if movement.quantity > 0 %}+{% endif %}{{ movement.quantity }}
+                  </span>
+                  · {{ movement.store.name|truncatechars:14 }}
+                </div>
+                <div class="text-inv-xs" style="font-size:.7rem">{{ movement.created_at|timesince }} ago</div>
+              </div>
+            </div>
+            {% empty %}
+            <p class="text-center text-inv-muted py-4 small">No recent activity</p>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4 inv-animate">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-star me-2 text-warning"></i>Top Products</h6>
+          <span class="text-inv-muted" style="font-size:.72rem">by movement</span>
+        </div>
+        <div class="inv-card-body p-0">
+          <div class="inv-scroll-400 p-0" id="topProductsList">
+            {% for product in top_products|slice:":10" %}
+            <div class="d-flex align-items-center gap-2 px-3 py-2" style="border-bottom:1px solid var(--inv-border-light)">
+              <div class="text-inv-muted num fw-bold" style="font-size:.72rem;min-width:1.5rem">#{{ forloop.counter }}</div>
+              <div class="inv-product-thumb"><i class="fas fa-box"></i></div>
+              <div class="flex-grow-1 min-w-0">
+                <div style="font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ product.name|truncatechars:24 }}</div>
+                <div class="text-inv-muted" style="font-size:.7rem">{{ product.sku|default:"" }}</div>
+              </div>
+              <span class="inv-badge inv-badge-primary num">{{ product.movement_count|default:product.total_movements }}</span>
+            </div>
+            {% empty %}
+            <p class="text-center text-inv-muted py-4">No product data</p>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Quick actions + Recent movements table #}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-3 inv-animate">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-bolt me-2 text-warning"></i>Quick Actions</h6>
+        </div>
+        <div class="inv-card-body">
+          <div class="row g-2">
+            {% if perms.inventory.add_product %}
+            <div class="col-6">
+              <a href="{% url 'inventory:product_create' %}" class="inv-quick-action">
+                <i class="fas fa-plus-circle text-primary"></i>
+                <span>Add Product</span>
+                <small>Create new</small>
+              </a>
+            </div>
+            {% endif %}
+            {% if perms.inventory.add_stockmovement %}
+            <div class="col-6">
+              <a href="{% url 'inventory:movement_list' %}" class="inv-quick-action">
+                <i class="fas fa-exchange-alt text-success"></i>
+                <span>Stock Move</span>
+                <small>Record</small>
+              </a>
+            </div>
+            {% endif %}
+            {% if perms.inventory.change_stock %}
+            <div class="col-6">
+              <a href="{% url 'inventory:stock_adjustment' %}" class="inv-quick-action">
+                <i class="fas fa-sliders-h text-warning"></i>
+                <span>Adjust Stock</span>
+                <small>Correction</small>
+              </a>
+            </div>
+            {% endif %}
+            {% if perms.inventory.add_product %}
+            <div class="col-6">
+              <a href="{% url 'inventory:stock_import' %}" class="inv-quick-action">
+                <i class="fas fa-file-upload text-info"></i>
+                <span>Import</span>
+                <small>Bulk upload</small>
+              </a>
+            </div>
+            {% endif %}
+            {% if perms.inventory.view_stock %}
+            <div class="col-6">
+              <a href="{% url 'inventory:low_stock_report' %}" class="inv-quick-action">
+                <i class="fas fa-exclamation-triangle text-danger"></i>
+                <span>Low Stock</span>
+                <small>View alerts</small>
+              </a>
+            </div>
+            <div class="col-6">
+              <a href="{% url 'inventory:valuation_report' %}" class="inv-quick-action">
+                <i class="fas fa-coins text-success"></i>
+                <span>Valuation</span>
+                <small>Stock value</small>
+              </a>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-9 inv-animate">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-table me-2 text-primary"></i>Recent Stock Movements</h6>
+          {% if perms.inventory.view_stockmovement %}
+          <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+          {% endif %}
+        </div>
+        <div class="inv-card-body p-0">
+          <div class="table-responsive">
+            <table class="inv-table inv-table-compact">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Product</th>
+                  <th>Type</th>
+                  <th>Qty</th>
+                  <th>Store</th>
+                  <th>Reference</th>
+                  <th>By</th>
+                  {% if efris_enabled %}<th class="no-print"></th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for m in recent_movements|slice:":8" %}
+                <tr>
+                  <td><span class="text-inv-muted num" style="font-size:.75rem">{{ m.created_at|date:"M d, H:i" }}</span></td>
+                  <td>
+                    {% if perms.inventory.view_product %}
+                    <a href="{% url 'inventory:product_detail' m.product.id %}" class="text-decoration-none fw-600" style="font-size:.82rem">{{ m.product.name|truncatechars:26 }}</a>
+                    {% else %}<span class="fw-600" style="font-size:.82rem">{{ m.product.name|truncatechars:26 }}</span>{% endif %}
+                  </td>
+                  <td>
+                    <span class="inv-badge {% if m.movement_type == 'PURCHASE' or m.movement_type == 'TRANSFER_IN' %}inv-badge-success{% elif m.movement_type == 'SALE' or m.movement_type == 'TRANSFER_OUT' %}inv-badge-danger{% else %}inv-badge-secondary{% endif %}" style="font-size:.67rem">
+                      {{ m.movement_type }}
+                    </span>
+                  </td>
+                  <td class="num fw-bold {% if m.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
+                    {% if m.quantity > 0 %}+{% endif %}{{ m.quantity }}
+                  </td>
+                  <td class="text-inv-muted" style="font-size:.8rem">{{ m.store.name|truncatechars:18 }}</td>
+                  <td class="text-inv-muted num" style="font-size:.75rem">{{ m.reference|default:"—" }}</td>
+                  <td class="text-inv-muted" style="font-size:.78rem">{{ m.created_by.get_full_name|default:m.created_by.username|truncatechars:14 }}</td>
+                  {% if efris_enabled %}
+                  <td class="no-print">
+                    <a href="{% url 'efris:stock_query' m.product.id %}" class="btn btn-sm btn-outline-info" style="padding:.15rem .45rem;font-size:.72rem" title="View in EFRIS">
+                      <i class="fas fa-eye"></i>
+                    </a>
+                  </td>
+                  {% endif %}
+                </tr>
+                {% empty %}
+                <tr><td colspan="{% if efris_enabled %}8{% else %}7{% endif %}" class="text-center text-inv-muted py-4">No recent movements</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+
+  {% elif active_tab == 'inventory_report' %}
+
+  {# Transfer stats row #}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="inv-stat primary">
+        <div class="inv-stat-value num">{{ transfer_stats.total_transfers|default:0 }}</div>
+        <div class="inv-stat-label">Total Transfers</div>
+        <div class="inv-stat-change neutral"><i class="fas fa-exchange-alt me-1"></i>All time</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat success">
+        <div class="inv-stat-value num">{{ transfer_stats.completed_transfers|default:0 }}</div>
+        <div class="inv-stat-label">Completed</div>
+        <div class="inv-stat-change positive"><i class="fas fa-check-circle me-1"></i>Done</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat warning">
+        <div class="inv-stat-value num">{{ transfer_stats.pending_transfers|default:0 }}</div>
+        <div class="inv-stat-label">Pending</div>
+        <div class="inv-stat-change warning"><i class="fas fa-clock me-1"></i>In progress</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat info">
+        <div class="inv-stat-value num">{{ transfer_stats.total_items_transferred|default:0|floatformat:0|intcomma }}</div>
+        <div class="inv-stat-label">Units Transferred</div>
+        <div class="inv-stat-change neutral"><i class="fas fa-boxes me-1"></i>Total qty</div>
+      </div>
+    </div>
+  </div>
+
+  {# Search filter #}
+  <div class="inv-filter-bar no-print">
+    <form method="get" class="row g-3">
+      <div class="col-md-5">
+        <label class="form-label">Search Product</label>
+        <div class="input-group">
+          <span class="input-group-text" style="background:var(--inv-surface-alt);border-color:var(--inv-border);color:var(--inv-text-muted)"><i class="fas fa-search"></i></span>
+          <input type="text" name="search" class="form-control" placeholder="Name or SKU…" value="{{ request.GET.search }}">
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Date From</label>
+        <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Date To</label>
+        <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+      </div>
+      <div class="col-md-1 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i></button>
+      </div>
+    </form>
+  </div>
+
+  {# Tabbed inventory tables #}
+  <div class="inv-card mb-4">
+    <div class="inv-card-header">
+      <ul class="nav nav-tabs card-header-tabs mb-n1" id="inventoryTabs">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#irWarehouse"><i class="fas fa-warehouse me-1"></i>Warehouse</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#irBranch"><i class="fas fa-store me-1"></i>Branches</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#irMovement"><i class="fas fa-exchange-alt me-1"></i>Movements</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#irTopProducts"><i class="fas fa-star me-1"></i>Top Products</button></li>
+      </ul>
+    </div>
+    <div class="inv-card-body p-0">
+      <div class="tab-content">
+
+        {# Warehouse tab #}
+        <div class="tab-pane fade show active p-3" id="irWarehouse">
+          <div class="table-responsive">
+            <table class="inv-table" id="warehouseTable">
+              <thead>
+                <tr>
+                  <th>{% trans "Product" %}</th>
+                  <th>{% trans "SKU" %}</th>
+                  <th>{% trans "Category" %}</th>
+                  {% for store in warehouse_stores %}
+                  <th>{{ store.name }}</th>
+                  {% endfor %}
+                  <th>{% trans "Total" %}</th>
+                  <th>{% trans "Status" %}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in warehouse_inventory %}
+                <tr>
+                  <td>
+                    {% if perms.inventory.view_product %}
+                    <a href="{% url 'inventory:product_detail' item.product.id %}" class="text-decoration-none fw-600" style="font-size:.85rem">{{ item.product.name|truncatechars:30 }}</a>
+                    {% else %}<span class="fw-600" style="font-size:.85rem">{{ item.product.name|truncatechars:30 }}</span>{% endif %}
+                  </td>
+                  <td><span class="text-inv-muted num" style="font-size:.75rem">{{ item.product.sku }}</span></td>
+                  <td>{% if item.product.category %}<span class="inv-badge inv-badge-secondary">{{ item.product.category.name }}</span>{% else %}<span class="text-inv-muted">—</span>{% endif %}</td>
+                  {% for store in warehouse_stores %}
+                  <td class="num">{{ item.stock_by_store|get_item:store.id|default:0 }}</td>
+                  {% endfor %}
+                  <td class="fw-bold num">{{ item.total_stock|default:0 }}</td>
+                  <td>
+                    {% if item.total_stock == 0 %}
+                      <span class="inv-badge inv-badge-danger">Out of Stock</span>
+                    {% elif item.total_stock <= item.product.reorder_point|default:5 %}
+                      <span class="inv-badge inv-badge-warning">Low Stock</span>
+                    {% else %}
+                      <span class="inv-badge inv-badge-success">In Stock</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="10" class="text-center text-inv-muted py-5"><i class="fas fa-warehouse fa-2x mb-2 d-block opacity-25"></i>No warehouse inventory found</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {# Branch tab #}
+        <div class="tab-pane fade p-3" id="irBranch">
+          <div class="table-responsive">
+            <table class="inv-table" id="branchTable">
+              <thead>
+                <tr>
+                  <th>{% trans "Product" %}</th>
+                  <th>{% trans "SKU" %}</th>
+                  {% for store in branch_stores %}
+                  <th>{{ store.name }}</th>
+                  {% endfor %}
+                  <th>{% trans "Total" %}</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in branch_inventory %}
+                <tr>
+                  <td class="fw-600" style="font-size:.85rem">{{ item.product.name|truncatechars:30 }}</td>
+                  <td><span class="text-inv-muted num" style="font-size:.75rem">{{ item.product.sku }}</span></td>
+                  {% for store in branch_stores %}
+                  <td class="num">{{ item.stock_by_store|get_item:store.id|default:0 }}</td>
+                  {% endfor %}
+                  <td class="fw-bold num">{{ item.total_stock|default:0 }}</td>
+                  <td>
+                    {% if item.total_stock == 0 %}<span class="inv-badge inv-badge-danger">Out</span>
+                    {% elif item.total_stock <= 5 %}<span class="inv-badge inv-badge-warning">Low</span>
+                    {% else %}<span class="inv-badge inv-badge-success">OK</span>{% endif %}
+                  </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-center text-inv-muted py-5"><i class="fas fa-store fa-2x mb-2 d-block opacity-25"></i>No branch inventory found</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {# Movements tab #}
+        <div class="tab-pane fade p-3" id="irMovement">
+          <div class="table-responsive">
+            <table class="inv-table" id="irMovementTable">
+              <thead>
+                <tr><th>Date</th><th>Product</th><th>Type</th><th>Qty</th><th>From</th><th>To</th><th>By</th></tr>
+              </thead>
+              <tbody>
+                {% for m in stock_movements %}
+                <tr>
+                  <td><span class="num text-inv-muted" style="font-size:.75rem">{{ m.created_at|date:"M d, Y H:i" }}</span></td>
+                  <td class="fw-600" style="font-size:.82rem">{{ m.product.name|truncatechars:25 }}</td>
+                  <td><span class="inv-badge {% if m.movement_type == 'PURCHASE' or m.movement_type == 'TRANSFER_IN' %}inv-badge-success{% elif m.movement_type == 'SALE' or m.movement_type == 'TRANSFER_OUT' %}inv-badge-danger{% else %}inv-badge-secondary{% endif %}" style="font-size:.67rem">{{ m.movement_type }}</span></td>
+                  <td class="{% if m.quantity > 0 %}text-success{% else %}text-danger{% endif %} fw-bold num">
+                    {% if m.quantity > 0 %}+{% endif %}{{ m.quantity }}
+                  </td>
+                  <td class="text-inv-muted" style="font-size:.8rem">{{ m.from_store.name|default:"—" }}</td>
+                  <td class="text-inv-muted" style="font-size:.8rem">{{ m.to_store.name|default:m.store.name|default:"—" }}</td>
+                  <td class="text-inv-muted" style="font-size:.78rem">{{ m.created_by.get_full_name|default:m.created_by.username }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="text-center text-inv-muted py-4">No movements in this period</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {# Top products tab #}
+        <div class="tab-pane fade p-3" id="irTopProducts">
+          <div class="table-responsive">
+            <table class="inv-table" id="irTopProductsTable">
+              <thead>
+                <tr><th>#</th><th>Product</th><th>Category</th><th>Total Moved</th><th>Activity Bar</th></tr>
+              </thead>
+              <tbody>
+                {% for p in top_products %}
+                <tr>
+                  <td class="fw-bold text-primary num">#{{ forloop.counter }}</td>
+                  <td class="fw-600" style="font-size:.85rem">{{ p.name|truncatechars:30 }}</td>
+                  <td>{{ p.category.name|default:"—" }}</td>
+                  <td><span class="inv-badge inv-badge-primary num">{{ p.movement_count|default:p.total_movements }}</span></td>
+                  <td>
+                    <div class="inv-progress" style="width:100px">
+                      <div class="inv-progress-fill primary" style="width:{{ p.movement_pct|default:50 }}%"></div>
+                    </div>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-center text-inv-muted py-4">No data available</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+
+  {% elif active_tab == 'low_stock' %}
+
+  <div class="inv-hero inv-hero-danger mb-4">
+    <div class="row align-items-center g-3">
+      <div class="col-md-7">
+        <h2 class="mb-1"><i class="fas fa-exclamation-triangle me-2"></i>Low Stock Alert</h2>
+        <p class="mb-0">Items requiring immediate restocking attention</p>
+      </div>
+      <div class="col-md-5">
+        <div class="row g-3 text-center">
+          <div class="col-4 hero-stat">
+            <div class="hero-stat-value">{{ out_of_stock_count|default:0 }}</div>
+            <div class="hero-stat-label">Out of Stock</div>
+          </div>
+          <div class="col-4 hero-stat">
+            <div class="hero-stat-value">{{ critical_stock_count|default:0 }}</div>
+            <div class="hero-stat-label">Critical</div>
+          </div>
+          <div class="col-4 hero-stat">
+            <div class="hero-stat-value">{{ low_stock_count|default:0 }}</div>
+            <div class="hero-stat-label">Low Stock</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Summary stats #}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="inv-stat danger">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="inv-stat-value num">{{ out_of_stock_count|default:0 }}</div>
+            <div class="inv-stat-label">Out of Stock</div>
+          </div>
+          <div class="inv-stat-icon bg-danger bg-opacity-10 text-danger"><i class="fas fa-times-circle"></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat warning">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="inv-stat-value num">{{ critical_stock_count|default:0 }}</div>
+            <div class="inv-stat-label">Critical (≤ reorder)</div>
+          </div>
+          <div class="inv-stat-icon bg-warning bg-opacity-10 text-warning"><i class="fas fa-exclamation-triangle"></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat info">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="inv-stat-value num">{{ low_stock_count|default:0 }}</div>
+            <div class="inv-stat-label">Low Stock</div>
+          </div>
+          <div class="inv-stat-icon bg-info bg-opacity-10 text-info"><i class="fas fa-exclamation-circle"></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat primary">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="inv-stat-value" style="font-size:1.1rem">{{ total_low_stock_value|money|default:"UGX 0" }}</div>
+            <div class="inv-stat-label">Value at Risk</div>
+          </div>
+          <div class="inv-stat-icon bg-primary bg-opacity-10 text-primary"><i class="fas fa-coins"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Charts #}
+  <div class="row g-3 mb-4">
+    <div class="col-md-5">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-chart-pie me-2 text-danger"></i>Stock Status Breakdown</h6>
+        </div>
+        <div class="inv-card-body">
+          <div class="inv-chart-wrap-sm"><canvas id="statusChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-7">
+      <div class="inv-card h-100">
+        <div class="inv-card-header">
+          <h6><i class="fas fa-chart-bar me-2 text-primary"></i>Low Stock by Category</h6>
+        </div>
+        <div class="inv-card-body">
+          <div class="inv-chart-wrap-sm"><canvas id="categoryChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Filters #}
+  <div class="inv-filter-bar no-print">
+    <form method="get" class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label">Category</label>
+        <select name="category" class="form-select">
+          <option value="">All Categories</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}" {% if selected_category == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Store</label>
+        <select name="store" class="form-select">
+          <option value="">All Stores</option>
+          {% for store in stores %}
+          <option value="{{ store.id }}" {% if selected_store == store.id|stringformat:"s" %}selected{% endif %}>{{ store.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Severity</label>
+        <select name="status" class="form-select">
+          <option value="">All</option>
+          <option value="out" {% if selected_status == 'out' %}selected{% endif %}>Out of Stock</option>
+          <option value="critical" {% if selected_status == 'critical' %}selected{% endif %}>Critical</option>
+          <option value="low" {% if selected_status == 'low' %}selected{% endif %}>Low Stock</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Sort by</label>
+        <select name="sort" class="form-select">
+          <option value="urgency">Urgency</option>
+          <option value="quantity">Quantity</option>
+          <option value="value">Value at Risk</option>
+          <option value="name">Product Name</option>
+        </select>
+      </div>
+      <div class="col-md-2 d-flex align-items-end gap-2">
+        <button type="submit" class="btn btn-primary flex-grow-1"><i class="fas fa-filter me-1"></i>Filter</button>
+        <a href="{% url 'inventory:low_stock_report' %}" class="btn btn-outline-secondary">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  {# Main table #}
+  <div class="inv-card mb-4">
+    <div class="inv-card-header">
+      <h6><i class="fas fa-list me-2"></i>Low Stock Items</h6>
+      <div class="d-flex align-items-center gap-2">
+        <small class="text-inv-muted">{{ page_obj.paginator.count|default:low_stock_items|length }} items</small>
+        <button class="btn btn-sm btn-outline-success no-print" disabled id="bulkReorderBtn" onclick="bulkReorder()">
+          <i class="fas fa-shopping-cart me-1"></i>Bulk Reorder
+        </button>
+      </div>
+    </div>
+    <div class="inv-card-body p-0">
+      <div class="table-responsive">
+        <table class="inv-table" id="lowStockTable">
+          <thead>
+            <tr>
+              <th><input type="checkbox" class="form-check-input" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>
+              <th>Product</th><th>SKU</th><th>Category</th><th>Store</th>
+              <th>Current Qty</th><th>Reorder Point</th><th>Gap</th><th>Status</th><th class="no-print">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in page_obj|default:low_stock_items %}
+            <tr class="{% if item.stock.quantity == 0 %}inv-stock-row-danger{% elif item.stock.quantity <= item.product.reorder_point %}inv-stock-row-warning{% endif %}">
+              <td><input type="checkbox" class="form-check-input item-checkbox" value="{{ item.stock.id }}" onchange="updateBulkBtn()"></td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="inv-product-thumb"><i class="fas fa-box"></i></div>
+                  <div>
+                    {% if perms.inventory.view_product %}
+                    <a href="{% url 'inventory:product_detail' item.product.id %}" class="text-decoration-none fw-600" style="font-size:.85rem">{{ item.product.name|truncatechars:22 }}</a>
+                    {% else %}<span class="fw-600" style="font-size:.85rem">{{ item.product.name|truncatechars:22 }}</span>{% endif %}
+                  </div>
+                </div>
+              </td>
+              <td><span class="num text-inv-muted" style="font-size:.75rem">{{ item.product.sku }}</span></td>
+              <td>{{ item.product.category.name|default:"—" }}</td>
+              <td>{{ item.stock.store.name|truncatechars:16 }}</td>
+              <td>
+                <span class="fw-bold num {% if item.stock.quantity == 0 %}text-danger{% elif item.stock.quantity <= item.product.reorder_point %}text-warning{% else %}text-success{% endif %}">
+                  {{ item.stock.quantity|floatformat:0 }} <small class="text-inv-muted fw-normal">{{ item.product.unit_of_measure }}</small>
+                </span>
+              </td>
+              <td class="num">{{ item.product.reorder_point|default:"N/A" }}</td>
+              <td>
+                {% if item.product.reorder_point %}
+                <span class="num text-danger fw-bold">-{{ item.product.reorder_point|add:"-0"|floatformat:0 }}</span>
+                {% else %}<span class="text-inv-muted">—</span>{% endif %}
+              </td>
+              <td>
+                {% if item.stock.quantity == 0 %}
+                  <span class="inv-badge inv-badge-danger"><i class="fas fa-times-circle me-1"></i>Out of Stock</span>
+                {% elif item.stock.quantity <= item.product.reorder_point|default:0 %}
+                  <span class="inv-badge inv-badge-warning"><i class="fas fa-exclamation-triangle me-1"></i>Critical</span>
+                {% else %}
+                  <span class="inv-badge inv-badge-info"><i class="fas fa-exclamation-circle me-1"></i>Low Stock</span>
+                {% endif %}
+              </td>
+              <td class="no-print">
+                <div class="d-flex gap-1">
+                  <button class="btn btn-sm btn-outline-primary" style="padding:.2rem .5rem" onclick="showItemDetails({{ item.stock.id }})">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                  <button class="btn btn-sm btn-outline-success" style="padding:.2rem .5rem" onclick="showQuickReorder({{ item.stock.id }}, '{{ item.product.name|escapejs }}')">
+                    <i class="fas fa-shopping-cart"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="10" class="text-center py-5">
+              <i class="fas fa-check-circle fa-3x text-success mb-3 d-block opacity-50"></i>
+              <div class="fw-600">All items are well-stocked!</div>
+              <div class="text-inv-muted" style="font-size:.82rem">No stock alerts at this time.</div>
+            </td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% if page_obj.has_other_pages %}
+    <div class="p-3 border-top">
+      <nav><ul class="pagination justify-content-center mb-0 pagination-sm">
+        {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}"><i class="fas fa-chevron-left"></i></a></li>
+        {% endif %}
+        {% for num in page_obj.paginator.page_range %}
+          {% if page_obj.number == num %}<li class="page-item active"><span class="page-link">{{ num }}</span></li>
+          {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}<li class="page-item"><a class="page-link" href="?page={{ num }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}">{{ num }}</a></li>
+          {% endif %}
+        {% endfor %}
+        {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}"><i class="fas fa-chevron-right"></i></a></li>
+        {% endif %}
+      </ul></nav>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Recommendations #}
+  {% if recommendations %}
+  <div class="inv-card mb-4">
+    <div class="inv-card-header">
+      <h6><i class="fas fa-lightbulb me-2 text-warning"></i>Reorder Recommendations</h6>
+      <span class="inv-badge inv-badge-warning">{{ recommendations|length }} items</span>
+    </div>
+    <div class="inv-card-body">
+      <div class="row g-2">
+        {% for rec in recommendations %}
+        <div class="col-md-6">
+          <div class="inv-rec-card {% if rec.urgency == 'HIGH' %}danger{% elif rec.urgency == 'MEDIUM' %}warning{% else %}success{% endif %}">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <div class="fw-bold" style="font-size:.875rem">{{ rec.product.name }}</div>
+                <small class="text-inv-muted">{{ rec.store.name }} · Current: <strong class="num">{{ rec.current_qty }}</strong> · Suggest: <strong class="num">{{ rec.suggested_qty }}</strong></small>
+              </div>
+              <span class="inv-badge {% if rec.urgency == 'HIGH' %}inv-badge-danger{% elif rec.urgency == 'MEDIUM' %}inv-badge-warning{% else %}inv-badge-success{% endif %}">{{ rec.urgency }}</span>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+
+  {% elif active_tab == 'movement_report' %}
+
+  {# Summary stats #}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="inv-stat primary">
+        <div class="inv-stat-value num">{{ total_movements|default:0|intcomma }}</div>
+        <div class="inv-stat-label">Total Movements</div>
+        <div class="inv-stat-change neutral"><i class="fas fa-exchange-alt me-1"></i>In period</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat success">
+        <div class="inv-stat-value num">{{ total_inbound|default:0|intcomma }}</div>
+        <div class="inv-stat-label">Inbound</div>
+        <div class="inv-stat-change positive"><i class="fas fa-arrow-down me-1"></i>Stock received</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat danger">
+        <div class="inv-stat-value num">{{ total_outbound|default:0|intcomma }}</div>
+        <div class="inv-stat-label">Outbound</div>
+        <div class="inv-stat-change negative"><i class="fas fa-arrow-up me-1"></i>Stock dispatched</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat {% if net_movement >= 0 %}success{% else %}danger{% endif %}">
+        <div class="inv-stat-value num">{% if net_movement >= 0 %}+{% endif %}{{ net_movement|default:0|intcomma }}</div>
+        <div class="inv-stat-label">Net Change</div>
+        <div class="inv-stat-change {% if net_movement >= 0 %}positive{% else %}negative{% endif %}">
+          <i class="fas fa-{% if net_movement >= 0 %}arrow-up{% else %}arrow-down{% endif %} me-1"></i>Net flow
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Filters #}
+  <div class="inv-filter-bar no-print">
+    <form method="get" class="row g-3">
+      <div class="col-md-2">
+        <label class="form-label">Date From</label>
+        <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Date To</label>
+        <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Type</label>
+        <select name="movement_type" class="form-select">
+          <option value="">All Types</option>
+          <option value="PURCHASE">Purchase</option>
+          <option value="SALE">Sale</option>
+          <option value="TRANSFER_IN">Transfer In</option>
+          <option value="TRANSFER_OUT">Transfer Out</option>
+          <option value="ADJUSTMENT">Adjustment</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Warehouse</label>
+        <select name="stockstore" class="form-select">
+          <option value="">All Warehouses</option>
+          {% for store in stockstores %}
+          <option value="{{ store.pk }}" {% if selected_stockstore == store.pk|stringformat:"s" %}selected{% endif %}>{{ store.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Search</label>
+        <input type="text" name="search" class="form-control" placeholder="Product…" value="{{ request.GET.search }}">
+      </div>
+      <div class="col-md-1 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i></button>
+      </div>
+    </form>
+  </div>
+
+  {# Tabs #}
+  <div class="inv-card mb-4">
+    <div class="inv-card-header">
+      <ul class="nav nav-tabs card-header-tabs mb-n1">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#mvtAll"><i class="fas fa-list me-1"></i>All Movements</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mvtAnalysis"><i class="fas fa-chart-bar me-1"></i>Analysis</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mvtTopProducts"><i class="fas fa-star me-1"></i>Top Products</button></li>
+      </ul>
+    </div>
+    <div class="inv-card-body p-0">
+      <div class="tab-content">
+
+        {# All Movements #}
+        <div class="tab-pane fade show active p-3" id="mvtAll">
+          <div class="table-responsive">
+            <table class="inv-table" id="allMovementsTable">
+              <thead>
+                <tr><th>Date</th><th>Product</th><th>Type</th><th>Qty Change</th><th>After</th><th>Store</th><th>Reference</th><th>By</th></tr>
+              </thead>
+              <tbody>
+                {% for m in movements %}
+                <tr>
+                  <td><span class="num text-inv-muted" style="font-size:.75rem">{{ m.created_at|date:"M d, Y H:i" }}</span></td>
+                  <td>
+                    {% if perms.inventory.view_product %}
+                    <a href="{% url 'inventory:product_detail' m.product.id %}" class="text-decoration-none fw-600" style="font-size:.82rem">{{ m.product.name|truncatechars:24 }}</a>
+                    {% else %}<span class="fw-600" style="font-size:.82rem">{{ m.product.name|truncatechars:24 }}</span>{% endif %}
+                  </td>
+                  <td>
+                    <span class="inv-badge {% if m.movement_type == 'PURCHASE' or m.movement_type == 'TRANSFER_IN' %}inv-badge-success{% elif m.movement_type == 'SALE' or m.movement_type == 'TRANSFER_OUT' %}inv-badge-danger{% else %}inv-badge-secondary{% endif %}" style="font-size:.67rem">
+                      {{ m.movement_type }}
+                    </span>
+                  </td>
+                  <td class="fw-bold num {% if m.quantity_change > 0 %}text-success{% else %}text-danger{% endif %}">
+                    {% if m.quantity_change > 0 %}+{% endif %}{{ m.quantity_change|default:m.quantity }}
+                  </td>
+                  <td class="num text-inv-muted">{{ m.quantity_after|default:"—" }}</td>
+                  <td class="text-inv-muted" style="font-size:.8rem">{{ m.store.name|truncatechars:18 }}</td>
+                  <td><small class="text-inv-muted num">{{ m.reference|default:"—" }}</small></td>
+                  <td class="text-inv-muted" style="font-size:.78rem">{{ m.created_by.get_full_name|default:m.created_by.username }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-center text-inv-muted py-4">No movements in this period</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if movements.has_other_pages %}
+          <div class="p-3 border-top">
+            <nav><ul class="pagination justify-content-center mb-0 pagination-sm">
+              {% if movements.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ movements.previous_page_number }}&date_from={{ date_from }}&date_to={{ date_to }}"><i class="fas fa-chevron-left"></i></a></li>{% endif %}
+              {% for num in movements.paginator.page_range %}
+                {% if movements.number == num %}<li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                {% elif num > movements.number|add:'-3' and num < movements.number|add:'3' %}<li class="page-item"><a class="page-link" href="?page={{ num }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ num }}</a></li>{% endif %}
+              {% endfor %}
+              {% if movements.has_next %}<li class="page-item"><a class="page-link" href="?page={{ movements.next_page_number }}&date_from={{ date_from }}&date_to={{ date_to }}"><i class="fas fa-chevron-right"></i></a></li>{% endif %}
+            </ul></nav>
+          </div>
+          {% endif %}
+        </div>
+
+        {# Analysis #}
+        <div class="tab-pane fade p-3" id="mvtAnalysis">
+          <div class="row g-3 mb-3">
+            <div class="col-md-5">
+              <div class="inv-card">
+                <div class="inv-card-header"><h6><i class="fas fa-chart-pie me-2 text-primary"></i>Movement by Type</h6></div>
+                <div class="inv-card-body">
+                  <div class="inv-chart-wrap-sm"><canvas id="movementByTypeChart"></canvas></div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-7">
+              <div class="inv-card">
+                <div class="inv-card-header"><h6><i class="fas fa-chart-bar me-2 text-success"></i>Daily Movement Volume</h6></div>
+                <div class="inv-card-body">
+                  <div class="inv-chart-wrap-sm"><canvas id="dailyMovementChart"></canvas></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="inv-card">
+            <div class="inv-card-header"><h6><i class="fas fa-table me-2"></i>Movement Summary by Type</h6></div>
+            <div class="inv-card-body p-0">
+              <table class="inv-table">
+                <thead><tr><th>Type</th><th>Count</th><th>Total Qty</th><th>Avg / Move</th><th>Share</th></tr></thead>
+                <tbody>
+                  {% for s in movement_summary %}
+                  <tr>
+                    <td>
+                      <span class="inv-badge {% if s.movement_type == 'PURCHASE' or s.movement_type == 'TRANSFER_IN' %}inv-badge-success{% elif s.movement_type == 'SALE' or s.movement_type == 'TRANSFER_OUT' %}inv-badge-danger{% else %}inv-badge-secondary{% endif %}">{{ s.movement_type }}</span>
+                    </td>
+                    <td class="num fw-bold">{{ s.count }}</td>
+                    <td class="num">{{ s.total_quantity|floatformat:0 }}</td>
+                    <td class="num text-inv-muted">{% if s.count > 0 %}{% widthratio s.total_quantity s.count 1 as avg %}{{ avg|floatformat:1 }}{% else %}0{% endif %}</td>
+                    <td>
+                      <div class="d-flex align-items-center gap-2">
+                        <div class="inv-progress flex-grow-1">
+                          <div class="inv-progress-fill primary" style="width:{% widthratio s.count total_movements 100 %}%"></div>
+                        </div>
+                        <small class="num text-inv-muted">{% widthratio s.count total_movements 100 %}%</small>
+                      </div>
+                    </td>
+                  </tr>
+                  {% empty %}
+                  <tr><td colspan="5" class="text-center text-inv-muted py-3">No data</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {# Top products #}
+        <div class="tab-pane fade p-3" id="mvtTopProducts">
+          <div class="table-responsive">
+            <table class="inv-table" id="mvtTopProductsTable">
+              <thead><tr><th>#</th><th>Product</th><th>Movements</th><th>Total In</th><th>Total Out</th><th>Net</th></tr></thead>
+              <tbody>
+                {% for p in top_products %}
+                <tr>
+                  <td class="fw-bold text-primary num">#{{ forloop.counter }}</td>
+                  <td class="fw-600" style="font-size:.85rem">{{ p.product.name|truncatechars:30 }}</td>
+                  <td><span class="inv-badge inv-badge-primary num">{{ p.movement_count }}</span></td>
+                  <td class="text-success fw-bold num">+{{ p.total_in|default:0 }}</td>
+                  <td class="text-danger fw-bold num">-{{ p.total_out|default:0 }}</td>
+                  <td class="fw-bold num {% if p.net_change >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    {% if p.net_change >= 0 %}+{% endif %}{{ p.net_change|default:0 }}
+                  </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-inv-muted py-4">No data</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+
+  {% elif active_tab == 'valuation' %}
+
+  <div class="inv-hero inv-hero-success mb-4">
+    <div class="row align-items-center g-3">
+      <div class="col-md-6">
+        <h2 class="mb-1"><i class="fas fa-coins me-2"></i>Inventory Valuation</h2>
+        <p class="mb-0">Financial overview as of {{ report_date|date:"F j, Y" }}</p>
+      </div>
+      <div class="col-md-6">
+        <div class="row g-3 text-center">
+          <div class="col-4 hero-stat">
+            <div class="hero-stat-value" style="font-size:1.1rem">UGX {{ total_value|floatformat:0|intcomma }}</div>
+            <div class="hero-stat-label">Cost Value</div>
+          </div>
+          <div class="col-4 hero-stat">
+            <div class="hero-stat-value" style="font-size:1.1rem">UGX {{ total_selling_value|floatformat:0|intcomma }}</div>
+            <div class="hero-stat-label">Selling Value</div>
+          </div>
+          <div class="col-4 hero-stat">
+            <div class="hero-stat-value" style="font-size:1.1rem">UGX {{ potential_profit|floatformat:0|intcomma }}</div>
+            <div class="hero-stat-label">Potential Profit</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Summary stats #}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="inv-stat primary">
+        <div class="inv-stat-label">Total Inventory Value</div>
+        <div class="inv-stat-value mt-1" style="font-size:1.1rem num">UGX {{ total_value|floatformat:0|intcomma }}</div>
+        {% if value_change_percent %}
+        <div class="inv-stat-change {% if value_change >= 0 %}positive{% else %}negative{% endif %}">
+          <i class="fas fa-arrow-{% if value_change >= 0 %}up{% else %}down{% endif %}"></i>
+          {{ value_change_percent|floatformat:1 }}% from last period
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat success">
+        <div class="inv-stat-label">Potential Selling Value</div>
+        <div class="inv-stat-value mt-1" style="font-size:1.1rem">UGX {{ total_selling_value|floatformat:0|intcomma }}</div>
+        <div class="inv-stat-change positive"><i class="fas fa-chart-line me-1"></i>Profit: UGX {{ potential_profit|floatformat:0|intcomma }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat info">
+        <div class="inv-stat-label">Total Items</div>
+        <div class="inv-stat-value mt-1 num">{{ total_items|intcomma }}</div>
+        <div class="inv-stat-change neutral">Avg: UGX {{ avg_item_value|floatformat:0|intcomma }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat warning">
+        <div class="inv-stat-label">Margin</div>
+        <div class="inv-stat-value mt-1 num">
+          {% if total_value %}{% widthratio potential_profit total_value 100 %}%{% else %}0%{% endif %}
+        </div>
+        <div class="inv-stat-change neutral">Gross profit margin</div>
+      </div>
+    </div>
+  </div>
+
+  {# Charts row #}
+  <div class="row g-3 mb-4">
+    <div class="col-md-5">
+      <div class="inv-card h-100">
+        <div class="inv-card-header"><h6><i class="fas fa-chart-pie me-2 text-primary"></i>Value by Category</h6></div>
+        <div class="inv-card-body"><div class="inv-chart-wrap"><canvas id="categoryValueChart"></canvas></div></div>
+      </div>
+    </div>
+    <div class="col-md-7">
+      <div class="inv-card h-100">
+        <div class="inv-card-header"><h6><i class="fas fa-chart-area me-2 text-success"></i>Valuation Trend</h6></div>
+        <div class="inv-card-body"><div class="inv-chart-wrap"><canvas id="valueTrendChart"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+
+  {# Insights grid #}
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="inv-card h-100">
+        <div class="inv-card-header"><h6><i class="fas fa-trophy me-2 text-warning"></i>Top 5 Products by Value</h6></div>
+        <div class="inv-card-body">
+          {% for item in top_products|slice:":5" %}
+          <div class="inv-insight-item">
+            <div>
+              <div class="inv-insight-name">{{ item.product.name|truncatechars:28 }}</div>
+              <div class="inv-insight-sub">{{ item.product.sku }} · {{ item.quantity|floatformat:0 }} units</div>
+            </div>
+            <div class="inv-insight-value">UGX {{ item.total_cost|floatformat:0|intcomma }}</div>
+          </div>
+          {% empty %}
+          <p class="text-inv-muted text-center py-3">No products found</p>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="inv-card h-100">
+        <div class="inv-card-header"><h6><i class="fas fa-layer-group me-2 text-info"></i>Top 5 Categories by Value</h6></div>
+        <div class="inv-card-body">
+          {% for cat in top_categories %}
+          <div class="inv-insight-item">
+            <div>
+              <div class="inv-insight-name">{{ cat.name|default:"Uncategorized" }}</div>
+              <div class="inv-insight-sub">{{ cat.count }} items</div>
+            </div>
+            <div class="d-flex flex-column align-items-end gap-1">
+              <div class="inv-insight-value">UGX {{ cat.value|floatformat:0|intcomma }}</div>
+              <div class="inv-progress" style="width:80px">
+                <div class="inv-progress-fill primary" style="width:{% widthratio cat.value total_value 100 %}%"></div>
+              </div>
+            </div>
+          </div>
+          {% empty %}
+          <p class="text-inv-muted text-center py-3">No categories found</p>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Filters + Table #}
+  <div class="inv-filter-bar no-print">
+    <form method="GET" class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Category</label>
+        <select class="form-select" name="category">
+          <option value="">All Categories</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}" {% if selected_category == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Store</label>
+        <select class="form-select" name="store">
+          <option value="">All Stores</option>
+          {% for store in stores %}
+          <option value="{{ store.id }}" {% if selected_store == store.id|stringformat:"s" %}selected{% endif %}>{{ store.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4 d-flex align-items-end gap-2">
+        <button type="submit" class="btn btn-primary flex-grow-1"><i class="fas fa-filter me-1"></i>Filter</button>
+        <a href="{% url 'inventory:valuation_report' %}" class="btn btn-outline-secondary">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="inv-card mb-4">
+    <div class="inv-card-header">
+      <h6><i class="fas fa-table me-2"></i>Valuation Details</h6>
+      <small class="text-inv-muted">{{ page_obj.paginator.count|default:valuation_items|length }} items</small>
+    </div>
+    <div class="inv-card-body p-0">
+      <div class="table-responsive">
+        <table class="inv-table" id="valuationTable">
+          <thead>
+            <tr><th>Product</th><th>Category</th><th>Store</th><th>Qty</th><th>Cost Price</th><th>Total Cost</th><th>Sell Price</th><th>Total Value</th><th>Margin</th></tr>
+          </thead>
+          <tbody>
+            {% for item in page_obj|default:valuation_items %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="inv-product-thumb"><i class="fas fa-box"></i></div>
+                  <div>
+                    <div class="fw-600" style="font-size:.85rem">{{ item.product.name|truncatechars:26 }}</div>
+                    <small class="text-inv-muted num">{{ item.product.sku }}</small>
+                  </div>
+                </div>
+              </td>
+              <td>{% if item.product.category %}<span class="inv-badge inv-badge-secondary">{{ item.product.category.name }}</span>{% else %}<span class="text-inv-muted">—</span>{% endif %}</td>
+              <td class="text-inv-muted" style="font-size:.82rem">{{ item.store.name|truncatechars:16 }}</td>
+              <td class="num">{{ item.quantity|floatformat:0 }} <small class="text-inv-muted">{{ item.product.unit_of_measure }}</small></td>
+              <td class="num text-inv-muted">UGX {{ item.product.cost_price|floatformat:0|intcomma }}</td>
+              <td class="fw-bold num text-primary">UGX {{ item.total_cost|floatformat:0|intcomma }}</td>
+              <td class="num text-inv-muted">UGX {{ item.product.selling_price|floatformat:0|intcomma }}</td>
+              <td class="fw-bold num text-success">UGX {{ item.total_selling|floatformat:0|intcomma }}</td>
+              <td>
+                {% if item.product.cost_price and item.product.selling_price %}
+                <span class="inv-trend-chip inv-trend-up">{% widthratio item.product.selling_price|floatformat:0 item.product.cost_price|floatformat:0 100 as margin_pct %}{{ margin_pct|add:"-100" }}%</span>
+                {% else %}<span class="text-inv-muted">—</span>{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="9" class="text-center py-5">
+              <i class="fas fa-search fa-3x text-inv-muted mb-3 d-block opacity-25"></i>
+              <p class="text-inv-muted">No items found. Try adjusting your filters.</p>
+            </td></tr>
+            {% endfor %}
+          </tbody>
+          {% if page_obj|default:valuation_items %}
+          <tfoot>
+            <tr style="background:var(--inv-surface-alt);font-weight:600">
+              <td colspan="5" class="text-end">Totals:</td>
+              <td class="fw-bold num text-primary">UGX {{ total_value|floatformat:0|intcomma }}</td>
+              <td></td>
+              <td class="fw-bold num text-success">UGX {{ total_selling_value|floatformat:0|intcomma }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+    {% if page_obj.has_other_pages %}
+    <div class="p-3 border-top">
+      <nav><ul class="pagination justify-content-center mb-0 pagination-sm">
+        {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}"><i class="fas fa-chevron-left"></i></a></li>{% endif %}
+        {% for num in page_obj.paginator.page_range %}
+          {% if page_obj.number == num %}<li class="page-item active"><span class="page-link">{{ num }}</span></li>
+          {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}<li class="page-item"><a class="page-link" href="?page={{ num }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}">{{ num }}</a></li>{% endif %}
+        {% endfor %}
+        {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}"><i class="fas fa-chevron-right"></i></a></li>{% endif %}
+      </ul></nav>
+    </div>
+    {% endif %}
+  </div>
+
+
+
+  {% elif active_tab == 'movement_analytics' %}
+
+  {# Summary cards #}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="inv-stat primary">
+        <div class="inv-stat-value num">{{ movement_summary|length }}</div>
+        <div class="inv-stat-label">Movement Types</div>
+        <div class="inv-stat-change neutral"><i class="fas fa-tags me-1"></i>Distinct types</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat success">
+        <div class="inv-stat-value num">{{ top_products|length }}</div>
+        <div class="inv-stat-label">Active Products</div>
+        <div class="inv-stat-change positive"><i class="fas fa-box me-1"></i>With movements</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat info">
+        <div class="inv-stat-value num">{{ recent_movements|length }}</div>
+        <div class="inv-stat-label">Recent Activities</div>
+        <div class="inv-stat-change neutral"><i class="fas fa-history me-1"></i>Last loaded</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="inv-stat warning">
+        <div class="inv-stat-value num">
+          {% for s in movement_summary %}{% if forloop.first %}{{ s.total_quantity|floatformat:0|intcomma }}{% endif %}{% endfor %}
+        </div>
+        <div class="inv-stat-label">Top Type Volume</div>
+        <div class="inv-stat-change neutral"><i class="fas fa-boxes me-1"></i>Largest category</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    {# Movement summary table #}
+    <div class="col-lg-6">
+      <div class="inv-card h-100">
+        <div class="inv-card-header"><h6><i class="fas fa-table me-2 text-primary"></i>Movement Summary by Type</h6></div>
+        <div class="inv-card-body p-0">
+          <table class="inv-table" id="movementSummaryTable">
+            <thead><tr><th>Movement Type</th><th>Count</th><th>Total Qty</th><th>Avg / Move</th><th>Share</th></tr></thead>
+            <tbody>
+              {% for summary in movement_summary %}
+              <tr>
+                <td>
+                  <span class="inv-badge {% if summary.movement_type == 'PURCHASE' or summary.movement_type == 'TRANSFER_IN' %}inv-badge-success{% elif summary.movement_type == 'SALE' or summary.movement_type == 'TRANSFER_OUT' %}inv-badge-danger{% else %}inv-badge-secondary{% endif %}">{{ summary.movement_type }}</span>
+                </td>
+                <td class="num fw-bold">{{ summary.count }}</td>
+                <td class="num">{{ summary.total_quantity|floatformat:0|intcomma }}</td>
+                <td class="num text-inv-muted">{% if summary.count > 0 %}{% widthratio summary.total_quantity summary.count 1 as avg_qty %}{{ avg_qty|floatformat:1 }}{% else %}0{% endif %}</td>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="inv-progress" style="width:60px">
+                      <div class="inv-progress-fill primary" style="width:{% widthratio summary.count recent_movements|length 100 %}%"></div>
+                    </div>
+                    <small class="num text-inv-muted">{% widthratio summary.count recent_movements|length 100 %}%</small>
+                  </div>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-inv-muted py-4">No movement data</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {# Top products #}
+    <div class="col-lg-6">
+      <div class="inv-card h-100">
+        <div class="inv-card-header"><h6><i class="fas fa-star me-2 text-warning"></i>Top Products by Activity</h6></div>
+        <div class="inv-card-body p-0">
+          {% for product in top_products %}
+          {% if perms.inventory.view_product %}
+          <a href="{% url 'inventory:product_detail' product.id %}" class="d-flex justify-content-between align-items-center px-3 py-2 text-decoration-none" style="border-bottom:1px solid var(--inv-border-light);color:var(--inv-text);transition:background .15s">
+            <div class="d-flex align-items-center gap-2">
+              <div class="text-inv-xs num fw-bold" style="min-width:1.5rem">#{{ forloop.counter }}</div>
+              <div class="inv-product-thumb"><i class="fas fa-box"></i></div>
+              <span style="font-size:.85rem;font-weight:500">{{ product.name|truncatechars:26 }}</span>
+            </div>
+            <span class="inv-badge inv-badge-primary num">{{ product.movement_count }}</span>
+          </a>
+          {% else %}
+          <div class="d-flex justify-content-between align-items-center px-3 py-2" style="border-bottom:1px solid var(--inv-border-light)">
+            <div class="d-flex align-items-center gap-2">
+              <div class="inv-product-thumb"><i class="fas fa-box"></i></div>
+              <span style="font-size:.85rem">{{ product.name|truncatechars:26 }}</span>
+            </div>
+            <span class="inv-badge inv-badge-primary num">{{ product.movement_count }}</span>
+          </div>
+          {% endif %}
+          {% empty %}
+          <p class="text-center text-inv-muted py-4">No product data</p>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Recent movements #}
+  <div class="inv-card mb-4">
+    <div class="inv-card-header">
+      <h6><i class="fas fa-history me-2 text-info"></i>Recent Stock Movements</h6>
+      {% if perms.inventory.view_stockmovement %}
+      <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+      {% endif %}
+    </div>
+    <div class="inv-card-body p-0">
+      <div class="table-responsive">
+        <table class="inv-table" id="recentMovementsTable">
+          <thead><tr><th>Date &amp; Time</th><th>Product</th><th>Type</th><th>Qty</th><th>Store</th><th>User</th></tr></thead>
+          <tbody>
+            {% for movement in recent_movements %}
+            <tr>
+              <td><span class="num text-inv-muted" style="font-size:.75rem">{{ movement.created_at|date:"M d, Y H:i" }}</span></td>
+              <td>
+                {% if perms.inventory.view_product %}
+                <a href="{% url 'inventory:product_detail' movement.product.id %}" class="text-decoration-none fw-600" style="font-size:.85rem">{{ movement.product.name|truncatechars:26 }}</a>
+                {% else %}<span class="fw-600" style="font-size:.85rem">{{ movement.product.name|truncatechars:26 }}</span>{% endif %}
+              </td>
+              <td>
+                <span class="inv-badge {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'TRANSFER_IN' %}inv-badge-success{% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}inv-badge-danger{% else %}inv-badge-secondary{% endif %}" style="font-size:.67rem">
+                  {{ movement.movement_type }}
+                </span>
+              </td>
+              <td class="{% if movement.quantity > 0 %}text-success{% else %}text-danger{% endif %} fw-bold num">
+                {% if movement.quantity > 0 %}+{% endif %}{{ movement.quantity }}
+              </td>
+              <td class="text-inv-muted" style="font-size:.8rem">{{ movement.store.name|truncatechars:18 }}</td>
+              <td class="text-inv-muted" style="font-size:.78rem">{{ movement.created_by.get_full_name|default:movement.created_by.username }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-inv-muted py-4">No recent movements</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {% endif %}{# end active_tab blocks #}
+
+</div>{# /container-fluid #}
+
+
+
+
+{# Settings Modal #}
+{% if active_tab == 'dashboard' or active_tab == 'realtime' or active_tab == 'stock_dashboard' or active_tab == 'enhanced_dashboard' %}
+<div class="modal fade" id="settingsModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--inv-surface);color:var(--inv-text);border-color:var(--inv-border)">
+      <div class="modal-header" style="border-color:var(--inv-border)">
+        <h5 class="modal-title"><i class="fas fa-cog me-2"></i>Dashboard Settings</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-bold">Auto-Refresh Interval</label>
+          <select class="form-select" id="refreshInterval" style="background:var(--inv-input-bg);color:var(--inv-text);border-color:var(--inv-border)">
+            <option value="0">Disabled</option>
+            <option value="30000">30 seconds</option>
+            <option value="60000">1 minute</option>
+            <option value="300000" selected>5 minutes</option>
+            <option value="600000">10 minutes</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-bold">Chart Animation</label>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="chartAnimation" checked>
+            <label class="form-check-label" for="chartAnimation">Enable animations</label>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-bold">Density</label>
+          <div class="inv-section-tabs">
+            <button class="inv-section-tab active">Comfortable</button>
+            <button class="inv-section-tab">Compact</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--inv-border)">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save me-1"></i>Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# Low Stock Modals #}
+{% if active_tab == 'low_stock' %}
+<div class="modal fade" id="itemDetailsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background:var(--inv-surface);color:var(--inv-text);border-color:var(--inv-border)">
+      <div class="modal-header" style="border-color:var(--inv-border)">
+        <h5 class="modal-title"><i class="fas fa-info-circle me-2"></i>Item Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="itemDetailsContent">
+        <div class="text-center py-3"><div class="spinner-border text-primary"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="quickReorderModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--inv-surface);color:var(--inv-text);border-color:var(--inv-border)">
+      <div class="modal-header" style="border-color:var(--inv-border)">
+        <h5 class="modal-title"><i class="fas fa-shopping-cart me-2"></i>Quick Reorder</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        {% csrf_token %}
+        <input type="hidden" id="reorderStockId">
+        <div class="mb-3">
+          <label class="form-label fw-bold">Product</label>
+          <input type="text" class="form-control" id="reorderProductName" readonly style="background:var(--inv-surface-alt)">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-bold">Order Quantity</label>
+          <input type="number" class="form-control" id="orderQuantity" min="1" step="0.001" style="background:var(--inv-input-bg);color:var(--inv-text);border-color:var(--inv-border)">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-bold">Notes</label>
+          <textarea class="form-control" id="reorderNotes" rows="2" style="background:var(--inv-input-bg);color:var(--inv-text);border-color:var(--inv-border)"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--inv-border)">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-success" onclick="submitReorder()"><i class="fas fa-check me-1"></i>Submit Reorder</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── EFRIS Stock Modals (Increase / Decrease / Query) ── #}
+{% if efris_enabled %}
+<div class="modal fade" id="increaseStockModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--inv-surface);color:var(--inv-text);border-color:var(--inv-border)">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title"><i class="fas fa-plus-circle me-2"></i>{% trans "Increase Stock" %}</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">{% trans "Select a product to increase its stock in EFRIS" %}</p>
+        <div class="mb-3">
+          <label class="form-label fw-bold">{% trans "Product" %}</label>
+          <select class="form-select" id="increaseProductSelect" style="background:var(--inv-input-bg);color:var(--inv-text);border-color:var(--inv-border)">
+            <option value="">{% trans "Select a product..." %}</option>
+            {% for product in products %}
+            <option value="{{ product.id }}">{{ product.name }} ({{ product.sku }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="button" class="btn btn-success w-100" onclick="goToIncrease()">
+          <i class="fas fa-arrow-right me-1"></i>{% trans "Continue" %}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="decreaseStockModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--inv-surface);color:var(--inv-text);border-color:var(--inv-border)">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="fas fa-minus-circle me-2"></i>{% trans "Decrease Stock" %}</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">{% trans "Select a product to decrease its stock in EFRIS" %}</p>
+        <div class="mb-3">
+          <label class="form-label fw-bold">{% trans "Product" %}</label>
+          <select class="form-select" id="decreaseProductSelect" style="background:var(--inv-input-bg);color:var(--inv-text);border-color:var(--inv-border)">
+            <option value="">{% trans "Select a product..." %}</option>
+            {% for product in products %}
+            <option value="{{ product.id }}">{{ product.name }} ({{ product.sku }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="button" class="btn btn-danger w-100" onclick="goToDecrease()">
+          <i class="fas fa-arrow-right me-1"></i>{% trans "Continue" %}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="queryStockModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--inv-surface);color:var(--inv-text);border-color:var(--inv-border)">
+      <div class="modal-header bg-info text-white">
+        <h5 class="modal-title"><i class="fas fa-search me-2"></i>{% trans "Query Stock" %}</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">{% trans "Select a product to view its stock in EFRIS" %}</p>
+        <div class="mb-3">
+          <label class="form-label fw-bold">{% trans "Product" %}</label>
+          <select class="form-select" id="queryProductSelect" style="background:var(--inv-input-bg);color:var(--inv-text);border-color:var(--inv-border)">
+            <option value="">{% trans "Select a product..." %}</option>
+            {% for product in products %}
+            <option value="{{ product.id }}">{{ product.name }} ({{ product.sku }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="button" class="btn btn-info w-100" onclick="goToQuery()">
+          <i class="fas fa-arrow-right me-1"></i>{% trans "Continue" %}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<script>
+(function () {
+'use strict';
+
+/* ── Helpers ── */
+function getCssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function getThemeColors() {
+  return {
+    text:    getCssVar('--inv-text')        || '#0f172a',
+    muted:   getCssVar('--inv-text-muted')  || '#64748b',
+    border:  getCssVar('--inv-border')      || '#e4e9f0',
+    surface: getCssVar('--inv-surface')     || '#ffffff',
+    alt:     getCssVar('--inv-surface-alt') || '#f8fafc',
+  };
+}
+function chartDefaults() {
+  const c = getThemeColors();
+  Chart.defaults.color = c.text;
+  Chart.defaults.borderColor = c.border;
+  Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+}
+function fmt(n) {
+  if (n === null || n === undefined) return '0';
+  if (n >= 1e9) return (n/1e9).toFixed(1)+'B';
+  if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+  return String(Math.round(n));
+}
+function invToast(msg, type='success') {
+  if (typeof toastr !== 'undefined') { toastr[type](msg); return; }
+  const el = document.createElement('div');
+  el.className = `alert alert-${type === 'error' ? 'danger' : type} position-fixed`;
+  el.style.cssText = 'top:1rem;right:1rem;z-index:9999;min-width:260px;animation:invFadeIn .3s ease;border-radius:10px';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+const PALETTE  = ['#4f46e5','#10b981','#f59e0b','#ef4444','#06b6d4','#8b5cf6','#ec4899','#14b8a6','#f97316','#84cc16'];
+const PALETTE2 = ['#6366f1','#34d399','#fbbf24','#f87171','#22d3ee','#a78bfa','#f472b6','#2dd4bf','#fb923c','#a3e635'];
+
+/* ════════════════════════════════════════════
+   DASHBOARD CHARTS
+══════════════════════════════════════════ */
+{% if active_tab == 'dashboard' or active_tab == 'realtime' or active_tab == 'stock_dashboard' or active_tab == 'enhanced_dashboard' %}
+let stockStatusChart = null;
+let movementTrendsChart = null;
+let categoryDistChart = null;
+let autoRefreshTimer = null;
+
+const CONFIG = {
+  apiEndpoints: {
+    stats:       '/inventory/ajax/dashboard-stats/',
+    alerts:      '/inventory/ajax/stock-alerts/',
+    topProducts: '/inventory/ajax/top-products/',
+  }
+};
+
+function initDashboardCharts() {
+  chartDefaults();
+  initStockStatusChart();
+  initMovementTrendsChart();
+  initCategoryDistChart();
+}
+
+function initStockStatusChart() {
+  const ctx = document.getElementById('stockStatusChart');
+  if (!ctx || typeof Chart === 'undefined') return;
+  const c = getThemeColors();
+  // 4-tier from stock_by_status context (matches view.py stock_dashboard_data_api)
+  const critical = parseInt('{{ stock_by_status.critical|default:0 }}');
+  const low      = parseInt('{{ stock_by_status.low|default:0 }}');
+  const medium   = parseInt('{{ stock_by_status.medium|default:0 }}');
+  const good     = parseInt('{{ stock_by_status.good|default:0 }}');
+  const total    = critical + low + medium + good || 1;
+  const el = (id) => document.getElementById(id);
+  if (el('criticalPct'))  el('criticalPct').textContent  = Math.round(critical/total*100)+'%';
+  if (el('lowStockPct'))  el('lowStockPct').textContent  = Math.round(low/total*100)+'%';
+  if (el('mediumPct'))    el('mediumPct').textContent    = Math.round(medium/total*100)+'%';
+  if (el('inStockPct'))   el('inStockPct').textContent   = Math.round(good/total*100)+'%';
+  if (stockStatusChart) stockStatusChart.destroy();
+  stockStatusChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Critical (Out)', 'Low Stock', 'Medium', 'Good'],
+      datasets: [{
+        data: [critical, low, medium, good],
+        backgroundColor: ['#ef4444','#f59e0b','#06b6d4','#10b981'],
+        borderWidth: 3, borderColor: c.surface, hoverBorderWidth: 4, hoverOffset: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '68%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw/total*100)}%)` } }
+      }
+    }
+  });
+}
+
+window.switchChart = function(type) {
+  if (!stockStatusChart) return;
+  document.getElementById('chartDoughnutBtn').classList.toggle('active', type === 'doughnut');
+  document.getElementById('chartBarBtn').classList.toggle('active', type === 'bar');
+  const c = getThemeColors();
+  stockStatusChart.config.type = type;
+  if (type === 'bar') {
+    stockStatusChart.options.cutout = 0;
+    stockStatusChart.options.indexAxis = 'y';
+    stockStatusChart.options.plugins.legend.display = false;
+  } else {
+    stockStatusChart.options.cutout = '68%';
+    delete stockStatusChart.options.indexAxis;
+  }
+  stockStatusChart.update();
+};
+
+function initMovementTrendsChart() {
+  const ctx = document.getElementById('movementTrendsChart');
+  if (!ctx || typeof Chart === 'undefined') return;
+  const c = getThemeColors();
+  const inData  = [{% for d in movement_trends.in %}{{ d|default:0 }},{% endfor %}];
+  const outData = [{% for d in movement_trends.out %}{{ d|default:0 }},{% endfor %}];
+  const labels  = [{% for d in movement_trends.labels %}'{{ d|escapejs }}',{% endfor %}];
+  const fallbackLabels = Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()-13+i);return d.toLocaleDateString('en-GB',{month:'short',day:'2-digit'});});
+  movementTrendsChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels.length ? labels : fallbackLabels,
+      datasets: [
+        {
+          label: 'Inbound',
+          data: inData.length ? inData : Array(14).fill(0),
+          borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,.1)',
+          fill: true, tension: .45, pointRadius: 3, pointHoverRadius: 6,
+          borderWidth: 2.5,
+        },
+        {
+          label: 'Outbound',
+          data: outData.length ? outData : Array(14).fill(0),
+          borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,.07)',
+          fill: true, tension: .45, pointRadius: 3, pointHoverRadius: 6,
+          borderWidth: 2.5,
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks:{color:c.muted,font:{size:10}}, grid:{color:c.border,drawBorder:false} },
+        y: { beginAtZero:true, ticks:{ color:c.muted, font:{size:10}, callback: v=>fmt(v) }, grid:{color:c.border,drawBorder:false} }
+      },
+      plugins: {
+        legend: { position:'top', align:'end', labels:{ color:c.text, usePointStyle:true, padding:16, font:{size:11} } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)}` } }
+      }
+    }
+  });
+}
+
+function initCategoryDistChart() {
+  const ctx = document.getElementById('categoryDistributionChart');
+  if (!ctx || typeof Chart === 'undefined') return;
+  const c = getThemeColors();
+  const labels = [{% for cat in category_distribution %}'{{ cat.name|default:"Uncategorized"|escapejs }}',{% endfor %}];
+  const values = [{% for cat in category_distribution %}{{ cat.total_value|default:0 }},{% endfor %}];
+  if (!labels.length) return;
+  categoryDistChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: PALETTE.slice(0,labels.length), borderWidth: 2, borderColor: c.surface, hoverOffset: 5 }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false, cutout:'55%',
+      plugins: {
+        legend: { position:'right', labels:{ color:c.text, usePointStyle:true, padding:10, font:{size:10}, boxWidth:10 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: UGX ${fmt(ctx.raw)}` } }
+      }
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  initDashboardCharts();
+  loadAlerts();
+  setupPeriodFilter();
+  setupAutoRefresh();
+  updateTimestamp();
+  // Full AJAX refresh from stock_dashboard_data_api (matches view.py)
+  loadDashboardData();
+  setInterval(loadDashboardData, 300000); // every 5 minutes
+});
+
+function updateTimestamp() {
+  const el = document.getElementById('lastUpdated');
+  if (el) { el.textContent = 'Updated just now'; }
+  setTimeout(function() { if (el) el.textContent = 'Updated 1 min ago'; }, 60000);
+}
+
+function loadAlerts() {
+  fetch(CONFIG.apiEndpoints.alerts)
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      const el = document.getElementById('stockAlerts');
+      if (!el || !data) return;
+      if (data.alerts && data.alerts.length) {
+        el.innerHTML = data.alerts.map(a => `
+          <div class="inv-alert-item ${a.is_out ? '' : 'warning'}">
+            <div class="inv-stat-icon ${a.is_out ? 'bg-danger bg-opacity-10 text-danger' : 'bg-warning bg-opacity-10 text-warning'}" style="width:32px;height:32px;font-size:.8rem">
+              <i class="fas ${a.is_out ? 'fa-times-circle' : 'fa-exclamation-triangle'}"></i>
+            </div>
+            <div class="flex-grow-1 min-w-0">
+              <div class="fw-600" style="font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.product_name}</div>
+              <div class="text-inv-muted" style="font-size:.72rem">${a.store_name} · Qty: <strong class="num">${a.quantity}</strong></div>
+            </div>
+          </div>`).join('');
+        const countEl = document.getElementById('alertCount');
+        if (countEl) countEl.textContent = data.alerts.length;
+      } else {
+        el.innerHTML = '<div class="text-center py-4"><i class="fas fa-check-circle fa-2x text-success mb-2 d-block opacity-50"></i><p class="text-inv-muted small">No stock alerts</p></div>';
+      }
+    })
+    .catch(() => {
+      const el = document.getElementById('stockAlerts');
+      if (el) el.innerHTML = '<p class="text-center text-inv-muted py-3 small">Could not load alerts</p>';
+    });
+}
+
+function setupPeriodFilter() {
+  document.querySelectorAll('input[name="periodFilter"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      window.location.href = '?period=' + this.value;
+    });
+  });
+}
+
+function setupAutoRefresh() {
+  const sel = document.getElementById('refreshInterval');
+  if (sel) {
+    sel.addEventListener('change', function() {
+      clearInterval(autoRefreshTimer);
+      if (parseInt(this.value) > 0) {
+        autoRefreshTimer = setInterval(() => window.location.reload(), parseInt(this.value));
+      }
+    });
+  }
+}
+
+window.saveSettings = function() {
+  invToast('Settings saved', 'success');
+  bootstrap.Modal.getInstance(document.getElementById('settingsModal'))?.hide();
+};
+
+/* ── animateValue: counter animation (from view.py / enhanced_stock_dashboard.html) ── */
+function animateValue(elementId, start, end, duration) {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+  const range = end - start;
+  const startTime = performance.now();
+  function update(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    element.textContent = Math.floor(start + range * progress).toLocaleString();
+    if (progress < 1) requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
+/* ── formatTimeAgo: human relative timestamps ── */
+function formatTimeAgo(dateString) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diff = Math.floor((now - date) / 1000);
+  if (diff < 60)    return 'Just now';
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+/* ── Movement icon helpers (from enhanced_stock_dashboard view.py) ── */
+function getMovementIconClass(type) {
+  const inTypes = ['PURCHASE','RETURN','TRANSFER_IN'];
+  const outTypes = ['SALE','TRANSFER_OUT'];
+  if (inTypes.includes(type)) return 'in';
+  if (outTypes.includes(type)) return 'out';
+  return 'adjustment';
+}
+function getMovementQuantityClass(type) {
+  const inTypes = ['PURCHASE','RETURN','TRANSFER_IN'];
+  const outTypes = ['SALE','TRANSFER_OUT'];
+  if (inTypes.includes(type)) return 'positive';
+  if (outTypes.includes(type)) return 'negative';
+  return 'neutral';
+}
+function getMovementQuantityPrefix(type) {
+  if (['PURCHASE','RETURN','TRANSFER_IN'].includes(type)) return '+';
+  if (['SALE','TRANSFER_OUT'].includes(type)) return '-';
+  return '';
+}
+function getMovementIconFA(type) {
+  if (['PURCHASE','RETURN','TRANSFER_IN'].includes(type)) return 'fa-plus-circle';
+  if (['SALE','TRANSFER_OUT'].includes(type)) return 'fa-minus-circle';
+  return 'fa-exchange-alt';
+}
+
+/* ── updateRecentActivity: renders live activity feed from API ── */
+function updateRecentActivity(data) {
+  const container = document.getElementById('recentActivity');
+  if (!container) return;
+  if (!data.recent_movements || !data.recent_movements.length) {
+    container.innerHTML = `<div class="text-center py-4">
+      <i class="fas fa-inbox fa-2x text-muted mb-2 d-block opacity-50"></i>
+      <p class="text-inv-muted small">No recent activity</p></div>`;
+    return;
+  }
+  container.innerHTML = data.recent_movements.map(m => {
+    const iconClass  = getMovementIconClass(m.movement_type);
+    const qtyClass   = getMovementQuantityClass(m.movement_type);
+    const prefix     = getMovementQuantityPrefix(m.movement_type);
+    const iconFA     = getMovementIconFA(m.movement_type);
+    return `<div class="activity-item">
+      <div class="activity-icon ${iconClass}">
+        <i class="fas ${iconFA}"></i>
+      </div>
+      <div class="activity-content">
+        <div class="activity-product">${m.product__name || m.product_name || ''}</div>
+        <div class="activity-meta">
+          <span>${m.store__name || m.store_name || ''}</span>
+          <span>•</span>
+          <span>${formatTimeAgo(m.created_at)}</span>
+          <span>•</span>
+          <span>${m.created_by__username || m.created_by || ''}</span>
+        </div>
+      </div>
+      <div class="activity-quantity ${qtyClass}">${prefix}${Math.abs(m.quantity)}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ── updateStockAlerts: renders live alerts feed from API ── */
+function updateStockAlerts(data) {
+  const container = document.getElementById('stockAlerts');
+  if (!container) return;
+  if (!data.stock_alerts || !data.stock_alerts.length) {
+    container.innerHTML = `<div class="text-center py-4">
+      <i class="fas fa-check-circle fa-2x text-success mb-2 d-block opacity-50"></i>
+      <p class="text-inv-muted small">No stock alerts — all levels healthy!</p></div>`;
+    return;
+  }
+  container.innerHTML = data.stock_alerts.map(a => {
+    const isCritical = a.status === 'critical';
+    const statusClass = isCritical ? 'critical' : 'low';
+    const statusText  = isCritical ? 'OUT OF STOCK' : 'LOW STOCK';
+    const iconName    = isCritical ? 'fa-times-circle' : 'fa-exclamation-circle';
+    return `<div class="alert-item">
+      <div class="alert-icon ${statusClass}">
+        <i class="fas ${iconName}"></i>
+      </div>
+      <div class="alert-content">
+        <div class="alert-product">${a.product_name}</div>
+        <div class="alert-details">
+          <span>${a.store_name}</span> &bull;
+          <span>${a.current_stock} / ${a.reorder_level || 0}</span>
+        </div>
+      </div>
+      <div class="alert-status ${statusClass}">${statusText}</div>
+    </div>`;
+  }).join('');
+  const countEl = document.getElementById('alertCount');
+  if (countEl) countEl.textContent = data.stock_alerts.length;
+}
+
+/* ── loadDashboardData: full AJAX refresh matching stock_dashboard_data_api ── */
+async function loadDashboardData() {
+  try {
+    const response = await fetch(CONFIG.apiEndpoints.stats);
+    if (!response.ok) return;
+    const data = await response.json();
+    if (!data.success) return;
+
+    // Animate KPI counters
+    const stats = data.stock_stats || {};
+    animateValue('totalProductsStat', 0, stats.total_products || 0, 900);
+    animateValue('totalStoresStat',   0, stats.total_stores   || 0, 900);
+    animateValue('outOfStockStat',    0, stats.out_of_stock   || 0, 900);
+    animateValue('lowStockStat',      0, stats.low_stock      || 0, 900);
+    animateValue('efrisProducts',     0, stats.efris_products || 0, 900);
+
+    // Sync needing counter
+    const efris = data.efris_stats || {};
+    const syncEl = document.getElementById('stocksNeedingSync');
+    if (syncEl && efris.stocks_needing_sync !== undefined)
+      animateValue('stocksNeedingSync', 0, efris.stocks_needing_sync, 700);
+
+    // Update stock status chart (4-tier) from live API
+    if (data.stock_by_status && stockStatusChart) {
+      const sb = data.stock_by_status;
+      const total = (sb.critical||0)+(sb.low||0)+(sb.medium||0)+(sb.good||0)||1;
+      stockStatusChart.data.datasets[0].data = [sb.critical||0, sb.low||0, sb.medium||0, sb.good||0];
+      stockStatusChart.update();
+      const el = (id) => document.getElementById(id);
+      if (el('criticalPct')) el('criticalPct').textContent = Math.round((sb.critical||0)/total*100)+'%';
+      if (el('lowStockPct')) el('lowStockPct').textContent = Math.round((sb.low||0)/total*100)+'%';
+      if (el('mediumPct'))   el('mediumPct').textContent   = Math.round((sb.medium||0)/total*100)+'%';
+      if (el('inStockPct'))  el('inStockPct').textContent  = Math.round((sb.good||0)/total*100)+'%';
+    }
+
+    // Update movement trends chart with live 7-day data
+    if (data.movements_by_day && movementTrendsChart) {
+      const byDay = data.movements_by_day;
+      const labels = byDay.map(d => {
+        const dt = new Date(d.date);
+        return dt.toLocaleDateString('en-GB', {month:'short', day:'2-digit'});
+      });
+      const counts = byDay.map(d => d.count);
+      // Update the first dataset (Inbound or total) with daily count
+      movementTrendsChart.data.labels = labels;
+      movementTrendsChart.data.datasets[0].data = counts;
+      movementTrendsChart.update();
+    }
+
+    // Render live activity feed and alerts
+    updateRecentActivity(data);
+    updateStockAlerts(data);
+
+  } catch(e) { console.warn('loadDashboardData error:', e); }
+}
+
+/* ── EFRIS Modal navigation ── */
+window.goToIncrease = function() {
+  const id = document.getElementById('increaseProductSelect')?.value;
+  if (id) window.location.href = `/efris/stock/increase/${id}/`;
+  else    alert('Please select a product');
+};
+window.goToDecrease = function() {
+  const id = document.getElementById('decreaseProductSelect')?.value;
+  if (id) window.location.href = `/efris/stock/decrease/${id}/`;
+  else    alert('Please select a product');
+};
+window.goToQuery = function() {
+  const id = document.getElementById('queryProductSelect')?.value;
+  if (id) window.location.href = `/efris/stock/query/${id}/`;
+  else    alert('Please select a product');
+};
+
+{% endif %}
+
+
+/* ════════════════════════════════════════════
+   LOW STOCK CHARTS
+══════════════════════════════════════════ */
+{% if active_tab == 'low_stock' %}
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof Chart === 'undefined') return;
+  chartDefaults();
+  const c = getThemeColors();
+
+  const catCtx = document.getElementById('categoryChart');
+  if (catCtx) {
+    const labels = [{% for cat in by_category %}'{{ cat.name|default:"Uncategorized"|escapejs }}',{% endfor %}];
+    const values = [{% for cat in by_category %}{{ cat.count|default:0 }},{% endfor %}];
+    if (labels.length) {
+      new Chart(catCtx, {
+        type:'bar',
+        data:{ labels, datasets:[{ label:'Items', data:values, backgroundColor: PALETTE.map(c=>c+'cc'), borderRadius:6, borderSkipped:false }] },
+        options:{
+          responsive:true, maintainAspectRatio:false,
+          scales:{
+            x:{ticks:{color:c.muted,font:{size:10}},grid:{display:false}},
+            y:{beginAtZero:true,ticks:{color:c.muted,font:{size:10},stepSize:1},grid:{color:c.border,drawBorder:false}}
+          },
+          plugins:{legend:{display:false}}
+        }
+      });
+    }
+  }
+
+  const statCtx = document.getElementById('statusChart');
+  if (statCtx) {
+    const outCount  = parseInt('{{ out_of_stock_count|default:0 }}');
+    const critCount = parseInt('{{ critical_stock_count|default:0 }}');
+    const lowCount  = parseInt('{{ low_stock_count|default:0 }}');
+    new Chart(statCtx, {
+      type:'doughnut',
+      data:{
+        labels:['Out of Stock','Critical','Low Stock'],
+        datasets:[{ data:[outCount,critCount,lowCount], backgroundColor:['#ef4444','#f59e0b','#06b6d4'], borderWidth:3, borderColor:c.surface, hoverOffset:5 }]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false, cutout:'60%',
+        plugins:{ legend:{ position:'bottom', labels:{ color:c.text, usePointStyle:true, padding:16, font:{size:11} } } }
+      }
+    });
+  }
+
+  if (typeof $ !== 'undefined' && $.fn.DataTable) {
+    $('#lowStockTable').DataTable({ pageLength:25, order:[[5,'asc']], dom:'<"row"<"col-md-6"l><"col-md-6"f>><"row"<"col-md-12"tr>><"row"<"col-md-6"i><"col-md-6"p>>' });
+  }
+});
+
+window.toggleSelectAll = function() {
+  const cb = document.getElementById('selectAllCheckbox');
+  document.querySelectorAll('.item-checkbox').forEach(c => { c.checked = cb.checked; });
+  updateBulkBtn();
+};
+window.updateBulkBtn = function() {
+  const count = document.querySelectorAll('.item-checkbox:checked').length;
+  const btn = document.getElementById('bulkReorderBtn');
+  if (btn) { btn.disabled = count === 0; btn.innerHTML = count ? `<i class="fas fa-shopping-cart me-1"></i>Bulk Reorder (${count})` : '<i class="fas fa-shopping-cart me-1"></i>Bulk Reorder'; }
+};
+window.bulkReorder = function() {
+  const ids = [...document.querySelectorAll('.item-checkbox:checked')].map(c => c.value);
+  if (!ids.length) { invToast('Select items first', 'warning'); return; }
+  invToast(`Reorder requested for ${ids.length} items`, 'success');
+};
+window.showItemDetails = function(stockId) {
+  const modal = new bootstrap.Modal(document.getElementById('itemDetailsModal'));
+  document.getElementById('itemDetailsContent').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+  modal.show();
+  fetch(`/inventory/ajax/stock-details/${stockId}/`)
+    .then(r => r.json())
+    .then(d => { document.getElementById('itemDetailsContent').innerHTML = d.html || '<p class="text-center text-inv-muted">No data available</p>'; })
+    .catch(() => { document.getElementById('itemDetailsContent').innerHTML = '<p class="text-center text-danger">Failed to load details</p>'; });
+};
+window.showQuickReorder = function(stockId, productName) {
+  document.getElementById('reorderStockId').value = stockId;
+  document.getElementById('reorderProductName').value = productName;
+  new bootstrap.Modal(document.getElementById('quickReorderModal')).show();
+};
+window.submitReorder = function() {
+  const qty = document.getElementById('orderQuantity').value;
+  if (!qty || qty <= 0) { invToast('Enter a valid quantity', 'warning'); return; }
+  invToast('Reorder submitted successfully', 'success');
+  bootstrap.Modal.getInstance(document.getElementById('quickReorderModal'))?.hide();
+};
+{% endif %}
+
+
+/* ════════════════════════════════════════════
+   VALUATION CHARTS
+══════════════════════════════════════════ */
+{% if active_tab == 'valuation' %}
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof Chart === 'undefined') return;
+  chartDefaults();
+  const c = getThemeColors();
+
+  const catValueCtx = document.getElementById('categoryValueChart');
+  if (catValueCtx) {
+    const labels = [{% for cat in top_categories %}'{{ cat.name|default:"Uncategorized"|escapejs }}',{% endfor %}];
+    const values = [{% for cat in top_categories %}{{ cat.value|default:0 }},{% endfor %}];
+    if (labels.length) {
+      new Chart(catValueCtx, {
+        type: 'doughnut',
+        data: { labels, datasets: [{ data:values, backgroundColor:PALETTE.slice(0,labels.length), borderWidth:3, borderColor:c.surface, hoverOffset:6 }] },
+        options: {
+          responsive:true, maintainAspectRatio:false, cutout:'55%',
+          plugins:{ legend:{ position:'right', labels:{ color:c.text, usePointStyle:true, padding:10, font:{size:10} } },
+            tooltip:{ callbacks:{ label: ctx=>` ${ctx.label}: UGX ${fmt(ctx.raw)}` } }
+          }
+        }
+      });
+    }
+  }
+
+  const trendCtx = document.getElementById('valueTrendChart');
+  if (trendCtx) {
+    const labels = [{% for point in valuation_trend %}'{{ point.date|date:"M d"|escapejs }}',{% endfor %}];
+    const data   = [{% for point in valuation_trend %}{{ point.value|default:0 }},{% endfor %}];
+    new Chart(trendCtx, {
+      type: 'line',
+      data: {
+        labels: labels.length ? labels : Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);return d.toLocaleDateString('en-GB',{month:'short',day:'2-digit'});}),
+        datasets: [{
+          label:'Inventory Value',
+          data: data.length ? data : Array(7).fill(0),
+          borderColor:'#4f46e5', backgroundColor:'rgba(79,70,229,.1)',
+          fill:true, tension:.45, pointRadius:4, borderWidth:2.5
+        }]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales: {
+          x:{ticks:{color:c.muted,font:{size:10}}, grid:{color:c.border,drawBorder:false}},
+          y:{beginAtZero:false, ticks:{color:c.muted, font:{size:10}, callback:v=>'UGX '+fmt(v)}, grid:{color:c.border,drawBorder:false}}
+        },
+        plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>` UGX ${fmt(ctx.raw)}`}} }
+      }
+    });
+  }
+
+  if (typeof $ !== 'undefined' && $.fn.DataTable) {
+    $('#valuationTable').DataTable({ pageLength:25, order:[[5,'desc']], dom:'<"row"<"col-md-6"l><"col-md-6"f>><"row"<"col-md-12"tr>><"row"<"col-md-6"i><"col-md-6"p>>' });
+  }
+});
+{% endif %}
+
+
+/* ════════════════════════════════════════════
+   MOVEMENT REPORT CHARTS
+══════════════════════════════════════════ */
+{% if active_tab == 'movement_report' %}
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof Chart === 'undefined') return;
+  chartDefaults();
+  const c = getThemeColors();
+
+  const byTypeCtx = document.getElementById('movementByTypeChart');
+  if (byTypeCtx) {
+    const labels = [{% for s in movement_summary %}'{{ s.movement_type|escapejs }}',{% endfor %}];
+    const counts = [{% for s in movement_summary %}{{ s.count|default:0 }},{% endfor %}];
+    if (labels.length) {
+      new Chart(byTypeCtx, {
+        type:'doughnut',
+        data:{ labels, datasets:[{ data:counts, backgroundColor:PALETTE.slice(0,labels.length), borderWidth:3, borderColor:c.surface, hoverOffset:5 }] },
+        options:{
+          responsive:true, maintainAspectRatio:false, cutout:'60%',
+          plugins:{ legend:{ position:'bottom', labels:{color:c.text,usePointStyle:true,padding:12,font:{size:10}} } }
+        }
+      });
+    }
+  }
+
+  const dailyCtx = document.getElementById('dailyMovementChart');
+  if (dailyCtx) {
+    const labels = [{% for day in daily_movements %}'{{ day.date|date:"M d"|escapejs }}',{% endfor %}];
+    const data   = [{% for day in daily_movements %}{{ day.count|default:0 }},{% endfor %}];
+    new Chart(dailyCtx, {
+      type:'bar',
+      data:{
+        labels: labels.length ? labels : ['No data'],
+        datasets:[{ label:'Movements', data: data.length ? data : [0], backgroundColor:'rgba(79,70,229,.7)', borderRadius:5, borderSkipped:false }]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        scales:{
+          x:{ticks:{color:c.muted,font:{size:10}},grid:{display:false}},
+          y:{beginAtZero:true,ticks:{color:c.muted,font:{size:10}},grid:{color:c.border,drawBorder:false}}
+        },
+        plugins:{legend:{display:false}}
+      }
+    });
+  }
+
+  if (typeof $ !== 'undefined' && $.fn.DataTable) {
+    $('#allMovementsTable').DataTable({ pageLength:25, order:[[0,'desc']], dom:'<"row"<"col-md-6"l><"col-md-6"f>><"row"<"col-md-12"tr>><"row"<"col-md-6"i><"col-md-6"p>>' });
+    $('#mvtTopProductsTable').DataTable({ pageLength:25, order:[[2,'desc']], dom:'<"row"<"col-md-6"l><"col-md-6"f>><"row"<"col-md-12"tr>><"row"<"col-md-6"i><"col-md-6"p>>' });
+  }
+});
+{% endif %}
+
+
+/* ════════════════════════════════════════════
+   MOVEMENT ANALYTICS DataTables
+══════════════════════════════════════════ */
+{% if active_tab == 'movement_analytics' %}
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof $ !== 'undefined' && $.fn.DataTable) {
+    $('table.inv-table').DataTable({
+      pageLength:15, order:[[0,'desc']],
+      dom:'<"row"<"col-md-6"l><"col-md-6"f>><"row"<"col-md-12"tr>><"row"<"col-md-6"i><"col-md-6"p>>'
+    });
+  }
+});
+{% endif %}
+
+
+/* ════════════════════════════════════════════
+   INVENTORY REPORT DataTables
+══════════════════════════════════════════ */
+{% if active_tab == 'inventory_report' %}
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof $ !== 'undefined' && $.fn.DataTable) {
+    $('#warehouseTable, #branchTable, #irMovementTable, #irTopProductsTable').DataTable({
+      pageLength:25, dom:'<"row"<"col-md-6"l><"col-md-6"f>><"row"<"col-md-12"tr>><"row"<"col-md-6"i><"col-md-6"p>>'
+    });
+  }
+});
+{% endif %}
+
+
+/* ── Re-init charts on dark/light theme change ── */
+const themeObserver = new MutationObserver(function() {
+  if (typeof Chart === 'undefined') return;
+  chartDefaults();
+  Object.values(Chart.instances).forEach(chart => {
+    const c = getThemeColors();
+    if (chart.options.scales) {
+      Object.values(chart.options.scales).forEach(scale => {
+        if (scale.ticks) scale.ticks.color = c.muted;
+        if (scale.grid)  scale.grid.color = c.border;
+      });
+    }
+    if (chart.options.plugins?.legend?.labels) {
+      chart.options.plugins.legend.labels.color = c.text;
+    }
+    chart.update();
+  });
+});
+themeObserver.observe(document.documentElement, { attributes:true, attributeFilter:['data-bs-theme','data-theme'] });
+
+/* ── Toast keyframe ── */
+const ks = document.createElement('style');
+ks.textContent = '@keyframes invFadeIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}';
+document.head.appendChild(ks);
+
+})();
+</script>
+{% endblock %}

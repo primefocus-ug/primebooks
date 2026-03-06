@@ -4,12 +4,13 @@ from django.utils import timezone
 from django.db.models import Q
 from decimal import Decimal
 import json
+from stores.mixins import StoreRestrictedModelForm
 
 from .models import Invoice, InvoicePayment, InvoiceTemplate
 from sales.models import Sale
 
 
-class InvoiceForm(forms.ModelForm):
+class InvoiceForm(StoreRestrictedModelForm):
     """Enhanced invoice creation/edit form"""
 
     class Meta:
@@ -187,7 +188,7 @@ class InvoicePaymentForm(forms.ModelForm):
         return amount
 
 
-class InvoiceSearchForm(forms.Form):
+class InvoiceSearchForm(StoreRestrictedModelForm):
     """Advanced search form for invoices"""
 
     search = forms.CharField(

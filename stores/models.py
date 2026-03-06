@@ -349,31 +349,20 @@ class Store(OfflineIDMixin, models.Model):
     def distance_to(self, lat, lon):
         """
         Calculate distance to another point in kilometers using Haversine formula.
-
-        Args:
-            lat: Latitude of target point
-            lon: Longitude of target point
-
-        Returns:
-            Distance in kilometers, or None if this store has no coordinates
         """
         if not self.latitude or not self.longitude:
             return None
 
-        # Earth's radius in kilometers
         R = 6371.0
 
-        # Convert degrees to radians
         lat1 = radians(float(self.latitude))
         lon1 = radians(float(self.longitude))
         lat2 = radians(float(lat))
         lon2 = radians(float(lon))
 
-        # Differences
         dlat = lat2 - lat1
         dlon = lon2 - lon1
 
-        # Haversine formula
         a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
         c = 2 * atan2(sqrt(a), sqrt(1 - a))
 
@@ -384,15 +373,6 @@ class Store(OfflineIDMixin, models.Model):
     def find_nearest_stores(cls, lat, lon, limit=5, max_distance_km=None):
         """
         Find the nearest stores to a given location.
-
-        Args:
-            lat: Latitude to search from
-            lon: Longitude to search from
-            limit: Maximum number of stores to return
-            max_distance_km: Maximum distance in kilometers (optional)
-
-        Returns:
-            List of tuples: (store, distance_km)
         """
         stores_with_coords = cls.objects.filter(
             is_active=True,
@@ -400,7 +380,6 @@ class Store(OfflineIDMixin, models.Model):
             longitude__isnull=False
         )
 
-        # Calculate distances
         stores_with_distance = []
         for store in stores_with_coords:
             distance = store.distance_to(lat, lon)
@@ -408,7 +387,6 @@ class Store(OfflineIDMixin, models.Model):
                 if max_distance_km is None or distance <= max_distance_km:
                     stores_with_distance.append((store, distance))
 
-        # Sort by distance
         stores_with_distance.sort(key=lambda x: x[1])
 
         return stores_with_distance[:limit]
@@ -433,20 +411,16 @@ class Store(OfflineIDMixin, models.Model):
 
     def get_sales_summary(self, days=30):
         """Get sales summary for the specified number of days."""
-        from django.utils import timezone
-        from datetime import timedelta
         from django.db.models import Sum, Count, Avg
 
         start_date = timezone.now() - timedelta(days=days)
 
-        # Use 'created_at' or 'date' field based on what your Sale model has
         try:
             sales = self.sales.filter(created_at__gte=start_date)
-        except:
-            # Try alternative field names
+        except Exception:
             try:
                 sales = self.sales.filter(date__gte=start_date)
-            except:
+            except Exception:
                 sales = self.sales.all()
 
         return {
@@ -465,20 +439,22 @@ class Store(OfflineIDMixin, models.Model):
         if not self.company_id:
             return {}
 
+        import logging
+        logger = logging.getLogger(__name__)
+
         try:
             from django_tenants.utils import schema_context
             from company.models import Company
-            from efris.models import EFRISConfiguration  # Import the EFRISConfiguration model
+            from efris.models import EFRISConfiguration
 
             config = {}
+            company = None
 
             # Step 1: Get company info from public schema
             with schema_context('public'):
                 company = Company.objects.get(company_id=self.company_id)
 
-                # Get basic company info
                 config.update({
-                    # Business Information
                     'tin': company.tin or '',
                     'nin': company.nin or '',
                     'email': company.email or '',
@@ -486,8 +462,6 @@ class Store(OfflineIDMixin, models.Model):
                     'business_address': company.physical_address or '',
                     'business_name': company.trading_name or company.name or '',
                     'taxpayer_name': company.name or '',
-
-                    # Company-level EFRIS settings
                     'efris_enabled': company.efris_enabled,
                     'efris_is_active': company.efris_is_active,
                     'efris_device_number': company.efris_device_number or '',
@@ -495,80 +469,86 @@ class Store(OfflineIDMixin, models.Model):
                     'efris_integration_mode': company.efris_integration_mode,
                     'efris_auto_fiscalize_sales': company.efris_auto_fiscalize_sales,
                     'efris_auto_sync_products': company.efris_auto_sync_products,
+                    # Store schema_name for use outside the context manager
+                    '_schema_name': company.schema_name,
+                    '_has_efris_cert_data': (
+                        hasattr(company, 'efris_certificate_data') and
+                        isinstance(company.efris_certificate_data, dict) and
+                        bool(company.efris_certificate_data)
+                    ),
+                    '_efris_cert_data': (
+                        company.efris_certificate_data
+                        if hasattr(company, 'efris_certificate_data') and
+                        isinstance(company.efris_certificate_data, dict)
+                        else {}
+                    ),
                 })
 
             # Step 2: Get EFRIS configuration from tenant schema
-            # Switch to company's tenant schema to access EFRISConfiguration
-            with schema_context(self.company.schema_name):
-                try:
-                    # Get the EFRISConfiguration for this company
-                    efris_config = EFRISConfiguration.objects.filter(company=self.company).first()
+            # Use the schema_name we captured above (outside the context manager)
+            schema_name = config.pop('_schema_name', None)
+            has_efris_cert_data = config.pop('_has_efris_cert_data', False)
+            efris_cert_data = config.pop('_efris_cert_data', {})
 
-                    if efris_config:
-                        # Add EFRIS configuration details
-                        config.update({
-                            'efris_private_key': efris_config.private_key or '',
-                            'efris_public_certificate': efris_config.public_certificate or '',
-                            'efris_key_password': efris_config.key_password or '',
-                            'efris_certificate_fingerprint': efris_config.certificate_fingerprint or '',
-                            'efris_certificate_expires_at': efris_config.certificate_expires_at,
-                            'efris_environment': efris_config.environment or 'sandbox',
-                            'efris_mode': efris_config.mode or 'online',
-                            'efris_device_mac': efris_config.device_mac or '',
-                            'efris_app_id': efris_config.app_id or '',
-                            'efris_version': efris_config.version or '',
-                            'efris_is_initialized': efris_config.is_initialized,
-                            'efris_timeout_seconds': efris_config.timeout_seconds or 30,
-                            'efris_max_retry_attempts': efris_config.max_retry_attempts or 3,
-                            'efris_auto_sync_enabled': efris_config.auto_sync_enabled,
-                            'efris_auto_fiscalize': efris_config.auto_fiscalize,
-                            'efris_sync_interval_minutes': efris_config.sync_interval_minutes or 60,
-                        })
-                except Exception as tenant_error:
-                    # Handle case where EFRISConfiguration might not exist or schema not accessible
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"Could not fetch EFRIS configuration for company {self.company_id}: {tenant_error}")
+            if schema_name:
+                with schema_context(schema_name):
+                    try:
+                        efris_config = EFRISConfiguration.objects.filter(
+                            company=self.company
+                        ).first()
 
-                    # Fallback to checking if certificate data exists in company JSONField
-                    # (if you still want to support the old way)
-                    if hasattr(company, 'efris_certificate_data') and company.efris_certificate_data and isinstance(
-                            company.efris_certificate_data, dict):
-                        config.update({
-                            'efris_private_key': company.efris_certificate_data.get('private_key', ''),
-                            'efris_public_certificate': company.efris_certificate_data.get('public_certificate', ''),
-                            'efris_key_password': company.efris_certificate_data.get('key_password', ''),
-                            'efris_certificate_fingerprint': company.efris_certificate_data.get(
-                                'certificate_fingerprint', ''),
-                        })
+                        if efris_config:
+                            config.update({
+                                'efris_private_key': efris_config.private_key or '',
+                                'efris_public_certificate': efris_config.public_certificate or '',
+                                'efris_key_password': efris_config.key_password or '',
+                                'efris_certificate_fingerprint': efris_config.certificate_fingerprint or '',
+                                'efris_certificate_expires_at': efris_config.certificate_expires_at,
+                                'efris_environment': efris_config.environment or 'sandbox',
+                                'efris_mode': efris_config.mode or 'online',
+                                'efris_device_mac': efris_config.device_mac or '',
+                                'efris_app_id': efris_config.app_id or '',
+                                'efris_version': efris_config.version or '',
+                                'efris_is_initialized': efris_config.is_initialized,
+                                'efris_timeout_seconds': efris_config.timeout_seconds or 30,
+                                'efris_max_retry_attempts': efris_config.max_retry_attempts or 3,
+                                'efris_auto_sync_enabled': efris_config.auto_sync_enabled,
+                                'efris_auto_fiscalize': efris_config.auto_fiscalize,
+                                'efris_sync_interval_minutes': efris_config.sync_interval_minutes or 60,
+                            })
+                    except Exception as tenant_error:
+                        logger.warning(
+                            f"Could not fetch EFRIS configuration for company "
+                            f"{self.company_id}: {tenant_error}"
+                        )
+                        # Fallback to certificate data captured from public schema
+                        if has_efris_cert_data:
+                            config.update({
+                                'efris_private_key': efris_cert_data.get('private_key', ''),
+                                'efris_public_certificate': efris_cert_data.get('public_certificate', ''),
+                                'efris_key_password': efris_cert_data.get('key_password', ''),
+                                'efris_certificate_fingerprint': efris_cert_data.get(
+                                    'certificate_fingerprint', ''),
+                            })
 
             return config
 
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error fetching company EFRIS config for store {self.id}: {e}")
+            import logging as _logging
+            _logging.getLogger(__name__).error(
+                f"Error fetching company EFRIS config for store {self.id}: {e}"
+            )
             return {}
 
     def get_efris_value(self, field_name, company_value=None):
         """
         Get EFRIS value with store override logic.
-
-        Args:
-            field_name: The base field name (without 'store_' prefix)
-            company_value: The company's value for this field (optional)
-
-        Returns:
-            The effective value (store-specific or company value)
         """
-        # If using company config, return company value
         if self.use_company_efris:
             return company_value
 
-        # Try to get store-specific field
         store_field_name = f"store_{field_name}"
 
-        # Handle special field mappings
         if field_name == 'tin':
             store_field_name = 'tin'
         elif field_name == 'efris_device_number':
@@ -578,11 +558,9 @@ class Store(OfflineIDMixin, models.Model):
 
         if hasattr(self, store_field_name):
             store_value = getattr(self, store_field_name)
-            # Return store value if it's not empty
             if store_value not in [None, '', [], {}]:
                 return store_value
 
-        # Fallback to company value
         return company_value
 
     @property
@@ -591,50 +569,34 @@ class Store(OfflineIDMixin, models.Model):
         Returns the effective EFRIS configuration for this store.
         Automatically uses store-specific values when available and enabled.
         """
-        # Get company config as base
         company_config = self.get_company_efris_config()
 
-        # Build effective config with overrides
         effective_config = {
-            # Core EFRIS fields
             'tin': self.get_efris_value('tin', company_config.get('tin')),
             'nin': self.get_efris_value('nin', company_config.get('nin')),
             'device_number': self.get_efris_value('efris_device_number', company_config.get('efris_device_number')),
-
-            # Certificate Configuration
             'private_key': self.get_efris_value('efris_private_key', company_config.get('efris_private_key')),
             'public_certificate': self.get_efris_value('efris_public_certificate',
                                                        company_config.get('efris_public_certificate')),
             'key_password': self.get_efris_value('efris_key_password', company_config.get('efris_key_password')),
             'certificate_fingerprint': self.get_efris_value('efris_certificate_fingerprint',
                                                             company_config.get('efris_certificate_fingerprint')),
-
-            # Environment & Mode
             'is_production': self.get_efris_value('efris_is_production', company_config.get('efris_is_production')),
             'integration_mode': self.get_efris_value('efris_integration_mode',
                                                      company_config.get('efris_integration_mode')),
-
-            # Automation Settings
             'auto_fiscalize_sales': self.get_efris_value('auto_fiscalize_sales',
                                                          company_config.get('efris_auto_fiscalize_sales')),
             'auto_sync_products': self.get_efris_value('auto_sync_products',
                                                        company_config.get('efris_auto_sync_products')),
-
-            # Status
             'is_active': self.get_efris_value('efris_is_active', company_config.get('efris_is_active')),
             'enabled': self.get_efris_value('efris_enabled', company_config.get('efris_enabled')),
             'last_sync': self.get_efris_value('efris_last_sync', company_config.get('efris_last_sync')),
-
             'email': self.email or company_config.get('email'),
             'phone': self.phone or company_config.get('phone'),
             'business_address': self.physical_address or company_config.get('business_address'),
-
-            # Store Information
             'store_name': self.name,
             'store_code': self.code,
             'store_id': self.id,
-
-            # Configuration Source
             'use_company_efris': self.use_company_efris,
             'config_source': 'company' if self.use_company_efris else 'store',
         }
@@ -648,11 +610,9 @@ class Store(OfflineIDMixin, models.Model):
     def can_fiscalize(self):
         """
         Enhanced check if store can fiscalize transactions.
-        Considers both company and store-specific EFRIS config.
         """
         config = self.effective_efris_config
 
-        # Required fields for fiscalization
         required_fields = [
             config.get('enabled'),
             config.get('is_active'),
@@ -672,7 +632,6 @@ class Store(OfflineIDMixin, models.Model):
     def efris_config_status(self):
         """
         Get detailed EFRIS configuration status.
-        Returns dict with status information.
         """
         config = self.effective_efris_config
 
@@ -683,7 +642,6 @@ class Store(OfflineIDMixin, models.Model):
             'warnings': [],
         }
 
-        # Check required fields
         required_fields = {
             'tin': 'TIN Number',
             'device_number': 'Device Number',
@@ -697,14 +655,12 @@ class Store(OfflineIDMixin, models.Model):
             if not config.get(field):
                 status['missing_fields'].append(label)
 
-        # Check optional but recommended fields
         if not config.get('business_address'):
             status['warnings'].append('Business address not set')
 
         if not config.get('key_password') and config.get('private_key'):
             status['warnings'].append('Private key may not be encrypted')
 
-        # Determine if configured
         status['configured'] = len(status['missing_fields']) == 0
 
         return status
@@ -713,15 +669,23 @@ class Store(OfflineIDMixin, models.Model):
         """
         Validate EFRIS configuration and return errors.
         Returns tuple: (is_valid, errors_list)
+
+        NOTE: When called before switching to store-specific config,
+        temporarily sets use_company_efris=False so the store fields
+        are evaluated rather than the company fields.
         """
+        # Temporarily override to evaluate store-specific fields
+        original = self.use_company_efris
+        self.use_company_efris = False
         config = self.effective_efris_config
+        self.use_company_efris = original
+
         errors = []
 
-        # Check if EFRIS is enabled
+        # Check if EFRIS is enabled at all
         if not config.get('enabled'):
             return True, []  # Not an error if EFRIS is disabled
 
-        # Required fields validation
         if not config.get('tin'):
             errors.append("TIN number is required for EFRIS integration")
 
@@ -740,10 +704,9 @@ class Store(OfflineIDMixin, models.Model):
         if not config.get('phone'):
             errors.append("Phone number is required for EFRIS integration")
 
-        # Validate certificate fingerprint if provided
         if config.get('certificate_fingerprint'):
             fingerprint = config.get('certificate_fingerprint')
-            if len(fingerprint) not in [64, 128]:  # SHA256 or SHA512
+            if len(fingerprint) not in [64, 128]:
                 errors.append("Invalid certificate fingerprint format")
 
         return len(errors) == 0, errors
@@ -769,11 +732,9 @@ class Store(OfflineIDMixin, models.Model):
     def copy_company_efris_to_store(self):
         """
         Copy company EFRIS configuration to store-specific fields.
-        Useful for creating a store-specific config based on company settings.
         """
         company_config = self.get_company_efris_config()
 
-        # Copy relevant fields
         self.tin = company_config.get('tin')
         self.efris_device_number = company_config.get('efris_device_number')
         self.store_efris_private_key = company_config.get('efris_private_key')
@@ -816,7 +777,6 @@ class Store(OfflineIDMixin, models.Model):
         lat = float(self.latitude)
         lon = float(self.longitude)
 
-        # Uganda bounds (with some buffer)
         if -2.0 <= lat <= 5.0 and 29.0 <= lon <= 36.0:
             return True, "Coordinates valid"
         else:
@@ -860,24 +820,28 @@ class Store(OfflineIDMixin, models.Model):
 
     def get_nearby_stores(self, radius_km=50, limit=10):
         """
-        Get stores within a specified radius.
+        Get stores within a specified radius, excluding self.
 
         Args:
             radius_km: Search radius in kilometers
             limit: Maximum number of stores to return
 
         Returns:
-            QuerySet of nearby stores with distance annotation
+            List of (store, distance_km) tuples for nearby stores (excluding self)
         """
         if not self.has_coordinates:
-            return Store.objects.none()
+            return []
 
-        return Store.find_nearest_stores(
+        # Fetch limit+1 to have room to exclude self without losing results
+        all_nearby = Store.find_nearest_stores(
             float(self.latitude),
             float(self.longitude),
-            limit=limit + 1,  # +1 to exclude self
+            limit=limit + 1,
             max_distance_km=radius_km
-        )[1:]  # Exclude the first result (self)
+        )
+
+        # Exclude self by ID (not by position), so order doesn't matter
+        return [(store, dist) for store, dist in all_nearby if store.pk != self.pk][:limit]
 
     def format_address_for_geocoding(self):
         """Format address for geocoding services."""
@@ -892,7 +856,7 @@ class Store(OfflineIDMixin, models.Model):
         if self.region:
             parts.append(self.region)
 
-        parts.append("Uganda")  # Add country
+        parts.append("Uganda")
 
         return ", ".join(parts)
 
@@ -931,10 +895,9 @@ class Store(OfflineIDMixin, models.Model):
             models.Index(fields=['company', 'is_active']),
             models.Index(fields=['is_main_branch']),
             models.Index(fields=['company', 'store_type']),
-            models.Index(fields=['latitude', 'longitude']),  # For map queries
-            models.Index(fields=['region']),  # For region filtering
+            models.Index(fields=['latitude', 'longitude']),
+            models.Index(fields=['region']),
         ]
-
 
     def __str__(self):
         company_name = self.company.name if self.company else "No Company"
@@ -943,29 +906,48 @@ class Store(OfflineIDMixin, models.Model):
     def save(self, *args, **kwargs):
         skip_main_branch_update = kwargs.pop('skip_main_branch_update', False)
 
-        # Auto-generate code if not provided
         if not self.code:
             self.code = f"ST-{uuid.uuid4().hex[:6].upper()}"
 
-        # Set default values for required fields
         if self.allows_sales is None:
             self.allows_sales = True
         if self.allows_inventory is None:
             self.allows_inventory = True
 
-        # Only try to update other stores if this store has an ID (already exists)
-        # and if we're setting it as main branch and not skipping the logic
-        if not skip_main_branch_update and self.id and self.is_main_branch and self.company:
+        # FIX: Deduplicate main branch for BOTH new and existing stores.
+        # For new stores (no pk yet) we must do the deduplication after super().save()
+        # sets the pk, so we handle both cases explicitly.
+        is_new = self._state.adding
+
+        if not skip_main_branch_update and self.is_main_branch and self.company:
+            if not is_new:
+                # Existing store: deduplicate before saving
+                try:
+                    Store.objects.filter(
+                        company=self.company,
+                        is_main_branch=True
+                    ).exclude(id=self.id).update(is_main_branch=False)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"Could not update other stores: {e}"
+                    )
+            # For new stores we dedup after super().save() below
+
+        super().save(*args, **kwargs)
+
+        if not skip_main_branch_update and is_new and self.is_main_branch and self.company:
+            # Now we have a pk, safe to exclude self
             try:
                 Store.objects.filter(
                     company=self.company,
                     is_main_branch=True
                 ).exclude(id=self.id).update(is_main_branch=False)
             except Exception as e:
-                # If this fails (e.g., table doesn't exist or no other stores), just log and continue
-                print(f"Warning: Could not update other stores: {e}")
-
-        super().save(*args, **kwargs)
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Could not update other stores after create: {e}"
+                )
 
     @property
     def full_address(self):
@@ -984,7 +966,6 @@ class Store(OfflineIDMixin, models.Model):
             'nin': self.nin,
         }
 
-
     @property
     def efris_status(self):
         """Get comprehensive EFRIS status"""
@@ -1002,9 +983,8 @@ class Store(OfflineIDMixin, models.Model):
     def is_open_now(self):
         """Check if store is currently open based on operating hours."""
         if not self.operating_hours:
-            return True  # Assume open if no hours set
+            return True
 
-        from django.utils import timezone
         now = timezone.now()
         day_name = now.strftime('%A').lower()
 
@@ -1027,12 +1007,10 @@ class Store(OfflineIDMixin, models.Model):
     # Backward compatibility properties
     @property
     def branch_name(self):
-        """Backward compatibility for templates using branch.name"""
         return self.name
 
     @property
     def branch_code(self):
-        """Backward compatibility for templates using branch.code"""
         return self.code
 
 
@@ -1074,7 +1052,6 @@ class StoreAccess(OfflineIDMixin, models.Model):
         verbose_name=_("Access Level")
     )
 
-    # Granular permissions
     can_view_sales = models.BooleanField(default=True)
     can_create_sales = models.BooleanField(default=True)
     can_view_inventory = models.BooleanField(default=True)
@@ -1083,7 +1060,6 @@ class StoreAccess(OfflineIDMixin, models.Model):
     can_fiscalize = models.BooleanField(default=False)
     can_manage_staff = models.BooleanField(default=False)
 
-    # Metadata
     granted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1118,7 +1094,6 @@ class StoreAccess(OfflineIDMixin, models.Model):
         self.revoked_at = timezone.now()
         self.save(update_fields=['is_active', 'revoked_at'])
 
-        # Log the revocation
         AuditLog.log(
             action='store_access_revoked',
             user=revoked_by,
@@ -1130,9 +1105,14 @@ class StoreAccess(OfflineIDMixin, models.Model):
             }
         )
 
+
 def geocode_address(address_string):
     """
     Geocode an address using OpenStreetMap Nominatim.
+
+    NOTE: This makes a live HTTP request. Do not call from within ORM operations
+    or request/response cycles where latency is critical. Prefer calling from
+    a background task (e.g. Celery).
 
     Args:
         address_string: Address to geocode
@@ -1167,9 +1147,11 @@ def geocode_address(address_string):
                     'address_details': result.get('address', {})
                 }
     except Exception as e:
-        print(f"Geocoding error: {str(e)}")
+        import logging
+        logging.getLogger(__name__).error(f"Geocoding error: {str(e)}")
 
     return None
+
 
 class StoreOperatingHours(OfflineIDMixin, models.Model):
     DAYS_OF_WEEK = [
@@ -1221,6 +1203,7 @@ class StoreOperatingHours(OfflineIDMixin, models.Model):
         if self.is_closed:
             return f"{self.store.name} - {self.get_day_display()}: Closed"
         return f"{self.store.name} - {self.get_day_display()}: {self.opening_time} to {self.closing_time}"
+
 
 class StoreDevice(OfflineIDMixin, models.Model):
     DEVICE_TYPES = [
@@ -1334,12 +1317,10 @@ class StoreDevice(OfflineIDMixin, models.Model):
 
     @property
     def is_fiscal_device(self):
-        """Check if this is a fiscal device"""
         return self.device_type == 'EFRIS_FISCAL' or self.is_efris_linked
 
     @property
     def active_sessions_count(self):
-        """Get count of currently active sessions on this device"""
         return self.device_sessions.filter(
             is_active=True,
             expires_at__gt=timezone.now()
@@ -1347,11 +1328,9 @@ class StoreDevice(OfflineIDMixin, models.Model):
 
     @property
     def is_at_capacity(self):
-        """Check if device has reached max concurrent users"""
         return self.active_sessions_count >= self.max_concurrent_users
 
     def update_last_seen(self):
-        """Update the last seen timestamp"""
         self.last_seen_at = timezone.now()
         self.save(update_fields=['last_seen_at'])
 
@@ -1395,7 +1374,6 @@ class UserDeviceSession(OfflineIDMixin, models.Model):
         help_text=_("Physical POS device if applicable")
     )
 
-    # Session Information
     session_key = models.CharField(
         max_length=100,
         unique=True,
@@ -1412,7 +1390,6 @@ class UserDeviceSession(OfflineIDMixin, models.Model):
         verbose_name=_("Is Active")
     )
 
-    # Device Fingerprint
     device_fingerprint = models.CharField(
         max_length=64,
         db_index=True,
@@ -1420,39 +1397,14 @@ class UserDeviceSession(OfflineIDMixin, models.Model):
         help_text=_("Unique hash identifying this device")
     )
 
-    # Browser Information
-    browser_name = models.CharField(
-        max_length=50,
-        blank=True,
-        verbose_name=_("Browser Name")
-    )
-    browser_version = models.CharField(
-        max_length=20,
-        blank=True,
-        verbose_name=_("Browser Version")
-    )
+    browser_name = models.CharField(max_length=50, blank=True, verbose_name=_("Browser Name"))
+    browser_version = models.CharField(max_length=20, blank=True, verbose_name=_("Browser Version"))
+    os_name = models.CharField(max_length=50, blank=True, verbose_name=_("OS Name"))
+    os_version = models.CharField(max_length=20, blank=True, verbose_name=_("OS Version"))
 
-    # Operating System
-    os_name = models.CharField(
-        max_length=50,
-        blank=True,
-        verbose_name=_("OS Name")
-    )
-    os_version = models.CharField(
-        max_length=20,
-        blank=True,
-        verbose_name=_("OS Version")
-    )
+    ip_address = models.GenericIPAddressField(verbose_name=_("IP Address"))
+    user_agent = models.TextField(verbose_name=_("User Agent String"))
 
-    # Network Information
-    ip_address = models.GenericIPAddressField(
-        verbose_name=_("IP Address")
-    )
-    user_agent = models.TextField(
-        verbose_name=_("User Agent String")
-    )
-
-    # Display Information
     screen_resolution = models.CharField(
         max_length=20,
         blank=True,
@@ -1460,77 +1412,27 @@ class UserDeviceSession(OfflineIDMixin, models.Model):
         help_text=_("Format: 1920x1080")
     )
 
-    # Location Information
     timezone = models.CharField(
         max_length=100,
         blank=True,
         default='UTC',
         verbose_name=_("Timezone")
     )
-    latitude = models.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        blank=True,
-        null=True,
-        verbose_name=_("Latitude")
-    )
-    longitude = models.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        blank=True,
-        null=True,
-        verbose_name=_("Longitude")
-    )
-    location_accuracy = models.FloatField(
-        blank=True,
-        null=True,
-        verbose_name=_("Location Accuracy (meters)")
-    )
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True, verbose_name=_("Latitude"))
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True, verbose_name=_("Longitude"))
+    location_accuracy = models.FloatField(blank=True, null=True, verbose_name=_("Location Accuracy (meters)"))
 
-    # Session Timing
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name=_("Login Time")
-    )
-    last_activity_at = models.DateTimeField(
-        auto_now=True,
-        verbose_name=_("Last Activity")
-    )
-    expires_at = models.DateTimeField(
-        verbose_name=_("Expires At")
-    )
-    logged_out_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name=_("Logout Time")
-    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Login Time"))
+    last_activity_at = models.DateTimeField(auto_now=True, verbose_name=_("Last Activity"))
+    expires_at = models.DateTimeField(verbose_name=_("Expires At"))
+    logged_out_at = models.DateTimeField(blank=True, null=True, verbose_name=_("Logout Time"))
 
-    # Security Flags
-    is_new_device = models.BooleanField(
-        default=False,
-        verbose_name=_("New Device"),
-        help_text=_("First time user logged in from this device")
-    )
-    is_suspicious = models.BooleanField(
-        default=False,
-        verbose_name=_("Suspicious Activity"),
-        help_text=_("Flagged for suspicious activity")
-    )
-    suspicious_reason = models.TextField(
-        blank=True,
-        verbose_name=_("Suspicious Reason")
-    )
-    security_alerts_count = models.PositiveIntegerField(
-        default=0,
-        verbose_name=_("Security Alerts Count")
-    )
+    is_new_device = models.BooleanField(default=False, verbose_name=_("New Device"))
+    is_suspicious = models.BooleanField(default=False, verbose_name=_("Suspicious Activity"))
+    suspicious_reason = models.TextField(blank=True, verbose_name=_("Suspicious Reason"))
+    security_alerts_count = models.PositiveIntegerField(default=0, verbose_name=_("Security Alerts Count"))
 
-    # Additional Metadata
-    metadata = models.JSONField(
-        default=dict,
-        blank=True,
-        verbose_name=_("Additional Metadata")
-    )
+    metadata = models.JSONField(default=dict, blank=True, verbose_name=_("Additional Metadata"))
 
     class Meta:
         verbose_name = _("User Device Session")
@@ -1552,24 +1454,19 @@ class UserDeviceSession(OfflineIDMixin, models.Model):
         return f"{self.user.get_full_name()} - {self.browser_name}{device_info} ({self.get_status_display()})"
 
     def save(self, *args, **kwargs):
-        # Set expiry time if not set (24 hours from creation for security)
         if not self.expires_at:
             self.expires_at = timezone.now() + timedelta(hours=24)
-
         super().save(*args, **kwargs)
 
     @property
     def is_expired(self):
-        """Check if session has expired"""
         return timezone.now() > self.expires_at
-
-    from datetime import timedelta
-    from django.utils import timezone
 
     @property
     def session_duration(self):
         """Get session duration safely"""
-        # If created_at is missing, return 0 duration
+        # FIX: Moved imports to module level; these were previously inside the class body
+        # which made them class attributes instead of usable imports.
         if not self.created_at:
             return timedelta(0)
         if self.logged_out_at:
@@ -1578,25 +1475,21 @@ class UserDeviceSession(OfflineIDMixin, models.Model):
 
     @property
     def location_string(self):
-        """Get formatted location string"""
         if self.latitude and self.longitude:
             return f"{self.latitude}, {self.longitude}"
         return None
 
     def extend_session(self, hours=24):
-        """Extend session expiry time"""
         self.expires_at = timezone.now() + timedelta(hours=hours)
         self.save(update_fields=['expires_at'])
 
     def terminate(self, reason='LOGGED_OUT'):
-        """Terminate the session"""
         self.is_active = False
         self.logged_out_at = timezone.now()
         self.status = reason
         self.save(update_fields=['is_active', 'logged_out_at', 'status'])
 
     def flag_suspicious(self, reason):
-        """Flag session as suspicious"""
         self.is_suspicious = True
         self.suspicious_reason = reason
         self.security_alerts_count += 1
@@ -1634,11 +1527,7 @@ class DeviceOperatorLog(OfflineIDMixin, models.Model):
         related_name='device_logs',
         verbose_name=_("User")
     )
-    action = models.CharField(
-        max_length=50,
-        choices=ACTION_CHOICES,
-        verbose_name=_("Action")
-    )
+    action = models.CharField(max_length=50, choices=ACTION_CHOICES, verbose_name=_("Action"))
     device = models.ForeignKey(
         StoreDevice,
         on_delete=models.SET_NULL,
@@ -1659,38 +1548,14 @@ class DeviceOperatorLog(OfflineIDMixin, models.Model):
         null=True,
         blank=True,
         related_name='action_logs',
-        verbose_name=_("Session"),
-        help_text=_("Associated device session")
+        verbose_name=_("Session")
     )
-    timestamp = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name=_("Timestamp")
-    )
-    ip_address = models.GenericIPAddressField(
-        blank=True,
-        null=True,
-        verbose_name=_("IP Address")
-    )
-    details = models.JSONField(
-        default=dict,
-        verbose_name=_("Details"),
-        help_text=_("Additional action details in JSON format")
-    )
-    is_efris_related = models.BooleanField(
-        default=False,
-        verbose_name=_("EFRIS Related"),
-        help_text=_("Whether this action is related to EFRIS operations")
-    )
-    success = models.BooleanField(
-        default=True,
-        verbose_name=_("Success"),
-        help_text=_("Whether the action was successful")
-    )
-    error_message = models.TextField(
-        blank=True,
-        verbose_name=_("Error Message"),
-        help_text=_("Error details if action failed")
-    )
+    timestamp = models.DateTimeField(auto_now_add=True, verbose_name=_("Timestamp"))
+    ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name=_("IP Address"))
+    details = models.JSONField(default=dict, verbose_name=_("Details"))
+    is_efris_related = models.BooleanField(default=False, verbose_name=_("EFRIS Related"))
+    success = models.BooleanField(default=True, verbose_name=_("Success"))
+    error_message = models.TextField(blank=True, verbose_name=_("Error Message"))
 
     class Meta:
         verbose_name = _('Device Operator Log')
@@ -1776,53 +1641,19 @@ class SecurityAlert(OfflineIDMixin, models.Model):
         verbose_name=_("Device")
     )
 
-    alert_type = models.CharField(
-        max_length=50,
-        choices=ALERT_TYPES,
-        verbose_name=_("Alert Type")
-    )
-    severity = models.CharField(
-        max_length=20,
-        choices=SEVERITY_LEVELS,
-        default='MEDIUM',
-        verbose_name=_("Severity")
-    )
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default='OPEN',
-        verbose_name=_("Status")
-    )
+    alert_type = models.CharField(max_length=50, choices=ALERT_TYPES, verbose_name=_("Alert Type"))
+    severity = models.CharField(max_length=20, choices=SEVERITY_LEVELS, default='MEDIUM', verbose_name=_("Severity"))
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='OPEN', verbose_name=_("Status"))
 
-    title = models.CharField(
-        max_length=200,
-        verbose_name=_("Alert Title")
-    )
-    description = models.TextField(
-        verbose_name=_("Description")
-    )
+    title = models.CharField(max_length=200, verbose_name=_("Alert Title"))
+    description = models.TextField(verbose_name=_("Description"))
 
-    ip_address = models.GenericIPAddressField(
-        blank=True,
-        null=True,
-        verbose_name=_("IP Address")
-    )
+    ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name=_("IP Address"))
 
-    alert_data = models.JSONField(
-        default=dict,
-        verbose_name=_("Alert Data"),
-        help_text=_("Additional data related to the alert")
-    )
+    alert_data = models.JSONField(default=dict, verbose_name=_("Alert Data"))
 
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name=_("Created At")
-    )
-    resolved_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name=_("Resolved At")
-    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
+    resolved_at = models.DateTimeField(blank=True, null=True, verbose_name=_("Resolved At"))
     resolved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1831,20 +1662,10 @@ class SecurityAlert(OfflineIDMixin, models.Model):
         related_name='resolved_alerts',
         verbose_name=_("Resolved By")
     )
-    resolution_notes = models.TextField(
-        blank=True,
-        verbose_name=_("Resolution Notes")
-    )
+    resolution_notes = models.TextField(blank=True, verbose_name=_("Resolution Notes"))
 
-    notified = models.BooleanField(
-        default=False,
-        verbose_name=_("Admin Notified")
-    )
-    notified_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        verbose_name=_("Notified At")
-    )
+    notified = models.BooleanField(default=False, verbose_name=_("Admin Notified"))
+    notified_at = models.DateTimeField(blank=True, null=True, verbose_name=_("Notified At"))
 
     class Meta:
         verbose_name = _("Security Alert")
@@ -1863,7 +1684,6 @@ class SecurityAlert(OfflineIDMixin, models.Model):
         return f"{self.get_alert_type_display()} - {self.user} ({self.get_severity_display()})"
 
     def resolve(self, resolved_by, notes=''):
-        """Mark alert as resolved"""
         self.status = 'RESOLVED'
         self.resolved_at = timezone.now()
         self.resolved_by = resolved_by
@@ -1871,7 +1691,6 @@ class SecurityAlert(OfflineIDMixin, models.Model):
         self.save(update_fields=['status', 'resolved_at', 'resolved_by', 'resolution_notes'])
 
     def mark_false_positive(self, resolved_by, notes=''):
-        """Mark alert as false positive"""
         self.status = 'FALSE_POSITIVE'
         self.resolved_at = timezone.now()
         self.resolved_by = resolved_by
@@ -1894,67 +1713,25 @@ class DeviceFingerprint(OfflineIDMixin, models.Model):
         related_name='known_devices',
         verbose_name=_("User")
     )
-    fingerprint_hash = models.CharField(
-        max_length=64,
-        db_index=True,
-        verbose_name=_("Fingerprint Hash")
-    )
-    device_name = models.CharField(
-        max_length=100,
-        verbose_name=_("Device Name"),
-        help_text=_("User-friendly device name")
-    )
+    fingerprint_hash = models.CharField(max_length=64, db_index=True, verbose_name=_("Fingerprint Hash"))
+    device_name = models.CharField(max_length=100, verbose_name=_("Device Name"))
 
-    # Aggregated device info
     browser_name = models.CharField(max_length=50, blank=True)
     os_name = models.CharField(max_length=50, blank=True)
 
-    # Trust level
-    is_trusted = models.BooleanField(
-        default=False,
-        verbose_name=_("Trusted Device")
-    )
-    trust_score = models.IntegerField(
-        default=0,
-        verbose_name=_("Trust Score"),
-        help_text=_("Higher score = more trusted (0-100)")
-    )
+    is_trusted = models.BooleanField(default=False, verbose_name=_("Trusted Device"))
+    trust_score = models.IntegerField(default=0, verbose_name=_("Trust Score"))
 
-    # Usage tracking
-    first_seen_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name=_("First Seen")
-    )
-    last_seen_at = models.DateTimeField(
-        auto_now=True,
-        verbose_name=_("Last Seen")
-    )
-    login_count = models.PositiveIntegerField(
-        default=0,
-        verbose_name=_("Login Count")
-    )
+    first_seen_at = models.DateTimeField(auto_now_add=True, verbose_name=_("First Seen"))
+    last_seen_at = models.DateTimeField(auto_now=True, verbose_name=_("Last Seen"))
+    login_count = models.PositiveIntegerField(default=0, verbose_name=_("Login Count"))
 
-    # Location tracking
-    last_ip_address = models.GenericIPAddressField(
-        blank=True,
-        null=True,
-        verbose_name=_("Last IP Address")
-    )
-    last_location = models.CharField(
-        max_length=200,
-        blank=True,
-        verbose_name=_("Last Location")
-    )
+    last_ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name=_("Last IP Address"))
+    last_location = models.CharField(max_length=200, blank=True, verbose_name=_("Last Location"))
 
-    is_active = models.BooleanField(
-        default=True,
-        verbose_name=_("Active")
-    )
+    is_active = models.BooleanField(default=True, verbose_name=_("Active"))
 
-    notes = models.TextField(
-        blank=True,
-        verbose_name=_("Notes")
-    )
+    notes = models.TextField(blank=True, verbose_name=_("Notes"))
 
     class Meta:
         verbose_name = _("Device Fingerprint")
@@ -1971,20 +1748,16 @@ class DeviceFingerprint(OfflineIDMixin, models.Model):
         return f"{self.device_name} - {self.user.get_full_name()}"
 
     def increment_login(self):
-        """Increment login count and update trust score"""
         self.login_count += 1
-        # Increase trust score with each successful login (max 100)
         self.trust_score = min(100, self.trust_score + 5)
         self.save(update_fields=['login_count', 'trust_score'])
 
     def flag_suspicious(self):
-        """Decrease trust score due to suspicious activity"""
         self.trust_score = max(0, self.trust_score - 20)
         self.save(update_fields=['trust_score'])
 
 
 class StockStore(models.Model):
-    # Link to company
     company = models.ForeignKey(
         'company.Company',
         on_delete=models.CASCADE,
@@ -1998,52 +1771,15 @@ class StockStore(models.Model):
         editable=False,
         null=True, blank=True
     )
-    # Basic Information
-    name = models.CharField(
-        max_length=255,
-        verbose_name=_("StockStore Name"),
-        help_text=_("e.g., 'Main Warehouse', 'Central Depot'")
-    )
+    name = models.CharField(max_length=255, verbose_name=_("StockStore Name"))
+    code = models.CharField(max_length=20, unique=True, verbose_name=_("StockStore Code"))
+    description = models.TextField(blank=True, verbose_name=_("Description"))
 
-    code = models.CharField(
-        max_length=20,
-        unique=True,
-        verbose_name=_("StockStore Code"),
-        help_text=_("Unique identifier, e.g., 'WH-001'")
-    )
+    physical_address = models.TextField(verbose_name=_("Physical Address"))
+    region = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("Region/District"))
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
 
-    description = models.TextField(
-        blank=True,
-        verbose_name=_("Description")
-    )
-
-    # Location
-    physical_address = models.TextField(
-        verbose_name=_("Physical Address")
-    )
-
-    region = models.CharField(
-        max_length=100,
-        blank=True,
-        null=True,
-        verbose_name=_("Region/District")
-    )
-
-    latitude = models.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        blank=True,
-        null=True
-    )
-
-    longitude = models.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        blank=True,
-        null=True
-    )
-
-    # Contact Information
     phone = models.CharField(
         max_length=20,
         blank=True,
@@ -2051,20 +1787,9 @@ class StockStore(models.Model):
         validators=[RegexValidator(r'^\+?[0-9]+$', _('Enter a valid phone number.'))],
         verbose_name=_("Primary Phone")
     )
+    email = models.EmailField(blank=True, null=True, verbose_name=_("Email"))
 
-    email = models.EmailField(
-        blank=True,
-        null=True,
-        verbose_name=_("Email")
-    )
-
-    # Manager Information
-    manager_name = models.CharField(
-        max_length=255,
-        blank=True,
-        verbose_name=_("Warehouse Manager")
-    )
-
+    manager_name = models.CharField(max_length=255, blank=True, verbose_name=_("Warehouse Manager"))
     manager_phone = models.CharField(
         max_length=20,
         blank=True,
@@ -2072,76 +1797,30 @@ class StockStore(models.Model):
         verbose_name=_("Manager Phone")
     )
 
-    # StockStore Configuration
-    is_main_stockstore = models.BooleanField(
-        default=False,
-        verbose_name=_("Main StockStore"),
-        help_text=_("Primary warehouse for the company")
-    )
+    is_main_stockstore = models.BooleanField(default=False, verbose_name=_("Main StockStore"))
+    auto_approve_transfers = models.BooleanField(default=False, verbose_name=_("Auto-Approve Transfers"))
+    requires_manager_approval = models.BooleanField(default=True, verbose_name=_("Requires Manager Approval"))
+    min_stock_alert_enabled = models.BooleanField(default=True, verbose_name=_("Enable Low Stock Alerts"))
 
-    auto_approve_transfers = models.BooleanField(
-        default=False,
-        verbose_name=_("Auto-Approve Transfers"),
-        help_text=_("Automatically approve transfer requests to branches")
-    )
-
-    requires_manager_approval = models.BooleanField(
-        default=True,
-        verbose_name=_("Requires Manager Approval"),
-        help_text=_("Transfers need manager approval")
-    )
-
-    min_stock_alert_enabled = models.BooleanField(
-        default=True,
-        verbose_name=_("Enable Low Stock Alerts"),
-        help_text=_("Alert when stock falls below threshold")
-    )
-
-    # Access Control
     staff = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,
         related_name='accessible_stockstores',
-        verbose_name=_("Warehouse Staff"),
-        help_text=_("Users who can access this stockstore")
+        verbose_name=_("Warehouse Staff")
     )
-
     managers = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,
         related_name='managed_stockstores',
-        verbose_name=_("Warehouse Managers"),
-        help_text=_("Users who can manage this stockstore")
+        verbose_name=_("Warehouse Managers")
     )
 
-    # Status
-    is_active = models.BooleanField(
-        default=True,
-        verbose_name=_("Active")
-    )
+    is_active = models.BooleanField(default=True, verbose_name=_("Active"))
+    notes = models.TextField(blank=True, verbose_name=_("Notes"))
+    sort_order = models.PositiveIntegerField(default=0)
 
-    # Metadata
-    notes = models.TextField(
-        blank=True,
-        verbose_name=_("Notes")
-    )
-
-    sort_order = models.PositiveIntegerField(
-        default=0,
-        help_text=_("Used for ordering in lists")
-    )
-
-    # Timestamps
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name=_("Created At")
-    )
-
-    updated_at = models.DateTimeField(
-        auto_now=True,
-        verbose_name=_("Updated At")
-    )
-
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Created At"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -2172,23 +1851,26 @@ class StockStore(models.Model):
         return f"{indicator} {self.name}"
 
     def save(self, *args, **kwargs):
-        # Auto-generate code if not provided
         if not self.code:
-            import uuid
             self.code = f"WH-{uuid.uuid4().hex[:6].upper()}"
 
-        # Ensure only one main stockstore per company
+        # FIX: Added error handling around the main stockstore deduplication
         if self.is_main_stockstore and self.company:
-            StockStore.objects.filter(
-                company=self.company,
-                is_main_stockstore=True
-            ).exclude(id=self.id).update(is_main_stockstore=False)
+            try:
+                StockStore.objects.filter(
+                    company=self.company,
+                    is_main_stockstore=True
+                ).exclude(id=self.id).update(is_main_stockstore=False)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Could not update other stockstores: {e}"
+                )
 
         super().save(*args, **kwargs)
 
     @property
     def total_inventory_value(self):
-        """Calculate total value of inventory in this stockstore"""
         from django.db.models import Sum, F
         from inventory.models import StockStoreInventory
 
@@ -2202,13 +1884,11 @@ class StockStore(models.Model):
 
     @property
     def total_products(self):
-        """Count unique products in this stockstore"""
         from inventory.models import StockStoreInventory
         return StockStoreInventory.objects.filter(stockstore=self).count()
 
     @property
     def low_stock_items_count(self):
-        """Count items below minimum threshold"""
         from inventory.models import StockStoreInventory
         return StockStoreInventory.objects.filter(
             stockstore=self,
@@ -2216,7 +1896,6 @@ class StockStore(models.Model):
         ).count()
 
     def get_inventory_summary(self):
-        """Get detailed inventory summary"""
         from django.db.models import Sum, Count, F
         from inventory.models import StockStoreInventory
 
@@ -2233,27 +1912,19 @@ class StockStore(models.Model):
         }
 
     def can_supply_branch(self, product, quantity):
-        """Check if stockstore can supply requested quantity to a branch"""
         from inventory.models import StockStoreInventory
 
         try:
-            stock = StockStoreInventory.objects.get(
-                stockstore=self,
-                product=product
-            )
+            stock = StockStoreInventory.objects.get(stockstore=self, product=product)
             return stock.quantity >= quantity
         except StockStoreInventory.DoesNotExist:
             return False
 
     def get_available_quantity(self, product):
-        """Get available quantity for a product"""
         from inventory.models import StockStoreInventory
 
         try:
-            stock = StockStoreInventory.objects.get(
-                stockstore=self,
-                product=product
-            )
+            stock = StockStoreInventory.objects.get(stockstore=self, product=product)
             return stock.quantity
         except StockStoreInventory.DoesNotExist:
             return 0

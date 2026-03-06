@@ -4,9 +4,11 @@ from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.authtoken.models import Token
+from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+import hashlib
 
 from .models import CustomUser, UserSignature, Role, RoleHistory, AuditLog, LoginHistory
 from .serializers import (
@@ -55,6 +57,40 @@ def log_action(request, action, description, **kwargs):
 
 
 # ============================================
+# RATE LIMITING
+# Cache-based, no extra packages required.
+# Limits:
+#   - Login:    10 attempts / IP / 10 min  +  20 attempts / email / 15 min
+#   - Register: 5 attempts  / IP / hour
+#   - Password: 5 attempts  / user / hour
+# ============================================
+
+def _rl_key(scope, identifier):
+    h = hashlib.sha256(f"{scope}:{identifier}".encode()).hexdigest()[:16]
+    return f"rl:api:{scope}:{h}"
+
+
+def _is_rate_limited(scope, identifier, max_attempts, window_seconds):
+    return cache.get(_rl_key(scope, identifier), 0) >= max_attempts
+
+
+def _increment_rl(scope, identifier, window_seconds):
+    key = _rl_key(scope, identifier)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, timeout=window_seconds)
+
+
+def _clear_rl(scope, identifier):
+    cache.delete(_rl_key(scope, identifier))
+
+
+def _rl_response(message="Too many requests. Please try again later."):
+    return Response({'detail': message}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+
+# ============================================
 # AUTH
 # ============================================
 
@@ -63,6 +99,11 @@ class RegisterView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        ip = get_client_ip(request)
+        if _is_rate_limited('register_ip', ip, max_attempts=5, window_seconds=3600):
+            return _rl_response("Too many registration attempts. Please try again in an hour.")
+        _increment_rl('register_ip', ip, window_seconds=3600)
+
         serializer = UserRegistrationSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             user = serializer.save()
@@ -80,10 +121,22 @@ class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        ip = get_client_ip(request)
+        email_attempt = request.data.get('email', '').lower().strip()
+
+        # Check rate limits before doing any auth work
+        if _is_rate_limited('login_ip', ip, max_attempts=10, window_seconds=600):
+            return _rl_response("Too many login attempts from this IP. Please wait 10 minutes.")
+        if email_attempt and _is_rate_limited('login_email', email_attempt, max_attempts=20, window_seconds=900):
+            return _rl_response("Too many login attempts for this account. Please wait 15 minutes.")
+
         serializer = LoginSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             user = serializer.validated_data['user']
-            ip = get_client_ip(request)
+
+            # Successful login — clear rate limit counters
+            _clear_rl('login_ip', ip)
+            _clear_rl('login_email', user.email.lower())
 
             user.record_login_attempt(success=True, ip_address=ip)
 
@@ -102,13 +155,16 @@ class LoginView(APIView):
                 'token': token.key,
             })
 
-        # Record failed attempt
-        email = request.data.get('email')
-        if email:
+        # Failed — increment counters
+        _increment_rl('login_ip', ip, window_seconds=600)
+        if email_attempt:
+            _increment_rl('login_email', email_attempt, window_seconds=900)
+
+        # Record failed attempt against the user if we can identify them
+        if email_attempt:
             try:
-                user = CustomUser.objects.get(email=email)
-                ip = get_client_ip(request)
-                user.record_login_attempt(success=False)
+                user = CustomUser.objects.get(email=email_attempt)
+                user.record_login_attempt(success=False, ip_address=ip)
                 LoginHistory.objects.create(
                     user=user,
                     status='failed',
@@ -140,9 +196,16 @@ class PasswordChangeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        # 5 attempts per user per hour to limit brute-force via stolen sessions
+        user_key = str(request.user.pk)
+        if _is_rate_limited('pw_change', user_key, max_attempts=5, window_seconds=3600):
+            return _rl_response("Too many password change attempts. Please try again in an hour.")
+        _increment_rl('pw_change', user_key, window_seconds=3600)
+
         serializer = PasswordChangeSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
+            _clear_rl('pw_change', user_key)
             # Rotate token on password change for security
             try:
                 request.user.auth_token.delete()
@@ -362,7 +425,7 @@ class UserStatsView(APIView):
             'total': base.count(),
             'active': base.filter(is_active=True).count(),
             'inactive': base.filter(is_active=False).count(),
-            'locked': sum(1 for u in base if u.is_locked),
+            'locked': base.filter(locked_until__gt=timezone.now()).count(),
             'company_admins': base.filter(company_admin=True).count(),
         })
 
@@ -429,6 +492,7 @@ class UserRolesView(APIView):
         target = get_object_or_404(CustomUser, pk=pk, is_hidden=False)
         if not (request.user.can_manage_user(target) or request.user.pk == target.pk):
             return Response({'detail': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+        primary_role_pk = target.primary_role.pk if target.primary_role else None
         return Response({
             'primary_role': {
                 'id': target.primary_role.id,
@@ -442,7 +506,7 @@ class UserRolesView(APIView):
                     'name': r.group.name,
                     'priority': r.priority,
                     'color': r.color_code,
-                    'is_primary': (r.pk == target.primary_role_id),
+                    'is_primary': (r.pk == primary_role_pk),
                 }
                 for r in target.all_roles
             ],

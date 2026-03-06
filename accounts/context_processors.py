@@ -1,7 +1,6 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from accounts.utils import get_accessible_companies
-from .views import get_user_type_display_from_role
-from public_accounts.models import PublicUser
+
 User = get_user_model()
 
 
@@ -19,6 +18,7 @@ def saas_admin_context(request):
 
     if hasattr(request, 'user') and request.user.is_authenticated:
         user = request.user
+        from accounts.utils import get_accessible_companies
 
         context.update({
             'is_saas_admin': getattr(user, 'is_saas_admin', False),
@@ -40,6 +40,8 @@ def user_role_context(request):
 
     # Only apply tenant-specific attributes if this is a CustomUser
     if isinstance(user, User):  # Your tenant user model
+        # Local import to avoid circular import at module level
+        from .views import get_user_type_display_from_role
         return {
             'user_primary_role': getattr(user, 'primary_role', None),
             'user_all_roles': getattr(user, 'all_roles', []),
@@ -50,21 +52,23 @@ def user_role_context(request):
             'user_type_display': get_user_type_display_from_role(user),
         }
 
-    # If it's a PublicUser, return minimal info
-    elif isinstance(user, PublicUser):
-        return {
-            'user_primary_role': None,
-            'user_all_roles': [],
-            'user_role_names': [],
-            'user_display_role': 'Public',
-            'user_role_priority': None,
-            'user_type_display': 'Public',
-        }
+    # If it's a PublicUser, return minimal info — guard import in case app is absent
+    try:
+        from public_accounts.models import PublicUser
+        if isinstance(user, PublicUser):
+            return {
+                'user_primary_role': None,
+                'user_all_roles': [],
+                'user_role_names': [],
+                'user_display_role': 'Public',
+                'user_role_priority': None,
+                'user_type_display': 'Public',
+            }
+    except ImportError:
+        pass
 
     # Fallback for other unexpected user types
     return {}
-
-from django.conf import settings
 
 def version_context(request):
     return {
@@ -87,4 +91,3 @@ def maintenance_info(request):
             "System maintenance scheduled."
         ),
     }
-
