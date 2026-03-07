@@ -305,7 +305,6 @@ class ProductTracker(BaseTracker):
 #
 # Model:  sales.Sale
 # Fields: document_number / document_type / status / total_amount
-#         customer (FK→customers.Customer) / store (FK) / served_by (FK)
 #         payment_method / is_fiscalized / efris_irn / fiscalized_at
 # Related: .items (SaleItem) / .payments (Payment)
 # SaleItem: product (FK) / quantity / unit_price / total_price
