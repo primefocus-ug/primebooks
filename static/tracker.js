@@ -1,23 +1,27 @@
 /**
  * ╔══════════════════════════════════════════════════════════════════╗
- * ║  PrimeBooks — Universal Tracker  (tracker.js)                   ║
+ * ║  PrimeBooks — Universal Tracker  (tracker.js)  v2              ║
  * ║                                                                  ║
  * ║  Zero dependencies. Include once in base.html.                  ║
  * ║                                                                  ║
  * ║  INCLUDE IN BASE TEMPLATE (before </body>):                     ║
  * ║    <script src="{% static 'js/tracker.js' %}"></script>         ║
  * ║                                                                  ║
- * ║  ADD TO ANY BUTTON:                                              ║
- * ║    <button data-track="product" data-id="{{ product.pk }}"      ║
- * ║            data-label="{{ product.name }}">Track</button>        ║
+ * ║  ADD TO ANY BUTTON / ELEMENT:                                   ║
+ * ║    <button data-track="product"                                 ║
+ * ║            data-id="{{ product.pk }}"                           ║
+ * ║            data-label="{{ product.name }}">Track</button>       ║
  * ║                                                                  ║
  * ║  THEME                                                           ║
- * ║    Reads your existing [data-theme='dark'] switcher on <html>.  ║
- * ║    Light mode = default.  Dark = [data-theme='dark'].           ║
- * ║    Theme switches instantly — no JS needed, just CSS vars.      ║
+ * ║    Light = default (no attribute needed).                       ║
+ * ║    Dark  = <html data-theme="dark">  (your existing switcher).  ║
+ * ║    All colours are CSS-variable-driven — switching is instant.  ║
  * ║                                                                  ║
- * ║  "VIEW FULL PAGE" opens a full-screen modal overlay showing     ║
- * ║    the same data in a 2-column layout.                          ║
+ * ║  "VIEW FULL PAGE" — opens a full-screen modal with 2-col layout ║
+ * ║    showing the same data. Click backdrop or ✕ to dismiss.      ║
+ * ║                                                                  ║
+ * ║  PROGRAMMATIC OPEN:                                             ║
+ * ║    PrimeTracker.open("product", 42, "My Product")               ║
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
@@ -28,16 +32,17 @@
   const CSRF_COOKIE = "csrftoken";
 
   /* ═══════════════════════════════════════════════════════════════════
-     CSS
-     Light theme is the default.
-     [data-theme='dark'] on <html> overrides all colour tokens.
-     Works instantly with your existing theme switcher — zero JS.
+     CSS — ALL colours use CSS variables.
+     :root defines the LIGHT theme (default).
+     [data-theme='dark'] overrides only colour tokens.
+     Your existing switcher that sets data-theme="dark" on <html>
+     will instantly flip every colour — no JavaScript needed.
   ═══════════════════════════════════════════════════════════════════ */
 
   const CSS = `
     @import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Syne:wght@600;700;800&display=swap');
 
-    /* ── LIGHT (default) ────────────────────────────────────────────── */
+    /* ── LIGHT THEME (default) ──────────────────────────────────────── */
     :root {
       --trk-bg:               #ffffff;
       --trk-s1:               #f8fafc;
@@ -48,9 +53,9 @@
       --trk-text:             #0f172a;
       --trk-sub:              #475569;
       --trk-dim:              #94a3b8;
-      --trk-overlay:          rgba(15,23,42,0.45);
-      --trk-shadow:           rgba(15,23,42,0.18);
-      --trk-table-zebra:      rgba(241,245,249,0.7);
+      --trk-overlay:          rgba(15,23,42,0.50);
+      --trk-shadow:           0 32px 80px rgba(15,23,42,0.18), 0 2px 8px rgba(15,23,42,0.08);
+      --trk-table-zebra:      rgba(241,245,249,0.9);
       --trk-diff-from-bg:     #fef2f2;
       --trk-diff-from-color:  #dc2626;
       --trk-diff-from-bd:     #fecaca;
@@ -59,11 +64,14 @@
       --trk-diff-to-bd:       #bbf7d0;
       --trk-td-last:          #16a34a;
       --trk-error-color:      #dc2626;
+      --trk-skel:             #e2e8f0;
+      --trk-close-bg:         #f8fafc;
+      --trk-close-hover:      #e9eef6;
       --trk-mono:             'DM Mono', monospace;
       --trk-display:          'Syne', sans-serif;
     }
 
-    /* ── DARK — your [data-theme='dark'] switcher triggers this ─────── */
+    /* ── DARK THEME — triggered by your [data-theme='dark'] switcher ── */
     [data-theme='dark'] {
       --trk-bg:               #060f1c;
       --trk-s1:               #0a1628;
@@ -75,23 +83,26 @@
       --trk-sub:              #4d6a87;
       --trk-dim:              #243550;
       --trk-overlay:          rgba(2,8,20,0.82);
-      --trk-shadow:           rgba(0,0,0,0.65);
-      --trk-table-zebra:      rgba(14,29,50,0.4);
+      --trk-shadow:           0 32px 80px rgba(0,0,0,0.65), 0 2px 8px rgba(0,0,0,0.4);
+      --trk-table-zebra:      rgba(14,29,50,0.5);
       --trk-diff-from-bg:     #240808;
       --trk-diff-from-color:  #f87171;
-      --trk-diff-from-bd:     rgba(248,113,113,0.15);
+      --trk-diff-from-bd:     rgba(248,113,113,0.18);
       --trk-diff-to-bg:       #042214;
       --trk-diff-to-color:    #4ade80;
-      --trk-diff-to-bd:       rgba(74,222,128,0.15);
+      --trk-diff-to-bd:       rgba(74,222,128,0.18);
       --trk-td-last:          #4ade80;
       --trk-error-color:      #f87171;
+      --trk-skel:             #12233b;
+      --trk-close-bg:         #0e1d32;
+      --trk-close-hover:      #12233b;
     }
 
-    /* ── OVERLAY ────────────────────────────────────────────────────── */
+    /* ── OVERLAY (drawer backdrop) ──────────────────────────────────── */
     #trk-overlay {
       position:fixed; inset:0; z-index:9998;
       background:var(--trk-overlay);
-      backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+      backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
       opacity:0; transition:opacity .25s ease; pointer-events:none;
     }
     #trk-overlay.trk-visible { opacity:1; pointer-events:all; }
@@ -102,7 +113,7 @@
       width:min(600px,100vw); z-index:9999;
       background:var(--trk-bg);
       border-left:1px solid var(--trk-bd2);
-      box-shadow:-24px 0 80px var(--trk-shadow);
+      box-shadow:var(--trk-shadow);
       display:flex; flex-direction:column;
       transform:translateX(100%);
       transition:transform .32s cubic-bezier(.22,.68,0,1.08);
@@ -125,7 +136,7 @@
       justify-content:space-between; margin-bottom:12px;
     }
     #trk-chip { display:flex; align-items:center; gap:7px; }
-    #trk-chip-icon { font-size:14px; }
+    #trk-chip-icon  { font-size:14px; }
     #trk-chip-label {
       font-size:9px; font-family:var(--trk-mono);
       letter-spacing:.18em; text-transform:uppercase;
@@ -136,17 +147,19 @@
     }
     #trk-close-btn {
       width:30px; height:30px; border-radius:7px;
-      border:1px solid var(--trk-bd2); background:transparent;
+      border:1px solid var(--trk-bd2);
+      background:var(--trk-close-bg);
       color:var(--trk-sub); font-size:18px; cursor:pointer;
       display:flex; align-items:center; justify-content:center;
       transition:all .14s; line-height:1;
     }
-    #trk-close-btn:hover { background:var(--trk-s3); color:var(--trk-text); }
+    #trk-close-btn:hover { background:var(--trk-close-hover); color:var(--trk-text); }
 
     #trk-title-row { display:flex; align-items:flex-start; gap:10px; margin-bottom:4px; }
     #trk-title {
       flex:1; font-size:21px; font-weight:800; color:var(--trk-text);
       letter-spacing:-.03em; line-height:1.2;
+      margin:0; /* reset h2 */
     }
     #trk-badge {
       font-size:10px; padding:3px 11px; border-radius:20px;
@@ -171,9 +184,11 @@
       font-size:9px; color:var(--trk-sub); font-family:var(--trk-mono);
       letter-spacing:.06em; margin-bottom:4px;
     }
-    .trk-stat-value { font-size:12px; font-weight:700; font-family:var(--trk-mono); line-height:1.2; }
+    .trk-stat-value {
+      font-size:12px; font-weight:700; font-family:var(--trk-mono); line-height:1.2;
+    }
 
-    /* ── BODY ───────────────────────────────────────────────────────── */
+    /* ── BODY (scrollable) ──────────────────────────────────────────── */
     #trk-body {
       flex:1; overflow-y:auto; padding:22px 24px;
       scrollbar-width:thin; scrollbar-color:var(--trk-bd2) transparent;
@@ -189,22 +204,34 @@
     #trk-footer-meta {
       flex:1; font-size:10px; color:var(--trk-dim); font-family:var(--trk-mono);
     }
-    #trk-expand-btn {
-      padding:7px 15px; border-radius:7px;
-      border:1px solid var(--trk-bd2); background:var(--trk-s2);
-      color:var(--trk-sub); font-size:11px; font-family:var(--trk-mono);
-      cursor:pointer; transition:all .13s;
+
+    /* Both footer buttons share this base */
+    .trk-footer-btn {
+      padding:7px 15px; border-radius:7px; cursor:pointer;
+      font-size:11px; font-family:var(--trk-mono); transition:all .13s;
+      border:1px solid var(--trk-bd2); white-space:nowrap;
     }
-    #trk-expand-btn:hover { color:var(--trk-text); background:var(--trk-s3); }
+    #trk-expand-btn {
+      background:var(--trk-s2); color:var(--trk-sub);
+    }
+    #trk-expand-btn:hover {
+      background:var(--trk-s3); color:var(--trk-text);
+      border-color:var(--trk-accent,#0ea5e9);
+    }
     #trk-close-link {
-      padding:7px 18px; border-radius:7px;
-      font-size:11px; font-family:var(--trk-mono);
-      cursor:pointer; transition:all .13s; border:1px solid transparent;
+      background:color-mix(in srgb, var(--trk-accent,#0ea5e9) 12%, var(--trk-bg));
+      color:var(--trk-accent,#0ea5e9);
+      border-color:color-mix(in srgb, var(--trk-accent,#0ea5e9) 30%, transparent);
+      font-weight:600;
+    }
+    #trk-close-link:hover {
+      background:color-mix(in srgb, var(--trk-accent,#0ea5e9) 20%, var(--trk-bg));
     }
 
     /* ═══════════════════════════════════════════════════════════════
        MODAL  — "View full page"
-       A centred overlay that shows the same data in a 2-col layout.
+       Full-screen overlay. Click backdrop or ✕ to close.
+       2-column grid for content — wide sections span full width.
     ═══════════════════════════════════════════════════════════════ */
     #trk-modal-overlay {
       position:fixed; inset:0; z-index:10000;
@@ -218,23 +245,26 @@
     #trk-modal {
       background:var(--trk-bg);
       border:1px solid var(--trk-bd2);
-      border-radius:14px;
-      box-shadow:0 32px 100px var(--trk-shadow);
-      width:min(940px,100%); max-height:calc(100vh - 48px);
+      border-radius:16px;
+      box-shadow:var(--trk-shadow);
+      width:min(980px,100%); max-height:calc(100vh - 48px);
       display:flex; flex-direction:column;
-      transform:scale(.96) translateY(8px);
-      transition:transform .24s cubic-bezier(.22,.68,0,1.08);
+      transform:scale(.96) translateY(10px);
+      transition:transform .26s cubic-bezier(.22,.68,0,1.08);
       font-family:var(--trk-display); overflow:hidden;
     }
-    #trk-modal-overlay.trk-visible #trk-modal { transform:scale(1) translateY(0); }
+    #trk-modal-overlay.trk-visible #trk-modal {
+      transform:scale(1) translateY(0);
+    }
 
     #trk-modal-accent {
       height:3px; flex-shrink:0;
       background:linear-gradient(90deg,transparent,var(--trk-accent,#0ea5e9),transparent);
     }
 
+    /* Modal header mirrors drawer header */
     #trk-modal-header {
-      padding:20px 28px 18px;
+      padding:22px 32px 18px;
       border-bottom:1px solid var(--trk-bd2); flex-shrink:0;
     }
     #trk-modal-chip-row {
@@ -253,66 +283,89 @@
     }
     #trk-modal-close-btn {
       width:32px; height:32px; border-radius:8px;
-      border:1px solid var(--trk-bd2); background:transparent;
+      border:1px solid var(--trk-bd2);
+      background:var(--trk-close-bg);
       color:var(--trk-sub); font-size:19px; cursor:pointer;
       display:flex; align-items:center; justify-content:center;
       transition:all .14s; line-height:1;
     }
-    #trk-modal-close-btn:hover { background:var(--trk-s3); color:var(--trk-text); }
+    #trk-modal-close-btn:hover { background:var(--trk-close-hover); color:var(--trk-text); }
 
-    #trk-modal-title-row { display:flex; align-items:flex-start; gap:10px; margin-bottom:5px; }
+    #trk-modal-title-row {
+      display:flex; align-items:flex-start; gap:12px; margin-bottom:5px;
+    }
     #trk-modal-title {
-      flex:1; font-size:26px; font-weight:800; color:var(--trk-text);
+      flex:1; font-size:28px; font-weight:800; color:var(--trk-text);
       letter-spacing:-.03em; line-height:1.2;
+      margin:0; /* reset h2 */
     }
     #trk-modal-badge {
-      font-size:10px; padding:3px 12px; border-radius:20px;
+      font-size:10px; padding:4px 13px; border-radius:20px;
       font-family:var(--trk-mono); font-weight:600;
-      flex-shrink:0; margin-top:5px;
+      flex-shrink:0; margin-top:6px;
     }
     #trk-modal-subtitle {
       font-size:12px; color:var(--trk-sub);
-      font-family:var(--trk-mono); margin-bottom:16px;
+      font-family:var(--trk-mono); margin-bottom:18px;
     }
     #trk-modal-stats {
       display:grid; gap:10px;
       grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
     }
 
-    /* 2-column body */
+    /* 2-column scrollable body */
     #trk-modal-body {
-      flex:1; overflow-y:auto; padding:28px;
-      display:grid; grid-template-columns:1fr 1fr; gap:0 32px; align-content:start;
+      flex:1; overflow-y:auto; padding:28px 32px;
+      display:grid; grid-template-columns:1fr 1fr; gap:0 36px;
+      align-content:start;
       scrollbar-width:thin; scrollbar-color:var(--trk-bd2) transparent;
     }
     #trk-modal-body::-webkit-scrollbar { width:3px; }
     #trk-modal-body::-webkit-scrollbar-thumb { background:var(--trk-bd2); }
-    /* Full-width items in modal */
-    #trk-modal-body > .trk-efris    { grid-column:1/-1; }
-    #trk-modal-body > .trk-wide     { grid-column:1/-1; }
 
+    /* EFRIS block and wide sections span both columns */
+    #trk-modal-body > .trk-efris { grid-column:1/-1; }
+    #trk-modal-body > .trk-wide  { grid-column:1/-1; }
+
+    /* Modal footer */
     #trk-modal-footer {
-      padding:13px 28px; border-top:1px solid var(--trk-bd2);
-      flex-shrink:0; display:flex; justify-content:flex-end; gap:8px;
+      padding:14px 32px; border-top:1px solid var(--trk-bd2);
+      flex-shrink:0; display:flex; justify-content:space-between;
+      align-items:center; gap:12px;
+    }
+    #trk-modal-footer-meta {
+      font-size:10px; color:var(--trk-dim); font-family:var(--trk-mono);
     }
     #trk-modal-close-link {
-      padding:8px 22px; border-radius:8px; border:1px solid transparent;
-      font-size:12px; font-family:var(--trk-mono); cursor:pointer; transition:all .13s;
+      padding:8px 22px; border-radius:8px; cursor:pointer;
+      font-size:11px; font-family:var(--trk-mono); font-weight:600;
+      transition:all .13s;
+      border:1px solid color-mix(in srgb, var(--trk-accent,#0ea5e9) 35%, transparent);
+      background:color-mix(in srgb, var(--trk-accent,#0ea5e9) 12%, var(--trk-bg));
+      color:var(--trk-accent,#0ea5e9);
+    }
+    #trk-modal-close-link:hover {
+      background:color-mix(in srgb, var(--trk-accent,#0ea5e9) 22%, var(--trk-bg));
     }
 
     /* ── EFRIS BLOCK ────────────────────────────────────────────────── */
     .trk-efris {
       display:flex; align-items:flex-start; gap:12px;
-      padding:12px 16px; border-radius:9px; margin-bottom:28px;
+      padding:12px 16px; border-radius:10px; margin-bottom:28px;
     }
     .trk-efris-icon   { font-size:20px; line-height:1; margin-top:1px; }
-    .trk-efris-status { font-size:10px; font-family:var(--trk-mono); font-weight:700; letter-spacing:.08em; margin-bottom:3px; }
+    .trk-efris-status {
+      font-size:10px; font-family:var(--trk-mono); font-weight:700;
+      letter-spacing:.08em; margin-bottom:3px;
+    }
     .trk-efris-ref    { font-size:11px; font-family:var(--trk-mono); opacity:.8; margin-bottom:2px; }
     .trk-efris-date   { font-size:10.5px; color:var(--trk-sub); font-family:var(--trk-mono); }
 
     /* ── SECTION ────────────────────────────────────────────────────── */
     .trk-section { margin-bottom:28px; }
-    .trk-sec-header { display:flex; align-items:center; gap:8px; margin-bottom:16px; }
+    .trk-sec-header {
+      display:flex; align-items:center; gap:8px; margin-bottom:16px;
+    }
     .trk-sec-title {
       font-size:9px; font-family:var(--trk-mono); color:var(--trk-dim);
       text-transform:uppercase; letter-spacing:.14em; white-space:nowrap;
@@ -330,7 +383,10 @@
       position:absolute; left:14px; top:8px; bottom:4px;
       width:1px; background:var(--trk-bd2);
     }
-    .trk-tl-item { display:flex; gap:14px; padding-left:36px; position:relative; margin-bottom:20px; }
+    .trk-tl-item {
+      display:flex; gap:14px; padding-left:36px;
+      position:relative; margin-bottom:20px;
+    }
     .trk-tl-item:last-child { margin-bottom:0; }
     .trk-tl-dot {
       position:absolute; left:7px; top:3px;
@@ -338,72 +394,129 @@
       display:flex; align-items:center; justify-content:center; flex-shrink:0;
     }
     .trk-tl-dot-inner { width:5px; height:5px; border-radius:50%; }
-    .trk-tl-content { flex:1; min-width:0; }
-    .trk-tl-toprow { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
-    .trk-tag { font-size:9px; padding:2px 8px; border-radius:4px; font-family:var(--trk-mono); font-weight:600; letter-spacing:.06em; }
+    .trk-tl-content   { flex:1; min-width:0; }
+    .trk-tl-toprow    {
+      display:flex; align-items:center; flex-wrap:wrap;
+      gap:6px; margin-bottom:4px;
+    }
+    .trk-tag {
+      font-size:9px; padding:2px 8px; border-radius:4px;
+      font-family:var(--trk-mono); font-weight:600; letter-spacing:.06em;
+    }
     .trk-tl-sub   { font-size:11px; color:var(--trk-sub); font-family:var(--trk-mono); }
-    .trk-tl-qty   { margin-left:auto; font-family:var(--trk-mono); font-size:13px; font-weight:700; }
-    .trk-tl-label { font-size:12.5px; color:var(--trk-text); font-weight:600; margin-bottom:3px; line-height:1.3; }
-    .trk-tl-note  { font-size:11.5px; color:var(--trk-sub); margin-bottom:4px; line-height:1.4; }
-    .trk-tl-meta  { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:10.5px; color:var(--trk-dim); font-family:var(--trk-mono); }
+    .trk-tl-qty   {
+      margin-left:auto; font-family:var(--trk-mono);
+      font-size:13px; font-weight:700;
+    }
+    .trk-tl-label {
+      font-size:12.5px; color:var(--trk-text); font-weight:600;
+      margin-bottom:3px; line-height:1.3;
+    }
+    .trk-tl-note  {
+      font-size:11.5px; color:var(--trk-sub); margin-bottom:4px; line-height:1.4;
+    }
+    .trk-tl-meta  {
+      display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+      font-size:10.5px; color:var(--trk-dim); font-family:var(--trk-mono);
+    }
     .trk-tl-running { margin-left:auto; color:var(--trk-sub); }
-    .trk-dot-sep  { color:var(--trk-bd2); }
+    .trk-dot-sep    { color:var(--trk-bd2); }
 
     /* ── AUDIT ──────────────────────────────────────────────────────── */
-    .trk-audit-item { display:flex; gap:12px; margin-bottom:16px; align-items:flex-start; }
+    .trk-audit-item {
+      display:flex; gap:12px; margin-bottom:16px; align-items:flex-start;
+    }
     .trk-audit-item:last-child { margin-bottom:0; }
-    .trk-sev-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:5px; }
-    .trk-audit-desc { font-size:12.5px; color:var(--trk-text); font-weight:500; margin-bottom:4px; line-height:1.35; }
-    .trk-diff-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:5px; }
+    .trk-sev-dot {
+      width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:5px;
+    }
+    .trk-audit-desc {
+      font-size:12.5px; color:var(--trk-text); font-weight:500;
+      margin-bottom:4px; line-height:1.35;
+    }
+    .trk-diff-row {
+      display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:5px;
+    }
     .trk-diff-from {
       font-size:10px; font-family:var(--trk-mono); padding:2px 7px; border-radius:4px;
-      background:var(--trk-diff-from-bg); color:var(--trk-diff-from-color); border:1px solid var(--trk-diff-from-bd);
+      background:var(--trk-diff-from-bg);
+      color:var(--trk-diff-from-color);
+      border:1px solid var(--trk-diff-from-bd);
     }
     .trk-diff-arrow { color:var(--trk-dim); font-size:11px; }
     .trk-diff-to {
       font-size:10px; font-family:var(--trk-mono); padding:2px 7px; border-radius:4px;
-      background:var(--trk-diff-to-bg); color:var(--trk-diff-to-color); border:1px solid var(--trk-diff-to-bd);
+      background:var(--trk-diff-to-bg);
+      color:var(--trk-diff-to-color);
+      border:1px solid var(--trk-diff-to-bd);
     }
-    .trk-audit-meta { font-size:10.5px; color:var(--trk-dim); font-family:var(--trk-mono); }
+    .trk-audit-meta {
+      font-size:10.5px; color:var(--trk-dim); font-family:var(--trk-mono);
+    }
 
     /* ── TABLE ──────────────────────────────────────────────────────── */
-    .trk-table-wrap { border:1px solid var(--trk-bd2); border-radius:9px; overflow:hidden; }
+    .trk-table-wrap {
+      border:1px solid var(--trk-bd2); border-radius:9px; overflow:hidden;
+    }
     .trk-table { width:100%; border-collapse:collapse; font-size:12px; }
-    .trk-table thead tr { background:var(--trk-s3); border-bottom:1px solid var(--trk-bd2); }
+    .trk-table thead tr {
+      background:var(--trk-s3); border-bottom:1px solid var(--trk-bd2);
+    }
     .trk-table th {
       padding:9px 13px; font-size:9px; color:var(--trk-dim);
       font-family:var(--trk-mono); font-weight:600;
       letter-spacing:.1em; text-transform:uppercase;
     }
-    .trk-table th:first-child { text-align:left; }
-    .trk-table th:not(:first-child) { text-align:right; }
+    .trk-table th:first-child       { text-align:left; }
+    .trk-table th:not(:first-child)  { text-align:right; }
     .trk-table tbody tr { border-bottom:1px solid var(--trk-bd); }
-    .trk-table tbody tr:last-child { border-bottom:none; }
+    .trk-table tbody tr:last-child   { border-bottom:none; }
     .trk-table tbody tr:nth-child(even) { background:var(--trk-table-zebra); }
-    .trk-table td { padding:11px 13px; color:var(--trk-sub); font-family:var(--trk-mono); }
-    .trk-table td:first-child { text-align:left; color:var(--trk-text); font-weight:600; font-family:var(--trk-display); }
+    .trk-table td {
+      padding:11px 13px; color:var(--trk-sub); font-family:var(--trk-mono);
+    }
+    .trk-table td:first-child {
+      text-align:left; color:var(--trk-text);
+      font-weight:600; font-family:var(--trk-display);
+    }
     .trk-table td:not(:first-child) { text-align:right; }
     .trk-table td.trk-td-last { color:var(--trk-td-last); font-weight:700; }
 
     /* ── KEYVALUE ───────────────────────────────────────────────────── */
-    .trk-kv-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-    .trk-kv-item { background:var(--trk-s2); border:1px solid var(--trk-bd2); border-radius:8px; padding:10px 12px; }
-    .trk-kv-label { font-size:9px; color:var(--trk-sub); font-family:var(--trk-mono); letter-spacing:.06em; margin-bottom:4px; }
+    .trk-kv-grid {
+      display:grid; grid-template-columns:1fr 1fr; gap:10px;
+    }
+    .trk-kv-item {
+      background:var(--trk-s2); border:1px solid var(--trk-bd2);
+      border-radius:8px; padding:10px 12px;
+    }
+    .trk-kv-label {
+      font-size:9px; color:var(--trk-sub); font-family:var(--trk-mono);
+      letter-spacing:.06em; margin-bottom:4px;
+    }
     .trk-kv-value { font-size:12.5px; color:var(--trk-text); font-weight:600; }
 
     /* ── SKELETON ───────────────────────────────────────────────────── */
-    @keyframes trk-pulse { 0%,100%{opacity:.35} 50%{opacity:.75} }
-    .trk-skel { border-radius:5px; background:var(--trk-s3); animation:trk-pulse 1.4s ease infinite; }
+    @keyframes trk-pulse { 0%,100%{opacity:.4} 50%{opacity:.8} }
+    .trk-skel {
+      border-radius:5px; background:var(--trk-skel);
+      animation:trk-pulse 1.4s ease infinite;
+    }
     .trk-skel-row { display:flex; gap:10px; margin-bottom:20px; }
     .trk-skel-circ { width:15px; height:15px; border-radius:50%; flex-shrink:0; }
 
-    /* ── ERROR ──────────────────────────────────────────────────────── */
+    /* ── ERROR BOX ──────────────────────────────────────────────────── */
     .trk-error-box { text-align:center; padding:40px 20px; }
     .trk-error-icon { font-size:32px; margin-bottom:12px; }
-    .trk-error-msg  { font-size:13px; color:var(--trk-error-color); margin-bottom:6px; }
-    .trk-error-det  { font-size:11px; color:var(--trk-sub); font-family:var(--trk-mono); }
+    .trk-error-msg  { font-size:13px; color:var(--trk-error-color); margin-bottom:6px; font-weight:600; }
+    .trk-error-det  {
+      font-size:11px; color:var(--trk-sub); font-family:var(--trk-mono);
+      background:var(--trk-s2); border:1px solid var(--trk-bd2);
+      padding:8px 12px; border-radius:7px; margin-top:8px;
+      display:inline-block; max-width:90%;
+    }
 
-    /* ── TRACK BUTTONS (auto-styled) ────────────────────────────────── */
+    /* ── DATA-TRACK BUTTONS (auto-styled, no class needed) ──────────── */
     [data-track] {
       display:inline-flex; align-items:center; gap:5px;
       padding:3px 10px; border-radius:6px; cursor:pointer;
@@ -415,9 +528,12 @@
     [data-track]:hover {
       border-color:var(--trk-accent,#0ea5e9);
       color:var(--trk-accent,#0ea5e9);
-      background:color-mix(in srgb,var(--trk-accent,#0ea5e9) 8%,transparent);
+      background:color-mix(in srgb, var(--trk-accent,#0ea5e9) 8%, transparent);
     }
-    [data-track]::before { content:attr(data-track-icon,'◎'); font-size:9px; }
+    [data-track]::before {
+      content:attr(data-track-icon,'◎');
+      font-size:9px;
+    }
   `;
 
   /* ═══════════════════════════════════════════════
@@ -425,74 +541,78 @@
   ═══════════════════════════════════════════════ */
 
   const TYPE_COLORS = {
-    product:"#0ea5e9", sale:"#22c55e",   invoice:"#8b5cf6",
-    expense:"#f97316", user:"#ec4899",   customer:"#06b6d4",
-    budget: "#84cc16", transfer:"#10b981",purchase:"#eab308",
-    payment:"#38bdf8", report:"#64748b",
+    product:"#0ea5e9",  sale:"#22c55e",    invoice:"#8b5cf6",
+    expense:"#f97316",  user:"#ec4899",    customer:"#06b6d4",
+    budget:"#84cc16",   transfer:"#10b981", purchase:"#eab308",
+    payment:"#38bdf8",  report:"#64748b",
   };
   const TYPE_ICONS = {
-    product:"⬡", sale:"◈",    invoice:"◇",  expense:"◉",
-    user:"◎",    customer:"⊙", budget:"◑",   transfer:"⇄",
+    product:"⬡",  sale:"◈",    invoice:"◇",  expense:"◉",
+    user:"◎",     customer:"⊙", budget:"◑",   transfer:"⇄",
     purchase:"↓", payment:"◆", report:"▤",
   };
 
   const TAG_COLORS = {
-    PURCHASE:"#22c55e",SALE:"#0ea5e9",RETURN:"#8b5cf6",VOID:"#ef4444",
-    REFUND:"#f97316",ADJUSTMENT:"#eab308",TRANSFER_IN:"#10b981",TRANSFER_OUT:"#64748b",
-    created:"#22c55e",updated:"#0ea5e9",deleted:"#ef4444",approved:"#22c55e",
-    rejected:"#ef4444",paid:"#22c55e",sent:"#38bdf8",cancelled:"#ef4444",
-    efris:"#8b5cf6",login:"#ec4899",locked:"#ef4444",
-    login_success:"#22c55e",login_failed:"#ef4444",
+    PURCHASE:"#22c55e", SALE:"#0ea5e9",      RETURN:"#8b5cf6",
+    VOID:"#ef4444",     REFUND:"#f97316",    ADJUSTMENT:"#eab308",
+    TRANSFER_IN:"#10b981", TRANSFER_OUT:"#64748b",
+    created:"#22c55e",  updated:"#0ea5e9",   deleted:"#ef4444",
+    approved:"#22c55e", rejected:"#ef4444",  paid:"#22c55e",
+    sent:"#38bdf8",     cancelled:"#ef4444", efris:"#8b5cf6",
+    login_success:"#22c55e", login_failed:"#ef4444",
   };
-  const tagColor = (t) => TAG_COLORS[t] || TAG_COLORS[(t||"").toUpperCase()] || "#64748b";
+  const tagColor = t => TAG_COLORS[t] || TAG_COLORS[(t||"").toUpperCase()] || "#64748b";
 
-  /* Badge colours split by theme */
+  /* Badge colours are defined as CSS-compatible values only.
+     We pick the palette based on current theme at render time.     */
   const BADGE_LIGHT = {
-    green:  {bg:"#dcfce7",color:"#15803d",bd:"#86efac"},
-    blue:   {bg:"#dbeafe",color:"#1d4ed8",bd:"#93c5fd"},
-    purple: {bg:"#ede9fe",color:"#7c3aed",bd:"#c4b5fd"},
-    red:    {bg:"#fee2e2",color:"#dc2626",bd:"#fca5a5"},
-    yellow: {bg:"#fefce8",color:"#a16207",bd:"#fde047"},
-    dim:    {bg:"#f1f5f9",color:"#475569",bd:"#cbd5e1"},
+    green:  {bg:"#dcfce7", color:"#15803d", bd:"#86efac"},
+    blue:   {bg:"#dbeafe", color:"#1d4ed8", bd:"#93c5fd"},
+    purple: {bg:"#ede9fe", color:"#7c3aed", bd:"#c4b5fd"},
+    red:    {bg:"#fee2e2", color:"#dc2626", bd:"#fca5a5"},
+    yellow: {bg:"#fefce8", color:"#a16207", bd:"#fde047"},
+    dim:    {bg:"#f1f5f9", color:"#475569", bd:"#cbd5e1"},
   };
   const BADGE_DARK = {
-    green:  {bg:"#042214",color:"#4ade80",bd:"rgba(74,222,128,.18)"},
-    blue:   {bg:"#051830",color:"#38bdf8",bd:"rgba(56,189,248,.18)"},
-    purple: {bg:"#180d35",color:"#a78bfa",bd:"rgba(167,139,250,.18)"},
-    red:    {bg:"#240808",color:"#f87171",bd:"rgba(248,113,113,.18)"},
-    yellow: {bg:"#241c00",color:"#facc15",bd:"rgba(250,204,21,.18)"},
-    dim:    {bg:"#0a1628",color:"#4d6a87",bd:"#172338"},
+    green:  {bg:"#042214", color:"#4ade80", bd:"rgba(74,222,128,.2)"},
+    blue:   {bg:"#051830", color:"#38bdf8", bd:"rgba(56,189,248,.2)"},
+    purple: {bg:"#180d35", color:"#a78bfa", bd:"rgba(167,139,250,.2)"},
+    red:    {bg:"#240808", color:"#f87171", bd:"rgba(248,113,113,.2)"},
+    yellow: {bg:"#241c00", color:"#facc15", bd:"rgba(250,204,21,.2)"},
+    dim:    {bg:"#0a1628", color:"#4d6a87", bd:"#172338"},
   };
+  function isDark() {
+    return document.documentElement.getAttribute("data-theme") === "dark";
+  }
   function badgeStyle(c) {
-    const dark = document.documentElement.getAttribute("data-theme") === "dark";
-    return (dark ? BADGE_DARK : BADGE_LIGHT)[c] || (dark ? BADGE_DARK : BADGE_LIGHT).dim;
+    const map = isDark() ? BADGE_DARK : BADGE_LIGHT;
+    return map[c] || map.dim;
   }
 
   const SEV_COLORS = {
-    info:"#0ea5e9",success:"#22c55e",warning:"#eab308",error:"#ef4444",critical:"#dc2626",
+    info:"#0ea5e9", success:"#22c55e", warning:"#eab308",
+    error:"#ef4444", critical:"#dc2626",
   };
-  const sevColor = (s) => SEV_COLORS[s] || SEV_COLORS.info;
+  const sevColor = s => SEV_COLORS[s] || SEV_COLORS.info;
 
   const STAT_COLORS = {
-    green:"#22c55e",blue:"#0ea5e9",purple:"#8b5cf6",
-    red:"#ef4444",yellow:"#eab308",dim:"#64748b",
+    green:"#22c55e", blue:"#0ea5e9", purple:"#8b5cf6",
+    red:"#ef4444",   yellow:"#eab308", dim:"#64748b",
   };
-  const statColor = (c) => STAT_COLORS[c] || STAT_COLORS.dim;
+  const statColor = c => STAT_COLORS[c] || STAT_COLORS.dim;
 
-  /* EFRIS config split by theme */
   const EFRIS_LIGHT = {
-    fiscalized:{label:"Fiscalized",  color:"#7c3aed",bg:"#ede9fe",icon:"⬡"},
-    pending:   {label:"Pending Sync",color:"#a16207",bg:"#fefce8",icon:"◌"},
-    failed:    {label:"Sync Failed", color:"#dc2626",bg:"#fee2e2",icon:"⚠"},
+    fiscalized:{label:"Fiscalized",   color:"#7c3aed", bg:"#ede9fe", icon:"⬡"},
+    pending:   {label:"Pending Sync", color:"#a16207", bg:"#fefce8", icon:"◌"},
+    failed:    {label:"Sync Failed",  color:"#dc2626", bg:"#fee2e2", icon:"⚠"},
   };
   const EFRIS_DARK = {
-    fiscalized:{label:"Fiscalized",  color:"#a78bfa",bg:"#180d35",icon:"⬡"},
-    pending:   {label:"Pending Sync",color:"#facc15",bg:"#241c00",icon:"◌"},
-    failed:    {label:"Sync Failed", color:"#f87171",bg:"#240808",icon:"⚠"},
+    fiscalized:{label:"Fiscalized",   color:"#a78bfa", bg:"#180d35", icon:"⬡"},
+    pending:   {label:"Pending Sync", color:"#facc15", bg:"#241c00", icon:"◌"},
+    failed:    {label:"Sync Failed",  color:"#f87171", bg:"#240808", icon:"⚠"},
   };
   function efrisCfg(status) {
-    const dark = document.documentElement.getAttribute("data-theme") === "dark";
-    return (dark ? EFRIS_DARK : EFRIS_LIGHT)[status] || null;
+    return (isDark() ? EFRIS_DARK : EFRIS_LIGHT)[status] || null;
   }
 
   /* ═══════════════════════════════════════════════
@@ -505,7 +625,7 @@
       const dt = new Date(d);
       return dt.toLocaleDateString("en-GB", {day:"2-digit",month:"short",year:"numeric"})
            + "  " + dt.toLocaleTimeString("en-GB", {hour:"2-digit",minute:"2-digit"});
-    } catch { return d; }
+    } catch { return String(d); }
   }
 
   function getCookie(name) {
@@ -513,12 +633,13 @@
     return m ? decodeURIComponent(m[1]) : "";
   }
 
+  /** Tiny hyperscript helper — h("div", {class:"foo", onclick:fn}, child1, child2) */
   function h(tag, attrs={}, ...children) {
     const el = document.createElement(tag);
     for (const [k,v] of Object.entries(attrs)) {
-      if (k === "style" && typeof v === "object") Object.assign(el.style, v);
-      else if (k.startsWith("on")) el.addEventListener(k.slice(2).toLowerCase(), v);
-      else el.setAttribute(k, v);
+      if      (k === "style" && typeof v === "object") Object.assign(el.style, v);
+      else if (k.startsWith("on"))                     el.addEventListener(k.slice(2).toLowerCase(), v);
+      else                                             el.setAttribute(k, v);
     }
     for (const c of children.flat(Infinity)) {
       if (c == null) continue;
@@ -528,7 +649,7 @@
   }
 
   /* ═══════════════════════════════════════════════
-     DOM BUILD
+     INJECT STYLES
   ═══════════════════════════════════════════════ */
 
   function injectStyles() {
@@ -538,14 +659,18 @@
     document.head.appendChild(s);
   }
 
+  /* ═══════════════════════════════════════════════
+     BUILD DOM SHELL  (runs once)
+  ═══════════════════════════════════════════════ */
+
   function buildShell() {
     if (document.getElementById("trk-panel")) return;
 
-    /* Drawer overlay */
+    /* ── Drawer overlay (backdrop) ──────────────────────────────── */
     const overlay = h("div", {id:"trk-overlay"});
     overlay.addEventListener("click", closeTracker);
 
-    /* Drawer panel */
+    /* ── Drawer panel ───────────────────────────────────────────── */
     const panel = h("div", {id:"trk-panel"},
       h("div", {id:"trk-panel-accent"}),
       h("div", {id:"trk-header"},
@@ -555,29 +680,33 @@
             h("span", {id:"trk-chip-label"}),
             h("span", {id:"trk-chip-id"}),
           ),
-          h("button", {id:"trk-close-btn","aria-label":"Close tracker",onclick:closeTracker}, "×"),
+          h("button", {id:"trk-close-btn", "aria-label":"Close", onclick:closeTracker}, "×"),
         ),
         h("div", {id:"trk-title-row"},
           h("h2",  {id:"trk-title"}, "Loading…"),
           h("span",{id:"trk-badge"}),
         ),
-        h("div", {id:"trk-subtitle"}),
-        h("div", {id:"trk-stats"}),
+        h("div",  {id:"trk-subtitle"}),
+        h("div",  {id:"trk-stats"}),
       ),
-      h("div", {id:"trk-body"}),
-      h("div", {id:"trk-footer"},
+      h("div",   {id:"trk-body"}),
+      h("div",   {id:"trk-footer"},
         h("span",  {id:"trk-footer-meta"}),
-        h("button",{id:"trk-expand-btn", onclick:openModal}, "⤢  View full page"),
-        h("button",{id:"trk-close-link", onclick:closeTracker}, "Close"),
+        h("button",{id:"trk-expand-btn",  class:"trk-footer-btn", onclick:openModal}, "⤢  View full page"),
+        h("button",{id:"trk-close-link",  class:"trk-footer-btn", onclick:closeTracker}, "Close"),
       ),
     );
 
-    /* Modal overlay */
+    /* ── Modal overlay ──────────────────────────────────────────── */
     const modalOverlay = h("div", {id:"trk-modal-overlay"});
-    modalOverlay.addEventListener("click", e => { if (e.target===modalOverlay) closeModal(); });
+    modalOverlay.addEventListener("click", e => {
+      if (e.target === modalOverlay) closeModal();
+    });
 
     const modal = h("div", {id:"trk-modal"},
       h("div", {id:"trk-modal-accent"}),
+
+      /* Modal header */
       h("div", {id:"trk-modal-header"},
         h("div", {id:"trk-modal-chip-row"},
           h("div", {id:"trk-modal-chip"},
@@ -594,13 +723,18 @@
         h("div",{id:"trk-modal-subtitle"}),
         h("div",{id:"trk-modal-stats"}),
       ),
+
+      /* Modal body (2-col grid) */
       h("div",{id:"trk-modal-body"}),
+
+      /* Modal footer */
       h("div",{id:"trk-modal-footer"},
+        h("span",{id:"trk-modal-footer-meta"}),
         h("button",{id:"trk-modal-close-link",onclick:closeModal},"✕  Close"),
       ),
     );
-    modalOverlay.appendChild(modal);
 
+    modalOverlay.appendChild(modal);
     document.body.appendChild(overlay);
     document.body.appendChild(panel);
     document.body.appendChild(modalOverlay);
@@ -612,8 +746,12 @@
 
   function renderSkeleton(bodyEl) {
     bodyEl.innerHTML = "";
-    const statsRow = h("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"8px",marginBottom:"28px",gridColumn:"1/-1"}});
-    for (let i=0;i<4;i++) statsRow.appendChild(h("div",{class:"trk-skel",style:{height:"52px",borderRadius:"8px",animationDelay:`${i*.08}s`}}));
+    const statsRow = h("div",{style:{
+      display:"grid",gridTemplateColumns:"repeat(4,1fr)",
+      gap:"8px",marginBottom:"28px",
+    }});
+    for (let i=0;i<4;i++)
+      statsRow.appendChild(h("div",{class:"trk-skel",style:{height:"52px",borderRadius:"8px",animationDelay:`${i*.08}s`}}));
     bodyEl.appendChild(statsRow);
     for (let i=0;i<4;i++) {
       const row = h("div",{class:"trk-skel-row"});
@@ -621,13 +759,14 @@
       const lines = h("div",{style:{flex:1}});
       lines.appendChild(h("div",{class:"trk-skel",style:{height:"10px",width:"75%",marginBottom:"6px",animationDelay:`${i*.1}s`}}));
       lines.appendChild(h("div",{class:"trk-skel",style:{height:"9px",width:"50%",animationDelay:`${i*.12}s`}}));
-      row.appendChild(lines); bodyEl.appendChild(row);
+      row.appendChild(lines);
+      bodyEl.appendChild(row);
     }
   }
 
   function renderEfris(efris) {
     if (!efris) return null;
-    const cfg = efrisCfg(efris.status);
+    const cfg = efrisCfg(efris.status);   // re-evaluates theme NOW
     if (!cfg) return null;
     return h("div",{class:"trk-efris",style:{background:cfg.bg,border:`1px solid ${cfg.color}30`}},
       h("span",{class:"trk-efris-icon",style:{color:cfg.color}},cfg.icon),
@@ -654,21 +793,27 @@
       const clr   = tagColor(item.tag||item.label);
       const isPos = (item.qty||"").startsWith("+");
       const topRow = h("div",{class:"trk-tl-toprow"});
-      if (item.tag) topRow.appendChild(h("span",{class:"trk-tag",style:{background:`${clr}18`,color:clr,border:`1px solid ${clr}25`}},item.tag));
+      if (item.tag) topRow.appendChild(
+        h("span",{class:"trk-tag",style:{background:`${clr}18`,color:clr,border:`1px solid ${clr}25`}},item.tag)
+      );
       if (item.sub) topRow.appendChild(h("span",{class:"trk-tl-sub"},item.sub));
-      if (item.qty) topRow.appendChild(h("span",{class:"trk-tl-qty",style:{color:isPos?"#22c55e":"#ef4444"}},item.qty));
+      if (item.qty) topRow.appendChild(
+        h("span",{class:"trk-tl-qty",style:{color:isPos?"#22c55e":"#ef4444"}},item.qty)
+      );
       const metaRow = h("div",{class:"trk-tl-meta"},
         h("span",{},item.user||""),
         h("span",{class:"trk-dot-sep"},"·"),
         h("span",{},fmtDate(item.date)),
       );
       if (item.running) metaRow.appendChild(h("span",{class:"trk-tl-running"},`→ ${item.running}`));
-      const dot = h("div",{class:"trk-tl-dot",style:{background:`${clr}18`,border:`1.5px solid ${clr}`}},
+      const dot = h("div",{class:"trk-tl-dot",
+        style:{background:`${clr}18`,border:`1.5px solid ${clr}`}},
         h("div",{class:"trk-tl-dot-inner",style:{background:clr}}));
       wrap.appendChild(h("div",{class:"trk-tl-item"},dot,
-        h("div",{class:"trk-tl-content"},topRow,
+        h("div",{class:"trk-tl-content"},
+          topRow,
           h("div",{class:"trk-tl-label"},item.label||""),
-          item.note?h("div",{class:"trk-tl-note"},item.note):null,
+          item.note ? h("div",{class:"trk-tl-note"},item.note) : null,
           metaRow,
         )
       ));
@@ -698,17 +843,18 @@
   }
 
   function renderTable(section) {
-    const cols = section.columns||[]; const rows = section.rows||[];
+    const cols = section.columns||[];
+    const rows = section.rows||[];
     const thead = h("thead",{},h("tr",{},
       ...cols.map((c,i)=>h("th",{style:{textAlign:i===0?"left":"right"}},c)),
     ));
     const tbody = h("tbody",{});
-    rows.forEach(row=>{
-      const tr=h("tr",{});
+    rows.forEach(row => {
+      const tr = h("tr",{});
       row.forEach((cell,ci)=>tr.appendChild(h("td",{
         class:ci===row.length-1?"trk-td-last":"",
         style:{textAlign:ci===0?"left":"right"},
-      },cell)));
+      },String(cell))));
       tbody.appendChild(tr);
     });
     return h("div",{class:"trk-table-wrap"},h("table",{class:"trk-table"},thead,tbody));
@@ -718,48 +864,51 @@
     const grid = h("div",{class:"trk-kv-grid"});
     (section.pairs||[]).forEach(pair=>grid.appendChild(h("div",{class:"trk-kv-item"},
       h("div",{class:"trk-kv-label"},pair.label),
-      h("div",{class:"trk-kv-value"},pair.value),
+      h("div",{class:"trk-kv-value"},String(pair.value||"—")),
     )));
     return grid;
   }
 
   /**
-   * Render one section.
-   * inModal=true  → wide sections (non-keyvalue) get class 'trk-wide'
-   *                 so the 2-col grid spans them full width.
+   * Render one section block.
+   * inModal=true  → non-keyvalue sections get class 'trk-wide'
+   *                 so they span both columns of the modal grid.
    */
   function renderSection(section, inModal=false) {
-    const count = section.items?.length ?? section.rows?.length ?? section.pairs?.length;
+    const count  = section.items?.length ?? section.rows?.length ?? section.pairs?.length;
     const isWide = section.type !== "keyvalue";
-    const cls = "trk-section" + (inModal && isWide ? " trk-wide" : "");
-    const wrap = h("div",{class:cls}, renderSecHeader(section.title,count));
-    if      (section.type==="timeline") wrap.appendChild(renderTimeline(section.items));
-    else if (section.type==="audit")    wrap.appendChild(renderAudit(section.items));
-    else if (section.type==="table"||section.type==="lineitems") wrap.appendChild(renderTable(section));
-    else if (section.type==="keyvalue") wrap.appendChild(renderKeyvalue(section));
+    const cls    = "trk-section" + (inModal && isWide ? " trk-wide" : "");
+    const wrap   = h("div",{class:cls}, renderSecHeader(section.title, count));
+
+    if      (section.type === "timeline")  wrap.appendChild(renderTimeline(section.items));
+    else if (section.type === "audit")     wrap.appendChild(renderAudit(section.items));
+    else if (section.type === "table" || section.type === "lineitems")
+                                           wrap.appendChild(renderTable(section));
+    else if (section.type === "keyvalue")  wrap.appendChild(renderKeyvalue(section));
     return wrap;
   }
 
   /* ═══════════════════════════════════════════════
-     SHARED HEADER FILL  (drawer + modal share this)
+     SHARED HEADER FILL  (used by both drawer + modal)
   ═══════════════════════════════════════════════ */
 
   function applyHeader(prefix, data, type, id) {
     const meta      = data.meta  || {};
     const stats     = data.stats || [];
     const typeColor = TYPE_COLORS[type] || "#0ea5e9";
-    const bs        = badgeStyle(meta.badge_color);
+    const bs        = badgeStyle(meta.badge_color);  // re-reads theme NOW
 
-    // Accent bar
+    // Accent gradient bar
     document.getElementById(`${prefix}-accent`).style.background =
       `linear-gradient(90deg,transparent,${typeColor},transparent)`;
-    // Pass accent to panel/modal for button hover colour
+
+    // Set --trk-accent on the container so CSS-driven colours (buttons) auto-update
     const root = prefix==="trk-panel"
       ? document.getElementById("trk-panel")
       : document.getElementById("trk-modal");
     root.style.setProperty("--trk-accent", typeColor);
 
-    // Chip
+    // Chip row
     const icon  = document.getElementById(`${prefix}-chip-icon`);
     const label = document.getElementById(`${prefix}-chip-label`);
     const cid   = document.getElementById(`${prefix}-chip-id`);
@@ -773,15 +922,15 @@
     document.getElementById(`${prefix}-title`).textContent = meta.title || `#${id}`;
     const badge = document.getElementById(`${prefix}-badge`);
     if (meta.badge) {
-      badge.textContent = meta.badge;
+      badge.textContent   = meta.badge;
       badge.style.display = "";
-      Object.assign(badge.style, {background:bs.bg,color:bs.color,border:`1px solid ${bs.bd}`});
+      Object.assign(badge.style, {background:bs.bg, color:bs.color, border:`1px solid ${bs.bd}`});
     } else {
       badge.style.display = "none";
     }
     document.getElementById(`${prefix}-subtitle`).textContent = meta.subtitle || "";
 
-    // Stats
+    // Stats grid
     const statsEl = document.getElementById(`${prefix}-stats`);
     statsEl.innerHTML = "";
     stats.forEach(s => {
@@ -800,10 +949,7 @@
   function renderDrawer(data, type, id) {
     applyHeader("trk-panel", data, type, id);
 
-    const typeColor = TYPE_COLORS[type] || "#0ea5e9";
     document.getElementById("trk-footer-meta").textContent = `${type} · id ${id}`;
-    const cl = document.getElementById("trk-close-link");
-    Object.assign(cl.style, {background:`${typeColor}18`,color:typeColor,border:`1px solid ${typeColor}40`});
 
     const body = document.getElementById("trk-body");
     body.innerHTML = "";
@@ -811,9 +957,11 @@
     if (efrisEl) body.appendChild(efrisEl);
     const sects = data.sections || [];
     if (!sects.length) {
-      body.appendChild(h("div",{style:{textAlign:"center",padding:"40px 20px",
-        color:"var(--trk-dim)",fontSize:"12px",fontFamily:"'DM Mono',monospace"}},
-        "No tracking data available for this record."));
+      body.appendChild(h("div",{class:"trk-error-box"},
+        h("div",{class:"trk-error-icon"},"📭"),
+        h("div",{class:"trk-error-msg",style:{color:"var(--trk-sub)"}},
+          "No tracking data available for this record."),
+      ));
     } else {
       sects.forEach(sec => body.appendChild(renderSection(sec, false)));
     }
@@ -821,25 +969,20 @@
 
   /* ═══════════════════════════════════════════════
      MODAL — "View full page"
+     Opens when user clicks the footer expand button.
+     Renders the same data in a 2-column layout.
+     Close: ✕ button, footer Close button, or click backdrop.
   ═══════════════════════════════════════════════ */
 
   function openModal() {
     if (!_currentData) return;
     const {data, type, id} = _currentData;
-    const typeColor = TYPE_COLORS[type] || "#0ea5e9";
 
     applyHeader("trk-modal", data, type, id);
 
-    // Style close button
-    const cl = document.getElementById("trk-modal-close-link");
-    Object.assign(cl.style, {
-      background:`${typeColor}18`, color:typeColor,
-      border:`1px solid ${typeColor}40`,
-      padding:"8px 22px", borderRadius:"8px",
-      fontSize:"12px", fontFamily:"'DM Mono',monospace",
-    });
+    document.getElementById("trk-modal-footer-meta").textContent = `${type} · id ${id}`;
 
-    // Populate body (2-col)
+    // Populate 2-col body
     const body = document.getElementById("trk-modal-body");
     body.innerHTML = "";
     const efrisEl = renderEfris(data.efris);
@@ -859,32 +1002,28 @@
 
   let _currentType = null;
   let _currentId   = null;
-  let _currentData = null;   // { data, type, id } — held for modal
+  let _currentData = null;   // { data, type, id } — preserved for modal
 
   function openTracker(type, id, label) {
     _currentType = type;
     _currentId   = id;
     _currentData = null;
 
-    // Guard: ensure shell exists before any getElementById calls.
-    // Both functions are idempotent — safe to call on every open.
-    injectStyles();
-    buildShell();
-
     document.getElementById("trk-overlay").classList.add("trk-visible");
     document.getElementById("trk-panel").classList.add("trk-visible");
     document.body.style.overflow = "hidden";
 
-    // Instant title
+    // Instant label while loading
     document.getElementById("trk-title").textContent    = label || "Loading…";
     document.getElementById("trk-subtitle").textContent = "";
     document.getElementById("trk-badge").style.display  = "none";
     document.getElementById("trk-stats").innerHTML      = "";
     document.getElementById("trk-expand-btn").style.display = "none";
 
-    // Accent + chip immediately
+    // Accent + chip colour immediately (even before data arrives)
     const typeColor = TYPE_COLORS[type] || "#0ea5e9";
-    document.getElementById("trk-panel").style.setProperty("--trk-accent", typeColor);
+    const panel = document.getElementById("trk-panel");
+    panel.style.setProperty("--trk-accent", typeColor);
     document.getElementById("trk-panel-accent").style.background =
       `linear-gradient(90deg,transparent,${typeColor},transparent)`;
     document.getElementById("trk-chip-icon").textContent  = TYPE_ICONS[type]||"·";
@@ -896,15 +1035,15 @@
     renderSkeleton(document.getElementById("trk-body"));
 
     fetch(`${API_BASE}?type=${encodeURIComponent(type)}&id=${encodeURIComponent(id)}`, {
-      headers:{"X-CSRFToken":getCookie(CSRF_COOKIE),"Accept":"application/json"},
+      headers:{"X-CSRFToken":getCookie(CSRF_COOKIE), "Accept":"application/json"},
       credentials:"same-origin",
     })
       .then(r => {
-        if (!r.ok) return r.json().then(d=>Promise.reject(d.error||`HTTP ${r.status}`));
+        if (!r.ok) return r.json().then(d => Promise.reject(d.error || `HTTP ${r.status}`));
         return r.json();
       })
       .then(data => {
-        if (_currentId !== id) return;
+        if (_currentId !== id) return;   // user already opened something else
         _currentData = {data, type, id};
         renderDrawer(data, type, id);
         document.getElementById("trk-expand-btn").style.display = "";
@@ -931,7 +1070,7 @@
   }
 
   /* ═══════════════════════════════════════════════
-     EVENT DELEGATION  — works on dynamic rows too
+     EVENT DELEGATION — works on dynamically added rows
   ═══════════════════════════════════════════════ */
 
   document.addEventListener("click", e => {
@@ -947,7 +1086,7 @@
 
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape") return;
-    // Close modal first if open, then drawer
+    // Close modal first (if open), then close drawer
     const mo = document.getElementById("trk-modal-overlay");
     if (mo && mo.classList.contains("trk-visible")) { closeModal(); return; }
     closeTracker();
@@ -966,6 +1105,6 @@
   }
 
   // Public API
-  window.PrimeTracker = { open:openTracker, close:closeTracker, openModal };
+  window.PrimeTracker = { open: openTracker, close: closeTracker, openModal };
 
 })();
