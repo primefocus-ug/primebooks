@@ -188,7 +188,7 @@ class InvoicePaymentForm(forms.ModelForm):
         return amount
 
 
-class InvoiceSearchForm(StoreRestrictedModelForm):
+class InvoiceSearchForm(forms.Form):
     """Advanced search form for invoices"""
 
     search = forms.CharField(
