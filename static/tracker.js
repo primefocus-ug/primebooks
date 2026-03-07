@@ -653,7 +653,9 @@
   ═══════════════════════════════════════════════ */
 
   function injectStyles() {
-    if (document.getElementById("trk-styles")) return;
+    // Always replace — removes stale CSS from any previous tracker.js version
+    const old = document.getElementById("trk-styles");
+    if (old) old.remove();
     const s = document.createElement("style");
     s.id = "trk-styles"; s.textContent = CSS;
     document.head.appendChild(s);
@@ -663,81 +665,94 @@
      BUILD DOM SHELL  (runs once)
   ═══════════════════════════════════════════════ */
 
+  // Direct element refs — populated once by buildShell, used everywhere else.
+  const $ = {};
+
   function buildShell() {
-    if (document.getElementById("trk-panel")) return;
-
-    /* ── Drawer overlay (backdrop) ──────────────────────────────── */
-    const overlay = h("div", {id:"trk-overlay"});
-    overlay.addEventListener("click", closeTracker);
-
-    /* ── Drawer panel ───────────────────────────────────────────── */
-    const panel = h("div", {id:"trk-panel"},
-      h("div", {id:"trk-panel-accent"}),
-      h("div", {id:"trk-header"},
-        h("div", {id:"trk-chip-row"},
-          h("div", {id:"trk-chip"},
-            h("span", {id:"trk-chip-icon"}),
-            h("span", {id:"trk-chip-label"}),
-            h("span", {id:"trk-chip-id"}),
-          ),
-          h("button", {id:"trk-close-btn", "aria-label":"Close", onclick:closeTracker}, "×"),
-        ),
-        h("div", {id:"trk-title-row"},
-          h("h2",  {id:"trk-title"}, "Loading…"),
-          h("span",{id:"trk-badge"}),
-        ),
-        h("div",  {id:"trk-subtitle"}),
-        h("div",  {id:"trk-stats"}),
-      ),
-      h("div",   {id:"trk-body"}),
-      h("div",   {id:"trk-footer"},
-        h("span",  {id:"trk-footer-meta"}),
-        h("button",{id:"trk-expand-btn",  class:"trk-footer-btn", onclick:openModal}, "⤢  View full page"),
-        h("button",{id:"trk-close-link",  class:"trk-footer-btn", onclick:closeTracker}, "Close"),
-      ),
-    );
-
-    /* ── Modal overlay ──────────────────────────────────────────── */
-    const modalOverlay = h("div", {id:"trk-modal-overlay"});
-    modalOverlay.addEventListener("click", e => {
-      if (e.target === modalOverlay) closeModal();
+    ["trk-overlay","trk-panel","trk-modal-overlay"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
     });
 
-    const modal = h("div", {id:"trk-modal"},
-      h("div", {id:"trk-modal-accent"}),
-
-      /* Modal header */
-      h("div", {id:"trk-modal-header"},
-        h("div", {id:"trk-modal-chip-row"},
-          h("div", {id:"trk-modal-chip"},
-            h("span",{id:"trk-modal-chip-icon"}),
-            h("span",{id:"trk-modal-chip-label"}),
-            h("span",{id:"trk-modal-chip-id"}),
-          ),
-          h("button",{id:"trk-modal-close-btn","aria-label":"Close modal",onclick:closeModal},"×"),
+    /* ── Drawer ─────────────────────────────────────────────────── */
+    const overlay    = h("div",    {id:"trk-overlay"});
+    const dAccent    = h("div",    {id:"trk-panel-accent"});
+    const dChipIcon  = h("span",   {id:"trk-chip-icon"});
+    const dChipLabel = h("span",   {id:"trk-chip-label"});
+    const dChipId    = h("span",   {id:"trk-chip-id"});
+    const dTitle     = h("h2",     {id:"trk-title"}, "Loading…");
+    const dBadge     = h("span",   {id:"trk-badge"});
+    const dSubtitle  = h("div",    {id:"trk-subtitle"});
+    const dStats     = h("div",    {id:"trk-stats"});
+    const dBody      = h("div",    {id:"trk-body"});
+    const dFootMeta  = h("span",   {id:"trk-footer-meta"});
+    const dExpandBtn = h("button", {id:"trk-expand-btn", class:"trk-footer-btn", onclick:openModal}, "⤢  View full page");
+    const panel      = h("div",    {id:"trk-panel"},
+      dAccent,
+      h("div", {id:"trk-header"},
+        h("div", {id:"trk-chip-row"},
+          h("div", {id:"trk-chip"}, dChipIcon, dChipLabel, dChipId),
+          h("button", {id:"trk-close-btn", "aria-label":"Close", onclick:closeTracker}, "×"),
         ),
-        h("div",{id:"trk-modal-title-row"},
-          h("h2", {id:"trk-modal-title"}),
-          h("span",{id:"trk-modal-badge"}),
-        ),
-        h("div",{id:"trk-modal-subtitle"}),
-        h("div",{id:"trk-modal-stats"}),
+        h("div", {id:"trk-title-row"}, dTitle, dBadge),
+        dSubtitle, dStats,
       ),
-
-      /* Modal body (2-col grid) */
-      h("div",{id:"trk-modal-body"}),
-
-      /* Modal footer */
-      h("div",{id:"trk-modal-footer"},
-        h("span",{id:"trk-modal-footer-meta"}),
-        h("button",{id:"trk-modal-close-link",onclick:closeModal},"✕  Close"),
+      dBody,
+      h("div", {id:"trk-footer"},
+        dFootMeta, dExpandBtn,
+        h("button", {id:"trk-close-link", class:"trk-footer-btn", onclick:closeTracker}, "Close"),
       ),
     );
+    overlay.addEventListener("click", closeTracker);
 
+    /* ── Modal ──────────────────────────────────────────────────── */
+    const mAccent    = h("div",  {id:"trk-modal-accent"});
+    const mChipIcon  = h("span", {id:"trk-modal-chip-icon"});
+    const mChipLabel = h("span", {id:"trk-modal-chip-label"});
+    const mChipId    = h("span", {id:"trk-modal-chip-id"});
+    const mTitle     = h("h2",   {id:"trk-modal-title"});
+    const mBadge     = h("span", {id:"trk-modal-badge"});
+    const mSubtitle  = h("div",  {id:"trk-modal-subtitle"});
+    const mStats     = h("div",  {id:"trk-modal-stats"});
+    const mBody      = h("div",  {id:"trk-modal-body"});
+    const mFootMeta  = h("span", {id:"trk-modal-footer-meta"});
+    const modal      = h("div",  {id:"trk-modal"},
+      mAccent,
+      h("div", {id:"trk-modal-header"},
+        h("div", {id:"trk-modal-chip-row"},
+          h("div", {id:"trk-modal-chip"}, mChipIcon, mChipLabel, mChipId),
+          h("button", {id:"trk-modal-close-btn", "aria-label":"Close modal", onclick:closeModal}, "×"),
+        ),
+        h("div", {id:"trk-modal-title-row"}, mTitle, mBadge),
+        mSubtitle, mStats,
+      ),
+      mBody,
+      h("div", {id:"trk-modal-footer"},
+        mFootMeta,
+        h("button", {id:"trk-modal-close-link", onclick:closeModal}, "✕  Close"),
+      ),
+    );
+    const modalOverlay = h("div", {id:"trk-modal-overlay"});
+    modalOverlay.addEventListener("click", e => { if (e.target === modalOverlay) closeModal(); });
     modalOverlay.appendChild(modal);
+
     document.body.appendChild(overlay);
     document.body.appendChild(panel);
     document.body.appendChild(modalOverlay);
+
+    /* ── Populate $ — the only place refs are ever assigned ─────── */
+    $.overlay         = overlay;
+    $.panel           = panel;
+    $.body            = dBody;
+    $.expandBtn       = dExpandBtn;
+    $.footerMeta      = dFootMeta;
+    $.modalOverlay    = modalOverlay;
+    $.modalBody       = mBody;
+    $.modalFooterMeta = mFootMeta;
+    $.drawer = { root:panel,  accent:dAccent, chipIcon:dChipIcon, chipLabel:dChipLabel,
+                 chipId:dChipId, title:dTitle, badge:dBadge, subtitle:dSubtitle, stats:dStats };
+    $.modal  = { root:modal,  accent:mAccent, chipIcon:mChipIcon, chipLabel:mChipLabel,
+                 chipId:mChipId, title:mTitle, badge:mBadge, subtitle:mSubtitle, stats:mStats };
   }
 
   /* ═══════════════════════════════════════════════
@@ -889,53 +904,39 @@
   }
 
   /* ═══════════════════════════════════════════════
-     SHARED HEADER FILL  (used by both drawer + modal)
+     FILL HEADER  (pass $.drawer or $.modal refs)
   ═══════════════════════════════════════════════ */
 
-  function applyHeader(prefix, data, type, id) {
+  function fillHeader(r, data, type, id) {
     const meta      = data.meta  || {};
     const stats     = data.stats || [];
     const typeColor = TYPE_COLORS[type] || "#0ea5e9";
-    const bs        = badgeStyle(meta.badge_color);  // re-reads theme NOW
+    const bs        = badgeStyle(meta.badge_color);
+    const typeCap   = type.charAt(0).toUpperCase() + type.slice(1);
 
-    // Accent gradient bar
-    document.getElementById(`${prefix}-accent`).style.background =
-      `linear-gradient(90deg,transparent,${typeColor},transparent)`;
+    r.root.style.setProperty("--trk-accent", typeColor);
+    r.accent.style.background = `linear-gradient(90deg,transparent,${typeColor},transparent)`;
 
-    // Set --trk-accent on the container so CSS-driven colours (buttons) auto-update
-    const root = prefix==="trk-panel"
-      ? document.getElementById("trk-panel")
-      : document.getElementById("trk-modal");
-    root.style.setProperty("--trk-accent", typeColor);
+    r.chipIcon.textContent  = TYPE_ICONS[type] || "·";
+    r.chipIcon.style.color  = typeColor;
+    r.chipLabel.textContent = `${typeCap} Tracker`;
+    r.chipLabel.style.color = typeColor;
+    r.chipId.textContent    = meta.id_label ? `· ${meta.id_label}` : "";
 
-    // Chip row
-    const icon  = document.getElementById(`${prefix}-chip-icon`);
-    const label = document.getElementById(`${prefix}-chip-label`);
-    const cid   = document.getElementById(`${prefix}-chip-id`);
-    icon.textContent  = TYPE_ICONS[type] || "·";
-    icon.style.color  = typeColor;
-    label.textContent = `${type.charAt(0).toUpperCase()+type.slice(1)} Tracker`;
-    label.style.color = typeColor;
-    cid.textContent   = meta.id_label ? `· ${meta.id_label}` : "";
-
-    // Title + badge
-    document.getElementById(`${prefix}-title`).textContent = meta.title || `#${id}`;
-    const badge = document.getElementById(`${prefix}-badge`);
+    r.title.textContent = meta.title || `#${id}`;
     if (meta.badge) {
-      badge.textContent   = meta.badge;
-      badge.style.display = "";
-      Object.assign(badge.style, {background:bs.bg, color:bs.color, border:`1px solid ${bs.bd}`});
+      r.badge.textContent   = meta.badge;
+      r.badge.style.display = "";
+      Object.assign(r.badge.style, {background:bs.bg, color:bs.color, border:`1px solid ${bs.bd}`});
     } else {
-      badge.style.display = "none";
+      r.badge.style.display = "none";
     }
-    document.getElementById(`${prefix}-subtitle`).textContent = meta.subtitle || "";
+    r.subtitle.textContent = meta.subtitle || "";
 
-    // Stats grid
-    const statsEl = document.getElementById(`${prefix}-stats`);
-    statsEl.innerHTML = "";
+    r.stats.innerHTML = "";
     stats.forEach(s => {
       const clr = statColor(s.color);
-      statsEl.appendChild(h("div",{class:"trk-stat",style:{"--trk-stat-color":clr}},
+      r.stats.appendChild(h("div",{class:"trk-stat",style:{"--trk-stat-color":clr}},
         h("div",{class:"trk-stat-label"},s.label),
         h("div",{class:"trk-stat-value",style:{color:clr}},s.value),
       ));
@@ -947,53 +948,41 @@
   ═══════════════════════════════════════════════ */
 
   function renderDrawer(data, type, id) {
-    applyHeader("trk-panel", data, type, id);
-
-    document.getElementById("trk-footer-meta").textContent = `${type} · id ${id}`;
-
-    const body = document.getElementById("trk-body");
-    body.innerHTML = "";
+    fillHeader($.drawer, data, type, id);
+    $.footerMeta.textContent = `${type} · id ${id}`;
+    $.body.innerHTML = "";
     const efrisEl = renderEfris(data.efris);
-    if (efrisEl) body.appendChild(efrisEl);
+    if (efrisEl) $.body.appendChild(efrisEl);
     const sects = data.sections || [];
     if (!sects.length) {
-      body.appendChild(h("div",{class:"trk-error-box"},
+      $.body.appendChild(h("div",{class:"trk-error-box"},
         h("div",{class:"trk-error-icon"},"📭"),
         h("div",{class:"trk-error-msg",style:{color:"var(--trk-sub)"}},
           "No tracking data available for this record."),
       ));
     } else {
-      sects.forEach(sec => body.appendChild(renderSection(sec, false)));
+      sects.forEach(sec => $.body.appendChild(renderSection(sec, false)));
     }
   }
 
   /* ═══════════════════════════════════════════════
-     MODAL — "View full page"
-     Opens when user clicks the footer expand button.
-     Renders the same data in a 2-column layout.
-     Close: ✕ button, footer Close button, or click backdrop.
+     MODAL
   ═══════════════════════════════════════════════ */
 
   function openModal() {
     if (!_currentData) return;
     const {data, type, id} = _currentData;
-
-    applyHeader("trk-modal", data, type, id);
-
-    document.getElementById("trk-modal-footer-meta").textContent = `${type} · id ${id}`;
-
-    // Populate 2-col body
-    const body = document.getElementById("trk-modal-body");
-    body.innerHTML = "";
+    fillHeader($.modal, data, type, id);
+    $.modalFooterMeta.textContent = `${type} · id ${id}`;
+    $.modalBody.innerHTML = "";
     const efrisEl = renderEfris(data.efris);
-    if (efrisEl) body.appendChild(efrisEl);
-    (data.sections||[]).forEach(sec => body.appendChild(renderSection(sec, true)));
-
-    document.getElementById("trk-modal-overlay").classList.add("trk-visible");
+    if (efrisEl) $.modalBody.appendChild(efrisEl);
+    (data.sections||[]).forEach(sec => $.modalBody.appendChild(renderSection(sec, true)));
+    $.modalOverlay.classList.add("trk-visible");
   }
 
   function closeModal() {
-    document.getElementById("trk-modal-overlay").classList.remove("trk-visible");
+    $.modalOverlay.classList.remove("trk-visible");
   }
 
   /* ═══════════════════════════════════════════════
@@ -1002,37 +991,35 @@
 
   let _currentType = null;
   let _currentId   = null;
-  let _currentData = null;   // { data, type, id } — preserved for modal
+  let _currentData = null;
 
   function openTracker(type, id, label) {
     _currentType = type;
     _currentId   = id;
     _currentData = null;
 
-    document.getElementById("trk-overlay").classList.add("trk-visible");
-    document.getElementById("trk-panel").classList.add("trk-visible");
+    $.overlay.classList.add("trk-visible");
+    $.panel.classList.add("trk-visible");
     document.body.style.overflow = "hidden";
 
-    // Instant label while loading
-    document.getElementById("trk-title").textContent    = label || "Loading…";
-    document.getElementById("trk-subtitle").textContent = "";
-    document.getElementById("trk-badge").style.display  = "none";
-    document.getElementById("trk-stats").innerHTML      = "";
-    document.getElementById("trk-expand-btn").style.display = "none";
-
-    // Accent + chip colour immediately (even before data arrives)
     const typeColor = TYPE_COLORS[type] || "#0ea5e9";
-    const panel = document.getElementById("trk-panel");
-    panel.style.setProperty("--trk-accent", typeColor);
-    document.getElementById("trk-panel-accent").style.background =
-      `linear-gradient(90deg,transparent,${typeColor},transparent)`;
-    document.getElementById("trk-chip-icon").textContent  = TYPE_ICONS[type]||"·";
-    document.getElementById("trk-chip-icon").style.color  = typeColor;
-    document.getElementById("trk-chip-label").textContent = `${type.charAt(0).toUpperCase()+type.slice(1)} Tracker`;
-    document.getElementById("trk-chip-label").style.color = typeColor;
-    document.getElementById("trk-chip-id").textContent    = "";
+    const typeCap   = type.charAt(0).toUpperCase() + type.slice(1);
 
-    renderSkeleton(document.getElementById("trk-body"));
+    $.drawer.title.textContent    = label || "Loading…";
+    $.drawer.subtitle.textContent = "";
+    $.drawer.badge.style.display  = "none";
+    $.drawer.stats.innerHTML      = "";
+    $.expandBtn.style.display     = "none";
+
+    $.panel.style.setProperty("--trk-accent", typeColor);
+    $.drawer.accent.style.background = `linear-gradient(90deg,transparent,${typeColor},transparent)`;
+    $.drawer.chipIcon.textContent    = TYPE_ICONS[type] || "·";
+    $.drawer.chipIcon.style.color    = typeColor;
+    $.drawer.chipLabel.textContent   = `${typeCap} Tracker`;
+    $.drawer.chipLabel.style.color   = typeColor;
+    $.drawer.chipId.textContent      = "";
+
+    renderSkeleton($.body);
 
     fetch(`${API_BASE}?type=${encodeURIComponent(type)}&id=${encodeURIComponent(id)}`, {
       headers:{"X-CSRFToken":getCookie(CSRF_COOKIE), "Accept":"application/json"},
@@ -1043,16 +1030,15 @@
         return r.json();
       })
       .then(data => {
-        if (_currentId !== id) return;   // user already opened something else
+        if (_currentId !== id) return;
         _currentData = {data, type, id};
         renderDrawer(data, type, id);
-        document.getElementById("trk-expand-btn").style.display = "";
+        $.expandBtn.style.display = "";
       })
       .catch(err => {
         if (_currentId !== id) return;
-        const body = document.getElementById("trk-body");
-        body.innerHTML = "";
-        body.appendChild(h("div",{class:"trk-error-box"},
+        $.body.innerHTML = "";
+        $.body.appendChild(h("div",{class:"trk-error-box"},
           h("div",{class:"trk-error-icon"},"⚠"),
           h("div",{class:"trk-error-msg"},"Could not load tracking data"),
           h("div",{class:"trk-error-det"},String(err)),
@@ -1064,39 +1050,36 @@
     _currentId   = null;
     _currentData = null;
     closeModal();
-    document.getElementById("trk-overlay").classList.remove("trk-visible");
-    document.getElementById("trk-panel").classList.remove("trk-visible");
+    $.overlay.classList.remove("trk-visible");
+    $.panel.classList.remove("trk-visible");
     document.body.style.overflow = "";
   }
-
-  /* ═══════════════════════════════════════════════
-     EVENT DELEGATION — works on dynamically added rows
-  ═══════════════════════════════════════════════ */
-
-  document.addEventListener("click", e => {
-    const btn = e.target.closest("[data-track]");
-    if (!btn) return;
-    e.preventDefault();
-    const type  = btn.dataset.track;
-    const id    = btn.dataset.id;
-    const label = btn.dataset.label || btn.textContent.trim() || "";
-    if (!type || !id) return;
-    openTracker(type, id, label);
-  });
-
-  document.addEventListener("keydown", e => {
-    if (e.key !== "Escape") return;
-    // Close modal first (if open), then close drawer
-    const mo = document.getElementById("trk-modal-overlay");
-    if (mo && mo.classList.contains("trk-visible")) { closeModal(); return; }
-    closeTracker();
-  });
 
   /* ═══════════════════════════════════════════════
      INIT
   ═══════════════════════════════════════════════ */
 
-  function init() { injectStyles(); buildShell(); }
+  function init() {
+    injectStyles();
+    buildShell();
+
+    document.addEventListener("click", e => {
+      const btn = e.target.closest("[data-track]");
+      if (!btn) return;
+      e.preventDefault();
+      const type  = btn.dataset.track;
+      const id    = btn.dataset.id;
+      const label = btn.dataset.label || btn.textContent.trim() || "";
+      if (!type || !id) return;
+      openTracker(type, id, label);
+    });
+
+    document.addEventListener("keydown", e => {
+      if (e.key !== "Escape") return;
+      if ($.modalOverlay.classList.contains("trk-visible")) { closeModal(); return; }
+      closeTracker();
+    });
+  }
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

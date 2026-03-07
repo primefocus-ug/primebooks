@@ -390,7 +390,7 @@ class SaleTracker(BaseTracker):
             "sub": obj.document_number or f"#{obj.pk}",
             "tag": "created",
             "note": f"{obj.store.name} · {getattr(obj, 'document_type', 'SALE')}",
-            "user": obj.served_by.get_full_name() if getattr(obj, "served_by", None) else "System",
+            "user": obj.created_by.get_full_name() if getattr(obj, "created_by", None) else "System",
             "date": fmt_dt(obj.created_at),
         }]
 
@@ -401,7 +401,7 @@ class SaleTracker(BaseTracker):
                     "sub": str(pmt.payment_method or ""),
                     "tag": "paid",
                     "note": f"{fmt_ugx(pmt.amount)} · {pmt.reference_number or '—'}",
-                    "user": obj.served_by.get_full_name() if getattr(obj, "served_by", None) else "System",
+                    "user": obj.created_by.get_full_name() if getattr(obj, "created_by", None) else "System",
                     "date": fmt_dt(pmt.created_at),
                 })
 
