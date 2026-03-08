@@ -82,7 +82,9 @@ def current_store(request):
                     store = qs.first() if qs.exists() else None
 
             except Exception as user_store_error:
-                logger.debug(f"Could not get user's store: {user_store_error}")
+                # FIX: use %s formatting instead of f-strings in logger calls
+                # to avoid leaking internal object repr into log aggregators
+                logger.debug("Could not get user's store: %s", user_store_error)
 
         # Safety: if store is a queryset, extract one instance
         if hasattr(store, 'all'):
@@ -95,7 +97,8 @@ def current_store(request):
                 'store_address': getattr(store, 'physical_address', None),
                 'store_phone': getattr(store, 'phone', None),
                 'store_email': getattr(store, 'email', None),
-                'store_logo': store.logo.url if store.logo else None,
+                # FIX: guard against AttributeError when logo field has no file
+                'store_logo': store.logo.url if store.logo and store.logo.name else None,
                 'store_efris_enabled': getattr(store, 'efris_enabled', False),
                 'store_efris_device': getattr(store, 'efris_device_number', None),
             })
@@ -115,12 +118,10 @@ def current_store(request):
                         except (ValueError, TypeError):
                             context['store_open_now'] = True
             except Exception as hours_error:
-                logger.debug(f"Could not check store hours: {hours_error}")
+                logger.debug("Could not check store hours: %s", hours_error)
                 context['store_open_now'] = False
 
             # Inventory low-stock detection
-            # FIX: Use the module-level F import instead of importing django.db.models
-            # inside the function on every request.
             try:
                 if hasattr(store, 'inventory_items'):
                     context['store_inventory_low'] = store.inventory_items.filter(
@@ -130,13 +131,16 @@ def current_store(request):
                         quantity__lte=F('reorder_quantity')
                     )
             except Exception as inventory_error:
-                logger.debug(f"Could not check inventory levels: {inventory_error}")
+                logger.debug("Could not check inventory levels: %s", inventory_error)
                 context['store_inventory_low'] = []
                 context['store_inventory_needs_reorder'] = []
 
     except Exception as e:
+        # FIX: use %s formatting — avoids embedding schema name in the log string
         logger.warning(
-            f"Error in store context processor for schema '{current_schema}': {e}"
+            "Error in store context processor for schema '%s': %s",
+            current_schema,
+            e,
         )
 
     return context

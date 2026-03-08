@@ -13,11 +13,8 @@ from decimal import Decimal
 import json
 import logging
 from django.core.mail import EmailMessage
-from django.template.loader import render_to_string
-from weasyprint import HTML
-import json
 from datetime import timedelta
-from weasyprint import HTML, CSS
+from weasyprint import HTML  # CSS unused — removed (B26)
 from django.conf import settings
 from io import BytesIO
 from datetime import datetime
@@ -261,10 +258,11 @@ def complete_receipt(request, pk):
                     if item.item_type == 'PRODUCT' and item.product:
                         deduct_stock_for_item(item)
 
-                # Mark as completed
+                # B19 fix: use update_fields to avoid triggering full Sale.save()
+                # validation and preventing re-trigger of auto-fiscalize signal.
                 receipt.status = 'COMPLETED'
-                receipt.payment_status = 'PAID'  # Receipts are always paid
-                receipt.save()
+                receipt.payment_status = 'PAID'
+                receipt.save(update_fields=['status', 'payment_status'])
 
                 # Create payment record
                 Payment.objects.create(
@@ -284,11 +282,15 @@ def complete_receipt(request, pk):
                     if store_config.get('enabled', False) and store_config.get('auto_fiscalize_sales', False):
                         # Queue for fiscalization
                         from .tasks import fiscalize_invoice_async
-                        fiscalize_invoice_async.delay(
-                            receipt.id,
-                            user_id=request.user.pk
-                        )
-                        logger.info(f"Queued receipt {receipt.document_number} for auto-fiscalization")
+                        from django.db import connection as _conn
+                        _schema = _conn.schema_name
+                        _rid    = receipt.id
+                        _uid    = request.user.pk
+                        _docnum = receipt.document_number
+                        transaction.on_commit(lambda: fiscalize_invoice_async.delay(
+                            _rid, user_id=_uid, schema_name=_schema
+                        ))
+                        logger.info(f"Queued receipt {_docnum} for auto-fiscalization after commit")
                 except Exception as e:
                     logger.error(f"Auto-fiscalization check failed for receipt {receipt.id}: {e}")
 
@@ -538,27 +540,32 @@ def complete_invoice(request, pk):
 
                 invoice.save()
 
-                # Create invoice detail
+                # B23 fix: use get_or_create to prevent IntegrityError on re-runs
                 from invoices.models import Invoice as InvoiceDetail
-                InvoiceDetail.objects.create(
+                InvoiceDetail.objects.get_or_create(
                     sale=invoice,
-                    store=invoice.store,
-                    terms=request.POST.get('terms', ''),
-                    purchase_order=request.POST.get('purchase_order', ''),
-                    created_by=request.user
+                    defaults=dict(
+                        store=invoice.store,
+                        terms=request.POST.get('terms', ''),
+                        purchase_order=request.POST.get('purchase_order', ''),
+                        created_by=request.user,
+                    )
                 )
 
                 # Auto-fiscalize based on store's EFRIS config
                 try:
                     store_config = invoice.store.effective_efris_config
                     if store_config.get('enabled', False) and store_config.get('auto_fiscalize_sales', False):
-                        # Queue for fiscalization
-                        from .tasks import fiscalize_invoice_async
-                        fiscalize_invoice_async.delay(
-                            invoice.id,
-                            user_id=request.user.pk
-                        )
-                        logger.info(f"Queued invoice {invoice.document_number} for auto-fiscalization")
+                        # B18 fix: must fire AFTER commit — task runs before sale exists in DB otherwise
+                        from django.db import connection as _conn
+                        _schema  = _conn.schema_name
+                        _inv_id  = invoice.id
+                        _uid     = request.user.pk
+                        _docnum  = invoice.document_number
+                        transaction.on_commit(lambda: fiscalize_invoice_async.delay(
+                            _inv_id, user_id=_uid, schema_name=_schema
+                        ))
+                        logger.info(f"Queued invoice {_docnum} for auto-fiscalization after commit")
                 except Exception as e:
                     logger.error(f"Auto-fiscalization check failed for invoice {invoice.id}: {e}")
 
@@ -670,8 +677,7 @@ def email_draft(request):
             'error': 'Invalid draft data format'
         })
     except Exception as e:
-        import traceback
-        print(traceback.format_exc())  # Log for debugging
+        logger.error("email_draft failed", exc_info=True)
         return JsonResponse({
             'success': False,
             'error': f'Failed to send email: {str(e)}'
@@ -869,7 +875,11 @@ def extract_receipt_data(post_data, user, company):
     customer_id = post_data.get('customer')
     customer = None
     if customer_id:
-        customer = Customer.objects.get(id=customer_id,store=store)
+        # B20 fix: Customer has no direct store FK — remove store filter
+        try:
+            customer = Customer.objects.get(id=customer_id)
+        except Customer.DoesNotExist:
+            raise ValidationError(f'Customer id={customer_id} not found.')
 
     return {
         'store': store,
@@ -910,10 +920,11 @@ def extract_invoice_data(post_data, user, company):
     customer_id = post_data.get('customer')
     customer = None
     if customer_id:
+        # B20 fix: Customer has no direct store FK — remove store filter
         try:
-            customer = Customer.objects.get(id=customer_id, store=store)
+            customer = Customer.objects.get(id=customer_id)
         except Customer.DoesNotExist:
-            raise ValidationError('Customer not found.')
+            raise ValidationError(f'Customer id={customer_id} not found.')
 
     # Get due date - REQUIRED for ALL invoices, not just credit sales
     due_date = None
@@ -949,17 +960,23 @@ def extract_invoice_data(post_data, user, company):
 
 
 def create_sale_item_from_data(sale, item_data):
-    """Create sale item from data"""
+    """Create sale item — B21 fix: guard DoesNotExist; B5: suppress per-item totals."""
     item_type = item_data.get('item_type', 'PRODUCT')
 
     if item_type == 'PRODUCT':
-        product = Product.objects.get(id=item_data['product_id'])
+        try:
+            product = Product.objects.get(id=item_data['product_id'])
+        except Product.DoesNotExist:
+            raise ValidationError(f"Product id={item_data.get('product_id')} not found.")
         service = None
     else:
         product = None
-        service = Service.objects.get(id=item_data['service_id'])
+        try:
+            service = Service.objects.get(id=item_data['service_id'])
+        except Service.DoesNotExist:
+            raise ValidationError(f"Service id={item_data.get('service_id')} not found.")
 
-    SaleItem.objects.create(
+    item = SaleItem(
         sale=sale,
         item_type=item_type,
         product=product,
@@ -969,6 +986,8 @@ def create_sale_item_from_data(sale, item_data):
         tax_rate=item_data.get('tax_rate', 'A'),
         discount=Decimal(str(item_data.get('discount', 0))),
     )
+    item._skip_sale_update = True  # caller must call sale.update_totals() after all items
+    item.save()
 
 
 def validate_stock_for_items(store, items_data):
@@ -1042,10 +1061,18 @@ def deduct_stock_for_item(item):
         logger.info(f"Store {item.sale.store.name} does not allow inventory management. Skipping stock deduction.")
         return
 
-    stock = Stock.objects.select_for_update().get(
-        product=item.product,
-        store=item.sale.store
-    )
+    # B22 fix: guard against missing Stock record
+    try:
+        stock = Stock.objects.select_for_update().get(
+            product=item.product,
+            store=item.sale.store
+        )
+    except Stock.DoesNotExist:
+        logger.warning(
+            f"No stock record for product {item.product.name} in store "
+            f"{item.sale.store.name} — skipping stock deduction for item {item.pk}"
+        )
+        return
 
     stock.quantity -= item.quantity
     stock.save()

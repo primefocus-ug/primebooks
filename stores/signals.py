@@ -13,6 +13,7 @@ from django.dispatch import receiver
 from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
 from django.utils import timezone
 from django.db import connection
+import functools
 
 
 logger = logging.getLogger(__name__)
@@ -37,13 +38,14 @@ def table_exists(table_name: str) -> bool:
             """, [connection.schema_name, table_name])
             return cursor.fetchone()[0]
     except Exception as e:
-        logger.debug(f"Could not check table existence: {e}")
+        logger.debug("Could not check table existence: %s", e)
         return False
 
 
 def safe_schema_context(f):
     """Decorator to ensure signals run safely in tenant schemas"""
 
+    @functools.wraps(f)  # FIX: preserve __name__ and __doc__ so Django signal dispatch works correctly
     def wrapper(*args, **kwargs):
         try:
             # Skip if signals suppressed
@@ -58,7 +60,7 @@ def safe_schema_context(f):
             return f(*args, **kwargs)
 
         except Exception as e:
-            logger.warning(f"Signal {f.__name__} failed: {e}")
+            logger.warning("Signal %s failed: %s", f.__name__, e)
 
     return wrapper
 
@@ -81,9 +83,9 @@ def create_saas_admin_if_needed(sender, **kwargs):
                         first_name='SaaS',
                         last_name='Administrator'
                     )
-                    print(f"[{connection.schema_name}] Created default SaaS admin")
+                    logger.info("[%s] Created default SaaS admin", connection.schema_name)
         except Exception as e:
-            print(f"[{connection.schema_name}] Could not create SaaS admin: {str(e)}")
+            logger.error("[%s] Could not create SaaS admin: %s", connection.schema_name, e)
 
 
 def get_default_roles_config():
@@ -321,7 +323,7 @@ def get_default_roles_config():
                 'stores.storedevice': ['change', 'view'],
                 'stores.userdevicesession': ['view', 'change'],
                 'stores.securityalert': ['view'],
-                'stores.devicefingerprint': ['view','change','view'],
+                'stores.devicefingerprint': ['view', 'change'],  # FIX: removed duplicate 'view'
 
                 'branches.companybranch': ['change','view'],
 
@@ -822,7 +824,7 @@ def create_default_roles_for_tenant(sender, instance, created, **kwargs):
         return
 
     if should_suppress_signals():
-        logger.info(f"Skipping role creation for {instance.schema_name} — signals suppressed")
+        logger.info("Skipping role creation for %s — signals suppressed", instance.schema_name)
         return
 
     from django_tenants.utils import schema_context
@@ -837,8 +839,8 @@ def create_default_roles_for_tenant(sender, instance, created, **kwargs):
                 # Register a one-shot post_migrate listener that will create
                 # roles as soon as migrations finish for this tenant.
                 logger.warning(
-                    f"Auth tables not ready for {instance.schema_name} — "
-                    f"deferring role creation to post_migrate"
+                    "Auth tables not ready for %s — deferring role creation to post_migrate",
+                    instance.schema_name,
                 )
                 _schedule_deferred_role_creation(instance)
                 return
@@ -847,7 +849,8 @@ def create_default_roles_for_tenant(sender, instance, created, **kwargs):
 
         except Exception as e:
             logger.error(
-                f"❌ Error creating default roles for tenant {instance.schema_name}: {e}",
+                "❌ Error creating default roles for tenant %s: %s",
+                instance.schema_name, e,
                 exc_info=True
             )
 
@@ -867,12 +870,14 @@ def _schedule_deferred_role_creation(company_instance):
                 if table_exists('auth_group') and table_exists('accounts_role'):
                     if not Role.objects.filter(is_system_role=True).exists():
                         logger.info(
-                            f"🔄 Deferred role creation running for {company_instance.schema_name}"
+                            "🔄 Deferred role creation running for %s",
+                            company_instance.schema_name,
                         )
                         _do_create_roles(company_instance)
         except Exception as e:
             logger.error(
-                f"❌ Deferred role creation failed for {company_instance.schema_name}: {e}",
+                "❌ Deferred role creation failed for %s: %s",
+                company_instance.schema_name, e,
                 exc_info=True
             )
         finally:
@@ -887,7 +892,7 @@ def _do_create_roles(instance):
     Core role-creation logic, extracted so it can be called from both
     the signal handler and the deferred post_migrate path.
     """
-    logger.info(f"Creating default roles for tenant: {instance.schema_name}")
+    logger.info("Creating default roles for tenant: %s", instance.schema_name)
 
     roles_config = get_default_roles_config()
     created_roles = []
@@ -911,41 +916,73 @@ def _do_create_roles(instance):
             if permissions_config == 'all':
                 group.permissions.set(Permission.objects.all())
             elif isinstance(permissions_config, dict):
+                # FIX: the original code called ContentType.objects.get() and
+                # Permission.objects.get() inside a nested loop — O(n) queries
+                # where n is the number of model_path entries per role (up to
+                # 30+).  Replace with two bulk prefetch queries up front so the
+                # entire permission assignment costs exactly 2 queries per role
+                # regardless of how many models are referenced.
+
+                # Build the set of (app_label, model_name) pairs we need.
+                needed_ct_keys = set()
+                for model_path, actions in permissions_config.items():
+                    app_label, model_name = model_path.split('.')
+                    needed_ct_keys.add((app_label, model_name.lower()))
+
+                # Fetch all needed ContentTypes in one query.
+                from django.db.models import Q as _Q
+                ct_filter = _Q()
+                for app_label, model_name in needed_ct_keys:
+                    ct_filter |= _Q(app_label=app_label, model=model_name)
+                content_types = {
+                    (ct.app_label, ct.model): ct
+                    for ct in ContentType.objects.filter(ct_filter)
+                }
+
+                # Determine all needed codenames and fetch in one query.
+                needed_codenames = []
+                for model_path, actions in permissions_config.items():
+                    app_label, model_name = model_path.split('.')
+                    for action in set(actions):  # set() deduplicates within each list
+                        needed_codenames.append(f"{action}_{model_name.lower()}")
+
+                existing_perms = {
+                    p.codename: p
+                    for p in Permission.objects.filter(codename__in=needed_codenames)
+                }
+
                 permissions_to_add = []
                 for model_path, actions in permissions_config.items():
                     app_label, model_name = model_path.split('.')
-                    try:
-                        content_type = ContentType.objects.get(
-                            app_label=app_label,
-                            model=model_name.lower()
-                        )
-                        for action in actions:
-                            codename = f"{action}_{model_name.lower()}"
-                            try:
-                                permission = Permission.objects.get(
-                                    codename=codename,
-                                    content_type=content_type
-                                )
-                                permissions_to_add.append(permission)
-                            except Permission.DoesNotExist:
-                                logger.debug(
-                                    f"Permission {codename} not found for {app_label}.{model_name}"
-                                )
-                    except ContentType.DoesNotExist:
-                        logger.debug(f"ContentType not found for {model_path}")
+                    if (app_label, model_name.lower()) not in content_types:
+                        logger.debug("ContentType not found for %s", model_path)
+                        continue
+                    for action in set(actions):  # deduplicate within list
+                        codename = f"{action}_{model_name.lower()}"
+                        perm = existing_perms.get(codename)
+                        if perm:
+                            permissions_to_add.append(perm)
+                        else:
+                            logger.debug(
+                                "Permission %s not found for %s.%s",
+                                codename, app_label, model_name
+                            )
 
                 if permissions_to_add:
                     group.permissions.add(*permissions_to_add)
             else:
-                logger.warning(f"Role '{role_name}' has no permissions config — skipping permission assignment")
+                logger.warning(
+                    "Role '%s' has no permissions config — skipping permission assignment",
+                    role_name,
+                )
 
             created_roles.append(role_name)
-            logger.info(f"✓ Created role: {role_name} (priority: {config['priority']})")
+            logger.info("✓ Created role: %s (priority: %s)", role_name, config['priority'])
 
     if created_roles:
-        logger.info(f"✅ Created {len(created_roles)} roles: {', '.join(created_roles)}")
+        logger.info("✅ Created %d roles: %s", len(created_roles), ", ".join(created_roles))
     else:
-        logger.info(f"ℹ️  All roles already exist for {instance.schema_name}")
+        logger.info("ℹ️  All roles already exist for %s", instance.schema_name)
 
     # Seed default notification templates so events like sale_completed work
     # immediately without requiring manual admin configuration.
@@ -953,7 +990,7 @@ def _do_create_roles(instance):
         from notifications.services import NotificationService
         NotificationService.seed_default_templates(instance.schema_name)
     except Exception as e:
-        logger.warning(f"Could not seed notification templates for {instance.schema_name}: {e}")
+        logger.warning("Could not seed notification templates for %s: %s", instance.schema_name, e)
 
 
 
@@ -1023,7 +1060,8 @@ def _grant_store_access_for_user(user, stores, access_level, granted_by=None):
                 )
         except Exception as e:
             logger.error(
-                f"Could not grant store access to {user} for store {store}: {e}"
+                "Could not grant store access to %s for store %s: %s",
+                user, store, e,
             )
 
 
@@ -1072,12 +1110,12 @@ def sync_store_access_for_user(user):
         _grant_store_access_for_user(user, company_stores, access_level)
 
         logger.info(
-            f"Synced store access for {user} (role={role_name}, "
-            f"level={access_level}, stores={company_stores.count()})"
+            "Synced store access for %s (role=%s, level=%s, stores=%d)",
+            user, role_name, access_level, company_stores.count(),
         )
 
     except Exception as e:
-        logger.error(f"sync_store_access_for_user failed for {user}: {e}", exc_info=True)
+        logger.error("sync_store_access_for_user failed for %s: %s", user, e, exc_info=True)
 
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
@@ -1126,8 +1164,15 @@ def on_store_created_grant_access_to_admins(sender, instance, created, **kwargs)
     if not created:
         return
 
-    # Only react to Store saves
-    if sender.__name__ != 'Store':
+    # FIX: checking sender.__name__ == 'Store' is fragile — any model in any
+    # app named 'Store' would match.  Use a proper subclass check instead.
+    # The import is kept lazy here because stores.models cannot be imported at
+    # module level without risking circular imports during app startup.
+    try:
+        from stores.models import Store as StoreModel
+    except ImportError:
+        return
+    if not issubclass(sender, StoreModel):
         return
 
     if not table_exists('stores_storeaccess') or not table_exists('accounts_customuser'):
@@ -1166,13 +1211,14 @@ def on_store_created_grant_access_to_admins(sender, instance, created, **kwargs)
                 _grant_store_access_for_user(user, [instance], access_level)
 
         logger.info(
-            f"Granted store access for new store '{instance.name}' "
-            f"to eligible users in company {company}"
+            "Granted store access for new store '%s' to eligible users in company %s",
+            instance.name, company,
         )
 
     except Exception as e:
         logger.error(
-            f"on_store_created_grant_access_to_admins failed for store {instance}: {e}",
+            "on_store_created_grant_access_to_admins failed for store %s: %s",
+            instance, e,
             exc_info=True
         )
 
@@ -1184,6 +1230,7 @@ def create_default_roles_on_migrate(sender, **kwargs):
     """
     from django.db import connection
 
+
     if hasattr(connection, 'tenant') and connection.tenant:
         tenant = connection.tenant
 
@@ -1193,11 +1240,11 @@ def create_default_roles_on_migrate(sender, **kwargs):
 
         # Check if roles already exist
         if Role.objects.filter(is_system_role=True).exists():
-            logger.info(f"Default roles already exist for {tenant.schema_name}, skipping...")
+            logger.info("Default roles already exist for %s, skipping...", tenant.schema_name)
             return
 
         # Create roles
-        logger.info(f"Creating default roles during migration for {tenant.schema_name}")
+        logger.info("Creating default roles during migration for %s", tenant.schema_name)
         _do_create_roles(tenant)
 
 
@@ -1209,7 +1256,12 @@ def log_user_login(sender, request, user, **kwargs):
     if not table_exists('accounts_loginhistory') or not table_exists('accounts_auditlog'):
         return
 
-    from .utils import get_location_from_ip
+    # FIX: get_location_from_ip does not exist in utils.py.
+    # get_location_from_request() exists but requires a request object and
+    # reads coordinates from POST/GET params supplied by the frontend — it
+    # does not perform an IP geo-lookup.  Move the import inside the optional
+    # try block so a missing function never breaks the login signal entirely,
+    # and attempt the call only if the function is available.
 
     ip_address = get_client_ip(request)
     user_agent = request.META.get('HTTP_USER_AGENT', '')
@@ -1228,14 +1280,14 @@ def log_user_login(sender, request, user, **kwargs):
             session_key=request.session.session_key
         )
 
-        # Get location (optional)
+        # Get location from request coords (supplied by frontend) — optional
         try:
-            location_data = get_location_from_ip(ip_address)
-            if location_data:
-                login_history.location = location_data.get('city', '')
-                login_history.latitude = location_data.get('latitude')
-                login_history.longitude = location_data.get('longitude')
-                login_history.save(update_fields=['location', 'latitude', 'longitude'])
+            from .utils import get_location_from_request
+            latitude, longitude, accuracy, timezone_str = get_location_from_request(request)
+            if latitude is not None and longitude is not None:
+                login_history.latitude = latitude
+                login_history.longitude = longitude
+                login_history.save(update_fields=['latitude', 'longitude'])
         except Exception:
             pass
 
@@ -1256,7 +1308,7 @@ def log_user_login(sender, request, user, **kwargs):
             }
         )
     except Exception as e:
-        logger.error(f"Failed to log user login: {e}")
+        logger.error("Failed to log user login: %s", e)
 
 
 @receiver(user_login_failed)
@@ -1306,7 +1358,7 @@ def log_failed_login(sender, credentials, request, **kwargs):
             metadata={'username_attempted': username}
         )
     except Exception as e:
-        logger.error(f"Failed to log failed login: {e}")
+        logger.error("Failed to log failed login: %s", e)
 
 
 @receiver(user_logged_out)
@@ -1342,7 +1394,7 @@ def log_user_logout(sender, request, user, **kwargs):
             company=getattr(user, 'company', None)
         )
     except Exception as e:
-        logger.error(f"Failed to log user logout: {e}")
+        logger.error("Failed to log user logout: %s", e)
 
 
 # ================= GENERIC MODEL CHANGE TRACKING =================
@@ -1379,8 +1431,8 @@ def log_model_save(sender, instance, created, **kwargs):
         # Attempting ANY query here would raise TransactionManagementError.
         if connection.needs_rollback:
             logger.warning(
-                f"Skipping audit log for {sender.__name__} — "
-                f"outer transaction is already broken"
+                "Skipping audit log for %s — outer transaction is already broken",
+                sender.__name__,
             )
             return
 
@@ -1405,7 +1457,7 @@ def log_model_save(sender, instance, created, **kwargs):
     except Exception as e:
         # The savepoint above was rolled back automatically.
         # The outer transaction is completely unaffected.
-        logger.warning(f"Audit log skipped for {sender.__name__}: {e}")
+        logger.warning("Audit log skipped for %s: %s", sender.__name__, e)
 
 
 @receiver(post_delete)
@@ -1436,4 +1488,4 @@ def log_model_delete(sender, instance, **kwargs):
             }
         )
     except Exception as e:
-        logger.error(f"Failed to create audit log for deletion: {e}")
+        logger.error("Failed to create audit log for deletion: %s", e)

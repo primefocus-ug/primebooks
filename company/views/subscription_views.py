@@ -33,10 +33,10 @@ class SubscriptionDashboardView(LoginRequiredMixin, TemplateView):
         if not company:
             raise Http404("No company associated with user")
 
-        # Update status
-        company.check_and_update_access_status()
-
         # Current plan details
+        # NOTE: We do not call check_and_update_access_status() here — it writes
+        # to the DB and is already run by CompanyAccessMiddleware and the periodic
+        # Celery task. Reading company.status directly is sufficient and safe.
         plan = company.plan
 
         # Calculate usage with safe defaults
@@ -83,10 +83,9 @@ class SubscriptionDashboardView(LoginRequiredMixin, TemplateView):
 
             except (KeyError, TypeError, ZeroDivisionError) as e:
                 # Log error and set safe default
-                print(f"Error calculating percentage for {key}: {e}")
+                logger.warning(f"Error calculating usage percentage for {key}: {e}")
                 data['percentage'] = 0
 
-        # ... rest of your code remains the same
         # Subscription status
         status_info = {
             'is_trial': company.is_trial,
@@ -194,8 +193,12 @@ def get_subscription_limits(request):
     if not company:
         return JsonResponse({'error': 'No company found'}, status=404)
 
-    # Force refresh limits
-    company.force_status_refresh()
+    # Refresh from DB to get current field values without triggering a full
+    # status update write (that is handled by middleware and periodic tasks)
+    company.refresh_from_db(fields=[
+        'status', 'is_active', 'storage_used_mb', 'api_calls_this_month',
+        'subscription_ends_at', 'trial_ends_at'
+    ])
 
     limits = {
         'users': {
@@ -281,8 +284,14 @@ class SubscriptionUpgradeView(LoginRequiredMixin, View):
             }, status=404)
 
         plan_id = kwargs.get('plan_id')
-        billing_cycle = request.POST.get('billing_cycle', 'MONTHLY')
-        payment_method = request.POST.get('payment_method')
+        billing_cycle = request.POST.get('billing_cycle', 'MONTHLY').strip().upper()
+        payment_method = request.POST.get('payment_method', '').strip()
+
+        if billing_cycle not in ('MONTHLY', 'QUARTERLY', 'YEARLY'):
+            return JsonResponse({
+                'success': False,
+                'message': f'Invalid billing cycle: {billing_cycle!r}.'
+            }, status=400)
 
         try:
             new_plan = SubscriptionPlan.objects.get(id=plan_id, is_active=True)
@@ -502,8 +511,14 @@ class SubscriptionRenewView(LoginRequiredMixin, View):
                 'message': 'No active plan to renew'
             }, status=400)
 
-        billing_cycle = request.POST.get('billing_cycle')
-        payment_method = request.POST.get('payment_method')
+        billing_cycle = request.POST.get('billing_cycle', '').strip().upper()
+        payment_method = request.POST.get('payment_method', '').strip()
+
+        if billing_cycle not in ('MONTHLY', 'QUARTERLY', 'YEARLY'):
+            return JsonResponse({
+                'success': False,
+                'message': f'Invalid billing cycle: {billing_cycle!r}. Must be MONTHLY, QUARTERLY, or YEARLY.'
+            }, status=400)
 
         try:
             # Process through service

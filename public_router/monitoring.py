@@ -23,12 +23,13 @@ def safe_cache_incr(key, delta=1, default=0, timeout=None):
         # Try to increment
         return cache.incr(key, delta)
     except ValueError:
-        # Key doesn't exist, initialize it
+        # Key doesn't exist (or stores a non-integer) — initialize it
         cache.set(key, default + delta, timeout)
         return default + delta
     except Exception as e:
-        # Other cache errors - log and continue
-        logger.warning(f"Cache operation failed for key {key}: {str(e)}")
+        # Other cache errors (connection issues, serialization, etc.) — log and continue.
+        # Monitoring failures must never crash the signup flow.
+        logger.warning(f"Cache operation failed for key {key} ({type(e).__name__}): {str(e)}")
         return default + delta
 
 
@@ -210,6 +211,9 @@ def alert_on_high_failure_rate():
     try:
         health = check_signup_health()
 
+        # Note: health['healthy'] is False only when failure_rate > 20% of *recent* signups
+        # (last hour) or other conditions. Old FAILED records outside the window won't
+        # trigger this alert. See check_signup_health() for full conditions.
         if not health['healthy']:
             # Send alert (email, Slack, PagerDuty, etc.)
             logger.critical(
@@ -261,7 +265,11 @@ def cleanup_old_metrics():
 
     try:
         # Get all signup metric keys
-        # Note: This is redis-specific. For other cache backends, adjust accordingly
+        # Note: This is redis-specific. For other cache backends, adjust accordingly.
+        # WARNING: The key patterns below assume Django's cache key prefix is correctly
+        # reflected in the '*:' glob prefix. If KEY_PREFIX differs in settings, these
+        # patterns will not match and cleanup will silently delete nothing.
+        # Verify with: redis_conn.keys('*signups_total*') in a shell first.
         from django_redis import get_redis_connection
 
         redis_conn = get_redis_connection("default")

@@ -23,14 +23,13 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from django.views.generic import DetailView
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
-from django.db.models import Sum, Count, Avg, F, Q
+from django.db.models import Sum, Count, Avg, F, Q, DecimalField, ExpressionWrapper
+from django.core.cache import cache
 from django.utils import timezone
 from django.http import Http404
 import logging
 from django.views.decorators.http import require_POST
-from accounts.utils import require_saas_admin, require_company_access
 from customers.models import Customer
 from invoices.models import Invoice
 
@@ -210,7 +209,8 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
             thirty_days_ago = timezone.now().date() - timedelta(days=30)
             sixty_days_ago = timezone.now().date() - timedelta(days=60)
 
-            stores = branch.stores.all()
+            # Store IS the branch — no .stores relation exists; use the store directly
+            stores = Store.objects.filter(id=branch.id)
             store_ids = stores.values_list('id', flat=True)
 
             # Current metrics
@@ -335,26 +335,7 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
 #   • AJAX detail endpoint added (same pattern as tenant_overview)
 # ============================================================
 
-import json
-import logging
-from datetime import timedelta
-from decimal import Decimal
-
-from django.contrib.auth import get_user_model
-from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from django.core.cache import cache
-from django.db.models import (
-    Count, F, Q, Sum,
-    DecimalField, ExpressionWrapper,
-)
-from django.db.models.functions import Coalesce
-from django.http import JsonResponse
-from django.utils import timezone
-from django.utils.safestring import mark_safe
-from django.utils.translation import gettext_lazy as _
-from django.views.generic import TemplateView
-from django.contrib.auth.decorators import login_required
-from django.views.decorators.http import require_http_methods
+# (duplicate imports removed — all of these are already imported at module top)
 
 try:
     from django_tenants.utils import schema_context
@@ -673,17 +654,16 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
 
             # ── Monthly trend (last 12 months) ────────────────────────────
             monthly = []
+            import calendar
             now = timezone.now()
             for i in range(self.MONTHS_DISPLAY):
-                ms = (now.date().replace(day=1) - timedelta(days=1)).replace(day=1)
-                # simpler: subtract months manually
+                # Subtract i months from the current month start
                 month_date = now.date().replace(day=1)
                 y = month_date.year
                 m = month_date.month - i
                 while m <= 0:
                     m += 12; y -= 1
                 ms = month_date.replace(year=y, month=m)
-                import calendar
                 me = ms.replace(day=calendar.monthrange(y, m)[1])
                 agg = base.filter(
                     created_at__date__gte=ms,
@@ -780,8 +760,14 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
                 .select_related('store', 'customer')
                 .order_by('-created_at')[:5]
             )
+            # Filter customers who made purchases in company stores to scope by tenant
             recent_customers = list(
-                Customer.objects.order_by('-created_at')[:5]
+                Customer.objects.filter(
+                    id__in=Sale.objects.filter(
+                        store__in=stores,
+                        customer__isnull=False,
+                    ).values('customer')
+                ).order_by('-created_at')[:5]
             )
             recent_movements = list(
                 StockMovement.objects.filter(store__in=stores)
@@ -901,7 +887,12 @@ def dashboard_detail_api(request):
         return JsonResponse({'error': 'No company assigned'}, status=403)
 
     module = request.GET.get('module', '')
-    period = int(request.GET.get('period', 30))
+    try:
+        period = int(request.GET.get('period', 30))
+        if period not in (7, 30, 90):
+            period = 30
+    except (ValueError, TypeError):
+        period = 30
     since  = timezone.now() - timedelta(days=period)
     schema = company.schema_name
 
@@ -1233,8 +1224,8 @@ class CompanyDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
         context = super().get_context_data(**kwargs)
         company = self.object
 
-        # Check company access and update status
-        company.check_and_update_access_status()
+        # NOTE: Status is maintained by CompanyAccessMiddleware and periodic tasks.
+        # Calling check_and_update_access_status() here would write to DB on every page load.
 
         # Branches with analytics
         branches_data = self._get_paginated_branches_with_analytics(company)
@@ -1483,12 +1474,9 @@ class CompanyDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
             branch_performances = []
 
             for branch in branches:
-                stores = Store.objects.filter(company=company)
-                store_ids = stores.values_list('id', flat=True)
-
-                # Calculate branch performance metrics
+                # Query metrics for THIS branch/store only (not all company stores)
                 metrics = Sale.objects.filter(
-                    store_id__in=store_ids,
+                    store=branch,
                     created_at__date__gte=thirty_days_ago,
                     is_voided=False,
                     status__in=['COMPLETED', 'PAID']
@@ -1580,7 +1568,7 @@ class CompanyDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
                         'user_name': log.user.get_full_name() or log.user.username,
                         'action': log.action.replace('_', ' ').title(),
                         'store_name': log.device.store.name if log.device else 'Unknown',
-                        'branch_name': log.device.store.branch.name if log.device and log.device.store else 'Unknown',
+                        'branch_name': log.device.store.name if log.device and log.device.store else 'Unknown',
                         'time_ago': time_ago,
                         'timestamp': log.timestamp,
                     })
@@ -2251,9 +2239,6 @@ class CompanyUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView)
                 import uuid
                 self.object.schema_name = f"tenant_{slugify(self.object.name)[:20]}_{str(uuid.uuid4())[:8]}"
 
-            # Update status if needed
-            self.object.check_and_update_access_status()
-
             # Save the object
             self.object.save()
 
@@ -2304,7 +2289,6 @@ class CompanyUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView)
         return reverse('companies:company_detail', kwargs={'company_id': self.object.company_id})
 
 
-@method_decorator(csrf_exempt, name='dispatch')
 class CompanyAutoSaveView(LoginRequiredMixin, View):
     """Auto-save company form data."""
 
@@ -2360,25 +2344,14 @@ class CompanyAutoSaveView(LoginRequiredMixin, View):
                             instance.save()
                             company_id = instance.company_id
                         else:
-                            # For new companies, we need at least a name to proceed
-                            if 'name' in cleaned_data:
-                                company = Company()
-                                for field, value in cleaned_data.items():
-                                    if hasattr(company, field):
-                                        setattr(company, field, value)
-
-                                # Generate schema_name if not provided
-                                if not hasattr(company, 'schema_name') or not company.schema_name:
-                                    import uuid
-                                    company.schema_name = f"temp_{str(uuid.uuid4())[:8]}"
-
-                                company.save()
-                                company_id = company.company_id
-                            else:
-                                return JsonResponse({
-                                    'success': False,
-                                    'message': 'Company name is required for auto-save'
-                                }, status=400)
+                            # Auto-save only supports updating existing companies.
+                            # New company creation requires the full form submission
+                            # so that schema_name and tenant provisioning are handled correctly.
+                            return JsonResponse({
+                                'success': False,
+                                'message': 'Auto-save is only available for existing companies. '
+                                           'Please use the full form to create a new company.'
+                            }, status=400)
 
                         return JsonResponse({
                             'success': True,
@@ -2436,7 +2409,9 @@ class CompanyDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView)
         return obj
 
     def delete(self, request, *args, **kwargs):
-        company_name = self.get_object().name
+        # Fetch object once before deletion so we can reference the name afterwards
+        obj = self.get_object()
+        company_name = obj.name
         result = super().delete(request, *args, **kwargs)
         messages.success(request, _('Company "%s" deleted successfully.') % company_name)
         return result
@@ -2496,7 +2471,10 @@ class EmployeeListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['company'] = self.company
-        context['total_employees'] = self.get_queryset().count()
+        # Use the paginator count rather than re-running the queryset
+        context['total_employees'] = self.get_paginator(
+            self.get_queryset(), self.paginate_by
+        ).count
         return context
 
 
@@ -2983,7 +2961,12 @@ class CompanyStatsAPIView(LoginRequiredMixin, PermissionRequiredMixin, View):
     permission_required = 'company.view_company'
 
     def get(self, request, *args, **kwargs):
-        days = int(request.GET.get('days', 30))
+        try:
+            days = int(request.GET.get('days', 30))
+            if days <= 0 or days > 365:
+                days = 30
+        except (ValueError, TypeError):
+            days = 30
         start_date = timezone.now() - timedelta(days=days)
 
         # Apply access control
@@ -3094,8 +3077,8 @@ def company_expired_view(request):
     """View for expired companies"""
     company = request.user.company
 
-    # Force refresh company status
-    company.force_status_refresh()
+    # Refresh relevant fields from DB (status updates handled by middleware/tasks)
+    company.refresh_from_db(fields=['status', 'is_active', 'trial_ends_at', 'subscription_ends_at'])
 
     # Calculate days expired and determine expiration type
     expiration_date = None
@@ -3133,8 +3116,8 @@ def company_suspended_view(request):
     """View for suspended companies"""
     company = request.user.company
 
-    # Force refresh company status
-    company.force_status_refresh()
+    # Refresh relevant fields from DB
+    company.refresh_from_db(fields=['status', 'is_active', 'grace_period_ends_at'])
 
     grace_days_left = 0
     if company.grace_period_ends_at:
@@ -3158,8 +3141,8 @@ def billing_view(request):
     """Billing and subscription management view"""
     company = request.user.company
 
-    # Force refresh company status
-    company.force_status_refresh()
+    # Refresh relevant fields from DB
+    company.refresh_from_db(fields=['status', 'is_active', 'plan', 'storage_used_mb', 'api_calls_this_month'])
 
     plans = SubscriptionPlan.objects.filter(is_active=True).order_by('sort_order', 'price')
 
@@ -3194,8 +3177,11 @@ def upgrade_plan_view(request):
                 company_id=request.user.company.company_id
             )
 
-            # Validate upgrade
-            if company.plan and plan.price <= company.plan.price:
+            # Validate — block same plan re-selection or downgrades
+            if company.plan and company.plan.pk == plan.pk:
+                messages.warning(request, 'Company is already on this plan.')
+                return redirect('companies:subscription_dashboard')
+            if company.plan and plan.price < company.plan.price:
                 messages.warning(
                     request,
                     'Please use the subscription management page for plan changes.'
@@ -3316,17 +3302,24 @@ def admin_reactivate_company(request, company_id):
         )
 
         reason = request.POST.get('reason', 'Reactivated by administrator')
-        days = int(request.POST.get('days', 30))  # Default 30 days
-        grace_days = int(request.POST.get('grace_days', 7))  # Default 7 days grace
+        try:
+            days = int(request.POST.get('days', 30))
+            if days <= 0 or days > 365:
+                days = 30
+        except (ValueError, TypeError):
+            days = 30
+        try:
+            grace_days = int(request.POST.get('grace_days', 7))
+            if grace_days <= 0 or grace_days > 30:
+                grace_days = 7
+        except (ValueError, TypeError):
+            grace_days = 7
 
         # Use the reallow_company method for full reactivation
         company.reallow_company(reason=reason, days=days, grace_days=grace_days)
 
         # Clear all caches
         company._clear_all_caches()
-
-        # Force status refresh
-        company.force_status_refresh()
 
         messages.success(
             request,
@@ -3358,7 +3351,12 @@ def admin_extend_grace_period(request, company_id):
 
     if request.method == 'POST':
         company = get_object_or_404(Company, company_id=company_id)
-        days = int(request.POST.get('days', 7))
+        try:
+            days = int(request.POST.get('days', 7))
+            if days <= 0 or days > 90:
+                days = 7
+        except (ValueError, TypeError):
+            days = 7
 
         company.extend_grace_period(days=days)
 
@@ -3451,8 +3449,8 @@ def company_detail_admin(request, company_id):
         company_id=company_id
     )
 
-    # Force refresh status
-    company.force_status_refresh()
+    # Refresh key fields from DB for accurate display
+    company.refresh_from_db(fields=['status', 'is_active', 'subscription_ends_at', 'trial_ends_at', 'storage_used_mb'])
 
     # Get usage statistics
     usage_stats = {
@@ -3494,8 +3492,10 @@ def api_company_status(request):
     """API endpoint to get current company status"""
     company = request.user.company
 
-    # Update status
-    status_changed = company.check_and_update_access_status()
+    # Refresh status fields from DB without triggering a write
+    # (status updates are handled by middleware and periodic tasks)
+    company.refresh_from_db(fields=['status', 'is_active', 'subscription_ends_at', 'trial_ends_at'])
+    status_changed = False  # Polling endpoint — no status mutation performed here
 
     restrictions = company.get_access_restrictions()
 

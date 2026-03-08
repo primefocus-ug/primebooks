@@ -90,31 +90,40 @@ def _build_analytics_context(request, base_qs, accessible_stores, date_from, dat
         })
 
     # ── Daily trend ───────────────────────────────────────────────────────────
+    # B11 fix: replace deprecated .extra() with TruncDate
+    from django.db.models.functions import TruncDate
     daily_raw = (
         sales_qs
-        .extra(select={'day': 'DATE(created_at)'})
+        .annotate(day=TruncDate('created_at'))
         .values('day')
         .annotate(count=Count('id'), total=Sum('total_amount'))
         .order_by('day')
     )
 
+    # B15 fix: only compute growth for consecutive days to avoid wrong % from gaps
+    from datetime import date as _date
     daily_sales = []
+    prev_day   = None
     prev_total = None
     for d in daily_raw:
         day_total = float(d['total'] or 0)
         day_count = d['count'] or 0
-        if prev_total is not None and prev_total > 0:
-            growth = f"{((day_total - prev_total) / prev_total * 100):+.1f}%"
-        else:
-            growth = '+0.0%'
+        cur_day   = d['day'] if isinstance(d['day'], _date) else _date.fromisoformat(str(d['day']))
+        consecutive = (
+            prev_day is not None and prev_total is not None
+            and prev_total > 0
+            and (cur_day - prev_day).days == 1
+        )
+        growth = f"{((day_total - prev_total) / prev_total * 100):+.1f}%" if consecutive else '+0.0%'
         daily_sales.append({
-            'day':      str(d['day']),
-            'count':    day_count,
-            'total':    day_total,
+            'day':       str(cur_day),
+            'count':     day_count,
+            'total':     day_total,
             'avg_value': day_total / day_count if day_count else 0,
-            'growth':   growth,
+            'growth':    growth,
         })
         prev_total = day_total
+        prev_day   = cur_day
 
     # ── Top items (products + services) ──────────────────────────────────────
     top_products = (
@@ -172,9 +181,11 @@ def _build_analytics_context(request, base_qs, accessible_stores, date_from, dat
         item['performance_percentage'] = round(item['revenue'] / max_rev * 100, 1) if max_rev else 0
 
     # ── Hourly pattern ────────────────────────────────────────────────────────
+    # B11 fix: replace deprecated .extra() with ExtractHour
+    from django.db.models.functions import ExtractHour
     hourly_raw = (
         sales_qs
-        .extra(select={'hour': 'EXTRACT(HOUR FROM created_at)'})
+        .annotate(hour=ExtractHour('created_at'))
         .values('hour')
         .annotate(count=Count('id'), total=Sum('total_amount'))
         .order_by('hour')
@@ -274,21 +285,28 @@ def _build_analytics_context(request, base_qs, accessible_stores, date_from, dat
         itb['total_revenue']  = float(itb['total_revenue'] or 0)
         itb['total_quantity'] = float(itb['total_quantity'] or 0)
 
-    # ── Store stats (EFRIS info per branch) ───────────────────────────────────
+    # ── Store stats — B13 fix: single annotated query instead of N+1 per store ──
+    store_agg_map = {
+        row['store_id']: row
+        for row in sales_qs.values('store_id').annotate(
+            sales_count=Count('id'),
+            revenue=Sum('total_amount'),
+        )
+    }
     store_stats = []
     for store in stores:
-        cfg          = store.effective_efris_config
-        store_sales  = sales_qs.filter(store=store)
+        cfg     = store.effective_efris_config
+        agg_row = store_agg_map.get(store.id, {})
         store_stats.append({
-            'id':              store.id,
-            'name':            store.name,
-            'sales_count':     store_sales.count(),
-            'revenue':         float(store_sales.aggregate(Sum('total_amount'))['total_amount__sum'] or 0),
-            'efris_enabled':   cfg.get('enabled', False),
-            'efris_active':    cfg.get('is_active', False),
-            'allows_sales':    store.allows_sales,
-            'allows_inventory':store.allows_inventory,
-            'is_main_branch':  store.is_main_branch,
+            'id':               store.id,
+            'name':             store.name,
+            'sales_count':      agg_row.get('sales_count', 0),
+            'revenue':          float(agg_row.get('revenue') or 0),
+            'efris_enabled':    cfg.get('enabled', False),
+            'efris_active':     cfg.get('is_active', False),
+            'allows_sales':     store.allows_sales,
+            'allows_inventory': store.allows_inventory,
+            'is_main_branch':   store.is_main_branch,
         })
 
     return {
@@ -466,7 +484,8 @@ class SalesHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
         store = cd.get('store')
         if store:
-            if store in accessible:
+            # B14 fix: don't use `in accessible` — it calls QuerySet.__contains__ (DB query)
+            if accessible.filter(id=store.id).exists():
                 qs = qs.filter(store=store)
             else:
                 messages.warning(
@@ -605,95 +624,156 @@ class SalesHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         # ── List-tab summary stats ────────────────────────────────────────────
         # Strip select_related/prefetch_related — prefetch annotations
         # conflict with .annotate(Sum/Avg/Count) and raise FieldError.
-        list_qs      = self.get_queryset().select_related(None).prefetch_related(None)
-        credit_sales = list_qs.filter(document_type='INVOICE', payment_method='CREDIT')
+        # B12+B16 fix: use self.object_list (ListView already evaluated it) instead
+        # of calling get_queryset() a second time. Replace ~20 individual queries
+        # with a single .aggregate() cached for 60 seconds per store-set per day.
+        from django.core.cache import cache
+        from django.utils import timezone as _tz
+
+        # The correct fix for "total_amount is an aggregate" FieldError:
+        # self.object_list may carry annotations from get_queryset() or Django's
+        # pagination pipeline. select_related(None)/prefetch_related(None) do NOT
+        # remove annotations — they poison subsequent .aggregate() calls.
+        # Solution: rebuild a clean queryset using the same PKs as a subquery.
+        # This gives us a zero-annotation base safe for all aggregate operations.
+        list_qs = Sale.objects.filter(
+            pk__in=self.object_list.values('pk')
+        )
+        date_str  = _tz.now().strftime('%Y-%m-%d')
+        store_ids = '_'.join(str(s.id) for s in accessible)
+        cache_key = f'hub_stats:{store_ids}:{date_str}'
+
+        agg = cache.get(cache_key)
+        if agg is None:
+            agg = list_qs.aggregate(
+                total_sales_count=Count('id'),  # Changed from total_sales
+                total_sales_amount=Sum('total_amount', default=0),  # Changed from total_amount
+                total_credit_amount=Sum('total_amount',
+                                        filter=Q(document_type='INVOICE', payment_method='CREDIT')),
+                fiscalized_count=Count('id', filter=Q(is_fiscalized=True)),
+                receipt_count=Count('id', filter=Q(document_type='RECEIPT')),
+                invoice_count=Count('id', filter=Q(document_type='INVOICE')),
+                proforma_count=Count('id', filter=Q(document_type='PROFORMA')),
+                estimate_count=Count('id', filter=Q(document_type='ESTIMATE')),
+                overdue_count=Count('id', filter=Q(payment_status='OVERDUE')),
+                overdue_amount=Sum('total_amount', filter=Q(payment_status='OVERDUE')),
+                credit_pending_count=Count('id', filter=Q(
+                    document_type='INVOICE', payment_method='CREDIT',
+                    payment_status__in=['PENDING', 'PARTIALLY_PAID'])),
+                credit_paid_count=Count('id', filter=Q(
+                    document_type='INVOICE', payment_method='CREDIT',
+                    payment_status='PAID')),
+                avg_credit_amount=Avg('total_amount', filter=Q(
+                    document_type='INVOICE', payment_method='CREDIT')),
+            )
+            cache.set(cache_key, agg, 60)
+
+        # Update to use the new keys
+        total_sales_count = agg.get('total_sales_count', 0)  # Changed from total_sales
+        total_sales_amount = agg.get('total_sales_amount', 0)  # Changed from total_amount
 
         context['stats'] = {
-            'total_sales':          list_qs.count(),
-            'total_amount':         list_qs.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'total_credit_amount':  credit_sales.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'fiscalized_count':     list_qs.filter(is_fiscalized=True).count(),
-            'receipt_count':        list_qs.filter(document_type='RECEIPT').count(),
-            'invoice_count':        list_qs.filter(document_type='INVOICE').count(),
-            'proforma_count':       list_qs.filter(document_type='PROFORMA').count(),
-            'estimate_count':       list_qs.filter(document_type='ESTIMATE').count(),
+            'total_sales': total_sales_count,  # Keep template var name, use new value
+            'total_amount': total_sales_amount,  # Keep template var name, use new value
+            'total_credit_amount': agg.get('total_credit_amount', 0),
+            'fiscalized_count': agg.get('fiscalized_count', 0),
+            'receipt_count': agg.get('receipt_count', 0),
+            'invoice_count': agg.get('invoice_count', 0),
+            'proforma_count': agg.get('proforma_count', 0),
+            'estimate_count': agg.get('estimate_count', 0),
         }
 
-        # ── Credit stats ──────────────────────────────────────────────────────
-        credit_invoices = list_qs.filter(document_type='INVOICE', payment_method='CREDIT')
         context['credit_stats'] = {
-            'total_credit_invoices': credit_invoices.count(),
-            'total_credit_amount':   credit_invoices.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'overdue_count':         credit_invoices.filter(payment_status='OVERDUE').count(),
-            'overdue_amount':        credit_invoices.filter(payment_status='OVERDUE').aggregate(
-                                         Sum('total_amount'))['total_amount__sum'] or 0,
-            'pending_count':         credit_invoices.filter(
-                                         payment_status__in=['PENDING', 'PARTIALLY_PAID']).count(),
-            'paid_count':            credit_invoices.filter(payment_status='PAID').count(),
-            'avg_credit_amount':     credit_invoices.aggregate(Avg('total_amount'))['total_amount__avg'] or 0,
+            'total_credit_invoices': agg.get('invoice_count', 0),
+            'total_credit_amount': agg.get('total_credit_amount', 0),
+            'overdue_count': agg.get('overdue_count', 0),
+            'overdue_amount': agg.get('overdue_amount', 0),
+            'pending_count': agg.get('credit_pending_count', 0),
+            'paid_count': agg.get('credit_paid_count', 0),
+            'avg_credit_amount': agg.get('avg_credit_amount', 0),
         }
 
-        # ── Document type distribution ────────────────────────────────────────
-        total = context['stats']['total_sales'] or 1
-        doc_stats = list_qs.values('document_type').annotate(
-            count=Count('id'), total=Sum('total_amount')
-        ).order_by('-count')
+        # Document type distribution — 1 query, cached 60 s
+        doc_key = f'hub_doc_stats:{store_ids}:{date_str}'
+        doc_raw = cache.get(doc_key)
+        if doc_raw is None:
+            doc_raw = list(list_qs.values('document_type').annotate(
+                count=Count('id'), total=Sum('total_amount')
+            ).order_by('-count'))
+            cache.set(doc_key, doc_raw, 60)
 
         context['document_type_stats'] = [
             {
-                'type':         s['document_type'],
+                'type': s['document_type'],
                 'type_display': dict(Sale.DOCUMENT_TYPE_CHOICES).get(s['document_type'], s['document_type']),
-                'count':        s['count'],
-                'total':        s['total'] or 0,
-                'percentage':   round(s['count'] / total * 100, 1),
+                'count': s['count'],
+                'total': s['total'] or 0,
+                'percentage': round(s['count'] / (total_sales_count or 1) * 100, 1),  # Updated here
             }
-            for s in doc_stats
+            for s in doc_raw
         ]
 
-        # ── Payment status distribution ───────────────────────────────────────
-        ps_stats = list_qs.values('payment_status').annotate(
-            count=Count('id'), total=Sum('total_amount')
-        ).order_by('-count')
+        # Payment status distribution
+        ps_key = f'hub_ps_stats:{store_ids}:{date_str}'
+        ps_raw = cache.get(ps_key)
+        if ps_raw is None:
+            ps_raw = list(list_qs.values('payment_status').annotate(
+                count=Count('id'), total=Sum('total_amount')
+            ).order_by('-count'))
+            cache.set(ps_key, ps_raw, 60)
 
         context['payment_status_stats'] = [
             {
-                'status':         s['payment_status'],
+                'status': s['payment_status'],
                 'status_display': dict(Sale.PAYMENT_STATUS_CHOICES).get(s['payment_status'], s['payment_status']),
-                'count':          s['count'],
-                'total':          s['total'] or 0,
+                'count': s['count'],
+                'total': s['total'] or 0,
             }
-            for s in ps_stats
+            for s in ps_raw
         ]
 
-        # ── EFRIS stats ───────────────────────────────────────────────────────
-        efris_sales = list_qs.filter(is_fiscalized=True)
-        if efris_sales.exists():
+        # EFRIS stats — reuse agg, no extra DB query
+        if agg.get('fiscalized_count', 0):
+            efris_key = f'hub_efris_latest:{store_ids}'
+            latest = cache.get(efris_key)
+            if latest is None:
+                latest = (
+                    list_qs.filter(is_fiscalized=True)
+                    .order_by('-fiscalization_time')
+                    .only('id', 'document_number', 'fiscalization_time')
+                    .first()
+                )
+                cache.set(efris_key, latest, 120)
             context['efris_stats'] = {
-                'count':             efris_sales.count(),
-                'total_amount':      efris_sales.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-                'latest_fiscalized': efris_sales.order_by('-fiscalization_time').first(),
+                'count': agg.get('fiscalized_count', 0),
+                'total_amount': agg.get('total_sales_amount', 0),  # Updated here
+                'latest_fiscalized': latest,
             }
 
-        # ── Top credit customers ──────────────────────────────────────────────
-        context['top_credit_customers'] = (
-            list_qs
-            .filter(document_type='INVOICE', payment_method='CREDIT')
-            .values('customer__id', 'customer__name', 'customer__phone')
-            .annotate(
-                invoice_count=Count('id'),
-                total_credit=Sum('total_amount'),
-                outstanding_count=Count(
-                    'id', filter=Q(payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE'])
-                ),
+        # Top credit customers
+        top_key = f'hub_top_cust:{store_ids}:{date_str}'
+        top_credit = cache.get(top_key)
+        if top_credit is None:
+            top_credit = list(
+                list_qs
+                .filter(document_type='INVOICE', payment_method='CREDIT')
+                .values('customer__id', 'customer__name', 'customer__phone')
+                .annotate(
+                    invoice_count=Count('id'),
+                    total_credit=Sum('total_amount'),
+                    outstanding_count=Count(
+                        'id', filter=Q(payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE'])
+                    ),
+                )
+                .order_by('-total_credit')[:5]
             )
-            .order_by('-total_credit')[:5]
-        )
+            cache.set(top_key, top_credit, 120)
+        context['top_credit_customers'] = top_credit
 
         # ── Accessible stores ─────────────────────────────────────────────────
         context['accessible_stores'] = accessible
 
         return context
-
     # ── Export helpers ────────────────────────────────────────────────────────
 
     def _export_csv(self, sales):

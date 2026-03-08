@@ -1,22 +1,17 @@
 from celery import shared_task
+from celery.schedules import crontab
 from django.utils import timezone
 from django.core.mail import send_mail, EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Q, Sum, Count, Avg, F
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from celery.schedules import crontab
-import logging
-from celery import shared_task
-from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-from django.db.models import Sum, Count, Avg, F
 from django_tenants.utils import tenant_context, schema_context
 from django.core.serializers.json import DjangoJSONEncoder
+import logging
 from .models import Company
 from sales.models import Sale
 from stores.models import Store, DeviceOperatorLog
@@ -140,15 +135,13 @@ def check_performance_alerts():
         for company in companies:
             with tenant_context(company):
                 # Check for underperforming branches
+                # Store IS the branch — each Store is its own entity, no sub-stores relation
                 branches = Store.objects.filter(company=company, is_active=True)
 
                 for branch in branches:
-                    stores = branch.stores.all()
-                    store_ids = stores.values_list('id', flat=True)
-
-                    # Check sales activity
+                    # Check sales activity directly against this store
                     recent_sales = Sale.objects.filter(
-                        store_id__in=store_ids,
+                        store_id=branch.id,
                         created_at__date__gte=thirty_days_ago,
                         is_voided=False,
                         status__in=['COMPLETED', 'PAID']
@@ -157,7 +150,7 @@ def check_performance_alerts():
                     # Alert if no sales in 7 days
                     week_ago = timezone.now().date() - timedelta(days=7)
                     week_sales = Sale.objects.filter(
-                        store_id__in=store_ids,
+                        store_id=branch.id,
                         created_at__date__gte=week_ago,
                         is_voided=False,
                         status__in=['COMPLETED', 'PAID']
@@ -378,17 +371,14 @@ def send_expiration_warnings():
 
         for company in expiring_companies:
             try:
-                # Switch to tenant context to query CustomUser
-                with tenant_context(company):
-                    # Use proper email fields - check if billing_email exists or fall back to company email
-                    recipient_emails = []
-                    if hasattr(company, 'billing_email') and company.billing_email:
-                        recipient_emails.append(company.billing_email)
-                    if company.email:
-                        recipient_emails.append(company.email)
-
-                    # Remove duplicates
-                    recipient_emails = list(set(recipient_emails))
+                # billing_email and email are on the public-schema Company model —
+                # no tenant_context switch needed here.
+                recipient_emails = []
+                if company.billing_email:
+                    recipient_emails.append(company.billing_email)
+                if company.email:
+                    recipient_emails.append(company.email)
+                recipient_emails = list(set(recipient_emails))
 
                 if recipient_emails:
                     send_mail(

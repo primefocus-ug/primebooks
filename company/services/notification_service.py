@@ -10,6 +10,20 @@ logger = logging.getLogger(__name__)
 class NotificationService:
     '''Service for sending notifications'''
 
+    def _get_recipient(self, company):
+        '''Return the best available email address for a company, or None.'''
+        email = company.billing_email or company.email
+        if not email or not isinstance(email, str) or '@' not in email:
+            logger.warning(
+                f"No valid email address for company {company.company_id} — notification skipped"
+            )
+            return None
+        return email
+
+    def _site_url(self):
+        '''Return SITE_URL with a safe fallback if not configured.'''
+        return getattr(settings, 'SITE_URL', '').rstrip('/')
+
     def send_subscription_expiry_warning(self, company, days_left):
         '''Send warning email when subscription is expiring'''
         try:
@@ -18,7 +32,7 @@ class NotificationService:
             context = {
                 'company': company,
                 'days_left': days_left,
-                'renewal_url': f'{settings.SITE_URL}/companies/subscription/renew/',
+                'renewal_url': f'{self._site_url()}/companies/subscription/renew/',
             }
 
             html_message = render_to_string(
@@ -39,11 +53,15 @@ class NotificationService:
             The Team
             '''
 
+            recipient = self._get_recipient(company)
+            if not recipient:
+                return False
+
             send_mail(
                 subject=subject,
                 message=plain_message,
                 from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[company.billing_email or company.email],
+                recipient_list=[recipient],
                 html_message=html_message,
                 fail_silently=False,
             )
@@ -76,7 +94,7 @@ class NotificationService:
 
             Your subscription has been renewed successfully!
 
-            Plan: {company.plan.display_name}
+            Plan: {company.plan.display_name if company.plan else 'N/A'}
             Valid until: {company.subscription_ends_at}
 
             Thank you for your continued business!
@@ -84,11 +102,15 @@ class NotificationService:
             The Team
             '''
 
+            recipient = self._get_recipient(company)
+            if not recipient:
+                return False
+
             send_mail(
                 subject=subject,
                 message=plain_message,
                 from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[company.billing_email or company.email],
+                recipient_list=[recipient],
                 html_message=html_message,
                 fail_silently=False,
             )
@@ -108,7 +130,7 @@ class NotificationService:
             context = {
                 'company': company,
                 'error_message': error_message,
-                'payment_url': f'{settings.SITE_URL}/companies/billing/payment-methods/',
+                'payment_url': f'{self._site_url()}/companies/billing/payment-methods/',
             }
 
             plain_message = f'''
@@ -123,11 +145,15 @@ class NotificationService:
             The Team
             '''
 
+            recipient = self._get_recipient(company)
+            if not recipient:
+                return False
+
             send_mail(
                 subject=subject,
                 message=plain_message,
                 from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[company.billing_email or company.email],
+                recipient_list=[recipient],
                 fail_silently=False,
             )
 
@@ -156,11 +182,15 @@ class NotificationService:
             The Team
             '''
 
+            recipient = self._get_recipient(company)
+            if not recipient:
+                return False
+
             send_mail(
                 subject=subject,
                 message=plain_message,
                 from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[company.billing_email or company.email],
+                recipient_list=[recipient],
                 fail_silently=False,
             )
 
@@ -188,11 +218,15 @@ class NotificationService:
             The Team
             '''
 
+            recipient = self._get_recipient(company)
+            if not recipient:
+                return False
+
             send_mail(
                 subject=subject,
                 message=plain_message,
                 from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[company.billing_email or company.email],
+                recipient_list=[recipient],
                 fail_silently=False,
             )
 

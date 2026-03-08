@@ -97,25 +97,27 @@ class TenantSignupRequestAdmin(PublicModelAdmin):
     tenant_created_badge.admin_order_field = 'tenant_created'
 
     def actions_column(self, obj):
-        links = []
+        # All user-supplied values must go through format_html, never via .format()
+        # before format_html sees them — otherwise schema names with ' or " can
+        # break out of the onclick attribute.
+        parts = []
         if obj.status in ['PENDING', 'FAILED']:
-            links.append(
-                '<button class="button" onclick="alert(\'Retry functionality would go here\')">{}</button>'.format(
-                    _('Retry')
-                )
-            )
+            parts.append(format_html(
+                '<span class="badge bg-secondary" title="{}">{}</span>',
+                _('Select this row and use the Actions menu above to retry'),
+                _('Retry via action menu'),
+            ))
         if obj.tenant_created and obj.created_schema_name:
-            links.append(
-                '<button class="button" onclick="alert(\'Schema: {}\')">{}</button>'.format(
-                    obj.created_schema_name, _('View Schema')
-                )
-            )
-        return format_html(' '.join(links)) if links else '-'
+            parts.append(format_html('<code>{}</code>', obj.created_schema_name))
+        if parts:
+            return format_html(' '.join(['{}'] * len(parts)), *parts)
+        return '-'
 
     actions_column.short_description = _('Actions')
 
     def mark_as_processing(self, request, queryset):
-        updated = queryset.update(status='PROCESSING')
+        from django.utils import timezone
+        updated = queryset.update(status='PROCESSING', updated_at=timezone.now())
         self.message_user(
             request,
             _('{} signup request(s) marked as processing.').format(updated),
@@ -125,17 +127,23 @@ class TenantSignupRequestAdmin(PublicModelAdmin):
     mark_as_processing.short_description = _("Mark selected as processing")
 
     def mark_as_completed(self, request, queryset):
-        updated = queryset.update(status='COMPLETED')
+        from django.utils import timezone
+        # WARNING: This only flips the status flag — it does NOT create the tenant schema.
+        # Use "Retry processing" to actually provision a tenant.
+        # Only use this to mark requests that were provisioned manually outside this system.
+        updated = queryset.update(status='COMPLETED', updated_at=timezone.now())
         self.message_user(
             request,
-            _('{} signup request(s) marked as completed.').format(updated),
-            messages.SUCCESS
+            _('{} signup request(s) marked as completed '
+              '(status flag only — no tenant was created by this action).').format(updated),
+            messages.WARNING
         )
 
-    mark_as_completed.short_description = _("Mark selected as completed")
+    mark_as_completed.short_description = _("Mark selected as completed (status only)")
 
     def mark_as_failed(self, request, queryset):
-        updated = queryset.update(status='FAILED')
+        from django.utils import timezone
+        updated = queryset.update(status='FAILED', updated_at=timezone.now())
         self.message_user(
             request,
             _('{} signup request(s) marked as failed.').format(updated),
@@ -145,17 +153,102 @@ class TenantSignupRequestAdmin(PublicModelAdmin):
     mark_as_failed.short_description = _("Mark selected as failed")
 
     def retry_processing(self, request, queryset):
-        for request_obj in queryset:
-            if request_obj.status in ['PENDING', 'FAILED']:
-                request_obj.status = 'PROCESSING'
-                request_obj.retry_count += 1
-                request_obj.save()
+        from .tasks import create_tenant_async
+        from .models import TenantApprovalWorkflow
+        from django.core.cache import cache
+        from django.utils import timezone
+        import secrets
+        import string
 
-        self.message_user(
-            request,
-            _('{} signup request(s) queued for retry.').format(queryset.count()),
-            messages.SUCCESS
-        )
+        queued = 0
+        skipped = 0
+
+        for signup in queryset:
+            if signup.status not in ['PENDING', 'FAILED']:
+                skipped += 1
+                continue
+
+            # Retrieve the stored password from the approval workflow, or generate
+            # a new one. The original form POST password is gone at this point so
+            # we rely on what was stored during the first approval attempt.
+            password = None
+            try:
+                workflow = getattr(signup, 'approval_workflow', None)
+                if workflow and workflow.generated_password:
+                    password = workflow.generated_password
+            except Exception:
+                pass
+
+            if not password:
+                alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+                password = ''.join(secrets.choice(alphabet) for _ in range(12))
+                try:
+                    workflow, _ = TenantApprovalWorkflow.objects.get_or_create(
+                        signup_request=signup
+                    )
+                    workflow.generated_password = password
+                    workflow.save(update_fields=['generated_password', 'updated_at'])
+                except Exception as e:
+                    self.message_user(
+                        request,
+                        _('Could not save password for {}: {}').format(
+                            signup.company_name, str(e)
+                        ),
+                        messages.ERROR
+                    )
+                    continue
+
+            # Mark as processing
+            signup.status = 'PROCESSING'
+            signup.retry_count += 1
+            signup.error_message = ''
+            signup.save(update_fields=[
+                'status', 'retry_count', 'error_message', 'updated_at'
+            ])
+
+            # Fire the Celery task — this is what was missing before
+            try:
+                task = create_tenant_async.apply_async(
+                    args=[str(signup.request_id), password],
+                    countdown=2,
+                )
+                cache.set(
+                    f'signup_task_{signup.request_id}',
+                    {
+                        'task_id': task.id,
+                        'retried_by': str(request.user),
+                        'retried_at': timezone.now().isoformat(),
+                    },
+                    timeout=3600
+                )
+                queued += 1
+            except Exception as e:
+                signup.status = 'FAILED'
+                signup.error_message = f'Task dispatch failed: {str(e)}'
+                signup.save(update_fields=['status', 'error_message', 'updated_at'])
+                self.message_user(
+                    request,
+                    _('Failed to queue task for {}: {}').format(
+                        signup.company_name, str(e)
+                    ),
+                    messages.ERROR
+                )
+
+        if queued:
+            self.message_user(
+                request,
+                _('{} signup request(s) queued for retry. '
+                  'Refresh in 30–60 seconds to see the result.').format(queued),
+                messages.SUCCESS
+            )
+        if skipped:
+            self.message_user(
+                request,
+                _('{} request(s) skipped — only PENDING or FAILED can be retried.').format(
+                    skipped
+                ),
+                messages.WARNING
+            )
 
     retry_processing.short_description = _("Retry processing selected requests")
 

@@ -70,12 +70,12 @@ class CompanyAwareAuthBackend(ModelBackend):
         return super().has_perm(user_obj, perm, obj)
 
     def _is_company_accessible(self, company):
-        """Check if company is accessible"""
+        """Check if company is accessible (read-only — does not mutate the DB)."""
         try:
             if not company or not company.is_active:
                 return False
-
-            company.check_and_update_access_status()
+            # Use has_active_access which checks status in-memory without writing.
+            # Status is kept up-to-date by the periodic Celery task and middleware.
             return company.has_active_access
         except Exception as e:
             logger.error(f"Error checking company accessibility: {e}")

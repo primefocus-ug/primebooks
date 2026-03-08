@@ -22,6 +22,15 @@ def disable_signals(model=None, signals=None):
     Args:
         model: Model class to disable signals for (if None, disables for all models)
         signals: List of signals to disable (default: [pre_save, post_save])
+
+    WARNING: The per-model disconnection path (when model is not None) is unreliable.
+    Django stores signal receivers as (lookup_key, weakref) tuples; the code below
+    tries to inspect receiver[1].__self__.sender and receiver[1].keywords which do
+    not exist on weakrefs. As a result, the model-specific disconnection silently
+    does nothing and ALL receivers remain active.
+
+    For reliable signal suppression during tenant creation, use suppress_signals()
+    instead, which uses a thread-local flag checked by each signal handler.
     """
     if signals is None:
         signals = [pre_save, post_save, post_delete, pre_delete]
@@ -59,7 +68,10 @@ def disable_signals(model=None, signals=None):
         yield
 
     finally:
-        # Restore original receivers
+        # Restore original receivers.
+        # THREAD-SAFETY WARNING: Any receivers added by other threads between the
+        # snapshot above and this restore will be silently lost. Use suppress_signals()
+        # for thread-safe signal suppression in concurrent environments.
         for signal, receivers in original_receivers.items():
             signal.receivers = receivers
             logger.debug(f"Restored {signal} receivers")

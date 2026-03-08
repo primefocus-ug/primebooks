@@ -59,9 +59,11 @@ def action_severity(action):
     errors = {
         "login_failed", "account_locked", "suspicious_activity", "sale_voided",
         "product_deleted", "efris_failed", "expense_rejected", "user_deactivated",
+        "session_superseded", "token_superseded",
     }
     warnings = {
         "stock_adjusted", "password_changed", "account_unlocked", "permission_changed",
+        "sharing_detected",
     }
     successes = {
         "login_success", "sale_completed", "invoice_paid", "efris_fiscalized",
@@ -305,7 +307,6 @@ class ProductTracker(BaseTracker):
 #
 # Model:  sales.Sale
 # Fields: document_number / document_type / status / total_amount
-#         customer (FK→customers.Customer) / store (FK) / served_by (FK)
 #         payment_method / is_fiscalized / efris_irn / fiscalized_at
 # Related: .items (SaleItem) / .payments (Payment)
 # SaleItem: product (FK) / quantity / unit_price / total_price
@@ -390,7 +391,7 @@ class SaleTracker(BaseTracker):
             "sub": obj.document_number or f"#{obj.pk}",
             "tag": "created",
             "note": f"{obj.store.name} · {getattr(obj, 'document_type', 'SALE')}",
-            "user": obj.served_by.get_full_name() if getattr(obj, "served_by", None) else "System",
+            "user": obj.created_by.get_full_name() if getattr(obj, "created_by", None) else "System",
             "date": fmt_dt(obj.created_at),
         }]
 
@@ -401,7 +402,7 @@ class SaleTracker(BaseTracker):
                     "sub": str(pmt.payment_method or ""),
                     "tag": "paid",
                     "note": f"{fmt_ugx(pmt.amount)} · {pmt.reference_number or '—'}",
-                    "user": obj.served_by.get_full_name() if getattr(obj, "served_by", None) else "System",
+                    "user": obj.created_by.get_full_name() if getattr(obj, "created_by", None) else "System",
                     "date": fmt_dt(pmt.created_at),
                 })
 
@@ -919,7 +920,7 @@ class UserTracker(BaseTracker):
         ]
 
     def sections(self, obj, user):
-        from accounts.models import LoginHistory, RoleHistory
+        from accounts.models import LoginHistory, RoleHistory, AuditLog
 
         logins = LoginHistory.objects.filter(user=obj).order_by("-timestamp")[:15]
         login_items = [{
@@ -945,11 +946,107 @@ class UserTracker(BaseTracker):
 
         audit_items = build_audit_items(get_audit_qs(obj))
 
-        return [
-            {"id": "logins",  "title": "Login History",    "type": "timeline", "items": login_items},
-            {"id": "roles",   "title": "Role Changes",     "type": "audit",    "items": role_items},
-            {"id": "profile", "title": "Account Changes",  "type": "audit",    "items": audit_items},
+        # ── Sharing / security events ──────────────────────────────────────────
+        security_items = []
+        try:
+            security_qs = AuditLog.objects.filter(
+                user=obj,
+                action__in=[
+                    'suspicious_activity',
+                    'session_superseded',
+                    'token_superseded',
+                    'account_locked',
+                    'account_unlocked',
+                ]
+            ).order_by("-timestamp")[:20]
+
+            for log in security_qs:
+                metadata = log.metadata or {}
+                score = metadata.get("total_score")
+                detectors = metadata.get("detectors", {})
+
+                # Build a readable note from evidence
+                notes = []
+                for reason, evidence in detectors.items():
+                    label = reason.replace("_", " ").title()
+                    if "distance_km" in evidence:
+                        notes.append(
+                            f"{label}: {evidence['distance_km']} km in "
+                            f"{evidence.get('elapsed_hours', '?')} hrs"
+                        )
+                    elif "distinct_fingerprints" in evidence:
+                        notes.append(
+                            f"{label}: {evidence['distinct_fingerprints']} devices "
+                            f"in {evidence.get('window_hours', '?')} hrs"
+                        )
+                    elif "other_active_ips" in evidence:
+                        other = ", ".join(evidence["other_active_ips"])
+                        notes.append(f"{label}: simultaneous IPs — {other}")
+                    else:
+                        notes.append(label)
+
+                note_str = " · ".join(notes) if notes else (log.action_description or "")
+                if score is not None:
+                    note_str = f"Score: {score}/100 · " + note_str
+
+                severity = "error" if log.action in ("suspicious_activity", "account_locked") else "warning"
+
+                security_items.append({
+                    "id":          log.pk,
+                    "description": log.action_description or log.action.replace("_", " ").title(),
+                    "user":        log.user.get_full_name() if log.user else "System",
+                    "date":        fmt_dt(log.timestamp),
+                    "severity":    severity,
+                    "diff":        {"from": log.ip_address or "—", "to": note_str} if note_str else None,
+                })
+        except Exception as e:
+            logger.warning(f"[UserTracker] Failed to load security events: {e}")
+
+        # ── Current lock status ────────────────────────────────────────────────
+        security_pairs = [
+            {"label": "Account Status",  "value": "🔒 Locked" if getattr(obj, "is_locked", False) else "✅ Active"},
+            {"label": "Failed Logins",   "value": str(getattr(obj, "failed_login_attempts", 0))},
+            {"label": "2FA",             "value": "Enabled" if obj.two_factor_enabled else "Disabled"},
+            {"label": "Total Sessions",  "value": str(getattr(obj, "login_count", 0))},
         ]
+        if getattr(obj, "locked_until", None):
+            security_pairs.append({
+                "label": "Locked Until",
+                "value": obj.locked_until.strftime("%d %b %Y, %H:%M UTC"),
+            })
+        # Surface last known sharing lock reason from metadata if present
+        sharing_lock = (obj.metadata or {}).get("sharing_lock")
+        if sharing_lock:
+            security_pairs.append({
+                "label": "Lock Reason",
+                "value": ", ".join(sharing_lock.get("reasons", [])) or "Sharing detected",
+            })
+            security_pairs.append({
+                "label": "Lock Score",
+                "value": f"{sharing_lock.get('score', '—')}/100",
+            })
+
+        sections = [
+            {"id": "logins",  "title": "Login History",   "type": "timeline", "items": login_items},
+            {"id": "roles",   "title": "Role Changes",    "type": "audit",    "items": role_items},
+        ]
+
+        if security_items or getattr(obj, "is_locked", False):
+            sections.append({
+                "id":    "security_status",
+                "title": "Security Status",
+                "type":  "keyvalue",
+                "pairs": security_pairs,
+            })
+            sections.append({
+                "id":    "security_events",
+                "title": "Security Events",
+                "type":  "audit",
+                "items": security_items,
+            })
+
+        sections.append({"id": "profile", "title": "Account Changes", "type": "audit", "items": audit_items})
+        return sections
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -3,13 +3,16 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.forms import inlineformset_factory
 from .models import Company, Domain, SubscriptionPlan
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Update imports - remove CompanyBranch, add Store
 try:
     from stores.models import Store
 except ImportError:
     Store = None
-    print("WARNING: Store model not available")
+    logger.warning("Store model not available - CompanyStoreFormSet will be disabled")
 
 try:
     from accounts.models import CustomUser
@@ -305,8 +308,8 @@ class CompanyForm(forms.ModelForm):
                                                                                                     'price')
             self.fields['plan'].empty_label = 'Select a plan'
             self.fields['plan'].required = False
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"Could not load SubscriptionPlan queryset in CompanyForm: {e}")
 
         # Set initial values for new companies
         if not self.instance.pk:
@@ -670,7 +673,7 @@ class SearchForm(forms.Form):
 
     plan = forms.ModelChoiceField(
         required=False,
-        queryset=SubscriptionPlan.objects.filter(is_active=True),
+        queryset=SubscriptionPlan.objects.none(),  # populated in __init__
         empty_label=_('All Plans'),
         widget=forms.Select(attrs={'class': 'form-select'}),
         label=_('Subscription Plan')
@@ -717,6 +720,9 @@ class SearchForm(forms.Form):
         for choice in Company.CURRENCY_CHOICES:
             currency_choices.append(choice)
         self.fields['currency'].choices = currency_choices
+
+        # Populate plan queryset at request time, not at import time
+        self.fields['plan'].queryset = SubscriptionPlan.objects.filter(is_active=True)
 
 
 class BulkActionForm(forms.Form):
@@ -832,6 +838,10 @@ class SubscriptionPlanForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # Explicitly set choices for the `name` field — it's a CharField with choices,
+        # so Select widget won't auto-populate from the model; we must do it here.
+        self.fields['name'].widget.choices = SubscriptionPlan.PLAN_CHOICES
 
         # Add Bootstrap classes to checkboxes
         checkbox_fields = [

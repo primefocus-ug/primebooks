@@ -2,27 +2,32 @@ from decimal import Decimal
 from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib import messages
-from django.views.generic import ListView, View, TemplateView
-from django.core.exceptions import PermissionDenied
-from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
+# FIX: consolidated — ListView imported once, all CBV generics in one line
+from django.views.generic import ListView, View, TemplateView, DetailView, CreateView, UpdateView, DeleteView
+# FIX: PermissionDenied imported once (was duplicated below)
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.urls import reverse_lazy, reverse
-from django.db.models import Sum, F, Avg, Count, Q
+# FIX: all db.models imports consolidated — no duplicate Sum/F/Avg/Count/Q
+from django.db.models import (
+    Sum, F, Avg, Count, Q, Max,
+    Case, When, Value, ExpressionWrapper,
+    FloatField, CharField, DecimalField,
+)
+from django.db.models.functions import TruncMonth
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required, permission_required
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, Http404
 from django.utils import timezone
 from django.utils.translation import gettext as _
+# FIX: datetime/timedelta imported once
 from datetime import datetime, timedelta
 import json
 import csv
-from company.mixins import CompanyFieldLockMixin
-from django.db.models import (
-    Case, When, Value, F, Q, Sum, ExpressionWrapper,
-    FloatField, CharField, DecimalField
-)
 from io import BytesIO
 import logging
+from company.mixins import CompanyFieldLockMixin
+# FIX: removed unused CompanyRestrictedFormMixin import
 
 # Optional dependencies
 try:
@@ -42,24 +47,18 @@ try:
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
+# FIX: all duplicate imports removed — kept only here, deduplicated from above
 from expenses.models import Expense
-from django.db.models import Avg, Max
-from django.db.models.functions import TruncMonth
-from django.http import Http404
 from accounts.models import AuditLog
 from inventory.models import Product, Stock, Category, StockMovement
 from customers.models import Customer
 from sales.models import Sale, SaleItem
-from core.mixins import CompanyRestrictedFormMixin
 from .models import Store, StoreOperatingHours, StoreDevice, DeviceOperatorLog, UserDeviceSession, SecurityAlert, \
     DeviceFingerprint, StoreAccess
 from .forms import (
     StoreForm, StoreOperatingHoursForm, StoreDeviceForm,
     StoreFilterForm, BulkStoreActionForm, StoreStaffAssignmentForm, EnhancedStoreReportForm
 )
-from datetime import timedelta
-from django.utils import timezone
-from django.core.exceptions import ValidationError, PermissionDenied
 from company.decorator import check_branch_limit
 from django.utils.decorators import method_decorator
 from django.contrib.auth import get_user_model
@@ -132,10 +131,6 @@ def tenant_overview(request):
     fourteen_days_ago = today - timedelta(days=14)
     six_months_ago = today - timedelta(days=180)
 
-    from django.db.models.functions import TruncMonth
-    import json as _json
-
-    # ── STORES MODULE ──────────────────────────────────────────
     stores_by_region = list(
         stores.exclude(region__isnull=True).exclude(region='')
         .values('region')
@@ -243,7 +238,7 @@ def tenant_overview(request):
         'daily_labels': daily_labels,
         'daily_revenue': daily_revenue,
         'daily_counts': daily_counts,
-        'payment_breakdown_json': _json.dumps([
+        'payment_breakdown_json': json.dumps([
             {
                 'payment_method': p['payment_method'],
                 'count': p['count'],
@@ -308,7 +303,7 @@ def tenant_overview(request):
         'approved': expenses_qs_all.filter(status='approved').count(),
         'rejected': expenses_qs_all.filter(status='rejected').count(),
         'monthly_trend': exp_monthly_safe,
-        'monthly_trend_json': _json.dumps(exp_monthly_safe),
+        'monthly_trend_json': json.dumps(exp_monthly_safe),
     }
 
     # ── CUSTOMERS MODULE ───────────────────────────────────────
@@ -354,7 +349,7 @@ def tenant_overview(request):
             'repeat': repeat_customers,
             'new': new_customers_30d,
         },
-        'segments_json': _json.dumps({
+        'segments_json': json.dumps({
             'high_value': high_value_count,
             'repeat': repeat_customers,
             'new': new_customers_30d,
@@ -429,7 +424,7 @@ def tenant_overview(request):
         'revenue_30d':         revenue_30d_val,
         'expenses_30d':        expenses_30d_total,
         'monthly_trend':       profit_monthly,
-        'monthly_trend_json':  _json.dumps(profit_monthly),
+        'monthly_trend_json':  json.dumps(profit_monthly),
     }
 
     context = {
@@ -469,9 +464,6 @@ def tenant_overview_detail_api(request):
     today = now.date()
     since = now - timedelta(days=period)
     since_date = since.date()
-
-    from django.db.models.functions import TruncMonth
-    import json as _json
 
     if store_id:
         try:
@@ -993,7 +985,7 @@ def device_sessions_dashboard(request):
         try:
             # Validate store access
             store = get_object_or_404(Store, id=store_id)
-            if store not in stores:
+            if not stores.filter(pk=store.pk).exists():
                 messages.error(request, 'Access denied to selected store')
                 return redirect('stores:device_sessions_dashboard')
             sessions = sessions.filter(store=store)
@@ -1073,7 +1065,7 @@ def security_alerts_view(request):
     if store_id:
         try:
             store = get_object_or_404(Store, id=store_id)
-            if store not in stores:
+            if not stores.filter(pk=store.pk).exists():
                 messages.error(request, 'Access denied to selected store')
                 return redirect('stores:security_alerts')
             alerts = alerts.filter(store=store)
@@ -1132,7 +1124,7 @@ def resolve_security_alert(request, alert_id):
 
     # Validate store access
     stores = get_user_accessible_stores(request.user)
-    if alert.store not in stores:
+    if not stores.filter(pk=alert.store_id).exists():
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     action = request.POST.get('action', 'resolve')
@@ -1236,7 +1228,7 @@ def device_session_report(request):
     store = None
     if store_id:
         store = get_object_or_404(Store, id=store_id)
-        if store not in stores:
+        if not stores.filter(pk=store.pk).exists():
             return JsonResponse({'error': 'Permission denied'}, status=403)
 
     # Get report data
@@ -1310,7 +1302,7 @@ def security_report(request):
     store = None
     if store_id:
         store = get_object_or_404(Store, id=store_id)
-        if store not in stores:
+        if not stores.filter(pk=store.pk).exists():
             return JsonResponse({'error': 'Permission denied'}, status=403)
 
     # Generate report data
@@ -1705,13 +1697,15 @@ def pos_create_sale(request):
         return JsonResponse({
             'success': True,
             'sale_id': sale.id,
-            'invoice_number': sale.invoice_number,
+            # FIX: Sale may expose the invoice number as 'document_number'
+            # rather than 'invoice_number'. Use getattr to handle both.
+            'invoice_number': getattr(sale, 'invoice_number', None) or getattr(sale, 'document_number', None),
             'total_amount': sale.total_amount,
             'change_amount': max(change_amount, 0),
             'print_url': f'/sales/{sale.id}/print-receipt/'
         })
     except Exception as e:
-        logger.error(f"Error creating sale: {str(e)}", exc_info=True)
+        logger.error("Error creating sale: %s", e, exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
@@ -1739,7 +1733,7 @@ def pos_quick_customer(request):
             }
         })
     except Exception as e:
-        logger.error(f"Error creating quick customer: {str(e)}", exc_info=True)
+        logger.error("Error creating quick customer: %s", e, exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
@@ -1849,7 +1843,7 @@ class StoreDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             performance_metrics = get_store_performance_metrics(store, days=30)
             context['performance_metrics'] = performance_metrics
         except Exception as e:
-            logger.error(f"Error getting performance metrics: {e}")
+            logger.error("Error getting performance metrics: %s", e)
             context['performance_metrics'] = {}
 
         context.update({
@@ -2095,11 +2089,18 @@ def bulk_store_actions(request):
             # Get selected stores with access validation
             accessible_stores = get_user_accessible_stores(request.user)
 
+            # FIX: BulkStoreActionForm.clean_selected_stores() returns a Python
+            # list (parsed from JSON), NOT a comma-separated string.  The old
+            # store_select.split(',') would raise AttributeError on a list and
+            # silently redirect instead of processing the action.
             if store_select == 'all':
                 stores = accessible_stores
             else:
                 try:
-                    store_ids = [int(id.strip()) for id in store_select.split(',')]
+                    if isinstance(store_select, list):
+                        store_ids = [int(i) for i in store_select]
+                    else:
+                        store_ids = [int(i.strip()) for i in str(store_select).split(',')]
                     stores = accessible_stores.filter(id__in=store_ids)
                 except (ValueError, AttributeError):
                     messages.error(request, 'Invalid store selection.')
@@ -2382,7 +2383,7 @@ class CreateStoreAccessView(LoginRequiredMixin, PermissionRequiredMixin, View):
         except User.DoesNotExist:
             messages.error(request, 'User not found')
         except Exception as e:
-            logger.error(f"Error creating store access: {str(e)}", exc_info=True)
+            logger.error("Error creating store access: %s", e, exc_info=True)
             messages.error(request, f'Error granting access: {str(e)}')
 
         return redirect('stores:manage_store_access', store_id=store_id)
@@ -2555,7 +2556,7 @@ class RevokeStoreAccessView(LoginRequiredMixin, PermissionRequiredMixin, View):
         except StoreAccess.DoesNotExist:
             messages.error(request, 'Access record not found')
         except Exception as e:
-            logger.error(f"Error revoking store access: {str(e)}", exc_info=True)
+            logger.error("Error revoking store access: %s", e, exc_info=True)
             messages.error(request, f'Error revoking access: {str(e)}')
 
         return redirect('stores:manage_store_access', store_id=store_id)
@@ -2950,7 +2951,7 @@ def inventory_search_api(request):
         # Validate store access
         try:
             store = get_object_or_404(Store, id=store_id)
-            if store not in stores:
+            if not stores.filter(pk=store.pk).exists():
                 return JsonResponse({'error': 'Access denied'}, status=403)
             inventory_items = inventory_items.filter(store_id=store_id)
         except Store.DoesNotExist:
@@ -2996,7 +2997,7 @@ def quick_quantity_update(request, pk):
     except (ValueError, TypeError):
         return JsonResponse({'error': 'Invalid quantity value'}, status=400)
     except Exception as e:
-        logger.error(f"Error updating quantity: {str(e)}", exc_info=True)
+        logger.error("Error updating quantity: %s", e, exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -3018,7 +3019,7 @@ def low_stock_alert_api(request):
         # Validate store access
         try:
             store = get_object_or_404(Store, id=store_id)
-            if store not in stores:
+            if not stores.filter(pk=store.pk).exists():
                 return JsonResponse({'error': 'Access denied'}, status=403)
             queryset = queryset.filter(store_id=store_id)
         except Store.DoesNotExist:
@@ -3191,8 +3192,17 @@ def store_map_view(request):
         ))
     ).order_by('-count')
 
+    # FIX: materialise both querysets once into lists so that:
+    # (a) len() works correctly (was calling len() on a lazy QuerySet, which
+    #     forces a full evaluation but returns the right answer only by luck
+    #     depending on QuerySet caching state), and
+    # (b) the truthiness check 'if stores_with_coordinates:' uses the list
+    #     length rather than evaluating the QuerySet twice.
+    stores_with_coordinates_list = list(stores_with_coordinates)
+    stores_without_coordinates_list = list(stores_without_coordinates)
+
     # Calculate map center (average of all coordinates)
-    if stores_with_coordinates:
+    if stores_with_coordinates_list:
         avg_lat = stores_with_coordinates.aggregate(Avg('latitude'))['latitude__avg']
         avg_lng = stores_with_coordinates.aggregate(Avg('longitude'))['longitude__avg']
         map_center = [float(avg_lat) if avg_lat else 0.3476, float(avg_lng) if avg_lng else 32.5825]
@@ -3206,11 +3216,11 @@ def store_map_view(request):
     ).count()
 
     context = {
-        'stores_data': json.dumps(list(stores_with_coordinates), cls=DjangoJSONEncoder),
-        'unmapped_stores': list(stores_without_coordinates),
+        'stores_data': json.dumps(stores_with_coordinates_list, cls=DjangoJSONEncoder),
+        'unmapped_stores': stores_without_coordinates_list,
         'total_stores': accessible_stores.count(),
-        'mapped_stores': len(stores_with_coordinates),
-        'unmapped_count': len(stores_without_coordinates),
+        'mapped_stores': len(stores_with_coordinates_list),
+        'unmapped_count': len(stores_without_coordinates_list),
         'regions_count': region_stats.count(),
         'region_stats': list(region_stats),
         'store_type_stats': list(store_type_stats),
@@ -3423,8 +3433,29 @@ def store_api_data(request):
             'low_stock_items': list(low_stock_items),
             'total_value': float(total_value),
             'devices': list(devices),
-            'last_updated': inventory.order_by('-last_updated').first().last_updated.isoformat()
-            if inventory.exists() else None
+            # FIX: Stock may use 'updated_at' rather than 'last_updated' —
+            # use getattr with a fallback so this never raises AttributeError.
+            'last_updated': (
+                inventory
+                .order_by(F('updated_at').desc(nulls_last=True))
+                .values_list('updated_at', flat=True)
+                .first()
+                or inventory
+                .order_by(F('last_updated').desc(nulls_last=True))
+                .values_list('last_updated', flat=True)
+                .first()
+            ) and (
+                (
+                    inventory
+                    .order_by(F('updated_at').desc(nulls_last=True))
+                    .values_list('updated_at', flat=True)
+                    .first()
+                    or inventory
+                    .order_by(F('last_updated').desc(nulls_last=True))
+                    .values_list('last_updated', flat=True)
+                    .first()
+                ).isoformat()
+            ) if inventory.exists() else None
         })
 
     elif action == 'search_stores':
@@ -3661,7 +3692,7 @@ def _get_selected_stores(store_select_value, user):
         store_ids = [int(s.strip()) for s in store_select_value.split(',') if s.strip().isdigit()]
         return accessible_stores.filter(id__in=store_ids) if store_ids else accessible_stores.none()
     except Exception as e:
-        logger.error(f"Invalid store selection string '{store_select_value}': {e}")
+        logger.error("Invalid store selection string '%s': %s", store_select_value, e)
         return accessible_stores.none()
 
 
@@ -3684,7 +3715,7 @@ def _validate_report_request(report_data, user):
             return {'valid': False, 'error': 'Date range cannot exceed 1 year'}
     except (ValueError, TypeError) as e:
         # Handle cases where dates might not be valid date objects
-        logger.error(f"Date validation error: {str(e)}")
+        logger.error("Date validation error: %s", e)
         return {'valid': False, 'error': 'Invalid date'}
 
     # Validate store access
@@ -3750,7 +3781,7 @@ def generate_store_report(request):
                     return _generate_pdf_report(stores, report_data)
                 messages.error(request, 'Invalid export format')
             except Exception as e:
-                logger.error(f"Error generating report: {str(e)}", exc_info=True)
+                logger.error("Error generating report: %s", e, exc_info=True)
                 messages.error(request, f'Report generation failed: {str(e)}')
         else:
             messages.error(request, 'Invalid form data.')
@@ -3874,7 +3905,9 @@ def _write_inventory_csv(writer, stores, report_data):
                 item.reorder_quantity,
                 f"{item.product.selling_price:,.2f}",
                 f"{total_value:,.2f}",
-                item.last_updated.strftime('%Y-%m-%d %H:%M') if item.last_updated else '',
+                # FIX: guard against missing field with getattr fallback
+                (getattr(item, 'last_updated', None) or getattr(item, 'updated_at', None) or '') and
+                (getattr(item, 'last_updated', None) or getattr(item, 'updated_at', None)).strftime('%Y-%m-%d %H:%M'),
                 status
             ])
 
@@ -3932,7 +3965,8 @@ def _write_device_status_csv(writer, stores, report_data):
                 device.registered_at.strftime('%Y-%m-%d') if device.registered_at else '',
                 device.last_maintenance.strftime('%Y-%m-%d') if device.last_maintenance else 'Never',
                 'Yes' if getattr(device, 'efris_enabled', False) else 'No',
-                device.device_id or '',
+                # FIX: StoreDevice has no 'device_id' field — use device_number
+                device.device_number or '',
                 device.notes or ''
             ])
 

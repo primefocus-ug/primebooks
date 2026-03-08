@@ -90,9 +90,10 @@ class CompanyAccessMiddleware:
         if company.status == 'EXPIRED':
             exempt_paths = ['/companies/expired/', '/companies/billing/', '/companies/subscription/']
             if not any(request.path.startswith(path) for path in exempt_paths):
+                plan_name = company.plan.get_name_display().lower() if company.plan else "current"
                 messages.error(
                     request,
-                    f"Your {company.plan.get_name_display().lower()} subscription has expired. "
+                    f"Your {plan_name} subscription has expired. "
                     "Please renew to continue using the service."
                 )
                 return redirect('companies:company_expired')
@@ -125,29 +126,27 @@ class CompanyAccessMiddleware:
         return None
 
     def _get_fresh_company(self, user):
-        """Get fresh company instance from database, with caching for performance"""
+        """Get a fresh Company from the database on each middleware pass.
+        We intentionally do NOT cache the full Company object here because
+        check_and_update_access_status() mutates status fields; a cached
+        object would carry stale values into the next request.
+        We do cache the company PK for 30 s to avoid redundant PK lookups."""
         try:
-            cache_key = f'user_{user.id}_company_fresh'
-            company = cache.get(cache_key)
+            from company.models import Company
+            cache_key = f'user_{user.id}_company_pk'
+            company_pk = cache.get(cache_key)
 
-            if company is None:
-                from company.models import Company
+            if company_pk is None:
+                if hasattr(user, 'company_id') and user.company_id:
+                    company_pk = user.company_id
+                elif hasattr(user, 'company') and user.company:
+                    company_pk = user.company.pk
+                if company_pk:
+                    cache.set(cache_key, company_pk, 30)
 
-                if hasattr(user, 'company_id'):
-                    company = Company.objects.select_related('plan').get(
-                        company_id=user.company_id
-                    )
-                elif hasattr(user, 'company'):
-                    user.company.refresh_from_db(fields=[
-                        'status', 'is_active', 'subscription_ends_at',
-                        'trial_ends_at', 'grace_period_ends_at', 'is_trial'
-                    ])
-                    company = user.company
-
-                if company:
-                    cache.set(cache_key, company, 30)
-
-            return company
+            if company_pk:
+                return Company.objects.select_related('plan').get(pk=company_pk)
+            return None
         except Exception as e:
             logger.error(f"Error getting fresh company for user {user.id}: {e}")
             return None

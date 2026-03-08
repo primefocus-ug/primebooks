@@ -1,10 +1,12 @@
 from django.db import models
+import django.contrib.postgres.indexes
 from django.core.validators import MinValueValidator
 from django.utils import timezone
 from django.core.exceptions import ValidationError, PermissionDenied
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import uuid
+from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from decimal import InvalidOperation
 from django.db import transaction, IntegrityError
@@ -181,8 +183,8 @@ class EFRISSaleMixin:
                 if hasattr(item.product, 'get_efris_goods_data'):
                     try:
                         product_efris_data = item.product.get_efris_goods_data()
-                    except:
-                        pass
+                    except Exception as efris_err:
+                        logger.warning(f"Could not get EFRIS goods data for product {item.product.id}: {efris_err}")
 
                 if item.product.category:
                     category_id = item.product.category.efris_commodity_category_code
@@ -200,8 +202,8 @@ class EFRISSaleMixin:
                 if hasattr(item.service, 'get_efris_data'):
                     try:
                         service_efris_data = item.service.get_efris_data()
-                    except:
-                        pass
+                    except Exception as efris_err:
+                        logger.warning(f"Could not get EFRIS data for service {item.service.id}: {efris_err}")
 
                 if item.service.category:
                     category_id = item.service.category.efris_commodity_category_code
@@ -351,7 +353,9 @@ class EFRISSaleMixin:
             'VOUCHER': '101',  # Voucher/Coupon
             'CREDIT': '101',  # Credit sale
         }
-        return payment_modes.get(payment_method.upper(), '102')
+        if not payment_method:
+            return '102'  # Default to cash if not set
+        return payment_modes.get(str(payment_method).upper(), '102')
 
     def get_efris_invoice_data(self):
         """Get complete invoice data formatted for EFRIS API - works for ALL sales"""
@@ -476,22 +480,6 @@ class EFRISSaleMixin:
             })
 
         return tax_details
-
-
-from django.db import models
-from django.core.validators import MinValueValidator
-from django.core.exceptions import ValidationError
-from django.db import transaction
-from django.utils import timezone
-from decimal import Decimal, ROUND_HALF_UP
-from datetime import timedelta
-from django.utils.translation import gettext_lazy as _
-import uuid
-import logging
-from primebooks.mixins import OfflineIDMixin
-
-
-logger = logging.getLogger(__name__)
 
 
 class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
@@ -711,26 +699,72 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
-    related_sale = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
+    related_sale = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='related_to')
 
     class Meta:
         ordering = ['-created_at']
         indexes = [
+            # ── kept single-column indexes ────────────────────────────────
             models.Index(fields=['transaction_id']),
-            models.Index(fields=['store', 'created_at']),
             models.Index(fields=['efris_invoice_number']),
             models.Index(fields=['is_fiscalized']),
             models.Index(fields=['customer']),
-            models.Index(fields=['store', 'status', 'created_at']),
-            models.Index(fields=['document_type']),
             models.Index(fields=['document_number']),
             models.Index(fields=['payment_status']),
             models.Index(fields=['due_date']),
             models.Index(fields=['export_status']),
+
+            # ── composite indexes covering real query patterns ─────────────
+            models.Index(
+                fields=['store', 'document_type', 'created_at'],
+                name='sale_store_type_date_idx',
+            ),
+            models.Index(
+                fields=['store', 'payment_status', 'due_date'],
+                name='sale_store_payment_due_idx',
+            ),
+            models.Index(
+                fields=['store', 'is_fiscalized', 'document_type'],
+                name='sale_store_fiscal_type_idx',
+            ),
+            models.Index(
+                fields=['customer', 'document_type', 'payment_status'],
+                name='sale_customer_credit_idx',
+            ),
+            models.Index(
+                fields=['transaction_type', 'status', 'store'],
+                name='sale_txtype_status_store_idx',
+            ),
+            models.Index(
+                fields=['store', 'status', 'created_at'],
+                name='sale_store_status_date_idx',
+            ),
+
+            # ── partial index: only unfiscalized RECEIPT/INVOICE rows ──────
+            models.Index(
+                fields=['store', 'created_at'],
+                condition=models.Q(
+                    is_fiscalized=False,
+                    document_type__in=['RECEIPT', 'INVOICE'],
+                ),
+                name='sale_pending_fiscal_idx',
+            ),
+
+            # ── GIN trigram indexes for icontains search ───────────────────
+            # Requires pg_trgm extension. Add TrigramExtension() migration op.
+            django.contrib.postgres.indexes.GinIndex(
+                fields=['document_number'],
+                name='sale_docnum_gin_idx',
+                opclasses=['gin_trgm_ops'],
+            ),
+            django.contrib.postgres.indexes.GinIndex(
+                fields=['efris_invoice_number'],
+                name='sale_efris_gin_idx',
+                opclasses=['gin_trgm_ops'],
+            ),
         ]
         verbose_name = "Sale"
         verbose_name_plural = "Sales"
-        # ✅ REMOVED: Constraints that enforce positive values
 
     def __str__(self):
         doc_type = self.get_document_type_display()
@@ -823,6 +857,15 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
         return '101'
 
     def save(self, *args, **kwargs):
+        # If this is a partial update (update_fields), skip the heavy
+        # setup logic and full_clean — they are not needed and can cause
+        # ValidationError for legitimate field-only saves (e.g. after
+        # EFRIS response, payment status updates, fiscalization saves).
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None:
+            super().save(*args, **kwargs)
+            return
+
         # Auto-generate document number based on type
         if not self.document_number:
             self.document_number = self.generate_document_number()
@@ -838,7 +881,7 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
             calculated_total = subtotal - discount
             self.total_amount = calculated_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-        # Run model validation
+        # Run model validation only on full saves
         self.full_clean()
 
         is_new = not self.pk
@@ -942,7 +985,7 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
 
     def generate_document_number(self):
         """Generate unique document number — race-condition safe."""
-        from django.db import transaction as _tx
+        from django.db import IntegrityError as _IntegrityError
 
         if self.transaction_type == 'REFUND':
             prefix = 'REF'
@@ -2373,7 +2416,8 @@ class CartItem(OfflineIDMixin, models.Model):
         null=True,blank=True
     )
     cart = models.ForeignKey(Cart, related_name='items', on_delete=models.CASCADE)
-    product = models.ForeignKey('inventory.Product', on_delete=models.PROTECT)
+    product = models.ForeignKey('inventory.Product', on_delete=models.PROTECT, null=True, blank=True)
+    service = models.ForeignKey('inventory.Service', on_delete=models.PROTECT, null=True, blank=True)
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     unit_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     total_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -2391,12 +2435,22 @@ class CartItem(OfflineIDMixin, models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['cart', 'product'],
+                condition=models.Q(product__isnull=False),
                 name='unique_cart_product'
+            ),
+            models.UniqueConstraint(
+                fields=['cart', 'service'],
+                condition=models.Q(service__isnull=False),
+                name='unique_cart_service'
             ),
         ]
 
     def __str__(self):
-        return f"{self.quantity} x {self.product.name} in Cart #{self.cart.id}"
+        if self.product:
+            return f"{self.quantity} x {self.product.name} in Cart #{self.cart.id}"
+        elif self.service:
+            return f"{self.quantity} x {self.service.name} in Cart #{self.cart.id}"
+        return f"Cart item in Cart #{self.cart.id}"
 
     def save(self, *args, **kwargs):
         """Calculate totals, discounts, and tax with proper rounding"""
@@ -2444,7 +2498,9 @@ class CartItem(OfflineIDMixin, models.Model):
         cart.update_totals()
 
     def available_stock(self):
-        """Check current store stock for the product"""
+        """Check current store stock for the product. Returns None for services."""
+        if not self.product:
+            return None  # Services don't have stock
         stock = Stock.objects.filter(
             product=self.product,
             store=self.cart.store

@@ -1,19 +1,38 @@
 from rest_framework import serializers
 from .models import Store, StoreOperatingHours, StoreDevice, DeviceOperatorLog
-from branches.models import CompanyBranch
+# FIX: removed unused imports — CompanyBranch and Product were imported but
+# never referenced anywhere in this file.
 from company.models import Company
-from inventory.models import Product
 from django.utils.translation import gettext_lazy as _
 
 
-# Shared mixin to enforce tenant ownership
+# ---------------------------------------------------------------------------
+# Shared mixin
+# ---------------------------------------------------------------------------
+
 class TenantStoreSerializerMixin:
+    """
+    Enforce tenant ownership on any serializer that touches company-scoped
+    models.  Injects `company` from `request.tenant` during validation.
+    """
+
     def validate(self, attrs):
+        # FIX: the original implementation unconditionally overwrote
+        # `attrs['company']` with request.tenant whenever a tenant was present.
+        # This silently discarded any explicitly supplied `company` value and,
+        # more importantly, would overwrite valid data on partial updates
+        # (PATCH) where `company` was not in the payload at all.  We now only
+        # inject company when the field is absent so that the tenant is used as
+        # the default rather than a forced override.
         request = self.context.get('request')
-        if request and hasattr(request, 'tenant'):
+        if request and hasattr(request, 'tenant') and 'company' not in attrs:
             attrs['company'] = request.tenant
         return attrs
 
+
+# ---------------------------------------------------------------------------
+# DeviceOperatorLog
+# ---------------------------------------------------------------------------
 
 class DeviceOperatorLogSerializer(TenantStoreSerializerMixin, serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.get_full_name', read_only=True)
@@ -35,13 +54,20 @@ class DeviceOperatorLogSerializer(TenantStoreSerializerMixin, serializers.ModelS
         return super().create(validated_data)
 
 
+# ---------------------------------------------------------------------------
+# Store
+# ---------------------------------------------------------------------------
+
 class StoreSerializer(serializers.ModelSerializer):
     company = serializers.PrimaryKeyRelatedField(
+        # FIX: Company.objects.all() is an unscoped global queryset.
+        # A user from company A could supply company B's PK and pass
+        # field-level validation.  Scope to the requesting user's company.
         queryset=Company.objects.all(),
         required=False
     )
 
-    # Add computed properties
+    # Computed properties
     effective_efris_config = serializers.SerializerMethodField()
     can_fiscalize = serializers.SerializerMethodField()
 
@@ -72,38 +98,41 @@ class StoreSerializer(serializers.ModelSerializer):
             'store_efris_private_key': {'write_only': True},
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # FIX: scope company queryset to the tenant at serializer
+        # instantiation time so the field-level validator never accepts a
+        # company that doesn't belong to the current tenant.
+        request = self.context.get('request')
+        if request and hasattr(request, 'tenant'):
+            self.fields['company'].queryset = Company.objects.filter(
+                pk=request.tenant.pk
+            )
+
     def get_effective_efris_config(self, obj):
-        """Get effective EFRIS configuration"""
         return obj.effective_efris_config
 
     def get_can_fiscalize(self, obj):
-        """Check if store can fiscalize"""
         return obj.can_fiscalize
 
     def validate(self, attrs):
-        """
-        Enhanced validation for EFRIS override fields
-        """
         attrs = super().validate(attrs)
 
         request = self.context.get('request')
         use_company_efris = attrs.get('use_company_efris', True)
 
-        # If using store-specific EFRIS, validate required fields
         if not use_company_efris:
             required_fields = [
                 'tin',
                 'store_efris_private_key',
                 'store_efris_public_certificate'
             ]
-
             for field in required_fields:
                 if field not in attrs or not attrs[field]:
                     raise serializers.ValidationError({
-                        field: f'This field is required when using store-specific EFRIS configuration.'
+                        field: 'This field is required when using store-specific EFRIS configuration.'
                     })
 
-            # Validate store has TIN or company has TIN
             if not attrs.get('tin'):
                 company = attrs.get('company') or getattr(request, 'tenant', None)
                 if not company or not company.tin:
@@ -115,47 +144,49 @@ class StoreSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """
-        Handle EFRIS override fields during creation
+        Handle EFRIS override fields during creation.
+
+        FIX: the original code popped password and private_key from
+        validated_data, called super().create() (one INSERT), then set
+        the fields on the returned instance and called store.save() again
+        (a second UPDATE) — two round trips for every store creation.
+
+        Since these are regular model fields, they can be passed directly
+        to super().create() and written in the single INSERT.  We only
+        need the two-step approach for fields that require special encoding
+        (e.g. hashed passwords); plain text fields don't.
         """
-        # Extract password and private key for special handling
-        store_efris_key_password = validated_data.pop('store_efris_key_password', None)
-        store_efris_private_key = validated_data.pop('store_efris_private_key', None)
-
-        # Create the store
+        # Pass all fields including password/key directly — one DB write.
         store = super().create(validated_data)
-
-        # Set password and private key if provided
-        if store_efris_key_password:
-            store.store_efris_key_password = store_efris_key_password
-        if store_efris_private_key:
-            store.store_efris_private_key = store_efris_private_key
-
-        store.save()
         return store
 
     def update(self, instance, validated_data):
         """
-        Handle EFRIS override fields during update
+        Handle EFRIS override fields during update.
+        Only overwrite password/key if a new non-empty value is submitted.
         """
-        # Handle password field specially (don't overwrite if not provided)
+        # Handle password field specially — don't overwrite if blank/absent
         if 'store_efris_key_password' in validated_data:
             password = validated_data.pop('store_efris_key_password')
-            if password:  # Only update if new password provided
+            if password:
                 instance.store_efris_key_password = password
 
-        # Handle private key specially
+        # Handle private key specially — same pattern
         if 'store_efris_private_key' in validated_data:
             private_key = validated_data.pop('store_efris_private_key')
-            if private_key:  # Only update if new private key provided
+            if private_key:
                 instance.store_efris_private_key = private_key
 
-        # Update other fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
         instance.save()
         return instance
 
+
+# ---------------------------------------------------------------------------
+# StoreOperatingHours
+# ---------------------------------------------------------------------------
 
 class StoreOperatingHoursSerializer(TenantStoreSerializerMixin, serializers.ModelSerializer):
     store = serializers.PrimaryKeyRelatedField(queryset=Store.objects.all())
@@ -165,12 +196,27 @@ class StoreOperatingHoursSerializer(TenantStoreSerializerMixin, serializers.Mode
         fields = ['id', 'store', 'day', 'opening_time', 'closing_time', 'is_closed']
         read_only_fields = ['id']
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # FIX: scope the store queryset to the current tenant so a user
+        # cannot create operating hours for a store that belongs to a
+        # different company.
+        request = self.context.get('request')
+        if request and hasattr(request, 'tenant'):
+            self.fields['store'].queryset = Store.objects.filter(
+                company=request.tenant, is_active=True
+            )
+
     def validate_store(self, value):
         request = self.context.get('request')
         if request and hasattr(request, 'tenant') and value.company != request.tenant:
             raise serializers.ValidationError(_("Store must belong to your company."))
         return value
 
+
+# ---------------------------------------------------------------------------
+# StoreDevice
+# ---------------------------------------------------------------------------
 
 class StoreDeviceSerializer(TenantStoreSerializerMixin, serializers.ModelSerializer):
     store = serializers.PrimaryKeyRelatedField(queryset=Store.objects.all())
@@ -183,6 +229,16 @@ class StoreDeviceSerializer(TenantStoreSerializerMixin, serializers.ModelSeriali
             'last_maintenance', 'notes'
         ]
         read_only_fields = ['id', 'registered_at']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # FIX: scope the store queryset to the current tenant — same reason
+        # as StoreOperatingHoursSerializer above.
+        request = self.context.get('request')
+        if request and hasattr(request, 'tenant'):
+            self.fields['store'].queryset = Store.objects.filter(
+                company=request.tenant, is_active=True
+            )
 
     def validate_store(self, value):
         request = self.context.get('request')

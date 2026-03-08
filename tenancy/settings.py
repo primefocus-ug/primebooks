@@ -214,6 +214,7 @@ if IS_DESKTOP:
     DEFAULT_FROM_EMAIL = 'kondenationafrica@gmail.com'
     SUPPORT_EMAIL = 'primefocusug@gmail.com'
 
+
     # Site
     if IS_COMPILED:
         FRONTEND_URL = f'{PROTOCOL}://{BASE_DOMAIN}'
@@ -437,6 +438,7 @@ else:
             'OPTIONS': {
                 'connect_timeout': 10,
                 'sslmode': os.getenv('DB_SSLMODE', 'require'),
+                'application_name': 'primebooks_sales',  # visible in pg_stat_activity
             }
         }
     }
@@ -477,8 +479,10 @@ else:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     CSRF_TRUSTED_ORIGINS = [h.strip() for h in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if h.strip()]
 
-    # Static files
-    STATICFILES_STORAGE = 'whitenoise.storage.StaticFilesStorage'
+    # Static files — CompressedManifest adds content-hash fingerprinting so
+    # browsers can cache assets with immutable headers forever.
+    # Run `python manage.py collectstatic` after deploying.
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
     # Sessions
     SESSION_COOKIE_AGE = 1209600
@@ -492,6 +496,10 @@ else:
     # Celery
     CELERY_TASK_ALWAYS_EAGER = False
     CELERY_TASK_EAGER_PROPAGATES = False
+    # Reliability: only ack a task after it completes successfully;
+    # re-queue it if the worker process dies mid-execution.
+    CELERY_TASK_ACKS_LATE = True
+    CELERY_TASK_REJECT_ON_WORKER_LOST = True
 
     # REST Framework
     REST_FRAMEWORK_THROTTLE_RATES = {
@@ -509,12 +517,20 @@ else:
 
     # Cache settings
     CACHE_OPTIONS = {
+        'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        # hiredis C extension: 3-5x faster than pure-Python parser
+        # pip install hiredis
+        'PARSER_CLASS': 'redis.connection.HiredisParser',
         'SOCKET_CONNECT_TIMEOUT': 5,
         'SOCKET_TIMEOUT': 5,
         'CONNECTION_POOL_KWARGS': {
             'max_connections': 50,
-            'retry_on_timeout': True
-        }
+            'retry_on_timeout': True,
+        },
+        # Compress cache values > 1KB — reduces Redis memory usage
+        'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+        # Never crash the app if Redis is temporarily down
+        'IGNORE_EXCEPTIONS': True,
     }
     CACHE_BACKEND = 'django_redis.cache.RedisCache'
 
@@ -670,6 +686,7 @@ if not IS_DESKTOP:
         MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 
     MIDDLEWARE += [
+        'accounts.middleware.StrictSingleSessionMiddleware',
         'accounts.middleware.SaaSAdminAccessMiddleware',
         'accounts.middleware.HiddenUserMiddleware',
         'accounts.middleware.SaaSAdminContextMiddleware',
@@ -787,7 +804,13 @@ else:
         }
     }
 
-# Celery Configuration - Only for web mode
+SHARING_LOCK_THRESHOLD = 70           # score 0-100 that triggers auto-lock
+SHARING_IMPOSSIBLE_TRAVEL_SPEED = 800 # km/h (commercial flight)
+SHARING_FINGERPRINT_WINDOW_HOURS = 2  # rolling window for fingerprint check
+SHARING_FINGERPRINT_MAX_DISTINCT = 2  # max unique fingerprints before flag
+SHARING_CONCURRENT_WINDOW_SECONDS = 30
+
+#Celery Configuration - Only for web mode
 if not IS_DESKTOP and REDIS_URL:
     CELERY_BROKER_URL        = f'{REDIS_URL}/0'
     CELERY_RESULT_BACKEND    = f'{REDIS_URL}/2'   # ✅ FIX: separate DB from broker (/0) and cache (/1)
@@ -1060,3 +1083,53 @@ SIMPLE_JWT = {
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 DEFAULT_FILE_STORAGE = 'django_tenants.files.storage.TenantFileSystemStorage'
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+# LOG_LEVEL / CONSOLE_LOG_LEVEL are set in each mode block above.
+# This dict is intentionally defined once here so it picks up those values.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        },
+        'json': {
+            # Requires python-json-logger: pip install python-json-logger
+            '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+            'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+            'level': locals().get('CONSOLE_LOG_LEVEL', 'WARNING'),
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': locals().get('LOG_LEVEL', 'WARNING'),
+    },
+    'loggers': {
+        # Suppress per-query SQL logs — very noisy and slow at scale
+        'django.db.backends': {
+            'level': 'ERROR',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+        # Keep sales/EFRIS at INFO so fiscalization events remain visible
+        'sales': {
+            'level': 'INFO',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+        'efris': {
+            'level': 'INFO',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+    },
+}

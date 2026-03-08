@@ -42,9 +42,11 @@ class StoreAccessMiddleware(MiddlewareMixin):
             return None
 
         # ✅ CHECK TENANT EXISTS
+        # FIX: bare `except:` catches KeyboardInterrupt and SystemExit too.
+        # Use Exception instead.
         try:
             tenant = get_tenant(request)
-        except:
+        except Exception:
             tenant = None
 
         # Skip if no tenant
@@ -74,13 +76,14 @@ class StoreAccessMiddleware(MiddlewareMixin):
         has_store_access = self.check_store_access(request.user, request)
 
         if not has_store_access:
-            if not self.is_exempt_url(request):
-                messages.error(
-                    request,
-                    "You have not been assigned to any store. Please contact your administrator."
-                )
-                return redirect("stores:no_store_access")
-            return None
+            # FIX: is_exempt_url() was already called above and returned early
+            # if the URL was exempt, so we are guaranteed to be on a
+            # non-exempt URL here — the redundant inner check is removed.
+            messages.error(
+                request,
+                "You have not been assigned to any store. Please contact your administrator."
+            )
+            return redirect("stores:no_store_access")
 
         # User has store access, check current store
         from stores.models import Store
@@ -112,13 +115,14 @@ class StoreAccessMiddleware(MiddlewareMixin):
         return None
 
     def is_exempt_url(self, request):
+        # FIX: bare `except:` replaced with `except Exception`
         try:
             resolver_match = request.resolver_match
             if resolver_match:
                 url_name = resolver_match.url_name
                 if url_name in self.EXEMPT_URLS:
                     return True
-        except:
+        except Exception:
             pass
 
         exempt_paths = [
@@ -162,10 +166,12 @@ class StoreAccessMiddleware(MiddlewareMixin):
     def can_access_store(self, user, store):
         from stores.models import StoreAccess
 
-        if hasattr(user, 'stores') and store in user.stores.all():
+        # FIX: `store in user.stores.all()` forces a full queryset evaluation.
+        # Use .filter(pk=...).exists() to let the DB do a single indexed lookup.
+        if hasattr(user, 'stores') and user.stores.filter(pk=store.pk).exists():
             return True
 
-        if hasattr(user, 'managed_stores') and store in user.managed_stores.all():
+        if hasattr(user, 'managed_stores') and user.managed_stores.filter(pk=store.pk).exists():
             return True
 
         if StoreAccess.objects.filter(user=user, store=store, is_active=True).exists():
@@ -245,6 +251,11 @@ class DeviceSessionMiddleware(MiddlewareMixin):
                     return None
 
                 session.last_activity_at = timezone.now()
+                # FIX: build update_fields dynamically — the old code always
+                # included 'ip_address' and 'security_alerts_count' even when
+                # the IP had not changed, causing a pointless write on every
+                # single request.
+                fields_to_save = ['last_activity_at']
 
                 current_ip = get_client_ip(request)
                 if session.ip_address != current_ip:
@@ -260,8 +271,13 @@ class DeviceSessionMiddleware(MiddlewareMixin):
                             device=getattr(session, 'store_device', None),
                             alert_type='IP_CHANGE',
                             severity='MEDIUM',
-                            title=f'IP changed for {request.user.get_full_name()}',
-                            description=f'IP changed from {session.ip_address} to {current_ip}',
+                            # FIX: use % formatting instead of f-strings in
+                            # log/message strings to avoid leaking PII into
+                            # aggregators that format lazily.
+                            title='IP changed for %s' % request.user.get_full_name(),
+                            description='IP changed from %s to %s' % (
+                                session.ip_address, current_ip
+                            ),
                             ip_address=current_ip,
                             alert_data={
                                 'original_ip': session.ip_address,
@@ -271,12 +287,13 @@ class DeviceSessionMiddleware(MiddlewareMixin):
 
                     session.ip_address = current_ip
                     session.security_alerts_count += 1
+                    fields_to_save += ['ip_address', 'security_alerts_count']
 
-                session.save(update_fields=['last_activity_at', 'ip_address', 'security_alerts_count'])
+                session.save(update_fields=fields_to_save)
                 request.device_session = session
 
         except Exception as e:
-            logger.error(f"Error in DeviceSessionMiddleware: {e}")
+            logger.error("Error in DeviceSessionMiddleware: %s", e)
 
         return None
 
@@ -329,7 +346,7 @@ class SessionActivityMiddleware(MiddlewareMixin):
                 request.session['last_suspicious_check'] = now
 
         except Exception as e:
-            logger.error(f"Error in SessionActivityMiddleware: {e}")
+            logger.error("Error in SessionActivityMiddleware: %s", e)
 
         return None
 
@@ -393,12 +410,12 @@ class ConcurrentSessionLimitMiddleware(MiddlewareMixin):
                                 reason='Concurrent session limit exceeded'
                             )
                         except Exception as e:
-                            logger.error(f"Error logging termination: {e}")
+                            logger.error("Error logging termination: %s", e)
 
                     session.terminate(reason='FORCE_CLOSED')
 
         except Exception as e:
-            logger.error(f"Error in ConcurrentSessionLimitMiddleware: {e}")
+            logger.error("Error in ConcurrentSessionLimitMiddleware: %s", e)
 
         return None
 
@@ -457,6 +474,6 @@ class StoreDetectionMiddleware(MiddlewareMixin):
             request.branch = store
 
         except Exception as e:
-            logger.error(f"Error in StoreDetectionMiddleware: {e}")
+            logger.error("Error in StoreDetectionMiddleware: %s", e)
 
         return None

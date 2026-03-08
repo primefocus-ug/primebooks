@@ -1,0 +1,1090 @@
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Tracking Report" %} | {{ company.trading_name|default:company.name }}{% endblock %}
+{% block meta_description %}{% trans "PrimeBooks detailed tracking and reporting dashboard" %}{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item">
+        <a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a>
+    </li>
+    <li class="breadcrumb-item active text-white">{% trans "Tracking Report" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="tr-page-header">
+    <div class="tr-page-title">
+        <span class="tr-page-icon"><i class="bi bi-bar-chart-line-fill"></i></span>
+        <div>
+            <h1>{% trans "Tracking Report" %}</h1>
+            <p>{% trans "Select a type, set your date range and generate a detailed report with charts." %}</p>
+        </div>
+    </div>
+    <div class="tr-page-actions">
+        <button class="tr-btn tr-btn-ghost" onclick="clearReport()" id="clear-btn" style="display:none">
+            <i class="bi bi-x-circle"></i> {% trans "Clear" %}
+        </button>
+        <button class="tr-btn tr-btn-outline" onclick="generatePDF()" id="pdf-btn" style="display:none">
+            <i class="bi bi-file-earmark-pdf"></i> {% trans "Export PDF" %}
+        </button>
+        <button class="tr-btn tr-btn-primary" onclick="loadReport()" id="run-btn">
+            <i class="bi bi-play-circle-fill"></i> {% trans "Generate Report" %}
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   TRACKER REPORT — all colors reference base.html CSS variables.
+   Light values come from :root in base.html.
+   Dark overrides come from [data-theme="dark"] in base.html.
+   We never hardcode a color — only var() references throughout.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Tracker-specific token layer (theme-aware) ── */
+:root {
+    --tr-rust:       #c94f2a;
+    --tr-rust-dim:   rgba(201,79,42,.1);
+    --tr-teal:       #2a7a6f;
+    --tr-teal-dim:   rgba(42,122,111,.1);
+    --tr-gold:       #d4943a;
+    --tr-gold-dim:   rgba(212,148,58,.1);
+    --tr-purple:     #5e4ba3;
+    --tr-purple-dim: rgba(94,75,163,.1);
+    --tr-blue:       #2563c4;
+    --tr-success:    #2d7a4f;
+    --tr-danger:     #b83232;
+    --tr-warn:       #c97c1a;
+
+    /* Semantic surfaces — delegate to base.html tokens */
+    --tr-card:     var(--bg-primary);
+    --tr-sidebar:  var(--bg-secondary);
+    --tr-head:     var(--bg-tertiary);
+    --tr-border:   var(--border-color);
+    --tr-text:     var(--text-primary);
+    --tr-muted:    var(--text-muted, var(--gray-500));
+    --tr-sub:      var(--text-secondary);
+
+    --tr-radius:    10px;
+    --tr-radius-sm: 6px;
+    --tr-shadow:    var(--shadow-sm);
+    --tr-shadow-md: var(--shadow-md);
+    --tr-font-head: 'Syne', sans-serif;
+    --tr-font-mono: 'DM Mono', monospace;
+}
+
+/* Dark-mode intensity boosts (dims become more visible on dark bg) */
+[data-theme="dark"] {
+    --tr-rust-dim:   rgba(201,79,42,.22);
+    --tr-teal-dim:   rgba(42,122,111,.22);
+    --tr-gold-dim:   rgba(212,148,58,.22);
+    --tr-purple-dim: rgba(94,75,163,.22);
+}
+
+/* ─────────────────────────────
+   PAGE HEADER
+   ───────────────────────────── */
+.tr-page-header {
+    display: flex; align-items: center;
+    justify-content: space-between; flex-wrap: wrap;
+    gap: 14px; padding-bottom: 20px;
+    border-bottom: 2px solid var(--tr-border);
+    margin-bottom: 22px;
+}
+.tr-page-title { display: flex; align-items: center; gap: 14px; }
+.tr-page-icon  {
+    width: 44px; height: 44px; border-radius: var(--tr-radius-sm);
+    background: var(--tr-rust-dim); color: var(--tr-rust);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+}
+.tr-page-title h1 {
+    font-family: var(--tr-font-head);
+    font-size: 20px; font-weight: 800;
+    color: var(--tr-text); margin: 0; line-height: 1.2;
+}
+.tr-page-title p { font-size: 13px; color: var(--tr-muted); margin: 2px 0 0; }
+.tr-page-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* ─────────────────────────────
+   BUTTONS
+   ───────────────────────────── */
+.tr-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: var(--tr-radius-sm);
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    border: none; transition: all .15s; white-space: nowrap;
+    font-family: inherit;
+}
+.tr-btn-primary         { background: var(--tr-rust);  color: #fff; }
+.tr-btn-primary:hover   { background: #b0401f; }
+.tr-btn-outline         { background: transparent; color: var(--tr-text); border: 1px solid var(--tr-border); }
+.tr-btn-outline:hover   { background: var(--tr-head); }
+.tr-btn-ghost           { background: transparent; color: var(--tr-muted); border: 1px solid var(--tr-border); }
+.tr-btn-ghost:hover     { background: var(--tr-head); color: var(--tr-text); }
+.tr-btn-teal            { background: var(--tr-teal);  color: #fff; }
+.tr-btn-teal:hover      { background: #226058; }
+.tr-btn-full            { width: 100%; justify-content: center; }
+
+/* ─────────────────────────────
+   LAYOUT
+   ───────────────────────────── */
+.tr-layout {
+    display: grid;
+    grid-template-columns: 284px 1fr;
+    gap: 20px;
+    align-items: start;
+}
+@media (max-width: 920px) { .tr-layout { grid-template-columns: 1fr; } }
+
+/* ─────────────────────────────
+   SIDEBAR
+   ───────────────────────────── */
+.tr-sidebar {
+    background: var(--tr-card);
+    border: 1px solid var(--tr-border);
+    border-radius: var(--tr-radius);
+    box-shadow: var(--tr-shadow);
+    padding: 18px 15px;
+    display: flex; flex-direction: column; gap: 18px;
+    position: sticky;
+    top: calc(var(--header-height, 70px) + 16px);
+    max-height: calc(100vh - var(--header-height, 70px) - 48px);
+    overflow-y: auto;
+}
+.tr-sidebar::-webkit-scrollbar { width: 4px; }
+.tr-sidebar::-webkit-scrollbar-thumb { background: var(--tr-border); border-radius: 4px; }
+
+.tr-label-major {
+    font-family: var(--tr-font-head);
+    font-size: 12px; font-weight: 700;
+    color: var(--tr-text);
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px;
+}
+.tr-label-major::before {
+    content:''; width:3px; height:13px;
+    background: var(--tr-rust); border-radius: 2px;
+}
+.tr-label {
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .7px;
+    color: var(--tr-muted); margin-bottom: 5px;
+}
+.tr-divider { border: none; border-top: 1px solid var(--tr-border); margin: 0; }
+
+/* Inputs */
+.tr-input {
+    width: 100%; padding: 8px 10px;
+    border: 1px solid var(--tr-border);
+    border-radius: var(--tr-radius-sm);
+    background: var(--tr-card);
+    color: var(--tr-text);
+    font-size: 13px; font-family: inherit;
+    outline: none; transition: border-color .15s;
+    appearance: none;
+}
+.tr-input:focus { border-color: var(--tr-rust); }
+textarea.tr-input { min-height: 70px; resize: vertical; }
+
+/* Quick date buttons */
+.tr-quick-dates { display: flex; gap: 4px; flex-wrap: wrap; }
+.tr-qd {
+    padding: 4px 9px; border-radius: 4px;
+    border: 1px solid var(--tr-border);
+    background: var(--tr-card); color: var(--tr-sub);
+    font-size: 11px; font-weight: 500;
+    cursor: pointer; transition: all .15s; font-family: inherit;
+}
+.tr-qd:hover, .tr-qd.active { background: var(--tr-rust); color: #fff; border-color: var(--tr-rust); }
+
+/* Radio / checkbox items */
+.tr-check-list { display: flex; flex-direction: column; gap: 4px; }
+.tr-check-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; cursor: pointer;
+    padding: 6px 10px; border-radius: var(--tr-radius-sm);
+    border: 1px solid var(--tr-border);
+    background: var(--tr-card); color: var(--tr-text);
+    transition: all .15s; user-select: none;
+}
+.tr-check-item:hover  { border-color: var(--tr-rust); background: var(--tr-rust-dim); }
+.tr-check-item.active {
+    background: var(--tr-rust-dim);
+    border-color: var(--tr-rust);
+    color: var(--tr-rust); font-weight: 500;
+}
+[data-theme="dark"] .tr-check-item.active { color: #f4855f; }
+.tr-check-item input { accent-color: var(--tr-rust); width: 14px; height: 14px; flex-shrink: 0; }
+
+/* ─────────────────────────────
+   REPORT AREA
+   ───────────────────────────── */
+.tr-report-area { display: flex; flex-direction: column; gap: 16px; min-height: 320px; }
+
+/* Empty / loading */
+.tr-empty, .tr-loading {
+    text-align: center; padding: 80px 20px;
+    background: var(--tr-card);
+    border: 1px solid var(--tr-border);
+    border-radius: var(--tr-radius);
+    color: var(--tr-muted);
+}
+.tr-empty-icon  { font-size: 50px; opacity: .3; margin-bottom: 14px; }
+.tr-empty-title { font-family: var(--tr-font-head); font-size: 18px; font-weight: 700; color: var(--tr-sub); margin-bottom: 6px; }
+.tr-empty-sub   { font-size: 13px; }
+
+/* ─────────────────────────────
+   ENTITY HEADER CARD
+   ───────────────────────────── */
+.tr-entity-header {
+    background: var(--tr-card);
+    border: 1px solid var(--tr-border);
+    border-radius: var(--tr-radius);
+    padding: 20px 24px;
+    display: flex; align-items: flex-start;
+    justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    box-shadow: var(--tr-shadow);
+}
+.tr-entity-id   { font-family: var(--tr-font-mono); font-size: 11px; color: var(--tr-muted); margin-bottom: 4px; }
+.tr-entity-name { font-family: var(--tr-font-head); font-size: 22px; font-weight: 800; color: var(--tr-text); line-height: 1.1; }
+.tr-entity-sub  { font-size: 13px; color: var(--tr-muted); margin-top: 4px; }
+.tr-badge-row   { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+
+/* ─────────────────────────────
+   BADGES
+   ───────────────────────────── */
+.tr-badge {
+    display: inline-flex; align-items: center;
+    padding: 2px 9px; border-radius: 20px;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .4px;
+}
+.tr-badge-green  { background: var(--tr-teal-dim);           color: var(--tr-success); }
+.tr-badge-red    { background: rgba(184,50,50,.12);           color: var(--tr-danger); }
+.tr-badge-yellow { background: var(--tr-gold-dim);           color: var(--tr-warn); }
+.tr-badge-blue   { background: rgba(37,99,196,.1);           color: var(--tr-blue); }
+.tr-badge-purple { background: var(--tr-purple-dim);         color: var(--tr-purple); }
+.tr-badge-teal   { background: var(--tr-teal-dim);           color: var(--tr-teal); }
+.tr-badge-dim    { background: var(--tr-head);               color: var(--tr-muted); }
+[data-theme="dark"] .tr-badge-red    { background: rgba(184,50,50,.28); }
+[data-theme="dark"] .tr-badge-blue   { background: rgba(37,99,196,.22); }
+[data-theme="dark"] .tr-badge-purple { background: rgba(94,75,163,.28); }
+
+/* ─────────────────────────────
+   STAT CARDS
+   ───────────────────────────── */
+.tr-stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+    gap: 13px;
+}
+.tr-stat-card {
+    background: var(--tr-card);
+    border: 1px solid var(--tr-border);
+    border-radius: var(--tr-radius);
+    padding: 15px 17px;
+    box-shadow: var(--tr-shadow);
+    position: relative; overflow: hidden;
+}
+.tr-stat-card::before {
+    content: ''; position: absolute;
+    top: 0; left: 0; right: 0; height: 3px;
+    background: var(--tr-accent, var(--tr-rust));
+}
+.tr-stat-label {
+    font-size: 11px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: .6px;
+    color: var(--tr-muted); margin-bottom: 5px;
+}
+.tr-stat-value {
+    font-family: var(--tr-font-head);
+    font-size: 20px; font-weight: 700; line-height: 1.15;
+    color: var(--tr-stat-color, var(--tr-text));
+}
+
+/* ─────────────────────────────
+   CHARTS
+   ───────────────────────────── */
+.tr-charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 14px;
+}
+.tr-chart-wrap {
+    background: var(--tr-card);
+    border: 1px solid var(--tr-border);
+    border-radius: var(--tr-radius);
+    padding: 17px 17px 13px;
+    box-shadow: var(--tr-shadow);
+}
+.tr-chart-title {
+    font-family: var(--tr-font-head);
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .5px;
+    color: var(--tr-sub); margin-bottom: 12px;
+    display: flex; align-items: center; gap: 6px;
+}
+.tr-chart-canvas { position: relative; height: 245px; }
+
+/* ─────────────────────────────
+   SECTION CARDS
+   ───────────────────────────── */
+.tr-section-card {
+    background: var(--tr-card);
+    border: 1px solid var(--tr-border);
+    border-radius: var(--tr-radius);
+    box-shadow: var(--tr-shadow);
+    overflow: hidden;
+}
+.tr-section-head {
+    padding: 13px 17px;
+    border-bottom: 1px solid var(--tr-border);
+    background: var(--tr-head);
+    display: flex; align-items: center; justify-content: space-between;
+}
+.tr-section-title {
+    font-family: var(--tr-font-head);
+    font-size: 13px; font-weight: 700;
+    color: var(--tr-text);
+    display: flex; align-items: center; gap: 8px;
+}
+.tr-section-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--tr-rust); flex-shrink: 0;
+}
+.tr-section-body { padding: 16px; overflow-x: auto; }
+
+/* ─────────────────────────────
+   TABLE
+   ───────────────────────────── */
+.tr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tr-table th {
+    background: var(--tr-head);
+    padding: 9px 12px; text-align: left;
+    font-family: var(--tr-font-head);
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .5px;
+    color: var(--tr-sub);
+    border-bottom: 2px solid var(--tr-border);
+    white-space: nowrap;
+}
+.tr-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--tr-border);
+    color: var(--tr-text); vertical-align: middle;
+}
+.tr-table tr:last-child td { border-bottom: none; }
+.tr-table tbody tr:hover td { background: var(--tr-head); }
+.tr-table td:last-child { font-weight: 600; color: var(--tr-teal); }
+[data-theme="dark"] .tr-table td:last-child { color: #4ecda0; }
+
+/* ─────────────────────────────
+   TIMELINE
+   ───────────────────────────── */
+.tr-timeline { display: flex; flex-direction: column; }
+.tr-tl-item {
+    display: flex; gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--tr-border);
+}
+.tr-tl-item:last-child { border-bottom: none; }
+.tr-tl-dot {
+    width: 27px; height: 27px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; flex-shrink: 0; margin-top: 2px;
+}
+.tr-tl-dot.success { background: var(--tr-teal-dim);           color: var(--tr-success); }
+.tr-tl-dot.error   { background: rgba(184,50,50,.12);           color: var(--tr-danger); }
+.tr-tl-dot.warning { background: var(--tr-gold-dim);            color: var(--tr-warn); }
+.tr-tl-dot.info    { background: rgba(59,130,246,.1);           color: var(--tr-blue); }
+.tr-tl-dot.purple  { background: var(--tr-purple-dim);          color: var(--tr-purple); }
+[data-theme="dark"] .tr-tl-dot.error { background: rgba(184,50,50,.28); }
+.tr-tl-body  { flex: 1; min-width: 0; }
+.tr-tl-label { font-weight: 500; font-size: 13px; color: var(--tr-text); }
+.tr-tl-meta  { font-size: 11px; color: var(--tr-muted); margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
+.tr-tl-note  { font-size: 12px; color: var(--tr-sub); margin-top: 4px; font-style: italic; }
+.tr-tl-diff  {
+    display: inline-flex; gap: 6px; align-items: center;
+    font-size: 11px; font-family: var(--tr-font-mono);
+    margin-top: 4px; background: var(--tr-head);
+    padding: 2px 8px; border-radius: 4px; color: var(--tr-text);
+}
+.tr-tl-diff .from { color: var(--tr-danger); text-decoration: line-through; }
+.tr-tl-diff .to   { color: var(--tr-success); }
+
+/* ─────────────────────────────
+   KEY-VALUE GRID
+   ───────────────────────────── */
+.tr-kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(188px,1fr)); gap: 10px; }
+.tr-kv-item {
+    background: var(--tr-head);
+    border: 1px solid var(--tr-border);
+    border-radius: var(--tr-radius-sm);
+    padding: 10px 13px;
+}
+.tr-kv-label { font-size: 11px; color: var(--tr-muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 500; margin-bottom: 3px; }
+.tr-kv-value { font-weight: 600; font-size: 14px; color: var(--tr-text); font-family: var(--tr-font-mono); }
+
+/* ─────────────────────────────
+   NOTE BOX
+   ───────────────────────────── */
+.tr-note-box {
+    background: var(--tr-gold-dim);
+    border: 1px solid rgba(212,148,58,.3);
+    border-left: 4px solid var(--tr-gold);
+    border-radius: var(--tr-radius-sm);
+    padding: 12px 16px; font-size: 13px; color: var(--tr-text);
+    display: flex; gap: 10px; align-items: flex-start;
+}
+.tr-note-icon { font-size: 16px; flex-shrink: 0; color: var(--tr-gold); }
+
+/* ─────────────────────────────
+   SPINNER / ANIMATIONS
+   ───────────────────────────── */
+.tr-spinner {
+    display: inline-block; width: 18px; height: 18px;
+    border: 2px solid var(--tr-border);
+    border-top-color: var(--tr-rust);
+    border-radius: 50%;
+    animation: tr-spin .6s linear infinite;
+}
+@keyframes tr-spin { to { transform: rotate(360deg); } }
+@keyframes tr-fadein { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+.tr-fade { animation: tr-fadein .3s ease forwards; }
+
+/* ─────────────────────────────
+   PRINT
+   ───────────────────────────── */
+@media print {
+    .tr-sidebar, .tr-page-actions { display: none !important; }
+    .tr-layout { grid-template-columns: 1fr !important; }
+    .tr-chart-canvas { height: 200px !important; }
+    .tr-section-card { break-inside: avoid; }
+}
+</style>
+{% endblock %}
+
+
+{% block content %}
+<div class="tr-layout">
+
+    <!-- ═══════════════════════════
+         SIDEBAR — filters
+         ═══════════════════════════ -->
+    <aside class="tr-sidebar">
+
+        <div>
+            <div class="tr-label-major">{% trans "Track Type" %}</div>
+            <div class="tr-check-list" id="tr-type-list">
+                <label class="tr-check-item active" data-type="sale">
+                    <input type="radio" name="tr-type" value="sale" checked>
+                    <i class="bi bi-cart3"></i> {% trans "Sales" %}
+                </label>
+                <label class="tr-check-item" data-type="product">
+                    <input type="radio" name="tr-type" value="product">
+                    <i class="bi bi-box-seam"></i> {% trans "Products" %}
+                </label>
+                <label class="tr-check-item" data-type="customer">
+                    <input type="radio" name="tr-type" value="customer">
+                    <i class="bi bi-people"></i> {% trans "Customers" %}
+                </label>
+                <label class="tr-check-item" data-type="expense">
+                    <input type="radio" name="tr-type" value="expense">
+                    <i class="bi bi-wallet2"></i> {% trans "Expenses" %}
+                </label>
+                <label class="tr-check-item" data-type="budget">
+                    <input type="radio" name="tr-type" value="budget">
+                    <i class="bi bi-pie-chart"></i> {% trans "Budgets" %}
+                </label>
+                <label class="tr-check-item" data-type="user">
+                    <input type="radio" name="tr-type" value="user">
+                    <i class="bi bi-shield-lock"></i> {% trans "Users" %}
+                </label>
+            </div>
+        </div>
+
+        <hr class="tr-divider">
+
+        <div>
+            <div class="tr-label-major">{% trans "Date Range" %}</div>
+            <div class="tr-quick-dates" style="margin-bottom:10px">
+                <button class="tr-qd" onclick="setQuickDate('today',this)">{% trans "Today" %}</button>
+                <button class="tr-qd" onclick="setQuickDate('7d',this)">7D</button>
+                <button class="tr-qd active" onclick="setQuickDate('30d',this)">30D</button>
+                <button class="tr-qd" onclick="setQuickDate('3m',this)">3M</button>
+                <button class="tr-qd" onclick="setQuickDate('ytd',this)">{% trans "YTD" %}</button>
+            </div>
+            <div class="tr-label" style="margin-bottom:4px">{% trans "From" %}</div>
+            <input type="date" class="tr-input" id="tr-date-from" style="margin-bottom:10px">
+            <div class="tr-label" style="margin-bottom:4px">{% trans "To" %}</div>
+            <input type="date" class="tr-input" id="tr-date-to">
+        </div>
+
+        <hr class="tr-divider">
+
+        <div>
+            <div class="tr-label-major">{% trans "Sections" %}</div>
+            <div class="tr-check-list" id="tr-sections-list">
+                <!-- populated by JS based on selected type -->
+            </div>
+        </div>
+
+        <hr class="tr-divider">
+
+        <div>
+            <div class="tr-label-major">{% trans "Charts" %}</div>
+            <div class="tr-check-list" id="tr-chart-list">
+                <label class="tr-check-item active">
+                    <input type="checkbox" name="tr-chart" value="bar3d" checked>
+                    <i class="bi bi-bar-chart-fill"></i> {% trans "3D Bar" %}
+                </label>
+                <label class="tr-check-item active">
+                    <input type="checkbox" name="tr-chart" value="pie" checked>
+                    <i class="bi bi-pie-chart-fill"></i> {% trans "Pie" %}
+                </label>
+                <label class="tr-check-item active">
+                    <input type="checkbox" name="tr-chart" value="line" checked>
+                    <i class="bi bi-graph-up"></i> {% trans "Line" %}
+                </label>
+                <label class="tr-check-item">
+                    <input type="checkbox" name="tr-chart" value="doughnut">
+                    <i class="bi bi-record-circle"></i> {% trans "Doughnut" %}
+                </label>
+            </div>
+        </div>
+
+        <hr class="tr-divider">
+
+        <div>
+            <div class="tr-label-major">{% trans "Notes" %}</div>
+            <textarea class="tr-input" id="tr-notes"
+                      placeholder="{% trans 'Add notes for this report…' %}"></textarea>
+        </div>
+
+        <button class="tr-btn tr-btn-primary tr-btn-full" onclick="loadReport()">
+            <i class="bi bi-play-circle-fill"></i> {% trans "Generate" %}
+        </button>
+
+    </aside>
+
+    <!-- ═══════════════════════════
+         MAIN REPORT AREA
+         ═══════════════════════════ -->
+    <div class="tr-report-area" id="tr-report-area">
+        <div class="tr-empty tr-fade">
+            <div class="tr-empty-icon"><i class="bi bi-bar-chart-line"></i></div>
+            <div class="tr-empty-title">{% trans "No report yet" %}</div>
+            <div class="tr-empty-sub">
+                {% trans "Choose a type and date range, then click" %}
+                <strong>{% trans "Generate Report" %}</strong>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<!-- Chart.js, jsPDF, html2canvas -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   TRACKER REPORT JS
+   Calls: GET /api/report/?type=…&date_from=…&date_to=…[&sections=…]
+   Backed by: general_tracker.py → GeneralTrackerView
+   ═══════════════════════════════════════════════════════════════════ */
+
+const TR_API = '{% url "general-report" %}';
+
+/* ── Read live CSS variable (always current theme) ── */
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* ── Color palette (calls css() at render time so dark/light is correct) ── */
+const palette = () => [
+    css('--tr-rust'), css('--tr-teal'), css('--tr-gold'),
+    css('--tr-purple'), css('--tr-blue'),
+    '#8a95a3', '#c97c1a', '#b83276',
+];
+
+function hexAlpha(hex, a) {
+    if (!hex || hex[0] !== '#') return hex;
+    const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+    return `rgba(${r},${g},${b},${a})`;
+}
+
+/* ── Chart theme (grid/tick colors for current theme) ── */
+const chartTheme = () => {
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    return {
+        grid:   dark ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.06)',
+        tick:   dark ? '#9ca3af'                : '#6b7280',
+        legend: dark ? '#d1d5db'                : '#374151',
+    };
+};
+
+/* ── Chart instance registry ── */
+const TR_CHARTS = {};
+const destroyChart = id => { if (TR_CHARTS[id]) { TR_CHARTS[id].destroy(); delete TR_CHARTS[id]; } };
+
+/* ── Utility helpers ── */
+const fmtDate = d => new Date(d).toLocaleDateString('en-UG', {day:'2-digit',month:'short',year:'numeric'});
+const getType     = () => document.querySelector('input[name="tr-type"]:checked')?.value || 'sale';
+const getCharts   = () => [...document.querySelectorAll('input[name="tr-chart"]:checked')].map(x=>x.value);
+const getSections = () => [...document.querySelectorAll('#tr-sections-list input:checked')].map(x=>x.value).join(',');
+const getDates    = () => ({
+    from: document.getElementById('tr-date-from').value,
+    to:   document.getElementById('tr-date-to').value,
+});
+
+/* ══════════════════════════════════
+   SECTION DEFINITIONS
+   ids must match SECTION_KEYS in general_tracker.py
+   ══════════════════════════════════ */
+const SECTION_DEFS = {
+    sale:     [{id:'summary',l:'Summary'},{id:'top_products',l:'Top Products'},
+               {id:'top_customers',l:'Top Customers'},{id:'payments',l:'Payments'},
+               {id:'recent_sales',l:'Recent Sales'},{id:'audit',l:'Audit Log'}],
+    product:  [{id:'summary',l:'Summary'},{id:'inventory',l:'Inventory'},
+               {id:'low_stock',l:'Low Stock'},{id:'movements',l:'Movements'},
+               {id:'stock_by_category',l:'By Category'},{id:'audit',l:'Audit Log'}],
+    customer: [{id:'summary',l:'Summary'},{id:'customer_list',l:'Customer List'},
+               {id:'new_customers',l:'New Customers'},{id:'credit_summary',l:'Credit'},
+               {id:'sales_by_customer',l:'Sales by Customer'},{id:'audit',l:'Audit Log'}],
+    expense:  [{id:'summary',l:'Summary'},{id:'expense_list',l:'Expense List'},
+               {id:'by_vendor',l:'By Vendor'},{id:'approvals',l:'Approvals'},
+               {id:'audit',l:'Audit Log'}],
+    budget:   [{id:'summary',l:'Summary'},{id:'budget_list',l:'Budget List'},
+               {id:'budget_vs_actual',l:'Detail Cards'},{id:'expense_breakdown',l:'Expenses'}],
+    user:     [{id:'summary',l:'Summary'},{id:'user_list',l:'User List'},
+               {id:'login_activity',l:'Login History'},{id:'login_failures',l:'Failures'},
+               {id:'role_changes',l:'Role Changes'},{id:'audit',l:'Audit Log'}],
+};
+
+function populateSections(type) {
+    const defs = SECTION_DEFS[type] || [];
+    const el   = document.getElementById('tr-sections-list');
+    el.innerHTML = defs.map(s => `
+        <label class="tr-check-item active">
+            <input type="checkbox" name="tr-section" value="${s.id}" checked> ${s.l}
+        </label>`).join('');
+    el.querySelectorAll('.tr-check-item').forEach(addToggle);
+}
+
+function addToggle(el) {
+    el.addEventListener('click', e => {
+        if (e.target.tagName === 'INPUT') return;
+        const cb = el.querySelector('input'); cb.checked = !cb.checked;
+        el.classList.toggle('active', cb.checked);
+    });
+    el.querySelector('input').addEventListener('change', () =>
+        el.classList.toggle('active', el.querySelector('input').checked));
+}
+
+/* ── Type selector ── */
+document.querySelectorAll('#tr-type-list .tr-check-item').forEach(el => {
+    el.addEventListener('click', () => {
+        document.querySelectorAll('#tr-type-list .tr-check-item').forEach(x => x.classList.remove('active'));
+        el.classList.add('active');
+        el.querySelector('input').checked = true;
+        populateSections(el.dataset.type);
+    });
+});
+
+/* ── Chart toggles ── */
+document.querySelectorAll('#tr-chart-list .tr-check-item').forEach(addToggle);
+
+/* ── Quick dates ── */
+function setQuickDate(p, btn) {
+    const now = new Date(), from = new Date();
+    if      (p==='7d')  from.setDate(now.getDate()-7);
+    else if (p==='30d') from.setDate(now.getDate()-30);
+    else if (p==='3m')  from.setMonth(now.getMonth()-3);
+    else if (p==='ytd') { from.setMonth(0); from.setDate(1); }
+    document.getElementById('tr-date-from').value = from.toISOString().slice(0,10);
+    document.getElementById('tr-date-to').value   = now.toISOString().slice(0,10);
+    document.querySelectorAll('.tr-qd').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+}
+
+/* ── Init on load ── */
+(function init() {
+    const now = new Date(), from = new Date();
+    from.setDate(now.getDate()-30);
+    document.getElementById('tr-date-from').value = from.toISOString().slice(0,10);
+    document.getElementById('tr-date-to').value   = now.toISOString().slice(0,10);
+    populateSections('sale');
+})();
+
+/* ══════════════════════════════════
+   LOAD REPORT  — fetch from API
+   ══════════════════════════════════ */
+async function loadReport() {
+    const type = getType(), {from, to} = getDates();
+    if (!from || !to) { alert('Please select a date range.'); return; }
+
+    const params = new URLSearchParams({type, date_from: from, date_to: to});
+    const secs = getSections();
+    if (secs) params.set('sections', secs);
+
+    Object.keys(TR_CHARTS).forEach(destroyChart);
+
+    const area = document.getElementById('tr-report-area');
+    area.innerHTML = `
+        <div class="tr-loading tr-fade">
+            <div class="tr-spinner" style="width:34px;height:34px;border-width:3px;margin:0 auto"></div>
+            <div style="margin-top:16px;font-size:13px;color:var(--tr-muted)">
+                <i class="bi bi-hourglass-split me-1"></i>Fetching report…
+            </div>
+        </div>`;
+
+    let data;
+    try {
+        const resp = await fetch(`${TR_API}?${params}`, {
+            headers:     {'X-Requested-With': 'XMLHttpRequest'},
+            credentials: 'same-origin',
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+        data = await resp.json();
+    } catch (e) {
+        area.innerHTML = `
+            <div class="tr-empty tr-fade">
+                <div class="tr-empty-icon"><i class="bi bi-exclamation-triangle" style="color:var(--tr-danger)"></i></div>
+                <div class="tr-empty-title">Failed to load report</div>
+                <div class="tr-empty-sub" style="color:var(--tr-danger)">${e.message}</div>
+            </div>`;
+        return;
+    }
+
+    renderReport(area, data, type, from, to);
+    document.getElementById('pdf-btn').style.display   = '';
+    document.getElementById('clear-btn').style.display = '';
+}
+
+/* ══════════════════════════════════
+   RENDER
+   ══════════════════════════════════ */
+
+const COLOR_CSS = {
+    green:'var(--tr-teal)',   blue:'var(--tr-blue)',  dim:'var(--tr-muted)',
+    yellow:'var(--tr-warn)',  red:'var(--tr-danger)', purple:'var(--tr-purple)',
+    teal:'var(--tr-teal)',
+};
+const BADGE_MAP = {
+    green:'tr-badge-green', blue:'tr-badge-blue', yellow:'tr-badge-yellow',
+    red:'tr-badge-red', purple:'tr-badge-purple', teal:'tr-badge-teal', dim:'tr-badge-dim',
+};
+
+function renderReport(area, data, type, from, to) {
+    const note = document.getElementById('tr-notes').value.trim();
+    const enabledCharts = getCharts();
+
+    const visCharts = (data.charts || []).filter(c => {
+        if (c.type==='bar3d'    && !enabledCharts.includes('bar3d'))    return false;
+        if (c.type==='pie'      && !enabledCharts.includes('pie'))      return false;
+        if (c.type==='line'     && !enabledCharts.includes('line'))     return false;
+        if (c.type==='doughnut' && !enabledCharts.includes('doughnut'))return false;
+        return true;
+    });
+
+    const bClass = BADGE_MAP[data.badge_color] || 'tr-badge-dim';
+
+    const headerHTML = `
+        <div class="tr-entity-header tr-fade">
+            <div>
+                <div class="tr-entity-id">
+                    <i class="bi bi-calendar3 me-1"></i>${fmtDate(from)} — ${fmtDate(to)}
+                </div>
+                <div class="tr-entity-name">${data.title}</div>
+                <div class="tr-entity-sub">
+                    <i class="bi bi-clock me-1"></i>Generated ${new Date().toLocaleString('en-UG')}
+                </div>
+                <div class="tr-badge-row">
+                    <span class="tr-badge ${bClass}">${data.badge || type}</span>
+                    <span class="tr-badge tr-badge-dim">${type.toUpperCase()}</span>
+                </div>
+            </div>
+        </div>`;
+
+    const noteHTML = note ? `
+        <div class="tr-note-box tr-fade">
+            <span class="tr-note-icon"><i class="bi bi-sticky-fill"></i></span>
+            <div><strong>Notes:</strong> ${note}</div>
+        </div>` : '';
+
+    const statsHTML = `
+        <div class="tr-stats-row tr-fade">
+            ${(data.stats||[]).map(s=>`
+                <div class="tr-stat-card"
+                     style="--tr-accent:${COLOR_CSS[s.color]||'var(--tr-rust)'}">
+                    <div class="tr-stat-label">${s.label}</div>
+                    <div class="tr-stat-value"
+                         style="color:${COLOR_CSS[s.color]||'var(--tr-text)'}">${s.value}</div>
+                </div>`).join('')}
+        </div>`;
+
+    const CHART_ICON = {bar3d:'bi-bar-chart-fill',pie:'bi-pie-chart-fill',line:'bi-graph-up',doughnut:'bi-record-circle'};
+    const chartsHTML = visCharts.length ? `
+        <div class="tr-charts-grid">
+            ${visCharts.map(c=>`
+                <div class="tr-chart-wrap tr-fade">
+                    <div class="tr-chart-title">
+                        <i class="bi ${CHART_ICON[c.type]||'bi-bar-chart'}"></i>${c.title}
+                    </div>
+                    <div class="tr-chart-canvas">
+                        <canvas id="trc_${c.id}"></canvas>
+                    </div>
+                </div>`).join('')}
+        </div>` : '';
+
+    const sectionsHTML = (data.sections||[]).map(renderSection).join('');
+
+    area.innerHTML = headerHTML + noteHTML + statsHTML + chartsHTML + sectionsHTML;
+
+    requestAnimationFrame(() => visCharts.forEach(initChart));
+}
+
+function renderSection(sec) {
+    let body = '';
+    if      (sec.type === 'table' || sec.type === 'lineitems') body = renderTable(sec);
+    else if (sec.type === 'timeline' || sec.type === 'audit')  body = renderTimeline(sec);
+    else if (sec.type === 'keyvalue')                          body = renderKV(sec);
+    return `
+        <div class="tr-section-card tr-fade">
+            <div class="tr-section-head">
+                <div class="tr-section-title">
+                    <span class="tr-section-dot"></span>${sec.title}
+                </div>
+            </div>
+            <div class="tr-section-body">${body}</div>
+        </div>`;
+}
+
+function renderTable(sec) {
+    const cols = sec.columns || [];
+    const rows = (sec.rows||[]).map(r =>
+        `<tr>${r.map(c=>`<td>${c??'—'}</td>`).join('')}</tr>`).join('');
+    return `
+        <table class="tr-table">
+            <thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
+            <tbody>${rows||`<tr><td colspan="${cols.length}" style="text-align:center;color:var(--tr-muted);padding:20px">No data</td></tr>`}</tbody>
+        </table>`;
+}
+
+const TAG_ICON = {
+    sale_completed:'✅',sale_voided:'❌',sale_created:'🛒',created:'🟢',
+    paid:'💳',efris:'🧾',login_success:'🔓',login_failed:'🔐',
+    approved:'✅',rejected:'❌',updated:'✏️',SALE:'📤',PURCHASE:'📥',
+    TRANSFER_IN:'↩️',TRANSFER_OUT:'↪️',STOCK_TAKE:'📋',RETURN:'🔁',
+    cancelled:'🚫',user_created:'👤',success:'✅',error:'❌',warning:'⚠️',info:'ℹ️',
+};
+const TAG_SEV = {
+    sale_completed:'success',sale_voided:'error',sale_created:'success',created:'success',
+    paid:'success',efris:'purple',login_success:'success',login_failed:'error',
+    approved:'success',rejected:'error',updated:'info',SALE:'info',PURCHASE:'success',
+    TRANSFER_IN:'success',TRANSFER_OUT:'info',STOCK_TAKE:'info',RETURN:'warning',
+    cancelled:'warning',user_created:'success',
+    success:'success',error:'error',warning:'warning',
+};
+
+function renderTimeline(sec) {
+    return `<div class="tr-timeline">${(sec.items||[]).map(it => {
+        const sev  = TAG_SEV[it.tag||it.severity] || 'info';
+        const icon = TAG_ICON[it.tag||it.severity] || '•';
+        const d    = it.date ? new Date(it.date) : null;
+        return `
+            <div class="tr-tl-item">
+                <div class="tr-tl-dot ${sev}">${icon}</div>
+                <div class="tr-tl-body">
+                    <div class="tr-tl-label">
+                        ${it.label||it.description||''}
+                        ${it.qty?`<span style="font-family:var(--tr-font-mono);font-weight:600;color:var(--tr-sub);margin-left:6px">${it.qty}</span>`:''}
+                    </div>
+                    <div class="tr-tl-meta">
+                        ${it.user ?`<span><i class="bi bi-person me-1"></i>${it.user}</span>`:''}
+                        ${d       ?`<span><i class="bi bi-clock me-1"></i>${fmtDate(d)}</span>`:''}
+                        ${it.sub  ?`<span><i class="bi bi-link-45deg me-1"></i>${it.sub}</span>`:''}
+                        ${it.running?`<span>Running: ${it.running}</span>`:''}
+                    </div>
+                    ${it.note?`<div class="tr-tl-note">${it.note}</div>`:''}
+                    ${it.diff?`<div class="tr-tl-diff"><span class="from">${it.diff.from}</span>→<span class="to">${it.diff.to}</span></div>`:''}
+                </div>
+            </div>`;
+    }).join('')}</div>`;
+}
+
+function renderKV(sec) {
+    return `<div class="tr-kv-grid">${(sec.pairs||[]).map(p=>`
+        <div class="tr-kv-item">
+            <div class="tr-kv-label">${p.label}</div>
+            <div class="tr-kv-value">${p.value??'—'}</div>
+        </div>`).join('')}</div>`;
+}
+
+/* ══════════════════════════════════
+   CHART INIT
+   All color values resolved at render time from CSS vars
+   ══════════════════════════════════ */
+function initChart(def) {
+    const el = document.getElementById(`trc_${def.id}`);
+    if (!el) return;
+    destroyChart(def.id);
+
+    const ctx  = el.getContext('2d');
+    const pal  = palette();
+    const th   = chartTheme();
+    const type = def.type === 'bar3d' ? 'bar' : def.type;
+
+    const datasets = def.data.map((d, i) => ({
+        label:            d.label,
+        data:             d.data,
+        backgroundColor:  d.colors
+            ? d.colors.map(c => hexAlpha(c, .82))
+            : (type === 'bar' || type === 'line'
+                ? hexAlpha(d.color || pal[i % pal.length], .55)
+                : pal.map(c => hexAlpha(c, .82))),
+        borderColor:      d.colors ? d.colors : (d.color || pal[i % pal.length]),
+        borderWidth:      type === 'line' ? 2.5 : 1.5,
+        borderRadius:     type === 'bar'  ? 6   : 0,
+        fill:             type === 'line' ? {target:'origin', above: hexAlpha(d.color||pal[i%pal.length], .08)} : false,
+        tension:          type === 'line' ? .42 : 0,
+        pointBackgroundColor: d.color || pal[i % pal.length],
+        pointRadius:      type === 'line' ? 4 : 0,
+        hoverOffset:      (type==='doughnut'||type==='pie') ? 8 : 0,
+    }));
+
+    const scales = (type==='bar'||type==='line') ? {
+        x: { ticks:{font:{size:10,family:'var(--tr-font-mono)'},color:th.tick,maxTicksLimit:8}, grid:{color:th.grid} },
+        y: { ticks:{font:{size:10,family:'var(--tr-font-mono)'},color:th.tick},                grid:{color:th.grid} },
+    } : undefined;
+
+    TR_CHARTS[def.id] = new Chart(ctx, {
+        type,
+        data: { labels: def.labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            animation:  { duration:700, easing:'easeOutQuart' },
+            plugins: {
+                legend:  { labels:{ color:th.legend, padding:12, font:{family:'inherit'} } },
+                tooltip: { callbacks:{ label: c2 => `  ${c2.dataset.label}: ${(+c2.raw||0).toLocaleString()}` } },
+            },
+            scales,
+        },
+    });
+}
+
+/* ── Re-apply chart theme when base.html toggles data-theme ── */
+new MutationObserver(() => {
+    const th = chartTheme();
+    Object.values(TR_CHARTS).forEach(ch => {
+        if (ch.options.scales) {
+            ['x','y'].forEach(ax => {
+                if (!ch.options.scales[ax]) return;
+                ch.options.scales[ax].ticks.color = th.tick;
+                ch.options.scales[ax].grid.color  = th.grid;
+            });
+        }
+        if (ch.options.plugins?.legend?.labels)
+            ch.options.plugins.legend.labels.color = th.legend;
+        ch.update('none');
+    });
+}).observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
+
+/* ══════════════════════════════════
+   CLEAR
+   ══════════════════════════════════ */
+function clearReport() {
+    Object.keys(TR_CHARTS).forEach(destroyChart);
+    document.getElementById('tr-report-area').innerHTML = `
+        <div class="tr-empty tr-fade">
+            <div class="tr-empty-icon"><i class="bi bi-bar-chart-line"></i></div>
+            <div class="tr-empty-title">Report cleared</div>
+            <div class="tr-empty-sub">Select options and click <strong>Generate Report</strong></div>
+        </div>`;
+    document.getElementById('tr-notes').value          = '';
+    document.getElementById('pdf-btn').style.display   = 'none';
+    document.getElementById('clear-btn').style.display = 'none';
+}
+
+/* ══════════════════════════════════
+   PDF EXPORT
+   Forces light mode snapshot so charts are readable on white paper
+   ══════════════════════════════════ */
+async function generatePDF() {
+    const area = document.getElementById('tr-report-area');
+    if (!area || area.querySelector('.tr-empty')) { alert('Generate a report first.'); return; }
+
+    const btn = document.getElementById('pdf-btn');
+    btn.innerHTML = '<span class="tr-spinner" style="width:13px;height:13px;border-width:2px"></span> Generating…';
+    btn.disabled  = true;
+
+    try {
+        const { jsPDF } = window.jspdf;
+        const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
+
+        /* Temporarily switch to light so PDF background is white */
+        if (isDark) document.documentElement.setAttribute('data-theme', 'light');
+
+        const canv = await html2canvas(area, {
+            scale:1.8, useCORS:true, backgroundColor:'#ffffff', logging:false,
+        });
+
+        if (isDark) document.documentElement.setAttribute('data-theme', 'dark');
+
+        const pdf  = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+        const pdfW = pdf.internal.pageSize.getWidth();
+        const pdfH = pdf.internal.pageSize.getHeight();
+        const imgH = (canv.height * pdfW) / canv.width;
+        const img  = canv.toDataURL('image/png');
+
+        /* Header bar */
+        pdf.setFillColor(37,99,235);
+        pdf.rect(0,0,pdfW,12,'F');
+        pdf.setTextColor(255,255,255);
+        pdf.setFont('helvetica','bold'); pdf.setFontSize(11);
+        pdf.text('PrimeBooks — Tracking Report', 10, 8);
+        pdf.setFont('helvetica','normal'); pdf.setFontSize(8);
+        pdf.text(`Generated: ${new Date().toLocaleString('en-UG')}`, pdfW-10, 8, {align:'right'});
+
+        let left = imgH, pos = 14;
+        pdf.addImage(img,'PNG', 0, pos, pdfW, imgH);
+        left -= (pdfH - 14);
+
+        while (left > pdfH) {
+            pdf.addPage();
+            pdf.setFillColor(37,99,235); pdf.rect(0,0,pdfW,8,'F');
+            pos = -(imgH - left) + 8;
+            pdf.addImage(img,'PNG', 0, pos, pdfW, imgH);
+            left -= (pdfH - 8);
+        }
+
+        const total = pdf.internal.getNumberOfPages();
+        for (let i=1; i<=total; i++) {
+            pdf.setPage(i);
+            pdf.setFontSize(7); pdf.setTextColor(160,160,160);
+            pdf.text(`Page ${i} of ${total} · PrimeBooks`, pdfW/2, pdfH-3, {align:'center'});
+        }
+
+        const type = getType(), {from, to} = getDates();
+        pdf.save(`primebooks-${type}-${from}-${to}.pdf`);
+
+    } catch (e) {
+        console.error(e);
+        window.print();
+    }
+
+    btn.innerHTML = '<i class="bi bi-file-earmark-pdf"></i> {% trans "Export PDF" %}';
+    btn.disabled  = false;
+}
+</script>
+{% endblock %}

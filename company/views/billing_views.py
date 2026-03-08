@@ -1,3 +1,4 @@
+import csv
 import logging
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import JsonResponse, Http404, HttpResponse
@@ -19,7 +20,9 @@ class BillingHistoryView(LoginRequiredMixin, ListView):
     """
     template_name = 'company/billing/history.html'
     context_object_name = 'invoices'
-    paginate_by = 20
+    # TODO: restore paginate_by = 20 once get_queryset returns a real QuerySet.
+    # ListView pagination requires a QuerySet; returning a plain list disables it safely.
+    paginate_by = None
 
     def get_queryset(self):
         company = getattr(self.request.user, 'company', None)
@@ -183,7 +186,12 @@ class AddPaymentMethodView(LoginRequiredMixin, View):
                 'message': 'No company found'
             }, status=404)
 
-        payment_type = request.POST.get('payment_type')
+        payment_type = request.POST.get('payment_type', '').strip()
+        if not payment_type:
+            return JsonResponse({
+                'success': False,
+                'message': 'Payment type is required'
+            }, status=400)
 
         # TODO: Integrate with payment gateway
         # Example for Stripe:
@@ -239,9 +247,21 @@ class ProcessPaymentView(LoginRequiredMixin, View):
                 'message': 'No company found'
             }, status=404)
 
-        amount = request.POST.get('amount')
-        payment_method = request.POST.get('payment_method')
+        raw_amount = request.POST.get('amount', '').strip()
+        payment_method = request.POST.get('payment_method', '').strip()
         description = request.POST.get('description', 'Subscription payment')
+
+        # Validate amount before touching any gateway
+        try:
+            from decimal import Decimal, InvalidOperation
+            amount = Decimal(raw_amount)
+            if amount <= 0:
+                raise ValueError('Amount must be positive')
+        except (InvalidOperation, ValueError, TypeError):
+            return JsonResponse({
+                'success': False,
+                'message': f'Invalid amount: {raw_amount!r}'
+            }, status=400)
 
         try:
             # TODO: Process payment through gateway
@@ -304,9 +324,14 @@ class BillingSettingsView(LoginRequiredMixin, TemplateView):
                 'message': 'No company found'
             }, status=404)
 
-        # Update billing settings
-        billing_email = request.POST.get('billing_email')
+        # Update billing settings — validate email format before persisting
+        billing_email = request.POST.get('billing_email', '').strip()
         if billing_email:
+            if '@' not in billing_email or '.' not in billing_email.split('@')[-1]:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Invalid email address format'
+                }, status=400)
             company.billing_email = billing_email
             company.save(update_fields=['billing_email'])
 
@@ -323,7 +348,6 @@ class ExportInvoicesView(LoginRequiredMixin, View):
 
     def get(self, request, *args, **kwargs):
         import csv
-        from django.http import HttpResponse
 
         company = getattr(request.user, 'company', None)
         if not company:

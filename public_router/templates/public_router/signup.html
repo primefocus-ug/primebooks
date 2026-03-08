@@ -1,569 +1,1219 @@
-<!-- public_router/templates/public_router/signup.html -->
-
+{% extends 'public_router/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title }} - Primebooks</title>
-    
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <style>
-        :root {
-            --primary-color: #667eea;
-            --secondary-color: #764ba2;
-            --success-color: #4caf50;
-        }
-        
-        body {
-            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-            min-height: 100vh;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
 
-        .signup-container {
-            padding: 50px 0;
-        }
+{% block title %}Start Your Free Trial — Primebooks{% endblock %}
 
-        .signup-card {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            overflow: hidden;
-            max-width: 800px;
-            margin: 0 auto;
-        }
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+    /* ── Signup Page Variables ───────────────────────────────────────── */
+    :root {
+        --accent: #0c19dd;
+        --accent-light: #4c54c4;
+        --accent-glow: rgba(12, 25, 221, 0.18);
+        --radius-card: 16px;
+        --radius-input: 10px;
+    }
 
-        .signup-header {
-            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-            color: white;
-            padding: 40px;
-            text-align: center;
-        }
+    /* ── Page wrapper ────────────────────────────────────────────────── */
+    .signup-page {
+        min-height: calc(100vh - 80px);
+        padding: 56px 20px 80px;
+        background-color: var(--bg-primary);
+        position: relative;
+        overflow: hidden;
+    }
 
-        .signup-header h1 {
-            margin: 0 0 10px 0;
-            font-size: 32px;
-            font-weight: bold;
-        }
+    /* subtle grid pattern */
+    .signup-page::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image:
+            linear-gradient(var(--border-color) 1px, transparent 1px),
+            linear-gradient(90deg, var(--border-color) 1px, transparent 1px);
+        background-size: 48px 48px;
+        opacity: 0.4;
+        pointer-events: none;
+        z-index: 0;
+    }
 
-        .signup-header p {
-            margin: 0;
-            font-size: 16px;
-            opacity: 0.9;
-        }
+    .signup-page > * { position: relative; z-index: 1; }
 
-        .signup-body {
-            padding: 40px;
-        }
+    /* ── Layout ──────────────────────────────────────────────────────── */
+    .signup-layout {
+        max-width: 1100px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        gap: 32px;
+        align-items: start;
+    }
 
-        .form-section {
-            margin-bottom: 35px;
-            padding-bottom: 30px;
-            border-bottom: 2px solid #f0f0f0;
-        }
+    @media (max-width: 860px) {
+        .signup-layout { grid-template-columns: 1fr; }
+        .signup-sidebar { display: none; }
+    }
 
-        .form-section:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-        }
+    /* ── Sidebar ─────────────────────────────────────────────────────── */
+    .signup-sidebar {
+        position: sticky;
+        top: 100px;
+    }
 
-        .section-title {
-            color: var(--primary-color);
-            font-size: 20px;
-            font-weight: bold;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-        }
+    .sidebar-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 28px;
+    }
 
-        .section-title i {
-            margin-right: 10px;
-            font-size: 24px;
-        }
+    .sidebar-brand-name {
+        font-size: 1.25rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: var(--text-primary);
+    }
 
-        .form-label {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 8px;
-        }
+    .sidebar-headline {
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 1.2;
+        color: var(--text-primary);
+        margin-bottom: 16px;
+        letter-spacing: -0.03em;
+    }
 
-        .form-control, .form-select {
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 12px 15px;
-            font-size: 15px;
-            transition: all 0.3s;
-        }
+    .sidebar-headline span {
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
 
-        .form-control:focus, .form-select:focus {
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
-        }
+    .sidebar-sub {
+        font-size: 0.95rem;
+        color: var(--text-secondary);
+        line-height: 1.65;
+        margin-bottom: 32px;
+    }
 
-        .form-text {
-            color: #666;
-            font-size: 13px;
-        }
+    .feature-pill-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
 
-        .required-field::after {
-            content: " *";
-            color: #dc3545;
-        }
+    .feature-pill-list li {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+    }
 
-        .btn-signup {
-            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-            border: none;
-            color: white;
-            padding: 15px 40px;
-            font-size: 18px;
-            font-weight: bold;
-            border-radius: 8px;
-            width: 100%;
-            transition: transform 0.2s;
-        }
+    .feature-pill-list li .icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        flex-shrink: 0;
+        color: var(--accent);
+    }
 
-        .btn-signup:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-        }
+    .trust-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 32px;
+    }
 
-        .terms-box {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid var(--primary-color);
-            margin-bottom: 25px;
-        }
+    .trust-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 5px 10px;
+        border-radius: 20px;
+        border: 1px solid var(--border-color-light);
+        color: var(--text-secondary);
+        background: var(--bg-secondary);
+    }
 
-        .error-message {
-            background: #fff3f3;
-            border-left: 4px solid #dc3545;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
+    .trust-badge i { color: var(--accent); font-size: 11px; }
 
-        .subdomain-preview {
-            background: #e8f4fd;
-            padding: 10px 15px;
-            border-radius: 5px;
-            margin-top: 10px;
-            font-family: 'Courier New', monospace;
-            color: #0066cc;
-        }
+    /* ── Card ────────────────────────────────────────────────────────── */
+    .signup-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: var(--radius-card);
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+    }
 
-        .plan-selector {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-top: 10px;
-        }
+    .signup-card-header {
+        padding: 32px 36px 28px;
+        border-bottom: 1px solid var(--border-color);
+        background: linear-gradient(135deg,
+            color-mix(in srgb, var(--accent) 8%, var(--bg-secondary)) 0%,
+            var(--bg-secondary) 100%);
+    }
 
-        .plan-option {
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 15px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
+    .signup-card-header h2 {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin: 0 0 4px;
+        letter-spacing: -0.02em;
+    }
 
-        .plan-option input[type="radio"] {
-            display: none;
-        }
+    .signup-card-header p {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin: 0;
+    }
 
-        .plan-option:hover {
-            border-color: var(--primary-color);
-            background: #f8f9ff;
-        }
+    .step-indicator {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 18px;
+    }
 
-        .plan-option input[type="radio"]:checked + label {
-            background: var(--primary-color);
-            color: white;
-            border-radius: 5px;
-            padding: 5px;
-        }
+    .step-dot {
+        width: 28px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border-color-lighter);
+    }
 
-        .feature-list {
-            list-style: none;
-            padding-left: 0;
-        }
+    .step-dot.active {
+        background: var(--accent);
+    }
 
-        .feature-list li {
-            padding: 8px 0;
-            padding-left: 30px;
-            position: relative;
-        }
+    /* ── Form Body ───────────────────────────────────────────────────── */
+    .signup-card-body {
+        padding: 36px;
+    }
 
-        .feature-list li:before {
-            content: "✓";
-            position: absolute;
-            left: 0;
-            color: var(--success-color);
-            font-weight: bold;
-            font-size: 18px;
-        }
-    </style>
-</head>
-<body>
-    <div class="signup-container">
-        <div class="container">
-            <div class="signup-card">
-                <div class="signup-header">
-                    <h1>🚀 Try Primebooks Free</h1>
-                    <p>Start managing your business better today. No credit card required.</p>
+    /* ── Section blocks ──────────────────────────────────────────────── */
+    .form-block {
+        margin-bottom: 36px;
+    }
+
+    .form-block:last-child { margin-bottom: 0; }
+
+    .form-block-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .form-block-title .icon-badge {
+        width: 26px;
+        height: 26px;
+        border-radius: 6px;
+        background: var(--accent-gradient);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 11px;
+    }
+
+    /* ── Input fields ────────────────────────────────────────────────── */
+    .field-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+
+    .field-group.single { grid-template-columns: 1fr; }
+
+    @media (max-width: 540px) {
+        .field-group { grid-template-columns: 1fr; }
+    }
+
+    .field-wrap { display: flex; flex-direction: column; gap: 6px; }
+
+    .field-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .field-label .req { color: #e05252; font-size: 10px; }
+
+    .field-wrap input,
+    .field-wrap select,
+    .field-wrap textarea {
+        background: var(--bg-primary) !important;
+        border: 1.5px solid var(--border-color-light) !important;
+        border-radius: var(--radius-input) !important;
+        color: var(--text-primary) !important;
+        font-size: 0.9rem !important;
+        padding: 11px 14px !important;
+        transition: border-color 0.2s, box-shadow 0.2s !important;
+        width: 100%;
+        outline: none;
+    }
+
+    .field-wrap input::placeholder,
+    .field-wrap select option { color: var(--text-tertiary) !important; }
+
+    .field-wrap input:focus,
+    .field-wrap select:focus {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px var(--accent-glow) !important;
+    }
+
+    .field-wrap .invalid-feedback,
+    .field-wrap .text-danger {
+        font-size: 0.78rem;
+        color: #e05252;
+    }
+
+    .field-hint {
+        font-size: 0.75rem;
+        color: var(--text-tertiary);
+    }
+
+    /* ── Subdomain preview ───────────────────────────────────────────── */
+    .subdomain-preview {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        margin-top: 8px;
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1.5px solid var(--border-color-light);
+        font-size: 0.82rem;
+    }
+
+    .subdomain-preview .prefix {
+        padding: 7px 12px;
+        background: var(--bg-tertiary);
+        color: var(--text-tertiary);
+        font-family: 'SF Mono', monospace;
+        border-right: 1.5px solid var(--border-color-light);
+        white-space: nowrap;
+    }
+
+    .subdomain-preview .value {
+        padding: 7px 12px;
+        font-family: 'SF Mono', monospace;
+        color: var(--accent);
+        font-weight: 700;
+        background: color-mix(in srgb, var(--accent) 6%, var(--bg-primary));
+    }
+
+    .subdomain-preview .suffix {
+        padding: 7px 12px;
+        background: var(--bg-tertiary);
+        color: var(--text-tertiary);
+        font-family: 'SF Mono', monospace;
+        border-left: 1.5px solid var(--border-color-light);
+    }
+
+    /* ── Plan cards ──────────────────────────────────────────────────── */
+    .plan-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 12px;
+        margin-top: 4px;
+    }
+
+    .plan-option {
+        position: relative;
+        cursor: pointer;
+    }
+
+    .plan-option input[type="radio"] {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .plan-card {
+        border: 1.5px solid var(--border-color-light);
+        border-radius: 10px;
+        padding: 16px 14px;
+        text-align: center;
+        transition: all 0.2s;
+        background: var(--bg-primary);
+    }
+
+    .plan-card .plan-name {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: block;
+        margin-top: 4px;
+    }
+
+    .plan-card .plan-icon {
+        font-size: 1.4rem;
+        display: block;
+        margin-bottom: 6px;
+    }
+
+    .plan-option input:checked + .plan-card {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 8%, var(--bg-primary));
+        box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .plan-option:hover .plan-card {
+        border-color: var(--accent-light);
+    }
+
+    /* ── Terms box ───────────────────────────────────────────────────── */
+    .terms-wrap {
+        background: var(--bg-primary);
+        border: 1.5px solid var(--border-color-light);
+        border-radius: 10px;
+        padding: 16px 20px;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 24px;
+    }
+
+    .terms-wrap input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        accent-color: var(--accent);
+        margin-top: 1px;
+    }
+
+    .terms-wrap label {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        line-height: 1.55;
+        cursor: pointer;
+    }
+
+    .terms-wrap label a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    /* ── Error banner ────────────────────────────────────────────────── */
+    .error-banner {
+        background: color-mix(in srgb, #e05252 10%, var(--bg-secondary));
+        border: 1px solid color-mix(in srgb, #e05252 40%, transparent);
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin-bottom: 24px;
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .error-banner i { color: #e05252; margin-top: 2px; }
+    .error-banner .err-title { font-size: 0.85rem; font-weight: 700; color: #e05252; }
+    .error-banner ul { margin: 4px 0 0; padding-left: 16px; }
+    .error-banner ul li { font-size: 0.8rem; color: var(--text-secondary); }
+
+    /* ── Submit ──────────────────────────────────────────────────────── */
+    .btn-submit {
+        width: 100%;
+        padding: 15px;
+        background: var(--accent-gradient);
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        letter-spacing: 0.01em;
+        transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .btn-submit:hover {
+        opacity: 0.92;
+        transform: translateY(-1px);
+        box-shadow: 0 8px 28px var(--accent-glow);
+    }
+
+    .btn-submit:active { transform: translateY(0); }
+
+    .btn-submit .btn-shimmer {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+        transform: translateX(-100%);
+        transition: transform 0.5s;
+    }
+
+    .btn-submit:hover .btn-shimmer { transform: translateX(100%); }
+
+    .signin-link {
+        text-align: center;
+        margin-top: 18px;
+        font-size: 0.85rem;
+        color: var(--text-tertiary);
+    }
+
+    .signin-link a {
+        color: var(--accent);
+        font-weight: 600;
+        text-decoration: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="signup-page">
+    <div class="signup-layout">
+
+        <!-- ── Sidebar ──────────────────────────────────────────────── -->
+        <aside class="signup-sidebar">
+            <div class="sidebar-brand">
+                <img src="{% static 'logo1.jpeg' %}" alt="Primebooks" width="28" height="28" style="border-radius:50%;">
+                <span class="sidebar-brand-name">PRIMEBOOKS</span>
+            </div>
+
+            <h1 class="sidebar-headline">
+                Run your business<br><span>smarter</span>
+            </h1>
+            <p class="sidebar-sub">
+                Join thousands of Ugandan, East Africans and International businesses using Primebooks to manage inventory, invoicing, and growth — all in one place.
+            </p>
+
+            <ul class="feature-pill-list">
+                <li>
+                    <span class="icon"><i class="fas fa-boxes-stacked"></i></span>
+                    Full inventory & stock control
+                </li>
+                <li>
+                    <span class="icon"><i class="fas fa-file-invoice"></i></span>
+                    Professional invoicing & receipts
+                </li>
+                <li>
+                    <span class="icon"><i class="fas fa-chart-line"></i></span>
+                    Real-time analytics & reports
+                </li>
+                <li>
+                    <span class="icon"><i class="fas fa-users"></i></span>
+                    Multi-user & role management
+                </li>
+                <li>
+                    <span class="icon"><i class="fas fa-plug"></i></span>
+                    EFRIS integration built-in
+                </li>
+                <li>
+                    <span class="icon"><i class="fas fa-cloud"></i></span>
+                    Secure cloud-based access
+                </li>
+            </ul>
+
+            <div class="trust-badges">
+                <span class="trust-badge"><i class="fas fa-shield-halved"></i> SSL Secured</span>
+                <span class="trust-badge"><i class="fas fa-lock"></i> Data encrypted</span>
+                <span class="trust-badge"><i class="fas fa-credit-card"></i> No card needed</span>
+                <span class="trust-badge"><i class="fas fa-headset"></i> 24/7 support</span>
+            </div>
+        </aside>
+
+        <!-- ── Main Card ─────────────────────────────────────────────── -->
+        <div class="signup-card">
+            <div class="signup-card-header">
+                <div class="step-indicator">
+                    <div class="step-dot active"></div>
+                    <div class="step-dot active"></div>
+                    <div class="step-dot"></div>
                 </div>
+                <h2>Create your workspace</h2>
+                <p>Start your free trial — no credit card required</p>
+            </div>
 
-                <div class="signup-body">
-                    {% if messages %}
-                        {% for message in messages %}
-                            <div class="error-message">
-                                <i class="fas fa-exclamation-circle"></i>
-                                {{ message }}
+            <div class="signup-card-body">
+
+                {% if form.errors %}
+                <div class="error-banner">
+                    <i class="fas fa-circle-exclamation"></i>
+                    <div>
+                        <div class="err-title">Please fix the following errors:</div>
+                        <ul>
+                            {% for field in form %}
+                                {% for error in field.errors %}
+                                    <li>{{ field.label }}: {{ error }}</li>
+                                {% endfor %}
+                            {% endfor %}
+                            {% for error in form.non_field_errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                {% endif %}
+
+                <form method="post" action="" novalidate>
+                    {% csrf_token %}
+
+                    <!-- Company Info -->
+                    <div class="form-block">
+                        <div class="form-block-title">
+                            <span class="icon-badge"><i class="fas fa-building"></i></span>
+                            Company Information
+                        </div>
+
+                        <div class="field-group">
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.company_name.id_for_label }}">
+                                    Company Name <span class="req">*</span>
+                                </label>
+                                {{ form.company_name }}
+                                {% if form.company_name.errors %}
+                                    <span class="text-danger">{{ form.company_name.errors }}</span>
+                                {% endif %}
+                                <span class="field-hint">Legal registered company name</span>
                             </div>
-                        {% endfor %}
-                    {% endif %}
-
-                    <form method="post" id="signupForm">
-                        {% csrf_token %}
-
-                        <!-- Company Information -->
-                        <div class="form-section">
-                            <h3 class="section-title">
-                                <i class="fas fa-building"></i>
-                                Company Information
-                            </h3>
-
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.company_name.id_for_label }}" class="form-label required-field">
-                                        Company Name
-                                    </label>
-                                    {{ form.company_name }}
-                                    {% if form.company_name.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.company_name.errors }}
-                                        </div>
-                                    {% endif %}
-                                    <small class="form-text">Legal registered company name</small>
-                                </div>
-
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.trading_name.id_for_label }}" class="form-label">
-                                        Trading Name
-                                    </label>
-                                    {{ form.trading_name }}
-                                    {% if form.trading_name.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.trading_name.errors }}
-                                        </div>
-                                    {% endif %}
-                                    <small class="form-text">Optional: Business/brand name if different</small>
-                                </div>
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.trading_name.id_for_label }}">
+                                    Trading Name
+                                </label>
+                                {{ form.trading_name }}
+                                {% if form.trading_name.errors %}
+                                    <span class="text-danger">{{ form.trading_name.errors }}</span>
+                                {% endif %}
+                                <span class="field-hint">Optional: brand name if different</span>
                             </div>
+                        </div>
 
-                            <div class="mb-3">
-                                <label for="{{ form.subdomain.id_for_label }}" class="form-label required-field">
-                                    Choose Your Subdomain
+                        <div class="field-group single">
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.subdomain.id_for_label }}">
+                                    Choose Your Subdomain <span class="req">*</span>
                                 </label>
                                 {{ form.subdomain }}
                                 {% if form.subdomain.errors %}
-                                    <div class="text-danger small mt-1">
-                                        {{ form.subdomain.errors }}
-                                    </div>
+                                    <span class="text-danger">{{ form.subdomain.errors }}</span>
                                 {% endif %}
-                                <div class="subdomain-preview" id="subdomainPreview">
-                                    Your URL will be: <strong><span id="subdomainText">yourcompany</span>.primebooks.sale</strong>
+                                <div class="subdomain-preview">
+                                    <span class="prefix">https://</span>
+                                    <span class="value" id="subdomainText">yourcompany</span>
+                                    <span class="suffix">.primebooks.sale</span>
                                 </div>
-                                <small class="form-text">This will be your unique login URL (lowercase letters, numbers, hyphens only)</small>
+                                <span class="field-hint">Lowercase letters, numbers, hyphens only</span>
                             </div>
+                        </div>
 
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.email.id_for_label }}" class="form-label required-field">
-                                        Company Email
-                                    </label>
-                                    {{ form.email }}
-                                    {% if form.email.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.email.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.phone.id_for_label }}" class="form-label required-field">
-                                        Phone Number
-                                    </label>
-                                    {{ form.phone }}
-                                    {% if form.phone.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.phone.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
+                        <div class="field-group">
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.email.id_for_label }}">
+                                    Company Email <span class="req">*</span>
+                                </label>
+                                {{ form.email }}
+                                {% if form.email.errors %}
+                                    <span class="text-danger">{{ form.email.errors }}</span>
+                                {% endif %}
                             </div>
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.phone.id_for_label }}">
+                                    Phone Number <span class="req">*</span>
+                                </label>
+                                {{ form.phone }}
+                                {% if form.phone.errors %}
+                                    <span class="text-danger">{{ form.phone.errors }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
 
-                            <div class="mb-3">
-                                <label for="{{ form.country.id_for_label }}" class="form-label required-field">
-                                    Country
+                        <div class="field-group single">
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.country.id_for_label }}">
+                                    Country <span class="req">*</span>
                                 </label>
                                 {{ form.country }}
                                 {% if form.country.errors %}
-                                    <div class="text-danger small mt-1">
-                                        {{ form.country.errors }}
-                                    </div>
+                                    <span class="text-danger">{{ form.country.errors }}</span>
                                 {% endif %}
                             </div>
                         </div>
 
-                        <!-- Admin User Information -->
-                        <div class="form-section">
-                            <h3 class="section-title">
-                                <i class="fas fa-user-shield"></i>
-                                Admin User Details
-                            </h3>
+                    </div>
 
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.first_name.id_for_label }}" class="form-label required-field">
-                                        First Name
-                                    </label>
-                                    {{ form.first_name }}
-                                    {% if form.first_name.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.first_name.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.last_name.id_for_label }}" class="form-label required-field">
-                                        Last Name
-                                    </label>
-                                    {{ form.last_name }}
-                                    {% if form.last_name.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.last_name.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.admin_email.id_for_label }}" class="form-label required-field">
-                                        Admin Email
-                                    </label>
-                                    {{ form.admin_email }}
-                                    {% if form.admin_email.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.admin_email.errors }}
-                                        </div>
-                                    {% endif %}
-                                    <small class="form-text">You'll use this email to login</small>
-                                </div>
-
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.admin_phone.id_for_label }}" class="form-label required-field">
-                                        Admin Phone
-                                    </label>
-                                    {{ form.admin_phone }}
-                                    {% if form.admin_phone.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.admin_phone.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.password.id_for_label }}" class="form-label required-field">
-                                        Password
-                                    </label>
-                                    {{ form.password }}
-                                    {% if form.password.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.password.errors }}
-                                        </div>
-                                    {% endif %}
-                                    <small class="form-text">Minimum 8 characters with number and uppercase letter</small>
-                                </div>
-
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.password_confirm.id_for_label }}" class="form-label required-field">
-                                        Confirm Password
-                                    </label>
-                                    {{ form.password_confirm }}
-                                    {% if form.password_confirm.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.password_confirm.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-                            </div>
+                    <!-- Admin Info -->
+                    <div class="form-block">
+                        <div class="form-block-title">
+                            <span class="icon-badge"><i class="fas fa-user"></i></span>
+                            Admin Account
                         </div>
 
-                        <!-- Business Details -->
-                        <div class="form-section">
-                            <h3 class="section-title">
-                                <i class="fas fa-briefcase"></i>
-                                Business Details (Optional)
-                            </h3>
-
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.industry.id_for_label }}" class="form-label">
-                                        Industry
-                                    </label>
-                                    {{ form.industry }}
-                                    {% if form.industry.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.industry.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-
-                                <div class="col-md-6 mb-3">
-                                    <label for="{{ form.business_type.id_for_label }}" class="form-label">
-                                        Business Type
-                                    </label>
-                                    {{ form.business_type }}
-                                    {% if form.business_type.errors %}
-                                        <div class="text-danger small mt-1">
-                                            {{ form.business_type.errors }}
-                                        </div>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="{{ form.estimated_users.id_for_label }}" class="form-label">
-                                    Estimated Number of Users
+                        <div class="field-group">
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.first_name.id_for_label }}">
+                                    First Name <span class="req">*</span>
                                 </label>
-                                {{ form.estimated_users }}
-                                {% if form.estimated_users.errors %}
-                                    <div class="text-danger small mt-1">
-                                        {{ form.estimated_users.errors }}
-                                    </div>
+                                {{ form.first_name }}
+                                {% if form.first_name.errors %}
+                                    <span class="text-danger">{{ form.first_name.errors }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.last_name.id_for_label }}">
+                                    Last Name <span class="req">*</span>
+                                </label>
+                                {{ form.last_name }}
+                                {% if form.last_name.errors %}
+                                    <span class="text-danger">{{ form.last_name.errors }}</span>
                                 {% endif %}
                             </div>
                         </div>
 
-                        <!-- Plan Selection -->
-                        <div class="form-section">
-                            <h3 class="section-title">
-                                <i class="fas fa-tag"></i>
-                                Select Your Plan
-                            </h3>
-
-                            <div class="plan-selector">
-                                {% for value, label in form.selected_plan.field.choices %}
-                                    <div class="plan-option">
-                                        <input type="radio" name="selected_plan" value="{{ value }}" id="plan_{{ value }}"
-                                               {% if form.selected_plan.value == value or value == 'FREE' and not form.selected_plan.value %}checked{% endif %}>
-                                        <label for="plan_{{ value }}" style="cursor: pointer; display: block;">
-                                            <strong>{{ label }}</strong>
-                                        </label>
-                                    </div>
-                                {% endfor %}
-                            </div>
-
-                            <div class="mt-3">
-                                <small class="form-text">
-                                    <i class="fas fa-info-circle"></i>
-                                    Start with Free Trial - No credit card required. You can upgrade anytime.
-                                </small>
-                            </div>
-                        </div>
-
-                        <!-- Terms and Conditions -->
-                        <div class="terms-box">
-                            <div class="form-check">
-                                {{ form.accept_terms }}
-                                <label class="form-check-label" for="{{ form.accept_terms.id_for_label }}">
-                                    I agree to the <a href="#" target="_blank">Terms and Conditions</a>
-                                    and <a href="#" target="_blank">Privacy Policy</a>
+                        <div class="field-group">
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.admin_email.id_for_label }}">
+                                    Email Address <span class="req">*</span>
                                 </label>
+                                {{ form.admin_email }}
+                                {% if form.admin_email.errors %}
+                                    <span class="text-danger">{{ form.admin_email.errors }}</span>
+                                {% endif %}
+                                <span class="field-hint">Used to login to your workspace</span>
                             </div>
-                            {% if form.accept_terms.errors %}
-                                <div class="text-danger small mt-2">
-                                    {{ form.accept_terms.errors }}
-                                </div>
-                            {% endif %}
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.admin_phone.id_for_label }}">
+                                    Phone Number <span class="req">*</span>
+                                </label>
+                                {{ form.admin_phone }}
+                                {% if form.admin_phone.errors %}
+                                    <span class="text-danger">{{ form.admin_phone.errors }}</span>
+                                {% endif %}
+                            </div>
                         </div>
 
-                        <!-- Submit Button -->
-                        <button type="submit" class="btn btn-signup">
-                            <i class="fas fa-rocket"></i> Start My Free Trial
-                        </button>
-
-                        <div class="text-center mt-3">
-                            <small class="text-muted">
-                                Already have an account? <a href="#">Login here</a>
-                            </small>
-                        </div>
-                    </form>
-
-                    <!-- Features List -->
-                    <div class="mt-5">
-                        <h4 class="text-center mb-4">What You'll Get</h4>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <ul class="feature-list">
-                                    <li>Full inventory management</li>
-                                    <li>Invoice & receipt generation</li>
-                                    <li>Sales tracking & reports</li>
-                                    <li>Multi-store support</li>
-                                </ul>
+                        <div class="field-group">
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.password.id_for_label }}">
+                                    Password <span class="req">*</span>
+                                </label>
+                                {{ form.password }}
+                                {% if form.password.errors %}
+                                    <span class="text-danger">{{ form.password.errors }}</span>
+                                {% endif %}
+                                <span class="field-hint">Min 8 chars, include a number & uppercase</span>
                             </div>
-                            <div class="col-md-6">
-                                <ul class="feature-list">
-                                    <li>User & role management</li>
-                                    <li>EFRIS integration ready</li>
-                                    <li>Cloud-based access</li>
-                                    <li>Secure data storage</li>
-                                </ul>
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.password_confirm.id_for_label }}">
+                                    Confirm Password <span class="req">*</span>
+                                </label>
+                                {{ form.password_confirm }}
+                                {% if form.password_confirm.errors %}
+                                    <span class="text-danger">{{ form.password_confirm.errors }}</span>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
-                </div>
+
+                    <!-- Business Details -->
+                    <div class="form-block">
+                        <div class="form-block-title">
+                            <span class="icon-badge"><i class="fas fa-briefcase"></i></span>
+                            Business Details <span style="font-weight:400; text-transform:none; font-size:0.75rem; color:var(--text-tertiary); letter-spacing:0;">&nbsp;(Optional)</span>
+                        </div>
+
+                        <div class="field-group">
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.industry.id_for_label }}">Industry</label>
+                                {{ form.industry }}
+                                {% if form.industry.errors %}
+                                    <span class="text-danger">{{ form.industry.errors }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.business_type.id_for_label }}">Business Type</label>
+                                {{ form.business_type }}
+                                {% if form.business_type.errors %}
+                                    <span class="text-danger">{{ form.business_type.errors }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="field-group single">
+                            <div class="field-wrap">
+                                <label class="field-label" for="{{ form.estimated_users.id_for_label }}">Estimated Number of Users</label>
+                                {{ form.estimated_users }}
+                                {% if form.estimated_users.errors %}
+                                    <span class="text-danger">{{ form.estimated_users.errors }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Plan Selection -->
+                    <div class="form-block">
+                        <div class="form-block-title">
+                            <span class="icon-badge"><i class="fas fa-tag"></i></span>
+                            Select Your Plan
+                        </div>
+
+                        <div class="plan-grid">
+                            {% for value, label in form.selected_plan.field.choices %}
+                            <label class="plan-option">
+                                <input type="radio" name="selected_plan" value="{{ value }}" id="plan_{{ value }}"
+                                       {% if form.selected_plan.value == value or value == 'FREE' and not form.selected_plan.value %}checked{% endif %}>
+                                <div class="plan-card">
+                                    <span class="plan-icon">
+                                        {% if value == 'FREE' %}🚀
+                                        {% elif value == 'BASIC' %}⚡
+                                        {% elif value == 'PRO' %}💎
+                                        {% else %}🏢{% endif %}
+                                    </span>
+                                    <span class="plan-name">{{ label }}</span>
+                                </div>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <p style="font-size:0.78rem; color:var(--text-tertiary); margin-top:10px;">
+                            <i class="fas fa-circle-info" style="color:var(--accent);"></i>
+                            Start with Free Trial — upgrade anytime, no credit card needed.
+                        </p>
+                    </div>
+
+                    <!-- Terms -->
+                    <div class="terms-wrap">
+                        {{ form.accept_terms }}
+                        <label for="{{ form.accept_terms.id_for_label }}">
+                            I agree to Primebooks'
+                            <a href="#" target="_blank">Terms of Service</a> and
+                            <a href="#" target="_blank">Privacy Policy</a>.
+                            Your data is encrypted and never shared.
+                        </label>
+                    </div>
+                    {% if form.accept_terms.errors %}
+                        <p style="color:#e05252; font-size:0.8rem; margin-top:-12px; margin-bottom:16px;">
+                            {{ form.accept_terms.errors }}
+                        </p>
+                    {% endif %}
+
+                    <!-- Submit -->
+                    <button type="submit" class="btn-submit">
+                        <span class="btn-shimmer"></span>
+                        <i class="fas fa-rocket"></i>
+                        Start My Free Trial
+                    </button>
+
+                    <p class="signin-link">
+                        Already have an account?
+                        <a href="{% url 'public_router:login' %}">Sign in here</a>
+                    </p>
+                </form>
             </div>
         </div>
+
     </div>
+</div>
+{% endblock %}
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
 
-    <script>
-        // Subdomain preview
-        document.addEventListener('DOMContentLoaded', function() {
-            const subdomainInput = document.querySelector('input[name="subdomain"]');
-            const subdomainText = document.getElementById('subdomainText');
+    /* ─────────────────────────────────────────────────────────────────────
+       CONSTANTS — must mirror forms.py exactly
+    ───────────────────────────────────────────────────────────────────── */
+    const RESERVED_SUBDOMAINS = new Set([
+        'www','api','admin','app','mail','ftp','localhost',
+        'staging','dev','test','demo','public','static','media',
+        'blog','support','help','docs','status','prime','ug'
+    ]);
 
-            if (subdomainInput && subdomainText) {
-                subdomainInput.addEventListener('input', function(e) {
-                    let value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
-                    e.target.value = value;
-                    subdomainText.textContent = value || 'yourcompany';
-                });
+    /* ─────────────────────────────────────────────────────────────────────
+       HELPER: show / clear inline error on a field-wrap element
+    ───────────────────────────────────────────────────────────────────── */
+    function setError(input, message) {
+        const wrap = input.closest('.field-wrap');
+        if (!wrap) return;
+        let errEl = wrap.querySelector('.js-error');
+        if (!errEl) {
+            errEl = document.createElement('span');
+            errEl.className = 'js-error text-danger';
+            // Insert right after the input / select / textarea
+            const ref = wrap.querySelector('input, select, textarea');
+            if (ref && ref.nextSibling) {
+                wrap.insertBefore(errEl, ref.nextSibling);
+            } else {
+                wrap.appendChild(errEl);
             }
+        }
+        errEl.textContent = message;
+        input.style.borderColor = '#e05252';
+        input.style.boxShadow   = '0 0 0 3px rgba(224,82,82,0.18)';
+    }
 
-            // Password strength indicator (optional)
-            const passwordInput = document.querySelector('input[name="password"]');
-            if (passwordInput) {
-                passwordInput.addEventListener('input', function(e) {
-                    // Add password strength visual feedback here if needed
-                });
+    function clearError(input) {
+        const wrap = input.closest('.field-wrap');
+        if (!wrap) return;
+        const errEl = wrap.querySelector('.js-error');
+        if (errEl) errEl.textContent = '';
+        input.style.borderColor = '';
+        input.style.boxShadow   = '';
+    }
+
+    function setSuccess(input) {
+        clearError(input);
+        input.style.borderColor = '#22c55e';
+        input.style.boxShadow   = '0 0 0 3px rgba(34,197,94,0.15)';
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       VALIDATORS — each returns a string (error) or '' (ok)
+    ───────────────────────────────────────────────────────────────────── */
+
+    // Phone: must start with + followed by 7–15 digits (E.164-ish)
+    function validatePhone(value, label) {
+        if (!value.trim()) return `${label} is required.`;
+        const cleaned = value.trim().replace(/[\s\-().]/g, '');
+        if (!/^\+\d{7,15}$/.test(cleaned)) {
+            return `${label} must start with a country code (e.g. +256785230670).`;
+        }
+        return '';
+    }
+
+    // Email: basic RFC-ish check
+    function validateEmail(value, label) {
+        if (!value.trim()) return `${label} is required.`;
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim())) {
+            return `Please enter a valid ${label.toLowerCase()}.`;
+        }
+        return '';
+    }
+
+    // Required text
+    function validateRequired(value, label) {
+        return value.trim() ? '' : `${label} is required.`;
+    }
+
+    // Subdomain rules (mirrors forms.py clean_subdomain)
+    function validateSubdomain(value) {
+        const v = value.toLowerCase().trim();
+        if (!v)                              return 'Subdomain is required.';
+        if (!/^[a-z0-9-]+$/.test(v))        return 'Only lowercase letters, numbers, and hyphens allowed.';
+        if (v.length < 3)                    return 'Subdomain must be at least 3 characters.';
+        if (v.length > 63)                   return 'Subdomain must be 63 characters or less.';
+        if (v.startsWith('-') || v.endsWith('-')) return 'Subdomain cannot start or end with a hyphen.';
+        if (RESERVED_SUBDOMAINS.has(v))      return 'This subdomain is reserved.';
+        return '';
+    }
+
+    // Password strength (mirrors forms.py clean)
+    function validatePassword(value) {
+        if (!value)                          return 'Password is required.';
+        if (value.length < 8)               return 'Password must be at least 8 characters.';
+        if (!/[A-Z]/.test(value))           return 'Password must contain at least one uppercase letter.';
+        if (!/[0-9]/.test(value))           return 'Password must contain at least one number.';
+        return '';
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       ATTACH live validation on blur (+ re-validate on input after first blur)
+    ───────────────────────────────────────────────────────────────────── */
+    function attachBlurValidation(selector, validatorFn) {
+        const el = document.querySelector(selector);
+        if (!el) return;
+        let touched = false;
+        el.addEventListener('blur', function () {
+            touched = true;
+            const err = validatorFn(el.value);
+            err ? setError(el, err) : setSuccess(el);
+        });
+        el.addEventListener('input', function () {
+            if (!touched) return;
+            const err = validatorFn(el.value);
+            err ? setError(el, err) : setSuccess(el);
+        });
+    }
+
+    // Company name
+    attachBlurValidation('input[name="company_name"]', v => validateRequired(v, 'Company name'));
+
+    // Subdomain
+    attachBlurValidation('input[name="subdomain"]', validateSubdomain);
+
+    // Company email
+    attachBlurValidation('input[name="email"]', v => validateEmail(v, 'Company email'));
+
+    // Company phone
+    attachBlurValidation('input[name="phone"]', v => validatePhone(v, 'Company phone'));
+
+    // Country
+    attachBlurValidation('input[name="country"]', v => validateRequired(v, 'Country'));
+
+    // Admin first / last name
+    attachBlurValidation('input[name="first_name"]', v => validateRequired(v, 'First name'));
+    attachBlurValidation('input[name="last_name"]',  v => validateRequired(v, 'Last name'));
+
+    // Admin email
+    attachBlurValidation('input[name="admin_email"]', v => validateEmail(v, 'Admin email'));
+
+    // Admin phone
+    attachBlurValidation('input[name="admin_phone"]', v => validatePhone(v, 'Admin phone'));
+
+    // Password
+    attachBlurValidation('input[name="password"]', validatePassword);
+
+    // Confirm password — also cross-checks with password field
+    const pwInput      = document.querySelector('input[name="password"]');
+    const pwConfInput  = document.querySelector('input[name="password_confirm"]');
+    if (pwConfInput && pwInput) {
+        let touched = false;
+        function checkConfirm() {
+            if (!pwConfInput.value) {
+                setError(pwConfInput, 'Please confirm your password.');
+            } else if (pwConfInput.value !== pwInput.value) {
+                setError(pwConfInput, 'Passwords do not match.');
+            } else {
+                setSuccess(pwConfInput);
+            }
+        }
+        pwConfInput.addEventListener('blur', () => { touched = true; checkConfirm(); });
+        pwConfInput.addEventListener('input', () => { if (touched) checkConfirm(); });
+        // If the user changes the main password after confirming, re-check
+        pwInput.addEventListener('input', () => { if (touched) checkConfirm(); });
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       PASSWORD STRENGTH METER
+    ───────────────────────────────────────────────────────────────────── */
+    if (pwInput) {
+        // Build meter DOM inside the field-wrap
+        const wrap = pwInput.closest('.field-wrap');
+        if (wrap) {
+            const meterWrap = document.createElement('div');
+            meterWrap.className = 'pw-meter-wrap';
+            meterWrap.innerHTML =
+                '<div class="pw-meter"><div class="pw-meter-bar" id="pwBar"></div></div>' +
+                '<span class="pw-meter-label" id="pwLabel"></span>';
+            // Insert right after the input
+            pwInput.insertAdjacentElement('afterend', meterWrap);
+
+            const bar   = document.getElementById('pwBar');
+            const label = document.getElementById('pwLabel');
+
+            pwInput.addEventListener('input', function () {
+                const v = pwInput.value;
+                let score = 0;
+                if (v.length >= 8)          score++;
+                if (/[A-Z]/.test(v))        score++;
+                if (/[0-9]/.test(v))        score++;
+                if (/[^A-Za-z0-9]/.test(v)) score++;   // special char bonus
+
+                const levels = [
+                    { label: '',        color: 'transparent', w: '0%'   },
+                    { label: 'Weak',    color: '#e05252',     w: '25%'  },
+                    { label: 'Fair',    color: '#f59e0b',     w: '50%'  },
+                    { label: 'Good',    color: '#3b82f6',     w: '75%'  },
+                    { label: 'Strong',  color: '#22c55e',     w: '100%' },
+                ];
+                const lvl = v.length === 0 ? levels[0] : levels[Math.min(score, 4)];
+                bar.style.width           = lvl.w;
+                bar.style.backgroundColor = lvl.color;
+                label.textContent         = lvl.label;
+                label.style.color         = lvl.color;
+            });
+        }
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       SUBDOMAIN LIVE PREVIEW + AUTO-SLUG
+    ───────────────────────────────────────────────────────────────────── */
+    const subdomainInput = document.querySelector('input[name="subdomain"]');
+    const subdomainText  = document.getElementById('subdomainText');
+    const subdomainStatus = document.createElement('span');
+    subdomainStatus.className = 'field-hint subdomain-status';
+    if (subdomainInput) {
+        subdomainInput.parentNode.appendChild(subdomainStatus);
+    }
+
+    if (subdomainInput && subdomainText) {
+        subdomainInput.addEventListener('input', function (e) {
+            let value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            e.target.value = value;
+            subdomainText.textContent = value || 'yourcompany';
+        });
+    }
+
+    const companyInput = document.querySelector('input[name="company_name"]');
+    if (companyInput && subdomainInput) {
+        companyInput.addEventListener('input', function (e) {
+            if (!subdomainInput.dataset.manualEdit) {
+                let slug = e.target.value.toLowerCase()
+                    .replace(/[^a-z0-9\s-]/g, '')
+                    .trim().replace(/\s+/g, '-')
+                    .substring(0, 30);
+                subdomainInput.value = slug;
+                if (subdomainText) subdomainText.textContent = slug || 'yourcompany';
             }
         });
-    </script>
-</body>
-</html>
+        subdomainInput.addEventListener('input', function () {
+            subdomainInput.dataset.manualEdit = '1';
+        });
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       PHONE FIELD — auto-prepend "+" and format hint on focus
+    ───────────────────────────────────────────────────────────────────── */
+    ['input[name="phone"]', 'input[name="admin_phone"]'].forEach(function (sel) {
+        const el = document.querySelector(sel);
+        if (!el) return;
+        el.addEventListener('focus', function () {
+            if (!el.value) el.value = '+';
+        });
+        el.addEventListener('input', function () {
+            // Strip everything except + and digits, always keep leading +
+            let val = el.value.replace(/[^\d+]/g, '');
+            if (val && val[0] !== '+') val = '+' + val;
+            // Remove any extra + that crept in
+            val = '+' + val.replace(/\+/g, '');
+            el.value = val === '+' ? '' : val;
+        });
+        el.addEventListener('blur', function () {
+            // If they only typed "+" without digits, clear it
+            if (el.value === '+') el.value = '';
+        });
+    });
+
+    /* ─────────────────────────────────────────────────────────────────────
+       FORM SUBMIT — run all validations before allowing submit
+    ───────────────────────────────────────────────────────────────────── */
+    const form = document.querySelector('form[method="post"]');
+    if (form) {
+        form.addEventListener('submit', function (e) {
+            let valid = true;
+
+            function check(selector, validatorFn) {
+                const el = form.querySelector(selector);
+                if (!el) return;
+                const err = validatorFn(el.value);
+                if (err) { setError(el, err); valid = false; }
+                else      { setSuccess(el); }
+            }
+
+            check('input[name="company_name"]', v => validateRequired(v, 'Company name'));
+            check('input[name="subdomain"]',    validateSubdomain);
+            check('input[name="email"]',        v => validateEmail(v, 'Company email'));
+            check('input[name="phone"]',        v => validatePhone(v, 'Company phone'));
+            check('input[name="country"]',      v => validateRequired(v, 'Country'));
+            check('input[name="first_name"]',   v => validateRequired(v, 'First name'));
+            check('input[name="last_name"]',    v => validateRequired(v, 'Last name'));
+            check('input[name="admin_email"]',  v => validateEmail(v, 'Admin email'));
+            check('input[name="admin_phone"]',  v => validatePhone(v, 'Admin phone'));
+            check('input[name="password"]',     validatePassword);
+
+            // Confirm password
+            if (pwInput && pwConfInput) {
+                const confirmErr = !pwConfInput.value
+                    ? 'Please confirm your password.'
+                    : pwConfInput.value !== pwInput.value
+                    ? 'Passwords do not match.'
+                    : '';
+                if (confirmErr) { setError(pwConfInput, confirmErr); valid = false; }
+                else            { setSuccess(pwConfInput); }
+            }
+
+            // Terms checkbox
+            const terms = form.querySelector('input[name="accept_terms"]');
+            if (terms && !terms.checked) {
+                setError(terms, 'You must accept the terms and conditions to proceed.');
+                valid = false;
+            }
+
+            if (!valid) {
+                e.preventDefault();
+                // Scroll to the first error
+                const firstErr = form.querySelector('.js-error:not(:empty)');
+                if (firstErr) {
+                    firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } else {
+                // Disable button to prevent double-submit
+                const btn = form.querySelector('.btn-submit');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML =
+                        '<span class="btn-shimmer"></span>' +
+                        '<i class="fas fa-spinner fa-spin"></i> Creating your workspace…';
+                }
+            }
+        });
+    }
+
+});
+</script>
+
+<style>
+/* ── Password strength meter ───────────────────────────────────────── */
+.pw-meter-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+}
+.pw-meter {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border-color-light, #e2e8f0);
+    overflow: hidden;
+}
+.pw-meter-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: 2px;
+    transition: width 0.3s, background-color 0.3s;
+}
+.pw-meter-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    min-width: 44px;
+    text-align: right;
+    transition: color 0.3s;
+}
+
+/* ── Subdomain availability status ────────────────────────────────── */
+.subdomain-status {
+    margin-top: 4px;
+    min-height: 1em;
+    transition: color 0.2s;
+}
+
+/* ── Smooth error/success transitions on inputs ────────────────────── */
+.field-wrap input,
+.field-wrap select,
+.field-wrap textarea {
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+</style>
+{% endblock %}

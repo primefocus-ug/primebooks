@@ -10,8 +10,8 @@ from django.http import JsonResponse, HttpResponse
 from django.views.generic import ListView, DetailView
 from django.views.decorators.http import require_POST, require_http_methods
 from django.views.decorators.csrf import csrf_exempt
-from django.db.models import Q, Sum, Count, Avg, F,Min,Max
-from django.db import transaction, IntegrityError
+from django.db.models import Q, Sum, Count, Avg, F, Min, Max
+from django.db import transaction, connection, IntegrityError
 from django.utils import timezone
 from django.core.mail import EmailMessage
 from django.http import HttpResponseServerError
@@ -22,13 +22,12 @@ from django.core.paginator import Paginator
 import json
 from django.views.decorators.http import require_GET
 import csv
-from django.template.loader import render_to_string
+from django.template.loader import render_to_string, get_template
 import xlsxwriter
 from io import BytesIO
 from datetime import datetime, timedelta
 import logging
-from datetime import timedelta
-from django.utils import timezone
+from django.core.cache import cache
 from tenancy.utils import tenant_context_safe
 from .models import Sale, SaleItem, Payment, Cart, CartItem, Receipt
 from .forms import (
@@ -1014,114 +1013,153 @@ class SalesListView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMix
             for store in accessible_stores
         )
 
-        # Add summary statistics
+        # ── Stats: ONE aggregate query replacing 12+ separate COUNT/SUM calls ──
+        # Cached per store per day. Invalidated by post_save signal in cache.py.
         queryset = self.get_queryset()
-        credit_sales = queryset.filter(document_type='INVOICE', payment_method='CREDIT')
-        context['stats'] = {
-            'total_sales': queryset.count(),
-            'total_amount': queryset.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'total_credit_amount': credit_sales.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'fiscalized_count': queryset.filter(is_fiscalized=True).count(),
-            'receipt_count': queryset.filter(document_type='RECEIPT').count(),
-            'invoice_count': queryset.filter(document_type='INVOICE').count(),
-            'proforma_count': queryset.filter(document_type='PROFORMA').count(),
-            'estimate_count': queryset.filter(document_type='ESTIMATE').count(),
-        }
+        date_str = timezone.now().strftime('%Y-%m-%d')
+        store_ids = '_'.join(str(s.id) for s in accessible_stores)
+        stats_cache_key = f'sale_stats:{store_ids}:{date_str}'
 
-        # ADD: Credit invoice statistics
-        credit_invoices = queryset.filter(
-            document_type='INVOICE',
-            payment_method='CREDIT'
-        )
+        agg = cache.get(stats_cache_key)
+        if agg is None:
+            agg = queryset.aggregate(
+                total_sales          = Count('id'),
+                total_amount         = Sum('total_amount'),
+                total_credit_amount  = Sum('total_amount',
+                    filter=Q(document_type='INVOICE', payment_method='CREDIT')),
+                fiscalized_count     = Count('id', filter=Q(is_fiscalized=True)),
+                receipt_count        = Count('id', filter=Q(document_type='RECEIPT')),
+                invoice_count        = Count('id', filter=Q(document_type='INVOICE')),
+                proforma_count       = Count('id', filter=Q(document_type='PROFORMA')),
+                estimate_count       = Count('id', filter=Q(document_type='ESTIMATE')),
+                overdue_count        = Count('id', filter=Q(payment_status='OVERDUE')),
+                overdue_amount       = Sum('total_amount', filter=Q(payment_status='OVERDUE')),
+                credit_pending_count = Count('id', filter=Q(
+                    document_type='INVOICE', payment_method='CREDIT',
+                    payment_status__in=['PENDING', 'PARTIALLY_PAID'])),
+                credit_paid_count    = Count('id', filter=Q(
+                    document_type='INVOICE', payment_method='CREDIT',
+                    payment_status='PAID')),
+                avg_credit_amount    = Avg('total_amount', filter=Q(
+                    document_type='INVOICE', payment_method='CREDIT')),
+            )
+            cache.set(stats_cache_key, agg, 60)  # 60-second TTL
+
+        total_sales = agg['total_sales'] or 0
+
+        context['stats'] = {
+            'total_sales':        total_sales,
+            'total_amount':       agg['total_amount'] or 0,
+            'total_credit_amount':agg['total_credit_amount'] or 0,
+            'fiscalized_count':   agg['fiscalized_count'] or 0,
+            'receipt_count':      agg['receipt_count'] or 0,
+            'invoice_count':      agg['invoice_count'] or 0,
+            'proforma_count':     agg['proforma_count'] or 0,
+            'estimate_count':     agg['estimate_count'] or 0,
+        }
 
         context['credit_stats'] = {
-            'total_credit_invoices': credit_invoices.count(),
-            'total_credit_amount': credit_invoices.aggregate(
-                Sum('total_amount')
-            )['total_amount__sum'] or 0,
-            'overdue_count': credit_invoices.filter(
-                payment_status='OVERDUE'
-            ).count(),
-            'overdue_amount': credit_invoices.filter(
-                payment_status='OVERDUE'
-            ).aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'pending_count': credit_invoices.filter(
-                payment_status__in=['PENDING', 'PARTIALLY_PAID']
-            ).count(),
-            'paid_count': credit_invoices.filter(
-                payment_status='PAID'
-            ).count(),
-            'avg_credit_amount': credit_invoices.aggregate(
-                Avg('total_amount')
-            )['total_amount__avg'] or 0,
+            'total_credit_invoices': (agg['invoice_count'] or 0),
+            'total_credit_amount':   agg['total_credit_amount'] or 0,
+            'overdue_count':         agg['overdue_count'] or 0,
+            'overdue_amount':        agg['overdue_amount'] or 0,
+            'pending_count':         agg['credit_pending_count'] or 0,
+            'paid_count':            agg['credit_paid_count'] or 0,
+            'avg_credit_amount':     agg['avg_credit_amount'] or 0,
         }
 
-        # Add document type distribution for chart
-        doc_type_stats = queryset.values('document_type').annotate(
-            count=Count('id'),
-            total=Sum('total_amount')
-        ).order_by('-count')
+        # Document-type distribution — one VALUES+ANNOTATE query, cached together
+        doc_type_stats_key = f'sale_doc_type_stats:{store_ids}:{date_str}'
+        doc_type_raw = cache.get(doc_type_stats_key)
+        if doc_type_raw is None:
+            doc_type_raw = list(queryset.values('document_type').annotate(
+                count=Count('id'),
+                total=Sum('total_amount')
+            ).order_by('-count'))
+            cache.set(doc_type_stats_key, doc_type_raw, 60)
 
         context['document_type_stats'] = [
             {
-                'type': stat['document_type'],
-                'type_display': dict(Sale.DOCUMENT_TYPE_CHOICES).get(stat['document_type'], stat['document_type']),
-                'count': stat['count'],
-                'total': stat['total'] or 0,
-                'percentage': (stat['count'] / context['stats']['total_sales'] * 100) if context['stats'][
-                                                                                             'total_sales'] > 0 else 0
+                'type': s['document_type'],
+                'type_display': dict(Sale.DOCUMENT_TYPE_CHOICES).get(
+                    s['document_type'], s['document_type']),
+                'count': s['count'],
+                'total': s['total'] or 0,
+                'percentage': (s['count'] / total_sales * 100) if total_sales > 0 else 0,
             }
-            for stat in doc_type_stats
+            for s in doc_type_raw
         ]
 
-        # Add payment status distribution
-        payment_status_stats = queryset.values('payment_status').annotate(
-            count=Count('id'),
-            total=Sum('total_amount')
-        ).order_by('-count')
+        # Payment-status distribution
+        pay_stats_key = f'sale_pay_stats:{store_ids}:{date_str}'
+        pay_stats_raw = cache.get(pay_stats_key)
+        if pay_stats_raw is None:
+            pay_stats_raw = list(queryset.values('payment_status').annotate(
+                count=Count('id'),
+                total=Sum('total_amount')
+            ).order_by('-count'))
+            cache.set(pay_stats_key, pay_stats_raw, 60)
 
         context['payment_status_stats'] = [
             {
-                'status': stat['payment_status'],
-                'status_display': dict(Sale.PAYMENT_STATUS_CHOICES).get(stat['payment_status'], stat['payment_status']),
-                'count': stat['count'],
-                'total': stat['total'] or 0,
+                'status': s['payment_status'],
+                'status_display': dict(Sale.PAYMENT_STATUS_CHOICES).get(
+                    s['payment_status'], s['payment_status']),
+                'count': s['count'],
+                'total': s['total'] or 0,
             }
-            for stat in payment_status_stats
+            for s in pay_stats_raw
         ]
 
-        # Add EFRIS status information
-        efris_sales = queryset.filter(is_fiscalized=True)
-        if efris_sales.exists():
+        # EFRIS stats — reuse agg data, no extra query
+        if agg['fiscalized_count']:
+            efris_key = f'sale_efris_latest:{store_ids}'
+            latest_fiscal = cache.get(efris_key)
+            if latest_fiscal is None:
+                latest_fiscal = (
+                    queryset.filter(is_fiscalized=True)
+                    .order_by('-fiscalization_time')
+                    .only('id', 'document_number', 'fiscalization_time')
+                    .first()
+                )
+                cache.set(efris_key, latest_fiscal, 120)
             context['efris_stats'] = {
-                'count': efris_sales.count(),
-                'total_amount': efris_sales.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-                'latest_fiscalized': efris_sales.order_by('-fiscalization_time').first(),
+                'count':        agg['fiscalized_count'],
+                'total_amount': agg['total_amount'] or 0,
+                'latest_fiscalized': latest_fiscal,
             }
 
-        # Add store performance statistics
-        store_performance = queryset.values(
-            'store__id', 'store__name'
-        ).annotate(
-            sales_count=Count('id'),
-            total_amount=Sum('total_amount'),
-            fiscalized_count=Count('id', filter=Q(is_fiscalized=True))
-        ).order_by('-total_amount')[:10]
-
+        # Store performance — cached 2 minutes (changes less often)
+        store_perf_key = f'sale_store_perf:{store_ids}:{date_str}'
+        store_performance = cache.get(store_perf_key)
+        if store_performance is None:
+            store_performance = list(
+                queryset.values('store__id', 'store__name').annotate(
+                    sales_count=Count('id'),
+                    total_amount=Sum('total_amount'),
+                    fiscalized_count=Count('id', filter=Q(is_fiscalized=True)),
+                ).order_by('-total_amount')[:10]
+            )
+            cache.set(store_perf_key, store_performance, 120)
         context['store_performance'] = store_performance
 
-        # Add top customers for credit sales
-        top_credit_customers = queryset.filter(
-            document_type='INVOICE',
-            payment_method='CREDIT'
-        ).values(
-            'customer__id', 'customer__name', 'customer__phone'
-        ).annotate(
-            invoice_count=Count('id'),
-            total_credit=Sum('total_amount'),
-            outstanding_count=Count('id', filter=Q(payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']))
-        ).order_by('-total_credit')[:5]
-
+        # Top credit customers — cached 2 minutes
+        top_cust_key = f'sale_top_cust:{store_ids}:{date_str}'
+        top_credit_customers = cache.get(top_cust_key)
+        if top_credit_customers is None:
+            top_credit_customers = list(
+                queryset.filter(
+                    document_type='INVOICE', payment_method='CREDIT'
+                ).values(
+                    'customer__id', 'customer__name', 'customer__phone'
+                ).annotate(
+                    invoice_count=Count('id'),
+                    total_credit=Sum('total_amount'),
+                    outstanding_count=Count('id', filter=Q(
+                        payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE'])),
+                ).order_by('-total_credit')[:5]
+            )
+            cache.set(top_cust_key, top_credit_customers, 120)
         context['top_credit_customers'] = top_credit_customers
 
         return context
@@ -1467,16 +1505,18 @@ def create_invoice_for_sale(sale, user):
             try:
                 from invoices.models import InvoiceItem
                 for sale_item in sale.items.all():
-                    # Check if item already exists
+                    # Check if item already exists (match on product OR service)
                     existing_item = InvoiceItem.objects.filter(
                         invoice=invoice,
-                        product=sale_item.product
+                        product=sale_item.product,
+                        service=sale_item.service,
                     ).exists()
 
                     if not existing_item:
                         InvoiceItem.objects.create(
                             invoice=invoice,
-                            product=sale_item.product,
+                            product=sale_item.product if sale_item.item_type == 'PRODUCT' else None,
+                            service=sale_item.service if sale_item.item_type == 'SERVICE' else None,
                             quantity=sale_item.quantity,
                             unit_price=sale_item.unit_price,
                             total_price=sale_item.total_price,
@@ -1484,7 +1524,10 @@ def create_invoice_for_sale(sale, user):
                             discount_amount=getattr(sale_item, 'discount_amount', 0),
                         )
                     else:
-                        logger.debug(f"Invoice item already exists for product {sale_item.product.name}")
+                        item_label = sale_item.product.name if sale_item.item_type == 'PRODUCT' else (
+                            sale_item.service.name if sale_item.service else 'Unknown'
+                        )
+                        logger.debug(f"Invoice item already exists for {item_label}")
             except ImportError:
                 logger.warning("InvoiceItem model not available")
 
@@ -1705,8 +1748,9 @@ def recent_customers_api(request):
         # Prepare response data
         customers_data = []
         for customer in customers:
-            # Update credit balance to get current info
-            customer.update_credit_balance()
+            # Do not call update_credit_balance() in a list loop — it fires a
+            # DB write per row. Balances are kept fresh by the periodic
+            # refresh_customer_credit_balances Celery task.
 
             # Get EFRIS data if available
             efris_data = {}
@@ -1831,7 +1875,14 @@ def create_sale(request):
     if request.method == 'GET':
         return render_sale_form(request)
     else:
-        company = request.user.company  # or however your codebase resolves it
+        # Always resolve company from the request tenant (same as GET path)
+        # to guarantee consistent tenant context across the full request cycle.
+        company = get_current_tenant(request)
+        if not company:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': False, 'errors': ['No company context found']}, status=400)
+            messages.error(request, 'No company context found')
+            return redirect('sales:sales_list')
         return process_sale_creation(request, company)
 
 
@@ -2028,12 +2079,19 @@ def _process_sale_atomic(request, company):
             if (store_config.get('enabled', False) and
                     store_config.get('is_active', False) and
                     store_config.get('auto_fiscalize_sales', True)):
-                sale._auto_fiscalize_sale()
-                logger.info(f"Deferred auto-fiscalization triggered for sale {sale.id}")
+                # Schedule fiscalization AFTER the atomic transaction commits
+                # so the EFRIS HTTP call never holds the DB transaction open,
+                # and a network failure cannot roll back a successfully saved sale.
+                sale_id_for_closure = sale.id
+                user_id_for_closure = getattr(sale.created_by, 'pk', None)
+                transaction.on_commit(
+                    lambda: sale._auto_fiscalize_sale()
+                )
+                logger.info(f"Deferred auto-fiscalization scheduled for sale {sale.id}")
         except Exception as e:
-            # ✅ Log but don't re-raise — fiscalization failure should not
-            # roll back a successfully created sale
-            logger.error(f"Deferred auto-fiscalization failed for sale {sale.id}: {e}")
+            # Log but don't re-raise — fiscalization failure must not
+            # roll back a successfully created sale.
+            logger.error(f"Deferred auto-fiscalization scheduling failed for sale {sale.id}: {e}")
 
     if sale.document_type == 'RECEIPT':
         try:
@@ -2133,10 +2191,20 @@ def get_task_status(request, task_id):
     # Clean up completed tasks
     if task_data.get('status') in ['completed', 'failed', 'error']:
         # Keep for 5 minutes before cleanup
-        created_at = datetime.fromisoformat(task_data.get('created_at', '2000-01-01'))
-        if timezone.now() - created_at > timedelta(minutes=5):
-            del request.session[f'sale_task_{task_id}']
-            request.session.modified = True
+        try:
+            created_at_str = task_data.get('created_at', '')
+            if created_at_str:
+                # fromisoformat may return naive or aware datetime depending on
+                # the Python version and the stored string. Normalise to aware.
+                created_at = datetime.fromisoformat(created_at_str)
+                if created_at.tzinfo is None:
+                    from django.utils.timezone import make_aware
+                    created_at = make_aware(created_at)
+                if timezone.now() - created_at > timedelta(minutes=5):
+                    del request.session[f'sale_task_{task_id}']
+                    request.session.modified = True
+        except (ValueError, TypeError):
+            pass  # Malformed date — leave it, cleanup will happen on next request
 
     return JsonResponse(response_data)
 
@@ -2691,14 +2759,13 @@ def create_sale_items(sale, items_data):
                 **export_kwargs  # ✅ Apply export fields
             )
 
-            # Preserve defer flag if exists
-            if getattr(sale, '_defer_auto_fiscalize', False):
-                sale_item._skip_sale_update = True
+            # Suppress per-item update_totals — we call it ONCE after the loop.
+            # This reduces N aggregate queries (one per item) down to exactly 1.
+            sale_item._skip_sale_update = True
 
             sale_item.save()
             created_items.append(sale_item)
 
-            # Success log
             logger.info(
                 f"✅ Created sale item {idx}/{len(items_data)}: "
                 f"{sale_item.item_name} x{sale_item.quantity}"
@@ -2714,6 +2781,8 @@ def create_sale_items(sale, items_data):
             logger.error(f"❌ Unexpected error creating sale item {idx}: {str(e)}", exc_info=True)
             raise ValidationError(f"Failed to create sale item {idx}: {str(e)}")
 
+    # ONE update_totals for all N items instead of N separate aggregate queries
+    sale.update_totals()
     logger.info(f"✅ Created {len(created_items)} sale items for sale {sale.document_number}")
     return created_items
 
@@ -2831,35 +2900,46 @@ def search_products(request):
             except (ValueError, Store.DoesNotExist):
                 return JsonResponse({'error': 'Invalid store'}, status=400)
 
-        # Base product query
-        products = Product.objects.filter(
-            is_active=True
-        ).filter(
+        # Base product query — use prefetch_related to avoid N+1 stock lookups.
+        from django.db.models import Prefetch
+        from inventory.models import Stock as StockModel
+
+        products_qs = Product.objects.filter(is_active=True).filter(
             Q(name__icontains=query) |
             Q(sku__icontains=query) |
             Q(barcode__icontains=query)
         ).select_related('category', 'supplier')
 
-        # Filter by store stock if store is selected
         if store:
-            products = products.filter(
+            products_qs = products_qs.filter(
                 store_inventory__store=store,
                 store_inventory__quantity__gt=0
             )
 
-        products = products.distinct()[:20]
+        # Prefetch the specific store's stock in one extra query instead of N
+        if store:
+            products_qs = products_qs.prefetch_related(
+                Prefetch(
+                    'store_inventory',
+                    queryset=StockModel.objects.filter(store=store),
+                    to_attr='filtered_stock',
+                )
+            )
+
+        products = products_qs.distinct()[:20]
 
         product_data = []
         for product in products:
             stock_info = None
             if store:
-                try:
-                    stock = product.store_inventory.get(store=store)
+                # filtered_stock is pre-fetched — zero extra queries
+                stock_list = getattr(product, 'filtered_stock', [])
+                if stock_list:
                     stock_info = {
-                        'available': float(stock.quantity),
+                        'available': float(stock_list[0].quantity),
                         'unit': product.unit_of_measure or 'pcs'
                     }
-                except product.store_inventory.model.DoesNotExist:
+                else:
                     stock_info = {'available': 0, 'unit': product.unit_of_measure or 'pcs'}
 
             efris_data = {}
@@ -2957,7 +3037,9 @@ def search_customers(request):
 
         customer_data = []
         for customer in customers:
-            customer.update_credit_balance()
+            # DO NOT call update_credit_balance() here — it fires a DB write on
+            # every keystroke for every result row. Balances are refreshed by
+            # the periodic Celery task `refresh_customer_credit_balances`.
             efris_data = {}
             if hasattr(customer, 'get_efris_buyer_details'):
                 try:
@@ -3081,7 +3163,8 @@ def fiscalize_sale(request, sale_id):
             from .tasks import fiscalize_invoice_async
 
             # Queue the fiscalization task
-            task_result = fiscalize_invoice_async.delay(sale.pk, request.user.pk)
+            task_result = fiscalize_invoice_async.delay(
+            sale.pk, request.user.pk, schema_name=connection.schema_name)
 
             messages.success(
                 request,
@@ -3151,7 +3234,9 @@ def bulk_actions(request):
 
                         # Queue fiscalization for ANY sale type (receipt or invoice)
                         from .tasks import fiscalize_invoice_async
-                        fiscalize_invoice_async.delay(sale.pk, request.user.pk)
+                        fiscalize_invoice_async.delay(
+                        sale.pk, request.user.pk,
+                        schema_name=connection.schema_name)
                         total_queued += 1
 
                     except Exception as e:

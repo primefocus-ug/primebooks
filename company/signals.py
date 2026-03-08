@@ -213,17 +213,16 @@ def handle_company_efris_changes(sender, instance, created, **kwargs):
             logger.info(f"New company created without EFRIS: {instance.company_id}")
 
     else:
-        # Existing company updated - check for EFRIS changes
+        # Existing company updated - check for EFRIS changes.
+        # NOTE: We cannot reliably fetch "old" values in post_save because the DB
+        # already holds the new values. Instead we rely on _pre_save_efris_enabled
+        # which is stored on the instance by the pre_save signal below.
         try:
-            # Get the old instance from the transaction
-            old_instance = Company.objects.filter(pk=instance.pk).first()
-
-            if not old_instance:
-                logger.warning(f"Could not find old instance for company {instance.company_id}")
-                return
+            # Retrieve old EFRIS state captured by pre_save signal
+            old_efris_enabled = getattr(instance, '_pre_save_efris_enabled', instance.efris_enabled)
 
             # Check if EFRIS was just enabled
-            if not old_instance.efris_enabled and instance.efris_enabled:
+            if not old_efris_enabled and instance.efris_enabled:
                 logger.info(f"EFRIS enabled for existing company {instance.company_id}")
 
                 transaction.on_commit(
@@ -233,13 +232,15 @@ def handle_company_efris_changes(sender, instance, created, **kwargs):
                     )
                 )
 
-            # Check if critical EFRIS fields changed
+            # Check if critical EFRIS fields changed (use update_fields hint when available)
             elif instance.efris_enabled:
+                update_fields = kwargs.get('update_fields')
                 efris_fields = ['tin', 'name', 'trading_name', 'email', 'phone', 'physical_address']
-                fields_changed = [
-                    field for field in efris_fields
-                    if getattr(old_instance, field) != getattr(instance, field)
-                ]
+                if update_fields is not None:
+                    fields_changed = [f for f in efris_fields if f in update_fields]
+                else:
+                    # update_fields not provided - assume something may have changed
+                    fields_changed = efris_fields  # conservative: trigger sync
 
                 if fields_changed:
                     logger.info(
@@ -259,6 +260,25 @@ def handle_company_efris_changes(sender, instance, created, **kwargs):
                 f"Error in EFRIS change handler for company {instance.company_id}: {e}",
                 exc_info=True
             )
+
+
+@receiver(pre_save, sender=Company)
+def capture_efris_state_before_save(sender, instance, **kwargs):
+    """
+    Capture the current efris_enabled value BEFORE the save so that
+    handle_company_efris_changes (post_save) can compare old vs new correctly.
+    The DB still holds the old value here, so we fetch it once and stash it
+    on the instance as a private attribute.
+    """
+    if instance.pk:
+        try:
+            old = Company.objects.only('efris_enabled').get(pk=instance.pk)
+            instance._pre_save_efris_enabled = old.efris_enabled
+        except Company.DoesNotExist:
+            instance._pre_save_efris_enabled = instance.efris_enabled
+    else:
+        # New instance — treat as "was not enabled"
+        instance._pre_save_efris_enabled = False
 
 
 @receiver(pre_save, sender=Company)
@@ -432,6 +452,10 @@ def device_activity_handler(sender, instance, created, **kwargs):
 
         user_name = instance.user.get_full_name() or instance.user.username
 
+        if not channel_layer:
+            logger.debug("Channel layer not available, skipping device activity WebSocket")
+            return
+
         async_to_sync(channel_layer.group_send)(
             f'company_dashboard_{company_id}',
             {
@@ -462,6 +486,10 @@ def employee_updated_handler(sender, instance, created, **kwargs):
 
     try:
         event_type = 'employee_joined' if created else 'employee_updated'
+
+        if not channel_layer:
+            logger.debug("Channel layer not available, skipping employee update WebSocket")
+            return
 
         async_to_sync(channel_layer.group_send)(
             f'company_dashboard_{instance.company.company_id}',

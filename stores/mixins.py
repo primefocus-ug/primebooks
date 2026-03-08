@@ -164,9 +164,14 @@ def _scope_form_store_fields(form, accessible_stores):
     for field_name, field in form.fields.items():
         if _is_store_field(field):
             field.queryset = accessible_stores
+            # FIX: the old code called accessible_stores.count() inside an
+            # f-string, issuing a DB query even when DEBUG logging is off.
+            # Use %s-style lazy formatting; Django's logger won't evaluate
+            # the args unless the message is actually emitted.
             logger.debug(
-                f"Scoped field '{field_name}' on {form.__class__.__name__} "
-                f"to {accessible_stores.count()} stores"
+                "Scoped field '%s' on %s to accessible stores",
+                field_name,
+                form.__class__.__name__,
             )
 
 

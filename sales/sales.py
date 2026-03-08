@@ -19,6 +19,12 @@ from stores.utils import get_user_accessible_stores, validate_store_access
 logger = logging.getLogger(__name__)
 
 
+def get_current_tenant(request):
+    """Get current tenant from request. Defined here so all functions below can use it."""
+    return getattr(request, 'tenant', None)
+
+
+
 @login_required
 def create_sale_enhanced(request):
     """Enhanced sale creation with preview, drafts, and workflow support"""
@@ -64,7 +70,6 @@ def render_enhanced_sale_form(request):
     return render(request, 'sales/create_sale_enhanced.html', context)
 
 
-@transaction.atomic
 def process_enhanced_sale_creation(request):
     """Process enhanced sale creation with workflow support"""
 
@@ -115,7 +120,12 @@ def extract_sale_data(request):
     validate_store_access(request.user, store, action='create', raise_exception=True)
 
     customer_id = request.POST.get('customer')
-    customer = Customer.objects.get(id=customer_id) if customer_id else None
+    customer = None
+    if customer_id:
+        try:
+            customer = Customer.objects.get(id=customer_id)
+        except Customer.DoesNotExist:
+            raise ValueError(f"Customer id={customer_id} not found.")
 
     document_type = request.POST.get('document_type', 'RECEIPT')
     payment_method = request.POST.get('payment_method', 'CASH')
@@ -166,6 +176,12 @@ def extract_items_data(request):
         logger.warning("No items data found in request")
         return []
 
+    # B3 fix: batch-fetch all products and services in 2 queries instead of N
+    product_ids = [i['product_id'] for i in items_data if i.get('item_type', 'PRODUCT') == 'PRODUCT' and i.get('product_id')]
+    service_ids = [i['service_id'] for i in items_data if i.get('item_type') == 'SERVICE' and i.get('service_id')]
+    products_map = {p.id: p for p in Product.objects.filter(id__in=product_ids, is_active=True)}
+    services_map = {s.id: s for s in Service.objects.filter(id__in=service_ids, is_active=True)}
+
     validated_items = []
 
     for item in items_data:
@@ -178,7 +194,11 @@ def extract_items_data(request):
                     logger.warning(f"Missing product_id in item: {item}")
                     continue
 
-                product = Product.objects.get(id=product_id, is_active=True)
+                product = products_map.get(int(product_id))
+                if not product:
+                    logger.error(f"Product id={product_id} not found or inactive")
+                    continue
+
                 validated_items.append({
                     'item_type': 'PRODUCT',
                     'product': product,
@@ -195,7 +215,11 @@ def extract_items_data(request):
                     logger.warning(f"Missing service_id in item: {item}")
                     continue
 
-                service = Service.objects.get(id=service_id, is_active=True)
+                service = services_map.get(int(service_id))
+                if not service:
+                    logger.error(f"Service id={service_id} not found or inactive")
+                    continue
+
                 validated_items.append({
                     'item_type': 'SERVICE',
                     'product': None,
@@ -206,9 +230,6 @@ def extract_items_data(request):
                     'discount': Decimal(str(item.get('discount', '0'))),
                     'description': item.get('description', ''),
                 })
-        except (Product.DoesNotExist, Service.DoesNotExist) as e:
-            logger.error(f"Item not found: {e}")
-            continue
         except Exception as e:
             logger.error(f"Error processing item: {e}", exc_info=True)
             continue
@@ -259,6 +280,9 @@ def show_preview(request, sale_data, items_data):
         if item['tax_rate'] in ['A', 'D']:
             tax_amount += (item_net / Decimal('1.18') * Decimal('0.18'))
 
+    # B6 fix: tax is inclusive (embedded in unit_price), so total = subtotal - discount.
+    # Tax amount is informational only — do not add it again.
+    # The real Sale.total_amount = subtotal - discount (tax already in price).
     total = subtotal - discount
 
     context = {
@@ -266,7 +290,7 @@ def show_preview(request, sale_data, items_data):
         'items_data': items_data,
         'subtotal': subtotal,
         'discount': discount,
-        'tax_amount': tax_amount,
+        'tax_amount': tax_amount,   # shown as informational, not added to total
         'total': total,
         'is_preview': True,
     }
@@ -274,6 +298,7 @@ def show_preview(request, sale_data, items_data):
     return render(request, 'sales/preview_sale.html', context)
 
 
+@transaction.atomic
 def save_as_draft(request, sale_data, items_data):
     """Save sale as draft"""
     sale = Sale.objects.create(
@@ -290,9 +315,9 @@ def save_as_draft(request, sale_data, items_data):
         payment_status='NOT_APPLICABLE' if sale_data['document_type'] in ['PROFORMA', 'ESTIMATE'] else 'PENDING',
     )
 
-    # Add items
+    # B5 fix: suppress per-item update_totals signal, call once at end
     for item_data in items_data:
-        SaleItem.objects.create(
+        item = SaleItem(
             sale=sale,
             item_type=item_data['item_type'],
             product=item_data.get('product'),
@@ -303,6 +328,8 @@ def save_as_draft(request, sale_data, items_data):
             discount=item_data['discount'],
             description=item_data.get('description', ''),
         )
+        item._skip_sale_update = True
+        item.save()
 
     sale.update_totals()
 
@@ -319,10 +346,17 @@ def save_as_draft(request, sale_data, items_data):
     return sale
 
 
+@transaction.atomic
 def complete_sale(request, sale_data, items_data):
     """Complete sale (non-draft)"""
-    status = 'COMPLETED' if sale_data['document_type'] == 'RECEIPT' else 'PENDING_PAYMENT'
-    payment_status = 'PAID' if sale_data['document_type'] == 'RECEIPT' else 'PENDING'
+    # B10 fix: PROFORMA and ESTIMATE are not payable documents
+    doc_type = sale_data['document_type']
+    if doc_type == 'RECEIPT':
+        status, payment_status = 'COMPLETED', 'PAID'
+    elif doc_type == 'INVOICE':
+        status, payment_status = 'PENDING_PAYMENT', 'PENDING'
+    else:  # PROFORMA, ESTIMATE
+        status, payment_status = 'DRAFT', 'NOT_APPLICABLE'
 
     sale = Sale.objects.create(
         store=sale_data['store'],
@@ -338,9 +372,9 @@ def complete_sale(request, sale_data, items_data):
         payment_status=payment_status,
     )
 
-    # Add items
+    # B5 fix: suppress per-item update_totals signal, call once at end
     for item_data in items_data:
-        SaleItem.objects.create(
+        item = SaleItem(
             sale=sale,
             item_type=item_data['item_type'],
             product=item_data.get('product'),
@@ -351,6 +385,8 @@ def complete_sale(request, sale_data, items_data):
             discount=item_data['discount'],
             description=item_data.get('description', ''),
         )
+        item._skip_sale_update = True
+        item.save()
 
     sale.update_totals()
 
@@ -430,10 +466,10 @@ def update_draft(request, sale):
         # Delete existing items
         sale.items.all().delete()
 
-        # Add new items
+        # Add new items — B5 fix: suppress per-item totals, call once at end
         items_data = extract_items_data(request)
         for item_data in items_data:
-            SaleItem.objects.create(
+            item = SaleItem(
                 sale=sale,
                 item_type=item_data['item_type'],
                 product=item_data.get('product'),
@@ -444,9 +480,12 @@ def update_draft(request, sale):
                 discount=item_data['discount'],
                 description=item_data.get('description', ''),
             )
+            item._skip_sale_update = True
+            item.save()
 
+        # B7 fix: update_totals() calls save(update_fields=...) internally —
+        # do NOT call sale.save() again after it (would overwrite those fields).
         sale.update_totals()
-        sale.save()
 
         # Update invoice if exists
         if sale.document_type == 'INVOICE' and hasattr(sale, 'invoice_detail'):
@@ -470,10 +509,6 @@ def record_payment(request, pk):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid method'}, status=405)
 
-    sale = get_object_or_404(Sale, pk=pk, document_type='INVOICE')
-
-    validate_store_access(request.user, sale.store, action='change', raise_exception=True)
-
     try:
         amount = Decimal(request.POST.get('amount', '0'))
         payment_method = request.POST.get('payment_method', 'CASH')
@@ -483,15 +518,23 @@ def record_payment(request, pk):
         if amount <= 0:
             return JsonResponse({'success': False, 'error': 'Amount must be positive'}, status=400)
 
-        outstanding = sale.amount_outstanding
-        if amount > outstanding:
-            return JsonResponse({
-                'success': False,
-                'error': f'Amount exceeds outstanding balance of {outstanding}'
-            }, status=400)
+        # B8 fix: lock the sale row inside a transaction to prevent concurrent
+        # payments from both passing the outstanding-balance check simultaneously.
+        with transaction.atomic():
+            sale = get_object_or_404(
+                Sale.objects.select_for_update(), pk=pk, document_type='INVOICE'
+            )
+            validate_store_access(request.user, sale.store, action='change', raise_exception=True)
 
-        # Create payment
-        payment = Payment.objects.create(
+            outstanding = sale.amount_outstanding
+            if amount > outstanding:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Amount exceeds outstanding balance of {outstanding}'
+                }, status=400)
+
+            # Create payment
+            payment = Payment.objects.create(
             sale=sale,
             store=sale.store,
             amount=amount,
@@ -529,17 +572,24 @@ def record_payment(request, pk):
 
 
 def validate_stock_availability(store, items_data):
-    """Validate stock for products"""
+    """Validate stock for products — B9 fix: single IN query instead of N queries."""
     from inventory.models import Stock
 
     errors = []
 
-    for item in items_data:
-        if item['item_type'] != 'PRODUCT':
-            continue
+    product_items = [i for i in items_data if i['item_type'] == 'PRODUCT' and i.get('product')]
+    if not product_items:
+        return errors
 
+    product_ids = [i['product'].id for i in product_items]
+    stock_map = {
+        s.product_id: s
+        for s in Stock.objects.filter(product_id__in=product_ids, store=store)
+    }
+
+    for item in product_items:
         product = item['product']
-        stock = Stock.objects.filter(product=product, store=store).first()
+        stock = stock_map.get(product.id)
 
         if not stock:
             errors.append(f'No stock record for {product.name}')
@@ -552,9 +602,3 @@ def validate_stock_availability(store, items_data):
             )
 
     return errors
-
-
-def get_current_tenant(request):
-    """Get current tenant from request"""
-    return getattr(request, 'tenant', None)
-

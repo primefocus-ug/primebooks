@@ -193,8 +193,9 @@ def filter_session_queryset(user, base_queryset=None):
         user__is_hidden=False
     )
 
-    if not user.is_saas_admin and not getattr(user, 'is_company_owner', False) and not getattr(user, 'company_admin',
-                                                                                               False):
+    if (not user.is_saas_admin
+            and not getattr(user, 'is_company_owner', False)
+            and not getattr(user, 'company_admin', False)):
         if hasattr(user, 'managed_stores') and user.managed_stores.exists():
             managed_stores = user.managed_stores.all()
             queryset = queryset.filter(store__in=managed_stores)
@@ -279,7 +280,8 @@ def generate_device_fingerprint(request):
     try:
         ua = parse(user_agent)
     except Exception as e:
-        logger.error(f"Error parsing user agent: {e}")
+        # FIX: use %s-style logging to avoid leaking UA string into formatted log
+        logger.error("Error parsing user agent: %s", e)
         return hashlib.sha256(f"{user_agent}|{ip_address}".encode()).hexdigest(), {
             'browser_name': 'Unknown',
             'browser_version': '',
@@ -338,11 +340,15 @@ def create_device_session(user, store, request, store_device=None):
     Create a new device session for a user login safely.
     """
     session = None
-    # FIX: Initialize ip_address and fingerprint_data before the try block
-    # so they are always bound even if the try block raises early.
     ip_address = get_client_ip(request)
     fingerprint_hash = ''
     fingerprint_data = {}
+    # FIX: declare latitude, longitude, active_sessions at function scope so
+    # create_security_checks() can reference them without using locals().get(),
+    # which is fragile and silently returns None/0 if the try block raised early.
+    latitude = None
+    longitude = None
+    active_sessions = 0
 
     try:
         fingerprint_hash, fingerprint_data = generate_device_fingerprint(request)
@@ -363,11 +369,11 @@ def create_device_session(user, store, request, store_device=None):
         ).count()
 
         if not validate_store_access(user, store, action='view', raise_exception=False):
-            logger.warning(f"User {user} does not have access to store {store}")
+            logger.warning("User %s does not have access to store %s", user, store)
             store = None
 
         if store_device and getattr(store_device, 'is_at_capacity', False):
-            logger.warning(f"Device {store_device} at capacity, skipping assignment")
+            logger.warning("Device %s at capacity, skipping assignment", store_device)
             store_device = None
 
         session_kwargs = {
@@ -404,7 +410,7 @@ def create_device_session(user, store, request, store_device=None):
         session = UserDeviceSession.objects.create(**session_kwargs)
 
     except Exception as e:
-        logger.error(f"Failed to create device session for user {user.email}: {e}")
+        logger.error("Failed to create device session for user %s: %s", user.email, e)
 
     # Create device operator log — ip_address is always bound now
     try:
@@ -418,8 +424,14 @@ def create_device_session(user, store, request, store_device=None):
                 ip_address=ip_address,
                 details={
                     'fingerprint': fingerprint_hash,
-                    'browser': f"{fingerprint_data.get('browser_name', 'Unknown')} {fingerprint_data.get('browser_version', '')}",
-                    'os': f"{fingerprint_data.get('os_name', 'Unknown')} {fingerprint_data.get('os_version', '')}",
+                    'browser': (
+                        f"{fingerprint_data.get('browser_name', 'Unknown')} "
+                        f"{fingerprint_data.get('browser_version', '')}"
+                    ),
+                    'os': (
+                        f"{fingerprint_data.get('os_name', 'Unknown')} "
+                        f"{fingerprint_data.get('os_version', '')}"
+                    ),
                     'is_new_device': getattr(session, 'is_new_device', False),
                     'active_sessions_count': UserDeviceSession.objects.filter(
                         user=user, is_active=True, expires_at__gt=timezone.now()
@@ -429,7 +441,7 @@ def create_device_session(user, store, request, store_device=None):
                 success=True
             )
     except Exception as e:
-        logger.error(f"Error creating device operator log: {e}")
+        logger.error("Error creating device operator log: %s", e)
 
     # Update or create device fingerprint
     try:
@@ -438,7 +450,10 @@ def create_device_session(user, store, request, store_device=None):
                 user=user,
                 fingerprint_hash=fingerprint_hash,
                 defaults={
-                    'device_name': f"{fingerprint_data.get('browser_name', 'Unknown')} on {fingerprint_data.get('os_name', 'Unknown')}",
+                    'device_name': (
+                        f"{fingerprint_data.get('browser_name', 'Unknown')} "
+                        f"on {fingerprint_data.get('os_name', 'Unknown')}"
+                    ),
                     'browser_name': fingerprint_data.get('browser_name', ''),
                     'os_name': fingerprint_data.get('os_name', ''),
                     'last_ip_address': ip_address,
@@ -457,9 +472,11 @@ def create_device_session(user, store, request, store_device=None):
                 if hasattr(device_fp, 'increment_login'):
                     device_fp.increment_login()
     except Exception as e:
-        logger.error(f"Error updating device fingerprint: {e}")
+        logger.error("Error updating device fingerprint: %s", e)
 
-    # Security checks
+    # Security checks — FIX: pass the already-resolved variables directly
+    # instead of using locals().get() which silently returns None/0 when the
+    # try block above raised before those names were bound.
     try:
         if session:
             create_security_checks(
@@ -470,18 +487,18 @@ def create_device_session(user, store, request, store_device=None):
                 fingerprint_data=fingerprint_data,
                 fingerprint_hash=fingerprint_hash,
                 ip_address=ip_address,
-                latitude=locals().get('latitude'),
-                longitude=locals().get('longitude'),
-                active_sessions=locals().get('active_sessions', 0),
+                latitude=latitude,
+                longitude=longitude,
+                active_sessions=active_sessions,
             )
     except Exception as e:
-        logger.error(f"Error creating security checks: {e}")
+        logger.error("Error creating security checks: %s", e)
 
     if store_device and hasattr(store_device, 'update_last_seen'):
         try:
             store_device.update_last_seen()
         except Exception as e:
-            logger.error(f"Error updating device last seen: {e}")
+            logger.error("Error updating device last seen: %s", e)
 
     try:
         if session:
@@ -490,7 +507,7 @@ def create_device_session(user, store, request, store_device=None):
             if store:
                 request.session['store_id'] = store.id
     except Exception as e:
-        logger.error(f"Error storing session data in request.session: {e}")
+        logger.error("Error storing session data in request.session: %s", e)
 
     return session
 
@@ -579,17 +596,21 @@ def force_terminate_user_sessions(user, except_session_id=None, terminated_by=No
 
 
 def check_and_cleanup_expired_sessions():
-    """Clean up expired sessions (run this as a scheduled task)."""
-    expired_sessions = UserDeviceSession.objects.filter(
+    """
+    Clean up expired sessions (run this as a scheduled task).
+
+    FIX: replaced the per-object Python loop with a single bulk UPDATE query.
+    The old code called session.terminate() in a Python loop which issued one
+    UPDATE per row — O(n) round trips.  The new approach does it in two queries
+    total regardless of how many sessions have expired.
+    """
+    now = timezone.now()
+    expired_qs = UserDeviceSession.objects.filter(
         is_active=True,
-        expires_at__lte=timezone.now()
+        expires_at__lte=now,
     )
-
-    count = expired_sessions.count()
-
-    for session in expired_sessions:
-        session.terminate(reason='EXPIRED')
-
+    count = expired_qs.count()
+    expired_qs.update(is_active=False, status='EXPIRED', logged_out_at=now)
     return count
 
 
@@ -936,7 +957,7 @@ def get_store_performance_metrics(store, days=30):
         }
 
     except Exception as e:
-        logger.error(f"Error getting performance metrics: {str(e)}")
+        logger.error("Error getting performance metrics: %s", e)
         return {
             'period': {'days': days, 'start_date': start_date, 'end_date': end_date},
             'inventory': store.get_inventory_summary() if hasattr(store, 'get_inventory_summary') else {},

@@ -9,7 +9,8 @@ from django.db.models import Q
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 import hashlib
-
+from .middleware import register_token, clear_session_registry
+from .sharing_detection import SharingDetectionEngine, DetectionContext
 from .models import CustomUser, UserSignature, Role, RoleHistory, AuditLog, LoginHistory
 from .serializers import (
     UserRegistrationSerializer,
@@ -147,7 +148,16 @@ class LoginView(APIView):
                 user_agent=request.META.get('HTTP_USER_AGENT', ''),
             )
 
-            token, _ = Token.objects.get_or_create(user=user)
+            # Rotate: delete old token so the previous device is blocked immediately
+            Token.objects.filter(user=user).delete()
+            token = Token.objects.create(user=user)
+
+            # Register new token in cache for middleware verification
+            register_token(user, token.key)
+
+            # Run sharing detection (fingerprint + travel + concurrent)
+            _api_run_sharing_detection(request, user)
+
             log_action(request, 'login_success', f"User logged in: {user.email}")
 
             return Response({
@@ -183,6 +193,7 @@ class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        clear_session_registry(request.user.pk)
         try:
             request.user.auth_token.delete()
         except Token.DoesNotExist:
@@ -206,15 +217,58 @@ class PasswordChangeView(APIView):
         if serializer.is_valid():
             serializer.save()
             _clear_rl('pw_change', user_key)
-            # Rotate token on password change for security
-            try:
-                request.user.auth_token.delete()
-            except Token.DoesNotExist:
-                pass
-            token, _ = Token.objects.get_or_create(user=request.user)
+            # Rotate token on password change — invalidates all existing sessions
+            Token.objects.filter(user=request.user).delete()
+            token = Token.objects.create(user=request.user)
+            register_token(request.user, token.key)
             log_action(request, 'password_changed', f"Password changed for: {request.user.email}")
             return Response({'detail': 'Password updated successfully.', 'token': token.key})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _api_run_sharing_detection(request, user):
+    """
+    Build a DetectionContext from the API request and run all three detectors.
+    Fingerprint hash comes from an optional 'fp' field in the POST body
+    (populated by FingerprintJS on the client).  Falls back to a server-side
+    hash of UA + Accept-Language + Accept-Encoding if not provided.
+    """
+    try:
+        from .utils import get_location_from_ip, build_device_fingerprint_server_side
+
+        ip = get_client_ip(request)
+        ua = request.META.get('HTTP_USER_AGENT', '')
+
+        fp_raw = request.data.get('fp', '')
+        if not fp_raw:
+            fp_raw = build_device_fingerprint_server_side(request)
+
+        lat, lon = None, None
+        try:
+            loc = get_location_from_ip(ip)
+            if loc:
+                lat = loc.get('latitude')
+                lon = loc.get('longitude')
+        except Exception:
+            pass
+
+        ctx = DetectionContext(
+            user_id=user.pk,
+            user_email=user.email,
+            ip_address=ip or '0.0.0.0',
+            user_agent=ua,
+            fingerprint_hash=fp_raw,
+            latitude=lat,
+            longitude=lon,
+            timestamp=timezone.now(),
+        )
+        SharingDetectionEngine().run(user, ctx, request)
+
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error(
+            f"[SharingDetection] _api_run_sharing_detection failed: {exc}"
+        )
 
 
 # ============================================

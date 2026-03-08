@@ -15,19 +15,21 @@ class TenantSignupForm(forms.ModelForm):
             'minlength': '8'
         }),
         min_length=8,
-        help_text='At least 8 characters'
+        help_text='At least 8 characters, including one uppercase letter and one number'
     )
     password_confirm = forms.CharField(
         widget=forms.PasswordInput(attrs={
             'class': 'form-control',
             'placeholder': 'Confirm password'
         }),
-        label='Confirm Password'
+        label='Confirm Password',
+        help_text='Re-enter your password'
     )
 
     accept_terms = forms.BooleanField(
         required=True,
-        error_messages={'required': 'You must accept the terms and conditions'}
+        error_messages={'required': 'You must accept the terms and conditions'},
+        help_text='You must accept the terms to proceed'
     )
 
     class Meta:
@@ -42,13 +44,60 @@ class TenantSignupForm(forms.ModelForm):
         widgets = {
             'company_name': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'e.g., Acme Corporation Ltd'
+                'placeholder': 'e.g., Prime Focus Uganda'
+            }),
+            'trading_name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Optional trading name'
             }),
             'subdomain': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'e.g., acme',
+                'placeholder': 'e.g., prime (if Prime Focus Uganda)',
                 'pattern': '[a-z0-9-]+',
                 'maxlength': '63'
+            }),
+            'email': forms.EmailInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter company email'
+            }),
+            'phone': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Must include country code e.g +256'
+            }),
+            'country': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Country of operation'
+            }),
+            'first_name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Admin first name'
+            }),
+            'last_name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Admin last name'
+            }),
+            'admin_email': forms.EmailInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Admin email'
+            }),
+            'admin_phone': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Must include country code e.g +256'
+            }),
+            'industry': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Industry your company belongs to'
+            }),
+            'business_type': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Type of business'
+            }),
+            'estimated_users': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Estimated number of users'
+            }),
+            'selected_plan': forms.Select(attrs={
+                'class': 'form-control'
             }),
         }
 
@@ -75,7 +124,7 @@ class TenantSignupForm(forms.ModelForm):
         # Reserved subdomains
         reserved = ['www', 'api', 'admin', 'app', 'mail', 'ftp', 'localhost',
                     'staging', 'dev', 'test', 'demo', 'public', 'static', 'media',
-                    'blog', 'support', 'help', 'docs', 'status']
+                    'blog', 'support', 'help', 'docs', 'status','prime','test','ug']
 
         if subdomain in reserved:
             raise ValidationError('This subdomain is reserved.')

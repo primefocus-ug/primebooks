@@ -1,46 +1,37 @@
-from django.views.generic import CreateView, TemplateView
-from django.urls import reverse_lazy
-from django_ratelimit.decorators import ratelimit
-from django.utils.decorators import method_decorator
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-from django.db import transaction
-from django.utils import timezone
-from django.conf import settings
-from django.urls import reverse
-from .models import TenantSignupRequest, TenantApprovalWorkflow, TenantNotificationLog
-import secrets
-import string
-import logging
-from .forms import TenantSignupForm
-from .tasks import create_tenant_async
-from .models import TenantSignupRequest
-from company.models import Company, Domain, SubscriptionPlan
-from accounts.models import CustomUser
 import json
 import logging
+import re
 import secrets
+import string
 from datetime import timedelta
 from functools import wraps
+
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
+from django.db import transaction
 from django.http import JsonResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect, csrf_exempt
 from django.views.decorators.http import require_http_methods
-from django.db import transaction
+from django.views.generic import CreateView, TemplateView
+from django_ratelimit.decorators import ratelimit
 
-from .tenant_lookup import (
-    find_user_tenant_by_email,
-    verify_user_credentials,
-    get_tenant_login_url,
-    create_login_token,
-    verify_login_token
-)
+from .forms import TenantSignupForm
+from .models import TenantSignupRequest, TenantApprovalWorkflow, TenantNotificationLog
+from .tasks import create_tenant_async
+from company.models import Company, Domain, SubscriptionPlan
+from accounts.models import CustomUser
+
+# NOTE: find_user_tenant_by_email, verify_user_credentials, get_tenant_login_url,
+# create_login_token, and validate_and_consume_token are all defined later in this
+# file. The tenant_lookup import was removed — those local definitions take
+# precedence and make the imported names dead code.
 
 logger = logging.getLogger(__name__)
 
@@ -102,20 +93,13 @@ def signup_success_view(request, request_id):
     return render(request, 'public_router/signup_success.html', {
         'signup': signup_request,
         'support_email': 'primefocusug@gmail.com',
-        'support_phone': '+256 XXX XXX XXX',
-        'whatsapp_link': 'https://wa.me/256XXXXXXXXX',
+        'support_phone': '+256 785 230 670',
+        'whatsapp_link': 'https://wa.me/256785230670',
         'title': 'Signup Successful'
     })
 
 
-def get_client_ip(request):
-    """Get client IP address from request"""
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(',')[0]
-    else:
-        ip = request.META.get('REMOTE_ADDR')
-    return ip
+# get_client_ip is defined later in this module (with .strip() for proxy safety)
 
 
 # ============================================
@@ -253,7 +237,7 @@ def admin_approve_signup(request, request_id):
                     signup.status = 'FAILED'
                     signup.error_message = f"Approval error: {str(e)}"
                     signup.retry_count += 1
-                    signup.save()
+                    signup.save(update_fields=['status', 'error_message', 'retry_count', 'updated_at'])
             except Exception as save_error:
                 logger.error(f"Failed to update signup status: {str(save_error)}")
 
@@ -306,14 +290,20 @@ def create_tenant_company(signup):
         from datetime import timedelta
         company.trial_ends_at = timezone.now().date() + timedelta(days=plan.trial_days)
 
-    # Generate schema name
-    base_schema = slugify(signup.subdomain).replace('-', '_')[:50]
-    schema_name = f"tenant_{base_schema}"
-    counter = 1
-    while Company.objects.filter(schema_name=schema_name).exists():
-        schema_name = f"tenant_{base_schema}_{counter}"
-        counter += 1
-
+    # Generate schema name with UUID suffix to prevent TOCTOU races.
+    # A counter-based loop has a race window between the EXISTS check and INSERT;
+    # UUID suffix makes collisions astronomically unlikely without a blocking loop.
+    import uuid as _uuid
+    base_schema = slugify(signup.subdomain).replace('-', '_')[:40]
+    schema_name = f"tenant_{base_schema}_{str(_uuid.uuid4())[:8]}"
+    attempts = 0
+    while Company.objects.filter(schema_name=schema_name).exists() and attempts < 5:
+        schema_name = f"tenant_{base_schema}_{str(_uuid.uuid4())[:8]}"
+        attempts += 1
+    if Company.objects.filter(schema_name=schema_name).exists():
+        raise ValueError(
+            f"Could not generate a unique schema name for subdomain '{signup.subdomain}'"
+        )
     company.schema_name = schema_name
     company.save()
 
@@ -354,10 +344,13 @@ def create_tenant_admin_user(company, signup, password):
     from django.contrib.auth.models import Group
 
     with schema_context(company.schema_name):
-        # Create user
-        user = CustomUser.objects.create(
+        # Use create_user() so the password is hashed atomically on first INSERT.
+        # create() + set_password() + save() would leave the user with an unusable
+        # password between the create() and save() calls.
+        user = CustomUser.objects.create_user(
             email=signup.admin_email,
             username=signup.admin_email.split('@')[0],
+            password=password,
             first_name=signup.first_name,
             last_name=signup.last_name,
             phone_number=signup.admin_phone,
@@ -367,8 +360,6 @@ def create_tenant_admin_user(company, signup, password):
             company_admin=True,
             email_verified=False
         )
-        user.set_password(password)
-        user.save()
 
         # Assign Company Admin role
         try:
@@ -452,7 +443,7 @@ def send_approval_email(signup, password, company):
             signup_request=signup,
             notification_type='APPROVAL_TO_CLIENT',
             recipient_email=signup.admin_email,
-            subject=subject,
+            subject=locals().get('subject', 'Approval notification'),  # subject may not be set yet
             sent_successfully=False,
             error_message=str(e)
         )
@@ -514,7 +505,7 @@ class TenantSignupView(CreateView):
                 recent_requests = TenantSignupRequest.objects.filter(
                     ip_address=ip,
                     status__in=['PENDING', 'PROCESSING'],
-                    created_at__gte=timezone.now() - timezone.timedelta(minutes=10)
+                    created_at__gte=timezone.now() - timedelta(minutes=10)
                 ).count()
 
                 if recent_requests >= 2:
@@ -527,18 +518,12 @@ class TenantSignupView(CreateView):
                 # Create signup request with idempotency key
                 password = form.cleaned_data['password']
 
-                # Generate idempotency key from email + subdomain
-                import hashlib
-                idempotency_key = hashlib.md5(
-                    f"{form.cleaned_data['admin_email']}:{subdomain}".encode()
-                ).hexdigest()
-
-                # Check for duplicate requests with same idempotency key
+                # Check for duplicate requests (same subdomain + email in last 24h)
                 existing_request = TenantSignupRequest.objects.filter(
                     subdomain=subdomain,
                     admin_email=form.cleaned_data['admin_email'],
                     status__in=['PENDING', 'PROCESSING', 'COMPLETED'],
-                    created_at__gte=timezone.now() - timezone.timedelta(hours=24)
+                    created_at__gte=timezone.now() - timedelta(hours=24)
                 ).first()
 
                 if existing_request:
@@ -686,7 +671,6 @@ class CheckSignupStatusView(TemplateView):
         return getattr(settings, 'BASE_DOMAIN', 'localhost')
 
 @method_decorator(ratelimit(key='ip', rate='30/m', method='GET'), name='get')
-
 class CheckSubdomainView(TemplateView):
     """
     AJAX endpoint to check subdomain availability.
@@ -707,7 +691,6 @@ class CheckSubdomainView(TemplateView):
                 }, status=400)
 
             # Quick validation
-            import re
             if not re.match(r'^[a-z0-9-]{3,63}$', subdomain):
                 return JsonResponse({
                     'available': False,
@@ -963,8 +946,10 @@ def find_user_tenant_by_email(email):
     User = get_user_model()
 
     try:
-        # Search across all tenants
-        tenants = Company.objects.exclude(schema_name='public')
+        # Search across all active tenants.
+        # WARNING: This performs one DB query per tenant — can be slow at scale.
+        # Consider caching email→schema mappings or a cross-tenant user index.
+        tenants = Company.objects.filter(is_active=True).exclude(schema_name='public')
 
         for tenant in tenants:
             try:

@@ -201,6 +201,23 @@ def parse_user_agent(user_agent_string):
     }
 
 
+def build_device_fingerprint_server_side(request) -> str:
+    """
+    Build a lightweight device fingerprint from server-visible headers.
+    Used as a fallback when FingerprintJS data is not posted by the client.
+
+    For best accuracy, include FingerprintJS in your login template and POST
+    the visitorId as a hidden field named 'fp'.  This fallback is still
+    useful: it differentiates most distinct browser/OS/language combinations.
+    """
+    import hashlib
+    ua = request.META.get('HTTP_USER_AGENT', '')
+    lang = request.META.get('HTTP_ACCEPT_LANGUAGE', '')
+    encoding = request.META.get('HTTP_ACCEPT_ENCODING', '')
+    raw = f"{ua}:{lang}:{encoding}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 def get_location_from_ip(ip_address):
     """
     Get approximate location from IP address using free API

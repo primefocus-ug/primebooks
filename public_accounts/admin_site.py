@@ -711,7 +711,85 @@ class PublicModelAdmin:
         if request.method == 'POST':
             form = FormClass(request.POST, request.FILES, instance=obj)
             if form.is_valid():
+                # Capture old status BEFORE saving to detect PENDING/FAILED → PROCESSING
+                old_status = getattr(obj, 'status', None)
+
                 obj = form.save()
+
+                # ── Tenant provisioning hook ──────────────────────────────────
+                # The generic change_view just calls form.save() — it has no business logic.
+                # When a TenantSignupRequest is set to PROCESSING and the tenant doesn't
+                # exist yet, we must fire the Celery task here. This is exactly what was
+                # missing: changing status to PROCESSING in the admin did nothing because
+                # no code was watching for that transition and dispatching the task.
+                from public_router.models import TenantSignupRequest as _TSR
+                if isinstance(obj, _TSR):
+                    new_status = obj.status
+                    should_provision = (
+                        new_status == 'PROCESSING'
+                        and not obj.tenant_created
+                        and old_status in ('PENDING', 'FAILED', 'PROCESSING')
+                    )
+                    if should_provision:
+                        import logging as _logging
+                        import secrets, string
+                        _logger = _logging.getLogger(__name__)
+                        try:
+                            from public_router.tasks import create_tenant_async
+                            from public_router.models import TenantApprovalWorkflow
+                            from django.core.cache import cache
+
+                            # Retrieve stored password or generate a fresh one
+                            password = None
+                            try:
+                                wf = getattr(obj, 'approval_workflow', None)
+                                if wf and wf.generated_password:
+                                    password = wf.generated_password
+                            except Exception:
+                                pass
+
+                            if not password:
+                                alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+                                password = ''.join(secrets.choice(alphabet) for _ in range(12))
+                                try:
+                                    wf, _ = TenantApprovalWorkflow.objects.get_or_create(
+                                        signup_request=obj
+                                    )
+                                    wf.generated_password = password
+                                    wf.save(update_fields=['generated_password', 'updated_at'])
+                                except Exception as wf_err:
+                                    _logger.error(
+                                        f"Could not persist password for {obj.request_id}: {wf_err}"
+                                    )
+
+                            task = create_tenant_async.apply_async(
+                                args=[str(obj.request_id), password],
+                                countdown=2,
+                            )
+                            cache.set(
+                                f'signup_task_{obj.request_id}',
+                                {
+                                    'task_id': task.id,
+                                    'triggered_by': str(request.user),
+                                    'triggered_via': 'admin_change_view',
+                                },
+                                timeout=3600
+                            )
+                            messages.info(
+                                request,
+                                f'Tenant creation queued for "{obj.company_name}". '
+                                f'Refresh in 30–60 seconds to see the result.'
+                            )
+                        except Exception as task_err:
+                            _logger.error(
+                                f"Failed to queue tenant task for {obj.request_id}: {task_err}"
+                            )
+                            messages.error(
+                                request,
+                                f'Saved, but tenant creation task failed to queue: {task_err}. '
+                                f'Use the "Retry processing" bulk action to try again.'
+                            )
+                # ── end tenant provisioning hook ──────────────────────────────
 
                 # Log activity
                 from .models import PublicUserActivity

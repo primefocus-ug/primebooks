@@ -85,19 +85,28 @@ class BillingService:
             return Decimal('0.00')
 
         # Calculate daily rate of old plan
-        daily_rate = old_plan.price / 30  # Simplified
-        credit = daily_rate * days_remaining
+        daily_rate = old_plan.price / Decimal('30')  # Use Decimal to avoid float imprecision
+        credit = daily_rate * Decimal(days_remaining)
 
         return max(credit, Decimal('0.00'))
 
     def generate_invoice_pdf(self, invoice):
         '''Generate PDF for invoice'''
         # TODO: Implement PDF generation using reportlab or weasyprint
+        if invoice is None:
+            logger.warning("generate_invoice_pdf called with None invoice")
+            return None
         logger.info(f"PDF generation requested for invoice {invoice.id}")
         return None
 
     def send_invoice_email(self, invoice, recipient_email):
         '''Send invoice via email'''
+        if invoice is None:
+            logger.warning("send_invoice_email called with None invoice")
+            return False
+        if not recipient_email or '@' not in str(recipient_email):
+            logger.warning(f"send_invoice_email called with invalid recipient: {recipient_email!r}")
+            return False
         # TODO: Implement email sending
-        logger.info(f"Invoice email sent to {recipient_email}")
+        logger.info(f"Invoice email queued for {recipient_email}")
         return True

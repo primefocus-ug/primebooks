@@ -1442,3 +1442,53 @@ def log_model_delete(sender, instance, **kwargs):
         )
     except Exception as e:
         logger.error(f"Failed to create audit log for deletion: {e}")
+
+@receiver(user_logged_in)
+@safe_schema_context
+def sync_user_session_on_login(sender, request, user, **kwargs):
+    if not table_exists('accounts_usersession'):
+        return
+    from .models import UserSession
+    from .middleware import register_session
+    try:
+        session_key = request.session.session_key
+        if not session_key:
+            return
+
+        # Mark all previous sessions as inactive
+        UserSession.objects.filter(user=user, is_active=True).update(is_active=False)
+
+        ip = get_client_ip(request)
+        ua = request.META.get('HTTP_USER_AGENT', '')
+        browser_info = parse_user_agent(ua)
+
+        UserSession.objects.create(
+            user=user,
+            session_key=session_key,
+            ip_address=ip,
+            user_agent=ua,
+            browser=browser_info.get('browser', ''),
+            os=browser_info.get('os', ''),
+            device_type=browser_info.get('device_type', ''),
+            is_active=True,
+        )
+    except Exception as e:
+        logger.warning(f"sync_user_session_on_login failed: {e}")
+
+
+@receiver(user_logged_out)
+@safe_schema_context
+def sync_user_session_on_logout(sender, request, user, **kwargs):
+    if user is None or not table_exists('accounts_usersession'):
+        return
+    from .models import UserSession
+    from .middleware import clear_session_registry
+    try:
+        session_key = getattr(request.session, 'session_key', None)
+        if session_key:
+            UserSession.objects.filter(
+                user=user, session_key=session_key
+            ).update(is_active=False)
+        clear_session_registry(user.pk)
+    except Exception as e:
+        logger.warning(f"sync_user_session_on_logout failed: {e}")

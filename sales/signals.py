@@ -15,17 +15,16 @@ logger = logging.getLogger(__name__)
 
 from .models import Sale
 
-# Track previous state for comparison
-_pre_save_state = {}
-
 
 @receiver(pre_save, sender=Sale)
 def track_sale_state(sender, instance, **kwargs):
-    """Track sale state before save for comparison"""
+    """Track sale state before save for comparison — stored on instance to be process-safe."""
     if instance.pk:
         try:
             old_instance = sender.objects.get(pk=instance.pk)
-            _pre_save_state[f'sale_{instance.pk}'] = {
+            # Store directly on the instance (not a module-level dict) so it's
+            # process-safe under multi-worker/multi-thread deployments.
+            instance._pre_save_state = {
                 'document_type': old_instance.document_type,
                 'status': old_instance.status,
                 'payment_status': old_instance.payment_status,
@@ -33,8 +32,9 @@ def track_sale_state(sender, instance, **kwargs):
                 'total_amount': old_instance.total_amount,
             }
         except sender.DoesNotExist:
-            pass
-
+            instance._pre_save_state = {}
+    else:
+        instance._pre_save_state = {}
 
 
 @receiver(post_save, sender=Sale)
@@ -47,9 +47,8 @@ def handle_sale_completion(sender, instance, created, **kwargs):
         schema_name = instance.store.company.schema_name
 
         with schema_context(schema_name):
-            # Get previous state
-            state_key = f'sale_{instance.pk}'
-            old_state = _pre_save_state.get(state_key, {})
+            # Get previous state — now stored on the instance itself (process-safe)
+            old_state = getattr(instance, '_pre_save_state', {})
 
             # Handle different document types
             document_type = instance.document_type
@@ -70,10 +69,6 @@ def handle_sale_completion(sender, instance, created, **kwargs):
             elif document_type in ['PROFORMA', 'ESTIMATE']:
                 handle_proforma_completion(instance, created, old_state)
 
-            # Clean up tracked state
-            if state_key in _pre_save_state:
-                del _pre_save_state[state_key]
-
     except Exception as e:
         logger.error(
             f"Error in handle_sale_completion for sale {instance.pk}: {e}",
@@ -83,7 +78,7 @@ def handle_sale_completion(sender, instance, created, **kwargs):
 
 def send_receipt_ws_update(sale):
     """Send immediate WebSocket update for receipt completion.
-    
+
     Guarded against None channel_layer — in desktop mode Django Channels is
     not configured so get_channel_layer() returns None. The sale is still
     created successfully; the dashboard will reflect it on next page load.
@@ -108,6 +103,7 @@ def send_receipt_ws_update(sale):
     except Exception as e:
         logger.warning(f"Failed to send WebSocket update: {e}")
 
+
 def handle_receipt_completion(sale, created, old_state):
     """Handle receipt completion"""
     if not sale.status == 'COMPLETED':
@@ -121,6 +117,7 @@ def handle_receipt_completion(sale, created, old_state):
     )
 
     logger.info(f"Receipt {sale.document_number} completed")
+
 
 def handle_invoice_completion(sale, created, old_state):
     """Handle invoice completion"""
@@ -143,11 +140,15 @@ def handle_invoice_completion(sale, created, old_state):
         if not hasattr(sale, 'invoice_detail') or not sale.invoice_detail:
             from invoices.models import Invoice
             try:
-                Invoice.objects.create(
+                Invoice.objects.get_or_create(
                     sale=sale,
-                    store=sale.store,
-                    fiscalization_status='pending',
-                    created_by=sale.created_by
+                    defaults={
+                        'store': sale.store,
+                        'fiscalization_status': 'pending',
+                        'created_by': sale.created_by,
+                        'business_type': 'B2C',
+                        'operator_name': sale.created_by.get_full_name() if sale.created_by else 'System',
+                    }
                 )
             except Exception as e:
                 logger.error(f"Failed to create invoice detail for sale {sale.pk}: {e}")
@@ -231,6 +232,7 @@ def should_fiscalize_invoice(sale):
 
     return True
 
+
 @receiver(pre_save, sender=Invoice)
 def store_previous_invoice_status(sender, instance, **kwargs):
     """Store previous status for comparison in post_save signal"""
@@ -256,10 +258,8 @@ def handle_invoice_changes(sender, instance, created, **kwargs):
         with schema_context(schema_name):
             if created:
                 logger.info(f"New invoice detail created for sale {instance.sale.document_number}")
-
-                # Update related sale
-                if instance.sale:
-                    instance.sale.save()  # This will trigger sale signals
+                # NOTE: Do NOT call instance.sale.save() here — it would re-trigger
+                # sale signals and cause recursive signal firing / double processing.
 
             # Handle status changes
             previous_status = getattr(instance, '_previous_status', None)
@@ -273,6 +273,7 @@ def handle_invoice_changes(sender, instance, created, **kwargs):
 
     except Exception as e:
         logger.error(f"Error in handle_invoice_changes: {e}", exc_info=True)
+
 
 def handle_invoice_status_change(invoice, previous_status):
     """Handle invoice status changes"""
@@ -372,11 +373,12 @@ def create_invoice_from_sale(sale):
     """Create invoice from completed sale"""
     company = sale.store.company
 
-    # Calculate totals
+    # subtotal already contains tax (tax is extracted from the selling price,
+    # not added on top). Do NOT add tax_amount again here.
     subtotal = sum(item.total_price for item in sale.items.all())
     tax_amount = sum(item.tax_amount for item in sale.items.all())
     discount_amount = sale.discount_amount or Decimal('0')
-    total_amount = subtotal + tax_amount - discount_amount
+    total_amount = subtotal - discount_amount  # tax is already inside subtotal
 
     # Create invoice
     invoice = Invoice.objects.create(
@@ -414,30 +416,31 @@ def create_invoice_from_sale(sale):
     return invoice
 
 
-
 def generate_invoice_number(company):
-    """Generate sequential invoice number"""
+    """Generate sequential invoice number — uses select_for_update to prevent race conditions."""
+    from django.db import transaction as _tx
     current_year = timezone.now().year
 
-    # Get last invoice for the company in current year
-    last_invoice = Invoice.objects.filter(
-        store__company=company,
-        issue_date__year=current_year
-    ).order_by('-pk').first()
+    with _tx.atomic():
+        # Lock the last invoice row for this company/year to serialize concurrent requests
+        last_invoice = Invoice.objects.select_for_update().filter(
+            store__company=company,
+            issue_date__year=current_year
+        ).order_by('-pk').first()
 
-    if last_invoice and getattr(last_invoice, 'invoice_number', None):
-        try:
-            # Extract number from format like "INV-2024-0001"
-            parts = last_invoice.invoice_number.split('-')
-            if len(parts) >= 3:
-                last_num = int(parts[-1])
-                next_num = last_num + 1
-            else:
+        if last_invoice and getattr(last_invoice, 'invoice_number', None):
+            try:
+                # Extract number from format like "INV-2024-0001"
+                parts = last_invoice.invoice_number.split('-')
+                if len(parts) >= 3:
+                    last_num = int(parts[-1])
+                    next_num = last_num + 1
+                else:
+                    next_num = 1
+            except (ValueError, IndexError):
                 next_num = 1
-        except (ValueError, IndexError):
+        else:
             next_num = 1
-    else:
-        next_num = 1
 
     return f"INV-{current_year}-{next_num:04d}"
 

@@ -1,8 +1,15 @@
 from django.urls import path
 from . import api_views as views
 from . import tracking_api
+from django.views.generic import TemplateView
+from . import general_tracker
 
 urlpatterns = [
+    # 1. Serves the HTML page
+    path("tracker/", TemplateView.as_view(template_name="accounts/tracker_report.html"), name="tracker-report"),
+
+    # 2. Serves the JSON data the HTML's JS calls
+    path("report/", general_tracker.GeneralTrackerView.as_view(), name="general-report"),
 
     # ── Authentication ────────────────────────────────────────────────────────
     path('auth/register/',         views.RegisterView.as_view(),      name='register'),

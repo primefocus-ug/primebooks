@@ -82,6 +82,8 @@ from .utils import (
     get_accessible_companies,
     require_company_access,
 )
+from accounts.middleware import register_session, clear_session_registry
+from accounts.sharing_detection import SharingDetectionEngine, DetectionContext
 
 logger = logging.getLogger(__name__)
 
@@ -457,7 +459,11 @@ def _complete_login_ajax(request, user, remember_me):
     """Complete the login process for AJAX requests"""
     backend = getattr(user, 'backend', 'django.contrib.auth.backends.ModelBackend')
     login(request, user, backend=backend)
+    # ✅Strict-session: make this the only valid session
+    register_session(user, request.session.session_key)
 
+    # ✅ Sharing detection: fingerprint + travel checks run at login time
+    _run_sharing_detection(request, user)
     # Clear rate limits on successful login
     ip = get_client_ip(request)
     _clear_rate_limit('login_ip', ip)
@@ -491,6 +497,8 @@ def _complete_login_regular(request, user, remember_me):
     """Complete login for regular requests"""
     backend = getattr(user, 'backend', 'django.contrib.auth.backends.ModelBackend')
     login(request, user, backend=backend)
+    register_session(user, request.session.session_key)
+    _run_sharing_detection(request, user)
 
     # Clear rate limits on successful login
     ip = get_client_ip(request)
@@ -585,12 +593,59 @@ def _get_remaining_attempts(user):
     attempts = cache.get(cache_key, 0)
     return max(0, 5 - attempts)
 
+def _run_sharing_detection(request, user):
+    """
+    Build a DetectionContext from the current request and run all detectors.
+    Fingerprint hash comes from a hidden field posted by the login form
+    (populated by FingerprintJS or a lightweight server-side fallback).
+    """
+    try:
+        from accounts.utils import get_client_ip, get_location_from_ip
+
+        ip = get_client_ip(request)
+        ua = request.META.get('HTTP_USER_AGENT', '')
+
+        # Fingerprint: prefer JS-generated value, fall back to server-side hash
+        fp_raw = request.POST.get('fp', '') or request.data.get('fp', '')
+        if not fp_raw:
+            import hashlib
+            accept_lang = request.META.get('HTTP_ACCEPT_LANGUAGE', '')
+            fp_raw = hashlib.sha256(f"{ua}:{accept_lang}".encode()).hexdigest()
+
+        lat, lon = None, None
+        try:
+            loc = get_location_from_ip(ip)
+            if loc:
+                lat = loc.get('latitude')
+                lon = loc.get('longitude')
+        except Exception:
+            pass
+
+        ctx = DetectionContext(
+            user_id=user.pk,
+            user_email=user.email,
+            ip_address=ip or '0.0.0.0',
+            user_agent=ua,
+            fingerprint_hash=fp_raw,
+            latitude=lat,
+            longitude=lon,
+            timestamp=timezone.now(),
+        )
+
+        SharingDetectionEngine().run(user, ctx, request)
+
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error(
+            f"[SharingDetection] _run_sharing_detection failed: {exc}"
+        )
 
 # Logout
 def custom_logout(request):
     """Instant logout without intermediate allauth page."""
     if request.user.is_authenticated:
         user = request.user
+        clear_session_registry(user.pk)
         user.last_activity_at = timezone.now()
         user.save(update_fields=['last_activity_at'])
         logger.info(f"User {user.email} logged out")
@@ -643,6 +698,8 @@ def token_login_complete(request):
         return redirect('login')
 
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    register_session(user, request.session.session_key)
+    _run_sharing_detection(request, user)
 
     remember_me = request.GET.get('remember')
     if remember_me:

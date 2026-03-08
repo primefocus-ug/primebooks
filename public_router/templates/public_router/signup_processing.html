@@ -1,94 +1,492 @@
 {% extends 'public_router/base.html' %}
+{% load static %}
 
-{% block title %}Creating Your Workspace...{% endblock %}
+{% block title %}Setting Up Your Workspace — Primebooks{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --accent: #0c19dd;
+        --accent-light: #4c54c4;
+        --accent-glow: rgba(12, 25, 221, 0.18);
+    }
+
+    .processing-page {
+        min-height: calc(100vh - 80px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 20px;
+        background-color: var(--bg-primary);
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Animated radial glow */
+    .processing-page::before {
+        content: '';
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 600px;
+        height: 600px;
+        background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+        pointer-events: none;
+        animation: pulseGlow 3s ease-in-out infinite;
+        z-index: 0;
+    }
+
+    @keyframes pulseGlow {
+        0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+        50% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+    }
+
+    .processing-card {
+        position: relative;
+        z-index: 1;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 20px;
+        padding: 52px 48px;
+        max-width: 520px;
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.15);
+    }
+
+    /* ── Spinner ─────────────────────────────────────────────────────── */
+    .spinner-wrap {
+        position: relative;
+        width: 80px;
+        height: 80px;
+        margin: 0 auto 32px;
+    }
+
+    .spinner-ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 3px solid transparent;
+    }
+
+    .spinner-ring-outer {
+        border-top-color: var(--accent);
+        animation: spin 1s linear infinite;
+    }
+
+    .spinner-ring-inner {
+        inset: 10px;
+        border-top-color: color-mix(in srgb, var(--accent) 40%, transparent);
+        animation: spin 1.5s linear infinite reverse;
+    }
+
+    .spinner-center {
+        position: absolute;
+        inset: 22px;
+        border-radius: 50%;
+        background: var(--accent-gradient);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 14px;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* ── Text ────────────────────────────────────────────────────────── */
+    .processing-title {
+        font-size: 1.45rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin: 0 0 8px;
+        letter-spacing: -0.02em;
+    }
+
+    .processing-subtitle {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin: 0 0 36px;
+        line-height: 1.5;
+    }
+
+    /* ── Progress ────────────────────────────────────────────────────── */
+    .progress-wrap {
+        margin-bottom: 32px;
+    }
+
+    .progress-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .progress-label {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text-tertiary);
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+
+    .progress-pct {
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--accent);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .progress-track {
+        height: 6px;
+        background: var(--bg-tertiary);
+        border-radius: 999px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        border-radius: 999px;
+        background: var(--accent-gradient);
+        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .progress-fill::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+        animation: shimmer 1.8s linear infinite;
+    }
+
+    @keyframes shimmer {
+        from { transform: translateX(-100%); }
+        to   { transform: translateX(100%); }
+    }
+
+    /* ── Steps ───────────────────────────────────────────────────────── */
+    .steps-list {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 32px;
+        text-align: left;
+    }
+
+    .step-item {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border-color);
+        opacity: 0.4;
+        transition: opacity 0.4s;
+    }
+
+    .step-item:last-child { border-bottom: none; }
+
+    .step-item.active   { opacity: 1; }
+    .step-item.done     { opacity: 1; }
+
+    .step-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        flex-shrink: 0;
+        background: var(--bg-tertiary);
+        color: var(--text-tertiary);
+        transition: all 0.4s;
+    }
+
+    .step-item.active .step-icon {
+        background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+        color: var(--accent);
+    }
+
+    .step-item.done .step-icon {
+        background: color-mix(in srgb, #22c55e 15%, var(--bg-secondary));
+        color: #22c55e;
+    }
+
+    .step-text {
+        flex: 1;
+    }
+
+    .step-text strong {
+        display: block;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .step-text span {
+        font-size: 0.75rem;
+        color: var(--text-tertiary);
+    }
+
+    .step-status {
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 3px 8px;
+        border-radius: 20px;
+        letter-spacing: 0.04em;
+    }
+
+    .step-item.active .step-status {
+        background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+        color: var(--accent);
+    }
+
+    .step-item.done .step-status {
+        background: color-mix(in srgb, #22c55e 12%, var(--bg-secondary));
+        color: #22c55e;
+    }
+
+    .step-item:not(.active):not(.done) .step-status { display: none; }
+
+    /* ── Error state ─────────────────────────────────────────────────── */
+    #errorContainer {
+        text-align: center;
+    }
+
+    .error-icon-wrap {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        background: color-mix(in srgb, #e05252 12%, var(--bg-secondary));
+        border: 2px solid color-mix(in srgb, #e05252 30%, transparent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 24px;
+        font-size: 28px;
+        color: #e05252;
+    }
+
+    .error-title {
+        font-size: 1.3rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin-bottom: 10px;
+    }
+
+    .error-message-text {
+        font-size: 0.88rem;
+        color: var(--text-secondary);
+        margin-bottom: 28px;
+        line-height: 1.6;
+    }
+
+    .btn-retry {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 28px;
+        background: var(--accent-gradient);
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        font-size: 0.9rem;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+        transition: opacity 0.2s, transform 0.15s;
+    }
+
+    .btn-retry:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
+        color: #fff;
+    }
+
+    .d-none { display: none !important; }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container mt-5">
-    <div class="row justify-content-center">
-        <div class="col-md-6">
-            <div class="card shadow">
-                <div class="card-body text-center">
-                    <div id="statusContainer">
-                        <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <h4 id="statusText">Creating your workspace...</h4>
-                        <p class="text-muted" id="statusDetail">This usually takes 30-60 seconds</p>
+<div class="processing-page">
+    <div class="processing-card">
 
-                        <div class="progress mt-4" style="height: 25px;">
-                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
-                                 role="progressbar" style="width: 25%"></div>
-                        </div>
-                    </div>
-
-                    <div id="errorContainer" class="d-none">
-                        <i class="bi bi-exclamation-circle text-danger" style="font-size: 3rem;"></i>
-                        <h4 class="text-danger mt-3">Oops! Something went wrong</h4>
-                        <p id="errorMessage" class="text-muted"></p>
-                        <a href="{% url 'public_router:signup' %}" class="btn btn-primary">Try Again</a>
-                    </div>
+        <!-- ── Status: Processing ────────────────────────────────────── -->
+        <div id="statusContainer">
+            <div class="spinner-wrap">
+                <div class="spinner-ring spinner-ring-outer"></div>
+                <div class="spinner-ring spinner-ring-inner"></div>
+                <div class="spinner-center">
+                    <i class="fas fa-bolt"></i>
                 </div>
             </div>
+
+            <h2 class="processing-title" id="statusText">Creating your workspace…</h2>
+            <p class="processing-subtitle" id="statusDetail">This usually takes 30–60 seconds. Please don't close this tab.</p>
+
+            <div class="progress-wrap">
+                <div class="progress-header">
+                    <span class="progress-label">Setup Progress</span>
+                    <span class="progress-pct" id="progressPct">25%</span>
+                </div>
+                <div class="progress-track">
+                    <div id="progressBar" class="progress-fill" style="width: 25%;"></div>
+                </div>
+            </div>
+
+            <ul class="steps-list" id="stepsList">
+                <li class="step-item done" id="step1">
+                    <div class="step-icon"><i class="fas fa-check"></i></div>
+                    <div class="step-text">
+                        <strong>Request received</strong>
+                        <span>Your signup was submitted successfully</span>
+                    </div>
+                    <span class="step-status">Done</span>
+                </li>
+                <li class="step-item active" id="step2">
+                    <div class="step-icon"><i class="fas fa-server"></i></div>
+                    <div class="step-text">
+                        <strong>Provisioning workspace</strong>
+                        <span>Allocating dedicated resources</span>
+                    </div>
+                    <span class="step-status">Running</span>
+                </li>
+                <li class="step-item" id="step3">
+                    <div class="step-icon"><i class="fas fa-database"></i></div>
+                    <div class="step-text">
+                        <strong>Configuring database</strong>
+                        <span>Setting up your data environment</span>
+                    </div>
+                    <span class="step-status">Pending</span>
+                </li>
+                <li class="step-item" id="step4">
+                    <div class="step-icon"><i class="fas fa-envelope"></i></div>
+                    <div class="step-text">
+                        <strong>Sending credentials</strong>
+                        <span>Dispatching login details via email</span>
+                    </div>
+                    <span class="step-status">Pending</span>
+                </li>
+            </ul>
         </div>
+
+        <!-- ── Error State ─────────────────────────────────────────── -->
+        <div id="errorContainer" class="d-none">
+            <div class="error-icon-wrap">
+                <i class="fas fa-triangle-exclamation"></i>
+            </div>
+            <h3 class="error-title">Something went wrong</h3>
+            <p class="error-message-text" id="errorMessage">
+                An unexpected error occurred during setup.
+            </p>
+            <a href="{% url 'public_router:signup' %}" class="btn-retry">
+                <i class="fas fa-rotate-right"></i> Try Again
+            </a>
+        </div>
+
     </div>
 </div>
+{% endblock %}
 
+{% block extra_js %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script>
 let checkInterval;
 let progressValue = 25;
+let stepPhase = 2;
+
+const steps = [null,
+    document.getElementById('step1'),
+    document.getElementById('step2'),
+    document.getElementById('step3'),
+    document.getElementById('step4'),
+];
+
+function advanceStep() {
+    if (stepPhase < 4) {
+        if (steps[stepPhase]) {
+            steps[stepPhase].classList.remove('active');
+            steps[stepPhase].classList.add('done');
+            steps[stepPhase].querySelector('.step-status').textContent = 'Done';
+            steps[stepPhase].querySelector('.step-icon').innerHTML = '<i class="fas fa-check"></i>';
+        }
+        stepPhase++;
+        if (steps[stepPhase]) {
+            steps[stepPhase].classList.add('active');
+            steps[stepPhase].querySelector('.step-status').textContent = 'Running';
+        }
+    }
+}
+
+function setProgress(value) {
+    document.getElementById('progressBar').style.width = value + '%';
+    document.getElementById('progressPct').textContent  = value + '%';
+}
 
 function checkStatus() {
     fetch('/signup/check-status/')
-        .then(response => response.json())
+        .then(r => r.json())
         .then(data => {
             console.log('Status:', data.status);
 
-            // Update progress bar
             if (data.status === 'PROCESSING') {
-                progressValue = Math.min(progressValue + 5, 90);
-                document.getElementById('progressBar').style.width = progressValue + '%';
-                document.getElementById('statusText').textContent = 'Setting up your workspace...';
-                document.getElementById('statusDetail').textContent = 'Almost there!';
+                progressValue = Math.min(progressValue + 8, 88);
+                setProgress(progressValue);
+
+                if (progressValue > 50 && stepPhase === 2) advanceStep();
+                if (progressValue > 75 && stepPhase === 3) advanceStep();
+
+                document.getElementById('statusText').textContent    = 'Setting up your workspace…';
+                document.getElementById('statusDetail').textContent  = 'Almost there — hang tight!';
             }
 
             if (data.status === 'COMPLETED') {
                 clearInterval(checkInterval);
-                document.getElementById('progressBar').style.width = '100%';
-                document.getElementById('progressBar').classList.remove('progress-bar-animated');
-                document.getElementById('statusText').textContent = 'Success! Redirecting...';
-                document.getElementById('statusDetail').textContent = `Welcome to ${data.company_name}!`;
 
-                // Redirect after 2 seconds
-                setTimeout(() => {
-                    window.location.href = data.redirect_url;
-                }, 2000);
+                // Mark all done
+                for (let i = 1; i <= 4; i++) {
+                    if (steps[i]) {
+                        steps[i].classList.add('done');
+                        steps[i].classList.remove('active');
+                        steps[i].querySelector('.step-status').textContent = 'Done';
+                        steps[i].querySelector('.step-icon').innerHTML = '<i class="fas fa-check"></i>';
+                        steps[i].style.opacity = 1;
+                    }
+                }
+
+                setProgress(100);
+                document.getElementById('statusText').textContent   = 'All done — redirecting…';
+                document.getElementById('statusDetail').textContent = `Welcome to ${data.company_name}! 🎉`;
+
+                setTimeout(() => { window.location.href = data.redirect_url; }, 2000);
             }
 
             if (data.status === 'FAILED') {
                 clearInterval(checkInterval);
                 document.getElementById('statusContainer').classList.add('d-none');
                 document.getElementById('errorContainer').classList.remove('d-none');
-                document.getElementById('errorMessage').textContent = data.error_message || 'Unknown error';
+                document.getElementById('errorMessage').textContent =
+                    data.error_message || 'An unknown error occurred. Please try again or contact support.';
             }
         })
-        .catch(error => {
-            console.error('Error checking status:', error);
-        });
+        .catch(err => console.error('Status check error:', err));
 }
 
-// Start checking status every 2 seconds
 checkInterval = setInterval(checkStatus, 2000);
-
-// Initial check
 checkStatus();
 
-// Stop checking after 5 minutes (timeout)
+// 5-minute timeout
 setTimeout(() => {
     clearInterval(checkInterval);
-    if (document.getElementById('statusContainer').classList.contains('d-none') === false) {
+    if (!document.getElementById('statusContainer').classList.contains('d-none')) {
         document.getElementById('statusContainer').classList.add('d-none');
         document.getElementById('errorContainer').classList.remove('d-none');
-        document.getElementById('errorMessage').textContent = 'Setup is taking longer than expected. Please contact support.';
+        document.getElementById('errorMessage').textContent =
+            'Setup is taking longer than expected. Please contact our support team for assistance.';
     }
 }, 300000);
 </script>

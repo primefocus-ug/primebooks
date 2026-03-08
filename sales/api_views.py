@@ -2,7 +2,7 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.pagination import PageNumberPagination, CursorPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Sum, Count, Avg, F
 from django.utils import timezone
@@ -248,6 +248,18 @@ class LargeResultsSetPagination(PageNumberPagination):
     max_page_size = 500
 
 
+class SaleCursorPagination(CursorPagination):
+    """
+    Keyset (cursor) pagination for Sale list endpoint.
+    O(1) regardless of page depth — required for millions of rows.
+    """
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+    ordering = '-created_at'
+    cursor_query_param = 'cursor'
+
+
 # ==================== CUSTOM PERMISSIONS ====================
 class IsStoreAccessible(IsAuthenticated):
     """
@@ -263,7 +275,11 @@ class IsStoreAccessible(IsAuthenticated):
         try:
             validate_store_access(request.user, store, action='view', raise_exception=True)
             return True
-        except:
+        except (PermissionDenied, Exception) as e:
+            # Log unexpected errors so they don't silently masquerade as 403s
+            from django.core.exceptions import PermissionDenied as DjangoPermDenied
+            if not isinstance(e, DjangoPermDenied):
+                logger.warning(f"Unexpected error in IsStoreAccessible for store {store.id}: {e}")
             return False
 
 
@@ -286,27 +302,42 @@ class SaleViewSet(viewsets.ModelViewSet):
     """
     serializer_class = SaleSerializer
     permission_classes = [IsStoreAccessible]
-    pagination_class = StandardResultsSetPagination
+    pagination_class = SaleCursorPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['document_type', 'payment_method', 'payment_status', 'status', 'is_fiscalized', 'store']
     search_fields = ['document_number', 'transaction_id', 'efris_invoice_number', 'customer__name', 'customer__phone']
     ordering_fields = ['created_at', 'total_amount', 'document_number']
     ordering = ['-created_at']
 
+    # Columns needed for the list view — reduces per-row data transfer by ~70%
+    LIST_ONLY_FIELDS = [
+        'id', 'document_number', 'document_type', 'status', 'payment_status',
+        'payment_method', 'total_amount', 'currency', 'created_at', 'updated_at',
+        'is_fiscalized', 'efris_invoice_number', 'transaction_type', 'is_voided',
+        'store_id', 'customer_id', 'created_by_id',
+    ]
+
     def get_queryset(self):
         """
-        Filter sales by user's accessible stores
+        Filter sales by user's accessible stores.
+        Uses only() for list actions to avoid fetching all 40+ columns.
         """
         user = self.request.user
         accessible_stores = get_user_accessible_stores(user)
 
-        queryset = Sale.objects.filter(
-            store__in=accessible_stores
-        ).select_related(
-            'store', 'customer', 'created_by'
-        ).prefetch_related(
-            'items__product', 'items__service', 'payments'
-        )
+        base_qs = Sale.objects.filter(store__in=accessible_stores)
+
+        # Narrow columns for list; full object for detail/update/fiscalize
+        if getattr(self, 'action', None) == 'list':
+            queryset = base_qs.only(
+                *self.LIST_ONLY_FIELDS
+            ).select_related('store', 'customer', 'created_by')
+        else:
+            queryset = base_qs.select_related(
+                'store', 'customer', 'created_by'
+            ).prefetch_related(
+                'items__product', 'items__service', 'payments'
+            )
 
         # Additional filters from query params
         document_type = self.request.query_params.get('document_type')
@@ -388,7 +419,8 @@ class SaleViewSet(viewsets.ModelViewSet):
         try:
             # Queue fiscalization task
             from .tasks import fiscalize_invoice_async
-            task_result = fiscalize_invoice_async.delay(sale.pk, request.user.pk)
+            task_result = fiscalize_invoice_async.delay(
+                sale.pk, request.user.pk, schema_name=connection.schema_name)
 
             return Response({
                 'success': True,
@@ -439,7 +471,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            from django.db import transaction
+            from django.db import transaction, connection
 
             with transaction.atomic():
                 # Restore stock for products
@@ -699,9 +731,10 @@ class SaleViewSet(viewsets.ModelViewSet):
                 total=Sum('total_amount')
             ).order_by('-total')
 
-            # Daily sales trend
-            daily_sales = queryset.extra(
-                select={'day': 'DATE(created_at)'}
+            # Daily sales trend — use TruncDate (safe, DB-portable, index-friendly)
+            from django.db.models.functions import TruncDate
+            daily_sales = queryset.annotate(
+                day=TruncDate('created_at')
             ).values('day').annotate(
                 count=Count('id'),
                 total=Sum('total_amount')

@@ -16,10 +16,14 @@ ADMIN_EMAIL = 'primefocusug@gmail.com'
 def create_approval_workflow(sender, instance, created, **kwargs):
     """Create approval workflow when signup is created"""
     if created:
-        TenantApprovalWorkflow.objects.create(
-            signup_request=instance
-        )
-        logger.info(f"Created approval workflow for {instance.company_name}")
+        try:
+            TenantApprovalWorkflow.objects.create(signup_request=instance)
+            logger.info(f"Created approval workflow for {instance.company_name}")
+        except Exception as e:
+            # Log but don't raise — a workflow failure must not abort the signup save
+            logger.error(
+                f"Failed to create approval workflow for {instance.company_name}: {e}"
+            )
 
 
 @receiver(post_save, sender=TenantSignupRequest)
@@ -71,11 +75,17 @@ def send_admin_notification(signup_request):
             sent_successfully=True
         )
 
-        # Update workflow
-        workflow = signup_request.approval_workflow
-        workflow.signup_notification_sent = True
-        workflow.signup_notification_sent_at = timezone.now()
-        workflow.save()
+        # Update workflow if it exists (may not yet if signal ordering varies)
+        workflow = getattr(signup_request, 'approval_workflow', None)
+        if workflow:
+            workflow.signup_notification_sent = True
+            workflow.signup_notification_sent_at = timezone.now()
+            workflow.save(update_fields=['signup_notification_sent', 'signup_notification_sent_at'])
+        else:
+            logger.warning(
+                f"Approval workflow not yet created for {signup_request.request_id} "
+                "when trying to update notification status"
+            )
 
         logger.info(f"Admin notification sent for {signup_request.company_name}")
 
@@ -85,7 +95,7 @@ def send_admin_notification(signup_request):
             signup_request=signup_request,
             notification_type='SIGNUP_TO_ADMIN',
             recipient_email=ADMIN_EMAIL,
-            subject=subject,
+            subject=locals().get('subject', 'Admin signup notification'),
             sent_successfully=False,
             error_message=str(e)
         )

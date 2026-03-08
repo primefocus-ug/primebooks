@@ -346,6 +346,11 @@ def geocode_address_ajax(request):
             })
 
         try:
+            # FIX: geocode_address was moved to module level in models.py
+            # (it is no longer a nested function). The import still works the
+            # same way — it now imports the module-level function rather than
+            # an inner function, which prevents accidental calls in the ORM
+            # layer and keeps the import path consistent.
             from .models import geocode_address
             result = geocode_address(address)
 

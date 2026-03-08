@@ -119,24 +119,30 @@ def _validate_form_data(form_data, plans):
     if Domain.objects.filter(domain=form_data['domain_name']).exists():
         errors.append(f"Domain '{form_data['domain_name']}' already exists.")
 
+    # Validate user-provided schema_name if given
+    if form_data['schema_name']:
+        import re
+        if not re.match(r'^[a-z][a-z0-9_]{0,62}$', form_data['schema_name']):
+            errors.append("Schema name must start with a letter and contain only lowercase letters, numbers, and underscores (max 63 chars).")
+        elif Company.objects.filter(schema_name=form_data['schema_name']).exists():
+            errors.append(f"Schema name '{form_data['schema_name']}' is already taken.")
+
     return errors
 
 def _generate_schema_name(company_name):
     """Generate a unique schema name based on company name."""
     base_schema = slugify(company_name).replace('-', '_')[:20]
-    if not base_schema[0].isalpha():
+    if not base_schema or not base_schema[0].isalpha():
         base_schema = f"c_{base_schema}"
 
-    schema_name = f"{base_schema}_{uuid.uuid4().hex[:8]}"
+    # Re-roll the UUID suffix on each attempt — avoids unbounded name growth
+    for _ in range(10):
+        schema_name = f"{base_schema}_{uuid.uuid4().hex[:8]}"
+        if not Company.objects.filter(schema_name=schema_name).exists():
+            return schema_name[:63]
 
-    # Ensure schema_name is unique
-    counter = 1
-    original_schema = schema_name
-    while Company.objects.filter(schema_name=schema_name).exists():
-        schema_name = f"{original_schema}_{counter}"
-        counter += 1
-
-    return schema_name[:63]  # Respect PostgreSQL limit
+    # Extreme fallback (statistically unreachable)
+    raise ValueError(f"Could not generate unique schema name for '{company_name}' after 10 attempts")
 
 
 def _get_subscription_plan(plan_id):

@@ -111,17 +111,25 @@ class TenantEmailSettings(models.Model):
         if self.use_tls and self.use_ssl:
             raise ValidationError("Cannot use both TLS and SSL. Choose one.")
 
-        # Validate port matches security setting
-        if self.use_tls and self.smtp_port != 587:
-            raise ValidationError("TLS typically uses port 587")
+        # Warn (but don't block) if port doesn't match the typical security setting
+        # Some providers use non-standard ports (e.g. 25, 2525) which are valid
+        if self.use_tls and self.smtp_port not in (587, 25, 2525):
+            logger.warning(
+                f"TenantEmailSettings for company_id={self.company_id}: "
+                f"TLS is enabled but port is {self.smtp_port} (typically 587)."
+            )
         if self.use_ssl and self.smtp_port != 465:
-            raise ValidationError("SSL typically uses port 465")
+            logger.warning(
+                f"TenantEmailSettings for company_id={self.company_id}: "
+                f"SSL is enabled but port is {self.smtp_port} (typically 465)."
+            )
 
     def test_connection(self):
         """
         Test SMTP connection with current settings
         Returns (success: bool, message: str)
         """
+        server = None
         try:
             if self.use_ssl:
                 server = smtplib.SMTP_SSL(
@@ -148,7 +156,6 @@ class TenantEmailSettings(models.Model):
             msg['To'] = self.from_email
 
             server.send_message(msg)
-            server.quit()
 
             self.is_verified = True
             self.test_result = "Connection successful"
@@ -177,6 +184,13 @@ class TenantEmailSettings(models.Model):
             self.test_result = msg
             self.save()
             return False, msg
+
+        finally:
+            if server:
+                try:
+                    server.quit()
+                except Exception:
+                    pass
 
     def get_from_email_with_name(self):
         """Return formatted from email with display name"""
@@ -993,7 +1007,9 @@ class Company(TenantMixin,EFRISCompanyMixin):
         self.is_trial = False
         self.subscription_starts_at = timezone.now().date()
 
-        duration = duration_months or plan.duration_months
+        # Fall back to 30 days if duration_months not provided; SubscriptionPlan has
+        # no duration_months field so we never read it from the plan object.
+        duration = duration_months or 1
         self.subscription_ends_at = self.subscription_starts_at + timedelta(days=duration * 30)
         self.next_billing_date = self.subscription_ends_at
 
@@ -1228,7 +1244,7 @@ class Company(TenantMixin,EFRISCompanyMixin):
             self.refresh_from_db()
 
         except Exception as e:
-            print(f"🔴 DEBUG: Save failed - {e}")
+            logger.error(f"deactivate_company save failed for {self.company_id}: {e}")
             # Try saving without the skip parameter as fallback
             self.save()
 
@@ -1271,7 +1287,7 @@ class Company(TenantMixin,EFRISCompanyMixin):
                 User = get_user_model()
                 updated_count = User.objects.filter(is_active=False).update(is_active=True)
         except Exception as e:
-            print(f"🟢 DEBUG: Error reactivating users: {e}")
+            logger.error(f"Error reactivating users for company {self.company_id}: {e}")
 
         # Clear caches
         self._clear_all_caches()

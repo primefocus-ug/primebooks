@@ -7,3 +7,4 @@ class SalesConfig(AppConfig):
 
     def ready(self):
         import sales.signals
+        import sales.cache

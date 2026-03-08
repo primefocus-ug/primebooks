@@ -1,10 +1,8 @@
 from celery import shared_task
 from .models import Sale
 from django.conf import settings
-from django.utils.timezone import now
 from django.utils import timezone
 from django.core.mail import send_mail
-from django.conf import settings
 from django.db import connection
 import logging
 import uuid
@@ -118,23 +116,26 @@ class TenantResolver:
             return sale.store.company
         return None
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=30)
-def process_receipt_async(self, sale_id, user_id=None):
+@shared_task(bind=True, max_retries=3, default_retry_delay=30, queue='critical')
+def process_receipt_async(self, sale_id, user_id=None, schema_name=None):
     """
     Process receipt asynchronously - handles stock updates, notifications, etc.
+    Pass schema_name from the caller to avoid scanning every tenant schema.
     """
     initial_schema = TenantResolver.get_current_schema()
 
     try:
-        # Find sale and its tenant schema
-        sale, tenant_schema = TenantResolver.find_sale_schema(sale_id)
+        # Use provided schema_name to skip the expensive full-scan fallback
+        if schema_name:
+            tenant_schema = schema_name
+        else:
+            _, tenant_schema = TenantResolver.find_sale_schema(sale_id)
 
-        if not sale or not tenant_schema:
+        if not tenant_schema:
             logger.error(f"Receipt {sale_id} not found in any tenant schema")
             return {'success': False, 'message': 'Receipt not found'}
 
         with schema_context(tenant_schema):
-            # Re-fetch sale with related data
             sale = Sale.objects.select_related(
                 'store__company', 'customer', 'created_by'
             ).prefetch_related('items__product').get(id=sale_id)
@@ -158,6 +159,7 @@ def process_receipt_async(self, sale_id, user_id=None):
             # 1. Update stock (if needed)
             if sale.items.filter(item_type='PRODUCT').exists():
                 try:
+                    update_stock_for_receipt(sale)
                     results['stock_updated'] = True
                 except Exception as e:
                     logger.error(f"Failed to update stock for receipt {sale_id}: {e}")
@@ -200,77 +202,95 @@ def process_receipt_async(self, sale_id, user_id=None):
                 pass
 
 
-@shared_task(bind=True, max_retries=3)
-def fiscalize_export_invoice_async(self, sale_id, user_id, export_data):
+@shared_task(bind=True, max_retries=3, queue='efris')
+def fiscalize_export_invoice_async(self, sale_id, user_id, export_data, schema_name=None):
     """
     Asynchronously fiscalize an export invoice via EFRIS
     """
+    initial_schema = TenantResolver.get_current_schema()
     try:
-        from sales.models import Sale
         from django.contrib.auth import get_user_model
-        from efris.services import create_efris_service
 
-        User = get_user_model()
-        sale = Sale.objects.select_related('store', 'customer').get(pk=sale_id)
-        user = User.objects.get(pk=user_id)
+        # Find the sale in the correct tenant schema first
+        sale, tenant_schema = TenantResolver.find_sale_schema(sale_id)
+        if not sale or not tenant_schema:
+            logger.error(f"Sale {sale_id} not found in any tenant schema for export fiscalization")
+            return {'success': False, 'error': 'Sale not found'}
 
-        logger.info(f"Starting export fiscalization for sale {sale.document_number}")
+        with schema_context(tenant_schema):
+            from sales.models import Sale as SaleModel
+            User = get_user_model()
+            sale = SaleModel.objects.select_related('store', 'customer').get(pk=sale_id)
+            user = User.objects.get(pk=user_id)
 
-        # Create EFRIS service
-        export_service = create_efris_service(
-            sale.store.company,
-            'export',
-            sale.store
-        )
+            logger.info(f"Starting export fiscalization for sale {sale.document_number}")
 
-        # Build HS codes from product export configurations
-        hs_codes = []
-        for item in sale.items.filter(item_type='PRODUCT'):
-            if item.product and hasattr(item.product, 'hs_code') and item.product.hs_code:
-                hs_codes.append(item.product.hs_code)
+            # Create EFRIS service
+            export_service = create_efris_service(
+                sale.store.company,
+                'export',
+                sale.store
+            )
 
-        if not hs_codes:
-            raise Exception("No HS codes found on products. Configure products for export first.")
+            # Build HS codes from product export configurations
+            hs_codes = []
+            for item in sale.items.filter(item_type='PRODUCT'):
+                if item.product and hasattr(item.product, 'hs_code') and item.product.hs_code:
+                    hs_codes.append(item.product.hs_code)
 
-        # Fiscalize export invoice
-        result = export_service.fiscalize_export_sale(
-            sale_or_invoice=sale,
-            delivery_terms=export_data['delivery_terms'],
-            hs_codes=hs_codes,
-            total_weight=export_data['total_weight'],
-            buyer_country=export_data['buyer_country'],
-            buyer_passport=export_data.get('buyer_passport'),
-            foreign_currency=export_data.get('foreign_currency'),
-            exchange_rate=export_data.get('exchange_rate'),
-            user=user
-        )
+            if not hs_codes:
+                raise Exception("No HS codes found on products. Configure products for export first.")
 
-        if result.get('success'):
-            logger.info(f"Export invoice {sale.document_number} fiscalized successfully")
-            return {
-                'success': True,
-                'invoice_no': result['data']['invoice_no'],
-                'fiscal_code': result['data'].get('fiscal_code')
-            }
-        else:
-            logger.error(f"Export fiscalization failed: {result.get('error')}")
-            raise Exception(result.get('error'))
+            # Fiscalize export invoice
+            result = export_service.fiscalize_export_sale(
+                sale_or_invoice=sale,
+                delivery_terms=export_data['delivery_terms'],
+                hs_codes=hs_codes,
+                total_weight=export_data['total_weight'],
+                buyer_country=export_data['buyer_country'],
+                buyer_passport=export_data.get('buyer_passport'),
+                foreign_currency=export_data.get('foreign_currency'),
+                exchange_rate=export_data.get('exchange_rate'),
+                user=user
+            )
+
+            if result.get('success'):
+                logger.info(f"Export invoice {sale.document_number} fiscalized successfully")
+                return {
+                    'success': True,
+                    'invoice_no': result['data']['invoice_no'],
+                    'fiscal_code': result['data'].get('fiscal_code')
+                }
+            else:
+                logger.error(f"Export fiscalization failed: {result.get('error')}")
+                raise Exception(result.get('error'))
 
     except Exception as e:
         logger.error(f"Export fiscalization task failed: {e}", exc_info=True)
         raise self.retry(exc=e, countdown=60)
 
-@shared_task
-def send_receipt_notification(sale_id):
+    finally:
+        if initial_schema and initial_schema != 'public':
+            try:
+                connection.set_schema(initial_schema)
+            except Exception:
+                pass
+
+@shared_task(queue='default')
+def send_receipt_notification(sale_id, schema_name=None):
     """
-    Send receipt notifications asynchronously
+    Send receipt notifications asynchronously.
+    Pass schema_name from the caller to avoid scanning every tenant schema.
     """
     initial_schema = TenantResolver.get_current_schema()
 
     try:
-        sale, tenant_schema = TenantResolver.find_sale_schema(sale_id)
+        if schema_name:
+            tenant_schema = schema_name
+        else:
+            _, tenant_schema = TenantResolver.find_sale_schema(sale_id)
 
-        if not sale or not tenant_schema:
+        if not tenant_schema:
             return
 
         with schema_context(tenant_schema):
@@ -299,18 +319,21 @@ def send_receipt_notification(sale_id):
             # Send WebSocket notification for POS
             try:
                 channel_layer = get_channel_layer()
-                async_to_sync(channel_layer.group_send)(
-                    f'pos_{sale.store.id}',
-                    {
-                        'type': 'receipt.completed',
-                        'data': {
-                            'receipt_number': sale.document_number,
-                            'customer': sale.customer.name if sale.customer else 'Walk-in',
-                            'total': float(sale.total_amount),
-                            'timestamp': timezone.now().isoformat()
+                if channel_layer is None:
+                    logger.debug("WebSocket channel layer not configured — skipping receipt notification WS update")
+                else:
+                    async_to_sync(channel_layer.group_send)(
+                        f'pos_{sale.store.id}',
+                        {
+                            'type': 'receipt.completed',
+                            'data': {
+                                'receipt_number': sale.document_number,
+                                'customer': sale.customer.name if sale.customer else 'Walk-in',
+                                'total': float(sale.total_amount),
+                                'timestamp': timezone.now().isoformat()
+                            }
                         }
-                    }
-                )
+                    )
             except Exception as e:
                 logger.warning(f"Failed to send WebSocket notification: {e}")
 
@@ -485,18 +508,22 @@ def create_sale_background(self, form_data, user_id, task_id):
                 # that doesn't exist yet in the DB.
                 update_task_progress(task_id, 90, 'Queueing background tasks...')
 
+                # Capture schema before on_commit lambda closes over it
+                _schema = user_schema
+
                 if sale_document_type == 'RECEIPT':
                     transaction.on_commit(
-                        lambda: process_receipt_async.delay(sale_pk, user_id)
+                        lambda: process_receipt_async.delay(
+                            sale_pk, user_id, schema_name=_schema)
                     )
                 elif sale_document_type == 'INVOICE':
-                    # Stock movements must run synchronously — they write to DB
-                    # and must be inside the atomic block
+                    # Stock movements write to DB — must be inside the atomic block
                     create_stock_movements(sale)
 
                     if efris_enabled:
                         transaction.on_commit(
-                            lambda: fiscalize_invoice_async.delay(sale_pk, user_id)
+                            lambda: fiscalize_invoice_async.delay(
+                                sale_pk, user_id, schema_name=_schema)
                         )
 
             # ✅ Atomic block is now closed and committed before we get here
@@ -561,6 +588,9 @@ def update_task_progress(task_id, progress, message, status='processing', sale_i
     # Send WebSocket update
     try:
         channel_layer = get_channel_layer()
+        if channel_layer is None:
+            logger.debug("WebSocket channel layer not configured — skipping task progress WS update")
+            return
         async_to_sync(channel_layer.group_send)(
             f'task_progress_{task_id}',
             {
@@ -642,10 +672,11 @@ def update_stock_for_receipt(sale):
 
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def fiscalize_invoice_async(self, sale_id, user_id=None):
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, queue='efris')
+def fiscalize_invoice_async(self, sale_id, user_id=None, schema_name=None):
     """
-    Fiscalize sale asynchronously - works for BOTH RECEIPTS and INVOICES
+    Fiscalize sale asynchronously - works for BOTH RECEIPTS and INVOICES.
+    Pass schema_name from the caller to avoid scanning every tenant schema.
     """
     initial_schema = TenantResolver.get_current_schema()
     logger.info(
@@ -654,10 +685,13 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
     )
 
     try:
-        # Find sale and its tenant schema
-        sale, tenant_schema = TenantResolver.find_sale_schema(sale_id)
+        # Use provided schema_name — eliminates the N-tenant scan entirely
+        if schema_name:
+            tenant_schema = schema_name
+        else:
+            _, tenant_schema = TenantResolver.find_sale_schema(sale_id)
 
-        if not sale or not tenant_schema:
+        if not tenant_schema:
             logger.error(f"Sale {sale_id} not found in any tenant schema")
             return {
                 'success': False,
@@ -665,11 +699,9 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
                 'schema': None
             }
 
-        logger.info(f"Processing sale {sale_id} (type: {sale.document_type}) in tenant schema: {tenant_schema}")
+        logger.info(f"Processing sale {sale_id} in tenant schema: {tenant_schema}")
 
-        # Execute within the correct tenant context
         with schema_context(tenant_schema):
-            # Re-fetch sale
             sale = Sale.objects.select_related(
                 'store__company', 'customer', 'created_by'
             ).prefetch_related('items__product', 'items__service').get(id=sale_id)
@@ -941,17 +973,21 @@ def fiscalize_invoice_async(self, sale_id, user_id=None):
 
 
 
-@shared_task
-def convert_proforma_to_invoice(sale_id, due_date=None, terms=None, user_id=None):
+@shared_task(queue='default')
+def convert_proforma_to_invoice(sale_id, due_date=None, terms=None, user_id=None, schema_name=None):
     """
-    Convert proforma/estimate to invoice
+    Convert proforma/estimate to invoice.
+    Pass schema_name from the caller to avoid scanning every tenant schema.
     """
     initial_schema = TenantResolver.get_current_schema()
 
     try:
-        sale, tenant_schema = TenantResolver.find_sale_schema(sale_id)
+        if schema_name:
+            tenant_schema = schema_name
+        else:
+            _, tenant_schema = TenantResolver.find_sale_schema(sale_id)
 
-        if not sale or not tenant_schema:
+        if not tenant_schema:
             logger.error(f"Sale {sale_id} not found in any tenant schema")
             return {'success': False, 'message': 'Sale not found'}
 
@@ -1255,53 +1291,100 @@ def bulk_fiscalize_pending_invoices_all_tenants():
 
 def bulk_fiscalize_pending_invoices_for_tenant(schema_name):
     """
-    Helper function to fiscalize pending invoices for a specific tenant
+    Fiscalize all pending sales for a tenant using chunked batch tasks.
+    Sends batches of 50 to the efris queue instead of one task per sale,
+    dramatically reducing broker round-trips.
     """
-    try:
-        with schema_context(schema_name):
-            from django.db import models
+    from celery import group as celery_group
 
-            pending_invoices = Invoice.objects.filter(
-                fiscalization_status='pending',
-                is_fiscalized=False
-            ).select_related(
-                'store__company',
-                'sale__store__company'
-            ).filter(
-                models.Q(store__company__efris_enabled=True) |
-                models.Q(sale__store__company__efris_enabled=True)
-            )[:50]
+    with schema_context(schema_name):
+        ids = list(
+            Sale.objects.filter(
+                is_fiscalized=False,
+                document_type__in=['RECEIPT', 'INVOICE'],
+                status='COMPLETED',
+                is_voided=False,
+            ).values_list('id', flat=True)[:500]  # cap at 500 per run
+        )
 
-            results = {
-                'processed': 0,
-                'errors': [],
-                'schema': schema_name
-            }
+    if not ids:
+        logger.info(f"No pending sales to fiscalize in {schema_name}")
+        return
 
-            for invoice in pending_invoices:
-                try:
-                    # Skip if recently failed (wait 1 hour)
-                    if (hasattr(invoice, 'fiscalization_error') and invoice.fiscalization_error and
-                            hasattr(invoice, 'updated_at') and invoice.updated_at and
-                            (timezone.now() - invoice.updated_at).seconds < 3600):
-                        continue
+    chunk_size = 50
+    chunks = [ids[i:i + chunk_size] for i in range(0, len(ids), chunk_size)]
+    job = celery_group(
+        bulk_fiscalize_batch.s(chunk, schema_name)
+        for chunk in chunks
+    )
+    job.apply_async()
+    logger.info(
+        f"Queued {len(chunks)} batch tasks for {len(ids)} sales in {schema_name}"
+    )
 
-                    fiscalize_invoice_async.delay(invoice.pk)
-                    results['processed'] += 1
 
-                except Exception as e:
-                    results['errors'].append({
-                        'invoice_id': invoice.pk,
-                        'error': str(e)
-                    })
+@shared_task(queue='default')
+def refresh_customer_credit_balances(schema_name=None):
+    """
+    Periodically recompute credit balances for all credit-enabled customers.
+    Called every 5 minutes via Celery Beat so search_customers() never needs
+    to write to the DB on every keystroke.
+    """
+    from django_tenants.utils import schema_context, get_tenant_model
+    from django.db import connection
 
-            logger.info(f"Bulk fiscalization queued for schema {schema_name}: {results['processed']} invoices")
-            return results
+    if schema_name:
+        schemas = [schema_name]
+    else:
+        with schema_context('public'):
+            schemas = list(
+                get_tenant_model().objects
+                .exclude(schema_name='public')
+                .values_list('schema_name', flat=True)
+            )
 
-    except Exception as e:
-        logger.error(f"Error in bulk fiscalization for schema {schema_name}: {e}")
-        return {'error': str(e), 'schema': schema_name, 'processed': 0}
+    for schema in schemas:
+        try:
+            with schema_context(schema):
+                from customers.models import Customer
+                qs = Customer.objects.filter(allow_credit=True, is_active=True)
+                updated = 0
+                for customer in qs.iterator(chunk_size=200):
+                    try:
+                        customer.update_credit_balance()
+                        updated += 1
+                    except Exception as e:
+                        logger.warning(f"Credit balance update failed for customer {customer.id}: {e}")
+                logger.info(f"Refreshed credit balances for {updated} customers in {schema}")
+        except Exception as e:
+            logger.error(f"Error refreshing credit balances in schema {schema}: {e}")
 
+
+@shared_task(queue='efris')
+def bulk_fiscalize_batch(sale_ids, schema_name):
+    """
+    Fiscalize a chunk of sales in a single task — far fewer broker round-trips
+    than one task per sale.  Called by bulk_fiscalize_pending_invoices_for_tenant.
+    """
+    from celery import group as celery_group
+
+    with schema_context(schema_name):
+        for sale_id in sale_ids:
+            try:
+                sale = Sale.objects.select_related(
+                    'store__company', 'customer', 'created_by'
+                ).prefetch_related('items__product', 'items__service').get(pk=sale_id)
+
+                if sale.is_fiscalized:
+                    continue
+
+                from efris.services import create_efris_service
+                efris_service = create_efris_service(sale.store.company, sale.store)
+                efris_service.fiscalize_sale(sale)
+                logger.info(f"Batch fiscalized sale {sale.document_number} in {schema_name}")
+
+            except Exception as e:
+                logger.error(f"Batch fiscalize failed for sale {sale_id} in {schema_name}: {e}")
 
 @shared_task
 def periodic_bulk_fiscalization():

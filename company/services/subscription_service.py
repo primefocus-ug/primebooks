@@ -26,11 +26,16 @@ class SubscriptionService:
             dict: {'success': bool, 'message': str, 'data': dict}
         """
         try:
-            # Validate upgrade
-            if company.plan and new_plan.price <= company.plan.price:
+            # Validate upgrade — block same plan re-upgrade and downgrades
+            if company.plan and company.plan.pk == new_plan.pk:
                 return {
                     'success': False,
-                    'message': 'Cannot upgrade to a plan with equal or lower price'
+                    'message': 'Company is already on this plan'
+                }
+            if company.plan and new_plan.price < company.plan.price:
+                return {
+                    'success': False,
+                    'message': 'Cannot upgrade to a lower-priced plan — use downgrade instead'
                 }
 
             # Calculate costs
@@ -301,7 +306,9 @@ class SubscriptionService:
                     # Immediate cancellation
                     company.status = 'SUSPENDED'
                     company.is_active = False
-                    company.deactivate_all_users()
+                    # NOTE: deactivate_all_users() touches the tenant schema and is
+                    # called AFTER the atomic block commits to avoid cross-schema
+                    # operations inside a public-schema transaction.
 
                     note = (
                         f"\n[{timestamp}] Subscription cancelled immediately "
@@ -320,17 +327,27 @@ class SubscriptionService:
                 company.notes = (company.notes or '') + note
                 company.save()
 
-                logger.info(
-                    f"Company {company.company_id} subscription cancelled "
-                    f"({'immediately' if immediate else 'at period end'}) "
-                    f"by {cancelled_by.username}"
-                )
+            # Deactivate tenant users outside the atomic block (cross-schema safety)
+            if immediate:
+                try:
+                    company.deactivate_all_users()
+                except Exception as e:
+                    logger.error(
+                        f"Failed to deactivate users for company {company.company_id} "
+                        f"after cancellation: {e}", exc_info=True
+                    )
 
-                return {
-                    'success': True,
-                    'message': 'Subscription cancelled' + (' immediately' if immediate else ''),
-                    'data': {
-                        'company_id': company.company_id,
+            logger.info(
+                f"Company {company.company_id} subscription cancelled "
+                f"({'immediately' if immediate else 'at period end'}) "
+                f"by {cancelled_by.username}"
+            )
+
+            return {
+                'success': True,
+                'message': 'Subscription cancelled' + (' immediately' if immediate else ''),
+                'data': {
+                    'company_id': company.company_id,
                         'immediate': immediate,
                         'effective_date': timezone.now().date().isoformat() if immediate else company.subscription_ends_at.isoformat(),
                     }
@@ -353,12 +370,12 @@ class SubscriptionService:
             'total': Decimal('0.00'),
         }
 
-        # Calculate proration credit
+        # Calculate proration credit using Decimal arithmetic throughout
         if company.subscription_ends_at and not company.is_trial and company.plan:
             days_remaining = (company.subscription_ends_at - timezone.now().date()).days
             if days_remaining > 0:
-                current_daily_rate = company.plan.price / 30
-                cost_breakdown['proration_credit'] = current_daily_rate * days_remaining
+                current_daily_rate = company.plan.price / Decimal('30')
+                cost_breakdown['proration_credit'] = current_daily_rate * Decimal(days_remaining)
 
         cost_breakdown['subtotal'] = (
                 cost_breakdown['plan_cost'] +
@@ -375,9 +392,10 @@ class SubscriptionService:
 
         issues = []
 
-        # Check users
+        # Check users — only count active, non-hidden users since deactivated
+        # users don't consume plan capacity
         current_users = CustomUser.objects.filter(
-            company=company, is_hidden=False
+            company=company, is_hidden=False, is_active=True
         ).count()
         if current_users > new_plan.max_users:
             issues.append(f'Too many users: {current_users} > {new_plan.max_users}')
