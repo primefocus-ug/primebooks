@@ -482,7 +482,7 @@ else:
     # Static files — CompressedManifest adds content-hash fingerprinting so
     # browsers can cache assets with immutable headers forever.
     # Run `python manage.py collectstatic` after deploying.
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
     # Sessions
     SESSION_COOKIE_AGE = 1209600
@@ -520,7 +520,7 @@ else:
         'CLIENT_CLASS': 'django_redis.client.DefaultClient',
         # hiredis C extension: 3-5x faster than pure-Python parser
         # pip install hiredis
-        'PARSER_CLASS': 'redis.connection.HiredisParser',
+        #'PARSER_CLASS': 'redis.connection.HiredisParser',
         'SOCKET_CONNECT_TIMEOUT': 5,
         'SOCKET_TIMEOUT': 5,
         'CONNECTION_POOL_KWARGS': {
