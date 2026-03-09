@@ -26,8 +26,8 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.db.models import Avg, Count, Min, Q, Sum
-from django.http import HttpResponse
-from django.shortcuts import redirect
+from django.http import Http404, HttpResponse
+from django.shortcuts import redirect, render
 from django.template.loader import get_template
 from django.utils import timezone
 from django.views.generic import ListView
@@ -348,14 +348,126 @@ class SalesHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     Unified Sales Hub — combines the sales list with live analytics.
 
     GET  → renders sales_dashboard.html with list + analytics context
+           If the request carries  X-Requested-With: XMLHttpRequest  (set by
+           the JS loadSales() function), only the lightweight partial template
+           is rendered — no charts, no analytics — so the browser swaps just
+           the #salesPane div without a full page reload.
     POST → handles exports (action=export_csv / export_excel / export_pdf)
            or delegates to bulk_actions()
     """
     model                = Sale
     template_name        = 'sales/sales_dashboard.html'
+    partial_template_name = 'sales/sales_list_partial.html'   # ← AJAX partial
     context_object_name  = 'sales'
     paginate_by          = 25
     permission_required  = 'sales.view_sale'
+
+    # ── GET — detect AJAX and serve partial ──────────────────────────────────
+
+    def get(self, request, *args, **kwargs):
+        # Standard ListView setup (populates self.object_list, self.kwargs, etc.)
+        self.object_list = self.get_queryset()
+        allow_empty = self.get_allow_empty()
+        if not allow_empty and len(self.object_list) == 0:
+            raise Http404
+
+        if self._is_ajax():
+            # AJAX request from loadSales() — serve a lightweight partial.
+            # We still call get_context_data() so pagination, stats and form
+            # are all correct, but we skip the heavy _build_analytics_context
+            # by passing a flag the method can check.
+            context = self._get_list_context()
+            return render(request, self.partial_template_name, context)
+
+        # Normal full-page render
+        context = self.get_context_data()
+        return render(request, self.template_name, context)
+
+    def _is_ajax(self):
+        """True when the JS fetch() sends  X-Requested-With: XMLHttpRequest."""
+        return self.request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+    def _get_list_context(self):
+        """
+        Lightweight context for the AJAX partial — only the data the sales
+        table and pagination need.  Skips all chart/analytics computation.
+        """
+        request    = self.request
+        accessible = get_user_accessible_stores(request.user)
+
+        # Paginate exactly as ListView.get_context_data() would
+        paginator, page, queryset, is_paginated = self.paginate_queryset(
+            self.object_list, self.paginate_by
+        )
+
+        search_form = SaleSearchForm(request.GET)
+        if search_form.fields.get('store'):
+            search_form.fields['store'].queryset = accessible
+
+        context = {
+            self.context_object_name: queryset,   # 'sales'
+            'paginator':      paginator,
+            'page_obj':       page,
+            'is_paginated':   is_paginated,
+            'search_form':    search_form,
+            'bulk_form':      BulkActionForm(),
+            'efris_enabled':  any(
+                store.effective_efris_config.get('enabled', False)
+                for store in accessible
+            ),
+        }
+
+        # Minimal stats needed by the partial toolbar / bulk bar
+        from django.core.cache import cache
+        from django.utils import timezone as _tz
+        from django.db.models import Count, Sum, Q
+
+        list_qs   = Sale.objects.filter(pk__in=self.object_list.values('pk'))
+        date_str  = _tz.now().strftime('%Y-%m-%d')
+        store_ids = '_'.join(str(s.id) for s in accessible)
+        cache_key = f'hub_stats:{store_ids}:{date_str}'
+
+        agg = cache.get(cache_key)
+        if agg is None:
+            agg = list_qs.aggregate(
+                total_sales_count=Count('id'),
+                total_sales_amount=Sum('total_amount', default=0),
+                total_credit_amount=Sum('total_amount',
+                    filter=Q(document_type='INVOICE', payment_method='CREDIT')),
+                fiscalized_count=Count('id', filter=Q(is_fiscalized=True)),
+                receipt_count=Count('id', filter=Q(document_type='RECEIPT')),
+                invoice_count=Count('id', filter=Q(document_type='INVOICE')),
+                proforma_count=Count('id', filter=Q(document_type='PROFORMA')),
+                overdue_count=Count('id', filter=Q(payment_status='OVERDUE')),
+                overdue_amount=Sum('total_amount', filter=Q(payment_status='OVERDUE')),
+                credit_pending_count=Count('id', filter=Q(
+                    document_type='INVOICE', payment_method='CREDIT',
+                    payment_status__in=['PENDING', 'PARTIALLY_PAID'])),
+                credit_paid_count=Count('id', filter=Q(
+                    document_type='INVOICE', payment_method='CREDIT',
+                    payment_status='PAID')),
+            )
+            cache.set(cache_key, agg, 60)
+
+        context['stats'] = {
+            'total_sales':         agg.get('total_sales_count', 0),
+            'total_amount':        agg.get('total_sales_amount', 0),
+            'total_credit_amount': agg.get('total_credit_amount', 0),
+            'fiscalized_count':    agg.get('fiscalized_count', 0),
+            'receipt_count':       agg.get('receipt_count', 0),
+            'invoice_count':       agg.get('invoice_count', 0),
+            'proforma_count':      agg.get('proforma_count', 0),
+        }
+        context['credit_stats'] = {
+            'total_credit_invoices': agg.get('invoice_count', 0),
+            'total_credit_amount':   agg.get('total_credit_amount', 0),
+            'overdue_count':         agg.get('overdue_count', 0),
+            'overdue_amount':        agg.get('overdue_amount', 0),
+            'pending_count':         agg.get('credit_pending_count', 0),
+            'paid_count':            agg.get('credit_paid_count', 0),
+        }
+
+        return context
 
     # ── POST dispatcher ───────────────────────────────────────────────────────
 

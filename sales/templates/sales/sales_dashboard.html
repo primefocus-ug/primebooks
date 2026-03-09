@@ -944,6 +944,7 @@ canvas { max-height: 260px; }
        TAB: SALES LIST
   ══════════════════════════════════════════════ -->
   <div id="tab-sales" class="tab-pane" style="display:none;">
+    <div id="salesPane">
     <div class="table-wrap">
       <!-- Toolbar -->
       <div class="table-toolbar">
@@ -1148,7 +1149,8 @@ canvas { max-height: 260px; }
         </div>
       </div>
       {% endif %}
-    </div>
+    </div><!-- /table-wrap -->
+    </div><!-- /salesPane -->
   </div><!-- /tab-sales -->
 
   <!-- ══════════════════════════════════════════
@@ -1416,7 +1418,7 @@ canvas { max-height: 260px; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script>
 /* ============================================
-   SALES HUB JS
+   SALES HUB JS  —  Full AJAX, no page reloads
    ============================================ */
 
 // ── Data from Django ──────────────────────────
@@ -1440,18 +1442,34 @@ Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
 Chart.defaults.font.size   = 12;
 
 // ── Tab switching ─────────────────────────────
-function switchTab(btn) {
+function switchTab(btn, skipHistory) {
   document.querySelectorAll('.hub-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-pane').forEach(p => { p.style.display = 'none'; });
   btn.classList.add('active');
-  const pane = document.getElementById(btn.dataset.tab);
+  const tabId = btn.dataset.tab;
+  const pane = document.getElementById(tabId);
   if (pane) pane.style.display = 'block';
 
-  // Lazy init charts for analytics tab
-  if (btn.dataset.tab === 'tab-analytics' && !window._analyticsInited) {
+  if (!skipHistory) history.replaceState(null, '', '#' + tabId);
+
+  if (tabId === 'tab-analytics' && !window._analyticsInited) {
     window._analyticsInited = true;
     initAnalyticsCharts();
   }
+  if (tabId === 'tab-overview' && !window._overviewInited) {
+    window._overviewInited = true;
+    initOverviewCharts();
+  }
+}
+
+function restoreTabFromHash() {
+  const hash = window.location.hash.replace('#', '');
+  if (hash) {
+    const btn = document.querySelector(`.hub-tab[data-tab="${hash}"]`);
+    if (btn) { switchTab(btn, true); return; }
+  }
+  const defaultBtn = document.querySelector('.hub-tab[data-tab="tab-overview"]');
+  if (defaultBtn) switchTab(defaultBtn, true);
 }
 
 // ── Dropdown helpers ──────────────────────────
@@ -1476,6 +1494,20 @@ function closeModal(id) { document.getElementById(id).classList.remove('show'); 
 function showLoading() { document.getElementById('loadingOverlay').classList.add('show'); }
 function hideLoading() { document.getElementById('loadingOverlay').classList.remove('show'); }
 
+// Inline pane skeleton while AJAX loads
+function showPaneSkeleton() {
+  const pane = document.getElementById('salesPane');
+  if (!pane) return;
+  pane.style.opacity = '0.45';
+  pane.style.pointerEvents = 'none';
+}
+function hidePaneSkeleton() {
+  const pane = document.getElementById('salesPane');
+  if (!pane) return;
+  pane.style.opacity = '';
+  pane.style.pointerEvents = '';
+}
+
 // ── Toast ─────────────────────────────────────
 function toast(msg, type = 'info') {
   const container = document.getElementById('toasts');
@@ -1487,7 +1519,184 @@ function toast(msg, type = 'info') {
   setTimeout(() => t.remove(), 4000);
 }
 
-// ── Date ranges ───────────────────────────────
+// ══════════════════════════════════════════════
+//  AJAX SALES LOADER  — the heart of no-reload
+// ══════════════════════════════════════════════
+let _ajaxController = null;  // abort previous request if user filters quickly
+
+async function loadSales(params) {
+  // Cancel any in-flight request
+  if (_ajaxController) _ajaxController.abort();
+  _ajaxController = new AbortController();
+
+  showPaneSkeleton();
+
+  // Normalise params — accept URLSearchParams, plain object, or query string
+  let qs;
+  if (params instanceof URLSearchParams) {
+    qs = params;
+  } else if (typeof params === 'string') {
+    qs = new URLSearchParams(params.replace(/^[?#]/, ''));
+  } else {
+    qs = new URLSearchParams(params);
+  }
+
+  // Keep the URL bar in sync (minus the hash) so F5 still works
+  const newUrl = window.location.pathname + '?' + qs.toString() + '#tab-sales';
+  history.pushState({ salesParams: qs.toString() }, '', newUrl);
+
+  // Rebuild filter chips from the new params immediately (feels snappy)
+  buildFilterChips(qs);
+
+  try {
+    const resp = await fetch(
+      window.location.pathname + '?' + qs.toString(),
+      {
+        signal: _ajaxController.signal,
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'text/html',
+        }
+      }
+    );
+
+    if (!resp.ok) throw new Error('Server error ' + resp.status);
+
+    const html = await resp.text();
+
+    // The server returns the full page HTML — we parse it and
+    // extract only the #salesPane inner content
+    const parser = new DOMParser();
+    const doc    = parser.parseFromString(html, 'text/html');
+    const fresh  = doc.getElementById('salesPane');
+
+    if (!fresh) {
+      // Fallback: server didn't return the partial — just navigate normally
+      window.location.href = window.location.pathname + '?' + qs.toString();
+      return;
+    }
+
+    const pane = document.getElementById('salesPane');
+    pane.innerHTML = fresh.innerHTML;
+
+    // Re-bind dynamic event listeners on the new DOM nodes
+    bindSalesPaneEvents();
+    hidePaneSkeleton();
+
+    // Switch to sales tab if not already there
+    const salesBtn = document.querySelector('.hub-tab[data-tab="tab-sales"]');
+    const salesTab = document.getElementById('tab-sales');
+    if (salesBtn && salesTab && salesTab.style.display === 'none') {
+      document.querySelectorAll('.hub-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => { p.style.display = 'none'; });
+      salesBtn.classList.add('active');
+      salesTab.style.display = 'block';
+    }
+
+  } catch (err) {
+    if (err.name === 'AbortError') return;  // intentional cancel — silent
+    hidePaneSkeleton();
+    toast('Failed to load sales. Retrying…', 'error');
+    console.error(err);
+  }
+}
+
+// Re-attach events after every AJAX swap
+function bindSalesPaneEvents() {
+  // Quick search
+  const qs = document.getElementById('quickSearch');
+  if (qs) {
+    qs.addEventListener('input', function() {
+      const q = this.value.toLowerCase();
+      let count = 0;
+      document.querySelectorAll('.sale-row').forEach(row => {
+        const text = row.dataset.search || row.textContent.toLowerCase();
+        const show = text.includes(q);
+        row.style.display = show ? '' : 'none';
+        if (show) count++;
+      });
+      const sc = document.getElementById('showCount');
+      if (sc) sc.textContent = count;
+    });
+  }
+
+  // Row checkboxes
+  selectedIds.clear();
+  updateBulkBar();
+  document.querySelectorAll('.row-select').forEach(cb => {
+    cb.addEventListener('change', function() {
+      this.checked ? selectedIds.add(this.value) : selectedIds.delete(this.value);
+      updateBulkBar();
+      syncSelectAll();
+    });
+  });
+
+  ['selectAll','selectAllRows'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', function() {
+      document.querySelectorAll('.row-select').forEach(cb => {
+        cb.checked = this.checked;
+        this.checked ? selectedIds.add(cb.value) : selectedIds.delete(cb.value);
+      });
+      updateBulkBar();
+    });
+  });
+
+  // Intercept pagination links — turn them into AJAX calls
+  document.querySelectorAll('#salesPane .page-btn[href]').forEach(link => {
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      const url = new URL(link.href, window.location.origin);
+      loadSales(url.searchParams);
+    });
+  });
+
+  // Column toggle checkboxes (re-apply any saved state)
+  document.querySelectorAll('#colsDrop input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', function() {
+      const col = parseInt(this.dataset.col);
+      document.querySelectorAll(`#salesTable td:nth-child(${col+1}), #salesTable th:nth-child(${col+1})`).forEach(cell => {
+        cell.style.display = this.checked ? '' : 'none';
+      });
+    });
+  });
+}
+
+// ── Advanced filters toggle ───────────────────
+function toggleAdv() {
+  const el = document.getElementById('advFilters');
+  const lbl = document.getElementById('advLabel');
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'grid';
+  lbl.textContent  = open ? 'More filters' : 'Less filters';
+}
+
+// ── Filter chips (now param-aware) ───────────
+function buildFilterChips(params) {
+  const p = params instanceof URLSearchParams
+    ? params
+    : new URLSearchParams(window.location.search);
+  const ignore = ['page', 'csrfmiddlewaretoken'];
+  const container = document.getElementById('filterChips');
+  if (!container) return;
+  container.innerHTML = '';
+  p.forEach((val, key) => {
+    if (!val || ignore.includes(key)) return;
+    const chip = document.createElement('span');
+    chip.className = 'filter-chip';
+    chip.innerHTML = `<span>${key}: ${val}</span><button onclick="removeFilter('${key}')">&times;</button>`;
+    container.appendChild(chip);
+  });
+}
+
+function removeFilter(key) {
+  const params = new URLSearchParams(window.location.search);
+  params.delete(key);
+  params.delete('page');
+  loadSales(params);
+}
+
+// ── Date ranges — now AJAX ────────────────────
 function setRange(range) {
   const form = document.getElementById('filterForm');
   const dFrom = form.querySelector('[name="date_from"]');
@@ -1508,103 +1717,13 @@ function setRange(range) {
   }
   dFrom.value = fmt(from);
   dTo.value   = fmt(today);
-  form.submit();
+
+  const params = new URLSearchParams(new FormData(form));
+  params.delete('page');
+  loadSales(params);
 }
 
-// ── Advanced filters toggle ───────────────────
-function toggleAdv() {
-  const el = document.getElementById('advFilters');
-  const lbl = document.getElementById('advLabel');
-  const open = el.style.display !== 'none';
-  el.style.display = open ? 'none' : 'grid';
-  lbl.textContent  = open ? 'More filters' : 'Less filters';
-}
-
-// ── Filter chips ──────────────────────────────
-function buildFilterChips() {
-  const params = new URLSearchParams(window.location.search);
-  const ignore = ['page'];
-  const container = document.getElementById('filterChips');
-  container.innerHTML = '';
-  params.forEach((val, key) => {
-    if (!val || ignore.includes(key)) return;
-    const chip = document.createElement('span');
-    chip.className = 'filter-chip';
-    chip.innerHTML = `<span>${key}: ${val}</span><button onclick="removeFilter('${key}')">&times;</button>`;
-    container.appendChild(chip);
-  });
-}
-
-function removeFilter(key) {
-  const params = new URLSearchParams(window.location.search);
-  params.delete(key);
-  window.location.search = params.toString();
-}
-buildFilterChips();
-
-// ── Quick search ──────────────────────────────
-document.getElementById('quickSearch').addEventListener('input', function() {
-  const q = this.value.toLowerCase();
-  let count = 0;
-  document.querySelectorAll('.sale-row').forEach(row => {
-    const text = row.dataset.search || row.textContent.toLowerCase();
-    const show = text.includes(q);
-    row.style.display = show ? '' : 'none';
-    if (show) count++;
-  });
-  document.getElementById('showCount').textContent = count;
-});
-
-// ── Row selection ─────────────────────────────
-let selectedIds = new Set();
-
-function updateBulkBar() {
-  const bar = document.getElementById('bulkBar');
-  const cnt = document.getElementById('selCount');
-  cnt.textContent = `${selectedIds.size} selected`;
-  bar.classList.toggle('show', selectedIds.size > 0);
-  document.getElementById('selectedSales').value = JSON.stringify([...selectedIds]);
-}
-
-document.querySelectorAll('.row-select').forEach(cb => {
-  cb.addEventListener('change', function() {
-    this.checked ? selectedIds.add(this.value) : selectedIds.delete(this.value);
-    updateBulkBar();
-    syncSelectAll();
-  });
-});
-
-['selectAll','selectAllRows'].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('change', function() {
-    document.querySelectorAll('.row-select').forEach(cb => {
-      cb.checked = this.checked;
-      this.checked ? selectedIds.add(cb.value) : selectedIds.delete(cb.value);
-    });
-    updateBulkBar();
-  });
-});
-
-function syncSelectAll() {
-  const all = document.querySelectorAll('.row-select');
-  const checked = document.querySelectorAll('.row-select:checked');
-  ['selectAll','selectAllRows'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.checked = all.length > 0 && all.length === checked.length;
-  });
-}
-
-function clearSelection() {
-  selectedIds.clear();
-  document.querySelectorAll('.row-select').forEach(cb => cb.checked = false);
-  ['selectAll','selectAllRows'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.checked = false;
-  });
-  updateBulkBar();
-}
-
-// ── Sort table ────────────────────────────────
+// ── Sort table (client-side, no reload) ───────
 let sortState = { col: null, dir: 'desc' };
 function sortTable(colIdx) {
   const tbody = document.getElementById('salesBody');
@@ -1669,10 +1788,10 @@ function fiscalizeSale(id) {
     method: 'POST',
     headers: {'X-CSRFToken': getCsrf(), 'Content-Type': 'application/x-www-form-urlencoded'},
     body: `csrfmiddlewaretoken=${getCsrf()}`
-  }).then(r => r.json()).then(data => {
+  }).then(r => r.json()).then(() => {
     hideLoading();
     toast('Sale fiscalized!', 'success');
-    setTimeout(() => location.reload(), 1200);
+    loadSales(new URLSearchParams(window.location.search));
   }).catch(() => { hideLoading(); toast('Fiscalization failed', 'error'); });
 }
 
@@ -1700,8 +1819,39 @@ function processRefund() {
     .then(r => r.json()).then(() => {
       hideLoading(); closeModal('refundModal');
       toast('Refund processed!', 'success');
-      setTimeout(() => location.reload(), 1200);
+      loadSales(new URLSearchParams(window.location.search));
     }).catch(() => { hideLoading(); toast('Refund failed', 'error'); });
+}
+
+// ── Row selection ─────────────────────────────
+let selectedIds = new Set();
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  const cnt = document.getElementById('selCount');
+  if (cnt) cnt.textContent = `${selectedIds.size} selected`;
+  if (bar) bar.classList.toggle('show', selectedIds.size > 0);
+  const ss = document.getElementById('selectedSales');
+  if (ss) ss.value = JSON.stringify([...selectedIds]);
+}
+
+function syncSelectAll() {
+  const all = document.querySelectorAll('.row-select');
+  const checked = document.querySelectorAll('.row-select:checked');
+  ['selectAll','selectAllRows'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.checked = all.length > 0 && all.length === checked.length;
+  });
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  document.querySelectorAll('.row-select').forEach(cb => cb.checked = false);
+  ['selectAll','selectAllRows'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.checked = false;
+  });
+  updateBulkBar();
 }
 
 // ── Chart helpers ─────────────────────────────
@@ -1733,7 +1883,6 @@ function toggleChartType(id, type) {
 function initOverviewCharts() {
   const days = HUB.dailySales;
 
-  // Revenue trend
   mkChart('revenueChart', 'line', {
     labels: days.map(d => new Date(d.day).toLocaleDateString('en-UG', {month:'short', day:'numeric'})),
     datasets: [{
@@ -1758,7 +1907,6 @@ function initOverviewCharts() {
     }
   });
 
-  // Payment donut
   const pms = HUB.paymentMethods;
   if (pms.length) {
     mkChart('paymentChart', 'doughnut', {
@@ -1772,7 +1920,6 @@ function initOverviewCharts() {
       cutout: '70%',
       scales: {}
     });
-    // Legend
     const legend = document.getElementById('pmLegend');
     if (legend) {
       legend.innerHTML = pms.map((p, i) => `
@@ -1784,7 +1931,6 @@ function initOverviewCharts() {
     }
   }
 
-  // Top items mini list
   const topEl = document.getElementById('topItemsList');
   if (topEl && HUB.topItems.length) {
     const maxRev = HUB.topItems[0]?.revenue || 1;
@@ -1804,7 +1950,6 @@ function initOverviewCharts() {
     }).join('');
   }
 
-  // Hourly heatmap
   const hmEl = document.getElementById('hourHeatmap');
   if (hmEl && HUB.hourlyData.length) {
     const maxCnt = Math.max(...HUB.hourlyData.map(h => h.count)) || 1;
@@ -1817,7 +1962,6 @@ function initOverviewCharts() {
     }).join('');
   }
 
-  // Store performance
   const storeEl = document.getElementById('storePerf');
   if (storeEl && HUB.storePerformance.length) {
     const maxAmt = Math.max(...HUB.storePerformance.map(s => parseFloat(s.total_amount || s.total_revenue || 0))) || 1;
@@ -1837,7 +1981,6 @@ function initOverviewCharts() {
     }).join('');
   }
 
-  // Doc type bar
   const docStats = {{ document_type_stats|default:"[]"|safe }};
   if (docStats.length) {
     mkChart('docTypeChart', 'bar', {
@@ -1861,7 +2004,6 @@ function initOverviewCharts() {
 function initAnalyticsCharts() {
   const days = HUB.dailySales;
 
-  // Dual-axis daily chart
   const dailyCtx = document.getElementById('dailyDetailChart')?.getContext('2d');
   if (dailyCtx && days.length) {
     if (charts.dailyDetailChart) charts.dailyDetailChart.destroy();
@@ -1909,7 +2051,6 @@ function initAnalyticsCharts() {
     });
   }
 
-  // Payment breakdown horizontal bar
   const pms = HUB.paymentMethods;
   if (pms.length) {
     mkChart('paymentBreakChart', 'bar', {
@@ -1927,7 +2068,6 @@ function initAnalyticsCharts() {
     });
   }
 
-  // Top items detailed
   const detEl = document.getElementById('topItemsDetailed');
   if (detEl && HUB.topItems.length) {
     const maxRev = HUB.topItems[0]?.revenue || 1;
@@ -1952,7 +2092,6 @@ function initAnalyticsCharts() {
     }).join('');
   }
 
-  // Hourly bar chart
   mkChart('hourlyBarChart', 'bar', {
     labels: HUB.hourlyData.map(h => h.hour + ':00'),
     datasets: [{
@@ -1967,7 +2106,6 @@ function initAnalyticsCharts() {
     }]
   });
 
-  // Store chart
   const sp = HUB.storePerformance;
   if (sp.length) {
     mkChart('storeChart', 'bar', {
@@ -1984,7 +2122,6 @@ function initAnalyticsCharts() {
       scales: { x:{grid:{color:gridColor()}, ticks:{color:tickColor(), callback:v=>'UGX '+v.toLocaleString()}}, y:{grid:{color:'transparent'}, ticks:{color:tickColor()}} }
     });
 
-    // Store table below chart
     const spTable = document.getElementById('storePerfTable');
     if (spTable) {
       spTable.innerHTML = sp.map((s,i) => `
@@ -2000,18 +2137,45 @@ function initAnalyticsCharts() {
   }
 }
 
+// ── Handle browser Back/Forward navigation ────
+window.addEventListener('popstate', (e) => {
+  if (e.state && e.state.salesParams !== undefined) {
+    loadSales(new URLSearchParams(e.state.salesParams));
+  }
+});
+
 // ── Init ──────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  initOverviewCharts();
+  restoreTabFromHash();
+  buildFilterChips();
 
-  // Tooltips for action buttons
+  // Intercept filter form submission — use AJAX instead of full reload
+  const filterForm = document.getElementById('filterForm');
+  if (filterForm) {
+    filterForm.addEventListener('submit', e => {
+      e.preventDefault();
+      const params = new URLSearchParams(new FormData(filterForm));
+      params.delete('page');  // reset to page 1 on new filter
+      loadSales(params);
+    });
+  }
+
+  // Intercept the "Clear" filter link
+  const clearLink = filterForm?.querySelector('a[href*="sales_list"]');
+  if (clearLink) {
+    clearLink.addEventListener('click', e => {
+      e.preventDefault();
+      loadSales(new URLSearchParams());
+    });
+  }
+
+  // Bind initial pagination links
+  bindSalesPaneEvents();
+
+  // Tooltips
   document.querySelectorAll('[title]').forEach(el => {
     el.addEventListener('mouseenter', function() {
-      const tip = document.createElement('div');
-      tip.className = 'toast info';
-      tip.style.cssText = 'position:fixed;z-index:9999;font-size:.72rem;padding:.25rem .6rem;pointer-events:none;';
-      tip.textContent = this.title;
-      // Simple tooltip — use title attribute natively
+      // Uses native title attribute
     });
   });
 });

@@ -1,0 +1,224 @@
+{# ─────────────────────────────────────────────────────────────────────────
+   sales/templates/sales/sales_list_partial.html
+   Returned when the request has header  X-Requested-With: XMLHttpRequest
+   The JS swaps only  #salesPane  with this content.
+   ───────────────────────────────────────────────────────────────────────── #}
+{% load i18n %}
+{% load humanize %}
+{% load custom_filters %}
+{% load efris_tags %}
+
+<div class="table-wrap">
+  <!-- Toolbar -->
+  <div class="table-toolbar">
+    <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;">
+      <div class="search-box">
+        <i class="fas fa-search"></i>
+        <input type="text" id="quickSearch" placeholder="Quick search…">
+      </div>
+      <div class="check-row">
+        <input type="checkbox" id="selectAll">
+        <label for="selectAll">Select all</label>
+      </div>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap; align-items:center;">
+      <span style="font-size:.78rem; color:var(--text-xs);">
+        Showing <strong id="showCount">{{ sales|length }}</strong> of <strong>{{ paginator.count|default:stats.total_sales }}</strong>
+      </span>
+      <div class="dropdown">
+        <button class="btn btn-outline btn-sm" onclick="toggleDropdown('colsDrop')"><i class="fas fa-columns"></i> Columns</button>
+        <div class="dropdown-menu" id="colsDrop">
+          <label class="dropdown-item"><input type="checkbox" checked data-col="2"> Date</label>
+          <label class="dropdown-item"><input type="checkbox" checked data-col="3"> Customer</label>
+          <label class="dropdown-item"><input type="checkbox" checked data-col="4"> Store</label>
+          <label class="dropdown-item"><input type="checkbox" checked data-col="5"> Payment</label>
+          <label class="dropdown-item"><input type="checkbox" checked data-col="6"> Amount</label>
+          <label class="dropdown-item"><input type="checkbox" checked data-col="7"> Status</label>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadSales(new URLSearchParams(window.location.search))">
+        <i class="fas fa-sync-alt"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div style="overflow-x:auto;">
+    <table id="salesTable">
+      <thead>
+        <tr>
+          <th width="40"><input type="checkbox" id="selectAllRows"></th>
+          <th data-col="1" onclick="sortTable(1)">Doc # <span class="sort-icon"></span></th>
+          <th data-col="2" onclick="sortTable(2)">Date <span class="sort-icon"></span></th>
+          <th data-col="3">Customer</th>
+          <th data-col="4">Branch</th>
+          <th data-col="5">Payment</th>
+          <th data-col="6" onclick="sortTable(6)">Amount <span class="sort-icon"></span></th>
+          <th data-col="7">Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="salesBody">
+        {% for sale in sales %}
+        <tr class="sale-row" data-id="{{ sale.id }}"
+            data-search="{{ sale.document_number|lower }} {{ sale.transaction_id|lower }} {% if sale.customer %}{{ sale.customer.name|lower }} {{ sale.customer.phone|lower }}{% endif %}">
+          <td><input type="checkbox" class="row-select" value="{{ sale.id }}"></td>
+          <td>
+            <a href="{% url 'sales:sale_detail' sale.pk %}" class="sale-doc">{{ sale.document_number|default:sale.invoice_number }}</a>
+            {% if sale.transaction_type == 'REFUND' %}
+              <span class="badge badge-warning" style="margin-top:.25rem; display:block;">REFUND</span>
+            {% endif %}
+            <div class="sale-meta">{{ sale.transaction_id }}</div>
+          </td>
+          <td>
+            <div style="font-size:.85rem; font-weight:500;">{{ sale.created_at|date:"M d, Y" }}</div>
+            <div class="sale-meta">{{ sale.created_at|time:"g:i A" }}</div>
+          </td>
+          <td>
+            {% if sale.customer %}
+              <div style="font-weight:500; font-size:.85rem;">{{ sale.customer.name }}</div>
+              <div class="sale-meta">{{ sale.customer.phone }}</div>
+            {% else %}
+              <span class="badge badge-gray">Walk-in</span>
+            {% endif %}
+          </td>
+          <td>
+            <span style="font-size:.82rem; color:var(--text-sm);">
+              <i class="fas fa-store" style="color:var(--primary); margin-right:.3rem;"></i>{{ sale.store.name }}
+            </span>
+          </td>
+          <td>
+            {% with pm=sale.get_payment_method_display %}
+            {% if pm == 'Cash' %}<span class="badge badge-success">{{ pm }}</span>
+            {% elif pm == 'Credit' %}<span class="badge badge-warning">{{ pm }}</span>
+            {% elif 'Card' in pm %}<span class="badge badge-primary">{{ pm }}</span>
+            {% else %}<span class="badge badge-gray">{{ pm }}</span>
+            {% endif %}
+            {% endwith %}
+          </td>
+          <td>
+            <span style="font-weight:700; font-size:.9rem; color:{% if sale.transaction_type == 'REFUND' %}var(--danger){% else %}var(--success){% endif %}; font-family:var(--mono);">
+              {% if sale.transaction_type == 'REFUND' %}&minus;{% endif %}{{ sale.total_amount|money }}
+            </span>
+          </td>
+          <td>
+            <div style="display:flex; flex-direction:column; gap:.3rem;">
+              {% if efris_enabled %}
+                {% if sale.is_fiscalized %}
+                  <span class="badge badge-teal"><i class="fas fa-check-circle"></i> Fiscalized</span>
+                {% else %}
+                  <span class="badge badge-warning">Not Fiscalized</span>
+                {% endif %}
+              {% endif %}
+              {% if sale.is_refunded %}
+                <span class="badge badge-danger">Refunded</span>
+              {% elif sale.is_voided %}
+                <span class="badge badge-gray">Voided</span>
+              {% elif sale.payment_status == 'OVERDUE' %}
+                <span class="badge badge-danger">Overdue</span>
+              {% elif sale.payment_status == 'PARTIALLY_PAID' %}
+                <span class="badge badge-warning">Partial</span>
+              {% elif sale.payment_status == 'PAID' %}
+                <span class="badge badge-success">Paid</span>
+              {% else %}
+                <span class="badge badge-primary">{{ sale.get_status_display }}</span>
+              {% endif %}
+            </div>
+          </td>
+          <td>
+            <div class="actions">
+              <a href="{% url 'sales:sale_detail' sale.pk %}" class="act-btn act-view" title="View"><i class="fas fa-eye"></i></a>
+              <button class="act-btn act-print" title="Print" onclick="printReceipt({{ sale.id }})"><i class="fas fa-print"></i></button>
+              {% if efris_enabled and not sale.is_fiscalized %}
+              <button class="act-btn act-warn" title="Fiscalize" onclick="fiscalizeSale({{ sale.id }})"><i class="fas fa-stamp"></i></button>
+              {% endif %}
+              {% if sale.transaction_type == 'SALE' and not sale.is_refunded and not sale.is_voided %}
+              <a href="{% url 'sales:process_refund' sale.pk %}" class="act-btn act-refund" title="Refund"><i class="fas fa-undo"></i></a>
+              {% endif %}
+              <div class="dropdown">
+                <button class="act-btn act-more" onclick="toggleDropdown('more-{{ sale.id }}')"><i class="fas fa-ellipsis-v"></i></button>
+                <div class="dropdown-menu" id="more-{{ sale.id }}">
+                  <a class="dropdown-item" href="{% url 'sales:sale_detail' sale.pk %}"><i class="fas fa-eye"></i> View Details</a>
+                  <a class="dropdown-item" href="{% url 'sales:duplicate_sale' sale.pk %}"><i class="fas fa-copy"></i> Duplicate</a>
+                  <a class="dropdown-item" href="#" onclick="emailReceipt({{ sale.id }});return false;"><i class="fas fa-envelope"></i> Email Receipt</a>
+                  {% if not sale.is_voided and sale.transaction_type == 'SALE' %}
+                  <div class="dropdown-divider"></div>
+                  <a class="dropdown-item danger" href="{% url 'sales:void_sale' sale.pk %}"><i class="fas fa-ban"></i> Void Sale</a>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="9">
+            <div class="empty-state">
+              <i class="fas fa-inbox"></i>
+              <h5>No sales found</h5>
+              <p>Try adjusting your filters or date range</p>
+              {% if perms.sales.add_sale %}
+              <a href="{% url 'sales:create_sale' %}" class="btn btn-primary">Create First Sale</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Bulk bar -->
+  <div class="bulk-bar" id="bulkBar">
+    <form method="post" action="{% url 'sales:bulk_actions' %}" id="bulkForm">
+      {% csrf_token %}
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem;">
+        <div style="display:flex; align-items:center; gap:.875rem; flex-wrap:wrap;">
+          <span id="selCount" style="font-weight:600; font-size:.9rem;">0 selected</span>
+          <select name="action" class="form-select" style="width:auto; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.3); color:#fff; border-radius:var(--radius); padding:.4rem .875rem; font-size:.85rem;">
+            <option value="">Choose action…</option>
+            {% if efris_enabled %}<option value="fiscalize">Fiscalize Selected</option>{% endif %}
+            <option value="print_receipts">Print Receipts</option>
+            <option value="export_csv">Export CSV</option>
+            <option value="export_excel">Export Excel</option>
+          </select>
+          <button type="submit" class="btn btn-primary btn-sm">Execute</button>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,.7);" onclick="clearSelection()">Clear</button>
+      </div>
+      <input type="hidden" name="selected_sales" id="selectedSales">
+    </form>
+  </div>
+
+  <!-- Pagination -->
+  {% if is_paginated %}
+  <div class="pager">
+    <span class="pager-info">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ paginator.count }}</span>
+    <div class="page-btns">
+      {% if page_obj.has_previous %}
+      <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page=1">
+        <i class="fas fa-angle-double-left"></i>
+      </a>
+      <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}">
+        <i class="fas fa-angle-left"></i>
+      </a>
+      {% endif %}
+      {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}
+          <span class="page-btn active">{{ num }}</span>
+        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+          <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ num }}">{{ num }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if page_obj.has_next %}
+      <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}">
+        <i class="fas fa-angle-right"></i>
+      </a>
+      <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.paginator.num_pages }}">
+        <i class="fas fa-angle-double-right"></i>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>{# /table-wrap #}
