@@ -596,6 +596,21 @@
 
 {% block extra_js %}
 <script>
+// ============================================
+// URL CONFIG — base URLs from Django, ID spliced in JS
+// The trailing '0' is a real pk placeholder that Django
+// accepts at parse time; JS replaces it with the real id.
+// ============================================
+const URLS = {
+    serviceDelete:  (id) => '{% url "inventory:service_delete" 0 %}'.replace('/0/', `/${id}/`),
+    serviceEdit:    (id) => '{% url "inventory:service_update" 0 %}'.replace('/0/', `/${id}/`),
+    serviceDetail:  (id) => '{% url "inventory:service_detail" 0 %}'.replace('/0/', `/${id}/`),
+    serviceCreate:  '{% url "inventory:service_create" %}',
+    bulkActions:    '{% url "inventory:service_bulk_actions" %}',
+    statistics:     '{% url "inventory:service_statistics_api" %}',
+};
+
+// ============================================
 // Utility: Escape HTML (must be defined FIRST)
 function escapeHtml(text) {
     const map = {
@@ -984,7 +999,7 @@ function renderServicesTable(services) {
             <td>${renderStatusBadge(service.is_active)}</td>
             <td>
                 <div class="btn-group btn-group-sm" role="group">
-                    <a href="/en/inventory/services/${service.id}/edit/"
+                    <a href="${URLS.serviceEdit(service.id)}"
                        class="btn btn-info btn-sm" title="Edit">
                         <i class="bi bi-pencil"></i>
                     </a>
@@ -1234,7 +1249,7 @@ async function handleBulkActions(e) {
         selectedIds.forEach(id => formData.append('service_ids[]', id));
         formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
 
-        const response = await fetch('/inventory/services/bulk-actions/', {
+        const response = await fetch(URLS.bulkActions, {
             method: 'POST',
             body: formData
         });
@@ -1301,7 +1316,7 @@ window.deleteService = async function(serviceId, serviceName) {
         const formData = new FormData();
         formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
 
-        const response = await fetch(`/inventory/services/${serviceId}/delete/`, {
+        const response = await fetch(URLS.serviceDelete(serviceId), {
             method: 'POST',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest'
@@ -1330,8 +1345,8 @@ async function handleServiceSubmit(e) {
 
     const serviceId = document.getElementById('serviceId').value;
     const url = serviceId
-        ? `/inventory/services/${serviceId}/edit/`
-        : '{% url "inventory:service_create" %}';
+        ? URLS.serviceEdit(serviceId)
+        : URLS.serviceCreate;
 
     const formData = new FormData(e.target);
 
@@ -1370,7 +1385,7 @@ async function handleCategorySubmit(e) {
 // Load statistics
 async function loadStatistics() {
     try {
-        const response = await fetch('/inventory/api/services/statistics/');
+        const response = await fetch(URLS.statistics);
         const data = await response.json();
 
         if (data.success) {

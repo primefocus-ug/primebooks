@@ -1090,6 +1090,7 @@ class Product(OfflineIDMixin, models.Model, EFRISProductMixin):
     )
     discount_percentage = models.DecimalField(
         max_digits=5,
+        null=True,
         decimal_places=2,
         default=0,
         validators=[MinValueValidator(0)],

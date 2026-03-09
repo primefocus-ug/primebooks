@@ -594,6 +594,11 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // ============================================
+// DJANGO CONTEXT
+// ============================================
+const EFRIS_ENABLED = {{ efris_enabled|yesno:"true,false" }};
+
+// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
@@ -923,6 +928,11 @@ $(document).ready(function() {
             return;
         }
 
+        if (!EFRIS_ENABLED) {
+            $('#efris-validation-container').empty();
+            return;
+        }
+
         const apiUrl = "{% url 'inventory:category_detail_api' 99999 %}".replace('99999', categoryId);
         console.log('🌐 Fetching category data from:', apiUrl);
 
@@ -933,17 +943,10 @@ $(document).ready(function() {
             success: function(response) {
                 console.log('📊 Category validation response:', response);
 
-                if (!response.success) {
-                    $('#efris-validation-container').html(
-                        '<div class="alert alert-danger mt-2">' +
-                        '<i class="bi bi-x-circle me-2"></i>' + (response.error || 'Failed to load category data') +
-                        '</div>'
-                    );
-                    return;
-                }
-
-                // ✅ Access nested data
-                const data = response.data;
+                // API returns a flat response — fields are directly on response
+                const data = response;
+                // EFRIS details are nested under efris_commodity_category_details
+                const efris = data.efris_commodity_category_details || null;
 
                 let message = '';
                 let alertClass = '';
@@ -952,19 +955,19 @@ $(document).ready(function() {
                     message = '<i class="bi bi-x-circle me-2"></i>' +
                              '<strong>Invalid Category Type:</strong> This is not a service category.';
                     alertClass = 'alert-danger';
-                } else if (!data.efris_commodity_category_code) {
+                } else if (!efris) {
                     message = '<i class="bi bi-exclamation-triangle me-2"></i>' +
                              '<strong>EFRIS Not Configured:</strong> This category does not have an EFRIS commodity category assigned.';
                     alertClass = 'alert-warning';
-                } else if (!data.efris_is_leaf_node) {
+                } else if (!efris.is_leaf_node) {
                     message = '<i class="bi bi-x-circle me-2"></i>' +
                              '<strong>Invalid EFRIS Category:</strong> Not a leaf node.';
                     alertClass = 'alert-danger';
                 } else {
                     message = '<i class="bi bi-check-circle me-2"></i>' +
                              '<strong>Valid EFRIS Category:</strong> ' +
-                             '<span class="text-success">' + data.efris_commodity_category_name + '</span>' +
-                             ' <span class="badge bg-primary">' + data.efris_commodity_category_code + '</span>';
+                             '<span class="text-success">' + efris.name + '</span>' +
+                             ' <span class="badge bg-primary">' + efris.code + '</span>';
                     alertClass = 'alert-success';
                 }
 
@@ -993,7 +996,7 @@ $(document).ready(function() {
     updateUnitMeasureDisplay();
     toggleExciseDutyField();
 
-    if ($('#id_category').val()) {
+    if (EFRIS_ENABLED && $('#id_category').val()) {
         console.log('🔍 Triggering initial category validation');
         $('#id_category').trigger('change');
     }

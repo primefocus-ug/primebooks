@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Delete Service" %} - {{ object.name }} | {{ block.super }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    .form-section {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    [data-theme="dark"] .card-body {
+        background-color: var(--bg-primary);
+        color: white;
+    }
+
+    .form-section-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--red-500);
+    }
+
+    .danger-zone {
+        background: var(--red-50, #fef2f2);
+        border: 1px solid var(--red-200, #fecaca);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    [data-theme="dark"] .danger-zone {
+        background: rgba(220, 38, 38, 0.08);
+        border-color: rgba(220, 38, 38, 0.3);
+    }
+
+    .service-detail-row {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.875rem;
+    }
+
+    .service-detail-row:last-child {
+        border-bottom: none;
+    }
+
+    .service-detail-label {
+        font-weight: 600;
+        color: var(--text-secondary);
+        min-width: 140px;
+        flex-shrink: 0;
+    }
+
+    .service-detail-value {
+        color: var(--text-primary);
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumb_items %}
+{% if perms.inventory.view_product %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+{% endif %}
+{% if perms.inventory.view_service %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:service_list' %}">{% trans "Services" %}</a></li>
+{% endif %}
+<li class="breadcrumb-item active">{% trans "Delete Service" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-0">
+            <i class="bi bi-trash-fill text-danger me-2"></i>
+            {% trans "Delete Service" %}
+        </h2>
+        <p class="text-muted mb-0">{% trans "This action cannot be undone" %}</p>
+    </div>
+    <div>
+        {% if perms.inventory.view_service %}
+        <a href="{% url 'inventory:service_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>
+            {% trans "Back to Services" %}
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+
+        <!-- Service summary -->
+        <div class="form-section">
+            <h5 class="form-section-title">
+                <i class="bi bi-gear-fill me-2"></i>
+                {% trans "Service Details" %}
+            </h5>
+
+            <div class="service-detail-row">
+                <span class="service-detail-label">{% trans "Name" %}</span>
+                <span class="service-detail-value fw-semibold">{{ object.name }}</span>
+            </div>
+            {% if object.code %}
+            <div class="service-detail-row">
+                <span class="service-detail-label">{% trans "Code" %}</span>
+                <span class="service-detail-value">
+                    <code>{{ object.code }}</code>
+                </span>
+            </div>
+            {% endif %}
+            {% if object.category %}
+            <div class="service-detail-row">
+                <span class="service-detail-label">{% trans "Category" %}</span>
+                <span class="service-detail-value">{{ object.category }}</span>
+            </div>
+            {% endif %}
+            {% if object.unit_price %}
+            <div class="service-detail-row">
+                <span class="service-detail-label">{% trans "Unit Price" %}</span>
+                <span class="service-detail-value">UGX {{ object.unit_price|floatformat:2 }}</span>
+            </div>
+            {% endif %}
+            <div class="service-detail-row">
+                <span class="service-detail-label">{% trans "Status" %}</span>
+                <span class="service-detail-value">
+                    {% if object.is_active %}
+                        <span class="badge bg-success">{% trans "Active" %}</span>
+                    {% else %}
+                        <span class="badge bg-secondary">{% trans "Inactive" %}</span>
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+
+        <!-- Warning -->
+        <div class="danger-zone">
+            <div class="d-flex align-items-start gap-3">
+                <i class="bi bi-exclamation-triangle-fill text-danger fs-4 flex-shrink-0 mt-1"></i>
+                <div>
+                    <p class="fw-semibold text-danger mb-1">
+                        {% trans "Are you sure you want to delete this service?" %}
+                    </p>
+                    <p class="text-muted mb-0" style="font-size: 0.875rem;">
+                        {% blocktrans with name=object.name %}
+                            <strong>{{ name }}</strong> will be permanently deleted. Any associated records (invoices, transactions) may be affected.
+                        {% endblocktrans %}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Confirm / Cancel -->
+        <div class="d-flex gap-3">
+            <form method="post">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger">
+                    <i class="bi bi-trash me-1"></i>
+                    {% trans "Yes, Delete Service" %}
+                </button>
+            </form>
+            <a href="{% url 'inventory:service_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-x-circle me-1"></i>
+                {% trans "Cancel" %}
+            </a>
+            {% if perms.inventory.change_service %}
+            <a href="{% url 'inventory:service_update' object.pk %}" class="btn btn-outline-primary ms-auto">
+                <i class="bi bi-pencil me-1"></i>
+                {% trans "Edit Instead" %}
+            </a>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+{% endblock %}

@@ -304,6 +304,7 @@ class CategoryDetailSerializer(serializers.ModelSerializer):
             'id', 'name', 'code', 'description',
             'efris_commodity_category',
             'efris_commodity_category_details',
+            'category_type',
             'efris_commodity_category_id',
             'efris_commodity_category_name',
             'efris_auto_sync', 'efris_is_uploaded', 'efris_upload_date',

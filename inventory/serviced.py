@@ -447,17 +447,22 @@ class ServiceDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView)
     """Delete view for services"""
     model = Service
     permission_required = 'inventory.delete_service'
+    template_name = 'inventory/service_confirm_delete.html'
     success_url = reverse_lazy('inventory:service_list')
 
-    def delete(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
+        """
+        Override post() instead of delete() — required in Django 4+.
+        delete() is no longer called on POST; post() is the correct hook.
+        """
         service = self.get_object()
         service_name = service.name
 
         try:
-            response = super().delete(request, *args, **kwargs)
+            service.delete()
 
             logger.info(
-                f"Service deleted: {service_name} (ID: {service.id}) "
+                f"Service deleted: {service_name} (ID: {service.pk}) "
                 f"by {request.user}"
             )
 
@@ -468,7 +473,7 @@ class ServiceDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView)
                 })
 
             messages.success(request, _(f'Service "{service_name}" deleted successfully!'))
-            return response
+            return redirect(self.success_url)
 
         except Exception as e:
             logger.error(f"Error deleting service: {str(e)}")

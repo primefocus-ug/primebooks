@@ -486,6 +486,22 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     #  Product handlers
     # ─────────────────────────────────────────────────────────────────────────
 
+    # Optional numeric fields that the ProductForm marks required if the model
+    # field has blank=False.  We coerce blank → safe default before validation.
+    _OPTIONAL_NUMERIC_DEFAULTS = {
+        'discount_percentage': '0',
+        'min_stock_level':     '0',
+        'excise_duty_rate':    '0',
+    }
+
+    def _coerce_optional_numerics(self, post):
+        """Return a mutable copy of POST with optional numeric fields defaulted."""
+        data = post.copy()
+        for field, default in self._OPTIONAL_NUMERIC_DEFAULTS.items():
+            if not data.get(field, '').strip():
+                data[field] = default
+        return data
+
     def _action_product_create(self, request):
         """
         Create a product inline.
@@ -496,7 +512,7 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         company       = _get_company(request)
 
         form = ProductForm(
-            request.POST, request.FILES,
+            self._coerce_optional_numerics(request.POST), request.FILES,
             efris_enabled=efris_enabled,
             company=company,
         )
@@ -564,7 +580,7 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         company       = _get_company(request)
 
         form = ProductForm(
-            request.POST, request.FILES,
+            self._coerce_optional_numerics(request.POST), request.FILES,
             instance=product,
             efris_enabled=efris_enabled,
             company=company,
@@ -1201,11 +1217,16 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         req     = self.request
 
-        # ── Shared ───────────────────────────────────────────────────────────
+        # ── Shared — evaluate once, reuse below to avoid duplicate queries ────
         context['filter_form'] = ProductFilterForm(req.GET)
         context['bulk_form']   = BulkActionForm()
-        context['stores']      = Store.objects.filter(is_active=True).order_by('name')
-        context['categories']  = Category.objects.filter(is_active=True).order_by('name')
+
+        # Evaluate stores/categories once and cache on the queryset so Django's
+        # template engine can iterate without re-hitting the DB.
+        _stores_qs     = list(Store.objects.filter(is_active=True).order_by('name'))
+        _categories_qs = list(Category.objects.filter(is_active=True).order_by('name'))
+        context['stores']     = _stores_qs
+        context['categories'] = _categories_qs
 
         # Flat product list for inline stock-adjustment modal dropdown
         context['products_for_adj'] = (
@@ -1232,8 +1253,16 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         # Selected branch for products tab (used by branch-pill template logic)
         context['prod_store'] = req.GET.get('prod_store', '')
 
-        # All active stores for the branch filter pills on the products tab
-        context['prod_stores'] = Store.objects.filter(is_active=True).order_by('name')
+        # Reuse the already-evaluated list — no second DB query
+        context['prod_stores'] = _stores_qs
+
+        # Default store for modals (e.g. Quick Stock): prefer the active branch
+        # filter, fall back to the first active store alphabetically.
+        _prod_store_id = req.GET.get('prod_store', '')
+        _default_store = next(
+            (s for s in _stores_qs if str(s.id) == _prod_store_id), None
+        ) or (_stores_qs[0] if _stores_qs else None)
+        context['default_store_id'] = _default_store.id if _default_store else None
 
         # Per-branch stock breakdown: {store_id: {store, stock_items}}
         # Used by the branch columns in the product list table.
