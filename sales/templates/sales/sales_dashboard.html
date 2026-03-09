@@ -1126,25 +1126,25 @@ canvas { max-height: 260px; }
         </form>
       </div>
 
-      <!-- Pagination -->
+      <!-- Pagination — hrefs are built by JS to avoid ?page=2&page=3 -->
       {% if is_paginated %}
       <div class="pager">
         <span class="pager-info">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ paginator.count }}</span>
         <div class="page-btns">
           {% if page_obj.has_previous %}
-          <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page=1"><i class="fas fa-angle-double-left"></i></a>
-          <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}"><i class="fas fa-angle-left"></i></a>
+          <a class="page-btn" data-page="1"><i class="fas fa-angle-double-left"></i></a>
+          <a class="page-btn" data-page="{{ page_obj.previous_page_number }}"><i class="fas fa-angle-left"></i></a>
           {% endif %}
           {% for num in page_obj.paginator.page_range %}
             {% if page_obj.number == num %}
               <span class="page-btn active">{{ num }}</span>
             {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-              <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ num }}">{{ num }}</a>
+              <a class="page-btn" data-page="{{ num }}">{{ num }}</a>
             {% endif %}
           {% endfor %}
           {% if page_obj.has_next %}
-          <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}"><i class="fas fa-angle-right"></i></a>
-          <a class="page-btn" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.paginator.num_pages }}"><i class="fas fa-angle-double-right"></i></a>
+          <a class="page-btn" data-page="{{ page_obj.next_page_number }}"><i class="fas fa-angle-right"></i></a>
+          <a class="page-btn" data-page="{{ page_obj.paginator.num_pages }}"><i class="fas fa-angle-double-right"></i></a>
           {% endif %}
         </div>
       </div>
@@ -1522,82 +1522,86 @@ function toast(msg, type = 'info') {
 // ══════════════════════════════════════════════
 //  AJAX SALES LOADER  — the heart of no-reload
 // ══════════════════════════════════════════════
-let _ajaxController = null;  // abort previous request if user filters quickly
+let _ajaxController = null;
 
 async function loadSales(params) {
-  // Cancel any in-flight request
   if (_ajaxController) _ajaxController.abort();
   _ajaxController = new AbortController();
 
   showPaneSkeleton();
 
-  // Normalise params — accept URLSearchParams, plain object, or query string
+  // Normalise to URLSearchParams
   let qs;
   if (params instanceof URLSearchParams) {
-    qs = params;
+    qs = new URLSearchParams(params);
   } else if (typeof params === 'string') {
     qs = new URLSearchParams(params.replace(/^[?#]/, ''));
   } else {
     qs = new URLSearchParams(params);
   }
 
-  // Keep the URL bar in sync (minus the hash) so F5 still works
+  // FIX: deduplicate page param — Django template can produce ?page=2&page=3
+  const pageVal = qs.getAll('page').pop() || '1';
+  qs.delete('page');
+  if (pageVal && pageVal !== '1') qs.set('page', pageVal);
+
   const newUrl = window.location.pathname + '?' + qs.toString() + '#tab-sales';
   history.pushState({ salesParams: qs.toString() }, '', newUrl);
-
-  // Rebuild filter chips from the new params immediately (feels snappy)
   buildFilterChips(qs);
 
   try {
-    const resp = await fetch(
-      window.location.pathname + '?' + qs.toString(),
-      {
-        signal: _ajaxController.signal,
-        headers: {
-          'X-Requested-With': 'XMLHttpRequest',
-          'Accept': 'text/html',
-        }
-      }
-    );
+    const resp = await fetch(window.location.pathname + '?' + qs.toString(), {
+      signal: _ajaxController.signal,
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' },
+    });
 
     if (!resp.ok) throw new Error('Server error ' + resp.status);
-
     const html = await resp.text();
 
-    // The server returns the full page HTML — we parse it and
-    // extract only the #salesPane inner content
     const parser = new DOMParser();
     const doc    = parser.parseFromString(html, 'text/html');
-    const fresh  = doc.getElementById('salesPane');
 
-    if (!fresh) {
-      // Fallback: server didn't return the partial — just navigate normally
-      window.location.href = window.location.pathname + '?' + qs.toString();
+    // Fast path: server sent the lightweight partial (has marker meta tag)
+    let newHTML = null;
+    if (doc.querySelector('meta[name="hub-partial"]')) {
+      newHTML = doc.body.innerHTML;
+    } else {
+      // Fallback: server sent the full page — extract just #salesPane
+      const paneEl = doc.getElementById('salesPane');
+      if (paneEl) newHTML = paneEl.innerHTML;
+    }
+
+    if (newHTML === null) {
+      console.warn(
+        '[SalesHub] AJAX partial not found in response.\n' +
+        'Check: (1) SalesHubView overrides get() correctly, ' +
+        '(2) sales_list_partial.html exists, ' +
+        '(3) the view is reading the X-Requested-With header.'
+      );
+      hidePaneSkeleton();
+      toast('Could not swap content — check console for details.', 'warning');
       return;
     }
 
-    const pane = document.getElementById('salesPane');
-    pane.innerHTML = fresh.innerHTML;
-
-    // Re-bind dynamic event listeners on the new DOM nodes
+    document.getElementById('salesPane').innerHTML = newHTML;
     bindSalesPaneEvents();
     hidePaneSkeleton();
 
-    // Switch to sales tab if not already there
-    const salesBtn = document.querySelector('.hub-tab[data-tab="tab-sales"]');
+    // Ensure Sales List tab stays active
     const salesTab = document.getElementById('tab-sales');
-    if (salesBtn && salesTab && salesTab.style.display === 'none') {
+    if (salesTab && salesTab.style.display === 'none') {
       document.querySelectorAll('.hub-tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach(p => { p.style.display = 'none'; });
-      salesBtn.classList.add('active');
+      const salesBtn = document.querySelector('.hub-tab[data-tab="tab-sales"]');
+      if (salesBtn) salesBtn.classList.add('active');
       salesTab.style.display = 'block';
     }
 
   } catch (err) {
-    if (err.name === 'AbortError') return;  // intentional cancel — silent
+    if (err.name === 'AbortError') return;
     hidePaneSkeleton();
-    toast('Failed to load sales. Retrying…', 'error');
-    console.error(err);
+    toast('Failed to load sales — please try again.', 'error');
+    console.error('[SalesHub] AJAX error:', err);
   }
 }
 
@@ -1642,12 +1646,17 @@ function bindSalesPaneEvents() {
     });
   });
 
-  // Intercept pagination links — turn them into AJAX calls
-  document.querySelectorAll('#salesPane .page-btn[href]').forEach(link => {
-    link.addEventListener('click', e => {
+  // Intercept pagination buttons — built with data-page, no href
+  document.querySelectorAll('#salesPane [data-page]').forEach(btn => {
+    btn.style.cursor = 'pointer';
+    btn.addEventListener('click', e => {
       e.preventDefault();
-      const url = new URL(link.href, window.location.origin);
-      loadSales(url.searchParams);
+      const page = btn.dataset.page;
+      // Build params from current URL, replacing page cleanly
+      const qs = new URLSearchParams(window.location.search);
+      qs.delete('page');
+      if (page && page !== '1') qs.set('page', page);
+      loadSales(qs);
     });
   });
 
