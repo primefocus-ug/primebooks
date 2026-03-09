@@ -200,7 +200,7 @@ def admin_approve_signup(request, request_id):
             logger.info(f"Queueing tenant creation for {signup.request_id}")
 
             task = create_tenant_async.apply_async(
-                args=[str(signup.request_id), password],
+                args=[str(signup.request_id)],
                 countdown=2,  # Wait 2 seconds before starting
             )
 
@@ -552,7 +552,7 @@ class TenantSignupView(CreateView):
 
             # Queue async tenant creation (outside transaction)
             task = create_tenant_async.apply_async(
-                args=[str(signup_request.request_id), password],
+                args=[str(signup_request.request_id)],
                 countdown=2,  # Wait 2 seconds before starting
                 expires=600,  # Task expires in 10 minutes
             )

@@ -319,7 +319,7 @@ elif DEBUG:
     SECRET_KEY = 'django-insecure-9mghr4buf3l(sinf2(lez20c&*=2)lha_qkdyrxeu1#14@p&(%'
     ALLOWED_HOSTS = ['*']
     PUBLIC_ADMIN_URL = 'http://localhost:8000'
-
+    BASE_DOMAINS='localhost'
     # Database - PostgreSQL with schema-per-tenant
     DATABASES = {
         'default': {
@@ -424,7 +424,7 @@ else:
 
     ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'primebooks.sale').split(',')]
     PUBLIC_ADMIN_URL = 'https://primebooks.sale'
-
+    BASE_DOMAINS='primebooks.sale'
     # Database - PostgreSQL with schema-per-tenant
     DATABASES = {
         'default': {

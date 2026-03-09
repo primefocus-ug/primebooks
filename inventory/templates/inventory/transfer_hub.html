@@ -1,0 +1,1804 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}Transfer Hub{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+/* ── Design: Refined Industrial Utility ────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@500;600;700&display=swap');
+
+:root {
+  --hub-accent:    #2563eb;
+  --hub-accent-2:  #0ea5e9;
+  --hub-pending:   #f59e0b;
+  --hub-transit:   #0ea5e9;
+  --hub-done:      #10b981;
+  --hub-cancel:    #6b7280;
+  --hub-danger:    #ef4444;
+  --hub-radius:    10px;
+  --hub-mono:      'DM Mono', monospace;
+  --hub-head:      'Syne', sans-serif;
+  --tab-h:         46px;
+}
+
+/* Light */
+[data-theme="light"], :root {
+  --bg-canvas:   #f1f5f9;
+  --bg-card:     #ffffff;
+  --bg-row-alt:  #f8fafc;
+  --bg-hover:    #eff6ff;
+  --text-main:   #0f172a;
+  --text-muted:  #64748b;
+  --border:      #e2e8f0;
+  --tab-bg:      #ffffff;
+  --tab-border:  #e2e8f0;
+  --tab-active:  #2563eb;
+  --input-bg:    #ffffff;
+  --shadow:      0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+  --shadow-md:   0 4px 12px rgba(0,0,0,.08);
+}
+
+/* Dark */
+[data-theme="dark"] {
+  --bg-canvas:   #0f172a;
+  --bg-card:     #1e293b;
+  --bg-row-alt:  #172032;
+  --bg-hover:    #1e3a5f;
+  --text-main:   #f1f5f9;
+  --text-muted:  #94a3b8;
+  --border:      #334155;
+  --tab-bg:      #1e293b;
+  --tab-border:  #334155;
+  --tab-active:  #3b82f6;
+  --input-bg:    #1e293b;
+  --shadow:      0 1px 3px rgba(0,0,0,.4);
+  --shadow-md:   0 4px 12px rgba(0,0,0,.4);
+}
+
+/* ── Hub shell ─────────────────────────────────────────────────────────── */
+.hub-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.hub-title {
+  font-family: var(--hub-head);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+  line-height: 1.2;
+}
+.hub-title span { color: var(--hub-accent); }
+.hub-sub { color: var(--text-muted); font-size: .82rem; margin-top: .2rem; }
+
+/* ── Summary pills ─────────────────────────────────────────────────────── */
+.summary-pills {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .35rem .75rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 600;
+  font-family: var(--hub-mono);
+  cursor: pointer;
+  transition: filter .15s, transform .1s;
+  text-decoration: none;
+  border: none;
+  background: none;
+}
+.pill:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.pill-pending  { background: #fef3c7; color: #92400e; }
+.pill-transit  { background: #e0f2fe; color: #075985; }
+.pill-done     { background: #dcfce7; color: #14532d; }
+.pill-cancel   { background: #f1f5f9; color: #475569; }
+[data-theme="dark"] .pill-pending  { background: #451a03; color: #fcd34d; }
+[data-theme="dark"] .pill-transit  { background: #082f49; color: #7dd3fc; }
+[data-theme="dark"] .pill-done     { background: #052e16; color: #6ee7b7; }
+[data-theme="dark"] .pill-cancel   { background: #1e293b; color: #94a3b8; }
+
+/* ── Tab bar ───────────────────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  background: var(--tab-bg);
+  border: 1px solid var(--tab-border);
+  border-radius: var(--hub-radius);
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow);
+}
+.tab-btn {
+  flex: 1;
+  height: var(--tab-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  font-family: var(--hub-head);
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  position: relative;
+  transition: color .2s, background .2s;
+  padding: 0 .5rem;
+  letter-spacing: .02em;
+}
+.tab-btn::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--tab-active);
+  border-radius: 3px 3px 0 0;
+  transform: scaleX(0);
+  transition: transform .2s cubic-bezier(.4,0,.2,1);
+}
+.tab-btn:hover { color: var(--text-main); background: var(--bg-hover); }
+.tab-btn.active {
+  color: var(--tab-active);
+  background: var(--bg-hover);
+}
+.tab-btn.active::after { transform: scaleX(1); }
+.tab-btn + .tab-btn { border-left: 1px solid var(--tab-border); }
+.tab-icon { font-size: .9rem; }
+
+/* ── Tab panels ────────────────────────────────────────────────────────── */
+.tab-panel { display: none; animation: panelIn .22s ease; }
+.tab-panel.active { display: block; }
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Card wrapper ──────────────────────────────────────────────────────── */
+.hub-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--hub-radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.hub-card-header {
+  padding: .9rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.hub-card-title {
+  font-family: var(--hub-head);
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+.hub-card-body { padding: 1.25rem; }
+
+/* ── Filter bar ────────────────────────────────────────────────────────── */
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .6rem;
+  padding: .9rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-row-alt);
+}
+.filter-row .form-control,
+.filter-row .form-select {
+  background: var(--input-bg);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: .8rem;
+  padding: .4rem .65rem;
+  height: 34px;
+}
+.filter-row .form-control:focus,
+.filter-row .form-select:focus {
+  border-color: var(--hub-accent);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+  outline: none;
+}
+.filter-btn {
+  background: var(--hub-accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: .8rem;
+  font-weight: 600;
+  padding: .4rem 1rem;
+  cursor: pointer;
+  height: 34px;
+  transition: background .15s;
+}
+.filter-btn:hover { background: #1d4ed8; }
+.filter-reset {
+  color: var(--text-muted);
+  font-size: .78rem;
+  text-decoration: none;
+  padding: .4rem .5rem;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+}
+.filter-reset:hover { color: var(--hub-danger); }
+
+/* ── Table ─────────────────────────────────────────────────────────────── */
+.hub-table-wrap { overflow-x: auto; }
+.hub-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+}
+.hub-table thead th {
+  background: var(--bg-row-alt);
+  color: var(--text-muted);
+  font-family: var(--hub-mono);
+  font-size: .72rem;
+  font-weight: 500;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: .7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.hub-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
+  cursor: pointer;
+}
+.hub-table tbody tr:last-child { border-bottom: none; }
+.hub-table tbody tr:hover { background: var(--bg-hover); }
+.hub-table tbody td {
+  padding: .75rem 1rem;
+  color: var(--text-main);
+  vertical-align: middle;
+}
+
+.transfer-num {
+  font-family: var(--hub-mono);
+  font-size: .78rem;
+  font-weight: 500;
+  color: var(--hub-accent);
+  text-decoration: none;
+}
+.transfer-num:hover { text-decoration: underline; }
+.product-name { font-weight: 600; color: var(--text-main); }
+.product-sku { font-family: var(--hub-mono); font-size: .72rem; color: var(--text-muted); }
+.store-arrow { color: var(--text-muted); margin: 0 .3rem; font-size: .8rem; }
+.qty-badge {
+  font-family: var(--hub-mono);
+  background: var(--bg-row-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: .15rem .5rem;
+  font-size: .78rem;
+}
+
+/* ── Status badges ─────────────────────────────────────────────────────── */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .22rem .65rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 600;
+  font-family: var(--hub-mono);
+  white-space: nowrap;
+}
+.status-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.status-pending  { background: #fef3c7; color: #92400e; }
+.status-in_transit { background: #e0f2fe; color: #075985; }
+.status-completed  { background: #dcfce7; color: #14532d; }
+.status-cancelled  { background: #f1f5f9; color: #64748b; }
+[data-theme="dark"] .status-pending    { background: #451a03; color: #fcd34d; }
+[data-theme="dark"] .status-in_transit { background: #082f49; color: #7dd3fc; }
+[data-theme="dark"] .status-completed  { background: #052e16; color: #6ee7b7; }
+[data-theme="dark"] .status-cancelled  { background: #1e293b; color: #94a3b8; }
+
+/* ── Action buttons ────────────────────────────────────────────────────── */
+.action-group { display: flex; gap: .3rem; align-items: center; }
+.act-btn {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .75rem;
+  cursor: pointer;
+  transition: background .15s, transform .1s, color .15s;
+  text-decoration: none;
+}
+.act-btn:hover { transform: scale(1.1); }
+.act-view    { background: #eff6ff; color: #2563eb; }
+.act-approve { background: #f0fdf4; color: #16a34a; }
+.act-complete{ background: #eff6ff; color: #2563eb; }
+.act-cancel  { background: #fef2f2; color: #dc2626; }
+[data-theme="dark"] .act-view     { background: #1e3a5f; color: #7dd3fc; }
+[data-theme="dark"] .act-approve  { background: #052e16; color: #6ee7b7; }
+[data-theme="dark"] .act-complete { background: #1e3a5f; color: #7dd3fc; }
+[data-theme="dark"] .act-cancel   { background: #3b0f0f; color: #fca5a5; }
+
+/* ── Pagination ────────────────────────────────────────────────────────── */
+.pagination-wrap { padding: .75rem 1.25rem; border-top: 1px solid var(--border); }
+.pagination .page-link {
+  background: var(--bg-card);
+  border-color: var(--border);
+  color: var(--text-main);
+  font-size: .8rem;
+}
+.pagination .page-item.active .page-link {
+  background: var(--hub-accent);
+  border-color: var(--hub-accent);
+}
+.pagination .page-link:hover { background: var(--bg-hover); }
+
+/* ── Create form ────────────────────────────────────────────────────────── */
+.create-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.2rem;
+}
+.form-field label {
+  display: block;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: .4rem;
+  font-family: var(--hub-mono);
+}
+.form-field .form-control,
+.form-field .form-select {
+  background: var(--input-bg);
+  color: var(--text-main);
+  border: 1.5px solid var(--border);
+  border-radius: 7px;
+  padding: .55rem .85rem;
+  font-size: .85rem;
+  transition: border-color .15s, box-shadow .15s;
+  width: 100%;
+}
+.form-field .form-control:focus,
+.form-field .form-select:focus {
+  border-color: var(--hub-accent);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+  outline: none;
+}
+.form-field .invalid-feedback { font-size: .75rem; color: var(--hub-danger); }
+.form-field.has-error .form-control,
+.form-field.has-error .form-select { border-color: var(--hub-danger); }
+
+.stock-hint {
+  font-family: var(--hub-mono);
+  font-size: .73rem;
+  color: var(--text-muted);
+  margin-top: .3rem;
+}
+.stock-hint.low  { color: var(--hub-pending); }
+.stock-hint.zero { color: var(--hub-danger); }
+
+.form-actions {
+  display: flex;
+  gap: .75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+.btn-primary-hub {
+  background: var(--hub-accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: .6rem 1.5rem;
+  font-family: var(--hub-head);
+  font-size: .88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+}
+.btn-primary-hub:hover { background: #1d4ed8; transform: translateY(-1px); }
+.btn-secondary-hub {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: .6rem 1.25rem;
+  font-family: var(--hub-head);
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+}
+.btn-secondary-hub:hover { border-color: var(--text-muted); color: var(--text-main); }
+
+/* ── Detail view ────────────────────────────────────────────────────────── */
+.detail-hero {
+  background: linear-gradient(135deg, #1e40af 0%, #0369a1 100%);
+  padding: 1.5rem 1.5rem 2.5rem;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+}
+[data-theme="dark"] .detail-hero {
+  background: linear-gradient(135deg, #1e3a8a 0%, #0c4a6e 100%);
+}
+.detail-hero::before {
+  content: '';
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.06);
+}
+.detail-hero-num {
+  font-family: var(--hub-mono);
+  font-size: .78rem;
+  opacity: .7;
+  letter-spacing: .08em;
+}
+.detail-hero-title {
+  font-family: var(--hub-head);
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: .25rem 0;
+}
+.detail-hero-meta { font-size: .82rem; opacity: .8; }
+.detail-hero-actions { display: flex; gap: .5rem; margin-top: 1rem; flex-wrap: wrap; }
+
+.detail-hero-action-btn {
+  padding: .45rem 1.1rem;
+  border-radius: 7px;
+  font-family: var(--hub-head);
+  font-size: .8rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  transition: filter .15s, transform .1s;
+}
+.detail-hero-action-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.dbtn-approve  { background: #10b981; color: #fff; }
+.dbtn-complete { background: #3b82f6; color: #fff; }
+.dbtn-cancel   { background: rgba(255,255,255,.15); color: #fff; backdrop-filter: blur(4px); }
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+@media (max-width: 640px) { .detail-grid { grid-template-columns: 1fr; } }
+.detail-block {
+  padding: 1.1rem 1.25rem;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.detail-block:nth-child(even) { border-right: none; }
+.detail-block-label {
+  font-family: var(--hub-mono);
+  font-size: .68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  margin-bottom: .3rem;
+}
+.detail-block-value {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.stock-flow-bar {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.stock-flow-item {
+  flex: 1;
+  min-width: 120px;
+  background: var(--bg-row-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .75rem 1rem;
+}
+.stock-flow-label { font-family: var(--hub-mono); font-size: .68rem; color: var(--text-muted); text-transform: uppercase; }
+.stock-flow-val   { font-family: var(--hub-mono); font-size: 1.1rem; font-weight: 700; color: var(--text-main); margin: .2rem 0; }
+.stock-flow-arrow { color: var(--text-muted); font-size: 1.4rem; }
+
+.movements-table { font-size: .8rem; }
+.movements-table th {
+  font-family: var(--hub-mono);
+  font-size: .68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: .6rem 1rem;
+  background: var(--bg-row-alt);
+  border-bottom: 1px solid var(--border);
+}
+.movements-table td {
+  padding: .65rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-main);
+}
+
+/* ── Stats ─────────────────────────────────────────────────────────────── */
+.stats-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--hub-radius);
+  padding: 1.1rem;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.kpi-label {
+  font-family: var(--hub-mono);
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  margin-bottom: .35rem;
+}
+.kpi-value {
+  font-family: var(--hub-head);
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--hub-accent);
+  line-height: 1;
+}
+.kpi-sub { font-size: .72rem; color: var(--text-muted); margin-top: .2rem; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+
+.mini-list { list-style: none; padding: 0; margin: 0; }
+.mini-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .55rem .75rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .82rem;
+}
+.mini-list li:last-child { border-bottom: none; }
+.mini-list li span { color: var(--text-muted); font-family: var(--hub-mono); font-size: .75rem; }
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+}
+.empty-state i { font-size: 2.5rem; opacity: .3; margin-bottom: .75rem; display: block; }
+.empty-state p { margin: 0; font-size: .88rem; }
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.hub-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  pointer-events: none;
+}
+.hub-toast-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--hub-done);
+  border-radius: 8px;
+  padding: .75rem 1rem;
+  box-shadow: var(--shadow-md);
+  font-size: .83rem;
+  color: var(--text-main);
+  animation: toastIn .3s ease forwards;
+  pointer-events: all;
+  max-width: 320px;
+}
+.hub-toast-item.error { border-left-color: var(--hub-danger); }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Cancel modal ─────────────────────────────────────────────────────── */
+[data-theme="dark"] .modal-content {
+  background: var(--bg-card);
+  color: var(--text-main);
+  border-color: var(--border);
+}
+[data-theme="dark"] .modal-header { border-color: var(--border); }
+[data-theme="dark"] .modal-footer { border-color: var(--border); }
+[data-theme="dark"] .form-control {
+  background: var(--input-bg);
+  color: var(--text-main);
+  border-color: var(--border);
+}
+[data-theme="dark"] .btn-close { filter: invert(1); }
+
+/* ── Loading spinner ────────────────────────────────────────────────────── */
+.spin { animation: spin .6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 560px) {
+  .hub-title { font-size: 1.15rem; }
+  .tab-btn { font-size: .72rem; gap: .25rem; }
+  .tab-btn .tab-label { display: none; }
+  .detail-hero { padding: 1rem 1rem 2rem; }
+}
+
+/* ── Select2 overrides ────────────────────────────────────────────────── */
+/* Select2 appends .select2-dropdown to <body>, outside the themed wrapper,
+   so we target both light and dark explicitly instead of relying on CSS vars */
+
+/* --- selection box (inside the form) --- */
+.select2-container--default .select2-selection--single {
+  background: #fff;
+  border: 1.5px solid #d1d5db;
+  border-radius: .45rem;
+  height: 2.6rem;
+  display: flex; align-items: center;
+  color: #111827;
+}
+[data-theme="dark"] .select2-container--default .select2-selection--single {
+  background: #1e2530;
+  border-color: #374151;
+  color: #e5e7eb;
+}
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+  color: inherit;
+  line-height: 1;
+  padding: 0 2.2rem 0 .75rem;
+  font-family: 'DM Mono', monospace;
+  font-size: .85rem;
+}
+.select2-container--default .select2-selection--single .select2-selection__placeholder {
+  color: #9ca3af;
+}
+[data-theme="dark"] .select2-container--default .select2-selection--single .select2-selection__rendered {
+  color: #e5e7eb;
+}
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+  height: 2.6rem;
+}
+
+/* --- dropdown (appended to <body>, needs explicit dark rules via body class) --- */
+.select2-dropdown {
+  background: #fff;
+  border: 1.5px solid #d1d5db;
+  border-radius: .45rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  z-index: 9999;
+}
+.select2-container--default .select2-search--dropdown .select2-search__field {
+  background: #f9fafb;
+  color: #111827;
+  border: 1.5px solid #d1d5db;
+  border-radius: .35rem;
+  padding: .45rem .75rem;
+  font-family: 'DM Mono', monospace;
+  font-size: .85rem;
+  outline: none;
+}
+.select2-container--default .select2-results__option {
+  color: #111827;
+  font-family: 'DM Mono', monospace;
+  font-size: .83rem;
+  padding: .5rem .85rem;
+}
+.select2-container--default .select2-results__option--highlighted[aria-selected] {
+  background: #2563eb;
+  color: #fff;
+}
+.select2-container--default .select2-results__option[aria-selected=true] {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+/* Dark theme — body gets data-theme="dark" from your theme switcher */
+body[data-theme="dark"] .select2-dropdown {
+  background: #1e2530;
+  border-color: #374151;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+body[data-theme="dark"] .select2-container--default .select2-search--dropdown .select2-search__field {
+  background: #111827;
+  color: #e5e7eb;
+  border-color: #374151;
+}
+body[data-theme="dark"] .select2-container--default .select2-results__option {
+  color: #e5e7eb;
+  background: transparent;
+}
+body[data-theme="dark"] .select2-container--default .select2-results__option--highlighted[aria-selected] {
+  background: #2563eb;
+  color: #fff;
+}
+body[data-theme="dark"] .select2-container--default .select2-results__option[aria-selected=true] {
+  background: #1e3a8a;
+  color: #bfdbfe;
+}
+body[data-theme="dark"] .select2-container--default .select2-selection--single .select2-selection__arrow b {
+  border-color: #9ca3af transparent transparent transparent;
+}
+
+.select2-container { width: 100% !important; }
+
+/* ── Mode toggle ─────────────────────────────────────────────────────── */
+.mode-toggle { display: flex; gap: .25rem; background: var(--hub-sidebar-bg,var(--hub-bg)); border: 1.5px solid var(--hub-border); border-radius: .45rem; padding: .2rem; }
+.mode-btn { background: transparent; border: none; border-radius: .3rem; color: var(--hub-text-muted); padding: .35rem .9rem; font-family: 'Syne',sans-serif; font-size: .8rem; font-weight: 600; cursor: pointer; display:flex;align-items:center;gap:.4rem; transition: background .15s, color .15s; }
+.mode-btn.active { background: var(--hub-accent); color: #fff; }
+
+/* ── Bulk rows table ─────────────────────────────────────────────────── */
+.bulk-rows-wrapper { border: 1.5px solid var(--hub-border); border-radius: .5rem; overflow: hidden; margin-bottom: .5rem; }
+.bulk-table { width: 100%; border-collapse: collapse; }
+.bulk-table th { background: var(--hub-sidebar-bg,var(--hub-bg)); color: var(--hub-text-muted); font-size: .72rem; font-family: 'Syne',sans-serif; text-transform: uppercase; letter-spacing: .07em; padding: .55rem .85rem; text-align: left; border-bottom: 1.5px solid var(--hub-border); }
+.bulk-table td { padding: .5rem .7rem; border-bottom: 1px solid var(--hub-border); vertical-align: middle; }
+.bulk-table tbody tr:last-child td { border-bottom: none; }
+.bulk-table .stock-badge { font-size:.75rem; font-family:'DM Mono',monospace; padding:.2rem .55rem; border-radius:999px; }
+.bulk-table .stock-badge.ok   { background:color-mix(in srgb,#22c55e 15%,transparent); color:#16a34a; }
+.bulk-table .stock-badge.low  { background:color-mix(in srgb,#f59e0b 15%,transparent); color:#d97706; }
+.bulk-table .stock-badge.zero { background:color-mix(in srgb,#ef4444 15%,transparent); color:#dc2626; }
+.bulk-table .qty-input { width:100%; border:1.5px solid var(--hub-border); border-radius:.35rem; background:var(--hub-input-bg); color:var(--hub-text); font-family:'DM Mono',monospace; font-size:.85rem; padding:.35rem .6rem; }
+.bulk-table .qty-input:focus { border-color:var(--hub-accent); outline:none; }
+.remove-row-btn { background:transparent; border:none; color:var(--hub-text-muted); cursor:pointer; font-size:.9rem; padding:.25rem .4rem; border-radius:.3rem; transition:color .15s,background .15s; }
+.remove-row-btn:hover { color:#ef4444; background:color-mix(in srgb,#ef4444 10%,transparent); }
+
+/* req asterisk */
+.req { color: var(--hub-accent); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+  {# ── Header ─────────────────────────────────────────────────── #}
+  <div class="hub-header">
+    <div>
+      <h1 class="hub-title"><i class="fas fa-exchange-alt" style="font-size:.9em"></i> Transfer <span>Hub</span></h1>
+      <p class="hub-sub">Manage inter-store stock transfers in one place</p>
+    </div>
+    <div class="summary-pills">
+      <a class="pill pill-pending" href="?tab=list&status=pending">
+        <i class="fas fa-clock"></i> {{ summary.pending_count }} Pending
+      </a>
+      <a class="pill pill-transit" href="?tab=list&status=in_transit">
+        <i class="fas fa-truck"></i> {{ summary.in_transit_count }} In Transit
+      </a>
+      <a class="pill pill-done" href="?tab=list&status=completed">
+        <i class="fas fa-check-circle"></i> {{ summary.completed_count }} Completed
+      </a>
+      <a class="pill pill-cancel" href="?tab=list&status=cancelled">
+        <i class="fas fa-ban"></i> {{ summary.cancelled_count }} Cancelled
+      </a>
+    </div>
+  </div>
+
+  {# ── Tab bar ────────────────────────────────────────────────── #}
+  <nav class="tab-bar" role="tablist">
+    <a href="?tab=list"   class="tab-btn {% if active_tab == 'list'   %}active{% endif %}" role="tab">
+      <i class="fas fa-list tab-icon"></i><span class="tab-label">All Transfers</span>
+    </a>
+    <a href="?tab=create" class="tab-btn {% if active_tab == 'create' %}active{% endif %}" role="tab">
+      <i class="fas fa-plus tab-icon"></i><span class="tab-label">New Transfer</span>
+    </a>
+    <a href="?tab=detail{% if active_tab == 'detail' and request.GET.id %}&id={{ request.GET.id }}{% endif %}"
+       class="tab-btn {% if active_tab == 'detail' %}active{% endif %}" role="tab" id="tab-detail-link">
+      <i class="fas fa-eye tab-icon"></i><span class="tab-label">Detail</span>
+    </a>
+    <a href="?tab=stats"  class="tab-btn {% if active_tab == 'stats'  %}active{% endif %}" role="tab">
+      <i class="fas fa-chart-bar tab-icon"></i><span class="tab-label">Analytics</span>
+    </a>
+  </nav>
+
+  {# ── LIST TAB ───────────────────────────────────────────────── #}
+  <div class="tab-panel {% if active_tab == 'list' %}active{% endif %}">
+    <div class="hub-card">
+      <div class="hub-card-header">
+        <h2 class="hub-card-title"><i class="fas fa-list me-2"></i>All Transfers</h2>
+        <a href="?tab=create" class="btn-primary-hub"><i class="fas fa-plus"></i> New Transfer</a>
+      </div>
+
+      {# Filters #}
+      <form method="get" id="filterForm">
+        <input type="hidden" name="tab" value="list">
+        <div class="filter-row">
+          <input type="text" name="search" class="form-control" placeholder="Search #, product…"
+                 value="{{ current_filters.search }}">
+          <select name="status" class="form-select">
+            <option value="">All Statuses</option>
+            {% for val, label in status_choices %}
+            <option value="{{ val }}" {% if current_filters.status == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <select name="from_store" class="form-select">
+            <option value="">All Source Stores</option>
+            {% for store in stores %}
+            <option value="{{ store.id }}" {% if current_filters.from_store|stringformat:"s" == store.id|stringformat:"s" %}selected{% endif %}>{{ store.name }}</option>
+            {% endfor %}
+          </select>
+          <select name="to_store" class="form-select">
+            <option value="">All Dest. Stores</option>
+            {% for store in stores %}
+            <option value="{{ store.id }}" {% if current_filters.to_store|stringformat:"s" == store.id|stringformat:"s" %}selected{% endif %}>{{ store.name }}</option>
+            {% endfor %}
+          </select>
+          <input type="date" name="date_from" class="form-control" value="{{ current_filters.date_from }}">
+          <input type="date" name="date_to"   class="form-control" value="{{ current_filters.date_to }}">
+          <button type="submit" class="filter-btn"><i class="fas fa-filter me-1"></i>Filter</button>
+          <a href="?tab=list" class="filter-reset"><i class="fas fa-times me-1"></i>Reset</a>
+        </div>
+      </form>
+
+      {# Table #}
+      <div class="hub-table-wrap">
+        <table class="hub-table">
+          <thead>
+            <tr>
+              <th>Transfer #</th>
+              <th>Product</th>
+              <th>Route</th>
+              <th>Qty</th>
+              <th>Status</th>
+              <th>Requested By</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for transfer in transfers %}
+            <tr onclick="goToDetail({{ transfer.pk }})" title="View transfer {{ transfer.transfer_number }}">
+              <td><a href="?tab=detail&id={{ transfer.pk }}" class="transfer-num" onclick="event.stopPropagation()">{{ transfer.transfer_number }}</a></td>
+              <td>
+                <div class="product-name">{{ transfer.product.name }}</div>
+                <div class="product-sku">{{ transfer.product.sku }}</div>
+              </td>
+              <td>
+                <span style="font-size:.82rem; color: var(--text-main)">{{ transfer.from_store.name }}</span>
+                <span class="store-arrow"><i class="fas fa-arrow-right"></i></span>
+                <span style="font-size:.82rem; color: var(--text-main)">{{ transfer.to_store.name }}</span>
+              </td>
+              <td><span class="qty-badge">{{ transfer.quantity }} {{ transfer.product.unit_of_measure }}</span></td>
+              <td>
+                <span class="status-badge status-{{ transfer.status }}">
+                  {{ transfer.get_status_display }}
+                </span>
+              </td>
+              <td style="font-size:.8rem">{{ transfer.requested_by.get_full_name|default:transfer.requested_by.username }}</td>
+              <td style="font-size:.78rem; font-family: var(--hub-mono); color: var(--text-muted)">{{ transfer.created_at|date:"Y-m-d H:i" }}</td>
+              <td onclick="event.stopPropagation()">
+                <div class="action-group">
+                  <a href="?tab=detail&id={{ transfer.pk }}" class="act-btn act-view" title="View"><i class="fas fa-eye"></i></a>
+                  {% if transfer.can_be_approved and perms.inventory.change_stocktransfer %}
+                  <button class="act-btn act-approve" title="Approve"
+                          data-action="approve" data-id="{{ transfer.pk }}" data-num="{{ transfer.transfer_number }}">
+                    <i class="fas fa-check"></i>
+                  </button>
+                  {% endif %}
+                  {% if transfer.can_be_completed and perms.inventory.change_stocktransfer %}
+                  <button class="act-btn act-complete" title="Complete"
+                          data-action="complete" data-id="{{ transfer.pk }}" data-num="{{ transfer.transfer_number }}">
+                    <i class="fas fa-check-double"></i>
+                  </button>
+                  {% endif %}
+                  {% if transfer.can_be_cancelled and perms.inventory.change_stocktransfer %}
+                  <button class="act-btn act-cancel" title="Cancel"
+                          data-action="cancel" data-id="{{ transfer.pk }}" data-num="{{ transfer.transfer_number }}">
+                    <i class="fas fa-times"></i>
+                  </button>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="8">
+                <div class="empty-state">
+                  <i class="fas fa-exchange-alt"></i>
+                  <p>No transfers found. <a href="?tab=create" style="color: var(--hub-accent)">Create one →</a></p>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {# Pagination #}
+      {% if page_obj.has_other_pages %}
+      <div class="pagination-wrap">
+        <nav><ul class="pagination justify-content-center mb-0">
+          {% if page_obj.has_previous %}
+          <li class="page-item"><a class="page-link" href="?tab=list&page=1{% if current_filters.status %}&status={{ current_filters.status }}{% endif %}">First</a></li>
+          <li class="page-item"><a class="page-link" href="?tab=list&page={{ page_obj.previous_page_number }}{% if current_filters.status %}&status={{ current_filters.status }}{% endif %}">‹</a></li>
+          {% endif %}
+          <li class="page-item active"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+          {% if page_obj.has_next %}
+          <li class="page-item"><a class="page-link" href="?tab=list&page={{ page_obj.next_page_number }}{% if current_filters.status %}&status={{ current_filters.status }}{% endif %}">›</a></li>
+          <li class="page-item"><a class="page-link" href="?tab=list&page={{ page_obj.paginator.num_pages }}{% if current_filters.status %}&status={{ current_filters.status }}{% endif %}">Last</a></li>
+          {% endif %}
+        </ul></nav>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>{# /list #}
+
+  {# ── CREATE TAB ─────────────────────────────────────────────── #}
+  <div class="tab-panel {% if active_tab == 'create' %}active{% endif %}">
+    <div class="hub-card">
+      <div class="hub-card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;">
+        <h2 class="hub-card-title"><i class="fas fa-plus-circle me-2"></i>New Transfer Request</h2>
+        {# ── Mode toggle ── #}
+        <div class="mode-toggle" id="modeToggle">
+          <button type="button" class="mode-btn active" data-mode="single" onclick="setTransferMode('single')">
+            <i class="fas fa-exchange-alt"></i> Single
+          </button>
+          <button type="button" class="mode-btn" data-mode="bulk" onclick="setTransferMode('bulk')">
+            <i class="fas fa-layer-group"></i> Bulk
+          </button>
+        </div>
+      </div>
+      <div class="hub-card-body">
+
+        {# ════════════════ SINGLE TRANSFER FORM ════════════════ #}
+        <form method="post" action="?tab=create" id="createTransferForm" class="transfer-mode-panel" data-mode="single">
+          {% csrf_token %}
+          <input type="hidden" name="transfer_mode" value="single">
+
+          <div class="create-form-grid">
+            {# Product — Select2 autocomplete #}
+            <div class="form-field {% if form.product.errors %}has-error{% endif %}" style="grid-column:1/-1">
+              <label for="{{ form.product.id_for_label }}">
+                Product <span class="req">*</span>
+              </label>
+              {{ form.product }}
+              {% if form.product.errors %}<div class="invalid-feedback d-block">{{ form.product.errors.0 }}</div>{% endif %}
+              <div class="stock-hint" id="stockHint"></div>
+            </div>
+
+            {# From Store #}
+            <div class="form-field {% if form.from_store.errors %}has-error{% endif %}">
+              <label for="{{ form.from_store.id_for_label }}">From Store <span class="req">*</span></label>
+              {{ form.from_store }}
+              {% if form.from_store.errors %}<div class="invalid-feedback d-block">{{ form.from_store.errors.0 }}</div>{% endif %}
+            </div>
+
+            {# To Store #}
+            <div class="form-field {% if form.to_store.errors %}has-error{% endif %}">
+              <label for="{{ form.to_store.id_for_label }}">To Store <span class="req">*</span></label>
+              {{ form.to_store }}
+              {% if form.to_store.errors %}<div class="invalid-feedback d-block">{{ form.to_store.errors.0 }}</div>{% endif %}
+            </div>
+
+            {# Quantity #}
+            <div class="form-field {% if form.quantity.errors %}has-error{% endif %}">
+              <label for="{{ form.quantity.id_for_label }}">Quantity <span class="req">*</span></label>
+              {{ form.quantity }}
+              {% if form.quantity.errors %}<div class="invalid-feedback d-block">{{ form.quantity.errors.0 }}</div>{% endif %}
+            </div>
+
+            {# Notes #}
+            {% if form.notes %}
+            <div class="form-field" style="grid-column:1/-1">
+              <label for="{{ form.notes.id_for_label }}">Notes</label>
+              {{ form.notes }}
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-primary-hub" id="submitTransferBtn">
+              <i class="fas fa-paper-plane"></i> Submit Transfer Request
+            </button>
+            <a href="?tab=list" class="btn-secondary-hub"><i class="fas fa-times"></i> Cancel</a>
+          </div>
+        </form>
+
+        {# ════════════════ BULK TRANSFER FORM ═══════════════════ #}
+        <form method="post" action="?tab=create" id="bulkTransferForm" class="transfer-mode-panel" data-mode="bulk" style="display:none">
+          {% csrf_token %}
+          <input type="hidden" name="transfer_mode" value="bulk">
+
+          {# Shared stores row #}
+          <div class="create-form-grid" style="margin-bottom:1.5rem;">
+            <div class="form-field">
+              <label>From Store <span class="req">*</span></label>
+              <select name="from_store" id="bulk_from_store" class="hub-select bulk-store-select">
+                <option value="">— select source —</option>
+                {% for store in stores %}
+                <option value="{{ store.pk }}">{{ store.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-field">
+              <label>To Store <span class="req">*</span></label>
+              <select name="to_store" id="bulk_to_store" class="hub-select bulk-store-select">
+                <option value="">— select destination —</option>
+                {% for store in stores %}
+                <option value="{{ store.pk }}">{{ store.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-field" style="grid-column:1/-1">
+              <label>Notes (applies to all rows)</label>
+              <textarea name="notes" class="hub-input" rows="2" placeholder="Optional shared notes…"></textarea>
+            </div>
+          </div>
+
+          {# Product rows table #}
+          <div class="bulk-rows-wrapper">
+            <table class="bulk-table" id="bulkRowsTable">
+              <thead>
+                <tr>
+                  <th style="width:50%">Product</th>
+                  <th style="width:20%">Qty</th>
+                  <th style="width:20%">Stock at Source</th>
+                  <th style="width:10%"></th>
+                </tr>
+              </thead>
+              <tbody id="bulkRowsBody">
+                {# rows injected by JS #}
+              </tbody>
+            </table>
+          </div>
+
+          <div style="margin:.75rem 0 1.5rem;">
+            <button type="button" class="btn-secondary-hub btn-sm" id="addBulkRowBtn" onclick="addBulkRow()">
+              <i class="fas fa-plus"></i> Add Product Row
+            </button>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-primary-hub" id="submitBulkBtn">
+              <i class="fas fa-layer-group"></i> Submit Bulk Transfer
+            </button>
+            <a href="?tab=list" class="btn-secondary-hub"><i class="fas fa-times"></i> Cancel</a>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>{# /create #}
+
+  {# ── DETAIL TAB ─────────────────────────────────────────────── #}
+  <div class="tab-panel {% if active_tab == 'detail' %}active{% endif %}">
+    {% if detail_error %}
+    <div class="hub-card">
+      <div class="hub-card-body">
+        <div class="empty-state">
+          <i class="fas fa-info-circle"></i>
+          <p>{{ detail_error }}</p>
+          <a href="?tab=list" class="btn-secondary-hub mt-2">← Back to List</a>
+        </div>
+      </div>
+    </div>
+    {% elif transfer %}
+    <div class="hub-card">
+
+      {# Hero banner #}
+      <div class="detail-hero">
+        <div class="detail-hero-num">TRANSFER</div>
+        <div class="detail-hero-title">{{ transfer.transfer_number }}</div>
+        <div class="detail-hero-meta">
+          {{ transfer.product.name }} &nbsp;·&nbsp;
+          {{ transfer.from_store.name }} → {{ transfer.to_store.name }} &nbsp;·&nbsp;
+          {{ transfer.created_at|date:"d M Y, H:i" }}
+        </div>
+        <div class="detail-hero-actions">
+          {% if transfer.can_be_approved and perms.inventory.change_stocktransfer %}
+          <button class="detail-hero-action-btn dbtn-approve"
+                  data-action="approve" data-id="{{ transfer.pk }}" data-num="{{ transfer.transfer_number }}">
+            <i class="fas fa-check"></i> Approve
+          </button>
+          {% endif %}
+          {% if transfer.can_be_completed and perms.inventory.change_stocktransfer %}
+          <button class="detail-hero-action-btn dbtn-complete"
+                  data-action="complete" data-id="{{ transfer.pk }}" data-num="{{ transfer.transfer_number }}">
+            <i class="fas fa-check-double"></i> Mark Complete
+          </button>
+          {% endif %}
+          {% if transfer.can_be_cancelled and perms.inventory.change_stocktransfer %}
+          <button class="detail-hero-action-btn dbtn-cancel"
+                  data-action="cancel" data-id="{{ transfer.pk }}" data-num="{{ transfer.transfer_number }}">
+            <i class="fas fa-times"></i> Cancel
+          </button>
+          {% endif %}
+          <a href="?tab=list" class="detail-hero-action-btn dbtn-cancel">← All Transfers</a>
+        </div>
+      </div>
+
+      {# Stock flow bar #}
+      <div class="stock-flow-bar">
+        <div class="stock-flow-item">
+          <div class="stock-flow-label">Source: {{ transfer.from_store.name }}</div>
+          {% if source_stock %}
+          <div class="stock-flow-val">{{ source_stock.quantity }}</div>
+          {% if source_stock_after is not None %}
+          <div style="font-size:.72rem; color: var(--text-muted); font-family: var(--hub-mono)">
+            After: {{ source_stock_after }}
+          </div>
+          {% endif %}
+          {% else %}
+          <div class="stock-flow-val">—</div>
+          <div style="font-size:.72rem; color: var(--hub-danger); font-family: var(--hub-mono)">No stock record</div>
+          {% endif %}
+        </div>
+
+        <div class="stock-flow-arrow">→</div>
+
+        <div class="stock-flow-item" style="border: 2px solid var(--hub-accent)">
+          <div class="stock-flow-label">Transfer Qty</div>
+          <div class="stock-flow-val" style="color: var(--hub-accent)">{{ transfer.quantity }}</div>
+          <div style="font-size:.72rem; color: var(--text-muted); font-family: var(--hub-mono)">{{ transfer.product.unit_of_measure }}</div>
+        </div>
+
+        <div class="stock-flow-arrow">→</div>
+
+        <div class="stock-flow-item">
+          <div class="stock-flow-label">Dest: {{ transfer.to_store.name }}</div>
+          {% if dest_stock %}
+          <div class="stock-flow-val">{{ dest_stock.quantity }}</div>
+          {% if dest_stock_after is not None %}
+          <div style="font-size:.72rem; color: var(--hub-done); font-family: var(--hub-mono)">
+            After: {{ dest_stock_after }}
+          </div>
+          {% endif %}
+          {% else %}
+          <div class="stock-flow-val">0</div>
+          <div style="font-size:.72rem; color: var(--text-muted); font-family: var(--hub-mono)">New stock record</div>
+          {% endif %}
+        </div>
+      </div>
+
+      {# Info grid #}
+      <div class="detail-grid">
+        <div class="detail-block">
+          <div class="detail-block-label">Status</div>
+          <div class="detail-block-value">
+            <span class="status-badge status-{{ transfer.status }}">{{ transfer.get_status_display }}</span>
+          </div>
+        </div>
+        <div class="detail-block">
+          <div class="detail-block-label">Product SKU</div>
+          <div class="detail-block-value" style="font-family: var(--hub-mono); font-size:.83rem">{{ transfer.product.sku }}</div>
+        </div>
+        <div class="detail-block">
+          <div class="detail-block-label">Requested By</div>
+          <div class="detail-block-value">{{ transfer.requested_by.get_full_name|default:transfer.requested_by.username }}</div>
+        </div>
+        <div class="detail-block">
+          <div class="detail-block-label">Requested On</div>
+          <div class="detail-block-value" style="font-family: var(--hub-mono); font-size:.83rem">{{ transfer.created_at|date:"d M Y, H:i" }}</div>
+        </div>
+        {% if transfer.approved_by %}
+        <div class="detail-block">
+          <div class="detail-block-label">Approved By</div>
+          <div class="detail-block-value">{{ transfer.approved_by.get_full_name|default:transfer.approved_by.username }}</div>
+        </div>
+        <div class="detail-block">
+          <div class="detail-block-label">Approved On</div>
+          <div class="detail-block-value" style="font-family: var(--hub-mono); font-size:.83rem">{{ transfer.approved_at|date:"d M Y, H:i"|default:"—" }}</div>
+        </div>
+        {% endif %}
+        {% if transfer.completed_by %}
+        <div class="detail-block">
+          <div class="detail-block-label">Completed By</div>
+          <div class="detail-block-value">{{ transfer.completed_by.get_full_name|default:transfer.completed_by.username }}</div>
+        </div>
+        <div class="detail-block">
+          <div class="detail-block-label">Completed On</div>
+          <div class="detail-block-value" style="font-family: var(--hub-mono); font-size:.83rem">{{ transfer.completed_at|date:"d M Y, H:i"|default:"—" }}</div>
+        </div>
+        {% endif %}
+        {% if transfer.notes %}
+        <div class="detail-block" style="grid-column: 1 / -1">
+          <div class="detail-block-label">Notes</div>
+          <div class="detail-block-value" style="font-weight: 400; font-size:.85rem">{{ transfer.notes }}</div>
+        </div>
+        {% endif %}
+        {% if transfer.cancel_reason %}
+        <div class="detail-block" style="grid-column: 1 / -1; border-left: 3px solid var(--hub-danger)">
+          <div class="detail-block-label" style="color: var(--hub-danger)">Cancellation Reason</div>
+          <div class="detail-block-value" style="font-weight:400; font-size:.85rem">{{ transfer.cancel_reason }}</div>
+        </div>
+        {% endif %}
+      </div>
+
+      {# Related movements #}
+      {% if related_movements %}
+      <div style="padding: 1rem 1.25rem 0">
+        <h3 style="font-family: var(--hub-head); font-size:.9rem; font-weight:700; color: var(--text-main); margin-bottom:.75rem">
+          <i class="fas fa-history me-1"></i> Stock Movements
+        </h3>
+        <table class="hub-table movements-table" style="margin-bottom:1rem">
+          <thead>
+            <tr>
+              <th>Store</th>
+              <th>Type</th>
+              <th>Quantity</th>
+              <th>By</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for mv in related_movements %}
+            <tr>
+              <td>{{ mv.store.name }}</td>
+              <td><span class="status-badge">{{ mv.get_movement_type_display }}</span></td>
+              <td style="font-family: var(--hub-mono)">{{ mv.quantity }}</td>
+              <td>{{ mv.created_by.get_full_name|default:mv.created_by.username }}</td>
+              <td style="font-family: var(--hub-mono); font-size:.75rem; color: var(--text-muted)">{{ mv.created_at|date:"d M Y, H:i" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+    </div>
+    {% else %}
+    <div class="hub-card">
+      <div class="hub-card-body">
+        <div class="empty-state">
+          <i class="fas fa-mouse-pointer"></i>
+          <p>Click on any transfer from the list to view details here.</p>
+          <a href="?tab=list" class="btn-secondary-hub mt-2">Go to List →</a>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>{# /detail #}
+
+  {# ── STATS TAB ──────────────────────────────────────────────── #}
+  <div class="tab-panel {% if active_tab == 'stats' %}active{% endif %}">
+
+    {# KPI row #}
+    <div class="stats-kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">All Time</div>
+        <div class="kpi-value">{{ stats.total_all_time }}</div>
+        <div class="kpi-sub">Total Transfers</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">This Week</div>
+        <div class="kpi-value" style="color: var(--hub-transit)">{{ stats.this_week }}</div>
+        <div class="kpi-sub">New Transfers</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">This Month</div>
+        <div class="kpi-value" style="color: var(--hub-pending)">{{ stats.this_month }}</div>
+        <div class="kpi-sub">New Transfers</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Completion Rate</div>
+        <div class="kpi-value" style="color: var(--hub-done)">{{ stats.avg_completion_rate }}%</div>
+        <div class="kpi-sub">Completed vs Total</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Pending</div>
+        <div class="kpi-value" style="color: var(--hub-pending)">{{ summary.pending_count }}</div>
+        <div class="kpi-sub">Awaiting Approval</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">In Transit</div>
+        <div class="kpi-value" style="color: var(--hub-transit)">{{ summary.in_transit_count }}</div>
+        <div class="kpi-sub">Currently Moving</div>
+      </div>
+    </div>
+
+    {# Two column details #}
+    <div class="two-col">
+
+      {# Top products #}
+      <div class="hub-card">
+        <div class="hub-card-header">
+          <h2 class="hub-card-title"><i class="fas fa-box me-2"></i>Top Transferred Products</h2>
+        </div>
+        <ul class="mini-list">
+          {% for p in top_products %}
+          <li>
+            <span style="color: var(--text-main); font-size:.82rem">{{ p.product__name }}</span>
+            <span>{{ p.transfer_count }} transfers</span>
+          </li>
+          {% empty %}
+          <li><span style="color: var(--text-muted)">No data yet</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      {# Top routes #}
+      <div class="hub-card">
+        <div class="hub-card-header">
+          <h2 class="hub-card-title"><i class="fas fa-route me-2"></i>Top Routes</h2>
+        </div>
+        <ul class="mini-list">
+          {% for r in top_routes %}
+          <li>
+            <span style="color: var(--text-main); font-size:.8rem">{{ r.from_store__name }} → {{ r.to_store__name }}</span>
+            <span>{{ r.route_count }}×</span>
+          </li>
+          {% empty %}
+          <li><span style="color: var(--text-muted)">No data yet</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    {# Recent completed #}
+    {% if recent_completed %}
+    <div class="hub-card mt-3">
+      <div class="hub-card-header">
+        <h2 class="hub-card-title"><i class="fas fa-check-circle me-2" style="color:var(--hub-done)"></i>Recently Completed</h2>
+      </div>
+      <div class="hub-table-wrap">
+        <table class="hub-table">
+          <thead>
+            <tr>
+              <th>Transfer #</th>
+              <th>Product</th>
+              <th>Route</th>
+              <th>Qty</th>
+              <th>Completed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in recent_completed %}
+            <tr onclick="goToDetail({{ t.pk }})">
+              <td><a href="?tab=detail&id={{ t.pk }}" class="transfer-num" onclick="event.stopPropagation()">{{ t.transfer_number }}</a></td>
+              <td>{{ t.product.name }}</td>
+              <td style="font-size:.8rem">{{ t.from_store.name }} → {{ t.to_store.name }}</td>
+              <td><span class="qty-badge">{{ t.quantity }}</span></td>
+              <td style="font-family: var(--hub-mono); font-size:.75rem; color: var(--text-muted)">{{ t.completed_at|date:"d M Y"|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>{# /stats #}
+
+</div>{# /container #}
+
+{# ── Cancel modal ────────────────────────────────────────────── #}
+<div class="modal fade" id="cancelModal" tabindex="-1" aria-labelledby="cancelModalLabel">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="cancelModalLabel">Cancel Transfer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Cancel transfer <strong id="cancelNum"></strong>?</p>
+        <label for="cancelReason" class="form-label" style="font-size:.8rem; font-weight:600">Reason for cancellation</label>
+        <textarea class="form-control" id="cancelReason" rows="3" placeholder="Required…"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-danger" id="confirmCancelBtn"><i class="fas fa-times me-1"></i>Confirm Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Toast container ─────────────────────────────────────────── #}
+<div class="hub-toast" id="hubToast"></div>
+
+<!-- Select2 CSS only here; JS loaded in extra_js after jQuery -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css">
+
+<script>
+/* ── Hub JS ──────────────────────────────────────────────────── */
+const HUB_URL  = "{{ request.path }}";
+const CSRF     = "{{ csrf_token }}";
+
+// Navigate to detail tab without full page reload
+function goToDetail(id) {
+  const url = `${HUB_URL}?tab=detail&id=${id}`;
+  history.pushState({}, '', url);
+  location.href = url;
+}
+
+// Toast helper
+function showToast(msg, type = 'success') {
+  const wrap = document.getElementById('hubToast');
+  const el = document.createElement('div');
+  el.className = `hub-toast-item${type === 'error' ? ' error' : ''}`;
+  el.innerHTML = `<i class="fas fa-${type === 'error' ? 'exclamation-circle' : 'check-circle'} me-2"></i>${msg}`;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// Generic AJAX action (approve / complete)
+function doAction(action, id, num) {
+  const btn = document.querySelector(`[data-action="${action}"][data-id="${id}"]`);
+  if (btn) { btn.innerHTML = '<i class="fas fa-circle-notch spin"></i>'; btn.disabled = true; }
+
+  fetch(`${HUB_URL}?tab=${action}&id=${id}`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' }
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      showToast(data.message);
+      setTimeout(() => location.reload(), 800);
+    } else {
+      showToast(data.error || 'Error.', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = btn.getAttribute('data-orig') || ''; }
+    }
+  })
+  .catch(() => {
+    showToast('Network error.', 'error');
+    if (btn) { btn.disabled = false; }
+  });
+}
+
+// Cancel flow
+let _cancelId = null, _cancelNum = null;
+function openCancelModal(id, num) {
+  _cancelId = id; _cancelNum = num;
+  document.getElementById('cancelNum').textContent = num;
+  document.getElementById('cancelReason').value = '';
+  new bootstrap.Modal(document.getElementById('cancelModal')).show();
+}
+
+document.getElementById('confirmCancelBtn')?.addEventListener('click', () => {
+  const reason = document.getElementById('cancelReason').value.trim();
+  if (!reason) { document.getElementById('cancelReason').focus(); return; }
+
+  const btn = document.getElementById('confirmCancelBtn');
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch spin me-1"></i>Cancelling…';
+
+  const fd = new FormData();
+  fd.append('reason', reason);
+
+  fetch(`${HUB_URL}?tab=cancel&id=${_cancelId}`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+    body: fd
+  })
+  .then(r => r.json())
+  .then(data => {
+    bootstrap.Modal.getInstance(document.getElementById('cancelModal'))?.hide();
+    if (data.success) {
+      showToast(data.message);
+      setTimeout(() => location.reload(), 800);
+    } else {
+      showToast(data.error || 'Error.', 'error');
+      btn.disabled = false; btn.innerHTML = '<i class="fas fa-times me-1"></i>Confirm Cancel';
+    }
+  })
+  .catch(() => {
+    showToast('Network error.', 'error');
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-times me-1"></i>Confirm Cancel';
+  });
+});
+
+// Wire all action buttons
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  e.preventDefault();
+  const { action, id, num } = btn.dataset;
+  if (!action || !id) return;
+
+  if (action === 'cancel') {
+    openCancelModal(id, num);
+  } else if (action === 'approve') {
+    if (confirm(`Approve transfer ${num}? Stock will be deducted from the source store.`)) {
+      doAction('approve', id, num);
+    }
+  } else if (action === 'complete') {
+    if (confirm(`Complete transfer ${num}? Stock will be added to the destination store.`)) {
+      doAction('complete', id, num);
+    }
+  }
+});
+
+
+// ── Transfer mode toggle ─────────────────────────────────────────────────
+function setTransferMode(mode) {
+  document.querySelectorAll('.transfer-mode-panel').forEach(p => {
+    p.style.display = p.dataset.mode === mode ? '' : 'none';
+  });
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  // bulk Select2 inited via $(document).ready in extra_js
+}
+
+
+// ── Single-form AJAX submit ──────────────────────────────────────────────
+document.getElementById('createTransferForm')?.addEventListener('submit', function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submitTransferBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-circle-notch spin me-1"></i>Submitting…';
+
+  fetch(`${HUB_URL}?tab=create`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+    body: new FormData(this),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      showToast(data.message);
+      setTimeout(() => { location.href = data.redirect_url; }, 600);
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>Submit Transfer Request';
+      const msg = data.errors
+        ? Object.entries(data.errors).map(([f,e]) => `${f}: ${e}`).join('<br>')
+        : (data.error || 'Validation failed.');
+      showToast(msg, 'error');
+    }
+  })
+  .catch(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-paper-plane me-1"></i>Submit Transfer Request';
+    showToast('Network error.', 'error');
+  });
+});
+
+// ── Stock hint (single form) ────────────────────────────────────────────
+function updateStockHint() {
+  const product = document.getElementById('id_product')?.value;
+  const store   = document.getElementById('id_from_store')?.value;
+  const hint    = document.getElementById('stockHint');
+  if (!hint) return;
+  if (!product || !store) { hint.textContent = ''; return; }
+  fetch(`/inventory/api/stock/?product=${product}&store=${store}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.results && data.results.length > 0) {
+        const qty = data.results[0].quantity;
+        hint.className = `stock-hint${qty == 0 ? ' zero' : qty < 10 ? ' low' : ''}`;
+        hint.textContent = `Available at source: ${qty} units`;
+      } else {
+        hint.className = 'stock-hint zero';
+        hint.textContent = 'No stock record at this store';
+      }
+    })
+    .catch(() => { hint.textContent = ''; });
+}
+
+
+// ── Bulk: add a product row ──────────────────────────────────────────────
+let _bulkRowIdx = 0;
+function addBulkRow() {
+  const idx  = _bulkRowIdx++;
+  const tbody = document.getElementById('bulkRowsBody');
+  const tr   = document.createElement('tr');
+  tr.dataset.rowIdx = idx;
+  tr.innerHTML = `
+    <td>
+      <select name="products[]" id="bulkProduct_${idx}" class="hub-select bulk-product-select" style="width:100%">
+        <option value="">Search product…</option>
+      </select>
+    </td>
+    <td>
+      <input type="number" name="quantities[]" id="bulkQty_${idx}" class="qty-input"
+             min="0.001" step="any" placeholder="0" oninput="updateBulkRowHint(${idx})">
+    </td>
+    <td id="bulkHint_${idx}"><span class="stock-badge" style="color:var(--hub-text-muted);background:none">—</span></td>
+    <td>
+      <button type="button" class="remove-row-btn" onclick="removeBulkRow(this)" title="Remove">
+        <i class="fas fa-trash-alt"></i>
+      </button>
+    </td>`;
+  tbody.appendChild(tr);
+  initBulkRowSelect2(idx);
+}
+
+function removeBulkRow(btn) {
+  btn.closest('tr').remove();
+}
+
+function initBulkRowSelect2(idx) {
+  if (typeof $ === 'undefined' || typeof $.fn.select2 === 'undefined') {
+    setTimeout(() => initBulkRowSelect2(idx), 150); return;
+  }
+  $(`#bulkProduct_${idx}`).select2({
+    width: '100%',
+    placeholder: 'Search product by name or SKU…',
+    allowClear: true,
+    ajax: {
+      url: '/inventory/api/products/autocomplete/',
+      dataType: 'json',
+      delay: 220,
+      data: params => ({ term: params.term || '' }),
+      processResults: function(data) {
+        var items = Array.isArray(data) ? data : (data.results || []);
+        return {
+          results: items.map(function(p) {
+            return { id: p.id, text: p.label || p.name || p.value || String(p.id) };
+          })
+        };
+      },
+      cache: true,
+    },
+    minimumInputLength: 0,
+    templateResult: formatProductOption,
+    templateSelection: r => r.text || r.id,
+    dropdownParent: document.getElementById('bulkTransferForm'),
+  }).on('change', () => updateBulkRowHint(idx));
+}
+
+function updateBulkRowHint(idx) {
+  const productId = document.getElementById(`bulkProduct_${idx}`)?.value;
+  const storeId   = document.getElementById('bulk_from_store')?.value;
+  const hintCell  = document.getElementById(`bulkHint_${idx}`);
+  if (!hintCell) return;
+  if (!productId || !storeId) { hintCell.innerHTML = '<span class="stock-badge" style="color:var(--hub-text-muted);background:none">—</span>'; return; }
+
+  fetch(`/inventory/api/stock/?product=${productId}&store=${storeId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.results && data.results.length > 0) {
+        const qty = parseFloat(data.results[0].quantity);
+        const cls = qty === 0 ? 'zero' : qty < 10 ? 'low' : 'ok';
+        hintCell.innerHTML = `<span class="stock-badge ${cls}">${qty}</span>`;
+      } else {
+        hintCell.innerHTML = '<span class="stock-badge zero">0</span>';
+      }
+    })
+    .catch(() => { hintCell.innerHTML = '—'; });
+}
+
+// Re-check hints when source store changes in bulk form
+document.getElementById('bulk_from_store')?.addEventListener('change', () => {
+  document.querySelectorAll('[id^="bulkProduct_"]').forEach(el => {
+    const idx = el.id.replace('bulkProduct_', '');
+    updateBulkRowHint(parseInt(idx));
+  });
+});
+
+// Add first row automatically when bulk tab opens
+document.querySelector('[data-mode="bulk"]')?.addEventListener('click', () => {
+  if (document.getElementById('bulkRowsBody').children.length === 0) addBulkRow();
+});
+
+// ── Bulk AJAX submit ─────────────────────────────────────────────────────
+document.getElementById('bulkTransferForm')?.addEventListener('submit', function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submitBulkBtn');
+
+  // Validate at least one product row
+  const rows = document.querySelectorAll('#bulkRowsBody tr');
+  if (rows.length === 0) { showToast('Add at least one product row.', 'error'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-circle-notch spin me-1"></i>Submitting…';
+
+  fetch(`${HUB_URL}?tab=create`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+    body: new FormData(this),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      showToast(data.message + (data.skipped && data.skipped.length ? ` (${data.skipped.length} rows skipped)` : ''));
+      setTimeout(() => { location.href = data.redirect_url; }, 800);
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-layer-group me-1"></i>Submit Bulk Transfer';
+      showToast(data.error || 'Submission failed.', 'error');
+    }
+  })
+  .catch(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-layer-group me-1"></i>Submit Bulk Transfer';
+    showToast('Network error.', 'error');
+  });
+});
+
+</script>
+
+{% endblock %}{# /content #}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+<script>
+// Select2 init — runs after jQuery from base.html
+// Django always renders ModelChoiceField IDs as id_<fieldname>, so we hardcode them.
+$(document).ready(function() {
+
+  // ── Single form product autocomplete ──────────────────────────
+  if ($('#id_product').length) {
+    $('#id_product').select2({
+      width: '100%',
+      placeholder: 'Search product by name or SKU…',
+      allowClear: true,
+      ajax: {
+        url: '/inventory/api/products/autocomplete/',
+        dataType: 'json',
+        delay: 220,
+        data: function(params) { return { term: params.term }; },
+        processResults: function(data) {
+          // API returns a flat array: [{id, label, value, sku, ...}]
+          var items = Array.isArray(data) ? data : (data.results || []);
+          return {
+            results: items.map(function(p) {
+              return { id: p.id, text: p.label || p.name || p.value || String(p.id) };
+            })
+          };
+        },
+        cache: true,
+      },
+      minimumInputLength: 0,
+      dropdownParent: $('#createTransferForm'),
+    }).on('change', updateStockHint);
+  }
+
+  // ── Single form store selects ──────────────────────────────────
+  if ($('#id_from_store').length) {
+    $('#id_from_store').select2({ width: '100%', placeholder: 'Select source store…', allowClear: true })
+      .on('change', updateStockHint);
+  }
+  if ($('#id_to_store').length) {
+    $('#id_to_store').select2({ width: '100%', placeholder: 'Select destination store…', allowClear: true });
+  }
+
+  // ── Bulk store selects (always present in DOM) ─────────────────
+  if ($('#bulk_from_store').length) {
+    $('#bulk_from_store, #bulk_to_store').select2({ width: '100%', allowClear: true });
+    window._select2BulkReady = true;
+  }
+});
+</script>
+{% endblock %}

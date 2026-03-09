@@ -205,46 +205,10 @@ NAVIGATION_ITEMS = [
                 permission="inventory.view_stocktransfer"
             ),
             NavigationItem(
-                name="Transfer Stock",
-                url_name="inventory:transfer_create",
-                icon="bi bi-arrow-right-square",
-                permission="inventory.add_stocktransfer"
-            ),
-            NavigationItem(
-                name="Add Product",
-                url_name="inventory:product_create",
-                icon="bi bi-plus-circle",
-                permission="inventory.add_product"
-            ),
-            NavigationItem(
-                name="Stock Adjustment",
-                url_name="inventory:stock_adjustment",
-                icon="bi bi-sliders",
-                permission="inventory.change_stock"
-            ),
-            NavigationItem(
                 name="Bulk Import",
                 url_name="inventory:product_import",
                 icon="bi bi-upload",
                 permission="inventory.add_product"
-            ),
-            NavigationItem(
-                name="Add Category",
-                url_name="inventory:category_create",
-                icon="bi bi-plus-circle",
-                permission="inventory.add_category"
-            ),
-            NavigationItem(
-                name="Add Supplier",
-                url_name="inventory:supplier_create",
-                icon="bi bi-plus-circle",
-                permission="inventory.add_supplier"
-            ),
-            NavigationItem(
-                name="Stock Adjustment",
-                url_name="inventory:stock_adjustment",
-                icon="bi bi-sliders",
-                permission="inventory.change_stock"
             ),
         ]
     ),

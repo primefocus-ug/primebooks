@@ -6,6 +6,7 @@ from datetime import timedelta
 import logging
 import time
 import secrets
+import hashlib  # FIX 1: deterministic hash for advisory lock
 from celery.exceptions import SoftTimeLimitExceeded
 
 from .models import TenantSignupRequest
@@ -48,7 +49,7 @@ def _close_old_connections():
     acks_late=True,
     reject_on_worker_lost=True,
 )
-def create_tenant_async(self, signup_request_id, password):
+def create_tenant_async(self, signup_request_id):
     """
     Async Celery task: provisions a complete new tenant.
 
@@ -57,9 +58,13 @@ def create_tenant_async(self, signup_request_id, password):
       2. Create Company + Domain rows  (under advisory lock)
       3. Poll until django-tenants finishes running migrations
       4. Create the main Store inside the tenant schema
-      5. Create admin user with their signup password + Company Admin role
+      5. Create admin user — password retrieved from approval_workflow
       6. Mark COMPLETED
       7. Send welcome email with one-time magic login link
+
+    FIX 6: Password is no longer passed as a task argument (which would expose
+    it in the broker, result backend, and worker logs).  It is now retrieved
+    securely from approval_workflow.generated_password inside the worker.
     """
     _close_old_connections()
 
@@ -90,6 +95,22 @@ def create_tenant_async(self, signup_request_id, password):
         except TenantSignupRequest.DoesNotExist:
             logger.error(f"Signup request {signup_request_id} not found")
             return {'success': False, 'error': 'Request not found'}
+
+        # FIX 6: Retrieve password securely from the workflow record,
+        # never from the task arguments / broker message.
+        workflow = getattr(signup_request, 'approval_workflow', None)
+        password = workflow.generated_password if workflow else None
+        if not password:
+            logger.error(
+                f"No stored password for request {signup_request_id}. "
+                "Cannot provision tenant without credentials."
+            )
+            _safe_mark_failed(
+                signup_request_id,
+                'No stored password available for provisioning.',
+                self.request.retries,
+            )
+            return {'success': False, 'error': 'No password available'}
 
         # Non-blocking metrics — a failure here must never abort provisioning
         try:
@@ -201,7 +222,13 @@ def create_tenant_with_lock(signup_request, password):
     from .signal_utils import suppress_signals
 
     schema_name = f"tenant_{signup_request.subdomain}"
-    lock_id = hash(schema_name) % 2147483647
+
+    # FIX 1: Use a deterministic, collision-resistant hash (SHA-256 truncated
+    # to a positive 32-bit integer) instead of Python's randomised hash().
+    # Python's hash() is seeded per-process (PYTHONHASHSEED) so the same
+    # schema name produces different lock_ids across workers, meaning the
+    # lock provides no mutual exclusion at all.  hashlib is stable.
+    lock_id = int(hashlib.sha256(schema_name.encode()).hexdigest(), 16) % 2147483647
 
     # ── A. Company + Domain ───────────────────────────────────────────────
     with _advisory_lock(lock_id):
@@ -241,6 +268,11 @@ class _advisory_lock:
     pg_advisory_lock is session-scoped, NOT transaction-scoped — the lock
     persists until pg_advisory_unlock() is called or the session closes.
     __exit__ always unlocks, even when an exception is in flight.
+
+    FIX 2: We now call ensure_connection() before creating the cursor so the
+    advisory lock is always acquired on a live, explicit connection rather than
+    relying on Django's thread-local default connection which may have been
+    silently recycled after _close_old_connections() was called.
     """
 
     def __init__(self, lock_id: int):
@@ -248,6 +280,7 @@ class _advisory_lock:
         self.cursor = None
 
     def __enter__(self):
+        connection.ensure_connection()   # guarantee the socket is open
         self.cursor = connection.cursor()
         self.cursor.execute("SELECT pg_advisory_lock(%s)", [self.lock_id])
         logger.debug(f"Acquired advisory lock {self.lock_id}")
@@ -282,7 +315,15 @@ def wait_for_schema_ready(schema_name, max_retries=10, delay=2):
     Runs outside any open transaction and outside the advisory lock.
     Closes the connection before sleeping so no socket is held open during
     idle time.
+
+    FIX 8: The original code could reach raise TimeoutError(...) only when
+    the loop exhausted retries WITHOUT an exception on the last attempt.
+    If the last attempt DID raise an exception, that exception was re-raised
+    instead of the descriptive TimeoutError, making debugging harder.
+    Now both exit paths (clean loop exhaustion and last-attempt exception)
+    raise the same TimeoutError with a consistent message.
     """
+    last_exc = None
     for attempt in range(max_retries):
         try:
             with schema_context(schema_name):
@@ -312,19 +353,18 @@ def wait_for_schema_ready(schema_name, max_retries=10, delay=2):
             time.sleep(delay)
 
         except Exception as e:
-            if attempt < max_retries - 1:
-                logger.warning(
-                    f"Error checking schema ({e}), retry {attempt + 1}/{max_retries}"
-                )
-                connection.close()
-                time.sleep(delay)
-            else:
-                logger.error(f"Schema {schema_name} never became ready: {e}")
-                raise
+            last_exc = e
+            logger.warning(
+                f"Error checking schema ({e}), retry {attempt + 1}/{max_retries}"
+            )
+            connection.close()
+            time.sleep(delay)
 
+    # FIX 8: Always raise TimeoutError regardless of whether the loop ended
+    # cleanly or on an exception, so callers always get a consistent error.
     raise TimeoutError(
         f"Schema {schema_name} did not become ready after {max_retries} attempts"
-    )
+    ) from last_exc
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -365,10 +405,22 @@ def create_company(signup_request, schema_name):
 
 
 def create_domain(signup_request, company):
-    """Create the primary Domain row for the tenant."""
+    """
+    Create the primary Domain row for the tenant.
+
+    FIX (settings / BASE_DOMAIN): BASE_DOMAIN is now always the bare hostname
+    with no port suffix (e.g. 'localhost' in dev, 'primebooks.sale' in prod).
+    django-tenants matches domains by hostname only — the port must NOT be
+    stored in the Domain row or tenant routing will fail in development.
+    """
     from django.conf import settings
 
-    base_domain = getattr(settings, 'BASE_DOMAIN', 'localhost')
+    # Strip any port that may have been accidentally included in BASE_DOMAIN.
+    # In settings.py BASE_DOMAIN should be 'localhost' (not 'localhost:8000'),
+    # but we guard here as a safety net.
+    raw_domain = getattr(settings, 'BASE_DOMAINS', 'localhost')
+    base_domain = raw_domain.split(':')[0]   # 'localhost:8000' → 'localhost'
+
     domain_name = f"{signup_request.subdomain}.{base_domain}"
 
     if Domain.objects.filter(domain=domain_name).exists():
@@ -393,15 +445,21 @@ def create_main_store(signup_request, company):
     - accessible_by_all=True                  →  admin can restrict later
     - manager details seeded from the signup admin contact
 
+    FIX 3: The Store is filtered by schema_name (via schema_context) only —
+    the 'company' FK is NOT used as a filter predicate inside schema_context
+    because in a tenant schema the company FK points to the public schema and
+    the cross-schema join is unreliable depending on django-tenants version.
+    We rely solely on is_main_branch=True which is sufficient for idempotency.
+
     Idempotent: if a main store already exists (e.g. on task retry) the
     existing one is returned without creating a duplicate.
     """
     from stores.models import Store
 
     with schema_context(company.schema_name):
-        existing = Store.objects.filter(
-            company=company, is_main_branch=True
-        ).first()
+        # FIX 3: filter by is_main_branch only inside the tenant schema context
+        # to avoid an unreliable cross-schema FK join on 'company'.
+        existing = Store.objects.filter(is_main_branch=True).first()
         if existing:
             logger.info(
                 f"Main store already exists for {company.schema_name}, skipping."
@@ -583,9 +641,8 @@ def create_admin_user(signup_request, company, password):
 
         # ── Assign to main store ─────────────────────────────────────────
         try:
-            main_store = Store.objects.filter(
-                company=company, is_main_branch=True
-            ).first()
+            # FIX 3: filter by is_main_branch only (no cross-schema FK join)
+            main_store = Store.objects.filter(is_main_branch=True).first()
             if main_store:
                 main_store.staff.add(admin_user)
                 main_store.store_managers.add(admin_user)
@@ -635,8 +692,17 @@ def _generate_magic_token(user_id, tenant_schema, email, ttl_seconds=3600):
     return token
 
 
-@shared_task
-def send_welcome_email(company_id, signup_request_id):
+# FIX 7: send_welcome_email now has bind=True + retry decorator so transient
+# mail-server failures don't permanently lose the welcome email.
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)
+def send_welcome_email(self, company_id, signup_request_id):
     """
     Send a welcome email containing:
       - The workspace login URL
@@ -650,6 +716,13 @@ def send_welcome_email(company_id, signup_request_id):
     credentials.  The magic link provides frictionless first access; after
     it expires the user logs in with their email + password as normal.
     If they forget their password the standard reset flow handles it.
+
+    FIX 7: Added retry decorator so transient SMTP failures are retried
+    automatically instead of silently dropping the welcome email.
+
+    FIX (BASE_DOMAIN / port): tenant_base is now built using PORT from
+    settings (dev only) so the domain stored in the Domain row ('localhost')
+    and the URL in the email ('http://x.localhost:8000/...') stay consistent.
     """
     _close_old_connections()
 
@@ -662,33 +735,26 @@ def send_welcome_email(company_id, signup_request_id):
             request_id=signup_request_id
         )
 
-        base_domain = getattr(settings, 'BASE_DOMAIN', 'localhost')
-        default_lang = getattr(settings, 'LANGUAGE_CODE', 'en')
+        # BASE_DOMAIN is always the bare hostname (no port).
+        # PORT is only added to URLs, never stored in the Domain row.
+        raw_domain = getattr(settings, 'BASE_DOMAINS', 'localhost')
+        base_domain = raw_domain.split(':')[0]   # safety strip
+        default_lang = getattr(settings, 'LANGUAGE_CODE', 'en').split('-')[0]
 
-        # Protocol + port follows the same logic as get_tenant_login_url
-        # in public_router/views.py: https in prod, http://host:8000 in DEBUG.
         protocol = 'https' if not settings.DEBUG else 'http'
-        port_suffix = ':8000' if settings.DEBUG else ''
+        # In dev, append the port only for human-facing URLs (emails, etc).
+        # The Domain row stores the bare hostname so django-tenants can match it.
+        port = getattr(settings, 'LOCAL_DEV_PORT', 8000)
+        port_suffix = f':{port}' if settings.DEBUG else ''
+
         tenant_base = (
             f"{protocol}://{signup_request.subdomain}.{base_domain}{port_suffix}"
         )
 
-        # URL structure (from accounts/urls.py with i18n_patterns prefix):
-        #   Login page:     /{lang}/accounts/login/
-        #   Password reset: /{lang}/accounts/password-reset/
-        #
-        # Magic link complete_tenant_login view:
-        #   /accounts/login/complete/?token=  (NO lang prefix — matches
-        #   get_tenant_login_url() in public_router/views.py line 1029)
         login_url = f"{tenant_base}/{default_lang}/accounts/login/"
         password_reset_url = f"{tenant_base}/{default_lang}/accounts/password-reset/"
 
         # ── Generate magic link ──────────────────────────────────────────
-        # The token payload MUST match what validate_and_consume_token()
-        # in public_router/views.py expects:
-        #   cache key:  login_token:{token}
-        #   fields:     user_id, tenant_schema, email, created_at, used
-        # TTL is 1 hour — token is single-use due to the 'used' flag.
         magic_link = None
         try:
             with schema_context(company.schema_name):
@@ -703,7 +769,6 @@ def send_welcome_email(company_id, signup_request_id):
                     email=signup_request.admin_email,
                     ttl_seconds=3600,
                 )
-                # Path matches get_tenant_login_url() exactly — no lang prefix
                 magic_link = f"{tenant_base}/accounts/login/complete/?token={token}"
                 logger.info(
                     f"Magic login token generated for {signup_request.admin_email}"
@@ -720,6 +785,7 @@ def send_welcome_email(company_id, signup_request_id):
                 f"Click the link below to access your workspace instantly\n"
                 f"(valid for 1 hour, single use only):\n\n"
                 f"  {magic_link}\n\n"
+                f"After loggimg in please remember to reset your password. Go to Profile amd click Change Password\n"
                 f"After the link expires, log in normally at:\n"
                 f"  {login_url}\n\n"
                 f"Forgotten your password? Reset it here:\n"
@@ -765,6 +831,8 @@ def send_welcome_email(company_id, signup_request_id):
 
     except Exception as e:
         logger.error(f"Failed to send welcome email: {e}", exc_info=True)
+        # FIX 7: retry on transient failures instead of silently dropping
+        raise self.retry(exc=e)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -776,6 +844,11 @@ def cleanup_failed_signups():
     """
     Auto-retry FAILED signups that still have retries left.
     Celery Beat: every 5 minutes.
+
+    FIX 5: Changed updated_at__gte → updated_at__lte so we pick up signups
+    that failed *more than* an hour ago.  The original __gte filter only
+    retried recent failures; anything older than 1 hour was silently ignored
+    forever even when retries remained.
     """
     _close_old_connections()
 
@@ -784,7 +857,7 @@ def cleanup_failed_signups():
     failed_signups = TenantSignupRequest.objects.filter(
         status='FAILED',
         retry_count__lt=3,
-        updated_at__gte=one_hour_ago,
+        updated_at__lte=one_hour_ago,   # FIX 5: was __gte (wrong direction)
     ).select_related('approval_workflow')
 
     for signup in failed_signups:
@@ -800,8 +873,9 @@ def cleanup_failed_signups():
                 continue
 
             logger.info(f"Auto-retrying failed signup: {signup.request_id}")
+            # FIX 6: task no longer accepts a password argument
             create_tenant_async.apply_async(
-                args=[str(signup.request_id), password],
+                args=[str(signup.request_id)],
                 countdown=5,
             )
 
@@ -817,23 +891,53 @@ def cleanup_stale_pending_signups():
     """
     Reset signups stuck in PENDING/PROCESSING for more than 10 minutes.
     Celery Beat: every 15 minutes.
+
+    FIX 4: Each record is now saved inside its own transaction.atomic() with
+    select_for_update() to prevent races with an active worker that may still
+    be processing the same signup.  A failure on one record no longer prevents
+    the rest from being marked FAILED.
     """
     _close_old_connections()
 
     ten_minutes_ago = timezone.now() - timedelta(minutes=10)
 
-    stale_signups = TenantSignupRequest.objects.filter(
-        status__in=['PENDING', 'PROCESSING'],
-        created_at__lt=ten_minutes_ago,
+    stale_ids = list(
+        TenantSignupRequest.objects.filter(
+            status__in=['PENDING', 'PROCESSING'],
+            created_at__lt=ten_minutes_ago,
+        ).values_list('request_id', flat=True)
     )
 
-    for signup in stale_signups:
-        logger.warning(
-            f"Stale signup {signup.request_id} (status={signup.status}) → FAILED"
-        )
-        signup.status = 'FAILED'
-        signup.error_message = (
-            'Processing timeout — please retry via the admin panel '
-            'or contact support.'
-        )
-        signup.save(update_fields=['status', 'error_message', 'updated_at'])
+    for request_id in stale_ids:
+        try:
+            # FIX 4: wrap each save in its own transaction with a row-level
+            # lock so we don't race with a worker that's still processing.
+            with transaction.atomic():
+                signup = TenantSignupRequest.objects.select_for_update(
+                    nowait=True   # skip if a worker already holds the lock
+                ).get(request_id=request_id)
+
+                # Re-check status after acquiring the lock — a worker may have
+                # completed or failed it between our list query and now.
+                if signup.status not in ('PENDING', 'PROCESSING'):
+                    continue
+
+                logger.warning(
+                    f"Stale signup {signup.request_id} "
+                    f"(status={signup.status}) → FAILED"
+                )
+                signup.status = 'FAILED'
+                signup.error_message = (
+                    'Processing timeout — please retry via the admin panel '
+                    'or contact support.'
+                )
+                signup.save(update_fields=['status', 'error_message', 'updated_at'])
+
+        except TenantSignupRequest.DoesNotExist:
+            pass  # already deleted
+        except Exception as e:
+            # FIX 4: log per-record failures without aborting the whole loop
+            logger.error(
+                f"cleanup_stale_pending_signups: could not mark "
+                f"{request_id} as FAILED: {e}"
+            )

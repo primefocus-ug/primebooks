@@ -763,7 +763,7 @@ class PublicModelAdmin:
                                     )
 
                             task = create_tenant_async.apply_async(
-                                args=[str(obj.request_id), password],
+                                args=[str(obj.request_id)],
                                 countdown=2,
                             )
                             cache.set(

@@ -3,6 +3,8 @@ from . import views
 from . import importt
 from . import efris_api
 from inventory.inventory_hub import InventoryHubView
+from .transfer_hub import TransferHubView
+from .transfer_hub import TransferHubView
 from .serviced import (
     ServiceListView, ServiceCreateView, ServiceUpdateView,
     ServiceDeleteView, ServiceDetailView,
@@ -33,6 +35,26 @@ def _tab_redirect(tab):
     def _view(request):
         return redirect(reverse('inventory:product_list') + f'?_tab={tab}')
     return _view
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _hub_redirect  →  used for old standalone create / edit URLs that now live
+# as inline modals inside InventoryHubView.
+# Redirects to the hub with the correct tab so the user lands in the right
+# place and can open the inline modal.  Accepts **kwargs to absorb any pk.
+# ─────────────────────────────────────────────────────────────────────────────
+def _hub_redirect(tab):
+    def _view(request, **kwargs):
+        return redirect(reverse('inventory:product_list') + f'?_tab={tab}')
+    return _view
+
+# Absolute redirects for transfer hub backwards-compat
+def _tab_redirect_abs(request, suffix):
+    from django.shortcuts import redirect
+    return redirect(f'/inventory/{suffix}')
+
+def _pk_redirect_abs(request, pk, prefix):
+    from django.shortcuts import redirect
+    return redirect(f'/inventory/{prefix}{pk}')
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _master_redirect  →  used for old standalone report/dashboard URLs that now
@@ -78,8 +100,8 @@ urlpatterns = [
     path('category/create/ajax/',               views.category_create_ajax,              name='category_create_ajax'),
     path('api/categories/<int:pk>/toggle-status/', views.toggle_category_status,         name='category_toggle_status'),
     path('categories/',                         _tab_redirect('categories'),             name='category_list'),
-    path('categories/add/',                     views.CategoryCreateView.as_view(),      name='category_create'),
-    path('categories/<int:pk>/edit/',           views.CategoryUpdateView.as_view(),      name='category_update'),
+    path('categories/add/',                     _hub_redirect('categories'),             name='category_create'),
+    path('categories/<int:pk>/edit/',           _hub_redirect('categories'),             name='category_update'),
     path('categories/<int:pk>/delete/',         views.CategoryDeleteView.as_view(),      name='category_delete'),
     path('categories/<int:pk>/',                views.CategoryDetailView.as_view(),      name='category_detail'),
     # Category detail API (must come after EFRIS routes to avoid slug conflicts)
@@ -101,8 +123,8 @@ urlpatterns = [
     # ══ Supplier ══════════════════════════════════════════════════════════════
     path('supplier/create/ajax/',       views.supplier_create_ajax,             name='supplier_create_ajax'),
     path('suppliers/',                  _tab_redirect('suppliers'),             name='supplier_list'),
-    path('suppliers/add/',              views.SupplierCreateView.as_view(),     name='supplier_create'),
-    path('suppliers/<int:pk>/edit/',    views.SupplierUpdateView.as_view(),     name='supplier_update'),
+    path('suppliers/add/',              _hub_redirect('suppliers'),             name='supplier_create'),
+    path('suppliers/<int:pk>/edit/',    _hub_redirect('suppliers'),             name='supplier_update'),
     path('suppliers/<int:pk>/',         views.SupplierDetailView.as_view(),     name='supplier_detail'),
 
     # ══ Services ══════════════════════════════════════════════════════════════
@@ -155,13 +177,18 @@ urlpatterns = [
     path('movements/<int:pk>/edit/',    views.StockMovementUpdateView.as_view(),           name='movement_update'),
     path('api/movements/<int:pk>/',     views.movement_detail_api,                        name='movement_detail_api'),
 
-    # ══ Stock Transfers ═══════════════════════════════════════════════════════
-    path('transfers/',                      views.StockTransferListView.as_view(),         name='transfer_list'),
-    path('transfers/create/',               views.StockTransferCreateView.as_view(),       name='transfer_create'),
-    path('transfers/<int:pk>/',             views.StockTransferDetailView.as_view(),       name='transfer_detail'),
-    path('transfers/<int:pk>/approve/',     views.approve_transfer,                        name='transfer_approve'),
-    path('transfers/<int:pk>/complete/',    views.complete_transfer,                       name='transfer_complete'),
-    path('transfers/<int:pk>/cancel/',      views.cancel_transfer,                         name='transfer_cancel'),
+    # ══ Stock Transfers — Hub (single page, tab-based) ════════════════════════
+    path('transfers/hub/', TransferHubView.as_view(), name='transfer_hub'),
+
+    # Backwards-compat redirects — old bookmarks / reverse() calls still work
+    path('transfers/',          lambda r:     _tab_redirect_abs(r, 'transfers/hub/?tab=list'),          name='transfer_list'),
+    path('transfers/create/',   lambda r:     _tab_redirect_abs(r, 'transfers/hub/?tab=create'),        name='transfer_create'),
+    path('transfers/<int:pk>/', lambda r, pk: _pk_redirect_abs(r, pk, 'transfers/hub/?tab=detail&id='), name='transfer_detail'),
+
+    # AJAX action endpoints — kept for any external / legacy callers
+    path('transfers/<int:pk>/approve/',  views.approve_transfer,  name='transfer_approve'),
+    path('transfers/<int:pk>/complete/', views.complete_transfer, name='transfer_complete'),
+    path('transfers/<int:pk>/cancel/',   views.cancel_transfer,   name='transfer_cancel'),
 
     # ══ Bulk / Import / Export ════════════════════════════════════════════════
     path('export/',                                     importt.export_products_selection,          name='export_products_selection'),

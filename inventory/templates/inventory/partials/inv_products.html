@@ -1,0 +1,230 @@
+{% load humanize %}{% load custom_filters %}{% load i18n %}
+<meta name="inv-partial" content="1">
+
+<!-- ── Branch Switcher — compact dropdown ───────────────────────── -->
+{% if prod_stores %}
+<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem 1rem;background:var(--bg2);border-bottom:1px solid var(--br);">
+  <label for="branchSelect" style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);white-space:nowrap;display:flex;align-items:center;gap:.35rem;margin:0;cursor:pointer;">
+    <i class="fas fa-store" style="color:var(--p);"></i> Branch
+  </label>
+  <div style="position:relative;display:inline-flex;align-items:center;">
+    <i class="fas fa-chevron-down" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);font-size:.62rem;color:var(--tx3);pointer-events:none;"></i>
+    <select id="branchSelect" onchange="switchBranchDrop(this)"
+      style="appearance:none;-webkit-appearance:none;padding:.35rem 2rem .35rem .75rem;border:1px solid var(--br);border-radius:var(--r);background:var(--bg);color:var(--tx);font-family:var(--fn);font-size:.8rem;cursor:pointer;min-width:160px;">
+      <option value="">All Branches</option>
+      {% for st in prod_stores %}
+      <option value="{{ st.id }}"{% if prod_store == st.id|stringformat:'s' %} selected{% endif %}>{{ st.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if prod_store %}
+  <span style="font-size:.72rem;color:var(--pu);font-weight:500;display:inline-flex;align-items:center;gap:.25rem;">
+    <i class="fas fa-filter"></i> Filtered by branch
+  </span>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="fbar">
+  <form method="get" data-ajax-tab="products">
+    <input type="hidden" name="_tab" value="products">
+    {% if prod_store %}<input type="hidden" name="prod_store" value="{{ prod_store }}">{% endif %}
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto auto;gap:.75rem;align-items:end;flex-wrap:wrap;">
+      <div><label class="fl">Search</label>
+        <div class="srw"><i class="fas fa-search"></i>{{ filter_form.search }}</div></div>
+      <div><label class="fl">Category</label>{{ filter_form.category }}</div>
+      <div><label class="fl">Supplier</label>{{ filter_form.supplier }}</div>
+      <div><label class="fl">Status</label>{{ filter_form.is_active }}</div>
+      <div><button type="submit" class="btn btnp bsm"><i class="fas fa-filter"></i> Filter</button></div>
+      <div><a href="{% url 'inventory:product_list' %}" class="btn btno bsm" data-clear-tab="products"><i class="fas fa-times"></i> Clear</a></div>
+    </div>
+    <div style="display:flex;gap:1rem;margin-top:.75rem;flex-wrap:wrap;align-items:flex-end;">
+      <div style="display:flex;align-items:center;gap:.5rem;">
+        <label class="fl" style="margin:0;white-space:nowrap;">Price:</label>
+        {{ filter_form.min_price }}<span style="color:var(--tx3);font-size:.75rem;">–</span>{{ filter_form.max_price }}
+      </div>
+      {% if filter_form.tax_rate %}<div style="display:flex;align-items:center;gap:.5rem;"><label class="fl" style="margin:0;">Tax:</label>{{ filter_form.tax_rate }}</div>{% endif %}
+    </div>
+  </form>
+</div>
+
+<div class="tw">
+  <div class="ttb">
+    <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+      <div class="qs"><i class="fas fa-search"></i><input type="text" id="pQS" placeholder="Quick search…"></div>
+      <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--tx2);cursor:pointer;">
+        <input type="checkbox" id="pSA" style="accent-color:var(--p);"> Select all
+      </label>
+    </div>
+    <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
+      <span style="font-size:.75rem;color:var(--tx3);">{{ products|length }} of {{ total_products }}</span>
+      <div class="dd">
+        <button class="btn btno bsm" onclick="dd('pExpDD')"><i class="fas fa-download"></i> Export</button>
+        <div class="ddm" id="pExpDD">
+          <a class="ddi" href="{% url 'inventory:export_products_selection' %}?format=excel"><i class="fas fa-file-excel"></i> Excel</a>
+          <a class="ddi" href="{% url 'inventory:export_products_selection' %}?format=csv"><i class="fas fa-file-csv"></i> CSV</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="overflow-x:auto;">
+    <table id="prodTable">
+      <thead>
+        <tr>
+          <th width="36"><input type="checkbox" id="pSAR" style="accent-color:var(--p);"></th>
+          <th>Product</th><th>Category</th><th>Pricing</th>
+          <th>
+            Stock
+            {% if prod_store %}
+              {% for st in prod_stores %}{% if st.id|stringformat:"s" == prod_store %}
+              <span style="font-size:.62rem;font-weight:500;color:var(--pu);background:var(--pult);padding:.1rem .4rem;border-radius:4px;margin-left:.3rem;vertical-align:middle;white-space:nowrap;">
+                <i class="fas fa-store"></i> {{ st.name }}
+              </span>{% endif %}{% endfor %}
+            {% else %}
+              <span style="font-size:.62rem;font-weight:400;color:var(--tx3);margin-left:.3rem;vertical-align:middle;">all branches</span>
+            {% endif %}
+          </th>
+          <th>Status</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="prodBody">
+        {% for product in products %}
+        <tr class="pr" data-id="{{ product.id }}" data-s="{{ product.name|lower }} {{ product.sku|lower }}{% if product.barcode %} {{ product.barcode|lower }}{% endif %}">
+          <td><input type="checkbox" class="pcb" value="{{ product.id }}" style="accent-color:var(--p);"></td>
+          <td>
+            <div class="pc">
+              <div class="pt">{% if product.image %}<img src="{{ product.image.url }}" alt="">{% else %}<i class="fas fa-box"></i>{% endif %}</div>
+              <div>
+                <div class="pn">{{ product.name }}</div>
+                <button data-track="product" data-id="{{ product.pk }}" data-label="{{ product.name }}">Track</button>
+                <div class="pm">
+                  <span class="bx bs">{{ product.sku }}</span>
+                  {% if product.barcode %}<span class="bx bp">{{ product.barcode }}</span>{% endif %}
+                </div>
+              </div>
+            </div>
+          </td>
+          <td>
+            {% if product.category %}<span class="bx bpu"><i class="fas fa-tag"></i> {{ product.category.name }}</span>
+            {% else %}<span style="color:var(--tx3);">—</span>{% endif %}
+          </td>
+          <td>
+            <div style="font-weight:700;font-family:var(--mn);font-size:.875rem;">UGX {{ product.selling_price|money }}</div>
+            <div style="font-size:.72rem;color:var(--tx3);">Cost: UGX {{ product.cost_price|money }}</div>
+            {% if product.discount_percentage > 0 %}<span class="bx bw">{{ product.discount_percentage }}% off</span>{% endif %}
+          </td>
+          <td>
+            <div style="font-weight:600;color:{% if product.annotated_total_stock|default:0 < 10 %}var(--d){% else %}var(--tx){% endif %};">
+              {{ product.annotated_total_stock|default:"0" }}
+            </div>
+            <div class="pb">
+              <div class="pbf {% if product.annotated_total_stock|default:0 < 10 %}d{% elif product.annotated_total_stock|default:0 < 30 %}w{% else %}s{% endif %}"
+                style="width:{{ product.annotated_total_stock|default:0 }}%;max-width:100%;"></div>
+            </div>
+          </td>
+          <td>
+            {% if product.is_active %}<span class="bx bs"><i class="fas fa-check-circle"></i> Active</span>
+            {% else %}<span class="bx bd"><i class="fas fa-ban"></i> Inactive</span>{% endif %}
+          </td>
+          <td>
+            <div class="ar">
+              {% if perms.inventory.view_product %}
+              <a href="{% url 'inventory:product_detail' product.pk %}" class="ab abv" title="View"><i class="fas fa-eye"></i></a>
+              {% endif %}
+              {% if perms.inventory.change_product %}
+              <button class="ab abe" title="Edit" onclick="openProdModal({{ product.pk }})"><i class="fas fa-edit"></i></button>
+              {% endif %}
+              {% if perms.inventory.add_stockmovement %}
+              <button class="ab abs qs-btn" data-product-id="{{ product.id }}" data-product-name="{{ product.name }}" title="Quick Stock" onclick="openSM(this)"><i class="fas fa-cubes"></i></button>
+              {% endif %}
+              {% if perms.inventory.delete_product %}
+              <button class="ab abd" title="Delete" onclick="dProd({{ product.pk }},'{{ product.name|escapejs }}')"><i class="fas fa-trash"></i></button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7">
+            <div class="es">
+              <i class="fas fa-box-open"></i>
+              <h5>No Products Found</h5>
+              <p>Adjust your filters or add a product.</p>
+              {% if perms.inventory.add_product %}
+              <button class="btn btnp bsm" onclick="openProdModal()"><i class="fas fa-plus"></i> Add Product</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── Bulk action bar ─────────────────────────────────────────── -->
+  <div class="bb" id="pBB">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;">
+      <div style="display:flex;align-items:center;gap:.75rem;">
+        <span id="pSC" style="font-weight:600;">0 selected</span>
+
+        <!-- Custom dropdown — avoids browser <option> styling limitations -->
+        <div style="position:relative;display:inline-block;" id="pBAWrap">
+          <button type="button" id="pBABtn" onclick="toggleBulkDrop()"
+            style="display:inline-flex;align-items:center;gap:.45rem;padding:.33rem .75rem;background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:var(--r);font-family:var(--fn);font-size:.82rem;cursor:pointer;white-space:nowrap;">
+            <span id="pBALabel">Action…</span>
+            <i class="fas fa-chevron-up" style="font-size:.62rem;opacity:.75;"></i>
+          </button>
+          <div id="pBADrop"
+            style="display:none;position:absolute;bottom:calc(100% + 5px);left:0;min-width:170px;background:var(--bg);border:1px solid var(--br);border-radius:var(--rlg);box-shadow:0 -6px 24px rgba(0,0,0,.22);z-index:300;overflow:hidden;">
+            <div style="padding:.45rem .875rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);border-bottom:1px solid var(--br);">Bulk Action</div>
+            <button class="pba-opt" onclick="setBulkAction('activate','Activate')"
+              style="width:100%;padding:.55rem .875rem;font-size:.84rem;color:var(--s);background:none;border:none;cursor:pointer;text-align:left;display:flex;align-items:center;gap:.6rem;font-family:var(--fn);">
+              <i class="fas fa-check-circle" style="width:14px;"></i> Activate
+            </button>
+            <button class="pba-opt" onclick="setBulkAction('deactivate','Deactivate')"
+              style="width:100%;padding:.55rem .875rem;font-size:.84rem;color:var(--w);background:none;border:none;cursor:pointer;text-align:left;display:flex;align-items:center;gap:.6rem;font-family:var(--fn);">
+              <i class="fas fa-ban" style="width:14px;"></i> Deactivate
+            </button>
+            <button class="pba-opt" onclick="setBulkAction('export','Export')"
+              style="width:100%;padding:.55rem .875rem;font-size:.84rem;color:var(--p);background:none;border:none;cursor:pointer;text-align:left;display:flex;align-items:center;gap:.6rem;font-family:var(--fn);">
+              <i class="fas fa-file-export" style="width:14px;"></i> Export
+            </button>
+            <div style="border-top:1px solid var(--br);margin:.2rem 0;"></div>
+            <button class="pba-opt" onclick="setBulkAction('delete','Delete')"
+              style="width:100%;padding:.55rem .875rem;font-size:.84rem;color:var(--d);background:none;border:none;cursor:pointer;text-align:left;display:flex;align-items:center;gap:.6rem;font-family:var(--fn);">
+              <i class="fas fa-trash" style="width:14px;"></i> Delete
+            </button>
+          </div>
+        </div>
+        <input type="hidden" id="pBA" value="">
+
+        <button class="btn bsm" onclick="exBulk()"
+          style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.3);">Go</button>
+      </div>
+      <button class="btn btng bsm" style="color:rgba(255,255,255,.7);" onclick="clrP()">Clear</button>
+    </div>
+  </div>
+
+  {% if is_paginated %}
+  <div class="pgr">
+    <span class="pgri">{{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ paginator.count }}</span>
+    <div class="pgbs">
+      {% if page_obj.has_previous %}
+      <a class="pg" data-page="1" data-ptab="products" style="cursor:pointer;"><i class="fas fa-angle-double-left"></i></a>
+      <a class="pg" data-page="{{ page_obj.previous_page_number }}" data-ptab="products" style="cursor:pointer;"><i class="fas fa-angle-left"></i></a>
+      {% endif %}
+      {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}<span class="pg active">{{ num }}</span>
+        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+        <a class="pg" data-page="{{ num }}" data-ptab="products" style="cursor:pointer;">{{ num }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if page_obj.has_next %}
+      <a class="pg" data-page="{{ page_obj.next_page_number }}" data-ptab="products" style="cursor:pointer;"><i class="fas fa-angle-right"></i></a>
+      <a class="pg" data-page="{{ page_obj.paginator.num_pages }}" data-ptab="products" style="cursor:pointer;"><i class="fas fa-angle-double-right"></i></a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>

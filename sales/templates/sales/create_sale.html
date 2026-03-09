@@ -1546,6 +1546,72 @@ body {
 .form-select option { background: var(--ink-2); }
 
 .nav-tabs { border-color: var(--line); }
+
+/* ── Product Form Wizard ── */
+.pf-wizard-steps {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+.pf-step {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  cursor: default;
+  opacity: .45;
+  transition: opacity .2s;
+}
+.pf-step.active { opacity: 1; }
+.pf-step.done { opacity: .75; }
+.pf-step-num {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--line);
+  color: var(--text);
+  font-size: .72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .2s, color .2s;
+}
+.pf-step.active .pf-step-num {
+  background: var(--accent);
+  color: #fff;
+}
+.pf-step.done .pf-step-num {
+  background: #198754;
+  color: #fff;
+}
+.pf-step-label {
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+.pf-step-line {
+  flex: 1;
+  height: 2px;
+  background: var(--line);
+  margin: 0 .5rem;
+}
+
+/* stock warning on product card */
+.product-card.stock-reserved .product-stock { color: #e67e22; }
+.stock-warn-badge {
+  position: absolute;
+  top: .35rem;
+  left: .35rem;
+  background: #e67e22;
+  color: #fff;
+  font-size: .6rem;
+  font-weight: 700;
+  padding: .1rem .35rem;
+  border-radius: .25rem;
+  line-height: 1.4;
+}
+
 .nav-tabs .nav-link { color: var(--muted); font-size: .78rem; font-weight: 600; border-color: transparent; font-family: var(--sans); }
 .nav-tabs .nav-link.active { background: none; border-bottom-color: var(--accent); color: var(--accent); }
 
@@ -3182,11 +3248,13 @@ and calls your /api/v1/ endpoints.
       </div>
       <div class="modal-body" style="padding:1.25rem">
 
-        <ul class="nav nav-tabs mb-3" id="productFormTabs">
-          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#pfTab-basic">Basic</button></li>
-          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#pfTab-pricing">Pricing &amp; Tax</button></li>
-          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#pfTab-stock">Stock</button></li>
-        </ul>
+        <div class="pf-wizard-steps" id="pfWizardSteps">
+          <div class="pf-step active" data-step="0"><span class="pf-step-num">1</span><span class="pf-step-label">Basic</span></div>
+          <div class="pf-step-line"></div>
+          <div class="pf-step" data-step="1"><span class="pf-step-num">2</span><span class="pf-step-label">Pricing &amp; Tax</span></div>
+          <div class="pf-step-line"></div>
+          <div class="pf-step" data-step="2"><span class="pf-step-num">3</span><span class="pf-step-label">Stock</span></div>
+        </div>
 
         <div class="tab-content">
           <!-- Basic -->
@@ -3278,7 +3346,7 @@ and calls your /api/v1/ endpoints.
                   <div class="row g-2">
                     <div class="col-12">
                       <label class="ss-qf-label">Name <span class="req">*</span></label>
-                      <input type="text" class="form-control form-control-sm ss-qf-input" id="ss-qf-pf-supplier-name" placeholder="e.g. Nile Breweries Ltd">
+                      <input type="text" class="form-control form-control-sm ss-qf-input" id="ss-qf-pf-supplier-name" placeholder="e.g. ">
                     </div>
                     <div class="col-6">
                       <label class="ss-qf-label">Phone</label>
@@ -3406,7 +3474,9 @@ and calls your /api/v1/ endpoints.
       </div>
       <div class="modal-footer inv-modal-footer">
         <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-primary" id="saveProductBtn" onclick="saveProduct()">
+        <button class="btn btn-outline-secondary" id="pfBackBtn" onclick="pfWizardBack()" style="display:none"><i class="bi bi-arrow-left me-1"></i>Back</button>
+        <button class="btn btn-primary" id="pfNextBtn" onclick="pfWizardNext()"><i class="bi bi-arrow-right me-1"></i>Continue</button>
+        <button class="btn btn-primary" id="saveProductBtn" onclick="saveProduct()" style="display:none">
           <span id="saveProductText"><i class="bi bi-check-circle me-1"></i>Save Product</span>
           <span id="saveProductLoading" style="display:none"><span class="spinner-border spinner-border-sm"></span></span>
         </button>
@@ -5512,7 +5582,7 @@ function updatePricePreview() {
   });
 });
 
-async function saveProduct() {
+let saveProduct = async function saveProduct() {
   const name = document.getElementById('pf-name').value.trim();
   const sku = document.getElementById('pf-sku').value.trim();
   const sellingPrice = parseFloat(document.getElementById('pf-selling-price').value);
@@ -5646,7 +5716,7 @@ async function openServiceForm(serviceId = null) {
   new bootstrap.Modal(document.getElementById('serviceFormModal')).show();
 }
 
-async function saveService() {
+let saveService = async function saveService() {
   const name = document.getElementById('sf-name').value.trim();
   const code = document.getElementById('sf-code').value.trim();
   const price = parseFloat(document.getElementById('sf-price').value);
@@ -5783,7 +5853,7 @@ async function openCategoryForm(catId = null) {
   new bootstrap.Modal(document.getElementById('categoryFormModal')).show();
 }
 
-async function saveCategory() {
+let saveCategory = async function saveCategory() {
   const name = document.getElementById('cf-name').value.trim();
   if (!name) { showToast('Category name required', 'error'); return; }
 
@@ -10311,7 +10381,7 @@ function showEnhancedToast(message, type = 'info', detail = null) {
 // to use enhanced error feedback with specific field highlighting
 
 const _origSaveProduct = saveProduct;
-async function saveProduct() {
+saveProduct = async function saveProduct() {
   // Clear any previous field errors
   ['pf-name','pf-sku','pf-selling-price'].forEach(id => {
     document.getElementById(id)?.classList.remove('is-invalid-custom');
@@ -10337,7 +10407,7 @@ async function saveProduct() {
   if (hasError) {
     showEnhancedToast('Please fix the highlighted fields', 'error', 'Name, SKU and Selling Price are required.');
     // Switch to Basic tab if needed
-    document.querySelector('[data-bs-target="#pfTab-basic"]')?.click();
+    pfWizardGoTo(0);
     return;
   }
 
@@ -10346,7 +10416,7 @@ async function saveProduct() {
 }
 
 const _origSaveService = saveService;
-async function saveService() {
+saveService = async function saveService() {
   ['sf-name','sf-code','sf-price'].forEach(id => {
     document.getElementById(id)?.classList.remove('is-invalid-custom');
   });
@@ -10366,7 +10436,7 @@ async function saveService() {
 }
 
 const _origSaveCategory = saveCategory;
-async function saveCategory() {
+saveCategory = async function saveCategory() {
   document.getElementById('cf-name')?.classList.remove('is-invalid-custom');
   const name = document.getElementById('cf-name')?.value?.trim();
   if (!name) {
@@ -10387,6 +10457,209 @@ document.addEventListener('hidden.bs.modal', () => closeAllQuickForms());
 
 
 console.log('✅ Smart-Select & Enhanced Error Handling loaded');
+
+// ══════════════════════════════════════════════════
+//  PRODUCT FORM WIZARD
+// ══════════════════════════════════════════════════
+const PF_TABS = ['#pfTab-basic', '#pfTab-pricing', '#pfTab-stock'];
+let pfCurrentStep = 0;
+
+function pfWizardGoTo(step) {
+  pfCurrentStep = step;
+  // update tab panes
+  PF_TABS.forEach((sel, i) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.classList.toggle('show', i === step);
+    el.classList.toggle('active', i === step);
+  });
+  // update step indicators
+  document.querySelectorAll('.pf-step').forEach(el => {
+    const s = parseInt(el.dataset.step);
+    el.classList.toggle('active', s === step);
+    el.classList.toggle('done', s < step);
+  });
+  // update footer buttons
+  const backBtn = document.getElementById('pfBackBtn');
+  const nextBtn = document.getElementById('pfNextBtn');
+  const saveBtn = document.getElementById('saveProductBtn');
+  const isLast  = step === PF_TABS.length - 1;
+  backBtn.style.display = step > 0 ? '' : 'none';
+  nextBtn.style.display = isLast  ? 'none' : '';
+  saveBtn.style.display = isLast  ? '' : 'none';
+}
+
+function pfWizardValidateStep(step) {
+  if (step === 0) {
+    const name  = document.getElementById('pf-name')?.value?.trim();
+    const sku   = document.getElementById('pf-sku')?.value?.trim();
+    if (!name) {
+      document.getElementById('pf-name')?.classList.add('is-invalid-custom');
+      showEnhancedToast('Product name is required', 'error', 'Fill in the Basic tab to continue.');
+      return false;
+    }
+    if (!sku) {
+      document.getElementById('pf-sku')?.classList.add('is-invalid-custom');
+      showEnhancedToast('SKU is required', 'error', 'Fill in the Basic tab to continue.');
+      return false;
+    }
+  }
+  if (step === 1) {
+    const price = parseFloat(document.getElementById('pf-selling-price')?.value);
+    if (!price || price < 0) {
+      document.getElementById('pf-selling-price')?.classList.add('is-invalid-custom');
+      showEnhancedToast('Selling price is required', 'error', 'Enter a valid price to continue.');
+      return false;
+    }
+  }
+  return true;
+}
+
+function pfWizardNext() {
+  ['pf-name','pf-sku','pf-selling-price'].forEach(id =>
+    document.getElementById(id)?.classList.remove('is-invalid-custom'));
+  if (!pfWizardValidateStep(pfCurrentStep)) return;
+  if (pfCurrentStep < PF_TABS.length - 1) pfWizardGoTo(pfCurrentStep + 1);
+}
+
+function pfWizardBack() {
+  if (pfCurrentStep > 0) pfWizardGoTo(pfCurrentStep - 1);
+}
+
+function pfWizardReset() {
+  pfWizardGoTo(0);
+}
+
+// Reset wizard whenever modal opens
+document.addEventListener('show.bs.modal', e => {
+  if (e.target.id === 'productFormModal') pfWizardReset();
+});
+
+
+// ══════════════════════════════════════════════════
+//  REAL-TIME STOCK TRACKING IN CART
+//  Tracks how many units are already reserved in cart
+//  and shows remaining available, blocks over-selling
+// ══════════════════════════════════════════════════
+
+function cartReservedQty(productId) {
+  return SaleState.cart
+    .filter(ci => ci.item_type === 'PRODUCT' && ci.product_id === productId)
+    .reduce((sum, ci) => sum + ci.quantity, 0);
+}
+
+function effectiveStock(cartItem) {
+  if (cartItem.item_type !== 'PRODUCT' || cartItem.stock_available === null) return Infinity;
+  return cartItem.stock_available;
+}
+
+// Patch addToCart to deduct reserved qty before allowing add
+const _origAddToCart = addToCart;
+addToCart = function(item) {
+  if (item.item_type === 'PRODUCT' && item.stock != null) {
+    const stockAvail = item.stock?.available ?? 0;
+    const reserved   = cartReservedQty(item.id);
+    const remaining  = stockAvail - reserved;
+    if (remaining <= 0) {
+      showEnhancedToast(
+        'Out of stock',
+        'error',
+        `All ${stockAvail} unit${stockAvail !== 1 ? 's' : ''} of "${item.name}" are already in the cart.`
+      );
+      return;
+    }
+  }
+  _origAddToCart(item);
+  refreshProductStockBadges();
+};
+
+// Patch updateCartItemQuantity to enforce real stock
+const _origUpdateCartItemQty = updateCartItemQuantity;
+updateCartItemQuantity = function(idx, qty) {
+  const cartItem = SaleState.cart[idx];
+  if (cartItem && cartItem.item_type === 'PRODUCT' && cartItem.stock_available !== null) {
+    if (qty > cartItem.stock_available) {
+      showEnhancedToast(
+        'Exceeds available stock',
+        'error',
+        `Only ${cartItem.stock_available} unit${cartItem.stock_available !== 1 ? 's' : ''} available for "${cartItem.name}".`
+      );
+      return;
+    }
+  }
+  _origUpdateCartItemQty(idx, qty);
+  refreshProductStockBadges();
+};
+
+// Patch removeFromCart to refresh badges
+const _origRemoveFromCart = removeFromCart;
+removeFromCart = function(idx) {
+  _origRemoveFromCart(idx);
+  refreshProductStockBadges();
+};
+
+// Update stock badges on product cards to reflect cart reservations
+function refreshProductStockBadges() {
+  const grid = document.getElementById('productsGrid');
+  if (!grid) return;
+  grid.querySelectorAll('.product-card:not(.oos-card)').forEach(card => {
+    const addBtn = card.querySelector('.product-add-btn');
+    if (!addBtn) return;
+    // Extract id from onclick like addToCartSafe(123,"PRODUCT")
+    const match = addBtn.getAttribute('onclick')?.match(/addToCartSafe\((\d+)/);
+    if (!match) return;
+    const id = parseInt(match[1]);
+    const item = SaleState.items.find(i => i.id === id && i.item_type === 'PRODUCT');
+    if (!item || item.stock == null) return;
+
+    const stockAvail = item.stock?.available ?? 0;
+    const reserved   = cartReservedQty(id);
+    const remaining  = stockAvail - reserved;
+
+    // Update the stock dot+number
+    const stockEl = card.querySelector('.product-stock');
+    if (stockEl) {
+      stockEl.innerHTML = `<span class="stock-dot ${remaining > 5 ? 'good' : remaining < 1 ? 'empty' : 'low'}"></span>${remaining}`;
+    }
+
+    // Warn badge
+    let warnBadge = card.querySelector('.stock-warn-badge');
+    if (reserved > 0 && remaining > 0) {
+      if (!warnBadge) {
+        warnBadge = document.createElement('span');
+        warnBadge.className = 'stock-warn-badge';
+        card.style.position = 'relative';
+        card.appendChild(warnBadge);
+      }
+      warnBadge.textContent = `${reserved} in cart`;
+    } else if (warnBadge) {
+      warnBadge.remove();
+    }
+
+    // Disable add button and show OOS label if nothing left
+    addBtn.disabled = remaining <= 0;
+    addBtn.title = remaining <= 0 ? 'No more stock available' : '';
+
+    let oosFlag = card.querySelector('.oos-flag-dynamic');
+    if (remaining <= 0) {
+      card.classList.add('oos-card');
+      addBtn.style.display = 'none';
+      if (!oosFlag) {
+        oosFlag = document.createElement('span');
+        oosFlag.className = 'oos-flag oos-flag-dynamic';
+        oosFlag.textContent = 'OUT OF STOCK';
+        card.prepend(oosFlag);
+      }
+    } else {
+      card.classList.remove('oos-card');
+      addBtn.style.display = '';
+      if (oosFlag) oosFlag.remove();
+    }
+  });
+}
+
+console.log('✅ Wizard & Stock Validation loaded');
+
 
 </script>
 <script src="{% static 'sales/js/draft_preview.js' %}"></script>

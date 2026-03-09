@@ -439,7 +439,7 @@ class Supplier(OfflineIDMixin, models.Model):
     )
     contact_person = models.CharField(
         max_length=100,
-        blank=True,
+        blank=True,null=True,
         verbose_name=_("Contact Person")
     )
     phone = models.CharField(
@@ -448,11 +448,11 @@ class Supplier(OfflineIDMixin, models.Model):
         verbose_name=_("Phone Number")
     )
     email = models.EmailField(
-        blank=True,
+        blank=True,null=True,
         verbose_name=_("Email Address")
     )
     address = models.TextField(
-        blank=True,
+        blank=True,null=True,
         verbose_name=_("Physical Address")
     )
     country = models.CharField(
