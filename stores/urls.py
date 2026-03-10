@@ -1,10 +1,19 @@
 from django.urls import path
 from . import views
 from . import view
+# Import the hub view directly so it is resolvable even if store_hub.py
+# is kept as a separate module rather than merged into views.py.
+# If you merged store_hub.py into views.py, replace this line with nothing
+# and reference views.store_hub below instead.
+from .store_hub import store_hub
 
 app_name = 'stores'
 
 urlpatterns = [
+
+    # ── Hub (merged single-page view) ─────────────────────────
+    path('hub/', store_hub, name='hub'),
+
     # Dashboard
     path('', views.store_dashboard, name='dashboard'),
     path('dashboard/', views.store_dashboard, name='store_dashboard'),

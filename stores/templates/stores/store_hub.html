@@ -1,0 +1,1544 @@
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
+{% load custom_filters %}
+{% load math_extras %}
+{% load efris_tags %}
+{% load crispy_forms_tags %}
+
+{% block title %}Store Hub | Prime Book{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+/* ── Hub Shell ─────────────────────────────────────────── */
+.hub-nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bs-body-bg);
+    border-bottom: 2px solid var(--bs-border-color);
+    padding: 0;
+}
+.hub-nav .nav-link {
+    padding: 0.85rem 1.1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--bs-secondary-color);
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+.hub-nav .nav-link:hover { color: var(--bs-primary); }
+.hub-nav .nav-link.active {
+    color: var(--bs-primary);
+    border-bottom-color: var(--bs-primary);
+    background: transparent;
+}
+.hub-nav .nav-link .badge { font-size: 0.65rem; }
+.hub-tab-pane { display: none; }
+.hub-tab-pane.active { display: block; }
+
+/* ── Dashboard ─────────────────────────────────────────── */
+.stat-card { transition: transform 0.2s; }
+.stat-card:hover { transform: translateY(-4px); }
+.store-avatar {
+    width: 40px; height: 40px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--bs-primary), var(--bs-info));
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: bold; flex-shrink: 0;
+}
+.quick-action-btn {
+    height: 90px; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; width: 100%;
+}
+.quick-action-icon { font-size: 1.8rem; margin-bottom: 0.4rem; }
+
+/* ── Store Detail ──────────────────────────────────────── */
+.store-header {
+    background: linear-gradient(135deg, var(--bs-primary) 0%, var(--bs-primary-dark, #0a58ca) 100%);
+    color: #fff; border-radius: var(--bs-border-radius-lg, 0.5rem);
+    padding: 1.75rem; margin-bottom: 1.5rem;
+}
+[data-theme="dark"] .store-header { background: #111; color: #fff; }
+.info-card { border-left: 4px solid var(--bs-primary); }
+
+/* ── Access / Staff ────────────────────────────────────── */
+.avatar-sm  { width: 40px; height: 40px; }
+.avatar-lg  { width: 60px; height: 60px; }
+.avatar-title {
+    width: 100%; height: 100%; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem;
+}
+
+/* ── Misc ──────────────────────────────────────────────── */
+.store-session-guard {
+    text-align: center; padding: 4rem 2rem;
+}
+[data-theme="dark"] .card  { background: #0d0d0d; }
+[data-theme="dark"] .card-header { background: #0d0d0d; }
+[data-theme="dark"] .card-body   { background: #0d0d0d; }
+[data-theme="dark"] .card-footer { background: #111; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h1 class="h3 mb-1"><i class="bi bi-shop-window me-2"></i>Store Hub</h1>
+        <p class="text-muted mb-0">
+            All store management in one place
+            {% if current_store %}
+            &mdash; <span class="badge bg-info">{{ current_store.name }}</span>
+            {% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if perms.stores.add_store %}
+        <a href="{% url 'stores:store_create' %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-circle me-1"></i>Add Store
+        </a>
+        {% endif %}
+        {% if perms.stores.view_store %}
+        <a href="{% url 'stores:store_map' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-map me-1"></i>Map
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ── Tab Navigation ────────────────────────────────────── #}
+<nav class="hub-nav mb-4">
+    <div class="d-flex overflow-auto">
+        <a class="nav-link hub-tab-link active" data-tab="dashboard" href="#dashboard">
+            <i class="bi bi-speedometer2 me-1"></i>Dashboard
+        </a>
+        <a class="nav-link hub-tab-link" data-tab="select-store" href="#select-store">
+            <i class="bi bi-arrow-left-right me-1"></i>Select Store
+        </a>
+        {% if perms.stores.view_store %}
+        <a class="nav-link hub-tab-link" data-tab="store-detail" href="#store-detail">
+            <i class="bi bi-info-circle me-1"></i>Store Detail
+            {% if not current_store %}<span class="badge bg-secondary ms-1">no store</span>{% endif %}
+        </a>
+        <a class="nav-link hub-tab-link" data-tab="analytics" href="#analytics">
+            <i class="bi bi-graph-up me-1"></i>Analytics
+        </a>
+        {% endif %}
+        {% if perms.inventory.view_stock %}
+        <a class="nav-link hub-tab-link" data-tab="low-stock" href="#low-stock">
+            <i class="bi bi-exclamation-triangle me-1"></i>Low Stock
+            {% if total_low_stock_items > 0 %}
+            <span class="badge bg-warning text-dark ms-1">{{ total_low_stock_items }}</span>
+            {% endif %}
+        </a>
+        {% endif %}
+        {% if perms.stores.view_store %}
+        <a class="nav-link hub-tab-link" data-tab="report" href="#report">
+            <i class="bi bi-file-earmark-bar-graph me-1"></i>Report
+        </a>
+        {% endif %}
+        {% if current_store %}
+            {% if perms.stores.change_store %}
+            <a class="nav-link hub-tab-link" data-tab="manage-staff" href="#manage-staff">
+                <i class="bi bi-people me-1"></i>Manage Staff
+            </a>
+            {% endif %}
+            {% if perms.stores.view_storeaccess %}
+            <a class="nav-link hub-tab-link" data-tab="manage-access" href="#manage-access">
+                <i class="bi bi-key me-1"></i>Access
+            </a>
+            {% endif %}
+            {% if perms.stores.change_storeaccess %}
+            <a class="nav-link hub-tab-link" data-tab="edit-access" href="#edit-access">
+                <i class="bi bi-pencil-square me-1"></i>Edit Access
+            </a>
+            {% endif %}
+        {% endif %}
+    </div>
+</nav>
+
+
+{# ══════════════════════════════════════════════════════════
+   TAB 1 — DASHBOARD
+══════════════════════════════════════════════════════════ #}
+<div id="tab-dashboard" class="hub-tab-pane active">
+
+    {# Stat Cards #}
+    <div class="row mb-4">
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+            <div class="card stat-card bg-primary bg-opacity-10 border-primary">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 text-muted">Total Stores</h6>
+                            <h3 class="mb-0">{{ stats.total_stores }}</h3>
+                            <small class="text-muted">{{ stats.active_stores }} active</small>
+                        </div>
+                        <i class="bi bi-shop fs-1 text-primary opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+            <div class="card stat-card bg-info bg-opacity-10 border-info">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 text-muted">Total Devices</h6>
+                            <h3 class="mb-0">{{ stats.total_devices }}</h3>
+                            <small class="text-muted">{{ stats.active_devices }} active</small>
+                        </div>
+                        <i class="bi bi-phone fs-1 text-info opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+            <div class="card stat-card bg-warning bg-opacity-10 border-warning">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 text-muted">Low Stock</h6>
+                            <h3 class="mb-0">{{ low_stock_count }}</h3>
+                            <small class="text-muted">Needs attention</small>
+                        </div>
+                        <i class="bi bi-exclamation-triangle fs-1 text-warning opacity-75"></i>
+                    </div>
+                    {% if low_stock_count > 0 %}
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-warning w-100 hub-tab-link" data-tab="low-stock">
+                            <i class="bi bi-eye me-1"></i>View Alerts
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+            <div class="card stat-card bg-success bg-opacity-10 border-success">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 text-muted">EFRIS Stores</h6>
+                            <h3 class="mb-0">{{ stats.efris_enabled }}</h3>
+                            <small class="text-muted">Enabled</small>
+                        </div>
+                        <i class="bi bi-receipt-cutoff fs-1 text-success opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+            <div class="card stat-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 text-muted">Main Stores</h6>
+                            <h3 class="mb-0">{{ stats.main_branch_count|default:0 }}</h3>
+                            <small class="text-muted">Primary locations</small>
+                        </div>
+                        <i class="bi bi-house fs-1 text-secondary opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+            <div class="card stat-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 text-muted">Avg Inventory</h6>
+                            <h3 class="mb-0">{{ stats.average_inventory|floatformat:0|default:0 }}</h3>
+                            <small class="text-muted">Per store</small>
+                        </div>
+                        <i class="bi bi-box-seam fs-1 text-secondary opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        {# Recent Stores #}
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Recent Stores</h5>
+                    {% if perms.stores.view_store %}
+                    <a href="{% url 'stores:store_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                    {% endif %}
+                </div>
+                <div class="card-body p-0">
+                    {% if recent_stores %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr><th>Store</th><th>Type</th><th>Status</th><th>Created</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for store in recent_stores %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="store-avatar">{{ store.name|slice:":1"|upper }}</div>
+                                            <div>
+                                                <a href="#" class="text-decoration-none fw-bold hub-tab-link"
+                                                   data-tab="store-detail" data-store-id="{{ store.pk }}">
+                                                    {{ store.name|truncatechars:20 }}
+                                                </a>
+                                                <small class="text-muted d-block">{{ store.code|default:"No code" }}{% if store.region %} · {{ store.region }}{% endif %}</small>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge {% if store.store_type == 'MAIN' %}bg-primary{% elif store.store_type == 'BRANCH' %}bg-info{% elif store.store_type == 'WAREHOUSE' %}bg-warning{% else %}bg-secondary{% endif %}">
+                                            {{ store.get_store_type_display|slice:":1" }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="badge {% if store.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+                                            {% if store.is_active %}Active{% else %}Inactive{% endif %}
+                                        </span>
+                                    </td>
+                                    <td><small class="text-muted">{{ store.created_at|date:"M d, Y" }}</small></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-shop fs-1 text-muted mb-3 d-block"></i>
+                        <p class="text-muted">No stores found</p>
+                        {% if perms.stores.add_store %}
+                        <a href="{% url 'stores:store_create' %}" class="btn btn-primary btn-sm">
+                            <i class="bi bi-plus-circle me-1"></i>Add Your First Store
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# Regional + Quick Stats #}
+        <div class="col-lg-6 mb-4">
+            <div class="card mb-3">
+                <div class="card-header"><h5 class="card-title mb-0">Stores by Region</h5></div>
+                <div class="card-body">
+                    {% if stores_by_region %}
+                    {% for rd in stores_by_region %}
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-geo-alt me-2 text-primary"></i>
+                            <span>{{ rd.region|default:"Not Specified" }}</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <div class="progress me-2" style="width:120px;height:8px;">
+                                <div class="progress-bar bg-primary" style="width:{{ rd.count|div:stats.total_stores|mul:100 }}%"></div>
+                            </div>
+                            <span class="badge bg-light text-dark border">{{ rd.count }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <p class="text-muted text-center py-3">No regional data available</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h5 class="card-title mb-0">Quick Actions</h5></div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        {% if perms.stores.add_store %}
+                        <div class="col-4">
+                            <a href="{% url 'stores:store_create' %}" class="btn btn-outline-primary quick-action-btn">
+                                <i class="bi bi-plus-circle quick-action-icon text-primary"></i>
+                                <span class="small">Add Store</span>
+                            </a>
+                        </div>
+                        {% endif %}
+                        {% if perms.inventory.view_stock %}
+                        <div class="col-4">
+                            <button class="btn btn-outline-warning quick-action-btn hub-tab-link" data-tab="low-stock">
+                                <i class="bi bi-exclamation-triangle quick-action-icon text-warning"></i>
+                                <span class="small">Stock Alerts {% if low_stock_count > 0 %}<span class="badge bg-danger">{{ low_stock_count }}</span>{% endif %}</span>
+                            </button>
+                        </div>
+                        {% endif %}
+                        {% if perms.stores.view_store %}
+                        <div class="col-4">
+                            <button class="btn btn-outline-success quick-action-btn hub-tab-link" data-tab="report">
+                                <i class="bi bi-file-earmark-text quick-action-icon text-success"></i>
+                                <span class="small">Report</span>
+                            </button>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Recent Activity #}
+    {% if recent_activity %}
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">Recent Activity</h5>
+            {% if perms.stores.view_storedevice %}
+            <a href="{% url 'stores:device_logs' %}" class="btn btn-sm btn-outline-primary">View All Logs</a>
+            {% endif %}
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>User</th><th>Action</th><th>Device/Store</th><th>Status</th><th>Time</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for log in recent_activity %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="avatar-sm">
+                                        <div class="avatar-title bg-primary bg-opacity-10 text-primary rounded-circle">
+                                            <i class="bi bi-person"></i>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="fw-medium">{{ log.user.get_full_name|default:log.user.username|truncatechars:15 }}</div>
+                                        <small class="text-muted">{{ log.user.email|truncatechars:20 }}</small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge {% if log.action == 'LOGIN' %}bg-success{% elif log.action == 'LOGOUT' %}bg-secondary{% elif 'ERROR' in log.action %}bg-danger{% else %}bg-info{% endif %}">
+                                    {{ log.get_action_display }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if log.device %}<small class="d-block"><i class="bi bi-phone me-1"></i>{{ log.device.name|truncatechars:15 }}</small>{% endif %}
+                                {% if log.store %}<small class="text-muted"><i class="bi bi-shop me-1"></i>{{ log.store.name|truncatechars:15 }}</small>{% endif %}
+                            </td>
+                            <td>
+                                <span class="badge {% if log.success %}bg-success{% else %}bg-danger{% endif %}">
+                                    {% if log.success %}Success{% else %}Failed{% endif %}
+                                </span>
+                            </td>
+                            <td><small class="text-muted">{{ log.timestamp|date:"M d H:i" }}</small></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>{# /tab-dashboard #}
+
+
+{# ══════════════════════════════════════════════════════════
+   TAB 2 — SELECT / SWITCH STORE
+══════════════════════════════════════════════════════════ #}
+<div id="tab-select-store" class="hub-tab-pane">
+    <div class="row justify-content-center">
+        <div class="col-md-9">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-arrow-left-right me-2"></i>Select Active Store</h5>
+                </div>
+                <div class="card-body">
+                    {% if accessible_stores %}
+                    <p class="text-muted mb-4">Choose a store to activate. Store-specific tabs (Manage Staff, Access) will become available once a store is selected.</p>
+                    <div class="row g-3">
+                        {% for store in accessible_stores %}
+                        <div class="col-md-6">
+                            <div class="card border {% if current_store.id == store.id %}border-primary shadow-sm{% endif %} h-100" style="cursor:pointer;"
+                                 onclick="document.getElementById('switch-form-{{ store.id }}').submit()">
+                                <div class="card-body d-flex align-items-center gap-3">
+                                    <div class="store-avatar fs-5">{{ store.name|slice:":1"|upper }}</div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1">{{ store.name }}
+                                            {% if current_store.id == store.id %}
+                                            <i class="bi bi-check-circle-fill text-primary ms-1"></i>
+                                            {% endif %}
+                                        </h6>
+                                        <small class="text-muted">{{ store.location|default:store.physical_address|truncatechars:40 }}</small>
+                                        <div class="mt-1">
+                                            <span class="badge {% if store.is_active %}bg-success{% else %}bg-secondary{% endif %} me-1">{% if store.is_active %}Active{% else %}Inactive{% endif %}</span>
+                                            <span class="badge bg-light text-dark border">{{ store.get_store_type_display }}</span>
+                                            {% if current_store.id == store.id %}<span class="badge bg-primary ms-1">Current</span>{% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <form id="switch-form-{{ store.id }}" method="post"
+                                  action="{% url 'stores:switch_store' store_id=store.id %}?next={% url 'stores:hub' %}"
+                                  style="display:none;">
+                                {% csrf_token %}
+                            </form>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-info-circle me-2"></i>
+                        You have not been assigned to any store. Please contact your administrator.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>{# /tab-select-store #}
+
+
+{# ══════════════════════════════════════════════════════════
+   TAB 3 — STORE DETAIL
+══════════════════════════════════════════════════════════ #}
+<div id="tab-store-detail" class="hub-tab-pane">
+{% if not current_store %}
+<div class="store-session-guard">
+    <i class="bi bi-shop display-1 text-muted mb-3 d-block"></i>
+    <h4 class="text-muted">No Store Selected</h4>
+    <p class="text-muted">Select a store first to view its details.</p>
+    <button class="btn btn-primary hub-tab-link" data-tab="select-store">
+        <i class="bi bi-arrow-left-right me-1"></i>Select a Store
+    </button>
+</div>
+{% else %}
+    {# Store Header #}
+    <div class="store-header mb-4">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+            <div>
+                <h2 class="mb-1">{{ current_store.name }}</h2>
+                <p class="mb-2 opacity-75">{{ current_store.physical_address }}</p>
+                <div class="d-flex flex-wrap gap-2">
+                    <span class="badge bg-white text-dark">{{ current_store.get_store_type_display }}</span>
+                    {% if current_store.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+                    {% if current_store.is_main_branch %}<span class="badge bg-warning text-dark">Main Branch</span>{% endif %}
+                    {% if current_store.efris_enabled %}<span class="badge bg-info">EFRIS</span>{% endif %}
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                {% if perms.stores.change_store %}
+                <a href="{% url 'stores:store_update' current_store.pk %}" class="btn btn-light btn-sm">
+                    <i class="bi bi-pencil me-1"></i>Edit
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        {# Info Cards #}
+        <div class="col-md-4 mb-4">
+            <div class="card info-card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>Store Info</h6></div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-5 text-muted small">Code</dt><dd class="col-sm-7 small">{{ current_store.code|default:"—" }}</dd>
+                        <dt class="col-sm-5 text-muted small">Phone</dt><dd class="col-sm-7 small">{{ current_store.phone|default:"—" }}</dd>
+                        <dt class="col-sm-5 text-muted small">Email</dt><dd class="col-sm-7 small">{{ current_store.email|default:"—" }}</dd>
+                        <dt class="col-sm-5 text-muted small">Region</dt><dd class="col-sm-7 small">{{ current_store.region|default:"—" }}</dd>
+                        <dt class="col-sm-5 text-muted small">Manager</dt><dd class="col-sm-7 small">{{ current_store.manager_name|default:"—" }}</dd>
+                        <dt class="col-sm-5 text-muted small">Open Now</dt>
+                        <dd class="col-sm-7 small">
+                            {% if store_open_now %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        {# Performance Metrics #}
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Performance (30d)</h6></div>
+                <div class="card-body">
+                    {% if performance_metrics %}
+                    <dl class="row mb-0">
+                        <dt class="col-sm-6 text-muted small">Revenue</dt>
+                        <dd class="col-sm-6 small">UGX {{ performance_metrics.revenue|money|default:"0" }}</dd>
+                        <dt class="col-sm-6 text-muted small">Transactions</dt>
+                        <dd class="col-sm-6 small">{{ performance_metrics.transaction_count|default:0 }}</dd>
+                        <dt class="col-sm-6 text-muted small">Avg Sale</dt>
+                        <dd class="col-sm-6 small">UGX {{ performance_metrics.avg_sale|money|default:"0" }}</dd>
+                        <dt class="col-sm-6 text-muted small">Low Stock Items</dt>
+                        <dd class="col-sm-6 small">
+                            <span class="badge {% if low_stock_items > 0 %}bg-warning{% else %}bg-success{% endif %}">{{ low_stock_items|default:0 }}</span>
+                        </dd>
+                    </dl>
+                    {% else %}
+                    <p class="text-muted small">Performance data unavailable.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# EFRIS Config #}
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-receipt me-2"></i>EFRIS Status</h6></div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-6 text-muted small">Enabled</dt>
+                        <dd class="col-sm-6 small">{% if current_store.efris_enabled %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</dd>
+                        <dt class="col-sm-6 text-muted small">Device No.</dt>
+                        <dd class="col-sm-6 small">{{ current_store.efris_device_number|default:"—" }}</dd>
+                        <dt class="col-sm-6 text-muted small">Can Fiscalize</dt>
+                        <dd class="col-sm-6 small">{% if can_fiscalize %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        {# Devices #}
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-phone me-2"></i>Devices</h6>
+                    <span class="badge bg-secondary">{{ devices|length }}</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if devices %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light"><tr><th>Name</th><th>Type</th><th>Status</th></tr></thead>
+                            <tbody>
+                                {% for device in devices %}
+                                <tr>
+                                    <td class="small">{{ device.name }}</td>
+                                    <td><span class="badge bg-info">{{ device.device_type }}</span></td>
+                                    <td><span class="badge {% if device.is_active %}bg-success{% else %}bg-secondary{% endif %}">{% if device.is_active %}Active{% else %}Off{% endif %}</span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted text-center py-3 mb-0">No devices registered</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# Staff #}
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-people me-2"></i>Staff</h6>
+                    <div>
+                        <span class="badge bg-secondary me-1">{{ visible_staff|length }}</span>
+                        {% if perms.stores.change_store %}
+                        <button class="btn btn-sm btn-outline-primary hub-tab-link" data-tab="manage-staff">Manage</button>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    {% if visible_staff %}
+                    <ul class="list-group list-group-flush">
+                        {% for member in visible_staff|slice:":8" %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center py-2">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="avatar-sm">
+                                    <div class="avatar-title bg-primary bg-opacity-10 text-primary rounded-circle small">
+                                        {{ member.get_full_name|default:member.username|slice:":1"|upper }}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="small fw-medium">{{ member.get_full_name|default:member.username }}</div>
+                                    <small class="text-muted">{{ member.email|truncatechars:25 }}</small>
+                                </div>
+                            </div>
+                            {% if member in current_store.store_managers.all %}
+                            <span class="badge bg-warning text-dark">Manager</span>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted text-center py-3 mb-0">No staff assigned</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Recent Logs #}
+    {% if recent_logs %}
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Device Logs</h6></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light"><tr><th>User</th><th>Action</th><th>Device</th><th>Time</th></tr></thead>
+                    <tbody>
+                        {% for log in recent_logs %}
+                        <tr>
+                            <td class="small">{{ log.user.get_full_name|default:log.user.username|truncatechars:20 }}</td>
+                            <td><span class="badge bg-info small">{{ log.get_action_display }}</span></td>
+                            <td class="small">{{ log.device.name|truncatechars:15 }}</td>
+                            <td class="small text-muted">{{ log.timestamp|date:"M d H:i" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+{% endif %}
+</div>{# /tab-store-detail #}
+
+
+{# ══════════════════════════════════════════════════════════
+   TAB 4 — ANALYTICS
+══════════════════════════════════════════════════════════ #}
+<div id="tab-analytics" class="hub-tab-pane">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-graph-up me-2"></i>Store Analytics</h4>
+            <p class="text-muted mb-0">Comprehensive analytics and insights for all stores</p>
+        </div>
+        {% if perms.stores.view_store %}
+        <button class="btn btn-primary hub-tab-link" data-tab="report">
+            <i class="bi bi-file-earmark-bar-graph me-1"></i>Generate Report
+        </button>
+        {% endif %}
+    </div>
+
+    <div class="row">
+        {# Inventory Summary #}
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0">Inventory Summary</h6></div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span>Total Items</span>
+                        <strong class="h4">{{ analytics_data.inventory_summary.total_items|default:0 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Low Stock Items</span>
+                        <strong class="h4 text-warning">{{ analytics_data.inventory_summary.low_stock_count|default:0 }}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# Device Status #}
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0">Device Status</h6></div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Total Devices</span><strong>{{ analytics_data.device_status.total|default:0 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Active Devices</span><strong class="text-success">{{ analytics_data.device_status.active|default:0 }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>POS Devices</span><strong>{{ analytics_data.device_status.pos_devices|default:0 }}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# Regional Distribution #}
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><h6 class="mb-0">Regional Distribution</h6></div>
+                <div class="card-body">
+                    {% for region in analytics_data.regional_distribution %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>{{ region.region|default:"Unknown" }}</span>
+                        <strong>{{ region.store_count }}</strong>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted">No regional data available</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Store Performance Table #}
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0">Store Performance</h6></div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr><th>Store Name</th><th>Inventory Value</th><th>Devices</th><th>Staff</th><th>Low Stock</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for store in analytics_data.store_performance %}
+                        <tr>
+                            <td>{{ store.name }}</td>
+                            <td>UGX {{ store.inventory_value|money }}</td>
+                            <td>{{ store.device_count }}</td>
+                            <td>{{ store.staff_count }}</td>
+                            <td>
+                                <span class="badge bg-{% if store.low_stock_items > 0 %}warning{% else %}success{% endif %}">
+                                    {{ store.low_stock_items }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">No performance data available</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {# Quick Links #}
+    <div class="row">
+        <div class="col-md-4 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-map display-4 text-primary mb-3 d-block"></i>
+                    <h6>Store Map</h6>
+                    <p class="text-muted small">View all store locations on an interactive map</p>
+                    <a href="{% url 'stores:store_map' %}" class="btn btn-outline-primary btn-sm">View Map</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-exclamation-triangle display-4 text-warning mb-3 d-block"></i>
+                    <h6>Low Stock Alerts</h6>
+                    <p class="text-muted small">Monitor inventory items that need restocking</p>
+                    <button class="btn btn-outline-warning btn-sm hub-tab-link" data-tab="low-stock">View Alerts</button>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-clipboard-data display-4 text-info mb-3 d-block"></i>
+                    <h6>Device Logs</h6>
+                    <p class="text-muted small">Review device usage and maintenance history</p>
+                    {% if perms.stores.view_deviceoperatorlog %}
+                    <a href="{% url 'stores:device_logs' %}" class="btn btn-outline-info btn-sm">View Logs</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>{# /tab-analytics #}
+
+
+{# ══════════════════════════════════════════════════════════
+   TAB 5 — LOW STOCK ALERTS
+══════════════════════════════════════════════════════════ #}
+<div id="tab-low-stock" class="hub-tab-pane">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1 text-warning"><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts</h4>
+            <p class="text-muted mb-0">Inventory items that need immediate attention</p>
+        </div>
+        <a href="{% url 'stores:inventory_list' %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-box-seam me-1"></i>View All Inventory
+        </a>
+    </div>
+
+    {% if total_low_stock_items > 0 %}
+    <div class="alert alert-warning">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>Total Low Stock Items:</strong> {{ total_low_stock_items }} items across {{ stores_with_alerts|length }} stores
+    </div>
+    {% endif %}
+
+    {% if stores_with_alerts %}
+    {% for store_name, store_data in stores_with_alerts.items %}
+    <div class="card mb-4">
+        <div class="card-header bg-warning text-dark">
+            <h6 class="mb-0">
+                <i class="bi bi-shop me-2"></i>{{ store_name }}
+                <span class="badge bg-dark ms-2">{{ store_data.items|length }} low stock items</span>
+            </h6>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr><th>Product</th><th>Qty</th><th>Threshold</th><th>Reorder Qty</th><th>Status</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for item in store_data.items %}
+                        <tr class="{% if item.quantity <= 0 %}table-danger{% else %}table-warning{% endif %}">
+                            <td>
+                                <strong>{{ item.product.name }}</strong>
+                                <br><small class="text-muted">{{ item.product.sku|default:"No code" }}</small>
+                            </td>
+                            <td>
+                                <span class="fw-bold {% if item.quantity <= 0 %}text-danger{% else %}text-warning{% endif %}">
+                                    {{ item.quantity }} {{ item.product.unit|default:"" }}
+                                </span>
+                            </td>
+                            <td>{{ item.low_stock_threshold }} {{ item.product.unit|default:"" }}</td>
+                            <td>{{ item.reorder_quantity }} {{ item.product.unit|default:"" }}</td>
+                            <td>
+                                {% if item.quantity <= 0 %}
+                                <span class="badge bg-danger">Out of Stock</span>
+                                {% else %}
+                                <span class="badge bg-warning">Low Stock</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if perms.inventory.add_stockadjustment %}
+                                <a href="{% url 'inventory:quick_adjust' item.stock.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil"></i> Update
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-2 d-flex gap-2">
+                <a href="{% url 'stores:inventory_list' %}?store={{ store_data.store.id }}" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-box-seam me-1"></i>Full Inventory
+                </a>
+                <button class="btn btn-outline-secondary btn-sm hub-tab-link" data-tab="store-detail"
+                        data-store-id="{{ store_data.store.id }}">
+                    <i class="bi bi-shop me-1"></i>Store Details
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="alert alert-info">
+        <i class="bi bi-lightbulb me-2"></i>
+        <strong>Recommendation:</strong> Consider creating purchase orders for these items to avoid stockouts.
+    </div>
+
+    {% else %}
+    <div class="text-center py-5">
+        <i class="bi bi-check-circle display-1 text-success d-block mb-3"></i>
+        <h4 class="text-success">No Low Stock Items</h4>
+        <p class="text-muted">All inventory levels are within acceptable limits.</p>
+        <a href="{% url 'stores:inventory_list' %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-box-seam me-1"></i>View Inventory
+        </a>
+    </div>
+    {% endif %}
+</div>{# /tab-low-stock #}
+
+
+{# ══════════════════════════════════════════════════════════
+   TAB 6 — GENERATE REPORT
+══════════════════════════════════════════════════════════ #}
+<div id="tab-report" class="hub-tab-pane">
+    <div class="row mb-4">
+        {# Stats strip #}
+        {% if report_stats %}
+        <div class="col-12 mb-3">
+            <div class="row g-3">
+                <div class="col-6 col-md-3">
+                    <div class="card text-center border-0 bg-primary bg-opacity-10">
+                        <div class="card-body py-3">
+                            <h3 class="mb-0">{{ report_stats.total_stores }}</h3>
+                            <small class="text-muted">Total Stores</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card text-center border-0 bg-success bg-opacity-10">
+                        <div class="card-body py-3">
+                            <h3 class="mb-0">{{ report_stats.active_stores }}</h3>
+                            <small class="text-muted">Active Stores</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card text-center border-0 bg-info bg-opacity-10">
+                        <div class="card-body py-3">
+                            <h3 class="mb-0">{{ report_stats.total_devices }}</h3>
+                            <small class="text-muted">Devices</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="card text-center border-0 bg-warning bg-opacity-10">
+                        <div class="card-body py-3">
+                            <h3 class="mb-0">{{ report_stats.low_stock_items }}</h3>
+                            <small class="text-muted">Low Stock</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-sliders me-2 text-primary"></i>Report Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{% url 'stores:generate_report' %}" id="reportForm">
+                        {% csrf_token %}
+                        {% if form %}
+                            {{ form|crispy }}
+                        {% endif %}
+                        <div class="d-flex gap-2 mt-3">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-download me-1"></i>Generate & Download
+                            </button>
+                            <button type="reset" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-lightning me-2 text-warning"></i>Quick Export</h6></div>
+                <div class="card-body d-grid gap-2">
+                    <a href="{% url 'stores:export_report_direct' 'store_summary' %}" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-file-earmark-spreadsheet me-1"></i>Store Summary CSV
+                    </a>
+                    <a href="{% url 'stores:export_report_direct' 'inventory' %}" class="btn btn-outline-success btn-sm">
+                        <i class="bi bi-box-seam me-1"></i>Inventory CSV
+                    </a>
+                    <a href="{% url 'stores:export_report_direct' 'device_status' %}" class="btn btn-outline-info btn-sm">
+                        <i class="bi bi-phone me-1"></i>Device Status CSV
+                    </a>
+                    <a href="" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-table me-1"></i>All Stores CSV
+                    </a>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header"><h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>Format Support</h6></div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-0 small">
+                        <li class="mb-1"><i class="bi bi-check-circle text-success me-2"></i>CSV — Always available</li>
+                        <li class="mb-1">
+                            <i class="bi bi-{% if excel_available %}check-circle text-success{% else %}x-circle text-danger{% endif %} me-2"></i>
+                            Excel (.xlsx) — {% if excel_available %}Available{% else %}Requires openpyxl{% endif %}
+                        </li>
+                        <li>
+                            <i class="bi bi-{% if pdf_available %}check-circle text-success{% else %}x-circle text-danger{% endif %} me-2"></i>
+                            PDF — {% if pdf_available %}Available{% else %}Requires reportlab{% endif %}
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>{# /tab-report #}
+
+
+{# ══════════════════════════════════════════════════════════
+   TAB 7 — MANAGE STAFF  (requires current_store)
+══════════════════════════════════════════════════════════ #}
+<div id="tab-manage-staff" class="hub-tab-pane">
+{% if not current_store %}
+<div class="store-session-guard">
+    <i class="bi bi-people display-1 text-muted d-block mb-3"></i>
+    <h4 class="text-muted">No Store Selected</h4>
+    <p class="text-muted">Select a store first to manage its staff.</p>
+    <button class="btn btn-primary hub-tab-link" data-tab="select-store">
+        <i class="bi bi-arrow-left-right me-1"></i>Select a Store
+    </button>
+</div>
+{% else %}
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-people-fill me-2"></i>Manage Staff</h4>
+            <p class="text-muted mb-0">{{ current_store.name }}</p>
+        </div>
+    </div>
+
+    <div class="row">
+        {# Current Staff #}
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-primary text-white border-0 d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-person-check me-2"></i>Current Staff</h6>
+                    <span class="badge bg-light text-dark">{{ current_staff.count }}</span>
+                </div>
+                <div class="card-body">
+                    {% if current_staff %}
+                    <div class="list-group list-group-flush">
+                        {% for member in current_staff %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center py-3 {% if member.user in current_store.store_managers.all %}border-start border-3 border-warning{% endif %}">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="avatar-sm">
+                                    <div class="avatar-title bg-light text-dark rounded-circle">
+                                        {{ member.user.get_full_name|default:member.user.username|slice:":1"|upper }}
+                                    </div>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0 small">{{ member.user.get_full_name|default:member.user.username }}</h6>
+                                    <small class="text-muted">{{ member.user.email }}</small>
+                                    <div><span class="badge bg-secondary small">{{ member.get_access_level_display }}</span></div>
+                                </div>
+                            </div>
+                            {% if member.user in current_store.store_managers.all %}
+                            <i class="bi bi-star-fill text-warning" title="Store Manager"></i>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-person-x display-4 text-muted d-block mb-2"></i>
+                        <p class="text-muted">No staff members assigned</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# Staff Assignment Form #}
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-dark text-white border-0">
+                    <h6 class="mb-0"><i class="bi bi-person-plus me-2"></i>Staff Assignment</h6>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{% url 'stores:manage_store_staff' current_store.pk %}" id="staffAssignmentForm">
+                        {% csrf_token %}
+                        {% if staff_form %}{{ staff_form|crispy }}{% endif %}
+                        <div class="mt-3 pt-3 border-top d-flex justify-content-between align-items-center">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="confirmStaff">
+                                <label class="form-check-label small" for="confirmStaff">I confirm these changes</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm" id="staffSubmitBtn" disabled>
+                                <i class="bi bi-check-circle me-1"></i>Update
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card shadow-sm border-0 mt-3">
+                <div class="card-header bg-secondary text-white border-0">
+                    <h6 class="mb-0"><i class="bi bi-graph-up me-2"></i>Statistics</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <h4 class="mb-0">{{ current_staff.count }}</h4>
+                            <small class="text-muted">Total Staff</small>
+                        </div>
+                        <div class="col-4">
+                            <h4 class="mb-0">{{ store_managers.count|default:0 }}</h4>
+                            <small class="text-muted">Managers</small>
+                        </div>
+                        <div class="col-4">
+                            <h4 class="mb-0">
+                                {% if is_store_manager %}<span class="badge bg-success">Mgr</span>
+                                {% elif request.user.company_admin %}<span class="badge bg-warning text-dark">Admin</span>
+                                {% else %}<span class="badge bg-secondary">Staff</span>{% endif %}
+                            </h4>
+                            <small class="text-muted">Your Role</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endif %}
+</div>{# /tab-manage-staff #}
+
+
+{# ══════════════════════════════════════════════════════════
+   TAB 8 — MANAGE ACCESS  (requires current_store)
+══════════════════════════════════════════════════════════ #}
+<div id="tab-manage-access" class="hub-tab-pane">
+{% if not current_store %}
+<div class="store-session-guard">
+    <i class="bi bi-key display-1 text-muted d-block mb-3"></i>
+    <h4 class="text-muted">No Store Selected</h4>
+    <p class="text-muted">Select a store first to manage access permissions.</p>
+    <button class="btn btn-primary hub-tab-link" data-tab="select-store">
+        <i class="bi bi-arrow-left-right me-1"></i>Select a Store
+    </button>
+</div>
+{% else %}
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-key me-2"></i>Manage Access</h4>
+            <p class="text-muted mb-0">User permissions for {{ current_store.name }}</p>
+        </div>
+    </div>
+
+    {# Store info strip #}
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>{{ current_store.name }}</h6>
+                    <small class="text-muted">
+                        <i class="bi bi-geo-alt me-1"></i>{{ current_store.physical_address }}<br>
+                        <i class="bi bi-telephone me-1"></i>{{ current_store.phone|default:"No phone" }}
+                    </small>
+                </div>
+                <div class="col-md-6">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <h4 class="mb-0">{{ current_store.staff.count }}</h4>
+                            <small class="text-muted">Staff Members</small>
+                        </div>
+                        <div class="col-6">
+                            <h4 class="mb-0">{{ access_permissions.count|default:0 }}</h4>
+                            <small class="text-muted">Permissions</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Grant Access Form #}
+    {% if can_manage_access %}
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0">Grant New Access</h6></div>
+        <div class="card-body">
+            <form method="post" action="{% url 'stores:create_store_access' store_id=current_store.id %}">
+                {% csrf_token %}
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label small">Select User</label>
+                        <select class="form-select form-select-sm" name="user_id" required>
+                            <option value="">Choose a user…</option>
+                            {% for u in available_users %}
+                            <option value="{{ u.id }}">{{ u.get_full_name }} ({{ u.email }})</option>
+                            {% empty %}
+                            <option value="" disabled>No users available</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Access Level</label>
+                        <select class="form-select form-select-sm" name="access_level" required>
+                            {% for value, label in access_level_choices %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-primary btn-sm w-100">
+                            <i class="bi bi-plus-circle me-1"></i>Grant Access
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    {# Existing Permissions #}
+    <div class="card">
+        <div class="card-header"><h6 class="mb-0">Current Access Permissions</h6></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>User</th><th>Level</th><th>Permissions</th><th>Granted By</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for perm in access_permissions %}
+                        <tr>
+                            <td>
+                                <div class="fw-medium small">{{ perm.user.get_full_name }}</div>
+                                <small class="text-muted">{{ perm.user.email }}</small>
+                            </td>
+                            <td><span class="badge bg-primary">{{ perm.get_access_level_display }}</span></td>
+                            <td>
+                                <div class="d-flex flex-wrap gap-1">
+                                    {% if perm.can_view_sales %}<span class="badge bg-light text-dark border small">Sales</span>{% endif %}
+                                    {% if perm.can_manage_inventory %}<span class="badge bg-light text-dark border small">Inventory</span>{% endif %}
+                                    {% if perm.can_view_reports %}<span class="badge bg-light text-dark border small">Reports</span>{% endif %}
+                                    {% if perm.can_manage_staff %}<span class="badge bg-light text-dark border small">Staff</span>{% endif %}
+                                    {% if perm.can_fiscalize %}<span class="badge bg-light text-dark border small">EFRIS</span>{% endif %}
+                                </div>
+                            </td>
+                            <td><small class="text-muted">{{ perm.granted_by.get_full_name|default:"System" }}</small></td>
+                            <td>
+                                <div class="d-flex gap-1">
+                                    {% if can_manage_access %}
+                                    <button class="btn btn-sm btn-outline-primary hub-tab-link"
+                                            data-tab="edit-access" data-user-id="{{ perm.user.id }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <form method="post" action="{% url 'stores:revoke_store_access' store_id=current_store.id user_id=perm.user.id %}" style="display:inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                onclick="return confirm('Revoke access for {{ perm.user.get_full_name }}?')">
+                                            <i class="bi bi-x-circle"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-center py-4 text-muted">No access permissions configured</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+{% endif %}
+</div>{# /tab-manage-access #}
+
+
+{# ══════════════════════════════════════════════════════════
+   TAB 9 — EDIT ACCESS  (requires current_store + selected user)
+══════════════════════════════════════════════════════════ #}
+<div id="tab-edit-access" class="hub-tab-pane">
+{% if not current_store %}
+<div class="store-session-guard">
+    <i class="bi bi-pencil-square display-1 text-muted d-block mb-3"></i>
+    <h4 class="text-muted">No Store Selected</h4>
+    <p class="text-muted">Select a store first, then choose a user from the Access tab.</p>
+    <button class="btn btn-primary hub-tab-link" data-tab="select-store">
+        <i class="bi bi-arrow-left-right me-1"></i>Select a Store
+    </button>
+</div>
+{% elif not edit_access_target %}
+<div class="store-session-guard">
+    <i class="bi bi-person-gear display-1 text-muted d-block mb-3"></i>
+    <h4 class="text-muted">No User Selected</h4>
+    <p class="text-muted">Go to the <strong>Access</strong> tab and click the edit button next to a user.</p>
+    <button class="btn btn-outline-primary hub-tab-link" data-tab="manage-access">
+        <i class="bi bi-key me-1"></i>Go to Access Tab
+    </button>
+</div>
+{% else %}
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1"><i class="bi bi-pencil-square me-2"></i>Edit Access Permissions</h4>
+            <p class="text-muted mb-0">{{ edit_access_target.user.get_full_name }} — {{ current_store.name }}</p>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm hub-tab-link" data-tab="manage-access">
+            <i class="bi bi-arrow-left me-1"></i>Back to Access
+        </button>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">User</h6>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="avatar-lg">
+                            <div class="avatar-title bg-primary text-white rounded-circle">
+                                {{ edit_access_target.user.get_full_name|slice:":1"|upper }}
+                            </div>
+                        </div>
+                        <div>
+                            <h5 class="mb-1">{{ edit_access_target.user.get_full_name }}</h5>
+                            <p class="text-muted mb-0 small">{{ edit_access_target.user.email }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title">Store</h6>
+                    <h5 class="mb-1">{{ current_store.name }}</h5>
+                    <p class="text-muted mb-0 small">{{ current_store.physical_address }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h6 class="mb-0">Access Permissions</h6></div>
+        <div class="card-body">
+            <form method="post" action="{% url 'stores:edit_store_access' store_id=current_store.id user_id=edit_access_target.user.id %}">
+                {% csrf_token %}
+
+                <div class="row mb-4">
+                    <div class="col-md-5">
+                        <label class="form-label">Access Level</label>
+                        <select name="access_level" class="form-select" required>
+                            {% for value, label in access_level_choices %}
+                            <option value="{{ value }}" {% if edit_access_target.access_level == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <h6 class="mb-3">Granular Permissions</h6>
+                <div class="row g-3 mb-4">
+                    {% for field_name, label, icon in edit_permissions_fields %}
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="{{ field_name }}" id="perm_{{ field_name }}"
+                                   {% if edit_access_target|getattr:field_name %}checked{% endif %}>
+                            <label class="form-check-label small" for="perm_{{ field_name }}">
+                                <i class="bi bi-{{ icon }} me-1"></i>{{ label }}
+                            </label>
+                        </div>
+                    </div>
+                    {% empty %}
+                    {# Fallback if context var not provided — render checkboxes directly #}
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="can_view_sales" id="perm_vs" {% if edit_access_target.can_view_sales %}checked{% endif %}>
+                            <label class="form-check-label small" for="perm_vs"><i class="bi bi-eye me-1"></i>View Sales</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="can_create_sales" id="perm_cs" {% if edit_access_target.can_create_sales %}checked{% endif %}>
+                            <label class="form-check-label small" for="perm_cs"><i class="bi bi-plus-circle me-1"></i>Create Sales</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="can_view_inventory" id="perm_vi" {% if edit_access_target.can_view_inventory %}checked{% endif %}>
+                            <label class="form-check-label small" for="perm_vi"><i class="bi bi-box-seam me-1"></i>View Inventory</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="can_manage_inventory" id="perm_mi" {% if edit_access_target.can_manage_inventory %}checked{% endif %}>
+                            <label class="form-check-label small" for="perm_mi"><i class="bi bi-pencil me-1"></i>Manage Inventory</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="can_view_reports" id="perm_vr" {% if edit_access_target.can_view_reports %}checked{% endif %}>
+                            <label class="form-check-label small" for="perm_vr"><i class="bi bi-graph-up me-1"></i>View Reports</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="can_fiscalize" id="perm_fi" {% if edit_access_target.can_fiscalize %}checked{% endif %}>
+                            <label class="form-check-label small" for="perm_fi"><i class="bi bi-receipt me-1"></i>Fiscalize (EFRIS)</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="can_manage_staff" id="perm_ms" {% if edit_access_target.can_manage_staff %}checked{% endif %}>
+                            <label class="form-check-label small" for="perm_ms"><i class="bi bi-people me-1"></i>Manage Staff</label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-check-circle me-1"></i>Save Permissions
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm hub-tab-link" data-tab="manage-access">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endif %}
+</div>{# /tab-edit-access #}
+
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    /* ── Determine initial tab from URL hash or first active ── */
+    function getInitialTab() {
+        const hash = window.location.hash.replace('#', '');
+        if (hash && document.getElementById('tab-' + hash)) return hash;
+        return 'dashboard';
+    }
+
+    function activateTab(tabId) {
+        // Deactivate all
+        document.querySelectorAll('.hub-tab-pane').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.hub-tab-link').forEach(l => l.classList.remove('active'));
+
+        // Activate target
+        const pane = document.getElementById('tab-' + tabId);
+        if (pane) pane.classList.add('active');
+
+        document.querySelectorAll('.hub-tab-link[data-tab="' + tabId + '"]').forEach(l => {
+            l.classList.add('active');
+        });
+
+        // Update URL hash without scrolling
+        history.replaceState(null, '', '#' + tabId);
+    }
+
+    /* ── Wire up all tab links ─────────────────────────────── */
+    document.querySelectorAll('.hub-tab-link').forEach(function (el) {
+        el.addEventListener('click', function (e) {
+            e.preventDefault();
+
+            const tabId   = this.dataset.tab;
+            const storeId = this.dataset.storeId;
+            const userId  = this.dataset.userId;
+
+            // If a store-id shortcut is provided, submit the switch form first
+            if (storeId) {
+                const switchForm = document.getElementById('switch-form-' + storeId);
+                if (switchForm) {
+                    // Append intended tab to next param
+                    const nextUrl = new URL(switchForm.action);
+                    nextUrl.searchParams.set('next', '{% url "stores:hub" %}#' + tabId);
+                    switchForm.action = nextUrl.toString();
+                    switchForm.submit();
+                    return;
+                }
+            }
+
+            // If navigating to edit-access from manage-access with a userId,
+            // set a hidden input or data attribute for the view to pick up
+            if (tabId === 'edit-access' && userId) {
+                document.getElementById('hub-edit-user-id').value = userId;
+            }
+
+            activateTab(tabId);
+        });
+    });
+
+    /* ── Activate initial tab ──────────────────────────────── */
+    activateTab(getInitialTab());
+
+    /* ── Staff confirm checkbox ────────────────────────────── */
+    const confirmStaff = document.getElementById('confirmStaff');
+    const staffBtn     = document.getElementById('staffSubmitBtn');
+    if (confirmStaff && staffBtn) {
+        confirmStaff.addEventListener('change', function () {
+            staffBtn.disabled = !this.checked;
+        });
+    }
+});
+</script>
+
+{# Hidden field for passing user id to edit-access tab (progressive enhancement) #}
+<input type="hidden" id="hub-edit-user-id" value="">
+{% endblock %}

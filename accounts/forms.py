@@ -595,7 +595,6 @@ class CustomUserChangeForm(UserChangeForm):
         return user
 
 
-
 class CustomAuthenticationForm(AuthenticationForm):
     """Enhanced authentication form with 2FA support"""
 
@@ -692,8 +691,9 @@ class CustomAuthenticationForm(AuthenticationForm):
                     _('Account is temporarily locked. Please try again later or reset your password.')
                 )
         except CustomUser.DoesNotExist:
+            # Generic message — do NOT reveal whether the email exists
             raise forms.ValidationError(
-                _('No account found with this email address.')
+                _('Invalid credentials. Please try again.')
             )
 
         return username
@@ -762,6 +762,8 @@ class CustomAuthenticationForm(AuthenticationForm):
                         _('Database not properly initialized. Please contact support.'),
                         code='schema_not_ready'
                     )
+        except forms.ValidationError:
+            raise
         except Exception as e:
             logger.error(f"Error checking schema tables: {e}")
             raise forms.ValidationError(
@@ -784,26 +786,24 @@ class CustomAuthenticationForm(AuthenticationForm):
             )
 
         if self.user_cache is None:
-            # Invalid credentials
+            # Record failed attempt WITHOUT leaking whether the email/password was wrong
             try:
                 from accounts.models import CustomUser
                 user = CustomUser.objects.get(email=username)
-                # User exists but wrong password
                 user.record_login_attempt(success=False, ip_address=self.get_client_ip())
-                raise forms.ValidationError(
-                    _('Incorrect password. Please try again.'),
-                    code='invalid_login'
-                )
             except CustomUser.DoesNotExist:
-                raise forms.ValidationError(
-                    _('No account found with this email address.'),
-                    code='invalid_login'
-                )
+                pass  # Silently ignore — don't reveal that the email doesn't exist
+
+            # Always raise the same generic error regardless of the failure reason
+            raise forms.ValidationError(
+                _('Invalid email or password. Please try again.'),
+                code='invalid_login'
+            )
         else:
             # Valid credentials - check if account is active
             if not self.user_cache.is_active:
                 raise forms.ValidationError(
-                    _('This account is inactive.'),
+                    _('This account has been deactivated. Please contact support.'),
                     code='inactive'
                 )
 

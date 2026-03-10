@@ -427,6 +427,20 @@ def tenant_overview(request):
         'monthly_trend_json':  json.dumps(profit_monthly),
     }
 
+    # ── TRACKER MODULE ────────────────────────────────────────
+    # Lightweight summary counts shown on the tracker card.
+    # Full report data is fetched on-demand by the AJAX detail panel.
+    from accounts.general_tracker import REPORT_REGISTRY
+    tracker_summary = {
+        'report_types': list(REPORT_REGISTRY.keys()),
+        'report_count': len(REPORT_REGISTRY),
+        # Quick headline numbers reusing already-computed querysets
+        'sales_count_30d':    sales_30d.count(),
+        'expenses_count_30d': expenses_30d.count(),
+        'customers_total':    total_customers,
+        'products_total':     inventory_summary['total_products'],
+    }
+
     context = {
         'stores_summary':    stores_summary,
         'inventory_summary': inventory_summary,
@@ -437,6 +451,7 @@ def tenant_overview(request):
         'expenses_summary':  expenses_summary,
         'customers_summary': customers_summary,
         'profit_summary':    profit_summary,
+        'tracker_summary':   tracker_summary,
         'today':             today,
     }
     return render(request, 'stores/tenant_overview.html', context)
@@ -800,6 +815,61 @@ def tenant_overview_detail_api(request):
             'open_alerts': open_alerts,
             'recent_sessions': recent_sessions,
         })
+
+    # ── TRACKER ───────────────────────────────────────────────
+    elif module == 'tracker':
+        """
+        Proxy the GeneralTrackerView from general_tracker.py.
+        Accepts the same query params it does:
+            rtype     (maps to general_tracker's 'type')  — default 'sale'
+            date_from / date_to                           — default last 30 days
+            sections                                      — comma-separated
+        Returns the full general_tracker JSON payload unchanged so the
+        frontend can render it with the same TR_* helpers from tracker_report.html.
+        """
+        from accounts.general_tracker import REPORT_REGISTRY, parse_date
+
+        rtype       = request.GET.get('rtype', 'sale').strip().lower()
+        date_from_s = request.GET.get('date_from', str(since_date))
+        date_to_s   = request.GET.get('date_to',   str(today))
+        sections_s  = request.GET.get('sections',  '').strip() or None
+
+        if rtype not in REPORT_REGISTRY:
+            return JsonResponse(
+                {'error': f"Unknown tracker type '{rtype}'. Supported: {', '.join(REPORT_REGISTRY)}"},
+                status=400,
+            )
+
+        d_from = parse_date(date_from_s)
+        d_to   = parse_date(date_to_s)
+        if not d_from or not d_to:
+            return JsonResponse({'error': 'Invalid date_from / date_to.'}, status=400)
+        if d_from > d_to:
+            return JsonResponse({'error': 'date_from must be before date_to.'}, status=400)
+
+        section_filter = [s.strip() for s in sections_s.split(',')] if sections_s else None
+        store_id_int   = int(store_id) if store_id and str(store_id).isdigit() else None
+
+        builder = REPORT_REGISTRY[rtype]
+        try:
+            data = builder.build(
+                user           = request.user,
+                date_from      = d_from,
+                date_to        = d_to,
+                store_id       = store_id_int,
+                section_filter = section_filter,
+            )
+        except Exception:
+            logger.exception(
+                'tracker module error  rtype=%s  from=%s  to=%s',
+                rtype, date_from_s, date_to_s,
+            )
+            return JsonResponse({'error': 'Internal error building tracker report.'}, status=500)
+
+        data['module']         = 'tracker'
+        data['rtype']          = rtype
+        data['report_types']   = list(REPORT_REGISTRY.keys())
+        return JsonResponse(data)
 
     return JsonResponse({'error': f'Unknown module: {module}'}, status=400)
 

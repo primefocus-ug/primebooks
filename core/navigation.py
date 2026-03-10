@@ -114,6 +114,11 @@ class NavigationItem:
 # Enhanced navigation items with parameter support
 NAVIGATION_ITEMS = [
     NavigationItem(
+        name="Tracker",
+        url_name="tracker-report",
+        permission="company.view_company"
+    ),
+    NavigationItem(
         name="Users Dashboard",
         url_name="user_dashboard",
         icon="bi bi-speedometer2",

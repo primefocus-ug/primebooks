@@ -785,7 +785,7 @@ def send_welcome_email(self, company_id, signup_request_id):
                 f"Click the link below to access your workspace instantly\n"
                 f"(valid for 1 hour, single use only):\n\n"
                 f"  {magic_link}\n\n"
-                f"After loggimg in please remember to reset your password. Go to Profile amd click Change Password\n"
+                f"After logging in please remember to reset your password. Go to Profile and click Change Password\n"
                 f"After the link expires, log in normally at:\n"
                 f"  {login_url}\n\n"
                 f"Forgotten your password? Reset it here:\n"
