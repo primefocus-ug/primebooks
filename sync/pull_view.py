@@ -56,14 +56,16 @@ Field mapping notes (server → desktop):
 
 import time
 import logging
+import functools
 from datetime import datetime, timezone as tz
 
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .utils import unix_to_dt, now_unix, ensure_sync_id
+from .utils import unix_to_dt, now_unix, ensure_sync_id, bulk_ensure_sync_ids
 from .serializers import (
     serialize_store, serialize_category, serialize_supplier,
     serialize_product, serialize_stock, serialize_stock_movement,
@@ -231,10 +233,14 @@ def _build_changes_qs(queryset, since_dt, schema_name, serializer_fn, table_name
     """
     Split a queryset into created / updated / deleted buckets.
 
-    NULL sync_id records: their updated_at may predate since_dt, but because
-    their sync_id was never sent, we must include them. We handle this by
-    always including records where sync_id IS NULL in the 'created' bucket,
-    then auto-assigning their sync_ids via ensure_sync_id().
+    Performance improvements:
+      - Single Q-filter query replaces three separate queries (changed_pks,
+        null_pks, pk__in) that were used to combine changed + NULL-sync_id rows.
+      - bulk_ensure_sync_ids() pre-assigns sync_ids to all NULL records in ONE
+        bulk_update() before the serialization loop starts — eliminates one
+        UPDATE per NULL record that ensure_sync_id() would fire inline.
+      - _has_field() is lru_cache'd so _meta scans run once per model, not
+        once per pull request.
 
     Stock special case: Stock.last_updated is used instead of updated_at
     because the server model has no updated_at field.
@@ -243,36 +249,41 @@ def _build_changes_qs(queryset, since_dt, schema_name, serializer_fn, table_name
     updated = []
     deleted = []
 
-    model = queryset.model
-    has_deleted = _has_field(model, "is_deleted")
-    has_updated = _has_field(model, "updated_at") or _has_field(model, "last_updated")
-    has_created = _has_field(model, "created_at")
+    model        = queryset.model
+    has_deleted  = _has_field(model, "is_deleted")
+    has_updated  = _has_field(model, "updated_at") or _has_field(model, "last_updated")
+    has_created  = _has_field(model, "created_at")
+    has_sync_id  = _has_field(model, "sync_id")
 
     # Stock uses last_updated instead of updated_at
-    updated_at_field = "updated_at"
-    if not _has_field(model, "updated_at") and _has_field(model, "last_updated"):
-        updated_at_field = "last_updated"
+    updated_at_field = (
+        "last_updated"
+        if not _has_field(model, "updated_at") and _has_field(model, "last_updated")
+        else "updated_at"
+    )
 
     if since_dt and has_updated:
-        # Delta pull: records changed since last pull
-        qs_changed = queryset.filter(**{f"{updated_at_field}__gte": since_dt})
-        # Also grab any records that still have sync_id=NULL (never pulled)
-        if _has_field(model, "sync_id"):
-            qs_null = queryset.filter(sync_id__isnull=True)
-            changed_pks = set(qs_changed.values_list("pk", flat=True))
-            null_pks = set(qs_null.values_list("pk", flat=True))
-            all_pks = changed_pks | null_pks
-            qs_to_process = queryset.filter(pk__in=all_pks)
+        if has_sync_id:
+            # One query replaces three: changed OR never-synced (NULL sync_id)
+            qs_to_process = queryset.filter(
+                Q(**{f"{updated_at_field}__gte": since_dt}) | Q(sync_id__isnull=True)
+            )
         else:
-            qs_to_process = qs_changed
+            qs_to_process = queryset.filter(**{f"{updated_at_field}__gte": since_dt})
     else:
         # Full pull: everything
         qs_to_process = queryset
 
+    # Pre-assign sync_ids to all NULL records in ONE bulk_update() before the
+    # loop. Without this, ensure_sync_id() inside serializers fires one UPDATE
+    # per NULL record — at 10 000 products that's 10 000 individual UPDATEs.
+    if has_sync_id:
+        bulk_ensure_sync_ids(qs_to_process, table_name, schema_name)
+
     for obj in qs_to_process.iterator(chunk_size=500):
         try:
             is_new_to_desktop = (
-                not obj.sync_id  # Never had a sync_id → brand new to desktop
+                not obj.sync_id
                 or (has_created and since_dt and obj.created_at >= since_dt)
             )
 
@@ -284,12 +295,20 @@ def _build_changes_qs(queryset, since_dt, schema_name, serializer_fn, table_name
             else:
                 updated.append(serializer_fn(obj, schema_name))
         except Exception as e:
-            logger.warning(f"Serialization error {table_name}#{obj.pk}: {e}", exc_info=True)
+            logger.warning(
+                f"Serialization error {table_name}#{obj.pk}: {e}", exc_info=True
+            )
 
     return {"created": created, "updated": updated, "deleted": deleted}
 
 
+@functools.lru_cache(maxsize=32)
 def _has_field(model, field_name: str) -> bool:
+    """
+    Check whether a model has a given field.
+    lru_cache'd per (model, field_name) — _meta scans run once per process,
+    not once per pull request.
+    """
     return hasattr(model, field_name) or any(
         f.name == field_name for f in model._meta.get_fields()
         if hasattr(f, "name")

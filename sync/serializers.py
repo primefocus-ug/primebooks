@@ -6,12 +6,15 @@ Lightweight serializers for the sync protocol.
 Rules:
   1. Every serialized record MUST have a sync_id — never null.
      Old records with sync_id=NULL get one auto-generated here.
+     For bulk pulls, call bulk_ensure_sync_ids() BEFORE iterating
+     so ensure_sync_id() never fires individual UPDATE queries inline.
   2. Decimal fields are serialized as strings to avoid float precision loss.
   3. ForeignKey fields are serialized as sync_id (not integer pk).
      This lets the desktop match relationships without knowing server PKs.
   4. Timestamps are Unix floats throughout.
 """
 
+import time
 import logging
 from typing import Optional
 from .utils import ensure_sync_id, dt_to_unix, safe_decimal
@@ -28,9 +31,6 @@ def _fk_sync_id(related_instance, table_name: str, schema_name: str = "") -> Opt
     if related_instance is None:
         return None
     return ensure_sync_id(related_instance, table_name, schema_name)
-
-
-from typing import Optional
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -127,8 +127,6 @@ def serialize_product(obj, schema_name="") -> dict:
         "created_at":               dt_to_unix(getattr(obj, "created_at", None)),
     }
 
-
-import time
 
 def serialize_stock(obj, schema_name="") -> dict:
     product_sync_id = None
@@ -260,8 +258,6 @@ def serialize_sale(obj, schema_name="") -> dict:
         "created_by_id":         str(getattr(obj.created_by, 'sync_id', '') or ""),
     }
 
-
-import time
 
 def serialize_sale_item(obj, schema_name="") -> dict:
     sale_sync_id = None

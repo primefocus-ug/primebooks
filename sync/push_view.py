@@ -75,10 +75,14 @@ from rest_framework.response import Response
 
 from .utils import (
     parse_sync_id, safe_decimal, safe_int, safe_bool,
-    unix_to_dt, now_unix, get_client_ip,
+    unix_to_dt, now_unix, get_client_ip, bulk_resolve_fk,
 )
 
 logger = logging.getLogger(__name__)
+
+# Hard cap on records accepted per table per push request.
+# Protects the server from runaway clients or malformed payloads.
+MAX_RECORDS_PER_TABLE = 5_000
 
 
 @api_view(["POST"])
@@ -148,25 +152,32 @@ def _push_customers(changes, user, schema_name):
 
     accepted, rejected, conflicts = [], [], []
 
-    for record in changes.get("created", []) + changes.get("updated", []):
-        sync_id = parse_sync_id(record.get("sync_id"))
-        if not sync_id:
-            rejected.append({"sync_id": None, "error": "Missing sync_id"})
-            continue
-        try:
-            with transaction.atomic():
+    records = (changes.get("created", []) + changes.get("updated", []))[:MAX_RECORDS_PER_TABLE]
+
+    # One outer transaction for the entire table batch.
+    # Per-record savepoints provide isolation so a failure on record N
+    # does not roll back the records before it.
+    with transaction.atomic():
+        for record in records:
+            sync_id = parse_sync_id(record.get("sync_id"))
+            if not sync_id:
+                rejected.append({"sync_id": None, "error": "Missing sync_id"})
+                continue
+            sid = transaction.savepoint()
+            try:
                 obj, created = Customer.objects.get_or_create(
                     sync_id=sync_id,
                     defaults=_customer_defaults(record),
                 )
                 if not created:
-                    # Desktop wins on customer data
                     _apply_customer(obj, record)
                     obj.save()
+                transaction.savepoint_commit(sid)
                 accepted.append(sync_id)
-        except Exception as e:
-            logger.warning(f"Customer push error {sync_id}: {e}")
-            rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+            except Exception as e:
+                transaction.savepoint_rollback(sid)
+                logger.warning(f"Customer push error {sync_id}: {e}")
+                rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
 
     for sync_id in changes.get("deleted", []):
         sid = parse_sync_id(sync_id)
@@ -187,32 +198,41 @@ def _push_sales(changes, user, schema_name):
     from customers.models import Customer
 
     accepted, rejected, conflicts = [], [], []
+    records = (changes.get("created", []) + changes.get("updated", []))[:MAX_RECORDS_PER_TABLE]
 
-    for record in changes.get("created", []) + changes.get("updated", []):
-        sync_id = parse_sync_id(record.get("sync_id"))
-        if not sync_id:
-            rejected.append({"sync_id": None, "error": "Missing sync_id"})
-            continue
-        try:
-            with transaction.atomic():
-                store = _resolve_fk(Store, record.get("store_id"))
-                customer = _resolve_fk(Customer, record.get("customer_id"))
+    # Pre-resolve all FK objects in bulk — one query per FK model
+    # instead of one query per record per FK field.
+    store_map    = bulk_resolve_fk(Store,    [r.get("store_id")    for r in records])
+    customer_map = bulk_resolve_fk(Customer, [r.get("customer_id") for r in records])
+
+    with transaction.atomic():
+        for record in records:
+            sync_id = parse_sync_id(record.get("sync_id"))
+            if not sync_id:
+                rejected.append({"sync_id": None, "error": "Missing sync_id"})
+                continue
+            sid = transaction.savepoint()
+            try:
+                store    = store_map.get(str(record.get("store_id", "")))
+                customer = customer_map.get(str(record.get("customer_id", "")))
 
                 obj, created = Sale.objects.get_or_create(
                     sync_id=sync_id,
                     defaults=_sale_defaults(record, store, customer, user),
                 )
                 if not created:
-                    # Desktop wins for sales
                     _apply_sale(obj, record, store, customer)
                     obj.save()
+                transaction.savepoint_commit(sid)
                 accepted.append(sync_id)
-        except IntegrityError as e:
-            logger.warning(f"Sale push IntegrityError {sync_id}: {e}")
-            rejected.append({"sync_id": sync_id, "error": "Duplicate document number"})
-        except Exception as e:
-            logger.warning(f"Sale push error {sync_id}: {e}")
-            rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+            except IntegrityError as e:
+                transaction.savepoint_rollback(sid)
+                logger.warning(f"Sale push IntegrityError {sync_id}: {e}")
+                rejected.append({"sync_id": sync_id, "error": "Duplicate document number"})
+            except Exception as e:
+                transaction.savepoint_rollback(sid)
+                logger.warning(f"Sale push error {sync_id}: {e}")
+                rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
 
     for sync_id in changes.get("deleted", []):
         sid = parse_sync_id(sync_id)
@@ -243,33 +263,37 @@ def _push_sale_items(changes, user, schema_name):
         return [], [], []
 
     accepted, rejected, conflicts = [], [], []
+    records = (changes.get("created", []) + changes.get("updated", []))[:MAX_RECORDS_PER_TABLE]
 
-    for record in changes.get("created", []) + changes.get("updated", []):
-        sync_id = parse_sync_id(record.get("sync_id"))
-        if not sync_id:
-            rejected.append({"sync_id": None, "error": "Missing sync_id"})
-            continue
-        try:
-            with transaction.atomic():
-                sale = _resolve_fk(Sale, record.get("sale_id"))
-                product = _resolve_fk(Product, record.get("product_id"))
+    # Bulk-resolve both FK models in 2 queries instead of 2 per record
+    sale_map    = bulk_resolve_fk(Sale,    [r.get("sale_id")    for r in records])
+    product_map = bulk_resolve_fk(Product, [r.get("product_id") for r in records])
 
-                if not sale:
-                    rejected.append({"sync_id": sync_id, "error": "Parent sale not found"})
-                    continue
+    with transaction.atomic():
+        for record in records:
+            sync_id = parse_sync_id(record.get("sync_id"))
+            if not sync_id:
+                rejected.append({"sync_id": None, "error": "Missing sync_id"})
+                continue
 
+            sale    = sale_map.get(str(record.get("sale_id", "")))
+            product = product_map.get(str(record.get("product_id", "")))
+
+            if not sale:
+                rejected.append({"sync_id": sync_id, "error": "Parent sale not found"})
+                continue
+
+            sid = transaction.savepoint()
+            try:
                 defaults = {
                     "sale":        sale,
                     "product":     product,
                     "quantity":    int(_d(record.get("quantity", 1))),
                     "unit_price":  _d(record.get("unit_price", 0)),
-                    # desktop sends discount_percentage, server field is discount
                     "discount":    _d(record.get("discount_percentage", 0)),
                     "tax_rate":    record.get("tax_rate", "A") or "A",
                     "tax_amount":  _d(record.get("tax_amount", 0)),
-                    # desktop sends subtotal, server field is total_price
                     "total_price": _d(record.get("subtotal", 0)),
-                    # total/line_total is a computed property — not written directly
                 }
                 obj, created = SaleItem.objects.get_or_create(
                     sync_id=sync_id, defaults=defaults
@@ -277,13 +301,15 @@ def _push_sale_items(changes, user, schema_name):
                 if not created:
                     for k, v in defaults.items():
                         setattr(obj, k, v)
-                    obj._skip_deduction = True   # stock already deducted on first save
-                    obj._skip_sale_update = True  # avoid triggering sale.update_totals()
+                    obj._skip_deduction   = True
+                    obj._skip_sale_update = True
                     obj.save()
+                transaction.savepoint_commit(sid)
                 accepted.append(sync_id)
-        except Exception as e:
-            logger.warning(f"SaleItem push error {sync_id}: {e}")
-            rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+            except Exception as e:
+                transaction.savepoint_rollback(sid)
+                logger.warning(f"SaleItem push error {sync_id}: {e}")
+                rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
 
     return accepted, rejected, conflicts
 
@@ -306,43 +332,35 @@ def _push_expenses(changes, user, schema_name):
         return [], [], []
 
     accepted, rejected, conflicts = [], [], []
+    records = (changes.get("created", []) + changes.get("updated", []))[:MAX_RECORDS_PER_TABLE]
 
-    for record in changes.get("created", []) + changes.get("updated", []):
-        sync_id = parse_sync_id(record.get("sync_id"))
-        if not sync_id:
-            rejected.append({"sync_id": None, "error": "Missing sync_id"})
-            continue
-        try:
-            with transaction.atomic():
-                expense_dt = unix_to_dt(record.get("expense_date"))
+    _VALID_PMS = {"CASH", "CREDIT_CARD", "DEBIT_CARD", "BANK_TRANSFER", "DIGITAL_WALLET", "OTHER"}
+    _PM_MAP    = {"MOBILE_MONEY": "DIGITAL_WALLET", "CARD": "CREDIT_CARD"}
+
+    with transaction.atomic():
+        for record in records:
+            sync_id = parse_sync_id(record.get("sync_id"))
+            if not sync_id:
+                rejected.append({"sync_id": None, "error": "Missing sync_id"})
+                continue
+            sid = transaction.savepoint()
+            try:
+                expense_dt   = unix_to_dt(record.get("expense_date"))
                 expense_date = expense_dt.date() if expense_dt else dj_timezone.now().date()
 
-                # Uppercase payment method to match server choices
-                raw_pm = record.get("payment_method", "cash") or "cash"
-                payment_method = raw_pm.upper()
-                # Map desktop values to server choices if needed
-                pm_map = {
-                    "MOBILE_MONEY": "DIGITAL_WALLET",
-                    "BANK_TRANSFER": "BANK_TRANSFER",
-                    "CARD": "CREDIT_CARD",
-                }
-                payment_method = pm_map.get(payment_method, payment_method)
-                # Fallback to OTHER if not a valid choice
-                valid_pms = {"CASH", "CREDIT_CARD", "DEBIT_CARD", "BANK_TRANSFER", "DIGITAL_WALLET", "OTHER"}
-                if payment_method not in valid_pms:
+                raw_pm         = (record.get("payment_method", "cash") or "cash").upper()
+                payment_method = _PM_MAP.get(raw_pm, raw_pm)
+                if payment_method not in _VALID_PMS:
                     payment_method = "OTHER"
 
                 defaults = {
-                    # desktop title → server description (main field)
                     "description":    record.get("title", "") or record.get("description", ""),
-                    # desktop description/notes → server notes
                     "notes":          record.get("notes", "") or record.get("description", ""),
                     "amount":         _d(record.get("amount", 0)),
                     "date":           expense_date,
                     "payment_method": payment_method,
                     "user":           user,
                 }
-
                 obj, created = Expense.objects.get_or_create(
                     sync_id=sync_id, defaults=defaults
                 )
@@ -350,20 +368,19 @@ def _push_expenses(changes, user, schema_name):
                     for k, v in defaults.items():
                         setattr(obj, k, v)
                     obj.save()
+                transaction.savepoint_commit(sid)
                 accepted.append(sync_id)
-        except Exception as e:
-            logger.warning(f"Expense push error {sync_id}: {e}")
-            rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+            except Exception as e:
+                transaction.savepoint_rollback(sid)
+                logger.warning(f"Expense push error {sync_id}: {e}")
+                rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
 
     for sync_id in changes.get("deleted", []):
         sid = parse_sync_id(sync_id)
         if not sid:
             continue
-        try:
-            # Expense has no status field — soft delete not supported, skip silently
-            accepted.append(sid)
-        except Exception as e:
-            rejected.append({"sync_id": sid, "error": str(e)[:200]})
+        # Expense has no status field — soft delete not supported, accept silently
+        accepted.append(sid)
 
     return accepted, rejected, conflicts
 
@@ -372,14 +389,20 @@ def _push_categories(changes, user, schema_name):
     from inventory.models import Category
 
     accepted, rejected, conflicts = [], [], []
+    records = (changes.get("created", []) + changes.get("updated", []))[:MAX_RECORDS_PER_TABLE]
 
-    for record in changes.get("created", []) + changes.get("updated", []):
-        sync_id = parse_sync_id(record.get("sync_id"))
-        if not sync_id:
-            rejected.append({"sync_id": None, "error": "Missing sync_id"})
-            continue
-        try:
-            with transaction.atomic():
+    # Collect conflict serializations after the transaction to avoid
+    # nested serializer DB calls inside the write transaction.
+    conflict_objs = []
+
+    with transaction.atomic():
+        for record in records:
+            sync_id = parse_sync_id(record.get("sync_id"))
+            if not sync_id:
+                rejected.append({"sync_id": None, "error": "Missing sync_id"})
+                continue
+            sid = transaction.savepoint()
+            try:
                 obj, created = Category.objects.get_or_create(
                     sync_id=sync_id,
                     defaults={
@@ -390,14 +413,19 @@ def _push_categories(changes, user, schema_name):
                         "is_active":     safe_bool(record.get("is_active", True)),
                     }
                 )
+                transaction.savepoint_commit(sid)
                 if not created:
-                    # Server wins for categories — send conflict back
-                    from .serializers import serialize_category
-                    conflicts.append(serialize_category(obj, schema_name))
+                    conflict_objs.append(obj)
                 else:
                     accepted.append(sync_id)
-        except Exception as e:
-            rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+            except Exception as e:
+                transaction.savepoint_rollback(sid)
+                rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+
+    # Serialize conflicts outside the write transaction
+    from .serializers import serialize_category
+    for obj in conflict_objs:
+        conflicts.append(serialize_category(obj, schema_name))
 
     return accepted, rejected, conflicts
 
@@ -406,14 +434,17 @@ def _push_suppliers(changes, user, schema_name):
     from inventory.models import Supplier
 
     accepted, rejected, conflicts = [], [], []
+    records      = (changes.get("created", []) + changes.get("updated", []))[:MAX_RECORDS_PER_TABLE]
+    conflict_objs = []
 
-    for record in changes.get("created", []) + changes.get("updated", []):
-        sync_id = parse_sync_id(record.get("sync_id"))
-        if not sync_id:
-            rejected.append({"sync_id": None, "error": "Missing sync_id"})
-            continue
-        try:
-            with transaction.atomic():
+    with transaction.atomic():
+        for record in records:
+            sync_id = parse_sync_id(record.get("sync_id"))
+            if not sync_id:
+                rejected.append({"sync_id": None, "error": "Missing sync_id"})
+                continue
+            sid = transaction.savepoint()
+            try:
                 obj, created = Supplier.objects.get_or_create(
                     sync_id=sync_id,
                     defaults={
@@ -427,13 +458,18 @@ def _push_suppliers(changes, user, schema_name):
                         "is_active":      safe_bool(record.get("is_active", True)),
                     }
                 )
+                transaction.savepoint_commit(sid)
                 if not created:
-                    from .serializers import serialize_supplier
-                    conflicts.append(serialize_supplier(obj, schema_name))
+                    conflict_objs.append(obj)
                 else:
                     accepted.append(sync_id)
-        except Exception as e:
-            rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+            except Exception as e:
+                transaction.savepoint_rollback(sid)
+                rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+
+    from .serializers import serialize_supplier
+    for obj in conflict_objs:
+        conflicts.append(serialize_supplier(obj, schema_name))
 
     return accepted, rejected, conflicts
 
@@ -442,16 +478,23 @@ def _push_products(changes, user, schema_name):
     from inventory.models import Product, Category, Supplier
 
     accepted, rejected, conflicts = [], [], []
+    records       = (changes.get("created", []) + changes.get("updated", []))[:MAX_RECORDS_PER_TABLE]
+    conflict_objs = []
 
-    for record in changes.get("created", []) + changes.get("updated", []):
-        sync_id = parse_sync_id(record.get("sync_id"))
-        if not sync_id:
-            rejected.append({"sync_id": None, "error": "Missing sync_id"})
-            continue
-        try:
-            with transaction.atomic():
-                category = _resolve_fk(Category, record.get("category_id"))
-                supplier = _resolve_fk(Supplier, record.get("supplier_id"))
+    # Bulk-resolve category and supplier FKs — 2 queries for the whole batch
+    category_map = bulk_resolve_fk(Category, [r.get("category_id") for r in records])
+    supplier_map = bulk_resolve_fk(Supplier, [r.get("supplier_id") for r in records])
+
+    with transaction.atomic():
+        for record in records:
+            sync_id = parse_sync_id(record.get("sync_id"))
+            if not sync_id:
+                rejected.append({"sync_id": None, "error": "Missing sync_id"})
+                continue
+            sid = transaction.savepoint()
+            try:
+                category = category_map.get(str(record.get("category_id", "")))
+                supplier = supplier_map.get(str(record.get("supplier_id", "")))
 
                 obj, created = Product.objects.get_or_create(
                     sync_id=sync_id,
@@ -471,16 +514,21 @@ def _push_products(changes, user, schema_name):
                         "supplier":            supplier,
                     }
                 )
+                transaction.savepoint_commit(sid)
                 if not created:
-                    # Server wins for products
-                    from .serializers import serialize_product
-                    conflicts.append(serialize_product(obj, schema_name))
+                    conflict_objs.append(obj)
                 else:
                     accepted.append(sync_id)
-        except IntegrityError:
-            rejected.append({"sync_id": sync_id, "error": "SKU already exists"})
-        except Exception as e:
-            rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+            except IntegrityError:
+                transaction.savepoint_rollback(sid)
+                rejected.append({"sync_id": sync_id, "error": "SKU already exists"})
+            except Exception as e:
+                transaction.savepoint_rollback(sid)
+                rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+
+    from .serializers import serialize_product
+    for obj in conflict_objs:
+        conflicts.append(serialize_product(obj, schema_name))
 
     return accepted, rejected, conflicts
 
@@ -494,16 +542,22 @@ def _push_stock(changes, user, schema_name):
     from stores.models import Store
 
     accepted, rejected, conflicts = [], [], []
+    records = (changes.get("created", []) + changes.get("updated", []))[:MAX_RECORDS_PER_TABLE]
 
-    for record in changes.get("created", []) + changes.get("updated", []):
-        sync_id = parse_sync_id(record.get("sync_id"))
-        if not sync_id:
-            rejected.append({"sync_id": None, "error": "Missing sync_id"})
-            continue
-        try:
-            with transaction.atomic():
-                product = _resolve_fk(Product, record.get("product_id"))
-                store = _resolve_fk(Store, record.get("store_id"))
+    # Bulk-resolve FK models — 2 queries for the whole batch
+    product_map = bulk_resolve_fk(Product, [r.get("product_id") for r in records])
+    store_map   = bulk_resolve_fk(Store,   [r.get("store_id")   for r in records])
+
+    with transaction.atomic():
+        for record in records:
+            sync_id = parse_sync_id(record.get("sync_id"))
+            if not sync_id:
+                rejected.append({"sync_id": None, "error": "Missing sync_id"})
+                continue
+            sid = transaction.savepoint()
+            try:
+                product = product_map.get(str(record.get("product_id", "")))
+                store   = store_map.get(str(record.get("store_id", "")))
 
                 defaults = {
                     "product":             product,
@@ -516,13 +570,14 @@ def _push_stock(changes, user, schema_name):
                     sync_id=sync_id, defaults=defaults
                 )
                 if not created:
-                    # Desktop wins for stock quantities
                     for k, v in defaults.items():
                         setattr(obj, k, v)
                     obj.save()
+                transaction.savepoint_commit(sid)
                 accepted.append(sync_id)
-        except Exception as e:
-            rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+            except Exception as e:
+                transaction.savepoint_rollback(sid)
+                rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
 
     return accepted, rejected, conflicts
 
@@ -532,16 +587,23 @@ def _push_stock_movements(changes, user, schema_name):
     from stores.models import Store
 
     accepted, rejected, conflicts = [], [], []
+    records       = (changes.get("created", []) + changes.get("updated", []))[:MAX_RECORDS_PER_TABLE]
+    conflict_objs = []
 
-    for record in changes.get("created", []) + changes.get("updated", []):
-        sync_id = parse_sync_id(record.get("sync_id"))
-        if not sync_id:
-            rejected.append({"sync_id": None, "error": "Missing sync_id"})
-            continue
-        try:
-            with transaction.atomic():
-                product = _resolve_fk(Product, record.get("product_id"))
-                store = _resolve_fk(Store, record.get("store_id"))
+    # Bulk-resolve FK models — 2 queries for the whole batch
+    product_map = bulk_resolve_fk(Product, [r.get("product_id") for r in records])
+    store_map   = bulk_resolve_fk(Store,   [r.get("store_id")   for r in records])
+
+    with transaction.atomic():
+        for record in records:
+            sync_id = parse_sync_id(record.get("sync_id"))
+            if not sync_id:
+                rejected.append({"sync_id": None, "error": "Missing sync_id"})
+                continue
+            sid = transaction.savepoint()
+            try:
+                product = product_map.get(str(record.get("product_id", "")))
+                store   = store_map.get(str(record.get("store_id", "")))
 
                 defaults = {
                     "product":       product,
@@ -557,14 +619,20 @@ def _push_stock_movements(changes, user, schema_name):
                 obj, created = StockMovement.objects.get_or_create(
                     sync_id=sync_id, defaults=defaults
                 )
+                transaction.savepoint_commit(sid)
                 if not created:
                     # Movements are append-only — send conflict back
-                    from .serializers import serialize_stock_movement
-                    conflicts.append(serialize_stock_movement(obj, schema_name))
+                    conflict_objs.append(obj)
                 else:
                     accepted.append(sync_id)
-        except Exception as e:
-            rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+            except Exception as e:
+                transaction.savepoint_rollback(sid)
+                rejected.append({"sync_id": sync_id, "error": str(e)[:200]})
+
+    # Serialize conflicts outside the write transaction
+    from .serializers import serialize_stock_movement
+    for obj in conflict_objs:
+        conflicts.append(serialize_stock_movement(obj, schema_name))
 
     return accepted, rejected, conflicts
 

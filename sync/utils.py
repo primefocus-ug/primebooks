@@ -134,3 +134,66 @@ def get_client_ip(request) -> Optional[str]:
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bulk FK resolution
+# ─────────────────────────────────────────────────────────────────────────────
+
+def bulk_resolve_fk(model_class, sync_id_values: list) -> dict:
+    """
+    Resolve a list of sync_id values to model instances in ONE query.
+    Returns {sync_id_str: instance} for all found records.
+
+    Replaces per-record _resolve_fk() calls inside push handler loops.
+    For 500 sale items with store_id + product_id FKs this cuts
+    1 000 individual SELECTs down to 2 bulk IN queries.
+
+    Usage:
+        store_map = bulk_resolve_fk(Store, [r.get("store_id") for r in records])
+        store = store_map.get(record.get("store_id"))
+    """
+    valid_ids = []
+    for v in sync_id_values:
+        sid = parse_sync_id(v)
+        if sid:
+            valid_ids.append(sid)
+
+    if not valid_ids:
+        return {}
+
+    return {
+        str(obj.sync_id): obj
+        for obj in model_class.objects.filter(sync_id__in=valid_ids)
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bulk sync_id assignment
+# ─────────────────────────────────────────────────────────────────────────────
+
+def bulk_ensure_sync_ids(queryset, table_name: str, schema_name: str = "") -> None:
+    """
+    Assign deterministic sync_ids to all NULL-sync_id records in a queryset
+    using a single bulk_update() instead of one UPDATE per record.
+
+    Call this BEFORE iterating the queryset for serialization so that
+    ensure_sync_id() inside serializers never fires individual UPDATEs
+    during the pull loop.
+
+    Only touches records where sync_id IS NULL — safe to call on any queryset.
+    """
+    null_qs = queryset.filter(sync_id__isnull=True)
+    to_update = list(null_qs)
+    if not to_update:
+        return
+
+    for obj in to_update:
+        seed = f"{schema_name}:{table_name}:{obj.pk}"
+        obj.sync_id = str(uuid.uuid5(SYNC_ID_NAMESPACE, seed))
+
+    # One bulk UPDATE instead of N individual UPDATEs
+    type(to_update[0]).objects.bulk_update(to_update, ["sync_id"])
+    logger.debug(
+        f"bulk_ensure_sync_ids: assigned {len(to_update)} sync_ids for {table_name}"
+    )
