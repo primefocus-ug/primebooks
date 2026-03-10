@@ -1684,13 +1684,20 @@ const TAB = {
 /* ── AJAX loader ────────────────────────────────────────────────── */
 let _ctrl = null;
 
-async function loadTab(tabName, params) {
+async function loadTab(tabName, params, silent) {
   const meta = TAB[tabName];
   if (!meta) return;
 
-  // Cancel any in-flight request
-  if (_ctrl) _ctrl.abort();
-  _ctrl = new AbortController();
+  // For silent background refresh, use a separate controller so we don't
+  // cancel the visible tab's in-flight request
+  let ctrl;
+  if (silent) {
+    ctrl = new AbortController();
+  } else {
+    if (_ctrl) _ctrl.abort();
+    _ctrl = new AbortController();
+    ctrl  = _ctrl;
+  }
 
   // Build clean URLSearchParams — deduplicate this tab's page param
   const qs = new URLSearchParams(
@@ -1701,17 +1708,19 @@ async function loadTab(tabName, params) {
   qs.delete(meta.pageParam);
   if (pageVal && pageVal !== '1') qs.set(meta.pageParam, pageVal);
 
-  // Sync URL bar — Back/Fwd and F5 both work
-  history.pushState({ tab: tabName, qs: qs.toString() },
-                    '', '?' + qs.toString() + '#' + meta.el);
+  // Sync URL bar only for the active (non-silent) load
+  if (!silent) {
+    history.pushState({ tab: tabName, qs: qs.toString() },
+                      '', '?' + qs.toString() + '#' + meta.el);
+  }
 
-  // Fade the pane
+  // Fade the pane only for active loads
   const paneEl = document.getElementById(meta.pane);
-  if (paneEl) { paneEl.style.opacity = '.35'; paneEl.style.pointerEvents = 'none'; }
+  if (paneEl && !silent) { paneEl.style.opacity = '.35'; paneEl.style.pointerEvents = 'none'; }
 
   try {
     const resp = await fetch('?' + qs.toString(), {
-      signal:  _ctrl.signal,
+      signal:  ctrl.signal,
       headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' },
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -1732,24 +1741,24 @@ async function loadTab(tabName, params) {
     if (newHTML === null) {
       console.warn('[InvHub] No partial for tab:', tabName,
         '\nEnsure inventory/partials/inv_' + tabName + '.html exists with <meta name="inv-partial">');
-      if (paneEl) { paneEl.style.opacity = ''; paneEl.style.pointerEvents = ''; }
-      tst('Could not load tab — see console', 'error');
+      if (paneEl && !silent) { paneEl.style.opacity = ''; paneEl.style.pointerEvents = ''; }
+      if (!silent) tst('Could not load tab — see console', 'error');
       return;
     }
 
     if (paneEl) {
       paneEl.innerHTML = newHTML;
-      paneEl.style.opacity = '';
-      paneEl.style.pointerEvents = '';
+      if (!silent) { paneEl.style.opacity = ''; paneEl.style.pointerEvents = ''; }
     }
 
     bindPaneEvents(tabName);
-    _activateTab(meta.el);
+    // Only switch the visible tab for active (non-silent) loads
+    if (!silent) _activateTab(meta.el);
 
   } catch (err) {
     if (err.name === 'AbortError') return;
-    if (paneEl) { paneEl.style.opacity = ''; paneEl.style.pointerEvents = ''; }
-    tst('Failed to load — please try again', 'error');
+    if (paneEl && !silent) { paneEl.style.opacity = ''; paneEl.style.pointerEvents = ''; }
+    if (!silent) tst('Failed to load — please try again', 'error');
     console.error('[InvHub]', err);
   }
 }
@@ -2015,9 +2024,16 @@ document.getElementById('smForm')?.addEventListener('submit', function(e) {
     body: JSON.stringify({adjustments:[{product_id:parseInt(pid),store_id:parseInt(sid),adjustment_type:m[adj]||'add',quantity:parseFloat(qty),reason:rsn+(nt?' – '+nt:'')}]})
   }).then(()=>{
     cM('smModal'); tst('Stock adjusted!','success');
-    // Refresh current stock pane without reload
-    const curTab = new URLSearchParams(window.location.search).get('_tab');
-    if (curTab === 'stock') loadTab('stock', new URLSearchParams(window.location.search));
+    // Refresh the active tab immediately, and also refresh the other tab silently
+    const qs = new URLSearchParams(window.location.search);
+    const curTab = qs.get('_tab') || 'products';
+    if (curTab === 'stock') {
+      loadTab('stock', qs);
+      loadTab('products', qs, true);
+    } else {
+      loadTab('products', qs);
+      loadTab('stock', qs, true);
+    }
   }).catch(()=>tst('Adjustment failed','error'))
     .finally(()=>{ submitBtn.innerHTML=org; submitBtn.disabled=false; });
 });
@@ -2304,8 +2320,16 @@ async function submitSA() {
     if (data.ok) {
       tst(data.message || 'Adjustment saved', 'success');
       cSA();
-      // Refresh stock pane AJAX to show new quantities
-      loadTab('stock', new URLSearchParams(window.location.search));
+      // Refresh the active tab immediately, and also refresh the other tab silently
+      const qs = new URLSearchParams(window.location.search);
+      const curTab = qs.get('_tab') || 'stock';
+      if (curTab === 'stock') {
+        loadTab('stock', qs);
+        loadTab('products', qs, true);
+      } else {
+        loadTab('products', qs);
+        loadTab('stock', qs, true);
+      }
     } else {
       tst(data.error || 'Adjustment failed', 'error');
     }
