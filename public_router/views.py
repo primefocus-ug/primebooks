@@ -550,6 +550,13 @@ class TenantSignupView(CreateView):
                 signup_request.referral_source = self.request.GET.get('ref', '')[:100]
                 signup_request.save()
 
+                # Persist password to workflow so the task can retrieve it
+                # securely without it being passed as a broker message argument.
+                TenantApprovalWorkflow.objects.update_or_create(
+                    signup_request=signup_request,
+                    defaults={'generated_password': password},
+                )
+
             # Queue async tenant creation (outside transaction)
             task = create_tenant_async.apply_async(
                 args=[str(signup_request.request_id)],
