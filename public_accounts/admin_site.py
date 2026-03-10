@@ -711,24 +711,25 @@ class PublicModelAdmin:
         if request.method == 'POST':
             form = FormClass(request.POST, request.FILES, instance=obj)
             if form.is_valid():
-                # Capture old status BEFORE saving to detect PENDING/FAILED → PROCESSING
-                old_status = getattr(obj, 'status', None)
+                # Read old_status from the DB before the form mutates the instance.
+                # Django's ModelForm updates instance fields in-place during is_valid(),
+                # so getattr(obj, 'status') at this point already holds the NEW value
+                # from POST data — not the value currently stored in the database.
+                from public_router.models import TenantSignupRequest as _TSR
+                old_status = (
+                    _TSR.objects.filter(pk=obj.pk).values_list('status', flat=True).first()
+                    if isinstance(obj, _TSR) else None
+                )
 
                 obj = form.save()
 
                 # ── Tenant provisioning hook ──────────────────────────────────
-                # The generic change_view just calls form.save() — it has no business logic.
-                # When a TenantSignupRequest is set to PROCESSING and the tenant doesn't
-                # exist yet, we must fire the Celery task here. This is exactly what was
-                # missing: changing status to PROCESSING in the admin did nothing because
-                # no code was watching for that transition and dispatching the task.
-                from public_router.models import TenantSignupRequest as _TSR
                 if isinstance(obj, _TSR):
                     new_status = obj.status
                     should_provision = (
                         new_status == 'PROCESSING'
                         and not obj.tenant_created
-                        and old_status in ('PENDING', 'FAILED', 'PROCESSING')
+                        and old_status in ('PENDING', 'FAILED')  # never re-queue if already PROCESSING
                     )
                     if should_provision:
                         import logging as _logging
