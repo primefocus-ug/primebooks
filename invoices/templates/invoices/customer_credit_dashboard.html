@@ -1,283 +1,419 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load humanize %}
 {% load custom_filters %}
 
 {% block title %}Customer Credit Dashboard{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
-{% endblock %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════
+   DESIGN SYSTEM — CUSTOMER CREDIT DASHBOARD
+   Matches: Premium Sales Detail theme
+   ═══════════════════════════════════════════════════ */
+:root,
+[data-theme="light"] {
+  --ink:        #f5f4fb;
+  --ink-soft:   #ffffff;
+  --border:     rgba(0,0,0,0.07);
+  --border-em:  rgba(0,0,0,0.13);
+  --text-1:     #0d0c1a;
+  --text-2:     #4a4868;
+  --text-3:     #9896b2;
+  --emerald:    #0f9e62;
+  --rose:       #d63060;
+  --sky:        #1a7fc4;
+  --violet:     #6c4fcf;
+  --amber:      #c47d0e;
+  --gold:       #b07d1a;
+  --white-10:   rgba(0,0,0,0.05);
+  --white-05:   rgba(0,0,0,0.025);
+  --shadow-1:   0 1px 3px rgba(0,0,0,0.08);
+  --shadow-2:   0 4px 16px rgba(0,0,0,0.10);
+  --r-sm:8px; --r-md:14px; --r-lg:20px; --r-xl:28px;
+  --font-head: 'Syne', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+[data-theme="dark"] {
+  --ink:        #0a0a0f;
+  --ink-soft:   #16161e;
+  --border:     rgba(255,255,255,0.07);
+  --border-em:  rgba(255,255,255,0.14);
+  --text-1:     #f0eff8;
+  --text-2:     #a8a7bf;
+  --text-3:     #66657e;
+  --emerald:    #3ecf8e;
+  --rose:       #f06292;
+  --sky:        #60b9f8;
+  --violet:     #9b7fe8;
+  --amber:      #f5a623;
+  --gold:       #e8c96a;
+  --white-10:   rgba(255,255,255,0.10);
+  --white-05:   rgba(255,255,255,0.05);
+  --shadow-1:   0 1px 3px rgba(0,0,0,0.4);
+  --shadow-2:   0 4px 16px rgba(0,0,0,0.5);
+}
 
+*, *::before, *::after { box-sizing: border-box; }
+body { font-family: var(--font-body); background: var(--ink); color: var(--text-1); transition: background 0.3s, color 0.3s; }
+
+body::before {
+  content:''; position:fixed; inset:0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events:none; z-index:0; opacity:0.6;
+}
+
+.page-wrap { position:relative; z-index:1; padding:2rem 1.5rem 4rem; }
+.ambient-glow { position:fixed; top:-200px; right:-200px; width:700px; height:700px; background:radial-gradient(circle,rgba(155,127,232,0.08) 0%,transparent 70%); pointer-events:none; z-index:0; }
+.ambient-glow-2 { position:fixed; bottom:-300px; left:-150px; width:600px; height:600px; background:radial-gradient(circle,rgba(15,158,98,0.05) 0%,transparent 70%); pointer-events:none; z-index:0; }
+[data-theme="light"] .ambient-glow  { background:radial-gradient(circle,rgba(108,79,207,0.05) 0%,transparent 70%); }
+[data-theme="light"] .ambient-glow-2 { background:radial-gradient(circle,rgba(15,158,98,0.04) 0%,transparent 70%); }
+
+/* Page Header */
+.page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:2rem; flex-wrap:wrap; gap:1rem; animation:heroIn 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+@keyframes heroIn { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:none} }
+.header-accent { width:3px; height:2rem; background:linear-gradient(180deg,var(--violet),var(--sky)); border-radius:2px; margin-right:0.875rem; flex-shrink:0; }
+.page-title { font-family:var(--font-head); font-size:clamp(1.4rem,3vw,2rem); font-weight:800; color:var(--text-1); margin:0 0 0.2rem; }
+.page-subtitle { color:var(--text-3); font-size:0.875rem; margin:0; }
+
+/* Buttons */
+.btn-act {
+  display:inline-flex; align-items:center; gap:0.4rem;
+  padding:0.55rem 1.1rem; border-radius:var(--r-sm);
+  font-size:0.875rem; font-weight:600; font-family:var(--font-body);
+  border:1px solid var(--border-em); background:var(--white-10);
+  color:var(--text-1); cursor:pointer; text-decoration:none;
+  transition:all 0.2s; white-space:nowrap;
+}
+.btn-act:hover { transform:translateY(-1px); box-shadow:var(--shadow-1); color:var(--text-1); }
+.btn-act.primary { background:var(--violet); border-color:transparent; color:#fff; }
+.btn-act.primary:hover { background:#7c5ed4; color:#fff; }
+.btn-act.success { background:var(--emerald); border-color:transparent; color:#fff; }
+.btn-act.success:hover { background:#0a8a55; color:#fff; }
+
+/* Metric Cards */
+.metric-card { background:var(--ink-soft); border:1px solid var(--border); border-radius:var(--r-lg); padding:1.5rem; cursor:pointer; transition:all 0.3s; animation:cardIn 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+@keyframes cardIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+.metric-card:hover { transform:translateY(-4px); box-shadow:var(--shadow-2); border-color:var(--violet); }
+.metric-icon { width:50px; height:50px; border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; font-size:1.3rem; margin-bottom:0.875rem; }
+.mi-violet  { background:rgba(155,127,232,0.15); color:var(--violet); }
+.mi-amber   { background:rgba(196,125,14,0.12);  color:var(--amber); }
+.mi-emerald { background:rgba(15,158,98,0.15);   color:var(--emerald); }
+.mi-rose    { background:rgba(214,48,96,0.15);   color:var(--rose); }
+.metric-label { font-family:var(--font-mono); font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-3); margin-bottom:0.3rem; }
+.metric-value { font-family:var(--font-head); font-size:1.5rem; font-weight:800; color:var(--text-1); line-height:1.1; }
+
+/* Section Card */
+.section-card { background:var(--ink-soft); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; margin-bottom:1.5rem; box-shadow:var(--shadow-1); animation:cardIn 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+.section-card:hover { box-shadow:var(--shadow-2); }
+.section-header { display:flex; align-items:center; justify-content:space-between; padding:1.1rem 1.75rem; border-bottom:1px solid var(--border); background:var(--white-05); }
+.section-title { display:flex; align-items:center; gap:0.6rem; font-family:var(--font-head); font-size:0.95rem; font-weight:700; color:var(--text-1); margin:0; }
+.section-icon { width:32px; height:32px; border-radius:var(--r-sm); display:flex; align-items:center; justify-content:center; font-size:0.875rem; }
+.icon-violet  { background:rgba(155,127,232,0.15); color:var(--violet); }
+.icon-emerald { background:rgba(62,207,142,0.15);  color:var(--emerald); }
+.icon-sky     { background:rgba(96,185,248,0.15);   color:var(--sky); }
+.icon-amber   { background:rgba(196,125,14,0.12);   color:var(--amber); }
+.section-body { padding:1.5rem 1.75rem; }
+
+/* Status pills */
+.status-pill { display:inline-flex; align-items:center; gap:0.3rem; padding:0.25rem 0.6rem; border-radius:50px; font-size:0.68rem; font-weight:600; font-family:var(--font-mono); border:1px solid transparent; }
+.status-pill .dot { width:4px; height:4px; border-radius:50%; flex-shrink:0; }
+.sp-good    { background:rgba(15,158,98,0.12);  color:var(--emerald); border-color:rgba(15,158,98,0.2);  }
+.sp-good .dot  { background:var(--emerald); }
+.sp-warn    { background:rgba(196,125,14,0.12); color:var(--amber);   border-color:rgba(196,125,14,0.2); }
+.sp-warn .dot  { background:var(--amber); }
+.sp-susp    { background:rgba(214,48,96,0.12);  color:var(--rose);    border-color:rgba(214,48,96,0.2);  }
+.sp-susp .dot  { background:var(--rose); }
+.sp-block   { background:var(--white-10);        color:var(--text-2);  border-color:var(--border-em); }
+.sp-block .dot { background:var(--text-3); }
+
+/* Util bar */
+.util-bar { height:8px; background:var(--white-10); border-radius:10px; overflow:hidden; }
+.util-bar-fill { height:100%; border-radius:10px; transition:width 0.6s ease; }
+.ub-good   { background:linear-gradient(90deg,var(--emerald),#2dd47a); }
+.ub-warn   { background:linear-gradient(90deg,var(--amber),#e8a830); }
+.ub-danger { background:linear-gradient(90deg,var(--rose),#e85080); }
+.ub-violet { background:linear-gradient(90deg,var(--violet),var(--sky)); }
+
+/* Distribution table */
+.dist-table { width:100%; border-collapse:collapse; }
+.dist-table tr { border-bottom:1px solid var(--border); }
+.dist-table tr:last-child { border-bottom:none; }
+.dist-table td { padding:0.75rem 0; vertical-align:middle; }
+.dist-table td:last-child { text-align:right; font-family:var(--font-mono); font-weight:600; color:var(--text-1); }
+
+/* Customer table */
+.cust-table { width:100%; border-collapse:collapse; }
+.cust-table thead th { font-family:var(--font-mono); font-size:0.63rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-3); padding:0.75rem 1rem; border-bottom:1px solid var(--border-em); background:var(--white-05); white-space:nowrap; }
+.cust-table tbody tr { border-bottom:1px solid var(--border); transition:background 0.15s; }
+.cust-table tbody tr:hover { background:var(--white-05); }
+.cust-table tbody tr:last-child { border-bottom:none; }
+.cust-table td { padding:0.875rem 1rem; vertical-align:middle; }
+.cust-avatar { width:36px; height:36px; border-radius:50%; background:rgba(155,127,232,0.15); color:var(--violet); display:flex; align-items:center; justify-content:center; font-size:0.85rem; font-weight:700; flex-shrink:0; }
+.cust-name { font-weight:600; color:var(--text-1); font-size:0.9rem; }
+.cust-sub  { font-family:var(--font-mono); font-size:0.72rem; color:var(--text-3); margin-top:1px; }
+.mono-val  { font-family:var(--font-mono); font-size:0.85rem; font-weight:600; }
+
+/* Search bar */
+.search-wrap { position:relative; }
+.search-wrap input { background:var(--ink); border:1px solid var(--border-em); color:var(--text-1); border-radius:var(--r-sm); padding:0.5rem 0.875rem 0.5rem 2.25rem; font-family:var(--font-body); font-size:0.875rem; width:280px; transition:border-color 0.2s; }
+.search-wrap input:focus { outline:none; border-color:var(--violet); box-shadow:0 0 0 3px rgba(108,79,207,0.12); }
+.search-wrap input::placeholder { color:var(--text-3); }
+.search-wrap i { position:absolute; left:0.7rem; top:50%; transform:translateY(-50%); color:var(--text-3); font-size:0.875rem; pointer-events:none; }
+
+/* Action btn */
+.act-btn { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:var(--r-sm); border:1px solid var(--border-em); background:var(--white-10); color:var(--text-2); font-size:0.8rem; text-decoration:none; transition:all 0.2s; cursor:pointer; }
+.act-btn:hover { background:var(--violet); border-color:transparent; color:#fff; }
+
+/* Empty state */
+.empty-state { text-align:center; padding:3rem 1.5rem; }
+.empty-state i { font-size:3rem; opacity:0.2; display:block; margin-bottom:0.75rem; }
+.empty-state p { color:var(--text-3); font-size:0.875rem; margin:0; }
+
+@media (max-width:768px) {
+  .metric-value { font-size:1.2rem; }
+  .search-wrap input { width:180px; }
+}
+</style>
+{% endblock %}
 
 {% block breadcrumb_items %}
 {% if perms.accounts.view_customuser %}
-    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+  <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
 {% endif %}
 {% if perms.invoices.view_invoice %}
-    <li class="breadcrumb-item"><a href="{% url 'invoices:dashboard' %}">Invoices</a></li>
+  <li class="breadcrumb-item"><a href="{% url 'invoices:dashboard' %}">Invoices</a></li>
 {% endif %}
-    <li class="breadcrumb-item active">Customer Credit Dashboard</li>
+<li class="breadcrumb-item active">Customer Credit Dashboard</li>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h2 class="mb-1"><i class="bi bi-credit-card-2-front me-2"></i>Customer Credit Dashboard</h2>
-            <p class="text-muted mb-0">Monitor customer credit accounts and outstanding balances</p>
+<div class="ambient-glow"></div>
+<div class="ambient-glow-2"></div>
+
+<div class="page-wrap">
+
+  <!-- Page Header -->
+  <div class="page-header">
+    <div style="display:flex; align-items:center;">
+      <div class="header-accent"></div>
+      <div>
+        <h1 class="page-title">Customer Credit Dashboard</h1>
+        <p class="page-subtitle">Monitor customer credit accounts and outstanding balances</p>
+      </div>
+    </div>
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+      {% if perms.invoices.view_invoice %}
+      <a href="{% url 'invoices:credit_aging_report' %}" class="btn-act">
+        <i class="bi bi-graph-up"></i> Aging Report
+      </a>
+      <a href="{% url 'invoices:export_credit_aging_csv' %}" class="btn-act success">
+        <i class="bi bi-file-earmark-excel"></i> Export CSV
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Summary Metric Cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-3 col-6">
+      <div class="metric-card">
+        <div class="metric-icon mi-violet"><i class="bi bi-wallet2"></i></div>
+        <div class="metric-label">Total Credit Limit</div>
+        <div class="metric-value">UGX {{ total_credit_limit|floatformat:0|default:"0"|intcomma }}</div>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="metric-card">
+        <div class="metric-icon mi-amber"><i class="bi bi-hourglass-split"></i></div>
+        <div class="metric-label">Credit Used</div>
+        <div class="metric-value" style="color:var(--amber);">UGX {{ total_credit_used|floatformat:0|default:"0"|intcomma }}</div>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="metric-card">
+        <div class="metric-icon mi-emerald"><i class="bi bi-check-circle"></i></div>
+        <div class="metric-label">Available Credit</div>
+        <div class="metric-value" style="color:var(--emerald);">UGX {{ total_credit_available|floatformat:0|default:"0"|intcomma }}</div>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="metric-card">
+        <div class="metric-icon mi-rose"><i class="bi bi-exclamation-triangle"></i></div>
+        <div class="metric-label">Customers Overdue</div>
+        <div class="metric-value" style="color:var(--rose);">{{ customers_overdue }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts Row -->
+  <div class="row g-3 mb-4">
+    <!-- Credit Utilization -->
+    <div class="col-lg-6">
+      <div class="section-card">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-violet"><i class="bi bi-pie-chart"></i></span>Credit Utilization</h5>
         </div>
-        <div>
-            {% if perms.invoices.view_invoice %}
-            <a href="{% url 'invoices:credit_aging_report' %}" class="btn btn-outline-primary me-2">
-                <i class="bi bi-graph-up"></i> Aging Report
-            </a>
-            <a href="{% url 'invoices:export_credit_aging_csv' %}" class="btn btn-success">
-                <i class="bi bi-file-earmark-excel"></i> Export CSV
-            </a>
-            {% endif %}
+        <div class="section-body">
+          <div style="display:flex; justify-content:space-between; margin-bottom:0.5rem; font-size:0.82rem;">
+            <span style="color:var(--text-2);">Overall utilization</span>
+            <span style="font-family:var(--font-mono); font-weight:700; color:var(--text-1);">{{ credit_utilization|floatformat:1 }}%</span>
+          </div>
+          <div class="util-bar" style="height:14px; margin-bottom:0.5rem;">
+            <div class="util-bar-fill ub-violet" style="width:{{ credit_utilization|floatformat:0 }}%;"></div>
+          </div>
+          <div style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-3);">Total credit utilization across all customers</div>
         </div>
+      </div>
     </div>
 
-    <!-- Summary Cards -->
-    <div class="row g-4 mb-4">
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="avatar-sm rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
-                                <i class="bi bi-wallet2 fs-4"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow-1 ms-3">
-                            <p class="text-muted mb-1 small">Total Credit Limit</p>
-                            <h4 class="mb-0">UGX {{ total_credit_limit|floatformat:0|default:"0" }}</h4>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <!-- Credit Status Distribution -->
+    <div class="col-lg-6">
+      <div class="section-card">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-sky"><i class="bi bi-bar-chart"></i></span>Status Distribution</h5>
         </div>
+        <div class="section-body" style="padding:0.75rem 1.75rem;">
+          <table class="dist-table">
+            {% for status in status_distribution %}
+            <tr>
+              <td>
+                {% if status.credit_status == 'GOOD' %}
+                  <span class="status-pill sp-good"><span class="dot"></span>{{ status.credit_status }}</span>
+                {% elif status.credit_status == 'WARNING' %}
+                  <span class="status-pill sp-warn"><span class="dot"></span>{{ status.credit_status }}</span>
+                {% elif status.credit_status == 'SUSPENDED' %}
+                  <span class="status-pill sp-susp"><span class="dot"></span>{{ status.credit_status }}</span>
+                {% elif status.credit_status == 'BLOCKED' %}
+                  <span class="status-pill sp-block"><span class="dot"></span>{{ status.credit_status }}</span>
+                {% endif %}
+              </td>
+              <td style="color:var(--text-3); font-size:0.85rem;">{{ status.count }} customers</td>
+              <td>UGX {{ status.total_outstanding|floatformat:0|default:"0"|intcomma }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="avatar-sm rounded-circle bg-warning bg-opacity-10 text-warning d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
-                                <i class="bi bi-hourglass-split fs-4"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow-1 ms-3">
-                            <p class="text-muted mb-1 small">Credit Used</p>
-                            <h4 class="mb-0">UGX {{ total_credit_used|floatformat:0|default:"0" }}</h4>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="avatar-sm rounded-circle bg-success bg-opacity-10 text-success d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
-                                <i class="bi bi-check-circle fs-4"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow-1 ms-3">
-                            <p class="text-muted mb-1 small">Available Credit</p>
-                            <h4 class="mb-0">UGX {{ total_credit_available|floatformat:0|default:"0" }}</h4>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="avatar-sm rounded-circle bg-danger bg-opacity-10 text-danger d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
-                                <i class="bi bi-exclamation-triangle fs-4"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow-1 ms-3">
-                            <p class="text-muted mb-1 small">Customers Overdue</p>
-                            <h4 class="mb-0">{{ customers_overdue }}</h4>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+  <!-- Customers Table -->
+  <div class="section-card">
+    <div class="section-header">
+      <h5 class="section-title">
+        <span class="section-icon icon-violet"><i class="bi bi-people"></i></span>
+        Customer Credit Accounts
+      </h5>
+      <div class="search-wrap">
+        <i class="bi bi-search"></i>
+        <input type="text" id="searchCustomers" placeholder="Search customers…">
+      </div>
     </div>
 
-    <!-- Credit Utilization Chart -->
-    <div class="row g-4 mb-4">
-        <div class="col-lg-6">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0"><i class="bi bi-pie-chart me-2"></i>Credit Utilization</h5>
+    <div style="overflow-x:auto;">
+      <table class="cust-table" id="customersTable">
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th style="text-align:right;">Credit Limit</th>
+            <th style="text-align:right;">Outstanding</th>
+            <th style="text-align:right;">Available</th>
+            <th style="width:120px;">Utilization</th>
+            <th style="text-align:center;">Status</th>
+            <th style="text-align:center;">Invoices</th>
+            <th style="text-align:center;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for customer in credit_customers %}
+          <tr>
+            <td>
+              <div style="display:flex; align-items:center; gap:0.75rem;">
+                <div class="cust-avatar">{{ customer.name|slice:":1" }}</div>
+                <div>
+                  <div class="cust-name">{{ customer.name }}</div>
+                  <div class="cust-sub">{{ customer.phone }}</div>
                 </div>
-                <div class="card-body">
-                    <div class="progress" style="height: 30px;">
-                        <div class="progress-bar bg-primary" role="progressbar"
-                             style="width: {{ credit_utilization|floatformat:0 }}%;"
-                             aria-valuenow="{{ credit_utilization|floatformat:0 }}"
-                             aria-valuemin="0" aria-valuemax="100">
-                            {{ credit_utilization|floatformat:1 }}%
-                        </div>
-                    </div>
-                    <p class="text-muted mt-3 mb-0">
-                        <small>Total credit utilization across all customers</small>
-                    </p>
+              </div>
+            </td>
+            <td style="text-align:right;">
+              <div class="mono-val">UGX {{ customer.credit_limit|floatformat:0|intcomma }}</div>
+            </td>
+            <td style="text-align:right;">
+              <div class="mono-val {% if customer.credit_balance > 0 %}style="color:var(--amber);"{% endif %}">
+                <span {% if customer.credit_balance > 0 %}style="color:var(--amber);"{% endif %}>
+                  UGX {{ customer.credit_balance|floatformat:0|intcomma }}
+                </span>
+              </div>
+            </td>
+            <td style="text-align:right;">
+              <div class="mono-val">
+                <span {% if customer.credit_available <= 0 %}style="color:var(--rose);"{% else %}style="color:var(--emerald);"{% endif %}>
+                  UGX {{ customer.credit_available|floatformat:0|intcomma }}
+                </span>
+              </div>
+            </td>
+            <td>
+              {% with utilization=customer.credit_balance|floatformat:0|div:customer.credit_limit|mul:100 %}
+              <div style="display:flex; align-items:center; gap:0.5rem;">
+                <div class="util-bar" style="flex:1; height:6px;">
+                  <div class="util-bar-fill {% if utilization >= 90 %}ub-danger{% elif utilization >= 70 %}ub-warn{% else %}ub-good{% endif %}"
+                       style="width:{{ utilization }}%;"></div>
                 </div>
-            </div>
-        </div>
-
-        <div class="col-lg-6">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Credit Status Distribution</h5>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-borderless mb-0">
-                            {% for status in status_distribution %}
-                            <tr>
-                                <td class="text-muted">
-                                    {% if status.credit_status == 'GOOD' %}
-                                        <span class="badge bg-success">{{ status.credit_status }}</span>
-                                    {% elif status.credit_status == 'WARNING' %}
-                                        <span class="badge bg-warning">{{ status.credit_status }}</span>
-                                    {% elif status.credit_status == 'SUSPENDED' %}
-                                        <span class="badge bg-danger">{{ status.credit_status }}</span>
-                                    {% elif status.credit_status == 'BLOCKED' %}
-                                        <span class="badge bg-dark">{{ status.credit_status }}</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end">{{ status.count }} customers</td>
-                                <td class="text-end fw-bold">UGX {{ status.total_outstanding|floatformat:0|default:"0" }}</td>
-                            </tr>
-                            {% endfor %}
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
+                <span style="font-family:var(--font-mono); font-size:0.68rem; color:var(--text-3); white-space:nowrap;">{{ utilization|floatformat:0 }}%</span>
+              </div>
+              {% endwith %}
+            </td>
+            <td style="text-align:center;">
+              {% if customer.credit_status == 'GOOD' %}
+                <span class="status-pill sp-good"><span class="dot"></span>Good</span>
+              {% elif customer.credit_status == 'WARNING' %}
+                <span class="status-pill sp-warn"><span class="dot"></span>Warning</span>
+              {% elif customer.credit_status == 'SUSPENDED' %}
+                <span class="status-pill sp-susp"><span class="dot"></span>Suspended</span>
+              {% elif customer.credit_status == 'BLOCKED' %}
+                <span class="status-pill sp-block"><span class="dot"></span>Blocked</span>
+              {% endif %}
+            </td>
+            <td style="text-align:center;">
+              <span style="background:rgba(26,127,196,0.12); color:var(--sky); border:1px solid rgba(26,127,196,0.2); padding:0.2rem 0.55rem; border-radius:50px; font-family:var(--font-mono); font-size:0.72rem; font-weight:600;">
+                {{ customer.invoice_count|default:0 }}
+              </span>
+            </td>
+            <td style="text-align:center;">
+              <a href="{% url 'invoices:customer_credit_detail' customer.id %}" class="act-btn" title="View Details">
+                <i class="bi bi-eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8">
+              <div class="empty-state">
+                <i class="bi bi-inbox"></i>
+                <p>No credit customers found</p>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
+  </div>
 
-    <!-- Customer Credit Accounts Table -->
-    <div class="card border-0 shadow-sm">
-        <div class="card-header bg-white">
-            <div class="d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="bi bi-people me-2"></i>Customer Credit Accounts</h5>
-                <div class="input-group" style="width: 300px;">
-                    <input type="text" class="form-control" id="searchCustomers" placeholder="Search customers...">
-                    <span class="input-group-text"><i class="bi bi-search"></i></span>
-                </div>
-            </div>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0" id="customersTable">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Customer</th>
-                            <th class="text-end">Credit Limit</th>
-                            <th class="text-end">Outstanding</th>
-                            <th class="text-end">Available</th>
-                            <th class="text-center">Utilization</th>
-                            <th class="text-center">Status</th>
-                            <th class="text-center">Invoices</th>
-                            <th class="text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for customer in credit_customers %}
-                        <tr>
-                            <td>
-                                <div class="d-flex align-items-center">
-                                    <div class="avatar-sm rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center me-2" style="width: 36px; height: 36px;">
-                                        <i class="bi bi-person"></i>
-                                    </div>
-                                    <div>
-                                        <strong>{{ customer.name }}</strong><br>
-                                        <small class="text-muted">{{ customer.phone }}</small>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="text-end">UGX {{ customer.credit_limit|floatformat:0 }}</td>
-                            <td class="text-end">
-                                <span class="{% if customer.credit_balance > 0 %}text-warning fw-bold{% endif %}">
-                                    UGX {{ customer.credit_balance|floatformat:0 }}
-                                </span>
-                            </td>
-                            <td class="text-end">
-                                <span class="{% if customer.credit_available <= 0 %}text-danger{% else %}text-success{% endif %}">
-                                    UGX {{ customer.credit_available|floatformat:0 }}
-                                </span>
-                            </td>
-                            <td class="text-center">
-                                {% with utilization=customer.credit_balance|floatformat:0|div:customer.credit_limit|mul:100 %}
-                                <div class="progress" style="height: 20px; min-width: 80px;">
-                                    <div class="progress-bar {% if utilization >= 90 %}bg-danger{% elif utilization >= 70 %}bg-warning{% else %}bg-success{% endif %}"
-                                         role="progressbar"
-                                         style="width: {{ utilization }}%;">
-                                        {{ utilization|floatformat:0 }}%
-                                    </div>
-                                </div>
-                                {% endwith %}
-                            </td>
-                            <td class="text-center">
-                                {% if customer.credit_status == 'GOOD' %}
-                                    <span class="badge bg-success">Good</span>
-                                {% elif customer.credit_status == 'WARNING' %}
-                                    <span class="badge bg-warning">Warning</span>
-                                {% elif customer.credit_status == 'SUSPENDED' %}
-                                    <span class="badge bg-danger">Suspended</span>
-                                {% elif customer.credit_status == 'BLOCKED' %}
-                                    <span class="badge bg-dark">Blocked</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-center">
-                                <span class="badge bg-info">{{ customer.invoice_count|default:0 }}</span>
-                            </td>
-                            <td class="text-center">
-                                <a href="{% url 'invoices:customer_credit_detail' customer.id %}"
-                                   class="btn btn-sm btn-outline-primary"
-                                   title="View Details">
-                                    <i class="bi bi-eye"></i>
-                                </a>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="8" class="text-center py-4 text-muted">
-                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
-                                No credit customers found
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
+</div><!-- /page-wrap -->
 
 <script>
-// Search functionality
 document.getElementById('searchCustomers').addEventListener('keyup', function() {
-    const searchValue = this.value.toLowerCase();
-    const rows = document.querySelectorAll('#customersTable tbody tr');
-
-    rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(searchValue) ? '' : 'none';
-    });
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('#customersTable tbody tr').forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
 });
 </script>
 {% endblock %}

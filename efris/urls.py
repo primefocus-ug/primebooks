@@ -26,7 +26,6 @@ urlpatterns = [
     # Invoice Fiscalization
     path('invoices/', ura.invoice_list, name='invoice_list'),
     path('invoices/<int:invoice_id>/fiscalize/', ura.invoice_fiscalize, name='invoice_fiscalize'),
-    path('invoices/<int:invoice_id>/', ura.invoice_detail, name='invoice_detail'),
 
     # Stock Management
     path('stock/', ura.stock_management, name='stock_management'),

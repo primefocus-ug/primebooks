@@ -61,10 +61,6 @@ def create_tenant_async(self, signup_request_id):
       5. Create admin user — password retrieved from approval_workflow
       6. Mark COMPLETED
       7. Send welcome email with one-time magic login link
-
-    FIX 6: Password is no longer passed as a task argument (which would expose
-    it in the broker, result backend, and worker logs).  It is now retrieved
-    securely from approval_workflow.generated_password inside the worker.
     """
     _close_old_connections()
 
@@ -80,6 +76,20 @@ def create_tenant_async(self, signup_request_id):
                 ).get(request_id=signup_request_id)
 
                 if signup_request.status == 'COMPLETED':
+                    try:
+                        from referral.models import ReferralSignup
+                        ReferralSignup.objects.filter(
+                            referral_code_used=signup_request.referral_source,
+                            company_email=signup_request.email,
+                            status='pending',
+                        ).update(
+                            status='completed',
+                            tenant_schema_name=signup_request.created_schema_name,
+                            completed_at=timezone.now(),
+                        )
+                    except Exception as ref_err:
+                        logger.warning(f"Could not mark referral completed: {ref_err}")
+
                     logger.info(
                         f"Request {signup_request_id} already completed, skipping."
                     )
@@ -96,10 +106,9 @@ def create_tenant_async(self, signup_request_id):
             logger.error(f"Signup request {signup_request_id} not found")
             return {'success': False, 'error': 'Request not found'}
 
-        # FIX 6: Retrieve password securely from the workflow record,
-        # never from the task arguments / broker message.
         workflow = getattr(signup_request, 'approval_workflow', None)
         password = workflow.generated_password if workflow else None
+
         if not password:
             logger.error(
                 f"No stored password for request {signup_request_id}. "
@@ -112,14 +121,13 @@ def create_tenant_async(self, signup_request_id):
             )
             return {'success': False, 'error': 'No password available'}
 
-        # Non-blocking metrics — a failure here must never abort provisioning
         try:
             from .monitoring import track_signup_metrics
             track_signup_metrics(signup_request)
         except Exception as metrics_error:
             logger.warning(f"Failed to track metrics: {metrics_error}")
 
-        # ── 2-5. Full tenant provisioning ────────────────────────────────
+        # ── 2-5. Tenant provisioning ─────────────────────────────────────
         company = create_tenant_with_lock(signup_request, password)
 
         execution_time = (timezone.now() - start_time).total_seconds()
@@ -132,18 +140,41 @@ def create_tenant_async(self, signup_request_id):
             signup_request.created_schema_name = company.schema_name
             signup_request.completed_at = timezone.now()
             signup_request.save(update_fields=[
-                'status', 'tenant_created', 'created_company_id',
-                'created_schema_name', 'completed_at', 'updated_at',
+                'status',
+                'tenant_created',
+                'created_company_id',
+                'created_schema_name',
+                'completed_at',
+                'updated_at',
             ])
+
+        # ── Mark referral completed ──────────────────────────────────────
+        # Must be OUTSIDE the transaction above so it doesn't get rolled
+        # back if the referral update itself raises an exception.
+        try:
+            from referral.models import ReferralSignup
+            if signup_request.referral_source:
+                ReferralSignup.objects.filter(
+                    referral_code_used=signup_request.referral_source,
+                    company_email=signup_request.email,
+                    status='pending',
+                ).update(
+                    status='completed',
+                    tenant_schema_name=company.schema_name,
+                    completed_at=timezone.now(),
+                )
+                logger.info(
+                    f"Referral marked completed for {signup_request.referral_source}"
+                )
+        except Exception as ref_err:
+            logger.warning(f"Could not mark referral completed: {ref_err}")
 
         logger.info(
             f"Tenant {company.company_id} provisioned in "
             f"{execution_time:.2f}s for request {signup_request_id}"
         )
 
-        # ── 7. Welcome email ─────────────────────────────────────────────
-        # Runs in a separate task so a mail-server failure cannot affect
-        # the provisioning success status.
+        # ── 7. Send welcome email ────────────────────────────────────────
         send_welcome_email.delay(company.company_id, signup_request_id)
 
         return {
@@ -156,7 +187,9 @@ def create_tenant_async(self, signup_request_id):
     except SoftTimeLimitExceeded:
         logger.error(f"Tenant creation soft-timeout for request {signup_request_id}")
         _safe_mark_failed(
-            signup_request_id, 'Operation timed out. Will retry…', self.request.retries
+            signup_request_id,
+            'Operation timed out. Will retry…',
+            self.request.retries,
         )
         raise self.retry(countdown=120)
 
@@ -169,7 +202,12 @@ def create_tenant_async(self, signup_request_id):
                 'retry_count': self.request.retries,
             },
         )
-        _safe_mark_failed(signup_request_id, str(e)[:1000], self.request.retries)
+
+        _safe_mark_failed(
+            signup_request_id,
+            str(e)[:1000],
+            self.request.retries,
+        )
 
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e)
@@ -181,6 +219,73 @@ def create_tenant_async(self, signup_request_id):
                 pass
             raise
 
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    acks_late=True,
+)
+def send_signup_notification(self, signup_request_id):
+    """
+    Notify admin team immediately after every new signup is saved.
+    Runs async so it never slows down the signup response.
+    """
+    _close_old_connections()
+
+    try:
+        from .models import TenantSignupRequest
+        signup = TenantSignupRequest.objects.get(request_id=signup_request_id)
+
+        subject = f"🆕 New Signup: {signup.company_name}"
+
+        # Check if referred
+        referral_note = ""
+        if signup.referral_source:
+            referral_note = f"\nReferral Code:   {signup.referral_source}"
+
+        message = (
+            f"A new company has signed up on PrimeBooks.\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Company:         {signup.company_name}\n"
+            f"Subdomain:       {signup.subdomain}.primebooks.sale\n"
+            f"Email:           {signup.email}\n"
+            f"Phone:           {signup.phone}\n"
+            f"Country:         {signup.country}\n"
+            f"Plan:            {signup.selected_plan}\n"
+            f"Industry:        {signup.industry or '—'}\n"
+            f"Est. Users:      {signup.estimated_users}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Admin Contact:   {signup.first_name} {signup.last_name}\n"
+            f"Admin Email:     {signup.admin_email}\n"
+            f"Admin Phone:     {signup.admin_phone}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"IP Address:      {signup.ip_address or '—'}{referral_note}\n"
+            f"Signed Up At:    {signup.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
+            f"Review and approve at:\n"
+            f"https://primebooks.sale/public-admin/tenant-signups/{signup.request_id}/\n"
+        )
+
+        from django.core.mail import send_mail
+        from django.conf import settings
+
+        admin_emails = getattr(settings, 'SIGNUP_NOTIFICATION_EMAILS', [settings.DEFAULT_FROM_EMAIL])
+
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            admin_emails,
+            fail_silently=False,
+        )
+
+        logger.info(f"Signup notification sent for {signup.company_name}")
+
+    except TenantSignupRequest.DoesNotExist:
+        logger.error(f"send_signup_notification: request {signup_request_id} not found")
+
+    except Exception as e:
+        logger.error(f"send_signup_notification failed: {e}", exc_info=True)
+        raise self.retry(exc=e)
 
 def _safe_mark_failed(signup_request_id, error_message, retry_count):
     """Best-effort FAILED status update with a fresh DB connection."""
@@ -252,6 +357,19 @@ def create_tenant_with_lock(signup_request, password):
     # ── D. Admin user ─────────────────────────────────────────────────────
     with suppress_signals():
         create_admin_user(signup_request, company, password)
+
+    # ── E. Default modules ────────────────────────────────────────────────
+    # Must run AFTER migrations (CompanyModule table exists) and AFTER
+    # create_admin_user (schema is fully functional).
+    # Wrapped in try/except so a missing seed row never aborts provisioning.
+    try:
+        _assign_default_modules(company)
+    except Exception as module_err:
+        logger.error(
+            f"_assign_default_modules failed for {company.company_id}: "
+            f"{module_err}",
+            exc_info=True,
+        )
 
     logger.info(f"Full provisioning complete for schema {schema_name}")
     return company
@@ -658,6 +776,60 @@ def create_admin_user(signup_request, company, password):
 
         logger.info(f"Admin user ready: {admin_user.email}")
         return admin_user
+
+
+def _assign_default_modules(company):
+    """
+    Activate the core modules every new tenant needs from day one.
+
+    Called from create_tenant_with_lock() as phase E, after migrations
+    have run (so CompanyModule table exists in the tenant schema) and
+    after create_admin_user (so the schema is fully functional).
+
+    Idempotent: get_or_create is safe to call on task retries.
+    Uses schema_context so queries target the tenant schema, not public.
+    If an AvailableModule key is missing (not yet seeded), it is skipped
+    with a warning — provisioning continues unaffected.
+    """
+    from company.models import AvailableModule, CompanyModule
+
+    # Extend this list whenever a new module should be on by default
+    default_keys = ['inventory', 'sales', 'reports']
+
+    activated = []
+    skipped = []
+
+    with schema_context(company.schema_name):
+        for key in default_keys:
+            try:
+                module = AvailableModule.objects.get(key=key)
+                _, created = CompanyModule.objects.get_or_create(
+                    company=company,
+                    module=module,
+                    defaults={
+                        'is_active': True,
+                        'activated_at': timezone.now(),
+                    },
+                )
+                if created:
+                    activated.append(key)
+                else:
+                    logger.debug(
+                        f"Module '{key}' already assigned to "
+                        f"{company.company_id}, skipping."
+                    )
+            except AvailableModule.DoesNotExist:
+                skipped.append(key)
+                logger.warning(
+                    f"_assign_default_modules: AvailableModule key='{key}' "
+                    f"not found for company {company.company_id}. "
+                    f"Run the seed command to create it."
+                )
+
+    logger.info(
+        f"Default modules for {company.company_id}: "
+        f"activated={activated}, skipped={skipped}"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

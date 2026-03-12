@@ -73,7 +73,7 @@
         <div>
             <h4 class="mb-0">
                 <i class="fas fa-file-invoice text-primary me-2"></i>
-                Credit Note Application: {{ application_id }}
+                Credit Note: {{ application.credit_note_no|default:application_id }}
             </h4>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0">
@@ -84,17 +84,11 @@
             </nav>
         </div>
         <div>
-            {# ✅ CORRECTED: 101=Approved, 102=Submitted/Pending, 103=Rejected, 104=Voided #}
-            {% if application.approve_status == '101' %}
-                <span class="badge status-badge status-101">APPROVED</span>
-            {% elif application.approve_status == '102' %}
-                <span class="badge status-badge status-102">PENDING APPROVAL</span>
-            {% elif application.approve_status == '103' %}
-                <span class="badge status-badge status-103">REJECTED</span>
-            {% elif application.approve_status == '104' %}
-                <span class="badge status-badge status-104">VOIDED</span>
+            {# T108 issued credit notes: show Issued or Invalid #}
+            {% if application.is_invalid %}
+                <span class="badge status-badge status-103">INVALID</span>
             {% else %}
-                <span class="badge bg-secondary status-badge">{{ application.approve_status|default:"UNKNOWN" }}</span>
+                <span class="badge status-badge status-101">ISSUED</span>
             {% endif %}
         </div>
     </div>
@@ -131,69 +125,46 @@
         <div class="detail-card-body">
             <div class="row">
                 <div class="col-md-6">
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Application ID:</span>
-                        <span class="info-value font-monospace">{{ application.application_id }}</span>
-                    </div>
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Original Invoice:</span>
-                        <span class="info-value">
-                            {% if application.original_invoice_no %}
-                                <span class="text-primary">{{ application.original_invoice_no }}</span>
-                            {% else %}
-                                <span class="data-missing">No original invoice</span>
-                            {% endif %}
-                        </span>
-                    </div>
+                    {# invoiceNo from T108 = the Credit Note number #}
                     <div class="info-grid mb-3">
                         <span class="info-label">Credit Note No:</span>
-                        <span class="info-value">
-                            {% if application.credit_note_no %}
-                                <span class="text-success font-monospace">{{ application.credit_note_no }}</span>
+                        <span class="info-value font-monospace text-primary fw-bold">
+                            {{ application.credit_note_no|default:"N/A" }}
+                        </span>
+                    </div>
+                    {# oriInvoiceNo from T108 = the original invoice this credit note was raised against #}
+                    <div class="info-grid mb-3">
+                        <span class="info-label">Original Invoice No:</span>
+                        <span class="info-value font-monospace">
+                            {% if application.original_invoice_no %}
+                                {{ application.original_invoice_no }}
                             {% else %}
-                                <span class="data-missing">Not yet assigned</span>
+                                <span class="data-missing">N/A</span>
                             {% endif %}
                         </span>
                     </div>
                     <div class="info-grid mb-3">
-                        <span class="info-label">Application Date:</span>
-                        <span class="info-value">{{ application.application_date|default:"N/A" }}</span>
+                        <span class="info-label">Credit Note Date:</span>
+                        <span class="info-value">{{ application.issued_date|default:"N/A" }}</span>
                     </div>
                     <div class="info-grid mb-3">
-                        <span class="info-label">Issued Date:</span>
-                        <span class="info-value">
-                            {% if application.issued_date %}
-                                {{ application.issued_date }}
-                            {% else %}
-                                <span class="data-missing">Not yet issued</span>
-                            {% endif %}
-                        </span>
+                        <span class="info-label">Original Invoice Date:</span>
+                        <span class="info-value">{{ application.ori_issued_date|default:"N/A" }}</span>
                     </div>
                     <div class="info-grid mb-3">
-                        <span class="info-label">Task ID:</span>
-                        <span class="info-value font-monospace">{{ application.task_id|default:"N/A" }}</span>
+                        <span class="info-label">Operator:</span>
+                        <span class="info-value">{{ application.operator|default:"N/A" }}</span>
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="info-grid mb-3">
                         <span class="info-label">Status:</span>
                         <span class="info-value">
-                            {# ✅ CORRECTED STATUS DISPLAY #}
-                            {% if application.approve_status == '101' %}
-                                <span class="badge bg-success">Approved</span>
-                            {% elif application.approve_status == '102' %}
-                                <span class="badge bg-warning text-dark">Pending Approval</span>
-                            {% elif application.approve_status == '103' %}
-                                <span class="badge bg-danger">Rejected</span>
-                            {% elif application.approve_status == '104' %}
-                                <span class="badge bg-secondary">Voided</span>
-                            {% else %}
-                                <span class="badge bg-secondary">{{ application.status|default:"Unknown" }}</span>
-                            {% endif %}
+                            <span class="badge bg-success">Issued</span>
                         </span>
                     </div>
                     <div class="info-grid mb-3">
-                        <span class="info-label">Applicant:</span>
+                        <span class="info-label">Seller:</span>
                         <span class="info-value">
                             {{ application.applicant_name|default:"N/A" }}<br>
                             <small class="text-muted">TIN: {{ application.applicant_tin|default:"N/A" }}</small>
@@ -205,7 +176,6 @@
                             {{ application.buyer_name|default:"N/A" }}<br>
                             <small class="text-muted">
                                 TIN: {{ application.buyer_tin|default:"N/A" }}<br>
-                                Email: {{ application.buyer_email|default:"N/A" }}<br>
                                 Mobile: {{ application.buyer_mobile|default:"N/A" }}
                             </small>
                         </span>
@@ -217,16 +187,17 @@
                     <div class="info-grid mb-3">
                         <span class="info-label">Reason:</span>
                         <span class="info-value">
-                            <strong>{{ application.reason_code }}</strong> - {{ application.reason_description|default:"N/A" }}
+                            <strong>{{ application.reason_code }}</strong>
+                            {% if application.reason_description %} — {{ application.reason_description }}{% endif %}
                         </span>
                     </div>
                 </div>
             </div>
-            {% if application.approve_remarks %}
+            {% if application.remarks %}
             <div class="mt-3">
-                <span class="info-label">Approval Remarks:</span>
+                <span class="info-label">Remarks:</span>
                 <div class="info-value mt-1 p-3 bg-light rounded border">
-                    <i class="fas fa-comment-alt text-muted me-2"></i>{{ application.approve_remarks }}
+                    <i class="fas fa-comment-alt text-muted me-2"></i>{{ application.remarks }}
                 </div>
             </div>
             {% endif %}
@@ -288,10 +259,9 @@
                     {% for tax in tax_details %}
                     <div class="d-flex justify-content-between mb-2">
                         <span>
-                            {% if tax.taxCategory %}{{ tax.taxCategory }}
-                            {% elif tax.taxCategoryCode %}Tax Category {{ tax.taxCategoryCode }}
-                            {% else %}Tax {{ forloop.counter }}{% endif %}
-                            {% if tax.taxRate %}<small>({{ tax.taxRate }})</small>{% endif %}
+                            {# T108 uses taxRateName e.g. "Exempt (-)" #}
+                            {{ tax.taxRateName|default:"Tax"|default:tax.taxCategory }}
+                            {% if tax.taxRate %}<small class="text-muted ms-1">({{ tax.taxRate }})</small>{% endif %}
                         </span>
                         <span class="fw-bold">
                             {% with tax_amount=tax.taxAmount|default:0 %}
@@ -340,7 +310,7 @@
                         <tr>
                             <td>{{ forloop.counter }}</td>
                             <td>
-                                <strong>{{ item.itemName|default:"Unnamed Item" }}</strong><br>
+                                <strong>{{ item.item|default:"Unnamed Item" }}</strong><br>
                                 <small class="text-muted">{{ item.itemCode|default:"N/A" }}</small>
                             </td>
                             <td><small>{{ item.goodsCategoryName|default:"N/A" }}</small></td>
@@ -479,38 +449,19 @@
                     </a>
                 </div>
                 <div class="d-flex gap-2">
-                    {# ✅ Show Approve/Cancel ONLY when status is 102 (Submitted/Pending) #}
-                    {% if application.approve_status == '102' %}
-                        <form method="POST" action="{% url 'efris:credit_note_application_detail' application_id %}"
-                              style="display: inline;"
-                              onsubmit="return confirm('Refresh application status?')">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="refresh_status">
-                            <button type="submit" class="btn btn-warning">
-                                <i class="fas fa-sync-alt me-2"></i>Refresh Status
-                            </button>
-                        </form>
-
-                        <a href="{% url 'efris:cancel_credit_debit_note' %}" class="btn btn-danger"
-                           onclick="return confirm('Cancel this application? This action cannot be undone.')">
-                            <i class="fas fa-times me-2"></i>Cancel
-                        </a>
-                    {% endif %}
-
-                    {# ✅ Show download ONLY when approved (101) and has credit note number #}
-                    {% if application.approve_status == '101' and application.credit_note_no %}
+                    {# T108 credit notes are already issued — no approval workflow #}
+                    {% if application.credit_note_no %}
                         <a href="{% url 'efris:print_credit_note' application_id %}"
                            target="_blank"
-                           class="btn btn-success">
-                            <i class="fas fa-download me-2"></i>Print / Download
+                           class="btn btn-primary">
+                            <i class="fas fa-print me-2"></i>Print Credit Note
                         </a>
                     {% endif %}
-
-                    <a href="{% url 'efris:print_credit_note' application_id %}"
-                       target="_blank"
-                       class="btn btn-primary">
-                        <i class="fas fa-print me-2"></i>Print Credit Note
-                    </a>
+                    {% if summary.qr_code %}
+                        <a href="{{ summary.qr_code }}" target="_blank" class="btn btn-outline-info">
+                            <i class="fas fa-qrcode me-2"></i>Verify on EFRIS
+                        </a>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -519,8 +470,8 @@
     <!-- Footer info -->
     <div class="text-center text-muted small mt-3">
         <i class="fas fa-info-circle me-1"></i>
-        Application ID: {{ application_id }} |
-        Status: {{ application.status|default:"Unknown" }} |
+        Credit Note No: {{ application.credit_note_no|default:application_id }} |
+        Original Invoice: {{ application.original_invoice_no|default:"N/A" }} |
         Viewed on {% now "Y-m-d H:i:s" %} |
         Company: {{ company.name }}
     </div>

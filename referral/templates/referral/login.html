@@ -1,0 +1,359 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Partner Login — PRIMEBOOKS</title>
+    <link rel="icon" type="image/png" href="{% static 'favicon/favicon-96x96.png' %}" sizes="96x96" />
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-primary: #000;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #2a2a2a;
+            --text-primary: #fff;
+            --text-secondary: #aaa;
+            --text-tertiary: #888;
+            --border-color: #222;
+            --border-color-light: #333;
+            --border-color-lighter: #444;
+            --accent-gradient: linear-gradient(135deg, #0c19dd, #4c54c4);
+            --accent-solid: #0c19dd;
+            --danger: #ef4444;
+            --danger-bg: rgba(239,68,68,0.1);
+        }
+
+        [data-theme="light"] {
+            --bg-primary: #fff;
+            --bg-secondary: #f5f5f5;
+            --bg-tertiary: #e5e5e5;
+            --text-primary: #000;
+            --text-secondary: #666;
+            --text-tertiary: #999;
+            --border-color: #e0e0e0;
+            --border-color-light: #d0d0d0;
+            --border-color-lighter: #c0c0c0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* ── Top bar ── */
+        .auth-topbar {
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .auth-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+            color: var(--text-primary);
+            font-size: 1.1rem;
+            font-weight: 300;
+        }
+
+        .auth-logo img { width: 22px; height: 22px; border-radius: 50%; }
+
+        .theme-toggle {
+            background: transparent;
+            border: 1px solid var(--border-color-lighter);
+            color: var(--text-primary);
+            width: 34px; height: 34px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+        .theme-toggle:hover { background-color: var(--bg-secondary); }
+
+        /* ── Center content ── */
+        .center-wrap {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1rem;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .login-header h1 {
+            font-size: 1.5rem;
+            font-weight: 300;
+            margin-bottom: 0.35rem;
+        }
+
+        .login-header p {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+        }
+
+        .portal-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: linear-gradient(135deg, rgba(12,25,221,0.15), rgba(76,84,196,0.1));
+            border: 1px solid rgba(12,25,221,0.25);
+            color: #6b78ff;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            padding: 3px 10px;
+            border-radius: 20px;
+            margin-bottom: 1rem;
+        }
+
+        /* Form */
+        .form-group { margin-bottom: 1rem; }
+
+        label {
+            display: block;
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 0.4rem;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.65rem 0.9rem;
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-color-light);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-family: inherit;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: var(--accent-solid);
+            box-shadow: 0 0 0 2px rgba(12,25,221,0.15);
+        }
+
+        input::placeholder { color: var(--text-tertiary); }
+
+        .form-error {
+            font-size: 0.78rem;
+            color: var(--danger);
+            margin-top: 0.3rem;
+        }
+
+        .alert {
+            padding: 0.65rem 0.9rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            margin-bottom: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .alert-error {
+            background: var(--danger-bg);
+            color: var(--danger);
+            border: 1px solid rgba(239,68,68,0.2);
+        }
+
+        .alert-success {
+            background: rgba(34,197,94,0.1);
+            color: #22c55e;
+            border: 1px solid rgba(34,197,94,0.2);
+        }
+
+        .alert-info {
+            background: linear-gradient(135deg, rgba(12,25,221,0.1), rgba(76,84,196,0.07));
+            color: #6b78ff;
+            border: 1px solid rgba(12,25,221,0.2);
+        }
+
+        .btn-full {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-size: 0.92rem;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        .btn-submit {
+            background: var(--accent-gradient);
+            color: #fff;
+            margin-bottom: 0.75rem;
+        }
+
+        .btn-submit:hover { opacity: 0.9; }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--border-color-lighter);
+        }
+
+        .btn-outline:hover { background: var(--bg-secondary); }
+
+        .btn-white {
+            background-color: #fff;
+            color: #000;
+            margin-bottom: 0.75rem;
+        }
+
+        .btn-white:hover { background-color: #e6e6e6; }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.78rem;
+            color: var(--text-tertiary);
+            margin: 1rem 0;
+        }
+
+        .divider::before, .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-color-light);
+        }
+
+        .back-link {
+            text-align: center;
+            margin-top: 1.5rem;
+        }
+
+        .back-link a {
+            font-size: 0.82rem;
+            color: var(--text-tertiary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .back-link a:hover { color: var(--text-secondary); }
+    </style>
+</head>
+<body>
+    <div class="auth-topbar">
+        <a href="/" class="auth-logo">
+            <img src="{% static 'logo1.jpeg' %}" alt="PrimeBooks">
+            <span>PRIMEBOOKS</span>
+        </a>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+            <span class="theme-icon">🌙</span>
+        </button>
+    </div>
+
+    <div class="center-wrap">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="portal-label">
+                    <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                    Partner Portal
+                </div>
+                <h1>Sign In</h1>
+                <p>Access your referral dashboard</p>
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                <div class="alert alert-{{ message.tags }}">
+                    {% if message.tags == 'success' %}✓{% elif message.tags == 'error' %}✕{% else %}ℹ{% endif %}
+                    {{ message }}
+                </div>
+                {% endfor %}
+            {% endif %}
+
+            <form method="post" novalidate>
+                {% csrf_token %}
+
+                <div class="form-group">
+                    <label for="{{ form.username.id_for_label }}">Email Address</label>
+                    {{ form.username }}
+                    {% if form.username.errors %}
+                        <div class="form-error">{{ form.username.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.password.id_for_label }}">Password</label>
+                    {{ form.password }}
+                    {% if form.password.errors %}
+                        <div class="form-error">{{ form.password.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                {% if form.non_field_errors %}
+                <div class="alert alert-error">
+                    ✕ {{ form.non_field_errors.0 }}
+                </div>
+                {% endif %}
+
+                <div style="margin-bottom:1.25rem"></div>
+
+                <button type="submit" class="btn-full btn-white">
+                    Sign In →
+                </button>
+
+                <div class="divider">new partner?</div>
+
+                <a href="{% url 'referral:register' %}" class="btn-full btn-outline">
+                    Apply to Join the Partner Program
+                </a>
+            </form>
+
+            <div class="back-link">
+                <a href="{% url 'public_router:login' %}">← Back to PrimeBooks login</a>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const html = document.documentElement;
+    const saved = localStorage.getItem('theme') || 'dark';
+    html.setAttribute('data-theme', saved);
+    const icon = document.querySelector('.theme-icon');
+    icon.textContent = saved === 'dark' ? '🌙' : '☀️';
+    document.getElementById('themeToggle').addEventListener('click', () => {
+        const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        icon.textContent = next === 'dark' ? '🌙' : '☀️';
+    });
+</script>
+</body>
+</html>

@@ -14,864 +14,868 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
 <style>
-    .search-filters-card {
-        background: var(--bg-primary);
-        border: 1px solid var(--border-color);
-        border-radius: var(--border-radius);
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: var(--shadow-sm);
-    }
+/* ═══════════════════════════════════════════════════
+   DESIGN SYSTEM — INVOICE LIST
+   Matches: Premium Sales Detail theme
+   ═══════════════════════════════════════════════════ */
+:root,
+[data-theme="light"] {
+  --ink:        #f5f4fb;
+  --ink-soft:   #ffffff;
+  --ink-muted:  #eeedf7;
+  --slate:      #dddce8;
+  --border:     rgba(0,0,0,0.07);
+  --border-em:  rgba(0,0,0,0.13);
+  --text-1:     #0d0c1a;
+  --text-2:     #4a4868;
+  --text-3:     #9896b2;
+  --gold:       #b07d1a;
+  --emerald:    #0f9e62;
+  --rose:       #d63060;
+  --sky:        #1a7fc4;
+  --violet:     #6c4fcf;
+  --amber:      #c47d0e;
+  --white-10:   rgba(0,0,0,0.05);
+  --white-05:   rgba(0,0,0,0.025);
+  --shadow-1:   0 1px 3px rgba(0,0,0,0.08);
+  --shadow-2:   0 4px 16px rgba(0,0,0,0.10);
+  --r-sm:       8px;
+  --r-md:       14px;
+  --r-lg:       20px;
+  --r-xl:       28px;
+  --font-head:  'Syne', sans-serif;
+  --font-body:  'DM Sans', sans-serif;
+  --font-mono:  'JetBrains Mono', monospace;
+}
+[data-theme="dark"] {
+  --ink:        #0a0a0f;
+  --ink-soft:   #16161e;
+  --ink-muted:  #22222e;
+  --slate:      #2e2e3e;
+  --border:     rgba(255,255,255,0.07);
+  --border-em:  rgba(255,255,255,0.14);
+  --text-1:     #f0eff8;
+  --text-2:     #a8a7bf;
+  --text-3:     #66657e;
+  --gold:       #e8c96a;
+  --emerald:    #3ecf8e;
+  --rose:       #f06292;
+  --sky:        #60b9f8;
+  --violet:     #9b7fe8;
+  --amber:      #f5a623;
+  --white-10:   rgba(255,255,255,0.10);
+  --white-05:   rgba(255,255,255,0.05);
+  --shadow-1:   0 1px 3px rgba(0,0,0,0.4);
+  --shadow-2:   0 4px 16px rgba(0,0,0,0.5);
+}
 
-    .filter-group {
-        margin-bottom: 1rem;
-    }
+*, *::before, *::after { box-sizing: border-box; }
 
-    .filter-group:last-child {
-        margin-bottom: 0;
-    }
+body {
+  font-family: var(--font-body);
+  background: var(--ink);
+  color: var(--text-1);
+  transition: background 0.3s, color 0.3s;
+}
 
-    .invoice-table {
-        background: var(--bg-primary);
-        border-radius: var(--border-radius);
-        overflow: hidden;
-        box-shadow: var(--shadow-sm);
-    }
-    [data-theme="dark"] .invoice-table {
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-    }
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.6;
+}
 
-    .invoice-table thead {
-        background: var(--bg-tertiary);
-    }
+.page-wrap { position: relative; z-index: 1; padding: 2rem 1.5rem 4rem; }
 
-    .invoice-table th {
-        font-weight: 600;
-        font-size: 0.875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        padding: 1rem 0.75rem;
-        border-bottom: 2px solid var(--border-color);
-        color: var(--text-primary);
-    }
+.ambient-glow {
+  position: fixed; top: -200px; right: -200px;
+  width: 700px; height: 700px;
+  background: radial-gradient(circle, rgba(155,127,232,0.08) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+.ambient-glow-2 {
+  position: fixed; bottom: -300px; left: -150px;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(15,158,98,0.05) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+[data-theme="light"] .ambient-glow  { background: radial-gradient(circle, rgba(108,79,207,0.05) 0%, transparent 70%); }
+[data-theme="light"] .ambient-glow-2 { background: radial-gradient(circle, rgba(15,158,98,0.04) 0%, transparent 70%); }
 
-    .invoice-table td {
-        padding: 1rem 0.75rem;
-        vertical-align: middle;
-        border-bottom: 1px solid var(--border-color-light);
-    }
+/* ── PAGE HEADER ── */
+.page-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 2rem;
+  animation: heroIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
+}
+@keyframes heroIn { from { opacity:0; transform:translateY(-12px); } to { opacity:1; transform:none; } }
 
-    .invoice-table tbody tr:hover {
-        background: var(--bg-secondary);
-        cursor: pointer;
-    }
+.page-title {
+  font-family: var(--font-head);
+  font-size: clamp(1.4rem,3vw,2rem);
+  font-weight: 800;
+  color: var(--text-1);
+  margin: 0 0 0.2rem;
+}
+.page-subtitle { color: var(--text-3); font-size: 0.875rem; margin: 0; }
 
-    .invoice-table tbody tr:last-child td {
-        border-bottom: none;
-    }
+.header-accent {
+  width: 3px; height: 2rem;
+  background: linear-gradient(180deg, var(--violet), var(--sky));
+  border-radius: 2px;
+  margin-right: 0.875rem;
+  flex-shrink: 0;
+}
 
-    .status-badge {
-        padding: 0.375rem 0.75rem;
-        border-radius: 50px;
-        font-weight: 600;
-        font-size: 0.75rem;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.375rem;
-        white-space: nowrap;
-    }
+/* ── ACTION BUTTONS ── */
+.btn-action {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--r-sm);
+  font-size: 0.875rem; font-weight: 600;
+  font-family: var(--font-body);
+  border: 1px solid var(--border-em);
+  background: var(--white-10);
+  color: var(--text-1);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-action:hover { background: var(--white-10); border-color: var(--border-em); color: var(--text-1); transform: translateY(-1px); box-shadow: var(--shadow-1); }
+.btn-action.primary { background: var(--violet); border-color: transparent; color: #fff; }
+.btn-action.primary:hover { background: #7c5ed4; color: #fff; }
 
-    .status-PAID, .status-COMPLETED {
-        background: var(--green-100);
-        color: var(--green-700);
-    }
+/* ── FILTER CARD ── */
+.filter-card {
+  background: var(--ink-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-1);
+  animation: cardIn 0.45s cubic-bezier(0.16,1,0.3,1) both;
+}
+@keyframes cardIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 
-    .status-PENDING_PAYMENT {
-        background: var(--amber-100);
-        color: var(--amber-700);
-    }
+.filter-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: block;
+  margin-bottom: 0.4rem;
+}
 
-    .status-PARTIALLY_PAID {
-        background: var(--primary-100);
-        color: var(--primary-700);
-    }
+.filter-card .form-control,
+.filter-card .form-select {
+  background: var(--ink);
+  border: 1px solid var(--border-em);
+  color: var(--text-1);
+  border-radius: var(--r-sm);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  transition: border-color 0.2s;
+}
+.filter-card .form-control:focus,
+.filter-card .form-select:focus {
+  background: var(--ink);
+  border-color: var(--violet);
+  color: var(--text-1);
+  box-shadow: 0 0 0 3px rgba(108,79,207,0.12);
+}
 
-    .status-OVERDUE {
-        background: var(--red-100);
-        color: var(--red-700);
-    }
+/* ── TABLE CARD ── */
+.table-card {
+  background: var(--ink-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+  animation: cardIn 0.5s cubic-bezier(0.16,1,0.3,1) 0.05s both;
+}
 
-    .status-DRAFT {
-        background: var(--gray-200);
-        color: var(--gray-700);
-    }
+.table-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1.25rem 1.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--white-05);
+}
 
-    .status-CANCELLED {
-        background: var(--gray-300);
-        color: var(--gray-800);
-    }
+.table-card-title {
+  font-family: var(--font-head);
+  font-size: 0.95rem; font-weight: 700;
+  color: var(--text-1); margin: 0;
+  display: flex; align-items: center; gap: 0.5rem;
+}
 
-    /* Dark theme overrides for status badges */
-    [data-theme="dark"] .status-PAID,
-    [data-theme="dark"] .status-COMPLETED {
-        background: rgba(34, 197, 94, 0.2);
-        color: var(--green-400);
-    }
+.section-icon {
+  width: 30px; height: 30px;
+  border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.875rem;
+}
+.icon-violet { background: rgba(155,127,232,0.15); color: var(--violet); }
+.icon-emerald { background: rgba(62,207,142,0.15); color: var(--emerald); }
 
-    [data-theme="dark"] .status-PENDING_PAYMENT {
-        background: rgba(245, 158, 11, 0.2);
-        color: var(--amber-400);
-    }
+/* ── INVOICE TABLE ── */
+.inv-table { width: 100%; border-collapse: collapse; }
 
-    [data-theme="dark"] .status-PARTIALLY_PAID {
-        background: rgba(59, 130, 246, 0.2);
-        color: var(--primary-400);
-    }
+.inv-table thead th {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--border-em);
+  background: var(--white-05);
+  white-space: nowrap;
+}
 
-    [data-theme="dark"] .status-OVERDUE {
-        background: rgba(239, 68, 68, 0.2);
-        color: var(--red-400);
-    }
+.inv-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+  cursor: pointer;
+}
+.inv-table tbody tr:hover { background: var(--white-05); }
+.inv-table tbody tr:last-child { border-bottom: none; }
+.inv-table tbody tr.overdue-row { background: rgba(214,48,96,0.04); }
+.inv-table tbody tr.overdue-row:hover { background: rgba(214,48,96,0.08); }
 
-    [data-theme="dark"] .status-DRAFT {
-        background: rgba(156, 163, 175, 0.2);
-        color: var(--gray-400);
-    }
+.inv-table td { padding: 0.95rem 1rem; vertical-align: middle; }
 
-    [data-theme="dark"] .status-CANCELLED {
-        background: rgba(107, 114, 128, 0.2);
-        color: var(--gray-500);
-    }
+/* Invoice number */
+.inv-number {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--violet);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.inv-number:hover { color: var(--sky); }
 
-    .fiscalized-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.25rem;
-        padding: 0.25rem 0.5rem;
-        background: var(--green-50);
-        color: var(--green-600);
-        border-radius: var(--border-radius-sm);
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
+.inv-date-sub { font-size: 0.75rem; color: var(--text-3); margin-top: 2px; }
 
-    /* Dark theme override for fiscalized badge */
-    [data-theme="dark"] .fiscalized-badge {
-        background: rgba(34, 197, 94, 0.15);
-        color: var(--green-400);
-    }
-    /* Dark theme overrides for Bootstrap badges */
-    [data-theme="dark"] .badge.bg-danger {
-        background-color: rgba(239, 68, 68, 0.8) !important;
-        color: white;
-    }
+/* Customer cell */
+.cust-name { font-weight: 600; color: var(--text-1); font-size: 0.9rem; }
+.cust-email { font-size: 0.75rem; color: var(--text-3); font-family: var(--font-mono); }
 
-    [data-theme="dark"] .badge.bg-secondary {
-        background-color: rgba(107, 114, 128, 0.8) !important;
-        color: white;
-    }
+/* Amount cell */
+.amt-primary {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-1);
+}
+.amt-due {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--rose);
+  margin-top: 2px;
+  display: flex; align-items: center; gap: 0.25rem;
+}
 
-    /* Dark theme override for empty state icon */
-    [data-theme="dark"] .text-muted .bi-inbox {
-        opacity: 0.3;
-    }
-    .bulk-actions-bar {
-        position: fixed;
-        bottom: -100px;
-        left: 0;
-        right: 0;
-        background: linear-gradient(135deg, var(--primary-600), var(--primary-700));
-        color: white;
-        padding: 1rem 2rem;
-        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
-        z-index: 1000;
-        transition: bottom 0.3s ease;
-    }
+/* Status badges */
+.status-pill {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 50px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.status-pill .dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 
-    .bulk-actions-bar.show {
-        bottom: 0;
-    }
+.status-PAID, .status-COMPLETED {
+  background: rgba(15,158,98,0.12); color: var(--emerald);
+  border-color: rgba(15,158,98,0.2);
+}
+.status-PAID .dot, .status-COMPLETED .dot { background: var(--emerald); }
 
-    .invoice-number-link {
-        font-weight: 600;
-        color: var(--primary-600);
-        text-decoration: none;
-        transition: color 0.2s ease;
-    }
+.status-PENDING_PAYMENT, .status-PENDING {
+  background: rgba(180,130,20,0.12); color: var(--amber);
+  border-color: rgba(180,130,20,0.2);
+}
+.status-PENDING_PAYMENT .dot, .status-PENDING .dot { background: var(--amber); }
 
-    .invoice-number-link:hover {
-        color: var(--primary-700);
-        text-decoration: underline;
-    }
+.status-PARTIALLY_PAID {
+  background: rgba(26,127,196,0.12); color: var(--sky);
+  border-color: rgba(26,127,196,0.2);
+}
+.status-PARTIALLY_PAID .dot { background: var(--sky); }
 
-    .amount-cell {
-        font-weight: 600;
-        font-family: 'SF Mono', 'Monaco', monospace;
-    }
+.status-OVERDUE {
+  background: rgba(214,48,96,0.12); color: var(--rose);
+  border-color: rgba(214,48,96,0.2);
+}
+.status-OVERDUE .dot { background: var(--rose); }
 
-    .overdue-row {
-        background: var(--red-50);
-    }
+.status-DRAFT {
+  background: var(--white-10); color: var(--text-3);
+  border-color: var(--border);
+}
+.status-DRAFT .dot { background: var(--text-3); }
 
-    [data-theme="dark"] .overdue-row {
-        background: rgba(239, 68, 68, 0.1);
-    }
+.status-CANCELLED {
+  background: var(--white-10); color: var(--text-3);
+  border-color: var(--border);
+  text-decoration: line-through;
+}
 
-    .action-btn-group {
-        display: flex;
-        gap: 0.25rem;
-    }
+/* EFRIS badge */
+.efris-badge {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 0.65rem; font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.efris-ok { background: rgba(15,158,98,0.12); color: var(--emerald); border: 1px solid rgba(15,158,98,0.2); }
+.efris-fail { background: rgba(214,48,96,0.12); color: var(--rose); border: 1px solid rgba(214,48,96,0.2); }
+.efris-pending { background: var(--white-10); color: var(--text-3); border: 1px solid var(--border); }
 
-    .pagination-info {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        color: var(--text-secondary);
-        font-size: 0.875rem;
-    }
+/* Due date cell */
+.due-ok { color: var(--text-2); }
+.due-warn { color: var(--amber); font-weight: 600; }
+.due-overdue { color: var(--rose); font-weight: 700; }
+.due-sub { font-size: 0.72rem; margin-top: 2px; }
 
-    @media (max-width: 768px) {
-        .invoice-table {
-            font-size: 0.875rem;
-        }
+/* Action buttons */
+.act-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-em);
+  background: var(--white-10);
+  color: var(--text-2);
+  font-size: 0.8rem;
+  text-decoration: none;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.act-btn:hover { background: var(--violet); border-color: transparent; color: #fff; transform: translateY(-1px); }
+.act-btn.print:hover { background: var(--sky); }
+.act-btn.danger:hover { background: var(--rose); }
 
-        .invoice-table th,
-        .invoice-table td {
-            padding: 0.75rem 0.5rem;
-        }
+.act-group { display: flex; gap: 0.25rem; align-items: center; }
 
-        .search-filters-card {
-            padding: 1rem;
-        }
+/* Dropdown */
+.dropdown-menu {
+  background: var(--ink-soft) !important;
+  border: 1px solid var(--border-em) !important;
+  border-radius: var(--r-md) !important;
+  box-shadow: var(--shadow-2) !important;
+  padding: 0.4rem !important;
+  min-width: 170px;
+}
+.dropdown-item {
+  color: var(--text-1) !important;
+  font-size: 0.875rem;
+  border-radius: var(--r-sm);
+  padding: 0.5rem 0.75rem;
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.dropdown-item:hover { background: var(--white-10) !important; color: var(--text-1) !important; }
+.dropdown-item.text-danger { color: var(--rose) !important; }
+.dropdown-divider { border-color: var(--border) !important; margin: 0.25rem 0; }
 
-        .bulk-actions-bar {
-            padding: 0.75rem 1rem;
-        }
-    }
-    [data-theme="dark"] .table-responsive !important {
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);   
-    }
-    [data-theme="dark"] .card-body !important {
-        background: var(--bg-secondary);
-    }
-   
-    [data-theme="dark"] .invoice-table {
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-    }
-    [data-theme="dark"] .bulk-actions-bar {
-        background: linear-gradient(135deg, var(--primary-800), var(--primary-900));
-    }
-    [data-theme="dark"] .search-filters-card {
-        background: var(--bg-secondary);
-        border-color: var(--border-color-dark);
-    }
+/* Checkbox */
+.form-check-input {
+  background-color: var(--ink) !important;
+  border-color: var(--border-em) !important;
+  cursor: pointer;
+}
+.form-check-input:checked { background-color: var(--violet) !important; border-color: var(--violet) !important; }
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: var(--text-3);
+}
+.empty-state i { font-size: 3.5rem; opacity: 0.25; display: block; margin-bottom: 1rem; }
+.empty-state h5 { font-family: var(--font-head); color: var(--text-2); margin-bottom: 0.5rem; }
+
+/* Bulk actions bar */
+.bulk-bar {
+  position: fixed; bottom: -80px; left: 0; right: 0;
+  background: var(--ink-soft);
+  border-top: 1px solid var(--border-em);
+  padding: 0.875rem 2rem;
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.15);
+  z-index: 1000;
+  transition: bottom 0.3s cubic-bezier(0.16,1,0.3,1);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.bulk-bar.show { bottom: 0; }
+.bulk-bar-count {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-2);
+}
+.bulk-bar-count strong { color: var(--violet); }
+
+/* Pagination */
+.pag-wrap {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.75rem;
+  border-top: 1px solid var(--border);
+}
+.pag-info {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-3);
+  letter-spacing: 0.05em;
+}
+.page-link {
+  background: var(--ink) !important;
+  border-color: var(--border-em) !important;
+  color: var(--text-2) !important;
+  border-radius: var(--r-sm) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 0.8rem !important;
+}
+.page-item.active .page-link {
+  background: var(--violet) !important;
+  border-color: var(--violet) !important;
+  color: #fff !important;
+}
+.page-link:hover { color: var(--violet) !important; }
+
+/* Advanced filters */
+#advancedFilters { margin-top: 1rem; }
+.adv-divider { border-color: var(--border); margin: 1rem 0; }
+
+@media (max-width: 768px) {
+  .page-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
+  .inv-table { font-size: 0.82rem; }
+  .inv-table thead th, .inv-table td { padding: 0.7rem 0.6rem; }
+  .filter-card { padding: 1rem; }
+  .bulk-bar { padding: 0.75rem 1rem; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h3 mb-1">
-                <i class="bi bi-file-earmark-text me-2"></i>
-                {% trans "Invoices" %}
-            </h1>
-            <p class="text-muted mb-0">
-                {% trans "Manage and track all your invoices" %}
-            </p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="{% url 'invoices:dashboard' %}" class="btn btn-outline-secondary">
-                <i class="bi bi-speedometer2 me-2"></i>
-                {% trans "Dashboard" %}
-            </a>
-            <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn btn-primary">
-                <i class="bi bi-plus-circle me-2"></i>
-                {% trans "Create Invoice" %}
-            </a>
-        </div>
+<div class="ambient-glow"></div>
+<div class="ambient-glow-2"></div>
+
+<div class="page-wrap">
+
+  <!-- Page Header -->
+  <div class="page-header">
+    <div style="display:flex; align-items:center;">
+      <div class="header-accent"></div>
+      <div>
+        <h1 class="page-title">{% trans "Invoices" %}</h1>
+        <p class="page-subtitle">{% trans "Manage and track all your invoices" %}</p>
+      </div>
     </div>
-
-    <!-- Search & Filters -->
-    <div class="search-filters-card">
-        <form method="get" id="searchForm">
-            <div class="row g-3">
-                <!-- Search Input -->
-                <div class="col-md-4">
-                    <div class="filter-group">
-                        <label class="form-label small fw-semibold">
-                            <i class="bi bi-search me-1"></i>
-                            {% trans "Search" %}
-                        </label>
-                        <input type="text"
-                               name="search"
-                               class="form-control"
-                               placeholder="{% trans 'Invoice number, customer name...' %}"
-                               value="{{ request.GET.search }}">
-                    </div>
-                </div>
-
-                <!-- Status Filter -->
-                <div class="col-md-2">
-                    <div class="filter-group">
-                        <label class="form-label small fw-semibold">
-                            <i class="bi bi-funnel me-1"></i>
-                            {% trans "Status" %}
-                        </label>
-                        <select name="status" class="form-select">
-                            <option value="">{% trans "All Statuses" %}</option>
-                            <option value="PAID" {% if request.GET.status == 'PAID' %}selected{% endif %}>{% trans "Paid" %}</option>
-                            <option value="PENDING_PAYMENT" {% if request.GET.status == 'PENDING_PAYMENT' %}selected{% endif %}>{% trans "Pending Payment" %}</option>
-                            <option value="PARTIALLY_PAID" {% if request.GET.status == 'PARTIALLY_PAID' %}selected{% endif %}>{% trans "Partially Paid" %}</option>
-                            <option value="OVERDUE" {% if request.GET.status == 'OVERDUE' %}selected{% endif %}>{% trans "Overdue" %}</option>
-                            <option value="DRAFT" {% if request.GET.status == 'DRAFT' %}selected{% endif %}>{% trans "Draft" %}</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Date From -->
-                <div class="col-md-2">
-                    <div class="filter-group">
-                        <label class="form-label small fw-semibold">
-                            <i class="bi bi-calendar me-1"></i>
-                            {% trans "From Date" %}
-                        </label>
-                        <input type="date"
-                               name="date_from"
-                               class="form-control"
-                               value="{{ request.GET.date_from }}">
-                    </div>
-                </div>
-
-                <!-- Date To -->
-                <div class="col-md-2">
-                    <div class="filter-group">
-                        <label class="form-label small fw-semibold">
-                            <i class="bi bi-calendar-check me-1"></i>
-                            {% trans "To Date" %}
-                        </label>
-                        <input type="date"
-                               name="date_to"
-                               class="form-control"
-                               value="{{ request.GET.date_to }}">
-                    </div>
-                </div>
-
-                <!-- Filter Buttons -->
-                <div class="col-md-2">
-                    <label class="form-label small fw-semibold d-block">
-                        &nbsp;
-                    </label>
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary flex-fill">
-                            <i class="bi bi-search"></i>
-                            <span class="d-none d-lg-inline ms-1">{% trans "Search" %}</span>
-                        </button>
-                        <a href="{% url 'invoices:list' %}" class="btn btn-outline-secondary">
-                            <i class="bi bi-x-circle"></i>
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Advanced Filters (Collapsible) -->
-            <div class="collapse" id="advancedFilters">
-                <hr class="my-3">
-                <div class="row g-3">
-                    <div class="col-md-3">
-                        <label class="form-label small fw-semibold">{% trans "Min Amount" %}</label>
-                        <input type="number"
-                               name="amount_min"
-                               class="form-control"
-                               placeholder="0"
-                               value="{{ request.GET.amount_min }}">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label small fw-semibold">{% trans "Max Amount" %}</label>
-                        <input type="number"
-                               name="amount_max"
-                               class="form-control"
-                               placeholder="999999999"
-                               value="{{ request.GET.amount_max }}">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label small fw-semibold">{% trans "Quick Filters" %}</label>
-                        <div class="form-check">
-                            <input class="form-check-input"
-                                   type="checkbox"
-                                   name="is_overdue"
-                                   id="isOverdue"
-                                   {% if request.GET.is_overdue %}checked{% endif %}>
-                            <label class="form-check-label" for="isOverdue">
-                                {% trans "Show Overdue Only" %}
-                            </label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input"
-                                   type="checkbox"
-                                   name="is_fiscalized"
-                                   id="isFiscalized"
-                                   {% if request.GET.is_fiscalized %}checked{% endif %}>
-                            <label class="form-check-label" for="isFiscalized">
-                                {% trans "Show Fiscalized Only" %}
-                            </label>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Toggle Advanced Filters -->
-            <div class="text-center mt-3">
-                <button class="btn btn-sm btn-outline-secondary"
-                        type="button"
-                        data-bs-toggle="collapse"
-                        data-bs-target="#advancedFilters">
-                    <i class="bi bi-sliders me-1"></i>
-                    {% trans "Advanced Filters" %}
-                </button>
-            </div>
-        </form>
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+      <a href="{% url 'invoices:dashboard' %}" class="btn-action">
+        <i class="bi bi-speedometer2"></i> {% trans "Dashboard" %}
+      </a>
+      <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn-action primary">
+        <i class="bi bi-plus-circle"></i> {% trans "Create Invoice" %}
+      </a>
     </div>
+  </div>
 
-    <!-- Bulk Actions Bar -->
-    <div class="bulk-actions-bar" id="bulkActionsBar">
-        <div class="container-fluid">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <span id="selectedCount">0</span> {% trans "invoices selected" %}
-                </div>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-light btn-sm" onclick="bulkAction('export_pdf')">
-                        <i class="bi bi-file-pdf me-1"></i>
-                        {% trans "Export PDF" %}
-                    </button>
-                    <button type="button" class="btn btn-light btn-sm" onclick="bulkAction('export_csv')">
-                        <i class="bi bi-file-spreadsheet me-1"></i>
-                        {% trans "Export CSV" %}
-                    </button>
-                    <button type="button" class="btn btn-warning btn-sm" onclick="bulkAction('fiscalize')">
-                        <i class="bi bi-shield-check me-1"></i>
-                        {% trans "Fiscalize" %}
-                    </button>
-                    <button type="button" class="btn btn-outline-light btn-sm" onclick="clearSelection()">
-                        <i class="bi bi-x-circle me-1"></i>
-                        {% trans "Clear" %}
-                    </button>
-                </div>
-            </div>
+  <!-- Filters -->
+  <div class="filter-card">
+    <form method="get" id="searchForm">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="filter-label"><i class="bi bi-search me-1"></i>{% trans "Search" %}</label>
+          <input type="text" name="search" class="form-control"
+                 placeholder="{% trans 'Invoice number, customer...' %}"
+                 value="{{ request.GET.search }}">
         </div>
-    </div>
-
-    <!-- Invoices Table -->
-    <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <div>
-                <h5 class="mb-0">
-                    {% if page_obj %}
-                        {% blocktrans count counter=page_obj.paginator.count %}
-                            {{ counter }} Invoice
-                        {% plural %}
-                            {{ counter }} Invoices
-                        {% endblocktrans %}
-                    {% else %}
-                        {% trans "Invoices" %}
-                    {% endif %}
-                </h5>
-            </div>
-            <div class="d-flex gap-2">
-                <div class="form-check">
-                    <input class="form-check-input"
-                           type="checkbox"
-                           id="selectAll"
-                           onclick="toggleSelectAll(this)">
-                    <label class="form-check-label small" for="selectAll">
-                        {% trans "Select All" %}
-                    </label>
-                </div>
-            </div>
+        <div class="col-md-2">
+          <label class="filter-label"><i class="bi bi-funnel me-1"></i>{% trans "Status" %}</label>
+          <select name="status" class="form-select">
+            <option value="">{% trans "All Statuses" %}</option>
+            <option value="PAID" {% if request.GET.status == 'PAID' %}selected{% endif %}>{% trans "Paid" %}</option>
+            <option value="PENDING_PAYMENT" {% if request.GET.status == 'PENDING_PAYMENT' %}selected{% endif %}>{% trans "Pending Payment" %}</option>
+            <option value="PARTIALLY_PAID" {% if request.GET.status == 'PARTIALLY_PAID' %}selected{% endif %}>{% trans "Partially Paid" %}</option>
+            <option value="OVERDUE" {% if request.GET.status == 'OVERDUE' %}selected{% endif %}>{% trans "Overdue" %}</option>
+            <option value="DRAFT" {% if request.GET.status == 'DRAFT' %}selected{% endif %}>{% trans "Draft" %}</option>
+          </select>
         </div>
-        <div class="card-body p-0 ">
-            <div class="table-responsive ">
-                <table class="table invoice-table mb-0 dre">
-                    <thead>
-                        <tr>
-                            <th width="3%">
-                                <input type="checkbox"
-                                       class="form-check-input"
-                                       id="selectAllHeader"
-                                       onclick="toggleSelectAll(this)">
-                            </th>
-                            <th width="12%">{% trans "Invoice #" %}</th>
-                            <th width="20%">{% trans "Customer" %}</th>
-                            <th width="12%" class="text-end">{% trans "Amount" %}</th>
-                            <th width="12%">{% trans "Status" %}</th>
-                            <th width="12%">{% trans "Issue Date" %}</th>
-                            <th width="12%">{% trans "Due Date" %}</th>
-                            {% if efris_enabled %}
-                            <th width="10%">{% trans "EFRIS" %}</th>
-                            {% endif %}
-                            <th width="7%" class="text-center">{% trans "Actions" %}</th>
-                        </tr>
-                    </thead>
-                    <tbody >
-                        {% for invoice in invoices %}
-                        <tr class="{% if invoice.is_overdue %}overdue-row{% endif %}"
-                            onclick="handleRowClick(event, '{% url 'invoices:detail' invoice.pk %}')">
-                            <td onclick="event.stopPropagation()">
-                                <input type="checkbox"
-                                       class="form-check-input invoice-checkbox"
-                                       name="selected_invoices"
-                                       value="{{ invoice.pk }}"
-                                       onchange="updateBulkActions()">
-                            </td>
-                            <td>
-                                <a href="{% url 'invoices:detail' invoice.pk %}"
-                                   class="invoice-number-link">
-                                    {{ invoice.invoice_number }}
-                                </a>
-                                <div class="small text-muted">
-                                    {{ invoice.issue_date|date:"M d, Y" }}
-                                </div>
-                            </td>
-                            <td>
-                                {% if invoice.customer %}
-                                    <div class="fw-semibold">{{ invoice.customer.name|truncatechars:30 }}</div>
-                                    {% if invoice.customer.email %}
-                                        <small class="text-muted">{{ invoice.customer.email|truncatechars:25 }}</small>
-                                    {% endif %}
-                                {% else %}
-                                    <span class="text-muted fst-italic">{% trans "Walk-in Customer" %}</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-end">
-                                <div class="amount-cell text-primary">
-                                    UGX {{ invoice.total_amount|floatformat:0|intcomma }}
-                                </div>
-                                {% if invoice.amount_outstanding > 0 %}
-                                    <small class="text-danger">
-                                        {% trans "Due:" %} UGX {{ invoice.amount_outstanding|floatformat:0|intcomma }}
-                                    </small>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <span class="status-badge status-{{ invoice.sale.payment_status }}">
-                                    <i class="bi
-                                        {% if invoice.sale.payment_status == 'PAID' or invoice.sale.payment_status == 'COMPLETED' %}bi-check-circle-fill
-                                        {% elif invoice.sale.payment_status == 'PENDING_PAYMENT' %}bi-clock
-                                        {% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}bi-hourglass-split
-                                        {% elif invoice.sale.payment_status == 'OVERDUE' %}bi-exclamation-triangle-fill
-                                        {% else %}bi-file-earmark{% endif %}">
-                                    </i>
-                                    {{ invoice.sale.get_payment_status_display }}
-                                </span>
-                            </td>
-                            <td>
-                                <div>{{ invoice.issue_date|date:"M d, Y" }}</div>
-                                <small class="text-muted">{{ invoice.issue_date|timesince }} ago</small>
-                            </td>
-                            <td>
-                                <div class="{% if invoice.is_overdue %}text-danger fw-bold{% endif %}">
-                                    {{ invoice.due_date|date:"M d, Y" }}
-                                </div>
-                                {% if invoice.is_overdue %}
-                                    <small class="text-danger fw-semibold">
-                                        <i class="bi bi-exclamation-circle me-1"></i>
-                                        {{ invoice.days_overdue }} {% trans "days overdue" %}
-                                    </small>
-                                {% elif invoice.days_until_due <= 3 and not invoice.is_paid %}
-                                    <small class="text-warning">
-                                        <i class="bi bi-clock me-1"></i>
-                                        {% trans "Due soon" %}
-                                    </small>
-                                {% endif %}
-                            </td>
-                            {% if efris_enabled %}
-                            <td>
-                                {% if invoice.is_fiscalized %}
-                                    <span class="fiscalized-badge">
-                                        <i class="bi bi-shield-check-fill"></i>
-                                        {% trans "Fiscalized" %}
-                                    </span>
-                                {% elif invoice.fiscalization_status == 'failed' %}
-                                    <span class="badge bg-danger">
-                                        <i class="bi bi-x-circle me-1"></i>
-                                        {% trans "Failed" %}
-                                    </span>
-                                {% else %}
-                                    <span class="badge bg-secondary">
-                                        <i class="bi bi-clock me-1"></i>
-                                        {% trans "Pending" %}
-                                    </span>
-                                {% endif %}
-                            </td>
-                            {% endif %}
-                            <td class="text-center" onclick="event.stopPropagation()">
-                                <div class="action-btn-group">
-                                    <a href="{% url 'invoices:detail' invoice.pk %}"
-                                       class="btn btn-sm btn-outline-primary"
-                                       title="{% trans 'View' %}"
-                                       data-bs-toggle="tooltip">
-                                        <i class="bi bi-eye"></i>
-                                    </a>
-                                    <a href="{% url 'invoices:print' invoice.pk %}"
-                                       class="btn btn-sm btn-outline-secondary"
-                                       title="{% trans 'Print' %}"
-                                       data-bs-toggle="tooltip"
-                                       target="_blank">
-                                        <i class="bi bi-printer"></i>
-                                    </a>
-                                    <div class="dropdown">
-                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
-                                                type="button"
-                                                data-bs-toggle="dropdown">
-                                            <i class="bi bi-three-dots-vertical"></i>
-                                        </button>
-                                        <ul class="dropdown-menu dropdown-menu-end">
-                                            <li>
-                                                <a class="dropdown-item" href="{% url 'invoices:print' invoice.pk %}">
-                                                    <i class="bi bi-download me-2"></i>
-                                                    {% trans "Download PDF" %}
-                                                </a>
-                                            </li>
-                                            {% if efris_enabled %}
-                                            {% if not invoice.is_fiscalized %}
-                                            <li>
-                                                <a class="dropdown-item" href="{% url 'invoices:fiscalize' invoice.pk %}">
-                                                    <i class="bi bi-shield-check me-2"></i>
-                                                    {% trans "Fiscalize" %}
-                                                </a>
-                                            </li>
-                                            {% endif %}
-                                            {% endif %}
-                                            <li><hr class="dropdown-divider"></li>
-                                            <li>
-                                                <a class="dropdown-item" href="{% url 'invoices:duplicate' invoice.pk %}">
-                                                    <i class="bi bi-files me-2"></i>
-                                                    {% trans "Duplicate" %}
-                                                </a>
-                                            </li>
-                                            {% if not invoice.is_fiscalized and invoice.sale.payment_status != 'PAID' %}
-                                            <li><hr class="dropdown-divider"></li>
-                                            <li>
-                                                <a class="dropdown-item text-danger"
-                                                   href="javascript:void(0)"
-                                                   onclick="confirmCancel({{ invoice.pk }})">
-                                                    <i class="bi bi-x-circle me-2"></i>
-                                                    {% trans "Cancel Invoice" %}
-                                                </a>
-                                            </li>
-                                            {% endif %}
-                                        </ul>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="9" class="text-center py-5">
-                                <div class="text-muted">
-                                    <i class="bi bi-inbox fs-1 mb-3 d-block opacity-50"></i>
-                                    <h5>{% trans "No invoices found" %}</h5>
-                                    <p>{% trans "Try adjusting your search filters or create a new invoice" %}</p>
-                                    <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn btn-primary mt-2">
-                                        <i class="bi bi-plus-circle me-2"></i>
-                                        {% trans "Create Invoice" %}
-                                    </a>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+        <div class="col-md-2">
+          <label class="filter-label"><i class="bi bi-calendar me-1"></i>{% trans "From" %}</label>
+          <input type="date" name="date_from" class="form-control" value="{{ request.GET.date_from }}">
         </div>
-
-        <!-- Pagination -->
-        {% if is_paginated %}
-        <div class="card-footer">
-            <div class="d-flex justify-content-between align-items-center">
-                <div class="pagination-info">
-                    {% trans "Showing" %}
-                    <strong>{{ page_obj.start_index }}</strong>
-                    {% trans "to" %}
-                    <strong>{{ page_obj.end_index }}</strong>
-                    {% trans "of" %}
-                    <strong>{{ page_obj.paginator.count }}</strong>
-                    {% trans "invoices" %}
-                </div>
-                <nav>
-                    <ul class="pagination mb-0">
-                        {% if page_obj.has_previous %}
-                            <li class="page-item">
-                                <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page=1">
-                                    <i class="bi bi-chevron-double-left"></i>
-                                </a>
-                            </li>
-                            <li class="page-item">
-                                <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}">
-                                    <i class="bi bi-chevron-left"></i>
-                                </a>
-                            </li>
-                        {% else %}
-                            <li class="page-item disabled">
-                                <span class="page-link"><i class="bi bi-chevron-double-left"></i></span>
-                            </li>
-                            <li class="page-item disabled">
-                                <span class="page-link"><i class="bi bi-chevron-left"></i></span>
-                            </li>
-                        {% endif %}
-
-                        {% for num in page_obj.paginator.page_range %}
-                            {% if page_obj.number == num %}
-                                <li class="page-item active"><span class="page-link">{{ num }}</span></li>
-                            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                                <li class="page-item">
-                                    <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ num }}">{{ num }}</a>
-                                </li>
-                            {% endif %}
-                        {% endfor %}
-
-                        {% if page_obj.has_next %}
-                            <li class="page-item">
-                                <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}">
-                                    <i class="bi bi-chevron-right"></i>
-                                </a>
-                            </li>
-                            <li class="page-item">
-                                <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.paginator.num_pages }}">
-                                    <i class="bi bi-chevron-double-right"></i>
-                                </a>
-                            </li>
-                        {% else %}
-                            <li class="page-item disabled">
-                                <span class="page-link"><i class="bi bi-chevron-right"></i></span>
-                            </li>
-                            <li class="page-item disabled">
-                                <span class="page-link"><i class="bi bi-chevron-double-right"></i></span>
-                            </li>
-                        {% endif %}
-                    </ul>
-                </nav>
-            </div>
+        <div class="col-md-2">
+          <label class="filter-label"><i class="bi bi-calendar-check me-1"></i>{% trans "To" %}</label>
+          <input type="date" name="date_to" class="form-control" value="{{ request.GET.date_to }}">
         </div>
+        <div class="col-md-2 d-flex align-items-end gap-2">
+          <button type="submit" class="btn-action primary flex-fill justify-content-center">
+            <i class="bi bi-search"></i> <span class="d-none d-lg-inline">{% trans "Search" %}</span>
+          </button>
+          <a href="{% url 'invoices:list' %}" class="btn-action" style="flex-shrink:0;">
+            <i class="bi bi-x"></i>
+          </a>
+        </div>
+      </div>
+
+      <!-- Advanced Filters -->
+      <div class="collapse" id="advancedFilters">
+        <hr class="adv-divider">
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label class="filter-label">{% trans "Min Amount" %}</label>
+            <input type="number" name="amount_min" class="form-control" placeholder="0" value="{{ request.GET.amount_min }}">
+          </div>
+          <div class="col-md-3">
+            <label class="filter-label">{% trans "Max Amount" %}</label>
+            <input type="number" name="amount_max" class="form-control" placeholder="999999999" value="{{ request.GET.amount_max }}">
+          </div>
+          <div class="col-md-3">
+            <label class="filter-label">{% trans "Quick Filters" %}</label>
+            <div style="display:flex; flex-direction:column; gap:0.4rem; margin-top:0.25rem;">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_overdue" id="isOverdue"
+                       {% if request.GET.is_overdue %}checked{% endif %}>
+                <label class="form-check-label" style="font-size:0.85rem; color:var(--text-2);" for="isOverdue">{% trans "Overdue Only" %}</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_fiscalized" id="isFiscalized"
+                       {% if request.GET.is_fiscalized %}checked{% endif %}>
+                <label class="form-check-label" style="font-size:0.85rem; color:var(--text-2);" for="isFiscalized">{% trans "Fiscalized Only" %}</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align:center; margin-top:1rem;">
+        <button class="btn-action" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+          <i class="bi bi-sliders me-1"></i> {% trans "Advanced Filters" %}
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Table Card -->
+  <div class="table-card">
+    <div class="table-card-header">
+      <h5 class="table-card-title">
+        <span class="section-icon icon-violet"><i class="bi bi-file-earmark-text"></i></span>
+        {% if page_obj %}
+          {% blocktrans count counter=page_obj.paginator.count %}
+            {{ counter }} Invoice
+          {% plural %}
+            {{ counter }} Invoices
+          {% endblocktrans %}
+        {% else %}
+          {% trans "Invoices" %}
         {% endif %}
+      </h5>
+      <div style="display:flex; align-items:center; gap:0.75rem;">
+        <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; color:var(--text-3); cursor:pointer;">
+          <input type="checkbox" class="form-check-input" id="selectAll" onclick="toggleSelectAll(this)">
+          {% trans "Select All" %}
+        </label>
+      </div>
     </div>
+
+    <div style="overflow-x:auto;">
+      <table class="inv-table">
+        <thead>
+          <tr>
+            <th style="width:3%; padding-left:1.25rem;">
+              <input type="checkbox" class="form-check-input" id="selectAllHeader" onclick="toggleSelectAll(this)">
+            </th>
+            <th style="width:13%;">{% trans "Invoice #" %}</th>
+            <th style="width:20%;">{% trans "Customer" %}</th>
+            <th style="width:14%; text-align:right;">{% trans "Amount" %}</th>
+            <th style="width:13%;">{% trans "Status" %}</th>
+            <th style="width:11%;">{% trans "Issue Date" %}</th>
+            <th style="width:12%;">{% trans "Due Date" %}</th>
+            {% if efris_enabled %}<th style="width:10%;">{% trans "EFRIS" %}</th>{% endif %}
+            <th style="width:8%; text-align:center;">{% trans "Actions" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for invoice in invoices %}
+          <tr class="{% if invoice.is_overdue %}overdue-row{% endif %}"
+              onclick="handleRowClick(event, '{% url 'invoices:detail' invoice.pk %}')">
+            <td style="padding-left:1.25rem;" onclick="event.stopPropagation()">
+              <input type="checkbox" class="form-check-input invoice-checkbox"
+                     name="selected_invoices" value="{{ invoice.pk }}"
+                     onchange="updateBulkActions()">
+            </td>
+
+            <td>
+              <a href="{% url 'invoices:detail' invoice.pk %}" class="inv-number">
+                {{ invoice.invoice_number }}
+              </a>
+              <div class="inv-date-sub">{{ invoice.issue_date|date:"M d, Y" }}</div>
+            </td>
+
+            <td>
+              {% if invoice.customer %}
+                <div class="cust-name">{{ invoice.customer.name|truncatechars:28 }}</div>
+                {% if invoice.customer.email %}
+                  <div class="cust-email">{{ invoice.customer.email|truncatechars:24 }}</div>
+                {% endif %}
+              {% else %}
+                <span style="color:var(--text-3); font-style:italic; font-size:0.875rem;">{% trans "Walk-in Customer" %}</span>
+              {% endif %}
+            </td>
+
+            <td style="text-align:right;">
+              <div class="amt-primary">UGX {{ invoice.total_amount|floatformat:0|intcomma }}</div>
+              {# ── BUG FIX: Only show "Due" line when there is actually an outstanding balance ── #}
+              {% if invoice.amount_outstanding > 0 %}
+                <div class="amt-due">
+                  <i class="bi bi-arrow-right-short"></i>
+                  {% trans "Due:" %} UGX {{ invoice.amount_outstanding|floatformat:0|intcomma }}
+                </div>
+              {% endif %}
+            </td>
+
+            <td>
+              <span class="status-pill status-{{ invoice.sale.payment_status }}">
+                <span class="dot"></span>
+                {{ invoice.sale.get_payment_status_display }}
+              </span>
+            </td>
+
+            <td>
+              <div style="font-size:0.875rem; color:var(--text-2);">{{ invoice.issue_date|date:"M d, Y" }}</div>
+              <div class="inv-date-sub">{{ invoice.issue_date|timesince }} ago</div>
+            </td>
+
+            <td>
+              {% if invoice.is_overdue %}
+                <div class="due-overdue">{{ invoice.due_date|date:"M d, Y" }}</div>
+                <div class="due-sub" style="color:var(--rose);">
+                  <i class="bi bi-exclamation-circle"></i> {{ invoice.days_overdue }}d overdue
+                </div>
+              {% elif invoice.days_until_due <= 3 and not invoice.is_paid %}
+                <div class="due-warn">{{ invoice.due_date|date:"M d, Y" }}</div>
+                <div class="due-sub" style="color:var(--amber);">
+                  <i class="bi bi-clock"></i> {% trans "Due soon" %}
+                </div>
+              {% else %}
+                <div class="due-ok">{{ invoice.due_date|date:"M d, Y" }}</div>
+              {% endif %}
+            </td>
+
+            {% if efris_enabled %}
+            <td>
+              {% if invoice.is_fiscalized %}
+                <span class="efris-badge efris-ok"><i class="bi bi-shield-check-fill"></i> {% trans "Fiscal" %}</span>
+              {% elif invoice.fiscalization_status == 'failed' %}
+                <span class="efris-badge efris-fail"><i class="bi bi-x-circle"></i> {% trans "Failed" %}</span>
+              {% else %}
+                <span class="efris-badge efris-pending"><i class="bi bi-clock"></i> {% trans "Pending" %}</span>
+              {% endif %}
+            </td>
+            {% endif %}
+
+            <td onclick="event.stopPropagation()">
+              <div class="act-group" style="justify-content:center;">
+                <a href="{% url 'invoices:detail' invoice.pk %}" class="act-btn" title="{% trans 'View' %}" data-bs-toggle="tooltip">
+                  <i class="bi bi-eye"></i>
+                </a>
+                <a href="{% url 'invoices:print' invoice.pk %}" class="act-btn print" title="{% trans 'Print' %}" data-bs-toggle="tooltip" target="_blank">
+                  <i class="bi bi-printer"></i>
+                </a>
+                <div class="dropdown">
+                  <button class="act-btn" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-three-dots-vertical"></i>
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="{% url 'invoices:print' invoice.pk %}">
+                      <i class="bi bi-download"></i> {% trans "Download PDF" %}
+                    </a></li>
+                    {% if efris_enabled and not invoice.is_fiscalized %}
+                    <li><a class="dropdown-item" href="{% url 'invoices:fiscalize' invoice.pk %}">
+                      <i class="bi bi-shield-check"></i> {% trans "Fiscalize" %}
+                    </a></li>
+                    {% endif %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="{% url 'invoices:duplicate' invoice.pk %}">
+                      <i class="bi bi-files"></i> {% trans "Duplicate" %}
+                    </a></li>
+                    {% if not invoice.is_fiscalized and invoice.sale.payment_status != 'PAID' %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="confirmCancel({{ invoice.pk }})">
+                      <i class="bi bi-x-circle"></i> {% trans "Cancel Invoice" %}
+                    </a></li>
+                    {% endif %}
+                  </ul>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9">
+              <div class="empty-state">
+                <i class="bi bi-inbox"></i>
+                <h5>{% trans "No invoices found" %}</h5>
+                <p style="font-size:0.875rem; margin-bottom:1.5rem;">{% trans "Try adjusting your search filters or create a new invoice" %}</p>
+                <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn-action primary">
+                  <i class="bi bi-plus-circle"></i> {% trans "Create Invoice" %}
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if is_paginated %}
+    <div class="pag-wrap">
+      <div class="pag-info">
+        SHOWING {{ page_obj.start_index }}–{{ page_obj.end_index }} OF {{ page_obj.paginator.count }}
+      </div>
+      <nav>
+        <ul class="pagination mb-0" style="gap:0.25rem;">
+          {% if page_obj.has_previous %}
+            <li class="page-item">
+              <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page=1"><i class="bi bi-chevron-double-left"></i></a>
+            </li>
+            <li class="page-item">
+              <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}"><i class="bi bi-chevron-left"></i></a>
+            </li>
+          {% else %}
+            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
+            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i></span></li>
+          {% endif %}
+
+          {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+              <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+              <li class="page-item">
+                <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ num }}">{{ num }}</a>
+              </li>
+            {% endif %}
+          {% endfor %}
+
+          {% if page_obj.has_next %}
+            <li class="page-item">
+              <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}"><i class="bi bi-chevron-right"></i></a>
+            </li>
+            <li class="page-item">
+              <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.paginator.num_pages }}"><i class="bi bi-chevron-double-right"></i></a>
+            </li>
+          {% else %}
+            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right"></i></span></li>
+            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-right"></i></span></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div><!-- /table-card -->
+
+</div><!-- /page-wrap -->
+
+<!-- Bulk Actions Bar -->
+<div class="bulk-bar" id="bulkBar">
+  <div class="bulk-bar-count"><strong id="selectedCount">0</strong> {% trans "invoices selected" %}</div>
+  <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+    <button class="btn-action" onclick="bulkAction('export_pdf')"><i class="bi bi-file-pdf"></i> PDF</button>
+    <button class="btn-action" onclick="bulkAction('export_csv')"><i class="bi bi-file-spreadsheet"></i> CSV</button>
+    <button class="btn-action" onclick="bulkAction('fiscalize')" style="color:var(--emerald);"><i class="bi bi-shield-check"></i> {% trans "Fiscalize" %}</button>
+    <button class="btn-action" onclick="clearSelection()"><i class="bi bi-x"></i> {% trans "Clear" %}</button>
+  </div>
 </div>
 
-<!-- Bulk Action Form (Hidden) -->
-<form id="bulkActionForm" method="post" action="{% url 'invoices:bulk_actions' %}" style="display: none;">
-    {% csrf_token %}
-    <input type="hidden" name="action" id="bulkActionType">
-    <div id="bulkInvoiceIds"></div>
+<!-- Hidden bulk form -->
+<form id="bulkActionForm" method="post" action="{% url 'invoices:bulk_actions' %}" style="display:none;">
+  {% csrf_token %}
+  <input type="hidden" name="action" id="bulkActionType">
+  <div id="bulkInvoiceIds"></div>
 </form>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// Initialize tooltips
 document.addEventListener('DOMContentLoaded', function() {
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
 });
 
-// Handle row click
 function handleRowClick(event, url) {
-    // Don't navigate if clicking on checkbox, button, or link
-    if (event.target.tagName === 'INPUT' ||
-        event.target.tagName === 'BUTTON' ||
-        event.target.tagName === 'A' ||
-        event.target.closest('button') ||
-        event.target.closest('a')) {
-        return;
-    }
-    window.location.href = url;
+  if (event.target.tagName === 'INPUT' || event.target.tagName === 'BUTTON' ||
+      event.target.tagName === 'A' || event.target.closest('button') || event.target.closest('a')) return;
+  window.location.href = url;
 }
 
-// Toggle select all
-function toggleSelectAll(checkbox) {
-    const checkboxes = document.querySelectorAll('.invoice-checkbox');
-    checkboxes.forEach(cb => cb.checked = checkbox.checked);
-    updateBulkActions();
+function toggleSelectAll(cb) {
+  document.querySelectorAll('.invoice-checkbox').forEach(c => c.checked = cb.checked);
+  updateBulkActions();
 }
-// Update bulk actions bar
+
 function updateBulkActions() {
-const checkedBoxes = document.querySelectorAll('.invoice-checkbox:checked');
-const count = checkedBoxes.length;
-const bulkBar = document.getElementById('bulkActionsBar');
-const countDisplay = document.getElementById('selectedCount');
-    countDisplay.textContent = count;
-
-if (count > 0) {
-    bulkBar.classList.add('show');
-} else {
-    bulkBar.classList.remove('show');
+  const checked = document.querySelectorAll('.invoice-checkbox:checked');
+  const count = checked.length;
+  document.getElementById('selectedCount').textContent = count;
+  document.getElementById('bulkBar').classList.toggle('show', count > 0);
+  const all = document.querySelectorAll('.invoice-checkbox');
+  ['selectAll','selectAllHeader'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.checked = count === all.length && count > 0;
+  });
 }
 
-// Update select all checkbox
-const selectAll = document.getElementById('selectAll');
-const selectAllHeader = document.getElementById('selectAllHeader');
-const allCheckboxes = document.querySelectorAll('.invoice-checkbox');
-
-if (selectAll) selectAll.checked = count === allCheckboxes.length && count > 0;
-if (selectAllHeader) selectAllHeader.checked = count === allCheckboxes.length && count > 0;
-    }
-// Clear selection
 function clearSelection() {
-const checkboxes = document.querySelectorAll('.invoice-checkbox');
-checkboxes.forEach(cb => cb.checked = false);
-updateBulkActions();
+  document.querySelectorAll('.invoice-checkbox').forEach(c => c.checked = false);
+  updateBulkActions();
 }
-// Bulk action
+
 function bulkAction(action) {
-const checkedBoxes = document.querySelectorAll('.invoice-checkbox:checked');
-    if (checkedBoxes.length === 0) {
-    alert('{% trans "Please select at least one invoice" %}');
-    return;
+  const checked = document.querySelectorAll('.invoice-checkbox:checked');
+  if (!checked.length) { alert('{% trans "Please select at least one invoice" %}'); return; }
+  const form = document.getElementById('bulkActionForm');
+  document.getElementById('bulkActionType').value = action;
+  const container = document.getElementById('bulkInvoiceIds');
+  container.innerHTML = '';
+  checked.forEach(cb => {
+    const inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = 'selected_invoices'; inp.value = cb.value;
+    container.appendChild(inp);
+  });
+  if (action === 'fiscalize') {
+    if (confirm('{% trans "Fiscalize selected invoices?" %}')) form.submit();
+  } else { form.submit(); }
 }
 
-const form = document.getElementById('bulkActionForm');
-const actionInput = document.getElementById('bulkActionType');
-const idsContainer = document.getElementById('bulkInvoiceIds');
-
-actionInput.value = action;
-idsContainer.innerHTML = '';
-
-checkedBoxes.forEach(checkbox => {
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'selected_invoices';
-    input.value = checkbox.value;
-    idsContainer.appendChild(input);
-});
-
-if (action === 'fiscalize') {
-    if (confirm('{% trans "Are you sure you want to fiscalize the selected invoices?" %}')) {
-        form.submit();
-    }
-} else {
-    form.submit();
-}
-    }
-// Confirm cancel
-function confirmCancel(invoiceId) {
-if (confirm('{% trans "Are you sure you want to cancel this invoice? This action cannot be undone." %}')) {
-const form = document.createElement('form');
-form.method = 'POST';
-form.action = /invoices/${invoiceId}/cancel/;
-
-    const csrfInput = document.createElement('input');
-    csrfInput.type = 'hidden';
-    csrfInput.name = 'csrfmiddlewaretoken';
-    csrfInput.value = '{{ csrf_token }}';
-
-    form.appendChild(csrfInput);
+function confirmCancel(id) {
+  if (confirm('{% trans "Cancel this invoice? This cannot be undone." %}')) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/invoices/${id}/cancel/`;
+    const csrf = document.createElement('input');
+    csrf.type = 'hidden'; csrf.name = 'csrfmiddlewaretoken'; csrf.value = '{{ csrf_token }}';
+    form.appendChild(csrf);
     document.body.appendChild(form);
     form.submit();
+  }
 }
-    }
 </script>
 {% endblock %}

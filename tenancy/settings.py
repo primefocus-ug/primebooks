@@ -375,7 +375,7 @@ elif DEBUG:
     SESSION_COOKIE_SAMESITE = 'Lax'
     SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
     SESSION_CACHE_ALIAS = 'default'
-
+    TENANT_SIGNUP_URL = 'http://localhost:8000/prime-books/signup/'
     # Celery
     CELERY_TASK_ALWAYS_EAGER = True
     CELERY_TASK_EAGER_PROPAGATES = True
@@ -425,6 +425,7 @@ else:
     ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'primebooks.sale').split(',')]
     PUBLIC_ADMIN_URL = 'https://primebooks.sale'
     BASE_DOMAINS='primebooks.sale'
+    TENANT_SIGNUP_URL = 'https://primebooks.sale/prime-books/signup/'
     # Database - PostgreSQL with schema-per-tenant
     DATABASES = {
         'default': {
@@ -596,6 +597,7 @@ SHARED_APPS = [
     'django_extensions',
     'public_accounts',
     'public_admin',
+    'referral',
     'public_router',
     'public_seo',
     'public_blog',
@@ -665,6 +667,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
 
     # 🔥 AUTH AFTER SCHEMA IS SET
+    'referral.middleware.PartnerSessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django_otp.middleware.OTPMiddleware',
 
@@ -948,6 +951,7 @@ if IS_DESKTOP:
     ]
 else:
     AUTHENTICATION_BACKENDS = [
+        'referral.auth_backend.PartnerAuthBackend',
         'public_accounts.backends.PublicIdentifierBackend',
         'company.authentication.CompanyAwareAuthBackend',
         'accounts.backends.RoleBasedAuthBackend',
@@ -987,6 +991,11 @@ EFRIS_WEBSOCKET_SETTINGS = {
     'MAX_CONNECTIONS_PER_COMPANY': 50,
     'MESSAGE_SIZE_LIMIT': 1024 * 10,
 }
+
+SIGNUP_NOTIFICATION_EMAILS = [
+    'primefocusug@gmail.com',
+    # add more as needed
+]
 
 EFRIS_ENABLED = True
 EFRIS_DEFAULT_ENVIRONMENT = os.getenv('EFRIS_ENVIRONMENT', 'sandbox')

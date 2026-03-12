@@ -1,0 +1,86 @@
+{% extends "referral/base.html" %}
+
+{% block title %}My Referrals — Partner Portal — PRIMEBOOKS{% endblock %}
+{% block page_title %}My Referrals{% endblock %}
+
+{% block content %}
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.75rem">
+    <div>
+        <p style="font-size:0.85rem;color:var(--text-tertiary)">
+            All companies that have signed up using your referral link
+        </p>
+    </div>
+
+    <!-- Status filter tabs -->
+    <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+        <a href="?status=" class="btn btn-sm {% if not status_filter %}btn-accent{% else %}btn-secondary{% endif %}">All</a>
+        <a href="?status=pending" class="btn btn-sm {% if status_filter == 'pending' %}btn-accent{% else %}btn-secondary{% endif %}">
+            ⏳ Pending
+        </a>
+        <a href="?status=completed" class="btn btn-sm {% if status_filter == 'completed' %}btn-accent{% else %}btn-secondary{% endif %}">
+            ✓ Completed
+        </a>
+        <a href="?status=cancelled" class="btn btn-sm {% if status_filter == 'cancelled' %}btn-accent{% else %}btn-secondary{% endif %}">
+            ✕ Cancelled
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    {% if referrals %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Registered</th>
+                    <th>Completed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ref in referrals %}
+                <tr>
+                    <td style="color:var(--text-primary);font-weight:500">{{ ref.company_name }}</td>
+                    <td>{{ ref.company_email }}</td>
+                    <td>
+                        <span class="badge badge-{{ ref.status }}">
+                            {% if ref.status == 'pending' %}⏳{% elif ref.status == 'completed' %}✓{% else %}✕{% endif %}
+                            {{ ref.get_status_display }}
+                        </span>
+                    </td>
+                    <td>{{ ref.registered_at|date:"M d, Y" }}</td>
+                    <td>
+                        {% if ref.completed_at %}
+                            <span style="color:var(--success)">{{ ref.completed_at|date:"M d, Y" }}</span>
+                        {% else %}
+                            <span style="color:var(--text-tertiary)">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <p>
+            {% if status_filter %}
+                No referrals with status "{{ status_filter }}".
+                <a href="?status=" style="color:#6b78ff;text-decoration:none">Clear filter</a>
+            {% else %}
+                No referrals yet. Share your referral link to get started.
+            {% endif %}
+        </p>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}

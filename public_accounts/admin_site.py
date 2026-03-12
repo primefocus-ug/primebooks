@@ -807,7 +807,11 @@ class PublicModelAdmin:
                 messages.success(request, f'{self.model._meta.verbose_name} updated successfully.')
                 return redirect(f'public_admin:public_admin_{app_label}_{model_name_lower}_list')
         else:
+
             form = FormClass(instance=obj)
+            # Add this temporarily to see what's failing
+            print("FORM ERRORS:", form.errors)
+            messages.error(request, f'Form errors: {form.errors}')
 
         context = {
             'title': f'Change {self.model._meta.verbose_name}',

@@ -18,6 +18,7 @@ urlpatterns = [
     # Invoice CRUD operations
     path('create/', views.InvoiceCreateView.as_view(), name='create'),
     path('<int:pk>/', views.InvoiceDetailView.as_view(), name='detail'),
+    path('<int:pk>/payments/<int:payment_id>/receipt/', views.payment_receipt_view, name='payment_receipt'),
     path('<int:pk>/cancel/', views.cancel_invoice, name='cancel'),
     path('<int:pk>/mark-paid/', views.mark_as_paid, name='mark_as_paid'),
     path('<int:pk>/send-reminder/', views.send_payment_reminder, name='send_reminder'),

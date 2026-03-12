@@ -18,1581 +18,890 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
-    /* Enhanced Metric Cards */
-    .metric-card {
-        background: var(--bg-primary);
-        border: 1px solid var(--border-color);
-        border-radius: var(--border-radius);
-        transition: all 0.3s ease;
-        cursor: pointer;
-        height: 100%;
-    }
+/* ═══════════════════════════════════════════════════
+   DESIGN SYSTEM — INVOICE DASHBOARD
+   Matches: Premium Sales Detail theme
+   ═══════════════════════════════════════════════════ */
+:root,
+[data-theme="light"] {
+  --ink:        #f5f4fb;
+  --ink-soft:   #ffffff;
+  --ink-muted:  #eeedf7;
+  --border:     rgba(0,0,0,0.07);
+  --border-em:  rgba(0,0,0,0.13);
+  --text-1:     #0d0c1a;
+  --text-2:     #4a4868;
+  --text-3:     #9896b2;
+  --gold:       #b07d1a;
+  --emerald:    #0f9e62;
+  --rose:       #d63060;
+  --sky:        #1a7fc4;
+  --violet:     #6c4fcf;
+  --amber:      #c47d0e;
+  --white-10:   rgba(0,0,0,0.05);
+  --white-05:   rgba(0,0,0,0.025);
+  --shadow-1:   0 1px 3px rgba(0,0,0,0.08);
+  --shadow-2:   0 4px 16px rgba(0,0,0,0.10);
+  --r-sm:8px; --r-md:14px; --r-lg:20px; --r-xl:28px;
+  --font-head: 'Syne', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+[data-theme="dark"] {
+  --ink:        #0a0a0f;
+  --ink-soft:   #16161e;
+  --ink-muted:  #22222e;
+  --border:     rgba(255,255,255,0.07);
+  --border-em:  rgba(255,255,255,0.14);
+  --text-1:     #f0eff8;
+  --text-2:     #a8a7bf;
+  --text-3:     #66657e;
+  --gold:       #e8c96a;
+  --emerald:    #3ecf8e;
+  --rose:       #f06292;
+  --sky:        #60b9f8;
+  --violet:     #9b7fe8;
+  --amber:      #f5a623;
+  --white-10:   rgba(255,255,255,0.10);
+  --white-05:   rgba(255,255,255,0.05);
+  --shadow-1:   0 1px 3px rgba(0,0,0,0.4);
+  --shadow-2:   0 4px 16px rgba(0,0,0,0.5);
+}
 
-    .metric-card:hover {
-        transform: translateY(-5px);
-        box-shadow: var(--shadow-lg);
-        border-color: var(--primary-500);
-    }
+*, *::before, *::after { box-sizing: border-box; }
+body { font-family: var(--font-body); background: var(--ink); color: var(--text-1); transition: background 0.3s, color 0.3s; }
 
-    .metric-icon {
-        width: 60px;
-        height: 60px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-        margin: 0 auto;
-        transition: transform 0.3s ease;
-    }
+body::before {
+  content:''; position:fixed; inset:0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events:none; z-index:0; opacity:0.6;
+}
 
-    .metric-card:hover .metric-icon {
-        transform: scale(1.1);
-    }
+.page-wrap { position:relative; z-index:1; padding:2rem 1.5rem 4rem; }
+.ambient-glow { position:fixed; top:-200px; right:-200px; width:700px; height:700px; background:radial-gradient(circle,rgba(155,127,232,0.08) 0%,transparent 70%); pointer-events:none; z-index:0; }
+.ambient-glow-2 { position:fixed; bottom:-300px; left:-150px; width:600px; height:600px; background:radial-gradient(circle,rgba(15,158,98,0.05) 0%,transparent 70%); pointer-events:none; z-index:0; }
+[data-theme="light"] .ambient-glow  { background:radial-gradient(circle,rgba(108,79,207,0.05) 0%,transparent 70%); }
+[data-theme="light"] .ambient-glow-2 { background:radial-gradient(circle,rgba(15,158,98,0.04) 0%,transparent 70%); }
 
-    .metric-value {
-        font-size: 2rem;
-        font-weight: 700;
-        line-height: 1.2;
-        margin: 0.5rem 0;
-    }
+/* ── PAGE HEADER ── */
+.page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:2rem; flex-wrap:wrap; gap:1rem; animation:heroIn 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+@keyframes heroIn { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:none} }
+.header-accent { width:3px; height:2rem; background:linear-gradient(180deg,var(--violet),var(--sky)); border-radius:2px; margin-right:0.875rem; flex-shrink:0; }
+.page-title { font-family:var(--font-head); font-size:clamp(1.4rem,3vw,2rem); font-weight:800; color:var(--text-1); margin:0 0 0.2rem; }
+.page-subtitle { color:var(--text-3); font-size:0.875rem; margin:0; }
 
-    .metric-label {
-        font-size: 0.875rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--text-muted);
-    }
+/* ── BUTTONS ── */
+.btn-act {
+  display:inline-flex; align-items:center; gap:0.4rem;
+  padding:0.55rem 1.1rem; border-radius:var(--r-sm);
+  font-size:0.875rem; font-weight:600; font-family:var(--font-body);
+  border:1px solid var(--border-em); background:var(--white-10);
+  color:var(--text-1); cursor:pointer; text-decoration:none;
+  transition:all 0.2s; white-space:nowrap;
+}
+.btn-act:hover { transform:translateY(-1px); box-shadow:var(--shadow-1); color:var(--text-1); }
+.btn-act.primary { background:var(--violet); border-color:transparent; color:#fff; }
+.btn-act.primary:hover { background:#7c5ed4; color:#fff; }
 
-    .metric-change {
-        font-size: 0.875rem;
-        margin-top: 0.5rem;
-    }
+/* ── METRIC CARDS ── */
+.metric-card {
+  background:var(--ink-soft); border:1px solid var(--border);
+  border-radius:var(--r-lg); padding:1.5rem; cursor:pointer;
+  transition:all 0.3s; height:100%;
+  animation:cardIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
+}
+@keyframes cardIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+.metric-card:hover { transform:translateY(-4px); box-shadow:var(--shadow-2); border-color:var(--violet); }
+.metric-icon { width:52px; height:52px; border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; font-size:1.4rem; margin-bottom:1rem; }
+.mi-violet  { background:rgba(155,127,232,0.15); color:var(--violet); }
+.mi-emerald { background:rgba(15,158,98,0.15);   color:var(--emerald); }
+.mi-sky     { background:rgba(26,127,196,0.15);   color:var(--sky); }
+.mi-rose    { background:rgba(214,48,96,0.15);    color:var(--rose); }
+.mi-amber   { background:rgba(196,125,14,0.12);   color:var(--amber); }
+.mi-slate   { background:var(--white-10);          color:var(--text-2); }
+.mi-gold    { background:rgba(176,125,26,0.15);   color:var(--gold); }
+.metric-label { font-family:var(--font-mono); font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-3); margin-bottom:0.3rem; }
+.metric-value { font-family:var(--font-head); font-size:1.6rem; font-weight:800; color:var(--text-1); line-height:1.1; }
+.metric-sub { font-size:0.78rem; color:var(--text-3); margin-top:0.3rem; font-family:var(--font-mono); }
+.metric-sub.up { color:var(--emerald); }
+.metric-sub.down { color:var(--rose); }
 
-    /* Credit Specific Styles */
-    .credit-metric {
-        border-left: 4px solid var(--info-500);
-    }
+/* ── SECTION CARD ── */
+.section-card { background:var(--ink-soft); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; margin-bottom:1.5rem; box-shadow:var(--shadow-1); animation:cardIn 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+.section-card:hover { box-shadow:var(--shadow-2); }
+.section-header { display:flex; align-items:center; justify-content:space-between; padding:1.1rem 1.75rem; border-bottom:1px solid var(--border); background:var(--white-05); }
+.section-title { display:flex; align-items:center; gap:0.6rem; font-family:var(--font-head); font-size:0.95rem; font-weight:700; color:var(--text-1); margin:0; }
+.section-icon { width:32px; height:32px; border-radius:var(--r-sm); display:flex; align-items:center; justify-content:center; font-size:0.9rem; }
+.icon-violet  { background:rgba(155,127,232,0.15); color:var(--violet); }
+.icon-emerald { background:rgba(62,207,142,0.15);  color:var(--emerald); }
+.icon-sky     { background:rgba(96,185,248,0.15);   color:var(--sky); }
+.icon-rose    { background:rgba(240,98,146,0.15);   color:var(--rose); }
+.icon-amber   { background:rgba(196,125,14,0.12);   color:var(--amber); }
+.icon-gold    { background:rgba(232,201,106,0.15);  color:var(--gold); }
+.section-body { padding:1.5rem 1.75rem; }
 
-    .credit-badge {
-        background: linear-gradient(135deg, var(--info-400), var(--info-600));
-        color: white;
-        font-size: 0.75rem;
-        padding: 0.25rem 0.75rem;
-        border-radius: 50px;
-    }
+/* ── STATUS PILLS ── */
+.status-pill {
+  display:inline-flex; align-items:center; gap:0.3rem;
+  padding:0.25rem 0.6rem; border-radius:50px;
+  font-size:0.68rem; font-weight:600;
+  font-family:var(--font-mono); border:1px solid transparent;
+}
+.status-pill .dot { width:4px; height:4px; border-radius:50%; flex-shrink:0; }
+.sp-paid    { background:rgba(15,158,98,0.12);  color:var(--emerald); border-color:rgba(15,158,98,0.2);  }
+.sp-paid .dot    { background:var(--emerald); }
+.sp-pending { background:rgba(180,130,20,0.12); color:var(--amber);   border-color:rgba(180,130,20,0.2); }
+.sp-pending .dot { background:var(--amber); }
+.sp-partial { background:rgba(26,127,196,0.12); color:var(--sky);     border-color:rgba(26,127,196,0.2); }
+.sp-partial .dot { background:var(--sky); }
+.sp-overdue { background:rgba(214,48,96,0.12);  color:var(--rose);    border-color:rgba(214,48,96,0.2);  }
+.sp-overdue .dot { background:var(--rose); }
+.sp-credit  { background:rgba(26,127,196,0.1);  color:var(--sky);     border-color:rgba(26,127,196,0.2); }
 
-    .credit-progress {
-        height: 8px;
-        border-radius: 4px;
-        overflow: hidden;
-        background: var(--gray-200);
-    }
+/* ── CREDIT UTILIZATION ── */
+.util-bar { height:10px; background:var(--white-10); border-radius:10px; overflow:hidden; margin-bottom:0.5rem; }
+.util-bar-fill { height:100%; border-radius:10px; transition:width 0.6s ease; }
+.ub-good   { background:linear-gradient(90deg,var(--emerald),#2dd47a); }
+.ub-warn   { background:linear-gradient(90deg,var(--amber),#e8a830); }
+.ub-danger { background:linear-gradient(90deg,var(--rose),#e85080); }
 
-    .credit-progress-bar {
-        height: 100%;
-        transition: width 0.6s ease;
-    }
+/* ── INVOICE TABLE ── */
+.inv-table { width:100%; border-collapse:collapse; }
+.inv-table thead th { font-family:var(--font-mono); font-size:0.63rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-3); padding:0.75rem 1rem; border-bottom:1px solid var(--border-em); background:var(--white-05); white-space:nowrap; }
+.inv-table tbody tr { border-bottom:1px solid var(--border); transition:background 0.15s; cursor:pointer; }
+.inv-table tbody tr:hover { background:var(--white-05); }
+.inv-table tbody tr:last-child { border-bottom:none; }
+.inv-table tbody tr.overdue-row { background:rgba(214,48,96,0.04); }
+.inv-table tbody tr.overdue-row:hover { background:rgba(214,48,96,0.08); }
+.inv-table td { padding:0.875rem 1rem; vertical-align:middle; }
+.inv-num { font-family:var(--font-mono); font-size:0.85rem; font-weight:600; color:var(--violet); text-decoration:none; }
+.inv-num:hover { color:var(--sky); }
+.inv-sub { font-size:0.72rem; color:var(--text-3); margin-top:2px; }
+.amt-main { font-family:var(--font-mono); font-weight:700; font-size:0.9rem; color:var(--text-1); }
+.amt-due { font-family:var(--font-mono); font-size:0.72rem; color:var(--rose); margin-top:2px; }
+.credit-chip { display:inline-flex; align-items:center; padding:0.15rem 0.4rem; background:rgba(26,127,196,0.1); color:var(--sky); border:1px solid rgba(26,127,196,0.2); border-radius:50px; font-family:var(--font-mono); font-size:0.62rem; font-weight:600; margin-left:0.3rem; }
 
-    .credit-progress-good {
-        background: linear-gradient(90deg, var(--green-400), var(--green-600));
-    }
+/* ── ACTION BTNS ── */
+.act-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:var(--r-sm); border:1px solid var(--border-em); background:var(--white-10); color:var(--text-2); font-size:0.78rem; text-decoration:none; transition:all 0.2s; cursor:pointer; }
+.act-btn:hover { background:var(--violet); border-color:transparent; color:#fff; }
 
-    .credit-progress-warning {
-        background: linear-gradient(90deg, var(--amber-400), var(--amber-600));
-    }
+/* ── CREDIT CUSTOMER ROWS ── */
+.cust-row { padding:1rem 1.75rem; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:1rem; transition:background 0.15s; cursor:pointer; }
+.cust-row:hover { background:var(--white-05); }
+.cust-row:last-child { border-bottom:none; }
+.cust-avatar { width:36px; height:36px; border-radius:50%; background:rgba(155,127,232,0.15); color:var(--violet); display:flex; align-items:center; justify-content:center; font-size:0.875rem; font-weight:700; flex-shrink:0; }
 
-    .credit-progress-danger {
-        background: linear-gradient(90deg, var(--red-400), var(--red-600));
-    }
+/* ── DUE DATE ITEMS ── */
+.due-item { padding:1rem 1.75rem; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.15s; }
+.due-item:hover { background:var(--white-05); }
+.due-item:last-child { border-bottom:none; }
+.due-item.urgent { border-left:3px solid var(--rose); }
+.due-item.warn   { border-left:3px solid var(--amber); }
 
-    .credit-customer-item {
-        padding: 0.75rem;
-        border-bottom: 1px solid var(--border-color-light);
-        transition: all 0.2s ease;
-    }
+/* ── PERFORMANCE BARS ── */
+.perf-item { margin-bottom:1.25rem; }
+.perf-item:last-child { margin-bottom:0; }
+.perf-meta { display:flex; justify-content:space-between; margin-bottom:0.35rem; font-size:0.82rem; }
+.perf-label { color:var(--text-2); }
+.perf-val   { font-weight:700; color:var(--text-1); font-family:var(--font-mono); }
+.perf-bar { height:6px; background:var(--white-10); border-radius:10px; overflow:hidden; }
+.perf-bar-fill { height:100%; border-radius:10px; transition:width 0.6s ease; }
 
-    .credit-customer-item:hover {
-        background: var(--bg-secondary);
-    }
+/* ── QUICK ACTIONS ── */
+.qa-btn { display:flex; align-items:center; gap:0.5rem; padding:0.7rem 1rem; border-radius:var(--r-sm); border:1px solid var(--border-em); background:var(--ink); color:var(--text-1); text-decoration:none; font-size:0.875rem; font-weight:500; transition:all 0.2s; margin-bottom:0.4rem; }
+.qa-btn:hover { background:var(--white-10); border-color:var(--violet); color:var(--violet); transform:translateX(2px); }
+.qa-btn i { color:var(--text-3); font-size:1rem; }
+.qa-btn:hover i { color:var(--violet); }
 
-    /* Status Badges */
-    .status-badge {
-        padding: 0.375rem 0.75rem;
-        border-radius: 50px;
-        font-weight: 600;
-        font-size: 0.75rem;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.375rem;
-        white-space: nowrap;
-    }
+/* ── CHART CONTAINERS ── */
+.chart-wrap { position:relative; height:280px; }
+.chart-loader { position:absolute; inset:0; background:var(--ink-soft); display:flex; align-items:center; justify-content:center; border-radius:var(--r-md); }
+.chart-spinner { width:36px; height:36px; border:3px solid var(--border-em); border-top-color:var(--violet); border-radius:50%; animation:spin 0.8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
 
-    .status-PAID, .status-COMPLETED {
-        background: var(--green-100);
-        color: var(--green-700);
-    }
+/* ── EMPTY STATE ── */
+.empty-state { text-align:center; padding:3rem 1.5rem; }
+.empty-state i { font-size:3rem; opacity:0.2; display:block; margin-bottom:0.75rem; }
+.empty-state p { color:var(--text-3); font-size:0.875rem; margin:0; }
 
-    .status-PENDING_PAYMENT {
-        background: var(--amber-100);
-        color: var(--amber-700);
-    }
-
-    .status-PARTIALLY_PAID {
-        background: var(--primary-100);
-        color: var(--primary-700);
-    }
-
-    .status-OVERDUE {
-        background: var(--red-100);
-        color: var(--red-700);
-    }
-
-    .status-DRAFT {
-        background: var(--gray-200);
-        color: var(--gray-700);
-    }
-
-    .status-CREDIT {
-        background: linear-gradient(135deg, var(--info-100), var(--info-300));
-        color: var(--info-900);
-        border: 1px solid var(--info-300);
-    }
-
-    /* Chart Container */
-    .chart-container {
-        position: relative;
-        height: 300px;
-    }
-
-    /* Table Styles */
-    .invoice-table {
-        background: var(--bg-primary);
-    }
-
-    .invoice-table thead {
-        background: var(--bg-tertiary);
-    }
-
-    .invoice-table th {
-        font-weight: 600;
-        font-size: 0.875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        padding: 1rem 0.75rem;
-        border-bottom: 2px solid var(--border-color);
-    }
-
-    .invoice-table td {
-        padding: 1rem 0.75rem;
-        vertical-align: middle;
-        border-bottom: 1px solid var(--border-color-light);
-    }
-
-    .invoice-table tbody tr:hover {
-        background: var(--bg-secondary);
-        cursor: pointer;
-    }
-
-    .overdue-row {
-        background: var(--red-50);
-    }
-
-    [data-theme="dark"] .overdue-row {
-        background: rgba(239, 68, 68, 0.1);
-    }
-
-    /* Performance Progress Bars */
-    .performance-item {
-        margin-bottom: 1.5rem;
-    }
-
-    .performance-item:last-child {
-        margin-bottom: 0;
-    }
-
-    .performance-label {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 0.5rem;
-        font-size: 0.875rem;
-    }
-
-    .performance-label-text {
-        color: var(--text-secondary);
-        font-weight: 500;
-    }
-
-    .performance-value {
-        font-weight: 700;
-        color: var(--text-primary);
-    }
-
-    .progress {
-        height: 8px;
-        background: var(--bg-tertiary);
-        border-radius: 10px;
-        overflow: hidden;
-    }
-
-    .progress-bar {
-        border-radius: 10px;
-        transition: width 0.6s ease;
-    }
-
-    /* Upcoming Due Dates List */
-    .due-date-item {
-        padding: 1rem;
-        border-bottom: 1px solid var(--border-color-light);
-        transition: background 0.2s ease;
-    }
-
-    .due-date-item:last-child {
-        border-bottom: none;
-    }
-
-    .due-date-item:hover {
-        background: var(--bg-secondary);
-        cursor: pointer;
-    }
-
-    .due-date-urgent {
-        border-left: 3px solid var(--red-500);
-    }
-
-    .due-date-warning {
-        border-left: 3px solid var(--amber-500);
-    }
-
-    /* Credit Trend Chart */
-    .credit-trend-up {
-        color: var(--green-600);
-    }
-
-    .credit-trend-down {
-        color: var(--red-600);
-    }
-
-    .credit-trend-neutral {
-        color: var(--gray-600);
-    }
-
-    /* Avatar */
-    .avatar-sm {
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-
-    /* Quick Action Buttons */
-    .quick-action-btn {
-        transition: all 0.3s ease;
-        border: 2px solid transparent;
-    }
-
-    .quick-action-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-md);
-    }
-
-    .quick-action-btn.btn-primary:hover {
-        border-color: var(--primary-700);
-    }
-
-    /* Empty State */
-    .empty-state {
-        text-align: center;
-        padding: 3rem 2rem;
-        color: var(--text-muted);
-    }
-
-    .empty-state-icon {
-        font-size: 4rem;
-        opacity: 0.3;
-        margin-bottom: 1rem;
-    }
-
-    /* Loading State */
-    .loading-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(255, 255, 255, 0.8);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10;
-        border-radius: var(--border-radius);
-    }
-
-    [data-theme="dark"] .loading-overlay {
-        background: rgba(0, 0, 0, 0.8);
-    }
-
-    .spinner {
-        width: 40px;
-        height: 40px;
-        border: 4px solid var(--border-color);
-        border-top-color: var(--primary-500);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
-    /* Responsive Design */
-    @media (max-width: 768px) {
-        .metric-value {
-            font-size: 1.5rem;
-        }
-
-        .metric-icon {
-            width: 50px;
-            height: 50px;
-        }
-
-        .chart-container {
-            height: 250px;
-        }
-
-        .invoice-table {
-            font-size: 0.875rem;
-        }
-
-        .invoice-table th,
-        .invoice-table td {
-            padding: 0.75rem 0.5rem;
-        }
-    }
+@media (max-width:768px) {
+  .metric-value { font-size:1.3rem; }
+  .metric-icon { width:44px; height:44px; font-size:1.2rem; }
+  .chart-wrap { height:220px; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h2 mb-1">
-                <i class="bi bi-speedometer2 me-2"></i>
-                {% trans "Invoice Dashboard" %}
-            </h1>
-            <p class="text-muted mb-0">
-                {% trans "Overview of your invoicing performance and credit management" %}
-            </p>
+<div class="ambient-glow"></div>
+<div class="ambient-glow-2"></div>
+
+<div class="page-wrap">
+
+  <!-- Page Header -->
+  <div class="page-header">
+    <div style="display:flex; align-items:center;">
+      <div class="header-accent"></div>
+      <div>
+        <h1 class="page-title">{% trans "Invoice Dashboard" %}</h1>
+        <p class="page-subtitle">{% trans "Overview of your invoicing performance and credit management" %}</p>
+      </div>
+    </div>
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+      <button class="btn-act" onclick="refreshDashboard()"><i class="bi bi-arrow-clockwise"></i> {% trans "Refresh" %}</button>
+      <div class="dropdown">
+        <button class="btn-act primary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="bi bi-plus-circle"></i> {% trans "New Invoice" %}
+        </button>
+        <ul class="dropdown-menu" style="background:var(--ink-soft); border:1px solid var(--border-em); border-radius:var(--r-md); padding:0.4rem;">
+          {% if perms.sales.add_sale %}
+          <li><a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CASH" style="color:var(--text-1); border-radius:var(--r-sm);">
+            <i class="bi bi-cash me-2" style="color:var(--emerald);"></i>{% trans "Cash Invoice" %}
+          </a></li>
+          <li><a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CREDIT" style="color:var(--text-1); border-radius:var(--r-sm);">
+            <i class="bi bi-credit-card me-2" style="color:var(--sky);"></i>{% trans "Credit Invoice" %}
+          </a></li>
+          {% endif %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metric Cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-xl-2 col-md-4 col-6">
+      <div class="metric-card" onclick="window.location.href='{% url 'invoices:list' %}'">
+        <div class="metric-icon mi-violet"><i class="bi bi-receipt"></i></div>
+        <div class="metric-label">{% trans "Total Invoices" %}</div>
+        <div class="metric-value" data-metric="total_invoices">{{ metrics.total_invoices|intcomma }}</div>
+        <div class="metric-sub up"><i class="bi bi-arrow-up-short"></i><span data-metric="invoices_this_month">{{ metrics.invoices_this_month }}</span> {% trans "this month" %}</div>
+      </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-6">
+      <div class="metric-card" onclick="filterByStatus('PAID')">
+        <div class="metric-icon mi-emerald"><i class="bi bi-currency-dollar"></i></div>
+        <div class="metric-label">{% trans "Total Revenue" %}</div>
+        <div class="metric-value" style="font-size:1.15rem; color:var(--emerald);" data-metric="total_revenue">UGX {{ metrics.total_revenue|floatformat:0|intcomma }}</div>
+        <div class="metric-sub">{% trans "Paid invoices" %}</div>
+      </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-6">
+      <div class="metric-card" onclick="filterByPaymentMethod('CREDIT')">
+        <div class="metric-icon mi-sky"><i class="bi bi-credit-card"></i></div>
+        <div class="metric-label">{% trans "Credit Invoices" %}</div>
+        <div class="metric-value" style="color:var(--sky);" data-metric="credit_invoices">{{ credit_metrics.total_credit_invoices|intcomma }}</div>
+        <div class="metric-sub {% if credit_metrics.credit_vs_cash_ratio >= 30 %}down{% endif %}">{{ credit_metrics.credit_vs_cash_ratio|floatformat:1 }}% of total</div>
+      </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-6">
+      <div class="metric-card" onclick="filterByStatus('OVERDUE')">
+        <div class="metric-icon mi-rose"><i class="bi bi-exclamation-triangle"></i></div>
+        <div class="metric-label">{% trans "Overdue Credit" %}</div>
+        <div class="metric-value" style="color:var(--rose);" data-metric="overdue_credit">{{ credit_metrics.overdue_credit_count|intcomma }}</div>
+        <div class="metric-sub down">UGX {{ credit_metrics.overdue_credit|floatformat:0|intcomma }}</div>
+      </div>
+    </div>
+    {% if efris_enabled %}
+    <div class="col-xl-2 col-md-4 col-6">
+      <div class="metric-card" onclick="filterByFiscalized(true)">
+        <div class="metric-icon mi-gold"><i class="bi bi-shield-check"></i></div>
+        <div class="metric-label">{% trans "Fiscalized" %}</div>
+        <div class="metric-value" style="color:var(--gold);" data-metric="fiscalized_invoices">{{ metrics.fiscalized_invoices|intcomma }}</div>
+        <div class="metric-sub">{% trans "EFRIS compliant" %}</div>
+      </div>
+    </div>
+    {% endif %}
+    <div class="col-xl-2 col-md-4 col-6">
+      <div class="metric-card" onclick="window.location.href='{% url 'customers:customer_list' %}?allow_credit=true'">
+        <div class="metric-icon mi-slate"><i class="bi bi-people"></i></div>
+        <div class="metric-label">{% trans "Credit Customers" %}</div>
+        <div class="metric-value" data-metric="credit_customers">{{ credit_customers_summary.customers_count|default:0|intcomma }}</div>
+        <div class="metric-sub down">{{ credit_customers_summary.customers_at_risk|default:0 }} {% trans "at risk" %}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credit Overview Row -->
+  <div class="row g-3 mb-4">
+    <!-- Credit Utilization -->
+    <div class="col-lg-4">
+      <div class="section-card h-100">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-sky"><i class="bi bi-pie-chart"></i></span>{% trans "Credit Utilization" %}</h5>
         </div>
-        <div class="d-flex gap-2">
-            <button class="btn btn-outline-secondary" onclick="refreshDashboard()">
-                <i class="bi bi-arrow-clockwise me-2"></i>
-                {% trans "Refresh" %}
-            </button>
-            <div class="dropdown">
-                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                    <i class="bi bi-plus-circle me-2"></i>
-                    {% trans "New Invoice" %}
-                </button>
-                <ul class="dropdown-menu">
-                    <li>
-                        {% if perms.sales.add_sale %}
-                        <a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CASH">
-                            <i class="bi bi-cash me-2"></i>
-                            {% trans "Cash Invoice" %}
-                        </a>
-                    </li>
-                    <li>
-                        <a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CREDIT">
-                            <i class="bi bi-credit-card me-2"></i>
-                            {% trans "Credit Invoice" %}
-                        </a>
-                        {% endif %}
-                    </li>
-                </ul>
+        <div class="section-body" style="text-align:center;">
+          <div style="font-family:var(--font-head); font-size:3rem; font-weight:800; color:var(--violet); line-height:1;">
+            {{ credit_customers_summary.utilization_percentage|default:0|money }}%
+          </div>
+          <div style="color:var(--text-3); font-size:0.8rem; margin-bottom:1rem;">{% trans "Credit Utilization" %}</div>
+          <div class="util-bar">
+            <div class="util-bar-fill {% if credit_customers_summary.utilization_percentage < 60 %}ub-good{% elif credit_customers_summary.utilization_percentage < 85 %}ub-warn{% else %}ub-danger{% endif %}"
+                 style="width:{{ credit_customers_summary.utilization_percentage|default:0 }}%;"></div>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:0.5rem; margin-top:1.25rem; text-align:center;">
+            <div>
+              <div style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.08em;">Limit</div>
+              <div style="font-family:var(--font-head); font-weight:700; font-size:0.9rem;">UGX {{ credit_customers_summary.total_limit|default:0|money }}</div>
             </div>
+            <div>
+              <div style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.08em;">Used</div>
+              <div style="font-family:var(--font-head); font-weight:700; font-size:0.9rem; color:var(--amber);">UGX {{ credit_customers_summary.total_used|default:0|money }}</div>
+            </div>
+            <div>
+              <div style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.08em;">Available</div>
+              <div style="font-family:var(--font-head); font-weight:700; font-size:0.9rem; color:var(--emerald);">UGX {{ credit_customers_summary.total_available|default:0|money }}</div>
+            </div>
+          </div>
         </div>
+      </div>
     </div>
 
-    <!-- Key Metrics Row -->
-    <div class="row g-3 mb-4">
-        <div class="col-xl-2 col-md-4 col-6">
-            <div class="card metric-card" onclick="window.location.href='{% url 'invoices:list' %}'">
-                <div class="card-body text-center">
-                    <div class="metric-icon bg-primary bg-opacity-10">
-                        <i class="bi bi-receipt text-primary fs-4"></i>
-                    </div>
-                    <div class="metric-label">{% trans "Total Invoices" %}</div>
-                    <div class="metric-value text-primary" data-metric="total_invoices">
-                        {{ metrics.total_invoices|intcomma }}
-                    </div>
-                    <div class="metric-change text-success">
-                        <i class="bi bi-arrow-up-short"></i>
-                        <span data-metric="invoices_this_month">{{ metrics.invoices_this_month }}</span>
-                        {% trans "this month" %}
-                    </div>
-                </div>
-            </div>
+    <!-- Credit vs Cash Chart -->
+    <div class="col-lg-4">
+      <div class="section-card h-100">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-violet"><i class="bi bi-arrow-left-right"></i></span>{% trans "Credit vs Cash" %}</h5>
         </div>
-
-        <div class="col-xl-2 col-md-4 col-6">
-            <div class="card metric-card" onclick="filterByStatus('PAID')">
-                <div class="card-body text-center">
-                    <div class="metric-icon bg-success bg-opacity-10">
-                        <i class="bi bi-currency-dollar text-success fs-4"></i>
-                    </div>
-                    <div class="metric-label">{% trans "Total Revenue" %}</div>
-                    <div class="metric-value text-success" data-metric="total_revenue">
-                        UGX {{ metrics.total_revenue|floatformat:0|intcomma }}
-                    </div>
-                    <div class="metric-change text-muted">
-                        {% trans "Paid invoices" %}
-                    </div>
-                </div>
+        <div class="section-body">
+          <div class="chart-wrap"><canvas id="creditCashChart"></canvas></div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1rem;">
+            <div>
+              <div style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.08em;">Avg Credit</div>
+              <div style="font-family:var(--font-head); font-weight:700; font-size:0.88rem;">UGX {{ credit_metrics.avg_credit_amount|floatformat:0|intcomma }}</div>
             </div>
-        </div>
-
-        <div class="col-xl-2 col-md-4 col-6">
-            <div class="card metric-card credit-metric" onclick="filterByPaymentMethod('CREDIT')">
-                <div class="card-body text-center">
-                    <div class="metric-icon bg-info bg-opacity-10">
-                        <i class="bi bi-credit-card text-info fs-4"></i>
-                    </div>
-                    <div class="metric-label">{% trans "Credit Invoices" %}</div>
-                    <div class="metric-value text-info" data-metric="credit_invoices">
-                        {{ credit_metrics.total_credit_invoices|intcomma }}
-                    </div>
-                    <div class="metric-change">
-                        <span class="{% if credit_metrics.credit_vs_cash_ratio >= 30 %}text-warning{% else %}text-muted{% endif %}">
-                            {{ credit_metrics.credit_vs_cash_ratio|floatformat:1 }}%
-                        </span>
-                        {% trans "of total" %}
-                    </div>
-                </div>
+            <div>
+              <div style="font-family:var(--font-mono); font-size:0.62rem; color:var(--text-3); text-transform:uppercase; letter-spacing:0.08em;">Avg Cash</div>
+              <div style="font-family:var(--font-head); font-weight:700; font-size:0.88rem;">UGX {{ credit_metrics.avg_cash_amount|floatformat:0|intcomma }}</div>
             </div>
+          </div>
         </div>
-
-        <div class="col-xl-2 col-md-4 col-6">
-            <div class="card metric-card" onclick="filterByStatus('OVERDUE')">
-                <div class="card-body text-center">
-                    <div class="metric-icon bg-danger bg-opacity-10">
-                        <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
-                    </div>
-                    <div class="metric-label">{% trans "Overdue Credit" %}</div>
-                    <div class="metric-value text-danger" data-metric="overdue_credit">
-                        {{ credit_metrics.overdue_credit_count|intcomma }}
-                    </div>
-                    <div class="metric-change text-danger">
-                        UGX {{ credit_metrics.overdue_credit|floatformat:0|intcomma }}
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% if efris_enabled %}
-        <div class="col-xl-2 col-md-4 col-6">
-            <div class="card metric-card" onclick="filterByFiscalized(true)">
-                <div class="card-body text-center">
-                    <div class="metric-icon bg-warning bg-opacity-10">
-                        <i class="bi bi-shield-check text-warning fs-4"></i>
-                    </div>
-                    <div class="metric-label">{% trans "Fiscalized" %}</div>
-                    <div class="metric-value text-warning" data-metric="fiscalized_invoices">
-                        {{ metrics.fiscalized_invoices|intcomma }}
-                    </div>
-                    <div class="metric-change text-muted">
-                        {% trans "EFRIS compliant" %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
-        <div class="col-xl-2 col-md-4 col-6">
-            <div class="card metric-card" onclick="window.location.href='{% url 'customers:customer_list' %}?allow_credit=true'">
-                <div class="card-body text-center">
-                    <div class="metric-icon bg-secondary bg-opacity-10">
-                        <i class="bi bi-people text-secondary fs-4"></i>
-                    </div>
-                    <div class="metric-label">{% trans "Credit Customers" %}</div>
-                    <div class="metric-value text-secondary" data-metric="credit_customers">
-                        {{ credit_customers_summary.customers_count|default:0|intcomma }}
-                    </div>
-                    <div class="metric-change text-muted">
-                        {{ credit_customers_summary.customers_at_risk|default:0 }} {% trans "at risk" %}
-                    </div>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
 
-    <!-- Credit Overview Row -->
-    <div class="row g-3 mb-4">
-        <!-- Credit Utilization -->
-        <div class="col-lg-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-pie-chart me-2"></i>
-                        {% trans "Credit Utilization" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="text-center mb-4">
-                        <div class="mb-3">
-                            <div class="credit-progress mb-2">
-                                <div class="credit-progress-bar
-                                    {% if credit_customers_summary.utilization_percentage < 60 %}credit-progress-good
-                                    {% elif credit_customers_summary.utilization_percentage < 85 %}credit-progress-warning
-                                    {% else %}credit-progress-danger{% endif %}"
-                                    style="width: {{ credit_customers_summary.utilization_percentage|default:0 }}%">
-                                </div>
-                            </div>
-                            <div class="display-4 fw-bold totall">
-                                {{ credit_customers_summary.utilization_percentage|default:0|money }}%
-                            </div>
-                            <div class="text-muted">{% trans "Credit Utilization" %}</div>
-                        </div>
-                        <div class="row text-center totall">
-                            <div class="col-4">
-                                <div class="text-muted small">{% trans "Limit" %}</div>
-                                <div class="fw-bold">UGX {{ credit_customers_summary.total_limit|default:0|money }}</div>
-                            </div>
-                            <div class="col-4">
-                                <div class="text-muted small totall">{% trans "Used" %}</div>
-                                <div class="fw-bold">UGX {{ credit_customers_summary.total_used|default:0|money }}</div>
-                            </div>
-                            <div class="col-4">
-                                <div class="text-muted small">{% trans "Available" %}</div>
-                                <div class="fw-bold">UGX {{ credit_customers_summary.total_available|default:0|money }}</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <!-- Top Credit Customers -->
+    <div class="col-lg-4">
+      <div class="section-card h-100">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-gold"><i class="bi bi-trophy"></i></span>{% trans "Top Credit Customers" %}</h5>
         </div>
-
-        <!-- Credit vs Cash Comparison -->
-        <div class="col-lg-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-arrow-left-right me-2"></i>
-                        {% trans "Credit vs Cash" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container">
-                        <canvas id="creditCashChart"></canvas>
-                    </div>
-                    <div class="row mt-3 text-center totall">
-                        <div class="col-6">
-                            <div class="text-muted small">{% trans "Avg Credit Invoice" %}</div>
-                            <div class="fw-bold">UGX {{ credit_metrics.avg_credit_amount|floatformat:0|intcomma }}</div>
-                        </div>
-                        <div class="col-6">
-                            <div class="text-muted small">{% trans "Avg Cash Invoice" %}</div>
-                            <div class="fw-bold">UGX {{ credit_metrics.avg_cash_amount|floatformat:0|intcomma }}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Top Credit Customers -->
-        <div class="col-lg-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-trophy me-2"></i>
-                        {% trans "Top Credit Customers" %}
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    {% for customer in top_credit_customers %}
-                    <div class="credit-customer-item" onclick="window.location.href='{% url 'customers:detail' customer.sale__customer__id %}'">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div class="flex-grow-1">
-                                <div class="fw-semibold">{{ customer.sale__customer__name|truncatechars:25 }}</div>
-                                <div class="small text-muted">
-                                    {{ customer.invoice_count }} {% trans "invoices" %}
-                                </div>
-                            </div>
-                            <div class="text-end">
-                                <div class="fw-bold">UGX {{ customer.total_credit|floatformat:0|intcomma }}</div>
-                                {% if customer.overdue_count > 0 %}
-                                <span class="badge bg-danger">
-                                    {{ customer.overdue_count }} {% trans "overdue" %}
-                                </span>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                    {% empty %}
-                    <div class="empty-state py-4">
-                        <i class="bi bi-people empty-state-icon" style="font-size: 3rem;"></i>
-                        <div>{% trans "No credit customers" %}</div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Charts Row -->
-    <div class="row g-3 mb-4">
-        <!-- Revenue Trend Chart -->
-        <div class="col-lg-8">
-            <div class="card h-100">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">
-                        <i class="bi bi-graph-up me-2"></i>
-                        {% trans "Revenue Trend (Credit vs Cash)" %}
-                    </h5>
-                    <div class="dropdown">
-                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
-                                type="button"
-                                data-bs-toggle="dropdown">
-                            <i class="bi bi-calendar me-1"></i>
-                            <span id="periodLabel">{% trans "12 Months" %}</span>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li>
-                                <a class="dropdown-item" href="#" data-period="3">
-                                    {% trans "3 Months" %}
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="#" data-period="6">
-                                    {% trans "6 Months" %}
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item active" href="#" data-period="12">
-                                    {% trans "12 Months" %}
-                                </a>
-                            </li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="card-body position-relative">
-                    <div class="chart-container">
-                        <canvas id="revenueTrendChart"></canvas>
-                    </div>
-                    <div class="loading-overlay d-none" id="chartLoader">
-                        <div class="spinner"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Credit Performance Chart -->
-        <div class="col-lg-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-credit-card me-2"></i>
-                        {% trans "Credit Performance" %}
-                    </h5>
-                </div>
-                <div class="card-body totall">
-                    <div class="mb-3 totall">
-                        <div class="d-flex justify-content-between mb-1">
-                            <span>{% trans "Collection Rate" %}</span>
-                            <span class="fw-bold">{{ credit_metrics.credit_collection_rate|floatformat:1 }}%</span>
-                        </div>
-                        <div class="progress" style="height: 10px;">
-                            <div class="progress-bar bg-success"
-                                 style="width: {{ credit_metrics.credit_collection_rate }}%"></div>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between mb-1">
-                            <span>{% trans "Outstanding Credit" %}</span>
-                            <span class="fw-bold">UGX {{ credit_metrics.outstanding_credit|floatformat:0|intcomma }}</span>
-                        </div>
-                        <div class="progress" style="height: 10px;">
-                            <div class="progress-bar bg-warning"
-                                 style="width: {{ credit_metrics.outstanding_credit|divide:credit_metrics.credit_revenue|multiply:100|default:0|floatformat:0 }}%"></div>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between mb-1">
-                            <span>{% trans "Overdue Credit" %}</span>
-                            <span class="fw-bold text-danger">UGX {{ credit_metrics.overdue_credit|floatformat:0|intcomma }}</span>
-                        </div>
-                        <div class="progress" style="height: 10px;">
-                            <div class="progress-bar bg-danger"
-                                 style="width: {{ credit_metrics.overdue_credit|divide:credit_metrics.credit_revenue|multiply:100|default:0|floatformat:0 }}%"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Main Content Row -->
-    <div class="row g-3">
-        <!-- Recent Invoices -->
-        <div class="col-lg-8">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">
-                        <i class="bi bi-clock-history me-2"></i>
-                        {% trans "Recent Invoices" %}
-                    </h5>
-                    <div class="btn-group">
-                         {% if perms.invoices.view_invoice %}
-                        <a href="{% url 'invoices:list' %}" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-list-ul me-1"></i>
-                            {% trans "View All" %}
-                        </a>
-                        {% endif %}
-                        <div class="dropdown">
-                            <button class="btn btn-sm btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                <i class="bi bi-plus-lg me-1"></i>
-                                {% trans "New" %}
-                            </button>
-                            <ul class="dropdown-menu">
-                                <li>
-                                    {% if perms.sales.add_sale %}
-                                    <a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CASH">
-                                        <i class="bi bi-cash me-2"></i>
-                                        {% trans "Cash Invoice" %}
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CREDIT">
-                                        <i class="bi bi-credit-card me-2"></i>
-                                        {% trans "Credit Invoice" %}
-                                    </a>
-                                    {% endif %}
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table invoice-table mb-0">
-                            <thead>
-                                <tr>
-                                    <th width="18%">{% trans "Invoice #" %}</th>
-                                    <th width="22%">{% trans "Customer" %}</th>
-                                    <th width="15%" class="text-end">{% trans "Amount" %}</th>
-                                    <th width="15%">{% trans "Status" %}</th>
-                                    <th width="15%">{% trans "Due Date" %}</th>
-                                    <th width="15%" class="text-center">{% trans "Actions" %}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for invoice in recent_invoices %}
-                                <tr class="{% if invoice.sale.payment_status == 'OVERDUE' %}overdue-row{% endif %}"
-                                    onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <strong>{{ invoice.sale.document_number }}</strong>
-                                            {% if efris_enabled %}
-                                            {% if invoice.is_fiscalized %}
-                                            <i class="bi bi-shield-check text-success ms-2"
-                                               title="{% trans 'Fiscalized' %}"
-                                               data-bs-toggle="tooltip"></i>
-                                               {% endif %}
-                                            {% endif %}
-                                            {% if invoice.sale.payment_method == 'CREDIT' %}
-                                            <span class="credit-badge ms-2">{% trans "CREDIT" %}</span>
-                                            {% endif %}
-                                        </div>
-                                        <small class="text-muted">
-                                            {{ invoice.sale.created_at|date:"M d, Y" }}
-                                        </small>
-                                    </td>
-                                    <td>
-                                        {% if invoice.sale.customer %}
-                                            <div class="fw-semibold">
-                                                {{ invoice.sale.customer.name|truncatechars:25 }}
-                                            </div>
-                                            {% if invoice.sale.customer.phone %}
-                                            <small class="text-muted">
-                                                {{ invoice.sale.customer.phone }}
-                                            </small>
-                                            {% endif %}
-                                        {% else %}
-                                            <span class="text-muted fst-italic">
-                                                {% trans "Walk-in Customer" %}
-                                            </span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-end">
-                                        <div class="fw-bold {% if invoice.sale.payment_method == 'CREDIT' %}text-info{% else %}text-primary{% endif %}">
-                                            UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}
-                                        </div>
-                                        {% if invoice.sale.payment_status != 'PAID' %}
-                                        <small class="text-danger">
-                                            {% trans "Due:" %} UGX {{ invoice.get_balance_due|floatformat:0|intcomma }}
-                                        </small>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <span class="status-badge {% if invoice.sale.payment_method == 'CREDIT' %}status-CREDIT{% endif %} status-{{ invoice.sale.payment_status }}">
-                                            <i class="bi
-                                                {% if invoice.sale.payment_status == 'PAID' or invoice.sale.payment_status == 'COMPLETED' %}bi-check-circle-fill
-                                                {% elif invoice.sale.payment_status == 'PENDING_PAYMENT' %}bi-clock
-                                                {% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}bi-hourglass-split
-                                                {% elif invoice.sale.payment_status == 'OVERDUE' %}bi-exclamation-triangle-fill
-                                                {% elif invoice.sale.payment_method == 'CREDIT' %}bi-credit-card
-                                                {% else %}bi-file-earmark{% endif %}">
-                                            </i>
-                                            {{ invoice.sale.get_payment_status_display }}
-                                            {% if invoice.sale.payment_method == 'CREDIT' %} (Credit){% endif %}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        {% if invoice.sale.due_date %}
-                                        <div class="{% if invoice.sale.payment_status == 'OVERDUE' %}text-danger fw-bold{% endif %}">
-                                            {{ invoice.sale.due_date|date:"M d, Y" }}
-                                        </div>
-                                        {% if invoice.sale.payment_status == 'OVERDUE' %}
-                                        <small class="text-danger">
-                                            <i class="bi bi-exclamation-circle me-1"></i>
-                                            {{ overdue_days }} {% trans "days overdue" %}
-                                        </small>
-                                        {% elif invoice.sale.days_until_due <= 3 and invoice.sale.payment_status != 'PAID' %}
-                                        <small class="text-warning">
-                                            <i class="bi bi-clock me-1"></i>
-                                            {% trans "Due soon" %}
-                                        </small>
-                                        {% endif %}
-                                        {% else %}
-                                        <span class="text-muted">{% trans "N/A" %}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-center" onclick="event.stopPropagation()">
-                                        <div class="btn-group btn-group-sm">
-                                            {% if perms.invoices.view_invoice %}
-                                            <a href="{% url 'invoices:detail' invoice.pk %}"
-                                               class="btn btn-sm btn-outline-primary"
-                                               title="{% trans 'View' %}"
-                                               data-bs-toggle="tooltip">
-                                                <i class="bi bi-eye"></i>
-                                            </a>
-                                            <a href="{% url 'invoices:print' invoice.pk %}"
-                                               class="btn btn-sm btn-outline-secondary"
-                                               title="{% trans 'Print' %}"
-                                               data-bs-toggle="tooltip"
-                                               target="_blank">
-                                                <i class="bi bi-printer"></i>
-                                            </a>
-                                            {% endif %}
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% empty %}
-                                <tr>
-                                    <td colspan="6" class="text-center">
-                                        <div class="empty-state">
-                                            <i class="bi bi-inbox empty-state-icon"></i>
-                                            <h5>{% trans "No invoices found" %}</h5>
-                                            <p>{% trans "Create your first invoice to get started" %}</p>
-                                            {% if perms.sales.add_sale %}
-                                            <a href="{% url 'sales:create_sale' %}?type=invoice"
-                                               class="btn btn-primary">
-                                                <i class="bi bi-plus-circle me-2"></i>
-                                                {% trans "Create Invoice" %}
-                                            </a>
-                                            {% endif %}
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Sidebar -->
-        <div class="col-lg-4">
-            <!-- Quick Actions -->
-            <div class="card mb-3">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-lightning me-2"></i>
-                        {% trans "Quick Actions" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="d-grid gap-2">
-                        {% if perms.sales.add_sale %}
-                        <a href="{% url 'sales:create_sale' %}?type=invoice"
-                           class="btn btn-primary quick-action-btn">
-                            <i class="bi bi-plus-circle me-2"></i>
-                            {% trans "Create Invoice" %}
-                        </a>
-                        {% endif %}
-                        {% if perms.invoices.view_invoice %}
-                        <a href="{% url 'invoices:list' %}"
-                           class="btn btn-outline-primary quick-action-btn">
-                            <i class="bi bi-list-ul me-2"></i>
-                            {% trans "View All Invoices" %}
-                        </a>
-                        {% endif %}
-                        {% if perms.customers.view_customer %}
-                        <a href="{% url 'customers:customer_list' %}?allow_credit=true"
-                           class="btn btn-outline-info quick-action-btn">
-                            <i class="bi bi-credit-card me-2"></i>
-                            {% trans "Credit Customers" %}
-                        </a>
-                        {% endif %}
-                        {% if perms.invoices.view_invoice %}
-                        <a href="{% url 'invoices:analytics' %}"
-                           class="btn btn-outline-info quick-action-btn">
-                            <i class="bi bi-graph-up me-2"></i>
-                            {% trans "View Analytics" %}
-                        </a>
-                        {% endif %}
-                        {% if EFRIS_ENABLED %}
-                        <a href="{% url 'invoices:efris_dashboard' %}"
-                           class="btn btn-outline-warning quick-action-btn">
-                            <i class="bi bi-shield-check me-2"></i>
-                            {% trans "EFRIS Status" %}
-                        </a>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Performance Metrics -->
-            <div class="card mb-3">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-speedometer2 me-2"></i>
-                        {% trans "Performance Metrics" %}
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="performance-item">
-                        <div class="performance-label">
-                            <span class="performance-label-text">
-                                {% trans "Collection Rate" %}
-                            </span>
-                            <span class="performance-value">
-                                {{ metrics.collection_rate|floatformat:1 }}%
-                            </span>
-                        </div>
-                        <div class="progress">
-                            <div class="progress-bar bg-success"
-                                 data-progress="collection_rate"
-                                 style="width: {{ metrics.collection_rate }}%">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="performance-item">
-                        <div class="performance-label">
-                            <span class="performance-label-text">
-                                {% trans "Credit Collection" %}
-                            </span>
-                            <span class="performance-value">
-                                {{ credit_metrics.credit_collection_rate|floatformat:1 }}%
-                            </span>
-                        </div>
-                        <div class="progress">
-                            <div class="progress-bar bg-info"
-                                 data-progress="credit_collection_rate"
-                                 style="width: {{ credit_metrics.credit_collection_rate }}%">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="performance-item">
-                        <div class="performance-label">
-                            <span class="performance-label-text">
-                                {% trans "On-Time Payment" %}
-                            </span>
-                            <span class="performance-value">
-                                {{ metrics.on_time_rate|floatformat:1 }}%
-                            </span>
-                        </div>
-                        <div class="progress">
-                            <div class="progress-bar bg-warning"
-                                 data-progress="on_time_rate"
-                                 style="width: {{ metrics.on_time_rate }}%">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="performance-item">
-                        <div class="performance-label">
-                            <span class="performance-label-text">
-                                {% trans "Fiscalization Rate" %}
-                            </span>
-                            <span class="performance-value">
-                                {{ metrics.fiscalization_rate|floatformat:1 }}%
-                            </span>
-                        </div>
-                        <div class="progress">
-                            <div class="progress-bar bg-purple"
-                                 data-progress="fiscalization_rate"
-                                 style="width: {{ metrics.fiscalization_rate }}%">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Top Overdue Credit Invoices -->
-            {% if credit_metrics.overdue_credit_count > 0 %}
-            <div class="card">
-                <div class="card-header bg-danger bg-opacity-10">
-                    <h5 class="mb-0 text-danger">
-                        <i class="bi bi-exclamation-triangle me-2"></i>
-                        {% trans "Top Overdue Credit Invoices" %}
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    {% for invoice in top_overdue_credit %}
-                    <div class="due-date-item due-date-urgent"
-                         onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div class="flex-grow-1">
-                                <div class="fw-bold">{{ invoice.sale.document_number }}</div>
-                                <div class="small">
-                                    {{ invoice.sale.customer.name|default:"N/A"|truncatechars:25 }}
-                                </div>
-                                <div class="small text-danger mt-1">
-                                    <i class="bi bi-calendar-x me-1"></i>
-                                    {{ invoice.overdue_days }} {% trans "days overdue" %}
-                                </div>
-                            </div>
-                            <div class="text-end">
-                                <div class="fw-bold text-danger">
-                                    UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}
-                                </div>
-                                <div class="small text-muted">
-                                    Due: {{ invoice.sale.due_date|date:"M d, Y" }}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                    <div class="card-footer bg-white text-center">
-                        {% if perms.invoices.view_invoice %}
-                        <a href="{% url 'invoices:list' %}?credit_status=OVERDUE_CREDIT" class="btn btn-sm btn-outline-danger">
-                            {% trans "View All Overdue" %}
-                        </a>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% else %}
-            <!-- Regular Upcoming Due Dates -->
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-calendar-check me-2"></i>
-                        {% trans "Upcoming Due Dates" %}
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    {% for invoice in upcoming_invoices %}
-                    <div class="due-date-item {% if invoice.days_until_due <= 3 %}due-date-urgent{% else %}due-date-warning{% endif %}"
-                         onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div class="flex-grow-1">
-                                <div class="fw-semibold">{{ invoice.sale.document_number }}</div>
-                                <div class="small text-muted">
-                                    {{ invoice.sale.customer.name|default:"Walk-in Customer"|truncatechars:30 }}
-                                </div>
-                                <div class="small mt-1">
-                                    UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}
-                                </div>
-                            </div>
-                            <div class="text-end">
-                                <span class="badge bg-{% if invoice.days_until_due <= 3 %}danger{% else %}warning{% endif %}">
-                                    {{ invoice.days_until_due }} {% trans "days" %}
-                                </span>
-                                <div class="small text-muted mt-1">
-                                    {{ invoice.sale.due_date|date:"M d" }}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {% empty %}
-                    <div class="empty-state py-4">
-                        <i class="bi bi-check-circle empty-state-icon" style="font-size: 3rem;"></i>
-                        <div>{% trans "No upcoming due dates" %}</div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
+        {% for customer in top_credit_customers %}
+        <div class="cust-row" onclick="window.location.href='{% url 'customers:detail' customer.sale__customer__id %}'">
+          <div class="cust-avatar">{{ customer.sale__customer__name|slice:":1" }}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; color:var(--text-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ customer.sale__customer__name|truncatechars:22 }}</div>
+            <div style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-3);">{{ customer.invoice_count }} invoices</div>
+          </div>
+          <div style="text-align:right; flex-shrink:0;">
+            <div style="font-family:var(--font-mono); font-weight:700; font-size:0.85rem;">UGX {{ customer.total_credit|floatformat:0|intcomma }}</div>
+            {% if customer.overdue_count > 0 %}
+            <span class="status-pill sp-overdue" style="font-size:0.62rem; padding:0.12rem 0.4rem; margin-top:2px;">{{ customer.overdue_count }} overdue</span>
             {% endif %}
+          </div>
         </div>
+        {% empty %}
+        <div class="empty-state"><i class="bi bi-people"></i><p>{% trans "No credit customers" %}</p></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Revenue Chart + Credit Performance -->
+  <div class="row g-3 mb-4">
+    <div class="col-lg-8">
+      <div class="section-card">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-emerald"><i class="bi bi-graph-up"></i></span>{% trans "Revenue Trend (Credit vs Cash)" %}</h5>
+          <div class="dropdown">
+            <button class="btn-act" style="padding:0.35rem 0.75rem; font-size:0.78rem;" data-bs-toggle="dropdown">
+              <i class="bi bi-calendar me-1"></i><span id="periodLabel">{% trans "12 Months" %}</span>
+            </button>
+            <ul class="dropdown-menu" style="background:var(--ink-soft); border:1px solid var(--border-em); border-radius:var(--r-md); padding:0.3rem;">
+              <li><a class="dropdown-item" href="#" data-period="3" style="color:var(--text-1); border-radius:var(--r-sm);">3 Months</a></li>
+              <li><a class="dropdown-item" href="#" data-period="6" style="color:var(--text-1); border-radius:var(--r-sm);">6 Months</a></li>
+              <li><a class="dropdown-item active" href="#" data-period="12" style="color:var(--text-1); border-radius:var(--r-sm);">12 Months</a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="section-body" style="position:relative;">
+          <div class="chart-wrap"><canvas id="revenueTrendChart"></canvas></div>
+          <div class="chart-loader d-none" id="chartLoader"><div class="chart-spinner"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="section-card">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-sky"><i class="bi bi-credit-card"></i></span>{% trans "Credit Performance" %}</h5>
+        </div>
+        <div class="section-body">
+          <div class="perf-item">
+            <div class="perf-meta">
+              <span class="perf-label">{% trans "Collection Rate" %}</span>
+              <span class="perf-val">{{ credit_metrics.credit_collection_rate|floatformat:1 }}%</span>
+            </div>
+            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ credit_metrics.credit_collection_rate }}%; background:var(--emerald);"></div></div>
+          </div>
+          <div class="perf-item">
+            <div class="perf-meta">
+              <span class="perf-label">{% trans "Outstanding" %}</span>
+              <span class="perf-val" style="color:var(--amber);">UGX {{ credit_metrics.outstanding_credit|floatformat:0|intcomma }}</span>
+            </div>
+            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ credit_metrics.outstanding_credit|divide:credit_metrics.credit_revenue|multiply:100|default:0|floatformat:0 }}%; background:var(--amber);"></div></div>
+          </div>
+          <div class="perf-item">
+            <div class="perf-meta">
+              <span class="perf-label">{% trans "Overdue" %}</span>
+              <span class="perf-val" style="color:var(--rose);">UGX {{ credit_metrics.overdue_credit|floatformat:0|intcomma }}</span>
+            </div>
+            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ credit_metrics.overdue_credit|divide:credit_metrics.credit_revenue|multiply:100|default:0|floatformat:0 }}%; background:var(--rose);"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Invoices + Sidebar -->
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="section-card">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-violet"><i class="bi bi-clock-history"></i></span>{% trans "Recent Invoices" %}</h5>
+          <div style="display:flex; gap:0.4rem;">
+            {% if perms.invoices.view_invoice %}
+            <a href="{% url 'invoices:list' %}" class="btn-act" style="padding:0.35rem 0.75rem; font-size:0.78rem;"><i class="bi bi-list-ul"></i> View All</a>
+            {% endif %}
+            <div class="dropdown">
+              <button class="btn-act primary" style="padding:0.35rem 0.75rem; font-size:0.78rem;" data-bs-toggle="dropdown"><i class="bi bi-plus-lg"></i></button>
+              <ul class="dropdown-menu" style="background:var(--ink-soft); border:1px solid var(--border-em); border-radius:var(--r-md); padding:0.3rem;">
+                {% if perms.sales.add_sale %}
+                <li><a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CASH" style="color:var(--text-1); border-radius:var(--r-sm);"><i class="bi bi-cash me-2"></i>Cash Invoice</a></li>
+                <li><a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CREDIT" style="color:var(--text-1); border-radius:var(--r-sm);"><i class="bi bi-credit-card me-2"></i>Credit Invoice</a></li>
+                {% endif %}
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="inv-table">
+            <thead>
+              <tr>
+                <th>{% trans "Invoice #" %}</th>
+                <th>{% trans "Customer" %}</th>
+                <th style="text-align:right;">{% trans "Amount" %}</th>
+                <th>{% trans "Status" %}</th>
+                <th>{% trans "Due Date" %}</th>
+                <th style="text-align:center;">{% trans "Actions" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for invoice in recent_invoices %}
+              <tr class="{% if invoice.sale.payment_status == 'OVERDUE' %}overdue-row{% endif %}"
+                  onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
+                <td>
+                  <div style="display:flex; align-items:center; gap:0.4rem;">
+                    <a href="{% url 'invoices:detail' invoice.pk %}" class="inv-num">{{ invoice.sale.document_number }}</a>
+                    {% if efris_enabled and invoice.is_fiscalized %}<i class="bi bi-shield-check" style="color:var(--emerald); font-size:0.8rem;" title="Fiscalized"></i>{% endif %}
+                    {% if invoice.sale.payment_method == 'CREDIT' %}<span class="credit-chip">CREDIT</span>{% endif %}
+                  </div>
+                  <div class="inv-sub">{{ invoice.sale.created_at|date:"M d, Y" }}</div>
+                </td>
+                <td>
+                  {% if invoice.sale.customer %}
+                    <div style="font-weight:600; color:var(--text-1);">{{ invoice.sale.customer.name|truncatechars:22 }}</div>
+                    {% if invoice.sale.customer.phone %}
+                    <div class="inv-sub">{{ invoice.sale.customer.phone }}</div>
+                    {% endif %}
+                  {% else %}
+                    <span style="color:var(--text-3); font-style:italic; font-size:0.875rem;">Walk-in</span>
+                  {% endif %}
+                </td>
+                <td style="text-align:right;">
+                  <div class="amt-main">UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}</div>
+                  {# ── BUG FIX: Only show Due line when invoice is NOT paid ── #}
+                  {% if invoice.sale.payment_status != 'PAID' and invoice.sale.payment_status != 'COMPLETED' %}
+                  <div class="amt-due">Due: UGX {{ invoice.get_balance_due|floatformat:0|intcomma }}</div>
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="status-pill {% if invoice.sale.payment_status == 'PAID' or invoice.sale.payment_status == 'COMPLETED' %}sp-paid{% elif invoice.sale.payment_status == 'OVERDUE' %}sp-overdue{% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}sp-partial{% else %}sp-pending{% endif %}">
+                    <span class="dot"></span>{{ invoice.sale.get_payment_status_display }}
+                    {% if invoice.sale.payment_method == 'CREDIT' %} (C){% endif %}
+                  </span>
+                </td>
+                <td>
+                  {% if invoice.sale.due_date %}
+                  <div style="font-size:0.875rem; {% if invoice.sale.payment_status == 'OVERDUE' %}color:var(--rose); font-weight:700;{% else %}color:var(--text-2);{% endif %}">
+                    {{ invoice.sale.due_date|date:"M d, Y" }}
+                  </div>
+                  {% if invoice.sale.payment_status == 'OVERDUE' %}
+                  <div class="inv-sub" style="color:var(--rose);"><i class="bi bi-exclamation-circle"></i> Overdue</div>
+                  {% elif invoice.sale.days_until_due <= 3 and invoice.sale.payment_status != 'PAID' %}
+                  <div class="inv-sub" style="color:var(--amber);"><i class="bi bi-clock"></i> Due soon</div>
+                  {% endif %}
+                  {% else %}
+                  <span style="color:var(--text-3); font-size:0.8rem;">—</span>
+                  {% endif %}
+                </td>
+                <td style="text-align:center;" onclick="event.stopPropagation()">
+                  <div style="display:flex; gap:0.25rem; justify-content:center;">
+                    {% if perms.invoices.view_invoice %}
+                    <a href="{% url 'invoices:detail' invoice.pk %}" class="act-btn" title="View"><i class="bi bi-eye"></i></a>
+                    <a href="{% url 'invoices:print' invoice.pk %}" class="act-btn" title="Print" target="_blank"><i class="bi bi-printer"></i></a>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state">
+                    <i class="bi bi-inbox"></i>
+                    <p style="margin-bottom:1rem;">{% trans "No invoices found" %}</p>
+                    {% if perms.sales.add_sale %}
+                    <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn-act primary"><i class="bi bi-plus-circle"></i> Create Invoice</a>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
-    <!-- Recent Credit Activity -->
-    {% if recent_credit_invoices %}
-    <div class="row g-3 mt-3">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header bg-info bg-opacity-10">
-                    <h5 class="mb-0">
-                        <i class="bi bi-credit-card me-2"></i>
-                        {% trans "Recent Credit Activity" %}
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>{% trans "Invoice" %}</th>
-                                    <th>{% trans "Customer" %}</th>
-                                    <th class="text-end">{% trans "Amount" %}</th>
-                                    <th>{% trans "Due Date" %}</th>
-                                    <th>{% trans "Status" %}</th>
-                                    <th>{% trans "Created" %}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for invoice in recent_credit_invoices %}
-                                <tr onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
-                                    <td>
-                                        <strong>{{ invoice.sale.document_number }}</strong>
-                                    </td>
-                                    <td>
-                                        {{ invoice.sale.customer.name|default:"Walk-in Customer"|truncatechars:30 }}
-                                    </td>
-                                    <td class="text-end fw-bold text-info">
-                                        UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}
-                                    </td>
-                                    <td>
-                                        {% if invoice.sale.due_date %}
-                                        {{ invoice.sale.due_date|date:"M d, Y" }}
-                                        {% else %}
-                                        <span class="text-muted">{% trans "N/A" %}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <span class="status-badge status-{{ invoice.sale.payment_status }}">
-                                            {{ invoice.sale.get_payment_status_display }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        {{ invoice.sale.created_at|date:"M d" }}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+      <!-- Quick Actions -->
+      <div class="section-card" style="animation-delay:0.05s;">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-violet"><i class="bi bi-lightning"></i></span>{% trans "Quick Actions" %}</h5>
         </div>
-    </div>
-    {% endif %}
+        <div class="section-body">
+          {% if perms.sales.add_sale %}
+          <a href="{% url 'sales:create_sale' %}?type=invoice" class="qa-btn"><i class="bi bi-plus-circle"></i> {% trans "Create Invoice" %}</a>
+          {% endif %}
+          {% if perms.invoices.view_invoice %}
+          <a href="{% url 'invoices:list' %}" class="qa-btn"><i class="bi bi-list-ul"></i> {% trans "View All Invoices" %}</a>
+          {% endif %}
+          {% if perms.customers.view_customer %}
+          <a href="{% url 'customers:customer_list' %}?allow_credit=true" class="qa-btn"><i class="bi bi-credit-card"></i> {% trans "Credit Customers" %}</a>
+          {% endif %}
+          {% if perms.invoices.view_invoice %}
+          <a href="{% url 'invoices:analytics' %}" class="qa-btn"><i class="bi bi-graph-up"></i> {% trans "View Analytics" %}</a>
+          {% endif %}
+          {% if EFRIS_ENABLED %}
+          <a href="{% url 'invoices:efris_dashboard' %}" class="qa-btn"><i class="bi bi-shield-check"></i> {% trans "EFRIS Status" %}</a>
+          {% endif %}
+        </div>
+      </div>
 
-    <!-- Recent Payments -->
-    {% if recent_payments %}
-    <div class="row g-3 mt-3">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">
-                        <i class="bi bi-cash-coin me-2"></i>
-                        {% trans "Recent Payments" %}
-                    </h5>
-                    <a href="{% url 'invoices:payments' %}" class="btn btn-sm btn-outline-primary">
-                        {% trans "View All" %}
-                    </a>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>{% trans "Invoice" %}</th>
-                                    <th>{% trans "Customer" %}</th>
-                                    <th class="text-end">{% trans "Amount" %}</th>
-                                    <th>{% trans "Method" %}</th>
-                                    <th>{% trans "Date" %}</th>
-                                    <th>{% trans "Processed By" %}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for payment in recent_payments %}
-                                <tr>
-                                    <td>
-                                        <a href="{% url 'invoices:detail' payment.invoice.pk %}">
-                                            {{ payment.invoice.sale.document_number }}
-                                        </a>
-                                    </td>
-                                    <td>
-                                        {{ payment.invoice.sale.customer.name|default:"Walk-in Customer"|truncatechars:30 }}
-                                    </td>
-                                    <td class="text-end fw-bold text-success">
-                                        UGX {{ payment.amount|floatformat:0|intcomma }}
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-primary">
-                                            {{ payment.get_payment_method_display }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        {{ payment.payment_date|date:"M d, Y" }}
-                                    </td>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="avatar-sm bg-primary bg-opacity-10 me-2">
-                                                <i class="bi bi-person text-primary"></i>
-                                            </div>
-                                            <span>
-                                                {{ payment.processed_by.get_full_name|default:payment.processed_by.username|truncatechars:20 }}
-                                            </span>
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+      <!-- Performance -->
+      <div class="section-card" style="animation-delay:0.08s;">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-emerald"><i class="bi bi-speedometer2"></i></span>{% trans "Performance" %}</h5>
         </div>
+        <div class="section-body">
+          <div class="perf-item">
+            <div class="perf-meta"><span class="perf-label">{% trans "Collection Rate" %}</span><span class="perf-val">{{ metrics.collection_rate|floatformat:1 }}%</span></div>
+            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ metrics.collection_rate }}%; background:var(--emerald);"></div></div>
+          </div>
+          <div class="perf-item">
+            <div class="perf-meta"><span class="perf-label">{% trans "Credit Collection" %}</span><span class="perf-val">{{ credit_metrics.credit_collection_rate|floatformat:1 }}%</span></div>
+            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ credit_metrics.credit_collection_rate }}%; background:var(--sky);"></div></div>
+          </div>
+          <div class="perf-item">
+            <div class="perf-meta"><span class="perf-label">{% trans "On-Time Payment" %}</span><span class="perf-val">{{ metrics.on_time_rate|floatformat:1 }}%</span></div>
+            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ metrics.on_time_rate }}%; background:var(--amber);"></div></div>
+          </div>
+          <div class="perf-item">
+            <div class="perf-meta"><span class="perf-label">{% trans "Fiscalization Rate" %}</span><span class="perf-val">{{ metrics.fiscalization_rate|floatformat:1 }}%</span></div>
+            <div class="perf-bar"><div class="perf-bar-fill" style="width:{{ metrics.fiscalization_rate }}%; background:var(--violet);"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overdue or Upcoming -->
+      {% if credit_metrics.overdue_credit_count > 0 %}
+      <div class="section-card" style="animation-delay:0.1s; border-color:rgba(214,48,96,0.2);">
+        <div class="section-header" style="background:rgba(214,48,96,0.05);">
+          <h5 class="section-title" style="color:var(--rose);">
+            <span class="section-icon icon-rose"><i class="bi bi-exclamation-triangle"></i></span>
+            {% trans "Top Overdue" %}
+          </h5>
+        </div>
+        {% for invoice in top_overdue_credit %}
+        <div class="due-item urgent" onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
+            <div>
+              <div style="font-weight:600; color:var(--text-1);">{{ invoice.sale.document_number }}</div>
+              <div class="inv-sub">{{ invoice.sale.customer.name|default:"N/A"|truncatechars:22 }}</div>
+              <div style="font-family:var(--font-mono); font-size:0.7rem; color:var(--rose); margin-top:3px;"><i class="bi bi-calendar-x"></i> {{ invoice.overdue_days }}d overdue</div>
+            </div>
+            <div style="text-align:right; flex-shrink:0;">
+              <div style="font-family:var(--font-mono); font-weight:700; color:var(--rose);">UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}</div>
+              <div class="inv-sub">Due {{ invoice.sale.due_date|date:"M d, Y" }}</div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+        <div style="padding:0.75rem 1.75rem; border-top:1px solid var(--border);">
+          {% if perms.invoices.view_invoice %}
+          <a href="{% url 'invoices:list' %}?credit_status=OVERDUE_CREDIT" class="btn-act" style="color:var(--rose); border-color:rgba(214,48,96,0.25); width:100%; justify-content:center;"><i class="bi bi-list"></i> View All Overdue</a>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="section-card" style="animation-delay:0.1s;">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-amber"><i class="bi bi-calendar-check"></i></span>{% trans "Upcoming Due" %}</h5>
+        </div>
+        {% for invoice in upcoming_invoices %}
+        <div class="due-item {% if invoice.days_until_due <= 3 %}urgent{% else %}warn{% endif %}" onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
+            <div>
+              <div style="font-weight:600; color:var(--text-1);">{{ invoice.sale.document_number }}</div>
+              <div class="inv-sub">{{ invoice.sale.customer.name|default:"Walk-in"|truncatechars:25 }}</div>
+              <div style="font-family:var(--font-mono); font-size:0.72rem; color:var(--text-3); margin-top:2px;">UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}</div>
+            </div>
+            <div style="text-align:right; flex-shrink:0;">
+              <span class="status-pill {% if invoice.days_until_due <= 3 %}sp-overdue{% else %}sp-pending{% endif %}" style="font-size:0.65rem;">{{ invoice.days_until_due }}d</span>
+              <div class="inv-sub">{{ invoice.sale.due_date|date:"M d" }}</div>
+            </div>
+          </div>
+        </div>
+        {% empty %}
+        <div class="empty-state" style="padding:2rem;">
+          <i class="bi bi-check-circle" style="color:var(--emerald);"></i>
+          <p>{% trans "No upcoming due dates" %}</p>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
     </div>
-    {% endif %}
-</div>
+  </div>
+
+  <!-- Recent Credit Activity -->
+  {% if recent_credit_invoices %}
+  <div class="row g-3 mt-3">
+    <div class="col-12">
+      <div class="section-card">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-sky"><i class="bi bi-credit-card"></i></span>{% trans "Recent Credit Activity" %}</h5>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="inv-table">
+            <thead>
+              <tr>
+                <th>{% trans "Invoice" %}</th>
+                <th>{% trans "Customer" %}</th>
+                <th style="text-align:right;">{% trans "Amount" %}</th>
+                <th>{% trans "Due Date" %}</th>
+                <th>{% trans "Status" %}</th>
+                <th>{% trans "Created" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for invoice in recent_credit_invoices %}
+              <tr onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
+                <td><strong style="color:var(--sky); font-family:var(--font-mono); font-size:0.85rem;">{{ invoice.sale.document_number }}</strong></td>
+                <td>{{ invoice.sale.customer.name|default:"Walk-in"|truncatechars:28 }}</td>
+                <td style="text-align:right; font-family:var(--font-mono); font-weight:700; color:var(--sky);">UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}</td>
+                <td>
+                  {% if invoice.sale.due_date %}{{ invoice.sale.due_date|date:"M d, Y" }}
+                  {% else %}<span style="color:var(--text-3);">—</span>{% endif %}
+                </td>
+                <td>
+                  <span class="status-pill {% if invoice.sale.payment_status == 'PAID' or invoice.sale.payment_status == 'COMPLETED' %}sp-paid{% elif invoice.sale.payment_status == 'OVERDUE' %}sp-overdue{% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}sp-partial{% else %}sp-pending{% endif %}">
+                    <span class="dot"></span>{{ invoice.sale.get_payment_status_display }}
+                  </span>
+                </td>
+                <td style="color:var(--text-3); font-size:0.82rem;">{{ invoice.sale.created_at|date:"M d" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Recent Payments -->
+  {% if recent_payments %}
+  <div class="row g-3 mt-3">
+    <div class="col-12">
+      <div class="section-card">
+        <div class="section-header">
+          <h5 class="section-title"><span class="section-icon icon-emerald"><i class="bi bi-cash-coin"></i></span>{% trans "Recent Payments" %}</h5>
+          <a href="{% url 'invoices:payments' %}" class="btn-act" style="padding:0.35rem 0.75rem; font-size:0.78rem;">View All</a>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="inv-table">
+            <thead>
+              <tr>
+                <th>{% trans "Invoice" %}</th>
+                <th>{% trans "Customer" %}</th>
+                <th style="text-align:right;">{% trans "Amount" %}</th>
+                <th>{% trans "Method" %}</th>
+                <th>{% trans "Date" %}</th>
+                <th>{% trans "Processed By" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for payment in recent_payments %}
+              <tr>
+                <td><a href="{% url 'invoices:detail' payment.invoice.pk %}" class="inv-num">{{ payment.invoice.sale.document_number }}</a></td>
+                <td>{{ payment.invoice.sale.customer.name|default:"Walk-in"|truncatechars:28 }}</td>
+                <td style="text-align:right; font-family:var(--font-mono); font-weight:700; color:var(--emerald);">UGX {{ payment.amount|floatformat:0|intcomma }}</td>
+                <td><span style="background:var(--white-10); border:1px solid var(--border-em); padding:0.18rem 0.45rem; border-radius:var(--r-sm); font-family:var(--font-mono); font-size:0.68rem; color:var(--text-2);">{{ payment.get_payment_method_display }}</span></td>
+                <td style="font-size:0.85rem; color:var(--text-2);">{{ payment.payment_date|date:"M d, Y" }}</td>
+                <td style="font-size:0.85rem; color:var(--text-2);">{{ payment.processed_by.get_full_name|default:payment.processed_by.username|truncatechars:20 }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div><!-- /page-wrap -->
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-// Dashboard Manager
 class InvoiceDashboard {
-    constructor() {
-        this.charts = {
-            revenue: null,
-            status: null,
-            creditCash: null
-        };
-        this.currentPeriod = 12;
-        this.initialize();
-    }
+  constructor() {
+    this.charts = { revenue: null, status: null, creditCash: null };
+    this.currentPeriod = 12;
+    this.initialize();
+  }
 
-    initialize() {
-        this.initializeTooltips();
-        this.loadCharts();
-        this.attachEventListeners();
-        this.startAutoRefresh();
-    }
+  initialize() {
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+    this.loadCharts();
+    this.attachEventListeners();
+    setInterval(() => { this.loadCharts(this.currentPeriod); this.updateMetrics(); }, 60000);
+  }
 
-    initializeTooltips() {
-        const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-        tooltips.forEach(el => new bootstrap.Tooltip(el));
-    }
+  async loadCharts(period = 12) {
+    this.showLoader(true);
+    try {
+      const data = await this.fetchChartData(period);
+      if (data) {
+        this.renderRevenueChart(data.monthly_data);
+        this.renderCreditCashChart();
+      }
+    } catch(e) { console.error(e); }
+    finally { this.showLoader(false); }
+  }
 
-    async loadCharts(period = 12) {
-        this.showLoader(true);
-        try {
-            const data = await this.fetchChartData(period);
-            if (data) {
-                this.renderRevenueChart(data.monthly_data);
-                this.renderStatusChart(data.status_data);
-                this.renderCreditCashChart();
-            }
-        } catch (error) {
-            console.error('Failed to load charts:', error);
-        } finally {
-            this.showLoader(false);
-        }
-    }
+  getChartColors() {
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    return {
+      grid: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+      text: dark ? '#66657e' : '#9896b2',
+    };
+  }
 
-    renderCreditCashChart() {
-        const ctx = document.getElementById('creditCashChart')?.getContext('2d');
-        if (!ctx) return;
+  renderRevenueChart(data) {
+    const ctx = document.getElementById('revenueTrendChart')?.getContext('2d');
+    if (!ctx) return;
+    if (this.charts.revenue) this.charts.revenue.destroy();
+    const c = this.getChartColors();
+    this.charts.revenue = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: data.map(d => d.month_name),
+        datasets: [
+          { label: 'Total Revenue', data: data.map(d => d.revenue), borderColor: '#6c4fcf', backgroundColor: 'rgba(108,79,207,0.08)', borderWidth:2.5, fill:true, tension:0.4 },
+          { label: 'Credit Revenue', data: data.map(d => d.credit_revenue||0), borderColor: '#1a7fc4', backgroundColor: 'rgba(26,127,196,0.06)', borderWidth:2, fill:true, tension:0.4 },
+          { label: 'Invoices', data: data.map(d => d.invoice_count), borderColor: '#0f9e62', backgroundColor: 'rgba(15,158,98,0.06)', borderWidth:2, fill:true, tension:0.4, yAxisID:'y1' }
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        interaction:{ mode:'index', intersect:false },
+        scales: {
+          x: { grid:{ color:c.grid }, ticks:{ color:c.text, font:{family:'JetBrains Mono',size:10} } },
+          y: { grid:{ color:c.grid }, ticks:{ color:c.text, font:{family:'JetBrains Mono',size:10}, callback: v => v>=1000000?`${(v/1000000).toFixed(1)}M`:v>=1000?`${(v/1000).toFixed(0)}K`:v } },
+          y1: { position:'right', grid:{ drawOnChartArea:false }, ticks:{ color:c.text, font:{family:'JetBrains Mono',size:10} } }
+        },
+        plugins:{ legend:{ labels:{ color:c.text, font:{family:'JetBrains Mono',size:10}, boxWidth:10 } } }
+      }
+    });
+  }
 
-        if (this.charts.creditCash) this.charts.creditCash.destroy();
+  renderCreditCashChart() {
+    const ctx = document.getElementById('creditCashChart')?.getContext('2d');
+    if (!ctx) return;
+    if (this.charts.creditCash) this.charts.creditCash.destroy();
+    const c = this.getChartColors();
+    this.charts.creditCash = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Credit Invoices','Cash Invoices'],
+        datasets: [{ data:[{{ credit_metrics.total_credit_invoices|default:0 }},{{ credit_metrics.cash_invoices_count|default:0 }}], backgroundColor:['#1a7fc4','#0f9e62'], borderWidth:0 }]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false, cutout:'72%',
+        plugins:{ legend:{ position:'bottom', labels:{ color:c.text, font:{family:'JetBrains Mono',size:10}, boxWidth:10, padding:12 } } }
+      }
+    });
+  }
 
-        this.charts.creditCash = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: [
-                    '{% trans "Credit Invoices" %}',
-                    '{% trans "Cash Invoices" %}'
-                ],
-                datasets: [{
-                    data: [
-                        {{ credit_metrics.total_credit_invoices|default:0 }},
-                        {{ credit_metrics.cash_invoices_count|default:0 }}
-                    ],
-                    backgroundColor: ['#0EA5E9', '#10B981'],
-                    borderWidth: 2,
-                    borderColor: '#fff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '70%',
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 15,
-                            usePointStyle: true
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: ctx => {
-                                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                                const pct = ((ctx.parsed / total) * 100).toFixed(1);
-                                return `${ctx.label}: ${ctx.parsed} (${pct}%)`;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
+  async fetchChartData(period) {
+    const r = await fetch(`{% url 'invoices:dashboard_chart_data' %}?period=${period}`);
+    const d = await r.json();
+    return d.success ? d : null;
+  }
 
-    async fetchChartData(period) {
-        const response = await fetch(`{% url 'invoices:dashboard_chart_data' %}?period=${period}`);
-        const data = await response.json();
-        return data.success ? data : null;
-    }
+  async fetchMetrics() {
+    const r = await fetch('{% url 'invoices:dashboard_metrics' %}');
+    const d = await r.json();
+    return d.success ? d.metrics : null;
+  }
 
-    async fetchMetrics() {
-        const response = await fetch('{% url 'invoices:dashboard_metrics' %}');
-        const data = await response.json();
-        return data.success ? data.metrics : null;
-    }
+  async updateMetrics() {
+    const m = await this.fetchMetrics();
+    if (!m) return;
+    const set = (sel, v) => { const el = document.querySelector(sel); if(el) el.textContent = typeof v==='number'?v.toLocaleString():v; };
+    set('[data-metric="total_invoices"]', m.total_invoices);
+    set('[data-metric="invoices_this_month"]', m.invoices_this_month);
+    set('[data-metric="total_revenue"]', `UGX ${Math.round(m.total_revenue).toLocaleString()}`);
+    set('[data-metric="fiscalized_invoices"]', m.fiscalized_invoices);
+  }
 
-    async updateMetrics() {
-        const metrics = await this.fetchMetrics();
-        if (metrics) {
-            this.updateMetricElement('[data-metric="total_invoices"]', metrics.total_invoices);
-            this.updateMetricElement('[data-metric="invoices_this_month"]', metrics.invoices_this_month);
-            this.updateMetricElement('[data-metric="total_revenue"]', `UGX ${this.formatNumber(metrics.total_revenue)}`);
-            this.updateMetricElement('[data-metric="pending_amount"]', `UGX ${this.formatNumber(metrics.pending_amount)}`);
-            this.updateMetricElement('[data-metric="pending_invoices"]', metrics.pending_invoices);
-            this.updateMetricElement('[data-metric="overdue_invoices"]', metrics.overdue_invoices);
-            this.updateMetricElement('[data-metric="fiscalized_invoices"]', metrics.fiscalized_invoices);
-            this.updateMetricElement('[data-metric="avg_invoice_amount"]', `UGX ${this.formatNumber(metrics.avg_invoice_amount)}`);
-            this.updateMetricElement('[data-metric="credit_invoices"]', {{ credit_metrics.total_credit_invoices|default:0 }});
-            this.updateMetricElement('[data-metric="overdue_credit"]', {{ credit_metrics.overdue_credit_count|default:0 }});
-            this.updateMetricElement('[data-metric="credit_customers"]', {{ credit_customers_summary.customers_count|default:0 }});
+  attachEventListeners() {
+    document.querySelectorAll('[data-period]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        this.currentPeriod = parseInt(btn.dataset.period);
+        this.loadCharts(this.currentPeriod);
+        document.getElementById('periodLabel').textContent = btn.textContent.trim();
+        document.querySelectorAll('[data-period]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+  }
 
-            // Update progress bars
-            this.updateProgressBar('collection_rate', metrics.collection_rate);
-            this.updateProgressBar('credit_collection_rate', {{ credit_metrics.credit_collection_rate|default:0 }});
-            this.updateProgressBar('on_time_rate', metrics.on_time_rate);
-            this.updateProgressBar('fiscalization_rate', metrics.fiscalization_rate);
-        }
-    }
-
-    updateMetricElement(selector, value) {
-        const el = document.querySelector(selector);
-        if (el) {
-            el.textContent = typeof value === 'number' ? value.toLocaleString() : value;
-        }
-    }
-
-    updateProgressBar(metric, value) {
-        const bar = document.querySelector(`[data-progress="${metric}"]`);
-        const label = bar?.closest('.performance-item')?.querySelector('.performance-value');
-
-        if (bar) bar.style.width = `${value}%`;
-        if (label) label.textContent = `${value.toFixed(1)}%`;
-    }
-
-    formatNumber(num) {
-        return Math.round(num).toLocaleString();
-    }
-
-    renderRevenueChart(data) {
-        const ctx = document.getElementById('revenueTrendChart')?.getContext('2d');
-        if (!ctx) return;
-
-        if (this.charts.revenue) this.charts.revenue.destroy();
-
-        this.charts.revenue = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: data.map(d => d.month_name),
-                datasets: [{
-                    label: '{% trans "Total Revenue" %}',
-                    data: data.map(d => d.revenue),
-                    borderColor: '#3B82F6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4
-                }, {
-                    label: '{% trans "Credit Revenue" %}',
-                    data: data.map(d => d.credit_revenue || 0),
-                    borderColor: '#0EA5E9',
-                    backgroundColor: 'rgba(14, 165, 233, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4
-                }, {
-                    label: '{% trans "Invoices" %}',
-                    data: data.map(d => d.invoice_count),
-                    borderColor: '#10B981',
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4,
-                    yAxisID: 'y1'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: '{% trans "Revenue (UGX)" %}'
-                        },
-                        ticks: {
-                            callback: value => {
-                                if (value >= 1000000) return `UGX ${(value/1000000).toFixed(1)}M`;
-                                if (value >= 1000) return `UGX ${(value/1000).toFixed(0)}K`;
-                                return `UGX ${value}`;
-                            }
-                        }
-                    },
-                    y1: {
-                        beginAtZero: true,
-                        position: 'right',
-                        title: {
-                            display: true,
-                            text: '{% trans "Invoices" %}'
-                        },
-                        grid: {
-                            drawOnChartArea: false
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    renderStatusChart(data) {
-        const ctx = document.getElementById('statusDistributionChart')?.getContext('2d');
-        if (!ctx) return;
-
-        if (this.charts.status) this.charts.status.destroy();
-
-        this.charts.status = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: data.map(d => d.label),
-                datasets: [{
-                    data: data.map(d => d.count),
-                    backgroundColor: ['#10B981', '#3B82F6', '#6B7280', '#EF4444', '#F59E0B', '#8B5CF6'],
-                    borderWidth: 2,
-                    borderColor: '#fff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '70%',
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 15,
-                            usePointStyle: true
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: ctx => {
-                                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                                const pct = ((ctx.parsed / total) * 100).toFixed(1);
-                                return `${ctx.label}: ${ctx.parsed} (${pct}%)`;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    attachEventListeners() {
-        // Period selection
-        document.querySelectorAll('[data-period]').forEach(btn => {
-            btn.addEventListener('click', e => {
-                e.preventDefault();
-                this.currentPeriod = parseInt(btn.dataset.period);
-                this.loadCharts(this.currentPeriod);
-                document.getElementById('periodLabel').textContent = btn.textContent.trim();
-
-                // Update active state
-                document.querySelectorAll('[data-period]').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-            });
-        });
-    }
-
-    showLoader(show) {
-        const loader = document.getElementById('chartLoader');
-        if (loader) {
-            loader.classList.toggle('d-none', !show);
-        }
-    }
-
-    startAutoRefresh() {
-        setInterval(() => {
-            this.loadCharts(this.currentPeriod);
-            this.updateMetrics();
-        }, 60000); // Refresh every minute
-    }
+  showLoader(show) {
+    document.getElementById('chartLoader')?.classList.toggle('d-none', !show);
+  }
 }
 
-// Global functions
-function refreshDashboard() {
-    window.location.reload();
-}
+function refreshDashboard() { window.location.reload(); }
+function filterByStatus(s) { window.location.href = `{% url 'invoices:list' %}?status=${s}`; }
+function filterByPaymentMethod(m) { window.location.href = `{% url 'invoices:list' %}?payment_method=${m}`; }
+function filterByFiscalized(f) { window.location.href = `{% url 'invoices:list' %}?is_fiscalized=${f}`; }
 
-function refreshCharts() {
-    dashboard.loadCharts(dashboard.currentPeriod);
-    dashboard.updateMetrics();
-}
-
-function filterByStatus(status) {
-    window.location.href = `{% url 'invoices:list' %}?status=${status}`;
-}
-
-function filterByPaymentMethod(method) {
-    window.location.href = `{% url 'invoices:list' %}?payment_method=${method}`;
-}
-
-function filterByFiscalized(fiscalized) {
-    window.location.href = `{% url 'invoices:list' %}?is_fiscalized=${fiscalized}`;
-}
-
-// Initialize dashboard
 let dashboard;
-document.addEventListener('DOMContentLoaded', () => {
-    dashboard = new InvoiceDashboard();
-});
+document.addEventListener('DOMContentLoaded', () => { dashboard = new InvoiceDashboard(); });
 </script>
 {% endblock %}

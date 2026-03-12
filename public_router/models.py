@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 import uuid
-
+from referral.models import ReferralSignup
 
 class TenantSignupRequest(models.Model):
     """Track tenant signup requests in public schema"""
@@ -140,7 +140,14 @@ class PublicNewsletterSubscriber(models.Model):
 
 class TenantApprovalWorkflow(models.Model):
     """Track approval workflow steps"""
-
+    referral_signup = models.ForeignKey(
+        'referral.ReferralSignup',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approval_workflows',
+        help_text="The referral record that brought this signup, if any"
+    )
     signup_request = models.OneToOneField(
         TenantSignupRequest,
         on_delete=models.CASCADE,

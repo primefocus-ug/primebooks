@@ -580,23 +580,6 @@ def invoice_fiscalize(request, invoice_id):
     return redirect('efris:invoice_list')
 
 
-@login_required
-def invoice_detail(request, invoice_id):
-    """View invoice fiscalization details"""
-    company = request.tenant
-    invoice = get_object_or_404(Invoice, id=invoice_id)
-
-    # Get fiscalization audits
-    audits = FiscalizationAudit.objects.filter(
-        invoice=invoice
-    ).order_by('-created_at')
-
-    context = {
-        'invoice': invoice,
-        'audits': audits,
-    }
-
-    return render(request, 'efris/invoice_detail.html', context)
 
 
 # ============================================================================

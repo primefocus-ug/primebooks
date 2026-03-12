@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Receipt #{{ payment.id }} — {{ invoice.invoice_number }}</title>
+    <style>
+    :root {
+        --primary: #ff9800;
+        --dark: #1b1f3b;
+        --text: #333;
+        --border: #ddd;
+        --light-gray: #f5f6fa;
+        --emerald: #0f9e62;
+        --rose: #d63060;
+        --amber: #c47d0e;
+    }
+
+    @media print {
+        .no-print { display: none !important; }
+        body { margin: 0; }
+        .page { box-shadow: none; border: none; }
+        @page { margin: 1cm; size: A5; }
+        .header, .footer {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            background: var(--dark) !important;
+            color: #fff !important;
+        }
+        .receipt-title h2 { color: var(--primary) !important; }
+        .badge-paid { background: var(--emerald) !important; color: #fff !important; }
+        .badge-partial { background: var(--amber) !important; color: #fff !important; }
+        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+
+    body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        font-size: 12px;
+        color: var(--text);
+        background: var(--light-gray);
+        margin: 0;
+        padding: 20px;
+    }
+
+    .page {
+        max-width: 620px;
+        margin: 0 auto;
+        background: #fff;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    /* Header */
+    .header {
+        background: var(--dark);
+        color: #fff;
+        padding: 24px 32px;
+        position: relative;
+        overflow: hidden;
+    }
+    .header::before {
+        content: '';
+        position: absolute; top:0; left:0; width:100%; height:100%;
+        background: linear-gradient(135deg, transparent 50%, var(--primary) 50%);
+        opacity: 0.1; z-index:0;
+    }
+    .header-content { position:relative; z-index:1; display:flex; justify-content:space-between; align-items:flex-start; }
+    .company h1 { margin:0; font-size:18px; text-transform:uppercase; letter-spacing:1.5px; font-weight:600; }
+    .company small { display:block; font-size:10px; color:#ccc; margin-top:4px; }
+    .receipt-title { text-align:right; }
+    .receipt-title h2 { margin:0; font-size:22px; color:var(--primary); font-weight:700; text-transform:uppercase; }
+    .receipt-title p { margin:4px 0 0; font-size:11px; color:#fff; }
+
+    /* Payment badge */
+    .badge-wrap { display:flex; justify-content:center; padding:12px 32px; background:#f9fafc; border-bottom:1px solid var(--border); }
+    .badge-paid    { display:inline-flex; align-items:center; gap:6px; padding:6px 16px; border-radius:50px; background:var(--emerald); color:#fff; font-weight:700; font-size:12px; }
+    .badge-partial { display:inline-flex; align-items:center; gap:6px; padding:6px 16px; border-radius:50px; background:var(--amber); color:#fff; font-weight:700; font-size:12px; }
+
+    /* Content */
+    .content { padding:28px 32px; }
+
+    .info-row { display:flex; justify-content:space-between; gap:20px; margin-bottom:20px; }
+    .info-box {
+        flex:1; background:#fff; border:1px solid var(--border);
+        padding:16px; border-left:5px solid var(--primary); border-radius:6px;
+        box-shadow:0 2px 5px rgba(0,0,0,0.04);
+    }
+    .info-box h4 { margin:0 0 8px; color:var(--primary); font-size:11px; font-weight:600; text-transform:uppercase; border-bottom:1px dashed var(--border); padding-bottom:4px; }
+    .info-box p { margin:3px 0; font-size:11px; }
+    .info-box strong { color:var(--text); }
+
+    /* Payment details table */
+    .pay-detail-table { width:100%; border-collapse:collapse; margin-bottom:20px; }
+    .pay-detail-table th, .pay-detail-table td { padding:9px 12px; border:1px solid var(--border); font-size:12px; }
+    .pay-detail-table th { background:var(--primary); color:#fff; text-transform:uppercase; font-size:10px; font-weight:600; text-align:left; }
+    .pay-detail-table tr:nth-child(even) td { background:#fafafa; }
+    .pay-detail-table td.label { color:#666; width:45%; }
+    .pay-detail-table td.value { font-weight:600; color:var(--dark); }
+
+    /* Amount box */
+    .amount-box {
+        background: var(--dark);
+        color:#fff;
+        border-radius:8px;
+        padding:18px 24px;
+        margin-bottom:20px;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+    }
+    .amount-box .label { font-size:11px; opacity:0.7; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:4px; }
+    .amount-box .value { font-size:20px; font-weight:700; }
+    .amount-box .value.paid   { color:#4ade80; }
+    .amount-box .value.balance { color:{% if invoice.amount_outstanding == 0 %}#4ade80{% else %}#f97316{% endif %}; }
+
+    /* Invoice payment history mini-table */
+    .history-label { font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:#888; margin-bottom:6px; font-weight:600; }
+    .history-table { width:100%; border-collapse:collapse; font-size:11px; }
+    .history-table th { background:#f0f0f5; color:#555; font-size:10px; text-transform:uppercase; padding:6px 10px; border-bottom:2px solid var(--border); text-align:left; }
+    .history-table td { padding:7px 10px; border-bottom:1px solid #f0f0f0; color:#555; }
+    .history-table td.amount { text-align:right; font-weight:700; color:var(--emerald); }
+    .history-table tr.current-payment td { background:#fff8e7; font-weight:600; }
+    .history-table tfoot td { border-top:2px solid var(--border); font-weight:700; font-size:11px; }
+
+    /* Footer */
+    .footer {
+        background: var(--dark);
+        color: #fff;
+        padding: 16px 32px;
+        font-size: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 0;
+    }
+    .footer strong { color: var(--primary); }
+
+    /* No-print buttons */
+    .no-print { text-align:right; margin-bottom:12px; }
+    .btn { background:var(--primary); color:#fff; border:none; padding:8px 16px; border-radius:4px; cursor:pointer; font-size:12px; margin-left:8px; transition:background 0.2s; }
+    .btn:hover { background:#e68a00; }
+    .btn.outline { background:transparent; border:1px solid var(--primary); color:var(--primary); }
+    .btn.outline:hover { background:var(--primary); color:#fff; }
+
+    .divider { border:none; border-top:1px dashed var(--border); margin:16px 0; }
+    </style>
+</head>
+<body>
+
+<div class="no-print">
+    <button class="btn outline" onclick="window.close()">✖ Close</button>
+    <button class="btn" onclick="window.print()">🖨️ Print Receipt</button>
+</div>
+
+<div class="page">
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-content">
+            <div class="company">
+                {% if company_info.logo %}
+                    <img src="{{ company_info.logo.url }}" alt="Logo" style="max-height:50px;margin-bottom:8px;display:block;">
+                {% endif %}
+                <h1>{{ company_info.name }}</h1>
+                <small>{{ company_info.address }} | Tel: {{ company_info.phone }}</small>
+            </div>
+            <div class="receipt-title">
+                <h2>Payment Receipt</h2>
+                <p><strong>Receipt #:</strong> REC-{{ payment.id }}</p>
+                <p><strong>Invoice #:</strong> {{ invoice.invoice_number }}</p>
+                <p><strong>Date:</strong> {{ payment.payment_date|date:"F d, Y" }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment status badge -->
+    <div class="badge-wrap">
+        {% if invoice.amount_outstanding == 0 %}
+            <span class="badge-paid">✔ Invoice Fully Paid</span>
+        {% else %}
+            <span class="badge-partial">⏳ Partially Paid — Balance Remaining</span>
+        {% endif %}
+    </div>
+
+    <div class="content">
+
+        <!-- Parties -->
+        <div class="info-row">
+            <div class="info-box">
+                <h4>Received From</h4>
+                {% if invoice.sale.customer %}
+                    <p><strong>{{ invoice.sale.customer.name }}</strong></p>
+                    {% if invoice.sale.customer.phone %}<p>{{ invoice.sale.customer.phone }}</p>{% endif %}
+                    {% if invoice.sale.customer.email %}<p>{{ invoice.sale.customer.email }}</p>{% endif %}
+                    {% if invoice.sale.customer.tin %}<p>TIN: {{ invoice.sale.customer.tin }}</p>{% endif %}
+                {% else %}
+                    <p><strong>Walk-in Customer</strong></p>
+                {% endif %}
+            </div>
+            <div class="info-box">
+                <h4>Received By</h4>
+                <p><strong>{{ payment.processed_by.get_full_name|default:payment.processed_by.username }}</strong></p>
+                <p>{{ company_info.name }}</p>
+                <p>{{ company_info.email }}</p>
+            </div>
+        </div>
+
+        <!-- This payment details -->
+        <table class="pay-detail-table">
+            <thead>
+                <tr><th colspan="2">This Payment Details</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="label">Payment Method</td>
+                    <td class="value">{{ payment.get_payment_method_display }}</td>
+                </tr>
+                <tr>
+                    <td class="label">Payment Date</td>
+                    <td class="value">{{ payment.payment_date|date:"F d, Y" }}</td>
+                </tr>
+                {% if payment.transaction_reference %}
+                <tr>
+                    <td class="label">Transaction Reference</td>
+                    <td class="value">{{ payment.transaction_reference }}</td>
+                </tr>
+                {% endif %}
+                {% if payment.notes %}
+                <tr>
+                    <td class="label">Notes</td>
+                    <td class="value">{{ payment.notes }}</td>
+                </tr>
+                {% endif %}
+                <tr>
+                    <td class="label">Processed By</td>
+                    <td class="value">{{ payment.processed_by.get_full_name|default:payment.processed_by.username }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Amounts summary box -->
+        <div class="amount-box">
+            <div>
+                <div class="label">Amount Paid This Receipt</div>
+                <div class="value paid">UGX {{ payment.amount|floatformat:"2g" }}</div>
+            </div>
+            <div style="text-align:right;">
+                <div class="label">Remaining Balance</div>
+                <div class="value balance">UGX {{ invoice.amount_outstanding|floatformat:"2g" }}</div>
+            </div>
+        </div>
+
+        <!-- Full payment history for this invoice -->
+        <div class="history-label">Full Payment History — Invoice {{ invoice.invoice_number }}</div>
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Date</th>
+                    <th>Method</th>
+                    <th>Reference</th>
+                    <th style="text-align:right;">Amount (UGX)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in all_payments %}
+                <tr {% if p.id == payment.id %}class="current-payment"{% endif %}>
+                    <td>{{ forloop.counter }}</td>
+                    <td>{{ p.payment_date|date:"M d, Y" }}</td>
+                    <td>{{ p.get_payment_method_display }}</td>
+                    <td>{{ p.transaction_reference|default:"—" }}</td>
+                    <td class="amount">{{ p.amount|floatformat:"2g" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="4" style="text-align:right; color:#333;">Total Paid</td>
+                    <td style="text-align:right; color:var(--emerald); font-weight:700;">{{ invoice.amount_paid|floatformat:"2g" }}</td>
+                </tr>
+                <tr>
+                    <td colspan="4" style="text-align:right; color:#333;">Invoice Total</td>
+                    <td style="text-align:right; font-weight:700;">{{ invoice.total_amount|floatformat:"2g" }}</td>
+                </tr>
+                <tr>
+                    <td colspan="4" style="text-align:right; color:#333; font-size:13px;">Balance Remaining</td>
+                    <td style="text-align:right; font-weight:700; font-size:13px; color:{% if invoice.amount_outstanding == 0 %}var(--emerald){% else %}var(--rose){% endif %};">
+                        {{ invoice.amount_outstanding|floatformat:"2g" }}
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+
+        {% if invoice.amount_outstanding > 0 and invoice.sale.due_date %}
+        <hr class="divider">
+        <p style="font-size:11px; color:var(--amber); text-align:center;">
+            ⚠ <strong>Balance of UGX {{ invoice.amount_outstanding|floatformat:"2g" }} is due by {{ invoice.sale.due_date|date:"F d, Y" }}.</strong>
+            Please ensure timely payment to avoid any penalties.
+        </p>
+        {% elif invoice.amount_outstanding == 0 %}
+        <hr class="divider">
+        <p style="font-size:11px; color:var(--emerald); text-align:center;">
+            ✔ <strong>This invoice has been fully settled. Thank you!</strong>
+        </p>
+        {% endif %}
+
+    </div><!-- /content -->
+
+    <div class="footer">
+        <div>
+            <p><strong>{{ company_info.name }}</strong> | {{ company_info.email }} | {{ company_info.phone }}</p>
+            <p>This is an official payment receipt. Please retain for your records.</p>
+        </div>
+        <div style="text-align:right;">
+            <p>Generated: {{ now|date:"F d, Y H:i" }}</p>
+            <p><small>Powered by <strong>Primebooks</strong></small></p>
+        </div>
+    </div>
+
+</div>
+</body>
+</html>

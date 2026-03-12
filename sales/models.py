@@ -1246,30 +1246,53 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
         self.save(update_fields=['fiscalization_error', 'fiscalization_status'])
 
     def update_payment_status(self):
-        """Update payment status based on payments"""
+        """Update payment status based on confirmed Payment records.
+
+        For non-credit invoices (CASH/CARD/MOBILE_MONEY/BANK_TRANSFER) that
+        were collected upfront, a Payment record may legitimately not exist yet
+        (e.g. created before the auto-Payment feature, or imported).  In that
+        case we honour the stored payment_status set at creation time rather than
+        regressing to PENDING.
+        """
         from django.db.models import Sum
         from decimal import Decimal
 
-        total_paid = self.payments.aggregate(
+        # Receipts are always immediately paid — nothing to recalculate.
+        if self.document_type == 'RECEIPT':
+            if self.payment_status != 'PAID':
+                self.payment_status = 'PAID'
+                self.status = 'COMPLETED'
+                self.save(update_fields=['payment_status', 'status'])
+            return
+
+        total_paid = self.payments.filter(is_confirmed=True).aggregate(
             total=Sum('amount')
         )['total'] or Decimal('0')
 
         total_amount = Decimal(str(self.total_amount or 0))
-        total_paid = Decimal(str(total_paid))
+        total_paid   = Decimal(str(total_paid))
 
-        # Determine status
-        if total_paid >= total_amount:
-            self.payment_status = 'PAID'  # ✅ Use 'PAID' not 'COMPLETED'
+        if total_paid >= total_amount and total_amount > 0:
+            self.payment_status = 'PAID'
             if self.status != 'CANCELLED':
-                self.status = 'COMPLETED'  # ✅ This is correct (status field)
+                self.status = 'COMPLETED'
         elif total_paid > Decimal('0'):
             self.payment_status = 'PARTIALLY_PAID'
             if self.status == 'DRAFT':
                 self.status = 'PENDING_PAYMENT'
         else:
+            # No confirmed payments recorded yet.
+            if self.document_type == 'INVOICE' and self.payment_method != 'CREDIT':
+                # Non-credit invoice: was paid at POS — keep the stored status.
+                # Do NOT regress to PENDING just because no Payment row exists.
+                logger.debug(
+                    f"Sale {self.id}: non-credit invoice with no Payment rows — "
+                    f"keeping stored payment_status='{self.payment_status}'"
+                )
+                return
             self.payment_status = 'PENDING'
 
-        # Check overdue
+        # Check overdue (only relevant for unpaid/partial credit invoices)
         if self.payment_status in ['PENDING', 'PARTIALLY_PAID']:
             if self.due_date and self.due_date < timezone.now().date():
                 self.payment_status = 'OVERDUE'
@@ -1282,9 +1305,20 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
         )
 
     def calculate_payment_status(self):
-        """Calculate payment status without saving"""
+        """Calculate payment status without saving.
+
+        Non-credit invoices (CASH / CARD / MOBILE_MONEY / BANK_TRANSFER) are
+        collected at point-of-sale.  A Payment record may not always exist for
+        them (legacy data, imports, etc.), so if there are no confirmed Payment
+        rows we fall back to the stored payment_status rather than reporting
+        PENDING, which would be misleading.
+        """
         from django.db.models import Sum
         from decimal import Decimal
+
+        # For receipts: always paid immediately.
+        if self.document_type == 'RECEIPT':
+            return 'PAID'
 
         total_paid = self.payments.filter(is_confirmed=True).aggregate(
             total=Sum('amount')
@@ -1292,14 +1326,25 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
 
         total_amount = self.total_amount or Decimal('0')
 
-        if total_paid >= total_amount:
+        if total_paid >= total_amount and total_amount > 0:
             return 'PAID'
         elif total_paid > 0:
             return 'PARTIALLY_PAID'
-        elif self.document_type == 'INVOICE' and self.due_date:
-            today = timezone.now().date()
-            if self.due_date < today:
-                return 'OVERDUE'
+
+        # No confirmed Payment rows found.
+        if self.document_type == 'INVOICE':
+            if self.payment_method != 'CREDIT':
+                # Non-credit invoice: payment was taken upfront at POS.
+                # Trust the stored payment_status (set by set_auto_statuses on
+                # creation).  Returning PAID here is safe because the view's
+                # auto-update block won't overwrite a correct stored status.
+                return self.payment_status or 'PAID'
+
+            # Credit invoice — check overdue.
+            if self.due_date:
+                today = timezone.now().date()
+                if self.due_date < today:
+                    return 'OVERDUE'
 
         return 'PENDING'
 
@@ -1335,17 +1380,37 @@ class Sale(OfflineIDMixin, models.Model, EFRISSaleMixin):
             return False
 
     def set_auto_statuses(self):
-        """Set status and payment status based on document type and payment"""
+        """Set status and payment status based on document type and payment method.
+
+        Rules:
+        - RECEIPT                  → always PAID / COMPLETED (immediate cash sale)
+        - INVOICE + CREDIT         → PENDING / PENDING_PAYMENT (pay later)
+        - INVOICE + non-CREDIT     → PAID / COMPLETED only on NEW records;
+                                     existing records keep their current status
+                                     so that a view re-save doesn't overwrite a
+                                     legitimate PAID status back to PENDING.
+        - PROFORMA / ESTIMATE      → NOT_APPLICABLE / DRAFT
+        """
         if self.document_type == 'RECEIPT':
-            self.payment_status = 'PAID'  # ✅ Correct
-            self.status = 'COMPLETED'  # ✅ Correct (status, not payment_status)
+            self.payment_status = 'PAID'
+            self.status = 'COMPLETED'
+
         elif self.document_type == 'INVOICE':
             if self.payment_method == 'CREDIT':
+                # Credit invoices always start as pending; a Payment record
+                # arriving later will call update_payment_status() to advance this.
                 self.payment_status = 'PENDING'
                 self.status = 'PENDING_PAYMENT'
             else:
-                self.payment_status = 'PAID'  # ✅ Changed from 'COMPLETED' to 'PAID'
-                self.status = 'COMPLETED'
+                # Non-credit invoice (CASH, CARD, MOBILE_MONEY, BANK_TRANSFER):
+                # payment is collected at point-of-sale, so the sale is paid.
+                # Only set on NEW records — never overwrite an already-saved status.
+                if not self.pk:
+                    self.payment_status = 'PAID'
+                    self.status = 'COMPLETED'
+                # For existing records keep whatever status is already stored;
+                # update_payment_status() is responsible for any later changes.
+
         elif self.document_type in ['PROFORMA', 'ESTIMATE']:
             self.payment_status = 'NOT_APPLICABLE'
             self.status = 'DRAFT'

@@ -40,6 +40,58 @@ def get_user_company(user):
     """Get user's company"""
     return getattr(user, 'company', None)
 
+# ─── ADD THIS VIEW to views.py (paste after invoice_print_view) ───────────────
+
+@login_required
+@permission_required('invoices.view_invoice')
+def payment_receipt_view(request, pk, payment_id):
+    """
+    Print/view a receipt for a specific payment on an invoice.
+    Shows: amount paid this payment, running total paid, and remaining balance.
+    """
+    company = get_current_tenant(request)
+    if not company:
+        return HttpResponse('No company context', status=403)
+
+    with tenant_context(company):
+        invoice = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company).select_related(
+                'sale', 'sale__customer', 'sale__store'
+            ).prefetch_related('payments'),
+            pk=pk
+        )
+
+        payment = get_object_or_404(
+            invoice.payments.select_related('processed_by'),
+            pk=payment_id
+        )
+
+        # All payments for this invoice ordered by date (for history table)
+        all_payments = invoice.payments.select_related('processed_by').order_by(
+            'payment_date', 'id'
+        )
+
+        template_obj = InvoiceTemplate.objects.filter(is_default=True).first()
+        if not template_obj:
+            template_obj = InvoiceTemplate.objects.first()
+
+        context = {
+            'invoice': invoice,
+            'payment': payment,
+            'all_payments': all_payments,
+            'template': template_obj,
+            'now': timezone.now(),
+            'company_info': {
+                'name': company.name,
+                'address': getattr(company, 'physical_address', ''),
+                'phone': getattr(company, 'phone', ''),
+                'email': getattr(company, 'email', ''),
+                'tin': getattr(company, 'tin', ''),
+                'logo': getattr(company, 'logo', None),
+            },
+        }
+
+        return render(request, 'invoices/payment_receipt_print.html', context)
 
 class InvoiceListView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, ListView):
     model = Invoice

@@ -63,9 +63,27 @@ def tenant_signup_view(request):
                     # Capture request metadata
                     signup_request.ip_address = get_client_ip(request)
                     signup_request.user_agent = request.META.get('HTTP_USER_AGENT', '')
-                    signup_request.referral_source = request.GET.get('ref', '')
+                    ref_code = request.GET.get('ref', '') or request.session.get('referral_code', '')
+                    signup_request.referral_source = ref_code
+
+                    if ref_code:
+                        request.session['referral_code'] = ref_code
 
                     signup_request.save()
+
+                    # Create the referral tracking record
+                    if ref_code:
+                        from referral.models import Partner, ReferralSignup
+                        partner = Partner.objects.filter(
+                            referral_code=ref_code, is_active=True, is_approved=True
+                        ).first()
+                        ReferralSignup.objects.create(
+                            partner=partner,
+                            referral_code_used=ref_code,
+                            company_name=signup_request.company_name,
+                            company_email=signup_request.email,
+                            status='pending',
+                        )
 
                     logger.info(f"New tenant signup: {signup_request.company_name}")
 

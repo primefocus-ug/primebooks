@@ -4,2186 +4,1736 @@
 {% load efris_tags %}
 {% load custom_filters %}
 
-{% block title %}Sale {{ sale.invoice_number }} - Sales Pro{% endblock %}
+{% block title %}Sale {{ sale.invoice_number }} — Sales Pro{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
 <style>
-:root {
-    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-    --danger-gradient: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
-    --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    --info-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+/* ═══════════════════════════════════════════════════
+   DESIGN SYSTEM — PREMIUM SALES DETAIL
+   Aesthetic: Refined Editorial · Dark-leaning Luxury
+   ═══════════════════════════════════════════════════ */
+
+/* ── LIGHT THEME (default / [data-theme="light"]) ── */
+:root,
+[data-theme="light"] {
+  --ink:        #f5f4fb;
+  --ink-soft:   #ffffff;
+  --ink-muted:  #eeedf7;
+  --slate:      #dddce8;
+  --border:     rgba(0,0,0,0.07);
+  --border-em:  rgba(0,0,0,0.13);
+  --text-1:     #0d0c1a;
+  --text-2:     #4a4868;
+  --text-3:     #9896b2;
+  --gold:       #b07d1a;
+  --gold-dim:   #c99a30;
+  --emerald:    #0f9e62;
+  --rose:       #d63060;
+  --sky:        #1a7fc4;
+  --violet:     #6c4fcf;
+  --white-10:   rgba(0,0,0,0.05);
+  --white-05:   rgba(0,0,0,0.025);
+  --shadow-1:   0 1px 3px rgba(0,0,0,0.08);
+  --shadow-2:   0 4px 16px rgba(0,0,0,0.10);
+  --shadow-3:   0 16px 48px rgba(0,0,0,0.12);
+  --r-sm:       8px;
+  --r-md:       14px;
+  --r-lg:       20px;
+  --r-xl:       28px;
+  --font-head:  'Syne', sans-serif;
+  --font-body:  'DM Sans', sans-serif;
+  --font-mono:  'JetBrains Mono', monospace;
 }
 
-[data-bs-theme="light"] {
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8f9fa;
-    --bg-tertiary: #e9ecef;
-    --bg-accent: #f1f5f9;
-    --text-primary: #1e293b;
-    --text-secondary: #64748b;
-    --text-muted: #94a3b8;
-    --border-color: #e2e8f0;
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
-    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
-    --overlay: rgba(0, 0, 0, 0.5);
+/* ── DARK THEME ([data-theme="dark"]) ── */
+[data-theme="dark"] {
+  --ink:        #0a0a0f;
+  --ink-soft:   #16161e;
+  --ink-muted:  #22222e;
+  --slate:      #2e2e3e;
+  --border:     rgba(255,255,255,0.07);
+  --border-em:  rgba(255,255,255,0.14);
+  --text-1:     #f0eff8;
+  --text-2:     #a8a7bf;
+  --text-3:     #66657e;
+  --gold:       #e8c96a;
+  --gold-dim:   #a8893a;
+  --emerald:    #3ecf8e;
+  --rose:       #f06292;
+  --sky:        #60b9f8;
+  --violet:     #9b7fe8;
+  --white-10:   rgba(255,255,255,0.10);
+  --white-05:   rgba(255,255,255,0.05);
+  --shadow-1:   0 1px 3px rgba(0,0,0,0.4);
+  --shadow-2:   0 4px 16px rgba(0,0,0,0.5);
+  --shadow-3:   0 16px 48px rgba(0,0,0,0.6);
 }
 
-[data-bs-theme="dark"] {
-    --bg-primary: #1e293b;
-    --bg-secondary: #0f172a;
-    --bg-tertiary: #334155;
-    --bg-accent: #1e293b;
-    --text-primary: #f1f5f9;
-    --text-secondary: #cbd5e1;
-    --text-muted: #94a3b8;
-    --border-color: #334155;
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
-    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.6);
-    --overlay: rgba(0, 0, 0, 0.7);
-}
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
-    background-color: var(--bg-secondary);
-    color: var(--text-primary);
-    transition: background-color 0.3s ease;
-}
-
-/* Item Type Badges */
-.item-type-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.75rem;
-    border-radius: 50px;
-    font-weight: 600;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-}
-/* Combined Items-Summary Table */
-.combined-table-container {
-    background: var(--bg-primary);
-    border-radius: 16px;
-    overflow: hidden;
-    box-shadow: var(--shadow-md);
-    margin-bottom: 2rem;
-}
-
-.combined-header {
-    padding: 1.5rem;
-    background: var(--bg-accent);
-    border-bottom: 1px solid var(--border-color);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.combined-title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    color: var(--text-primary);
-}
-
-.combined-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.combined-table thead th {
-    background: var(--bg-accent);
-    padding: 1rem 1.25rem;
-    text-align: left;
-    font-weight: 700;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    font-size: 0.813rem;
-    letter-spacing: 0.05em;
-    border-bottom: 2px solid var(--border-color);
-}
-
-.combined-table tbody td {
-    padding: 1.25rem;
-    border-bottom: 1px solid var(--border-color);
-    vertical-align: middle;
-}
-
-.combined-table tbody tr:last-child td {
-    border-bottom: none;
-}
-
-.combined-table tbody tr:hover {
-    background: rgba(102, 126, 234, 0.05);
-}
-
-/* Summary Row Styles */
-.summary-section {
-    margin-top: 1rem;
-    border-top: 2px solid var(--border-color);
-}
-
-.summary-row {
-    background: var(--bg-accent) !important;
-}
-
-.summary-row td {
-    font-weight: 600;
-    padding: 1rem 1.25rem !important;
-}
-
-.summary-label {
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    font-size: 0.875rem;
-    letter-spacing: 0.02em;
-}
-
-.summary-value {
-    text-align: right;
-    font-weight: 700;
-    color: var(--text-primary);
-    font-size: 1.063rem;
-}
-
-.total-row {
-    background: var(--primary-gradient) !important;
-    color: white !important;
-}
-
-.total-row td {
-    font-size: 1.25rem !important;
-    font-weight: 800 !important;
-    padding: 1.5rem 1.25rem !important;
-    border: none !important;
-}
-
-/* Payment Status Row */
-.payment-status-row {
-    background: rgba(16, 185, 129, 0.1) !important;
-}
-
-.payment-status-row .summary-label {
-    color: #10b981;
-}
-
-.payment-status-row .summary-value {
-    color: #10b981;
-}
-
-.balance-due-row {
-    background: rgba(239, 68, 68, 0.1) !important;
-}
-
-.balance-due-row .summary-label {
-    color: #ef4444;
-}
-
-.balance-due-row .summary-value {
-    color: #ef4444;
-}
-.item-type-badge.product {
-    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-    color: white;
-}
-
-.item-type-badge.service {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    color: white;
-}
-
-.item-icon {
-    font-size: 0.875rem;
-}
-
-/* Enhanced Product Image for Services */
-.product-image.service {
-    background: var(--warning-gradient);
-}
-
-.product-image.product {
-    background: var(--success-gradient);
-}
-
-/* Header Section */
-.sale-header {
-    background: var(--primary-gradient);
-    color: white;
-    border-radius: 20px;
-    padding: 2.5rem;
-    margin-bottom: 2rem;
-    position: relative;
-    overflow: hidden;
-    box-shadow: var(--shadow-xl);
-    width: 100%;
-}
-
-.sale-header::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    right: -10%;
-    width: 400px;
-    height: 400px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 50%;
-    animation: pulse 3s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { transform: scale(1); opacity: 0.1; }
-    50% { transform: scale(1.1); opacity: 0.15; }
-}
-
-.header-content {
-    position: relative;
-    z-index: 2;
-}
-
-.invoice-title {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1rem;
-}
-
-.invoice-icon {
-    width: 70px;
-    height: 70px;
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2rem;
-    backdrop-filter: blur(10px);
-}
-
-.invoice-number {
-    font-size: 2.5rem;
-    font-weight: 800;
-    margin: 0;
-    letter-spacing: -0.02em;
-}
-
-.invoice-subtitle {
-    font-size: 1.125rem;
-    opacity: 0.9;
-    margin: 0;
-}
-
-/* Status Badges */
-.status-group {
-    position: absolute;
-    top: 2rem;
-    right: 2rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    align-items: flex-end;
-}
-
-.status-badge {
-    padding: 0.625rem 1.25rem;
-    border-radius: 50px;
-    font-weight: 700;
-    font-size: 0.813rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    backdrop-filter: blur(10px);
-    box-shadow: var(--shadow-md);
-    animation: slideInRight 0.5s ease;
-}
-
-@keyframes slideInRight {
-    from {
-        opacity: 0;
-        transform: translateX(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
-}
-
-.status-badge.fiscalized {
-    background: var(--success-gradient);
-    color: white;
-}
-
-.status-badge.not-fiscalized {
-    background: var(--warning-gradient);
-    color: white;
-}
-
-.status-badge.refunded {
-    background: var(--danger-gradient);
-    color: white;
-}
-
-.status-badge.voided {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-}
-
-/* Info Grid */
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.5rem;
-    margin-top: 2rem;
-}
-
-.info-card {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border-radius: 12px;
-    padding: 1.25rem;
-    transition: transform 0.2s ease;
-}
-
-.info-card:hover {
-    transform: translateY(-3px);
-}
-
-.info-label {
-    font-size: 0.813rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    opacity: 0.8;
-    margin-bottom: 0.5rem;
-}
-
-.info-value {
-    font-size: 1.25rem;
-    font-weight: 700;
-    margin: 0;
-}
-
-.info-value.large {
-    font-size: 1.75rem;
-}
-
-/* Action Buttons */
-.action-buttons {
-    position: absolute;
-    bottom: 2rem;
-    right: 2rem;
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-}
-
-.action-btn {
-    padding: 0.875rem 1.75rem;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    background: rgba(255, 255, 255, 0.15);
-    color: white;
-    border-radius: 12px;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 0.938rem;
-    transition: all 0.3s ease;
-    backdrop-filter: blur(10px);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.action-btn:hover {
-    background: rgba(255, 255, 255, 0.25);
-    color: white;
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-lg);
-}
-
-/* VERTICAL STACK - All sections in horizontal layout */
-.vertical-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-    width: 100%;
-}
-
-/* Modern Card - Full width */
-.modern-card {
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 16px;
-    overflow: hidden;
-    box-shadow: var(--shadow-md);
-    transition: all 0.3s ease;
-    width: 100%;
-    margin-bottom: 0;
-}
-
-.modern-card:hover {
-    box-shadow: var(--shadow-lg);
-    transform: translateY(-2px);
-}
-
-.card-header-modern {
-    padding: 1.5rem;
-    background: var(--bg-accent);
-    border-bottom: 1px solid var(--border-color);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.card-title-modern {
-    font-size: 1.25rem;
-    font-weight: 700;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    color: var(--text-primary);
-}
-
-.card-title-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: var(--primary-gradient);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.25rem;
-}
-
-.card-body-modern {
-    padding: 1.5rem;
-}
-
-/* Items Table - Responsive */
-.items-table-modern {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-}
-
-.items-table-modern thead {
-    background: var(--bg-accent);
-}
-
-.items-table-modern th {
-    padding: 1rem 1.25rem;
-    font-weight: 700;
-    text-align: left;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    font-size: 0.813rem;
-    letter-spacing: 0.05em;
-    border-bottom: 2px solid var(--border-color);
-}
-
-.items-table-modern td {
-    padding: 1.25rem;
-    border-bottom: 1px solid var(--border-color);
-    vertical-align: middle;
-}
-
-.items-table-modern tbody tr {
-    transition: background-color 0.2s ease;
-}
-
-.items-table-modern tbody tr:hover {
-    background: var(--bg-accent);
-}
-
-.items-table-modern tbody tr:last-child td {
-    border-bottom: none;
-}
-[data-bs-theme="dark"] .modal-body {
-    background: var(--bg-tertiary);
-    color: #000;
-}
-
-/* Product Image */
-.product-image {
-    width: 60px;
-    height: 60px;
-    border-radius: 12px;
-    background: var(--bg-accent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    box-shadow: var(--shadow-sm);
-}
-
-.product-image img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.product-image i {
-    font-size: 1.5rem;
-    color: white;
-}
-
-/* Product Details */
-.product-name {
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 0.25rem;
-}
-
-.product-sku {
-    font-size: 0.813rem;
-    color: var(--text-muted);
-}
-
-/* Badges */
-.qty-badge {
-    background: var(--primary-gradient);
-    color: white;
-    padding: 0.375rem 0.875rem;
-    border-radius: 50px;
-    font-weight: 700;
-    font-size: 0.875rem;
-    display: inline-block;
-}
-
-.tax-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 50px;
-    font-weight: 600;
-    font-size: 0.813rem;
-}
-
-/* Tabs */
-.tabs-modern {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    border-bottom: 2px solid var(--border-color);
-    margin-bottom: 2rem;
-}
-
-.tab-modern {
-    padding: 1rem 1.5rem;
-    background: none;
-    border: none;
-    border-bottom: 3px solid transparent;
-    cursor: pointer;
-    font-weight: 600;
-    color: var(--text-secondary);
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.938rem;
-    flex: 1;
-    min-width: 150px;
-    justify-content: center;
-}
-
-.tab-modern:hover {
-    color: var(--text-primary);
-    background: var(--bg-accent);
-}
-
-.tab-modern.active {
-    color: #667eea;
-    border-bottom-color: #667eea;
-}
-
-.tab-content-modern {
-    display: none;
-}
-
-.tab-content-modern.active {
-    display: block;
-    animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* Timeline */
-.timeline {
-    position: relative;
-    padding-left: 2rem;
-}
-
+  font-family: var(--font-body);
+  background: var(--ink);
+  color: var(--text-1);
+  min-height: 100vh;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* ─── NOISE TEXTURE OVERLAY ─── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.6;
+}
+
+.page-wrapper {
+  position: relative;
+  z-index: 1;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+/* ─── AMBIENT GLOW ─── */
+.ambient-glow {
+  position: fixed;
+  top: -200px;
+  right: -200px;
+  width: 700px;
+  height: 700px;
+  background: radial-gradient(circle, rgba(155,127,232,0.08) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+.ambient-glow-2 {
+  position: fixed;
+  bottom: -300px;
+  left: -150px;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(62,207,142,0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+[data-theme="light"] .ambient-glow  { background: radial-gradient(circle, rgba(108,79,207,0.05) 0%, transparent 70%); }
+[data-theme="light"] .ambient-glow-2 { background: radial-gradient(circle, rgba(15,158,98,0.04) 0%, transparent 70%); }
+
+/* ═══════════════════════════════════════════════════
+   HERO HEADER
+   ═══════════════════════════════════════════════════ */
+.sale-hero {
+  position: relative;
+  background: var(--ink-soft);
+  border: 1px solid var(--border-em);
+  border-radius: var(--r-xl);
+  padding: 2.5rem 3rem;
+  margin-bottom: 2rem;
+  overflow: hidden;
+  box-shadow: var(--shadow-3);
+  animation: heroIn 0.6s cubic-bezier(0.16,1,0.3,1) both;
+}
+
+@keyframes heroIn {
+  from { opacity: 0; transform: translateY(-16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.hero-accent-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--violet), var(--sky), var(--emerald));
+}
+
+.hero-corner-art {
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 240px; height: 240px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  opacity: 0.3;
+}
+.hero-corner-art::before {
+  content: '';
+  position: absolute;
+  inset: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border-em);
+}
+
+.hero-layout {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2rem;
+  align-items: start;
+}
+
+.hero-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.hero-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 20px; height: 1px;
+  background: var(--gold);
+}
+
+.hero-invoice-num {
+  font-family: var(--font-head);
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-1);
+  margin: 0 0 0.25rem;
+  line-height: 1.1;
+}
+
+.hero-subtitle {
+  font-size: 0.938rem;
+  color: var(--text-2);
+  margin: 0 0 2rem;
+}
+
+/* Info chips row */
+.info-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+
+.info-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--white-10);
+  border: 1px solid var(--border);
+  border-radius: 50px;
+  font-size: 0.813rem;
+  color: var(--text-2);
+  transition: border-color 0.2s, background 0.2s;
+}
+.info-chip:hover { border-color: var(--border-em); background: var(--white-05); }
+.info-chip i { color: var(--text-3); font-size: 0.75rem; }
+.info-chip strong { color: var(--text-1); font-weight: 600; }
+
+/* Hero right: total + badges */
+.hero-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.hero-total-block {
+  text-align: right;
+}
+.hero-total-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 0.25rem;
+}
+.hero-total-amount {
+  font-family: var(--font-head);
+  font-size: clamp(1.5rem, 3.5vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--emerald);
+  line-height: 1;
+}
+.hero-total-amount.refund { color: var(--rose); }
+
+.status-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.875rem;
+  border-radius: 50px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.status-pill.fiscal   { background: rgba(62,207,142,0.15); color: var(--emerald); border: 1px solid rgba(62,207,142,0.25); }
+.status-pill.unfiscal { background: rgba(240,98,146,0.15); color: var(--rose); border: 1px solid rgba(240,98,146,0.25); }
+.status-pill.refunded { background: rgba(232,201,106,0.15); color: var(--gold); border: 1px solid rgba(232,201,106,0.25); }
+.status-pill.voided   { background: rgba(155,127,232,0.15); color: var(--violet); border: 1px solid rgba(155,127,232,0.25); }
+.status-pill .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: blink 2s ease infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* Hero action buttons */
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.btn-hero {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--r-sm);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: var(--font-body);
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid var(--border-em);
+  background: var(--white-10);
+  color: var(--text-1);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.btn-hero:hover { background: var(--white-10); border-color: rgba(255,255,255,0.2); color: var(--text-1); transform: translateY(-1px); box-shadow: var(--shadow-1); }
+.btn-hero.primary { background: var(--violet); border-color: transparent; color: #fff; }
+.btn-hero.primary:hover { background: #8b6ed8; color: #fff; }
+.btn-hero.danger { color: var(--rose); border-color: rgba(240,98,146,0.25); }
+.btn-hero.danger:hover { background: rgba(240,98,146,0.1); }
+.btn-hero.success { color: var(--emerald); border-color: rgba(62,207,142,0.25); }
+.btn-hero.success:hover { background: rgba(62,207,142,0.1); }
+
+/* ═══════════════════════════════════════════════════
+   SECTION CARDS
+   ═══════════════════════════════════════════════════ */
+.section-card {
+  background: var(--ink-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-1);
+  transition: box-shadow 0.3s;
+  animation: cardIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
+}
+.section-card:hover { box-shadow: var(--shadow-2); }
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.section-card:nth-child(2) { animation-delay: 0.05s; }
+.section-card:nth-child(3) { animation-delay: 0.10s; }
+.section-card:nth-child(4) { animation-delay: 0.15s; }
+.section-card:nth-child(5) { animation-delay: 0.20s; }
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--white-05);
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  font-family: var(--font-head);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-1);
+  margin: 0;
+}
+
+.section-icon {
+  width: 34px; height: 34px;
+  border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+}
+.icon-violet { background: rgba(155,127,232,0.15); color: var(--violet); }
+.icon-emerald { background: rgba(62,207,142,0.15); color: var(--emerald); }
+.icon-gold   { background: rgba(232,201,106,0.15); color: var(--gold); }
+.icon-sky    { background: rgba(96,185,248,0.15); color: var(--sky); }
+.icon-rose   { background: rgba(240,98,146,0.15); color: var(--rose); }
+
+.section-body { padding: 1.75rem; }
+
+/* ═══════════════════════════════════════════════════
+   ITEMS TABLE
+   ═══════════════════════════════════════════════════ */
+.items-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.items-table thead tr {
+  border-bottom: 1px solid var(--border-em);
+}
+
+.items-table th {
+  padding: 0.875rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  text-align: left;
+}
+.items-table th:last-child { text-align: right; }
+
+.items-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.items-table tbody tr:last-child { border-bottom: none; }
+.items-table tbody tr:hover { background: var(--white-05); }
+
+.items-table td {
+  padding: 1.125rem 1rem;
+  vertical-align: middle;
+}
+.items-table td:last-child { text-align: right; }
+
+/* Item product cell */
+.item-img {
+  width: 48px; height: 48px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+.item-img.is-product { background: rgba(62,207,142,0.12); color: var(--emerald); }
+.item-img.is-service { background: rgba(155,127,232,0.12); color: var(--violet); }
+.item-img img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+
+.item-cell { display: flex; align-items: center; gap: 0.875rem; }
+.item-name { font-weight: 600; color: var(--text-1); font-size: 0.938rem; }
+.item-sub  { font-size: 0.775rem; color: var(--text-3); font-family: var(--font-mono); margin-top: 2px; }
+
+/* Type badge */
+.type-badge {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 50px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.type-badge.product { background: rgba(62,207,142,0.12); color: var(--emerald); border: 1px solid rgba(62,207,142,0.2); }
+.type-badge.service { background: rgba(155,127,232,0.12); color: var(--violet); border: 1px solid rgba(155,127,232,0.2); }
+
+/* Qty pill */
+.qty-pill {
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  padding: 0.3rem 0.75rem;
+  background: var(--white-10);
+  border-radius: 50px;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  border: 1px solid var(--border);
+}
+
+/* Tax badge */
+.tax-tag {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.tax-tag.a { background: rgba(62,207,142,0.12); color: var(--emerald); }
+.tax-tag.b { background: rgba(96,185,248,0.12); color: var(--sky); }
+.tax-tag.c { background: var(--white-10); color: var(--text-3); }
+
+/* Price cells */
+.price-cell { font-family: var(--font-mono); font-size: 0.9rem; color: var(--text-2); }
+.price-total { font-family: var(--font-mono); font-weight: 700; font-size: 1rem; color: var(--text-1); }
+.price-discount { font-family: var(--font-mono); color: var(--rose); font-size: 0.875rem; }
+
+/* ─── SUMMARY DIVIDER ─── */
+.summary-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--white-05);
+  border-top: 1px solid var(--border-em);
+  border-bottom: 1px solid var(--border);
+}
+.summary-divider-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.summary-divider-line { flex: 1; height: 1px; background: var(--border); }
+
+/* Summary rows */
+.summary-rows { padding: 0; }
+.summary-row-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.875rem 1.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.summary-row-item:last-child { border-bottom: none; }
+.summary-row-item .s-label {
+  font-size: 0.875rem;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.summary-row-item .s-value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.938rem;
+  color: var(--text-1);
+}
+.summary-row-item.paid  .s-value { color: var(--emerald); }
+.summary-row-item.owed  .s-value { color: var(--rose); }
+.summary-row-item.full  .s-value { color: var(--emerald); }
+.summary-row-item.discount .s-value { color: var(--rose); }
+
+/* GRAND TOTAL row */
+.grand-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 1.75rem;
+  background: linear-gradient(135deg, rgba(155,127,232,0.12), rgba(96,185,248,0.08));
+  border-top: 1px solid var(--border-em);
+}
+.grand-total-row .gt-label {
+  font-family: var(--font-head);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.grand-total-row .gt-amount {
+  font-family: var(--font-head);
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--text-1);
+  letter-spacing: -0.02em;
+}
+
+/* ═══════════════════════════════════════════════════
+   QUICK ACTIONS GRID
+   ═══════════════════════════════════════════════════ */
+.actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.875rem;
+  padding: 1.5rem 1.75rem;
+}
+
+.action-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  padding: 1.25rem 0.75rem;
+  background: var(--white-05);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  text-decoration: none;
+  color: var(--text-2);
+  font-size: 0.813rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.2s ease;
+  text-align: center;
+}
+.action-tile:hover {
+  background: var(--white-10);
+  border-color: var(--border-em);
+  color: var(--text-1);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-1);
+}
+.action-tile i { font-size: 1.5rem; }
+.action-tile.danger { color: var(--rose); }
+.action-tile.danger:hover { background: rgba(240,98,146,0.08); border-color: rgba(240,98,146,0.2); }
+.action-tile.success-tile { color: var(--emerald); }
+.action-tile.success-tile:hover { background: rgba(62,207,142,0.08); border-color: rgba(62,207,142,0.2); }
+
+/* ═══════════════════════════════════════════════════
+   PAYMENT STATUS CARD
+   ═══════════════════════════════════════════════════ */
+.payment-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+@media (max-width: 640px) { .payment-grid { grid-template-columns: 1fr; } }
+
+.payment-panel {
+  background: var(--white-05);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 1.5rem;
+}
+.payment-panel-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.payment-panel-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.pay-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.pay-row:last-child { border-bottom: none; }
+.pay-row-label { font-size: 0.875rem; color: var(--text-2); }
+.pay-row-value { font-family: var(--font-mono); font-weight: 700; font-size: 0.938rem; color: var(--text-1); }
+.pay-row-value.em-green { color: var(--emerald); }
+.pay-row-value.em-red   { color: var(--rose); }
+
+.pay-method-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  background: var(--white-05);
+  border-radius: var(--r-sm);
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border);
+}
+.pay-method-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: rgba(155,127,232,0.12);
+  color: var(--violet);
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Status badge pill in header */
+.hdr-badge {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 50px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.hdr-badge.paid    { background: rgba(62,207,142,0.12); color: var(--emerald); border: 1px solid rgba(62,207,142,0.2); }
+.hdr-badge.partial { background: rgba(232,201,106,0.12); color: var(--gold); border: 1px solid rgba(232,201,106,0.2); }
+.hdr-badge.due     { background: rgba(240,98,146,0.12); color: var(--rose); border: 1px solid rgba(240,98,146,0.2); }
+
+/* ═══════════════════════════════════════════════════
+   FISCAL SECTION
+   ═══════════════════════════════════════════════════ */
+.fiscal-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+@media (max-width: 640px) { .fiscal-grid { grid-template-columns: 1fr; } }
+
+.qr-frame {
+  background: #fff; /* QR codes always need white bg for scanning */
+  border-radius: var(--r-md);
+  padding: 1rem;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--border-em);
+  box-shadow: var(--shadow-1);
+}
+.qr-frame img { max-width: 160px; display: block; }
+.qr-frame-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: #444;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.fiscal-data-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.875rem;
+}
+@media (max-width: 500px) { .fiscal-data-grid { grid-template-columns: 1fr; } }
+
+.fiscal-chip {
+  background: var(--white-05);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--emerald);
+  border-radius: var(--r-sm);
+  padding: 0.875rem 1rem;
+}
+.fiscal-chip-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 0.375rem;
+}
+.fiscal-chip-value {
+  font-weight: 700;
+  color: var(--text-1);
+  font-size: 0.875rem;
+  word-break: break-all;
+}
+
+/* ═══════════════════════════════════════════════════
+   PAYMENT TIMELINE
+   ═══════════════════════════════════════════════════ */
+.timeline { position: relative; padding-left: 2rem; }
 .timeline::before {
-    content: '';
-    position: absolute;
-    left: 0.75rem;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: var(--border-color);
+  content: '';
+  position: absolute;
+  left: 0.6rem; top: 0; bottom: 0;
+  width: 2px;
+  background: linear-gradient(to bottom, var(--emerald), transparent);
+  opacity: 0.4;
 }
-
-.timeline-item {
-    position: relative;
-    padding-bottom: 2rem;
+.timeline-item { position: relative; padding-bottom: 1.5rem; }
+.timeline-item:last-child { padding-bottom: 0; }
+.timeline-dot {
+  position: absolute;
+  left: -1.625rem;
+  top: 0.125rem;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: rgba(62,207,142,0.15);
+  border: 2px solid var(--emerald);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem;
+  color: var(--emerald);
 }
-
-.timeline-item:last-child {
-    padding-bottom: 0;
-}
-
-.timeline-icon {
-    position: absolute;
-    left: -1.5rem;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--success-gradient);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1rem;
-    box-shadow: var(--shadow-md);
-    z-index: 1;
-}
-
 .timeline-content {
-    background: var(--bg-accent);
-    padding: 1.25rem;
-    border-radius: 12px;
-    box-shadow: var(--shadow-sm);
+  background: var(--white-05);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 1rem 1.25rem;
 }
-
-.timeline-title {
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
+.timeline-content-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
 }
-
-.timeline-meta {
-    font-size: 0.875rem;
-    color: var(--text-muted);
+.timeline-content-title { font-weight: 700; font-size: 0.938rem; color: var(--text-1); }
+.timeline-content-amount {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.125rem;
+  color: var(--emerald);
 }
+.timeline-content-meta { font-size: 0.8rem; color: var(--text-3); }
 
-.timeline-amount {
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: #10b981;
-    margin-top: 0.5rem;
+/* ═══════════════════════════════════════════════════
+   CUSTOMER CARD
+   ═══════════════════════════════════════════════════ */
+.customer-layout {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
 }
-
-/* Summary Table - Full width */
-.summary-table {
-    width: 100%;
-}
-
-.summary-table td {
-    padding: 0.875rem 1.25rem;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.summary-table .label {
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-
-.summary-table .value {
-    text-align: right;
-    font-weight: 700;
-    color: var(--text-primary);
-    font-size: 1.063rem;
-}
-
-.summary-table .total-row {
-    background: var(--primary-gradient);
-    color: white;
-}
-
-.summary-table .total-row td {
-    padding: 1.25rem;
-    font-size: 1.375rem;
-    border: none;
-}
-
-/* Customer Card - Updated for vertical layout */
-.customer-info {
-    display: flex;
-    align-items: center;
-    gap: 1.25rem;
-    padding: 1.5rem;
-}
-
 .customer-avatar {
-    width: 70px;
-    height: 70px;
-    border-radius: 50%;
-    background: var(--primary-gradient);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2rem;
-    font-weight: 800;
-    box-shadow: var(--shadow-md);
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--violet), var(--sky));
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-head);
+  font-weight: 800;
+  font-size: 1.375rem;
+  flex-shrink: 0;
+}
+.customer-name { font-family: var(--font-head); font-size: 1.125rem; font-weight: 700; color: var(--text-1); margin-bottom: 0.25rem; }
+.customer-meta { font-size: 0.875rem; color: var(--text-2); display: flex; align-items: center; gap: 0.5rem; }
+
+/* ═══════════════════════════════════════════════════
+   ALERT BALANCE DUE
+   ═══════════════════════════════════════════════════ */
+.alert-balance {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.75rem;
+  background: rgba(240,98,146,0.08);
+  border: 1px solid rgba(240,98,146,0.2);
+  border-radius: var(--r-md);
+  margin-bottom: 1.5rem;
+}
+.alert-balance i { font-size: 1.5rem; color: var(--rose); flex-shrink: 0; }
+.alert-balance-text { flex: 1; color: var(--text-2); font-size: 0.938rem; }
+.alert-balance-text strong { color: var(--rose); }
+
+/* ═══════════════════════════════════════════════════
+   NOTES
+   ═══════════════════════════════════════════════════ */
+.notes-block {
+  padding: 1.25rem 1.5rem;
+  background: var(--white-05);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--r-sm);
+  font-size: 0.938rem;
+  color: var(--text-2);
+  line-height: 1.7;
 }
 
-.customer-details h5 {
-    font-size: 1.25rem;
-    font-weight: 700;
-    margin: 0 0 0.25rem 0;
-    color: var(--text-primary);
+/* ═══════════════════════════════════════════════════
+   EXPORT BUTTONS
+   ═══════════════════════════════════════════════════ */
+.export-btns { display: flex; gap: 0.5rem; }
+.btn-export {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: var(--white-05);
+  border: 1px solid var(--border-em);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.2s;
+}
+.btn-export:hover { background: var(--white-10); color: var(--text-1); }
+
+/* ═══════════════════════════════════════════════════
+   PAYMENT MODAL — UPGRADED
+   ═══════════════════════════════════════════════════ */
+.modal-content {
+  background: var(--ink-soft);
+  border: 1px solid var(--border-em);
+  border-radius: var(--r-xl);
+  overflow: hidden;
+}
+.modal-header {
+  background: var(--white-05);
+  border-bottom: 1px solid var(--border);
+  padding: 1.5rem 2rem;
+}
+.modal-title {
+  font-family: var(--font-head);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.modal-body {
+  padding: 2rem;
+  background: var(--ink-soft);
+  color: var(--text-1);
+}
+.modal-footer {
+  border-top: 1px solid var(--border);
+  padding: 1.25rem 2rem;
+  background: var(--white-05);
 }
 
-.customer-details p {
-    margin: 0.25rem 0;
-    color: var(--text-secondary);
-    font-size: 0.938rem;
+.form-label {
+  font-size: 0.813rem;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 0.5rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
-
-/* Quick Actions - Responsive grid */
-.quick-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
-    padding: 1.5rem;
+.form-control, .form-select {
+  background: var(--ink-muted);
+  border: 1px solid var(--border-em);
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  padding: 0.75rem 1rem;
+  font-family: var(--font-body);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
-
-.quick-action {
-    padding: 1.25rem;
-    background: var(--bg-accent);
-    border: 2px solid var(--border-color);
-    border-radius: 12px;
-    text-align: center;
-    text-decoration: none;
-    color: var(--text-primary);
-    transition: all 0.3s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
+.form-control:focus, .form-select:focus {
+  background: var(--ink-muted);
+  border-color: var(--violet);
+  box-shadow: 0 0 0 3px rgba(108,79,207,0.15);
+  color: var(--text-1);
+  outline: none;
 }
-
-.quick-action:hover {
-    border-color: #667eea;
-    background: rgba(102, 126, 234, 0.1);
-    transform: translateY(-3px);
-    box-shadow: var(--shadow-md);
-    color: #667eea;
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select {
+  box-shadow: none;
 }
-
-.quick-action i {
-    font-size: 1.75rem;
+[data-theme="dark"] .form-control:focus,
+[data-theme="dark"] .form-select:focus {
+  box-shadow: 0 0 0 3px rgba(155,127,232,0.18);
 }
+.form-control::placeholder { color: var(--text-3); }
+.form-select option { background: var(--ink-soft); color: var(--text-1); }
+.form-text { font-size: 0.78rem; color: var(--text-3); margin-top: 0.35rem; }
+.form-check-label { font-size: 0.875rem; color: var(--text-2); cursor: pointer; }
 
-.quick-action span {
-    font-weight: 600;
-    font-size: 0.875rem;
-}
-
-/* Empty State */
-.empty-state {
-    text-align: center;
-    padding: 4rem 2rem;
-    color: var(--text-muted);
-}
-
-.empty-icon {
-    font-size: 4rem;
-    margin-bottom: 1rem;
-    opacity: 0.5;
-}
-
-/* Alert Modern */
-.alert-modern {
-    padding: 1.25rem 1.5rem;
-    border-radius: 12px;
-    border: none;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-    box-shadow: var(--shadow-sm);
-}
-
-.alert-modern.warning {
-    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-    color: #92400e;
-}
-
-[data-bs-theme="dark"] .alert-modern.warning {
-    background: linear-gradient(135deg, #78350f 0%, #92400e 100%);
-    color: #fde68a;
-}
-
-/* Fiscal Section Styles */
-.fiscal-qr-code {
-    border: 2px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 1rem;
-    background: white;
-    box-shadow: var(--shadow-sm);
-}
-
-[data-bs-theme="dark"] .fiscal-qr-code {
-    border-color: #334155;
-    background: var(--bg-secondary);
-}
-
-.fiscal-details-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin: 1rem 0;
-}
-
-.fiscal-detail-item {
-    padding: 0.75rem;
-    background: var(--bg-accent);
-    border-radius: 8px;
-    border-left: 4px solid #10b981;
-}
-
-.fiscal-detail-label {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    font-weight: 600;
-    margin-bottom: 0.25rem;
-}
-
-.fiscal-detail-value {
-    font-weight: 700;
-    color: var(--text-primary);
-    word-break: break-all;
-}
-
-/* Payment Modal Styles */
-.quick-amount-buttons {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    margin: 0.75rem 0;
-}
-
+.quick-amount-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .quick-amount-btn {
-    flex: 1;
-    min-width: 70px;
-    padding: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--bg-accent);
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: all 0.2s ease;
+  flex: 1;
+  min-width: 80px;
+  padding: 0.5rem 0.75rem;
+  background: var(--white-10);
+  border: 1px solid var(--border-em);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.2s;
+  text-align: center;
 }
-
 .quick-amount-btn:hover {
-    background: var(--primary-gradient);
-    color: white;
-    border-color: #667eea;
+  background: rgba(155,127,232,0.15);
+  border-color: var(--violet);
+  color: var(--violet);
 }
 
-/* Responsive Design */
+.modal-summary-panel {
+  background: var(--ink-muted);
+  border: 1px solid var(--border-em);
+  border-radius: var(--r-md);
+  padding: 1.25rem;
+}
+.modal-summary-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+.modal-summary-row:last-child { border-bottom: none; }
+.modal-summary-row .ms-label { color: var(--text-2); }
+.modal-summary-row .ms-value { font-family: var(--font-mono); font-weight: 700; color: var(--text-1); }
+.modal-summary-row .ms-value.red { color: var(--rose); }
+
+.payment-icon-display { text-align: center; padding: 1.5rem 0 0.5rem; }
+.payment-icon-display i { font-size: 3rem; color: var(--emerald); transition: color 0.3s; }
+
+/* ═══════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════ */
 @media (max-width: 768px) {
-    .sale-header {
-        padding: 1.5rem;
-    }
-
-    .invoice-number {
-        font-size: 2rem;
-    }
-
-    .info-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .status-group {
-        position: static;
-        flex-direction: row;
-        margin-top: 1rem;
-        justify-content: flex-start;
-    }
-
-    .action-buttons {
-        position: static;
-        margin-top: 1rem;
-    }
-
-    /* Items table mobile */
-    .items-table-modern {
-        display: block;
-        overflow-x: auto;
-    }
-
-    .items-table-modern thead {
-        display: none;
-    }
-
-    .items-table-modern tbody tr {
-        display: block;
-        margin-bottom: 1rem;
-        background: var(--bg-accent);
-        border-radius: 12px;
-        padding: 1rem;
-    }
-
-    .items-table-modern td {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.75rem;
-        border-bottom: 1px solid var(--border-color);
-    }
-
-    .items-table-modern td:before {
-        content: attr(data-label);
-        font-weight: 700;
-        color: var(--text-secondary);
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        margin-right: 1rem;
-    }
-
-    .items-table-modern td:last-child {
-        border-bottom: none;
-    }
-
-    /* Customer info mobile */
-    .customer-info {
-        flex-direction: column;
-        text-align: center;
-    }
-
-    /* Tabs mobile */
-    .tab-modern {
-        min-width: 120px;
-        padding: 0.75rem 1rem;
-        font-size: 0.875rem;
-    }
-
-    /* Quick actions mobile */
-    .quick-actions {
-        grid-template-columns: repeat(2, 1fr);
-    }
+  .page-wrapper { padding: 1rem 1rem 3rem; }
+  .sale-hero { padding: 1.75rem 1.5rem; }
+  .hero-layout { grid-template-columns: 1fr; }
+  .hero-right { align-items: flex-start; }
+  .status-pills { justify-content: flex-start; }
+  .section-body { padding: 1.25rem; }
+  .section-header { padding: 1rem 1.25rem; }
+  .items-table { display: block; overflow-x: auto; }
+  .fiscal-grid { grid-template-columns: 1fr; }
+  .customer-layout { flex-direction: column; text-align: center; }
 }
 
-@media (max-width: 576px) {
-    .quick-actions {
-        grid-template-columns: 1fr;
-    }
-
-    .tabs-modern {
-        flex-direction: column;
-    }
-
-    .tab-modern {
-        width: 100%;
-        justify-content: flex-start;
-    }
-}
-
+/* ═══════════════════════════════════════════════════
+   PRINT
+   ═══════════════════════════════════════════════════ */
 @media print {
-    .no-print {
-        display: none !important;
-    }
-
-    .sale-header {
-        background: white !important;
-        color: black !important;
-    }
-}
-
-.text-muted {
-    color: #6c757d !important;
-}
-
-/* Remove old content-grid styles */
-.content-grid {
-    display: none;
-}
-
-[data-theme="dark"] .modal-content {
-    background: var(--bg-secondary);
-    color: var(--text-primary);}
-
-[data-theme="dark"] .card-body{
-    background: var(--bg-secondary);
-    color: var(--text-primary);
+  .no-print { display: none !important; }
+  .ambient-glow, .ambient-glow-2 { display: none; }
+  body::before { display: none; }
+  body { background: white !important; color: black !important; }
+  .sale-hero, .section-card {
+    background: white !important;
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+  }
+  .hero-accent-bar { display: none; }
 }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="animate-fade-in">
-    <!-- Sale Header -->
-    <div class="sale-header">
-        <div class="header-content">
-            <div class="invoice-title">
-                <div class="invoice-icon">
-                    <i class="bi bi-receipt"></i>
-                </div>
-                <div>
-                    <h1 class="invoice-number">{{ sale.invoice_number }}</h1>
-                    <p class="invoice-subtitle">
-                        {{ sale.get_transaction_type_display }}
-                        {% if sale.related_sale %}
-                            - Related to {{ sale.related_sale.invoice_number }}
-                        {% endif %}
-                    </p>
-                </div>
-            </div>
+<!-- Ambient glow elements -->
+<div class="ambient-glow"></div>
+<div class="ambient-glow-2"></div>
 
-            <!-- Info Grid -->
-            <div class="info-grid">
-                <div class="info-card">
-                    <div class="info-label">Transaction ID</div>
-                    <div class="info-value">{{ sale.transaction_id }}</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Date & Time</div>
-                    <div class="info-value">
-                        {{ sale.created_at|date:"M d, Y" }}<br>
-                        <small style="font-size: 0.875rem; opacity: 0.8;">{{ sale.created_at|time:"g:i A" }}</small>
-                    </div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Store</div>
-                    <div class="info-value">{{ sale.store.name }}</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Cashier</div>
-                    <div class="info-value">{{ sale.created_by.get_full_name|default:sale.created_by.username }}</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Payment Method</div>
-                    <div class="info-value">{{ sale.get_payment_method_display }}</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Total Amount</div>
-                    <div class="info-value large" style="color: {% if sale.transaction_type == 'REFUND' %}#ef4444{% else %}#10b981{% endif %};">
-                        {% if sale.transaction_type == 'REFUND' %}-{% endif %}{{ sale.total_amount|money }} UGX
-                    </div>
-                </div>
-                {% if efris_enabled %}
-                {% if sale.is_fiscalized %}
-                <div class="info-card">
-                    <div class="info-label">Fiscal Number</div>
-                    <div class="info-value">
-                        {{ fiscal_document_number|default:efris_invoice_no }}
-                        {% if efris_invoice_no %}
-                            <br><small style="font-size: 0.75rem; opacity: 0.8;">EFRIS: {{ efris_invoice_no }}</small>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endif %}
-                {% endif %}
-                <div class="info-value">
-                    {% if perms.sales.add_sale %}
-                    <a href="{% url 'sales:create_sale' %}" class="btn btn-primary btn-sm action-btn no-print">
-                        <i class="bi bi-pencil-square me-1"></i>Add New Sale
-                    </a>
-                    <a href="{% url 'sales:quick_sale' %}" class="btn btn-primary btn-sm action-btn no-print">
-                        <i class="fas fa-plus me-2"></i>Add Quick Sale
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
+<div class="page-wrapper">
+
+  <!-- ═══ HERO HEADER ═══ -->
+  <div class="sale-hero">
+    <div class="hero-accent-bar"></div>
+    <div class="hero-corner-art"></div>
+
+    <div class="hero-layout">
+      <!-- Left: Invoice Info -->
+      <div>
+        <div class="hero-eyebrow">
+          <i class="bi bi-receipt"></i>
+          {{ sale.get_transaction_type_display }}
+          {% if sale.related_sale %} · Related to {{ sale.related_sale.invoice_number }}{% endif %}
+        </div>
+        <h1 class="hero-invoice-num">{{ sale.invoice_number }}</h1>
+        <p class="hero-subtitle">{{ sale.store.name }} &nbsp;·&nbsp; {{ sale.created_at|date:"F j, Y" }}</p>
+
+        <div class="info-chips">
+          <span class="info-chip">
+            <i class="bi bi-hash"></i>
+            <strong>{{ sale.transaction_id }}</strong>
+          </span>
+          <span class="info-chip">
+            <i class="bi bi-clock"></i>
+            <strong>{{ sale.created_at|time:"g:i A" }}</strong>
+          </span>
+          <span class="info-chip">
+            <i class="bi bi-person"></i>
+            <strong>{{ sale.created_by.get_full_name|default:sale.created_by.username }}</strong>
+          </span>
+          <span class="info-chip">
+            <i class="bi bi-credit-card"></i>
+            <strong>{{ sale.get_payment_method_display }}</strong>
+          </span>
+          {% if efris_enabled and sale.is_fiscalized and efris_invoice_no %}
+          <span class="info-chip">
+            <i class="bi bi-shield-check"></i>
+            <strong>{{ efris_invoice_no }}</strong>
+          </span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Right: Total + Badges -->
+      <div class="hero-right">
+        <div class="hero-total-block">
+          <div class="hero-total-label">Invoice Total</div>
+          <div class="hero-total-amount {% if sale.transaction_type == 'REFUND' %}refund{% endif %}">
+            {% if sale.transaction_type == 'REFUND' %}-{% endif %}{{ sale.total_amount|money }} <span style="font-size:0.55em;opacity:0.7;font-weight:400">UGX</span>
+          </div>
         </div>
 
-        <!-- Status Group -->
-        <div class="status-group">
-            {% if efris_enabled %}
+        <div class="status-pills">
+          {% if efris_enabled %}
             {% if sale.is_fiscalized %}
-                <span class="status-badge fiscalized">
-                    <i class="bi bi-shield-check"></i>Fiscalized
-                    {% if efris_invoice_no %}
-                        <br><small>{{ efris_invoice_no }}</small>
-                    {% endif %}
-                </span>
+              <span class="status-pill fiscal"><span class="dot"></span><i class="bi bi-shield-check"></i> Fiscalized</span>
             {% else %}
-                <span class="status-badge not-fiscalized">
-                    <i class="bi bi-shield-x"></i>Not Fiscalized
-                </span>
+              <span class="status-pill unfiscal"><i class="bi bi-shield-x"></i> Not Fiscalized</span>
             {% endif %}
-            {% endif %}
-
-            {% if sale.is_refunded %}
-                <span class="status-badge refunded">
-                    <i class="bi bi-arrow-counterclockwise"></i>Refunded
-                </span>
-            {% endif %}
-
-            {% if sale.is_voided %}
-                <span class="status-badge voided">
-                    <i class="bi bi-x-circle"></i>Voided
-                </span>
-            {% endif %}
+          {% endif %}
+          {% if sale.is_refunded %}<span class="status-pill refunded"><i class="bi bi-arrow-counterclockwise"></i> Refunded</span>{% endif %}
+          {% if sale.is_voided %}<span class="status-pill voided"><i class="bi bi-x-circle"></i> Voided</span>{% endif %}
         </div>
+      </div>
     </div>
 
-    <!-- Quick Actions Card -->
-    <div class="modern-card no-print">
-        <div class="card-header-modern">
-            <h4 class="card-title-modern">
-                <span class="card-title-icon" style="background: var(--warning-gradient);">
-                    <i class="bi bi-lightning"></i>
-                </span>
-                Quick Actions
-            </h4>
-        </div>
-        <div class="quick-actions">
-            <a href="{% url 'sales:print_receipt' sale.pk %}" class="quick-action" target="_blank">
-                <i class="bi bi-printer"></i>
-                <span>Print</span>
-            </a>
-            <a href="{% url 'sales:send_receipt' sale.pk %}" class="quick-action">
-                <i class="bi bi-envelope"></i>
-                <span>Email</span>
-            </a>
-            <a href="{% url 'sales:duplicate_sale' sale.pk %}" class="quick-action">
-                <i class="bi bi-files"></i>
-                <span>Duplicate</span>
-            </a>
-            {% if efris_enabled %}
-            {% if not sale.is_fiscalized %}
-            <a href="{% url 'sales:fiscalize_sale' sale.pk %}" class="quick-action">
-                <i class="bi bi-shield-check"></i>
-                <span>Fiscalize</span>
-            </a>
-            {% endif %}
-            {% if sale.is_fiscalized %}
-            <button onclick="printFiscalReceipt()" class="quick-action">
-                <i class="bi bi-printer-fill"></i>
-                <span>Fiscal Receipt</span>
-            </button>
-            <button onclick="copyFiscalInfo()" class="quick-action">
-                <i class="bi bi-clipboard-data"></i>
-                <span>Copy Fiscal</span>
-            </button>
-            {% endif %}
-            {% endif %}
-            {% if sale.transaction_type == 'SALE' and not sale.is_refunded and not sale.is_voided %}
-            <a href="{% url 'sales:process_refund' sale.pk %}" class="quick-action" style="color: #ef4444;">
-                <i class="bi bi-arrow-counterclockwise"></i>
-                <span>Refund</span>
-            </a>
-            {% endif %}
-            {% if sale.transaction_type == 'SALE' and not sale.is_voided %}
-            <a href="{% url 'sales:void_sale' sale.pk %}" class="quick-action" style="color: #ef4444;">
-                <i class="bi bi-x-circle"></i>
-                <span>Void</span>
-            </a>
-            {% endif %}
-        </div>
+    <!-- Action row -->
+    <div class="hero-actions no-print">
+      {% if perms.sales.add_sale %}
+      <a href="{% url 'sales:create_sale' %}" class="btn-hero">
+        <i class="bi bi-pencil-square"></i>New Sale
+      </a>
+      <a href="{% url 'sales:quick_sale' %}" class="btn-hero">
+        <i class="bi bi-plus-circle"></i>Quick Sale
+      </a>
+      {% endif %}
     </div>
+  </div>
 
-    <!-- Fiscalization Information Card -->
-     {% if efris_enabled %}
-    {% if sale.is_fiscalized %}
-    <div class="modern-card">
-        <div class="card-header-modern">
-            <h4 class="card-title-modern">
-                <span class="card-title-icon" style="background: var(--success-gradient);">
-                    <i class="bi bi-shield-check"></i>
-                </span>
-                EFRIS Fiscal Receipt
-            </h4>
-            <span class="badge bg-success">
-                <i class="bi bi-check-circle me-1"></i>Fiscalized
-            </span>
+  <!-- ═══ BALANCE DUE ALERT ═══ -->
+  {% if balance_due > 0 %}
+  <div class="alert-balance no-print">
+    <i class="bi bi-exclamation-circle-fill"></i>
+    <div class="alert-balance-text">
+      Outstanding balance of <strong>{{ balance_due|money }} UGX</strong> remains on this invoice.
+    </div>
+    <button class="btn-hero primary" data-bs-toggle="modal" data-bs-target="#paymentModal">
+      <i class="bi bi-cash-coin"></i>Record Payment
+    </button>
+  </div>
+  {% endif %}
+
+  <!-- ═══ QUICK ACTIONS ═══ -->
+  <div class="section-card no-print">
+    <div class="section-header">
+      <h4 class="section-title">
+        <span class="section-icon icon-gold"><i class="bi bi-lightning-charge"></i></span>
+        Quick Actions
+      </h4>
+    </div>
+    <div class="actions-grid">
+      <a href="{% url 'sales:print_receipt' sale.pk %}" class="action-tile" target="_blank">
+        <i class="bi bi-printer"></i><span>Print</span>
+      </a>
+      <a href="{% url 'sales:send_receipt' sale.pk %}" class="action-tile">
+        <i class="bi bi-envelope"></i><span>Email</span>
+      </a>
+      <a href="{% url 'sales:duplicate_sale' sale.pk %}" class="action-tile">
+        <i class="bi bi-files"></i><span>Duplicate</span>
+      </a>
+      {% if efris_enabled %}
+        {% if not sale.is_fiscalized %}
+        <a href="{% url 'sales:fiscalize_sale' sale.pk %}" class="action-tile success-tile">
+          <i class="bi bi-shield-check"></i><span>Fiscalize</span>
+        </a>
+        {% endif %}
+        {% if sale.is_fiscalized %}
+        <button onclick="printFiscalReceipt()" class="action-tile success-tile">
+          <i class="bi bi-printer-fill"></i><span>Fiscal Receipt</span>
+        </button>
+        <button onclick="copyFiscalInfo()" class="action-tile">
+          <i class="bi bi-clipboard-data"></i><span>Copy Fiscal</span>
+        </button>
+        {% endif %}
+      {% endif %}
+      {% if sale.transaction_type == 'SALE' and not sale.is_refunded and not sale.is_voided %}
+      <a href="{% url 'sales:process_refund' sale.pk %}" class="action-tile danger">
+        <i class="bi bi-arrow-counterclockwise"></i><span>Refund</span>
+      </a>
+      {% endif %}
+      {% if sale.transaction_type == 'SALE' and not sale.is_voided %}
+      <a href="{% url 'sales:void_sale' sale.pk %}" class="action-tile danger">
+        <i class="bi bi-x-circle"></i><span>Void</span>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ═══ FISCAL INFORMATION ═══ -->
+  {% if efris_enabled and sale.is_fiscalized %}
+  <div class="section-card">
+    <div class="section-header">
+      <h4 class="section-title">
+        <span class="section-icon icon-emerald"><i class="bi bi-shield-check"></i></span>
+        EFRIS Fiscal Receipt
+      </h4>
+      <span class="hdr-badge paid"><i class="bi bi-check-circle"></i> Fiscalized</span>
+    </div>
+    <div class="section-body">
+      <div class="fiscal-grid">
+        <div>
+          {% if qr_code %}
+          <div class="qr-frame">
+            <img src="{{ qr_code }}" alt="EFRIS QR Code">
+            <span class="qr-frame-label">Scan to verify</span>
+          </div>
+          {% elif fiscal_verification_url %}
+          <div class="qr-frame">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={{ fiscal_verification_url|urlencode }}" alt="EFRIS QR">
+            <span class="qr-frame-label">Scan to verify with URA</span>
+          </div>
+          {% endif %}
         </div>
-        <div class="card-body-modern">
-            <div class="row">
-                <!-- QR Code -->
-                <div class="col-md-4 text-center mb-3">
-                    {% if qr_code %}
-                        <img src="{{ qr_code }}"
-                             alt="EFRIS QR Code"
-                             class="img-fluid rounded shadow-sm mb-2"
-                             style="max-width: 200px;">
-                    {% else %}
-                        <!-- Generate QR code from verification URL -->
-                        {% if fiscal_verification_url %}
-                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={{ fiscal_verification_url|urlencode }}"
-                                 alt="EFRIS QR Code"
-                                 class="img-fluid rounded shadow-sm mb-2">
-                        {% endif %}
-                    {% endif %}
-                    <div class="mt-2">
-                        <small class="text-muted">Scan to validate with URA</small>
-                    </div>
-                </div>
 
-                <!-- Fiscal Details -->
-                <div class="col-md-8">
-                    <div class="fiscal-details-grid">
-                        <div class="fiscal-detail-item">
-                            <div class="fiscal-detail-label">Fiscal Number</div>
-                            <div class="fiscal-detail-value">{{ fiscal_document_number|default:efris_invoice_no }}</div>
-                        </div>
-                        <div class="fiscal-detail-item">
-                            <div class="fiscal-detail-label">Invoice ID</div>
-                            <div class="fiscal-detail-value">{{ efris_invoice_id|default:"N/A" }}</div>
-                        </div>
-                        <div class="fiscal-detail-item">
-                            <div class="fiscal-detail-label">Fiscal Code</div>
-                            <div class="fiscal-detail-value">{{ efris_antifake_code|default:"N/A" }}</div>
-                        </div>
-                        <div class="fiscal-detail-item">
-                            <div class="fiscal-detail-label">Fiscalized On</div>
-                            <div class="fiscal-detail-value">{{ fiscalization_time|date:"M d, Y g:i A" }}</div>
-                        </div>
-                    </div>
-
-                    <!-- Verification Links -->
-                    <div class="mt-3">
-                        {% if fiscal_verification_url %}
-                        <a href="{{ fiscal_verification_url }}"
-                           target="_blank"
-                           class="btn btn-outline-primary btn-sm me-2">
-                            <i class="bi bi-shield-check me-1"></i>Verify with URA
-                        </a>
-                        {% endif %}
-
-                        <button onclick="downloadFiscalReceipt()"
-                                class="btn btn-outline-success btn-sm me-2">
-                            <i class="bi bi-download me-1"></i>Download Receipt
-                        </button>
-
-                        <button onclick="copyFiscalInfo()"
-                                class="btn btn-outline-info btn-sm">
-                            <i class="bi bi-clipboard me-1"></i>Copy Details
-                        </button>
-                    </div>
-                </div>
+        <div>
+          <div class="fiscal-data-grid">
+            <div class="fiscal-chip">
+              <div class="fiscal-chip-label">Fiscal Number</div>
+              <div class="fiscal-chip-value">{{ fiscal_document_number|default:efris_invoice_no }}</div>
             </div>
-        </div>
-    </div>
-    {% endif %}
-    {% endif %}
-
-    <div class="vertical-stack">
-        <!-- Combined Items & Summary Table -->
-        <div class="combined-table-container">
-            <div class="combined-header">
-                <h3 class="combined-title">
-                    <span class="card-title-icon">
-                        <i class="bi bi-cart"></i>
-                    </span>
-                    Sale Items & Summary
-                </h3>
-                <div class="d-flex gap-2 no-print">
-                    <button class="btn btn-sm btn-outline-primary" onclick="exportItems('csv')">
-                        <i class="bi bi-filetype-csv me-1"></i>CSV
-                    </button>
-                    <button class="btn btn-sm btn-outline-primary" onclick="exportItems('excel')">
-                        <i class="bi bi-file-excel me-1"></i>Excel
-                    </button>
-                </div>
+            <div class="fiscal-chip">
+              <div class="fiscal-chip-label">Invoice ID</div>
+              <div class="fiscal-chip-value">{{ efris_invoice_id|default:"N/A" }}</div>
             </div>
+            <div class="fiscal-chip">
+              <div class="fiscal-chip-label">Fiscal Code</div>
+              <div class="fiscal-chip-value">{{ efris_antifake_code|default:"N/A" }}</div>
+            </div>
+            <div class="fiscal-chip">
+              <div class="fiscal-chip-label">Fiscalized On</div>
+              <div class="fiscal-chip-value">{{ fiscalization_time|date:"M d, Y g:i A" }}</div>
+            </div>
+          </div>
 
-            <table class="combined-table">
-                <thead>
-                    <tr>
-                        <th width="80">Image</th>
-                        <th>Item</th>
-                        <th width="100">Type</th>
-                        <th width="120">Quantity</th>
-                        <th width="140">Unit Price</th>
-                        {% if efris_and_vat_enabled %}
-                        <th width="100">Tax</th>
-                        {% endif %}
-                        <th width="120">Discount</th>
-                        <th width="140">Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in sale.items.all %}
-                    <tr>
-                        <td data-label="Image">
-                            <div class="product-image {% if item.item_type == 'SERVICE' %}service{% else %}product{% endif %}">
-                                {% if item.item_type == 'PRODUCT' %}
-                                    {% if item.product.image %}
-                                        <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}">
-                                    {% else %}
-                                        <i class="bi bi-box-seam"></i>
-                                    {% endif %}
-                                {% else %}
-                                    <i class="bi bi-gear"></i>
-                                {% endif %}
-                            </div>
-                        </td>
-                        <td data-label="Item">
-                            <div class="product-name">{{ item.item_name }}</div>
-                            {% if item.item_type == 'PRODUCT' and item.product.sku %}
-                                <div class="product-sku">SKU: {{ item.product.sku }}</div>
-                            {% elif item.item_type == 'SERVICE' and item.service.code %}
-                                <div class="product-sku">Code: {{ item.service.code }}</div>
-                            {% endif %}
-                        </td>
-                        <td data-label="Type">
-                            {% if item.item_type == 'PRODUCT' %}
-                                <span class="item-type-badge product">
-                                    <i class="bi bi-box-seam item-icon"></i>
-                                    Product
-                                </span>
-                            {% else %}
-                                <span class="item-type-badge service">
-                                    <i class="bi bi-gear item-icon"></i>
-                                    Service
-                                </span>
-                            {% endif %}
-                        </td>
-                        <td data-label="Quantity">
-                            <span class="qty-badge">{{ item.quantity|money }}</span>
-                        </td>
-                        <td data-label="Unit Price" style="font-weight: 600; color: var(--text-primary);">
-                            {{ item.unit_price|money }} UGX
-                        </td>
-                        <td data-label="Tax">
-                            {% if item.tax_rate == 'A' %}
-                                <span class="tax-badge badge bg-success">18%</span>
-                            {% elif item.tax_rate == 'B' %}
-                                <span class="tax-badge badge bg-info">0%</span>
-                            {% elif item.tax_rate == 'C' %}
-                                <span class="tax-badge badge bg-secondary">Exempt</span>
-                            {% else %}
-                                <span class="tax-badge badge bg-secondary">{{ item.tax_rate }}</span>
-                            {% endif %}
-                        </td>
-                        <td data-label="Discount">
-                            {% if item.discount_amount > 0 %}
-                                <span style="color: #ef4444; font-weight: 600;">-{{ item.discount_amount|money }} UGX</span>
-                            {% else %}
-                                <span style="color: var(--text-muted);">-</span>
-                            {% endif %}
-                        </td>
-                        <td data-label="Total" style="font-weight: 700; color: var(--text-primary); font-size: 1.063rem;">
-                            {{ item.line_total|money }} UGX
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="8">
-                            <div class="empty-state">
-                                <div class="empty-icon">
-                                    <i class="bi bi-inbox"></i>
-                                </div>
-                                <h5>No items found</h5>
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-
-                    <!-- Summary Section Separator -->
-                    <tr class="summary-section">
-                        <td colspan="8" style="padding: 0; border: none;"></td>
-                    </tr>
-
-                    <!-- Summary Rows -->
-                    <tr class="summary-row">
-                        <td colspan="6" class="summary-label">Subtotal:</td>
-                        <td colspan="2" class="summary-value">{{ sale.subtotal|money }} UGX</td>
-                    </tr>
-
-                    <tr class="summary-row">
-                        <td colspan="6" class="summary-label">Tax:</td>
-                        <td colspan="2" class="summary-value">{{ sale.tax_amount|money }} UGX</td>
-                    </tr>
-
-                    {% if sale.discount_amount > 0 %}
-                    <tr class="summary-row">
-                        <td colspan="6" class="summary-label">Discount:</td>
-                        <td colspan="2" class="summary-value" style="color: #ef4444;">-{{ sale.discount_amount|money }} UGX</td>
-                    </tr>
-                    {% endif %}
-
-                    <!-- Payment Status Rows -->
-                    {% if sale.document_type != 'PROFORMA' and sale.document_type != 'ESTIMATE' %}
-                    <tr class="summary-row payment-status-row">
-                        <td colspan="6" class="summary-label">
-                            <i class="bi bi-check-circle me-2"></i>Amount Paid:
-                        </td>
-                        <td colspan="2" class="summary-value">{{ total_paid|money }} UGX</td>
-                    </tr>
-
-                    {% if balance_due > 0 %}
-                    <tr class="summary-row balance-due-row">
-                        <td colspan="6" class="summary-label">
-                            <i class="bi bi-exclamation-triangle me-2"></i>Balance Due:
-                        </td>
-                        <td colspan="2" class="summary-value">{{ balance_due|money }} UGX</td>
-                    </tr>
-                    {% else %}
-                    <tr class="summary-row" style="background: rgba(16, 185, 129, 0.1) !important;">
-                        <td colspan="6" class="summary-label" style="color: #10b981;">
-                            <i class="bi bi-check-circle-fill me-2"></i>Status:
-                        </td>
-                        <td colspan="2" class="summary-value" style="color: #10b981;">PAID IN FULL</td>
-                    </tr>
-                    {% endif %}
-                    {% endif %}
-
-                    <!-- Total Row -->
-                    <tr class="total-row">
-                        <td colspan="6" class="summary-label" style="color: white !important;">TOTAL:</td>
-                        <td colspan="2" class="summary-value" style="color: white !important; font-size: 1.375rem;">
-                            {{ sale.total_amount|money }} UGX
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+          <div style="display:flex;gap:0.625rem;flex-wrap:wrap;margin-top:1.25rem;">
+            {% if fiscal_verification_url %}
+            <a href="{{ fiscal_verification_url }}" target="_blank" class="btn-hero success-tile">
+              <i class="bi bi-shield-check"></i>Verify with URA
+            </a>
+            {% endif %}
+            <button onclick="downloadFiscalReceipt()" class="btn-hero">
+              <i class="bi bi-download"></i>Download
+            </button>
+            <button onclick="copyFiscalInfo()" class="btn-hero">
+              <i class="bi bi-clipboard"></i>Copy Details
+            </button>
+          </div>
         </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
-        <!-- Payment Status Card -->
-        <div class="modern-card">
-            <div class="card-header-modern">
-                <h4 class="card-title-modern">
-                    <span class="card-title-icon" style="background: {% if is_paid_in_full %}var(--success-gradient){% elif balance_due > 0 %}var(--warning-gradient){% else %}var(--info-gradient){% endif %};">
-                        <i class="bi bi-cash-coin"></i>
-                    </span>
-                    Payment Status
-                </h4>
-                {% if is_paid_in_full %}
-                    <span class="badge bg-success">
-                        <i class="bi bi-check-circle me-1"></i>Paid in Full
-                    </span>
-                {% elif balance_due > 0 %}
-                    <span class="badge bg-warning">
-                        <i class="bi bi-exclamation-triangle me-1"></i>Outstanding
-                    </span>
+  <!-- ═══ SALE ITEMS & SUMMARY ═══ -->
+  <div class="section-card">
+    <div class="section-header">
+      <h4 class="section-title">
+        <span class="section-icon icon-violet"><i class="bi bi-cart3"></i></span>
+        Sale Items &amp; Summary
+      </h4>
+      <div class="export-btns no-print">
+        <button class="btn-export" onclick="exportItems('csv')"><i class="bi bi-filetype-csv"></i> CSV</button>
+        <button class="btn-export" onclick="exportItems('excel')"><i class="bi bi-file-excel"></i> Excel</button>
+      </div>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width:60px;"></th>
+            <th>Item</th>
+            <th style="width:100px;">Type</th>
+            <th style="width:100px;">Qty</th>
+            <th style="width:150px;">Unit Price</th>
+            {% if efris_and_vat_enabled %}<th style="width:80px;">Tax</th>{% endif %}
+            <th style="width:130px;">Discount</th>
+            <th style="width:150px;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in sale.items.all %}
+          <tr>
+            <td>
+              <div class="item-img {% if item.item_type == 'SERVICE' %}is-service{% else %}is-product{% endif %}">
+                {% if item.item_type == 'PRODUCT' %}
+                  {% if item.product.image %}
+                    <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}">
+                  {% else %}
+                    <i class="bi bi-box-seam"></i>
+                  {% endif %}
                 {% else %}
-                    <span class="badge bg-info">
-                        <i class="bi bi-info-circle me-1"></i>{{ sale.get_payment_status_display }}
-                    </span>
+                  <i class="bi bi-gear-fill"></i>
                 {% endif %}
-            </div>
-            <div class="card-body-modern">
-                <div class="row g-4">
-                    <!-- Payment Summary -->
-                    <div class="col-md-6">
-                        <div class="payment-summary-card" style="background: var(--bg-accent); padding: 1.5rem; border-radius: 12px;">
-                            <h6 style="color: var(--text-secondary); margin-bottom: 1rem; font-weight: 700; text-transform: uppercase; font-size: 0.813rem;">
-                                <i class="bi bi-calculator me-2"></i>Payment Summary
-                            </h6>
-
-                            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border-color);">
-                                <span style="color: var(--text-secondary);">Total Amount:</span>
-                                <strong style="color: var(--text-primary); font-size: 1.125rem;">{{ sale.total_amount|money }} UGX</strong>
-                            </div>
-
-                            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border-color);">
-                                <span style="color: var(--text-secondary);">Amount Paid:</span>
-                                <strong style="color: #10b981; font-size: 1.125rem;">{{ total_paid|money }} UGX</strong>
-                            </div>
-
-                            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0;">
-                                <span style="color: var(--text-secondary);">Balance Due:</span>
-                                <strong style="{% if balance_due > 0 %}color: #ef4444;{% else %}color: #10b981;{% endif %} font-size: 1.125rem;">
-                                    {{ balance_due|money }} UGX
-                                </strong>
-                            </div>
-
-                            {% if is_paid_in_full %}
-                            <div class="alert alert-success" style="margin-top: 1rem; margin-bottom: 0;">
-                                <i class="bi bi-check-circle-fill me-2"></i>
-                                <strong>Payment Complete</strong>
-                            </div>
-                            {% elif balance_due > 0 %}
-                            <div class="alert alert-warning" style="margin-top: 1rem; margin-bottom: 0;">
-                                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                                <strong>Outstanding: {{ balance_due|money }} UGX</strong>
-                            </div>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <!-- Payment Method Breakdown -->
-                    <div class="col-md-6">
-                        <div class="payment-methods-card" style="background: var(--bg-accent); padding: 1.5rem; border-radius: 12px;">
-                            <h6 style="color: var(--text-secondary); margin-bottom: 1rem; font-weight: 700; text-transform: uppercase; font-size: 0.813rem;">
-                                <i class="bi bi-credit-card me-2"></i>Payment Methods
-                            </h6>
-
-                            {% if payments_by_method %}
-                                {% for payment in payments_by_method %}
-                                <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border-color);">
-                                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary-gradient); color: white; display: flex; align-items: center; justify-content: center;">
-                                            {% if payment.payment_method == 'CASH' %}
-                                                <i class="bi bi-cash-coin"></i>
-                                            {% elif payment.payment_method == 'CARD' %}
-                                                <i class="bi bi-credit-card"></i>
-                                            {% elif payment.payment_method == 'MOBILE_MONEY' %}
-                                                <i class="bi bi-phone"></i>
-                                            {% elif payment.payment_method == 'BANK_TRANSFER' %}
-                                                <i class="bi bi-bank"></i>
-                                            {% else %}
-                                                <i class="bi bi-cash-stack"></i>
-                                            {% endif %}
-                                        </div>
-                                        <div>
-                                            <div style="font-weight: 600; color: var(--text-primary);">
-                                                {% for method in sale.PAYMENT_METHODS %}
-                                                    {% if method.0 == payment.payment_method %}
-                                                        {{ method.1 }}
-                                                    {% endif %}
-                                                {% endfor %}
-                                            </div>
-                                            <small style="color: var(--text-muted);">{{ payment.count }} transaction{{ payment.count|pluralize }}</small>
-                                        </div>
-                                    </div>
-                                    <strong style="color: #10b981; font-size: 1.063rem;">{{ payment.total|money }} UGX</strong>
-                                </div>
-                                {% endfor %}
-                            {% else %}
-                                <div class="empty-state" style="padding: 2rem;">
-                                    <div class="empty-icon">
-                                        <i class="bi bi-wallet2"></i>
-                                    </div>
-                                    <p>No payments recorded</p>
-                                </div>
-                            {% endif %}
-                        </div>
-                    </div>
+              </div>
+            </td>
+            <td>
+              <div class="item-cell">
+                <div>
+                  <div class="item-name">{{ item.item_name }}</div>
+                  {% if item.item_type == 'PRODUCT' and item.product.sku %}
+                    <div class="item-sub">SKU: {{ item.product.sku }}</div>
+                  {% elif item.item_type == 'SERVICE' and item.service.code %}
+                    <div class="item-sub">Code: {{ item.service.code }}</div>
+                  {% endif %}
                 </div>
+              </div>
+            </td>
+            <td>
+              {% if item.item_type == 'PRODUCT' %}
+                <span class="type-badge product"><i class="bi bi-box-seam"></i> Product</span>
+              {% else %}
+                <span class="type-badge service"><i class="bi bi-gear-fill"></i> Service</span>
+              {% endif %}
+            </td>
+            <td><span class="qty-pill">{{ item.quantity|money }}</span></td>
+            <td class="price-cell">{{ item.unit_price|money }} <span style="font-size:0.75em;opacity:0.6">UGX</span></td>
+            {% if efris_and_vat_enabled %}
+            <td>
+              {% if item.tax_rate == 'A' %}<span class="tax-tag a">18%</span>
+              {% elif item.tax_rate == 'B' %}<span class="tax-tag b">0%</span>
+              {% elif item.tax_rate == 'C' %}<span class="tax-tag c">Exempt</span>
+              {% else %}<span class="tax-tag c">{{ item.tax_rate }}</span>{% endif %}
+            </td>
+            {% endif %}
+            <td>
+              {% if item.discount_amount > 0 %}
+                <span class="price-discount">-{{ item.discount_amount|money }} UGX</span>
+              {% else %}
+                <span style="color:var(--text-3);">—</span>
+              {% endif %}
+            </td>
+            <td class="price-total">{{ item.line_total|money }} <span style="font-size:0.75em;opacity:0.6">UGX</span></td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="8" style="text-align:center;padding:3rem 1rem;color:var(--text-3);">
+              <i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:0.5rem;opacity:0.4;"></i>
+              No items found
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
 
-                <!-- Payment Actions -->
-                {% if not is_paid_in_full and balance_due > 0 %}
-                <div class="mt-4 text-center">
-                    <button class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#paymentModal">
-                        <i class="bi bi-plus-circle me-2"></i>Record Payment
-                    </button>
-                </div>
-                {% endif %}
-            </div>
-        </div>
+    <!-- Summary divider -->
+    <div class="summary-divider">
+      <span class="summary-divider-label">Summary</span>
+      <div class="summary-divider-line"></div>
+    </div>
 
-        <!-- Customer Card -->
-        <div class="modern-card">
-            <div class="card-header-modern">
-                <h4 class="card-title-modern">
-                    <span class="card-title-icon">
-                        <i class="bi bi-person"></i>
-                    </span>
-                    Customer
-                </h4>
+    <div class="summary-rows">
+      <div class="summary-row-item">
+        <span class="s-label"><i class="bi bi-receipt"></i> Subtotal</span>
+        <span class="s-value">{{ sale.subtotal|money }} UGX</span>
+      </div>
+      <div class="summary-row-item">
+        <span class="s-label"><i class="bi bi-percent"></i> Tax</span>
+        <span class="s-value">{{ sale.tax_amount|money }} UGX</span>
+      </div>
+      {% if sale.discount_amount > 0 %}
+      <div class="summary-row-item discount">
+        <span class="s-label"><i class="bi bi-tag"></i> Discount</span>
+        <span class="s-value">-{{ sale.discount_amount|money }} UGX</span>
+      </div>
+      {% endif %}
+
+      {% if sale.document_type != 'PROFORMA' and sale.document_type != 'ESTIMATE' %}
+      <div class="summary-row-item paid">
+        <span class="s-label"><i class="bi bi-check-circle"></i> Amount Paid</span>
+        {# For receipts and paid non-credit invoices, if total_paid is 0 (no Payment record), #}
+        {# show the sale total instead so the display is accurate. #}
+        {% if is_paid_in_full and total_paid == 0 %}
+          <span class="s-value">{{ sale.total_amount|money }} UGX</span>
+        {% else %}
+          <span class="s-value">{{ total_paid|money }} UGX</span>
+        {% endif %}
+      </div>
+      {% if balance_due > 0 %}
+      <div class="summary-row-item owed">
+        <span class="s-label"><i class="bi bi-exclamation-triangle"></i> Balance Due</span>
+        <span class="s-value">{{ balance_due|money }} UGX</span>
+      </div>
+      {% else %}
+      <div class="summary-row-item full">
+        <span class="s-label"><i class="bi bi-check-circle-fill"></i> Status</span>
+        <span class="s-value">PAID IN FULL ✓</span>
+      </div>
+      {% endif %}
+      {% endif %}
+    </div>
+
+    <div class="grand-total-row">
+      <span class="gt-label">Grand Total</span>
+      <span class="gt-amount">{{ sale.total_amount|money }} <span style="font-size:0.55em;opacity:0.6;font-weight:400">UGX</span></span>
+    </div>
+  </div>
+
+  <!-- ═══ TWO-COLUMN LOWER SECTION ═══ -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;" class="lower-grid">
+
+    <!-- Customer Card -->
+    <div class="section-card" style="margin-bottom:0;">
+      <div class="section-header">
+        <h4 class="section-title">
+          <span class="section-icon icon-sky"><i class="bi bi-person-circle"></i></span>
+          Customer
+        </h4>
+      </div>
+      <div class="section-body">
+        <div class="customer-layout">
+          <div class="customer-avatar">
+            {% if sale.customer %}{{ sale.customer.name|slice:":1"|upper }}{% else %}G{% endif %}
+          </div>
+          <div>
+            <div class="customer-name">
+              {% if sale.customer %}{{ sale.customer.name }}{% else %}Walk-in Customer{% endif %}
             </div>
             {% if sale.customer %}
-            <div class="customer-info">
-                <div class="customer-avatar">
-                    {{ sale.customer.name.0|upper }}
-                </div>
-                <div>
-                    <h5>{{ sale.customer.name }}</h5>
-                    <p><i class="bi bi-telephone me-1"></i>{{ sale.customer.phone }}</p>
-                    {% if sale.customer.email %}
-                    <p><i class="bi bi-envelope me-1"></i>{{ sale.customer.email }}</p>
-                    {% endif %}
-                    {% if sale.customer.tin %}
-                    <p><i class="bi bi-badge-tm me-1"></i>TIN: {{ sale.customer.tin }}</p>
-                    {% endif %}
-                </div>
-            </div>
-            {% else %}
-            <div class="empty-state">
-                <div class="empty-icon">
-                    <i class="bi bi-person-x"></i>
-                </div>
-                <h5>Walk-in Customer</h5>
-                <p>No customer information</p>
-            </div>
+              {% if sale.customer.phone %}<div class="customer-meta"><i class="bi bi-telephone"></i> {{ sale.customer.phone }}</div>{% endif %}
+              {% if sale.customer.email %}<div class="customer-meta"><i class="bi bi-envelope"></i> {{ sale.customer.email }}</div>{% endif %}
             {% endif %}
+          </div>
         </div>
-
-        <!-- Tabs Section -->
-        <div class="modern-card">
-            <div class="card-body-modern">
-                <div class="tabs-modern">
-                    <button class="tab-modern active" onclick="showTab('payments')">
-                        <i class="bi bi-credit-card"></i>Payments
-                    </button>
-                    <button class="tab-modern" onclick="showTab('history')">
-                        <i class="bi bi-clock-history"></i>History
-                    </button>
-                    <button class="tab-modern" onclick="showTab('related')">
-                        <i class="bi bi-link-45deg"></i>Related
-                    </button>
-                    {% if sale.notes %}
-                    <button class="tab-modern" onclick="showTab('notes')">
-                        <i class="bi bi-sticky"></i>Notes
-                    </button>
-                    {% endif %}
-                </div>
-
-                <!-- Payments Tab -->
-                <div id="payments-tab" class="tab-content-modern active">
-                    <div class="timeline">
-                        {% for payment in sale.payments.all %}
-                        <div class="timeline-item">
-                            <div class="timeline-icon {% if payment.is_confirmed %}bg-success{% else %}bg-warning{% endif %}">
-                                <i class="bi {% if payment.payment_method == 'CASH' %}bi-cash-coin{% elif payment.payment_method == 'CARD' %}bi-credit-card{% elif payment.payment_method == 'MOBILE_MONEY' %}bi-phone{% else %}bi-bank{% endif %}"></i>
-                            </div>
-                            <div class="timeline-content">
-                                <h6 class="timeline-title">{{ payment.get_payment_method_display }}</h6>
-                                <div class="timeline-meta">
-                                    {{ payment.created_at|date:"M d, Y g:i A" }}
-                                    {% if payment.transaction_reference %}
-                                        | Ref: {{ payment.transaction_reference }}
-                                    {% endif %}
-                                    {% if not payment.is_confirmed %}
-                                        | <span class="badge bg-warning">Pending</span>
-                                    {% endif %}
-                                </div>
-                                {% if payment.notes %}
-                                    <div class="timeline-meta mt-2">{{ payment.notes }}</div>
-                                {% endif %}
-                                <div class="timeline-amount">{{ payment.amount|money }} UGX</div>
-                            </div>
-                        </div>
-                        {% empty %}
-                        <div class="empty-state">
-                            <div class="empty-icon">
-                                <i class="bi bi-credit-card"></i>
-                            </div>
-                            <h5>No payments recorded</h5>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-
-                <!-- History Tab -->
-                <div id="history-tab" class="tab-content-modern">
-                    <div class="timeline">
-                        <div class="timeline-item">
-                            <div class="timeline-icon" style="background: var(--info-gradient);">
-                                <i class="bi bi-plus-circle"></i>
-                            </div>
-                            <div class="timeline-content">
-                                <h6 class="timeline-title">Sale Created</h6>
-                                <div class="timeline-meta">
-                                    {{ sale.created_at|date:"M d, Y g:i A" }} by {{ sale.created_by.get_full_name|default:sale.created_by.username }}
-                                </div>
-                            </div>
-                        </div>
-                        {% if efris_enabled %}
-                        {% if sale.is_fiscalized %}
-                        <div class="timeline-item">
-                            <div class="timeline-icon" style="background: var(--success-gradient);">
-                                <i class="bi bi-shield-check"></i>
-                            </div>
-                            <div class="timeline-content">
-                                <h6 class="timeline-title">Sale Fiscalized</h6>
-                                <div class="timeline-meta">{{ fiscalization_time|date:"M d, Y g:i A" }}</div>
-                                {% if efris_invoice_no %}
-                                <div class="timeline-meta">Fiscal #: {{ efris_invoice_no }}</div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% endif %}
-                        {% endif %}
-
-                        {% if sale.is_refunded %}
-                        <div class="timeline-item">
-                            <div class="timeline-icon" style="background: var(--danger-gradient);">
-                                <i class="bi bi-arrow-counterclockwise"></i>
-                            </div>
-                            <div class="timeline-content">
-                                <h6 class="timeline-title">Sale Refunded</h6>
-                                <div class="timeline-meta">Partial or full refund processed</div>
-                            </div>
-                        </div>
-                        {% endif %}
-
-                        {% if sale.is_voided %}
-                        <div class="timeline-item">
-                            <div class="timeline-icon" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%);">
-                                <i class="bi bi-x-circle"></i>
-                            </div>
-                            <div class="timeline-content">
-                                <h6 class="timeline-title">Sale Voided</h6>
-                                <div class="timeline-meta">Reason: {{ sale.void_reason|default:"Not specified" }}</div>
-                            </div>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <!-- Related Tab -->
-                <div id="related-tab" class="tab-content-modern">
-                    {% if sale.related_sale %}
-                    <div class="alert-modern warning">
-                        <i class="bi bi-info-circle" style="font-size: 1.5rem;"></i>
-                        <div>
-                            <h6 style="margin: 0 0 0.5rem 0;">Original Sale</h6>
-                            <p style="margin: 0 0 0.75rem 0;">This {{ sale.get_transaction_type_display|lower }} is related to:</p>
-                            <a href="{% url 'sales:sale_detail' sale.related_sale.pk %}" class="btn btn-sm btn-primary">
-                                <i class="bi bi-box-arrow-up-right me-1"></i>View {{ sale.related_sale.invoice_number }}
-                            </a>
-                        </div>
-                    </div>
-                    {% endif %}
-
-                    {% with refunds=sale.sale_set.all %}
-                    {% if refunds %}
-                    <h6 style="margin-bottom: 1rem; color: var(--text-primary);">Refunds & Returns</h6>
-                    {% for refund in refunds %}
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--bg-accent); border-radius: 12px; margin-bottom: 1rem;">
-                        <div>
-                            <strong style="color: var(--text-primary);">{{ refund.invoice_number }}</strong>
-                            <br><small style="color: var(--text-muted);">{{ refund.created_at|date:"M d, Y" }}</small>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="color: #ef4444; font-weight: 700; font-size: 1.125rem;">-{{ refund.total_amount|money }} UGX</div>
-                            <a href="{% url 'sales:sale_detail' refund.pk %}" class="btn btn-sm btn-outline-primary mt-2">View</a>
-                        </div>
-                    </div>
-                    {% endfor %}
-                    {% endif %}
-                    {% endwith %}
-
-                    {% if not sale.related_sale and not sale.sale_set.all %}
-                    <div class="empty-state">
-                        <div class="empty-icon">
-                            <i class="bi bi-link-45deg"></i>
-                        </div>
-                        <h5>No related transactions</h5>
-                    </div>
-                    {% endif %}
-                </div>
-
-                <!-- Notes Tab -->
-                {% if sale.notes %}
-                <div id="notes-tab" class="tab-content-modern">
-                    <div class="alert-modern warning">
-                        <i class="bi bi-sticky" style="font-size: 1.5rem;"></i>
-                        <div>
-                            <h6 style="margin: 0 0 0.5rem 0;">Sale Notes</h6>
-                            <p style="margin: 0;">{{ sale.notes }}</p>
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
-            </div>
+        {% if sale.notes %}
+        <div style="margin-top:1.5rem;">
+          <div style="font-family:var(--font-mono);font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:0.625rem;">Notes</div>
+          <div class="notes-block">{{ sale.notes }}</div>
         </div>
+        {% endif %}
+      </div>
     </div>
+
+    <!-- Payment Status -->
+    <div class="section-card" style="margin-bottom:0;">
+      <div class="section-header">
+        <h4 class="section-title">
+          <span class="section-icon icon-emerald"><i class="bi bi-cash-coin"></i></span>
+          Payment Status
+        </h4>
+        {% if is_paid_in_full %}
+          <span class="hdr-badge paid"><i class="bi bi-check-circle"></i> Paid in Full</span>
+        {% elif balance_due > 0 %}
+          <span class="hdr-badge due"><i class="bi bi-exclamation-triangle"></i> Outstanding</span>
+        {% else %}
+          <span class="hdr-badge partial"><i class="bi bi-info-circle"></i> {{ sale.get_payment_status_display }}</span>
+        {% endif %}
+      </div>
+      <div class="section-body">
+        <div class="payment-panel">
+          <div class="payment-panel-label"><i class="bi bi-calculator"></i> Breakdown</div>
+          <div class="pay-row">
+            <span class="pay-row-label">Total Amount</span>
+            <span class="pay-row-value">{{ sale.total_amount|money }} UGX</span>
+          </div>
+          <div class="pay-row">
+            <span class="pay-row-label">Amount Paid</span>
+            {# When paid in full but no Payment record exists (receipt / non-credit invoice), #}
+            {# show the sale total so the user sees a meaningful amount instead of 0.00. #}
+            {% if is_paid_in_full and total_paid == 0 %}
+              <span class="pay-row-value em-green">{{ sale.total_amount|money }} UGX</span>
+            {% else %}
+              <span class="pay-row-value em-green">{{ total_paid|money }} UGX</span>
+            {% endif %}
+          </div>
+          <div class="pay-row">
+            <span class="pay-row-label">Balance</span>
+            <span class="pay-row-value {% if balance_due > 0 %}em-red{% else %}em-green{% endif %}">
+              {{ balance_due|money }} UGX{% if not balance_due > 0 %} ✓{% endif %}
+            </span>
+          </div>
+        </div>
+
+        {% if payments_by_method %}
+        <div style="margin-top:1rem;">
+          <div class="payment-panel-label" style="margin-top:1rem;"><i class="bi bi-credit-card"></i> By Method</div>
+          {% for payment in payments_by_method %}
+          <div class="pay-method-item">
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+              <div class="pay-method-icon">
+                {% if payment.payment_method == 'CASH' %}<i class="bi bi-cash-coin"></i>
+                {% elif payment.payment_method == 'CARD' %}<i class="bi bi-credit-card"></i>
+                {% elif payment.payment_method == 'MOBILE_MONEY' %}<i class="bi bi-phone"></i>
+                {% elif payment.payment_method == 'BANK_TRANSFER' %}<i class="bi bi-bank"></i>
+                {% else %}<i class="bi bi-cash-stack"></i>{% endif %}
+              </div>
+              <span style="font-size:0.875rem;color:var(--text-2);">{{ payment.payment_method }}</span>
+            </div>
+            <span style="font-family:var(--font-mono);font-weight:700;color:var(--text-1);">{{ payment.total|money }} UGX</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if balance_due > 0 %}
+        <button class="btn-hero primary no-print" style="width:100%;justify-content:center;margin-top:1.25rem;" data-bs-toggle="modal" data-bs-target="#paymentModal">
+          <i class="bi bi-plus-circle"></i>Record Payment
+        </button>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Payment History Timeline -->
+  {% if sale.payments.exists %}
+  <div class="section-card" style="margin-top:1.5rem;">
+    <div class="section-header">
+      <h4 class="section-title">
+        <span class="section-icon icon-violet"><i class="bi bi-clock-history"></i></span>
+        Payment History
+      </h4>
+    </div>
+    <div class="section-body">
+      <div class="timeline">
+        {% for payment in sale.payments.all %}
+        <div class="timeline-item">
+          <div class="timeline-dot"><i class="bi bi-check"></i></div>
+          <div class="timeline-content">
+            <div class="timeline-content-head">
+              <span class="timeline-content-title">{{ payment.get_payment_method_display }}</span>
+              <span class="timeline-content-amount">+{{ payment.amount|money }} UGX</span>
+            </div>
+            <div class="timeline-content-meta">
+              {{ payment.created_at|date:"M d, Y g:i A" }}
+              {% if payment.transaction_reference %}&nbsp;·&nbsp; Ref: {{ payment.transaction_reference }}{% endif %}
+              {% if payment.created_by %}&nbsp;·&nbsp; {{ payment.created_by.get_full_name|default:payment.created_by.username }}{% endif %}
+            </div>
+            {% if payment.notes %}
+            <div style="margin-top:0.5rem;font-size:0.8rem;color:var(--text-2);">{{ payment.notes }}</div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
 </div>
+<!-- END PAGE WRAPPER -->
 
-<!-- Payment Modal -->
-<div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="paymentModalLabel">
-                    <i class="bi bi-cash-coin me-2"></i>Record Payment for {{ sale.invoice_number }}
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+<!-- ═══════════════════════════════════════════════════
+     PAYMENT MODAL
+     ═══════════════════════════════════════════════════ -->
+<div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-cash-coin me-2" style="color:var(--emerald)"></i>Record Payment — {{ sale.invoice_number }}</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="paymentForm" method="post" action="{% url 'sales:add_payment' sale.pk %}">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="row g-4">
+            <div class="col-md-8">
+              <div class="mb-4">
+                <label class="form-label">Payment Amount (UGX)</label>
+                <input type="number" class="form-control form-control-lg" id="payment_amount" name="amount"
+                       step="0.01" min="0" max="{{ balance_due }}" required placeholder="0.00">
+                <div class="form-text">Maximum: {{ balance_due|money }} UGX</div>
+              </div>
+
+              <div class="mb-4">
+                <label class="form-label">Quick Amounts</label>
+                <div class="quick-amount-buttons">
+                  <button type="button" class="quick-amount-btn" data-amount="{{ balance_due }}">Full Amount</button>
+                  {% with half=balance_due|divide:2 %}
+                  <button type="button" class="quick-amount-btn" data-amount="{{ half }}">50% · {{ half|money }}</button>
+                  {% endwith %}
+                  {% with quarter=balance_due|divide:4 %}
+                  <button type="button" class="quick-amount-btn" data-amount="{{ quarter }}">25% · {{ quarter|money }}</button>
+                  {% endwith %}
+                </div>
+              </div>
+
+              <div class="mb-4">
+                <label class="form-label">Payment Method</label>
+                <select class="form-select" id="payment_method" name="payment_method" required>
+                  <option value="">Choose a method…</option>
+                  <option value="CASH">Cash</option>
+                  <option value="CARD">Credit / Debit Card</option>
+                  <option value="MOBILE_MONEY">Mobile Money</option>
+                  <option value="BANK_TRANSFER">Bank Transfer</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+
+              <div class="mb-4">
+                <label class="form-label">Transaction Reference</label>
+                <input type="text" class="form-control" id="transaction_reference" name="transaction_reference" placeholder="Optional reference number">
+              </div>
+
+              <div class="mb-4">
+                <label class="form-label">Notes</label>
+                <textarea class="form-control" id="payment_notes" name="notes" rows="2" placeholder="Optional notes about this payment"></textarea>
+              </div>
+
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="confirm_payment" name="confirm_payment" required>
+                <label class="form-check-label" for="confirm_payment">
+                  I confirm that I have received this payment
+                </label>
+              </div>
             </div>
-            <form id="paymentForm" method="post" action="{% url 'sales:add_payment' sale.pk %}">
-                {% csrf_token %}
-                <div class="modal-body">
-                    <div class="row">
-                        <div class="col-md-8">
-                            <!-- Payment Details -->
-                            <div class="mb-3">
-                                <label for="payment_amount" class="form-label">Payment Amount (UGX)</label>
-                                <input type="number"
-                                       class="form-control form-control-lg"
-                                       id="payment_amount"
-                                       name="amount"
-                                       step="0.01"
-                                       min="0"
-                                       max="{{ balance_due }}"
-                                       required
-                                       placeholder="0.00">
-                                <div class="form-text">Maximum amount: {{ balance_due|money }} UGX</div>
-                            </div>
 
-                            <!-- Quick Amount Buttons -->
-                            <div class="mb-3">
-                                <label class="form-label">Quick Amounts</label>
-                                <div class="quick-amount-buttons">
-                                    <button type="button" class="quick-amount-btn" data-amount="{{ balance_due }}">
-                                        Full Amount
-                                    </button>
-                                    {% with half=balance_due|divide:2 %}
-                                    <button type="button" class="quick-amount-btn" data-amount="{{ half }}">
-                                        50% ({{ half|money }})
-                                    </button>
-                                    {% endwith %}
-                                    {% with quarter=balance_due|divide:4 %}
-                                    <button type="button" class="quick-amount-btn" data-amount="{{ quarter }}">
-                                        25% ({{ quarter|money }})
-                                    </button>
-                                    {% endwith %}
-                                </div>
-                            </div>
-
-                            <!-- Payment Method -->
-                            <div class="mb-3">
-                                <label for="payment_method" class="form-label">Payment Method</label>
-                                <select class="form-select" id="payment_method" name="payment_method" required>
-                                    <option value="">Select payment method</option>
-                                    <option value="CASH">Cash</option>
-                                    <option value="CARD">Credit/Debit Card</option>
-                                    <option value="MOBILE_MONEY">Mobile Money</option>
-                                    <option value="BANK_TRANSFER">Bank Transfer</option>
-                                    <option value="OTHER">Other</option>
-                                </select>
-                            </div>
-
-                            <!-- Transaction Reference -->
-                            <div class="mb-3">
-                                <label for="transaction_reference" class="form-label">Transaction Reference</label>
-                                <input type="text"
-                                       class="form-control"
-                                       id="transaction_reference"
-                                       name="transaction_reference"
-                                       placeholder="Optional reference number">
-                            </div>
-
-                            <!-- Notes -->
-                            <div class="mb-3">
-                                <label for="payment_notes" class="form-label">Notes</label>
-                                <textarea class="form-control"
-                                          id="payment_notes"
-                                          name="notes"
-                                          rows="3"
-                                          placeholder="Any additional notes about this payment"></textarea>
-                            </div>
-
-                            <!-- Confirmation Checkbox -->
-                            <div class="form-check mb-3">
-                                <input class="form-check-input"
-                                       type="checkbox"
-                                       id="confirm_payment"
-                                       name="confirm_payment"
-                                       required>
-                                <label class="form-check-label" for="confirm_payment">
-                                    I confirm that I have received this payment
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="col-md-4">
-                            <!-- Payment Summary -->
-                            <div class="card border-0 bg-light">
-                                <div class="card-body">
-                                    <h6 class="card-title mb-3">Payment Summary</h6>
-
-                                    <div class="d-flex justify-content-between mb-2">
-                                        <span class="text-muted">Balance Due:</span>
-                                        <strong class="text-danger">{{ balance_due|money }} UGX</strong>
-                                    </div>
-
-                                    <hr class="my-3">
-
-                                    <div class="mb-3">
-                                        <label class="form-label">Payment Status</label>
-                                        <div class="alert alert-info mb-0">
-                                            <div class="d-flex align-items-center">
-                                                <i class="bi bi-info-circle-fill me-2"></i>
-                                                <div>
-                                                    <small>This payment will reduce the outstanding balance</small>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Payment Method Icons -->
-                                    <div class="text-center mt-4">
-                                        <div class="mb-2">
-                                            <i class="bi bi-cash-coin fs-1 text-success" id="payment-method-icon"></i>
-                                        </div>
-                                        <small class="text-muted">Select payment method above</small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+            <div class="col-md-4">
+              <div class="modal-summary-panel">
+                <div style="font-family:var(--font-mono);font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:1rem;">Payment Summary</div>
+                <div class="modal-summary-row">
+                  <span class="ms-label">Balance Due</span>
+                  <span class="ms-value red">{{ balance_due|money }} UGX</span>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-success" id="submitPaymentBtn">
-                        <i class="bi bi-check-circle me-1"></i>Record Payment
-                    </button>
+                <div class="modal-summary-row">
+                  <span class="ms-label">Total Paid</span>
+                  {% if is_paid_in_full and total_paid == 0 %}
+                    <span class="ms-value">{{ sale.total_amount|money }} UGX</span>
+                  {% else %}
+                    <span class="ms-value">{{ total_paid|money }} UGX</span>
+                  {% endif %}
                 </div>
-            </form>
+              </div>
+
+              <div class="payment-icon-display">
+                <i class="bi bi-cash-coin" id="payment-method-icon"></i>
+                <div style="font-size:0.78rem;color:var(--text-3);margin-top:0.5rem;" id="method-hint">Select a payment method above</div>
+              </div>
+            </div>
+          </div>
         </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-hero" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn-hero primary" id="submitPaymentBtn">
+            <i class="bi bi-check-circle"></i>Record Payment
+          </button>
+        </div>
+      </form>
     </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// Tab functionality
-function showTab(tabName) {
-    document.querySelectorAll('.tab-content-modern').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    document.querySelectorAll('.tab-modern').forEach(btn => {
-        btn.classList.remove('active');
-    });
-
-    const selectedTab = document.getElementById(`${tabName}-tab`);
-    const clickedButton = event.target.closest('.tab-modern');
-
-    if (selectedTab) {
-        selectedTab.classList.add('active');
-    }
-
-    if (clickedButton) {
-        clickedButton.classList.add('active');
-    }
+// ── Responsive lower grid ──
+const lowerGrid = document.querySelector('.lower-grid');
+function adjustLowerGrid() {
+  if (lowerGrid) {
+    lowerGrid.style.gridTemplateColumns = window.innerWidth < 768 ? '1fr' : '1fr 1fr';
+  }
 }
+adjustLowerGrid();
+window.addEventListener('resize', adjustLowerGrid);
 
-// Export items functionality
+// ── Export ──
 function exportItems(format) {
-    const saleId = {{ sale.id }};
-    window.open(`/sales/${saleId}/export-items/?format=${format}`, '_blank');
+  window.open(`/sales/{{ sale.id }}/export-items/?format=${format}`, '_blank');
 }
 
-// Fiscalization functions
+// ── Fiscal functions ──
 function downloadFiscalReceipt() {
-    const saleId = {{ sale.id }};
-    window.open(`/sales/${saleId}/download-fiscal-receipt/`, '_blank');
+  window.open(`/sales/{{ sale.id }}/download-fiscal-receipt/`, '_blank');
 }
 
 function copyFiscalInfo() {
-    const fiscalInfo = `
-Fiscal Number: {{ fiscal_document_number|default:efris_invoice_no }}
+  const info = `Fiscal Number: {{ fiscal_document_number|default:efris_invoice_no }}
 Invoice ID: {{ efris_invoice_id }}
 Fiscal Code: {{ efris_antifake_code }}
-Verification URL: {{ fiscal_verification_url }}
-    `.trim();
-
-    navigator.clipboard.writeText(fiscalInfo).then(function() {
-        // Show success message
-        const toast = document.createElement('div');
-        toast.className = 'alert alert-success position-fixed top-0 end-0 m-3';
-        toast.style.zIndex = '9999';
-        toast.innerHTML = '<i class="bi bi-check-circle me-2"></i>Fiscal details copied to clipboard';
-        document.body.appendChild(toast);
-
-        setTimeout(() => {
-            toast.remove();
-        }, 3000);
-    }).catch(function(err) {
-        console.error('Failed to copy: ', err);
-        alert('Failed to copy fiscal details');
-    });
+Verification URL: {{ fiscal_verification_url }}`.trim();
+  navigator.clipboard.writeText(info).then(() => {
+    showToast('Fiscal details copied to clipboard', 'success');
+  }).catch(() => alert('Failed to copy'));
 }
 
-// Print fiscal receipt
 function printFiscalReceipt() {
-    const printWindow = window.open('', '_blank');
-    const fiscalContent = `
-        <html>
-            <head>
-                <title>Fiscal Receipt - {{ sale.invoice_number }}</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 20px; }
-                    .header { text-align: center; margin-bottom: 20px; }
-                    .fiscal-info { margin: 20px 0; }
-                    .qr-code { text-align: center; margin: 20px 0; }
-                    .details { margin: 20px 0; }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h2>EFRIS Fiscal Receipt</h2>
-                    <h3>{{ sale.invoice_number }}</h3>
-                </div>
-                <div class="fiscal-info">
-                    <p><strong>Fiscal Number:</strong> {{ fiscal_document_number|default:efris_invoice_no }}</p>
-                    <p><strong>Invoice ID:</strong> {{ efris_invoice_id }}</p>
-                    <p><strong>Fiscal Code:</strong> {{ efris_antifake_code }}</p>
-                    <p><strong>Date:</strong> {{ fiscalization_time|date:"M d, Y g:i A" }}</p>
-                </div>
-                {% if qr_code or fiscal_verification_url %}
-                <div class="qr-code">
-                    {% if qr_code %}
-                        <img src="{{ qr_code }}" alt="QR Code" style="max-width: 200px;">
-                    {% else %}
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={{ fiscal_verification_url|urlencode }}"
-                             alt="QR Code" style="max-width: 200px;">
-                    {% endif %}
-                    <p>Scan to validate with URA</p>
-                </div>
-                {% endif %}
-                <div class="details">
-                    <p><strong>Verification URL:</strong><br>{{ fiscal_verification_url }}</p>
-                </div>
-            </body>
-        </html>
-    `;
-
-    printWindow.document.write(fiscalContent);
-    printWindow.document.close();
-    printWindow.print();
+  const w = window.open('', '_blank');
+  w.document.write(`<html><head><title>Fiscal Receipt - {{ sale.invoice_number }}</title>
+<style>body{font-family:Arial,sans-serif;margin:20px}h2,h3{text-align:center}</style></head>
+<body><h2>EFRIS Fiscal Receipt</h2><h3>{{ sale.invoice_number }}</h3>
+<p><strong>Fiscal Number:</strong> {{ fiscal_document_number|default:efris_invoice_no }}</p>
+<p><strong>Invoice ID:</strong> {{ efris_invoice_id }}</p>
+<p><strong>Fiscal Code:</strong> {{ efris_antifake_code }}</p>
+<p><strong>Date:</strong> {{ fiscalization_time|date:"M d, Y g:i A" }}</p>
+{% if fiscal_verification_url %}<p><strong>Verification URL:</strong> {{ fiscal_verification_url }}</p>{% endif %}
+</body></html>`);
+  w.document.close();
+  w.print();
 }
 
-// Payment Modal Functions
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('Sale detail page loaded');
-    console.log('Total items:', {{ sale.items.count }});
+// ── Toast ──
+function showToast(msg, type = 'info') {
+  const t = document.createElement('div');
+  t.className = `alert alert-${type} position-fixed top-0 end-0 m-3 shadow`;
+  t.style.cssText = 'z-index:9999;border-radius:12px;animation:fadeIn 0.3s ease;';
+  t.innerHTML = `<i class="bi bi-${type === 'success' ? 'check-circle' : 'info-circle'} me-2"></i>${msg}`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
 
-    // Payment amount validation
-    const paymentAmountInput = document.getElementById('payment_amount');
-    const maxAmount = parseFloat('{{ balance_due }}');
+// ── Payment modal ──
+document.addEventListener('DOMContentLoaded', () => {
+  const amountInput   = document.getElementById('payment_amount');
+  const maxAmount     = parseFloat('{{ balance_due }}');
+  const methodSelect  = document.getElementById('payment_method');
+  const methodIcon    = document.getElementById('payment-method-icon');
+  const methodHint    = document.getElementById('method-hint');
 
-    if (paymentAmountInput) {
-        paymentAmountInput.addEventListener('input', function() {
-            const amount = parseFloat(this.value) || 0;
-            if (amount > maxAmount) {
-                this.setCustomValidity(`Amount cannot exceed ${maxAmount.toLocaleString()} UGX`);
-            } else if (amount <= 0) {
-                this.setCustomValidity('Amount must be greater than 0');
-            } else {
-                this.setCustomValidity('');
-            }
-        });
+  const methodIcons = {
+    CASH: ['bi-cash-coin', 'var(--emerald)', 'Cash payment'],
+    CARD: ['bi-credit-card', 'var(--sky)', 'Credit / Debit card'],
+    MOBILE_MONEY: ['bi-phone', 'var(--violet)', 'Mobile money'],
+    BANK_TRANSFER: ['bi-bank', 'var(--gold)', 'Bank transfer'],
+    OTHER: ['bi-cash-stack', 'var(--text-2)', 'Other method'],
+  };
 
-        // Initial validation
-        if (paymentAmountInput.value) {
-            paymentAmountInput.dispatchEvent(new Event('input'));
-        }
-    }
-
-    // Quick amount buttons
-    const quickAmountBtns = document.querySelectorAll('.quick-amount-btn');
-    quickAmountBtns.forEach(btn => {
-        btn.addEventListener('click', function() {
-            const amount = parseFloat(this.dataset.amount);
-            if (paymentAmountInput) {
-                paymentAmountInput.value = amount.toFixed(2);
-                paymentAmountInput.dispatchEvent(new Event('input'));
-                paymentAmountInput.focus();
-            }
-        });
+  if (amountInput) {
+    amountInput.addEventListener('input', () => {
+      const v = parseFloat(amountInput.value) || 0;
+      if (v > maxAmount) amountInput.setCustomValidity(`Cannot exceed ${maxAmount.toLocaleString()} UGX`);
+      else if (v <= 0) amountInput.setCustomValidity('Must be greater than 0');
+      else amountInput.setCustomValidity('');
     });
+  }
 
-    // Payment form submission
-    const paymentForm = document.getElementById('paymentForm');
-    if (paymentForm) {
-        paymentForm.addEventListener('submit', function(e) {
-            const confirmCheckbox = document.getElementById('confirm_payment');
-            if (confirmCheckbox && !confirmCheckbox.checked) {
-                e.preventDefault();
-                alert('Please confirm that you have received this payment');
-                return false;
-            }
+  document.querySelectorAll('.quick-amount-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (amountInput) {
+        amountInput.value = parseFloat(btn.dataset.amount).toFixed(2);
+        amountInput.dispatchEvent(new Event('input'));
+        amountInput.focus();
+      }
+    });
+  });
 
-            // Validate amount
-            if (paymentAmountInput) {
-                const amount = parseFloat(paymentAmountInput.value) || 0;
-                if (amount > maxAmount) {
-                    e.preventDefault();
-                    alert(`Amount cannot exceed ${maxAmount.toLocaleString()} UGX`);
-                    return false;
-                }
-                if (amount <= 0) {
-                    e.preventDefault();
-                    alert('Amount must be greater than 0');
-                    return false;
-                }
-            }
+  if (methodSelect && methodIcon) {
+    methodSelect.addEventListener('change', () => {
+      const cfg = methodIcons[methodSelect.value];
+      if (cfg) {
+        methodIcon.className = `bi ${cfg[0]}`;
+        methodIcon.style.color = cfg[1];
+        if (methodHint) methodHint.textContent = cfg[2];
+      }
+    });
+  }
 
-            // Show loading state
-            const submitBtn = document.getElementById('submitPaymentBtn');
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Processing...';
-            }
-        });
-    }
+  const paymentForm = document.getElementById('paymentForm');
+  if (paymentForm) {
+    paymentForm.addEventListener('submit', e => {
+      const cb = document.getElementById('confirm_payment');
+      if (cb && !cb.checked) { e.preventDefault(); showToast('Please confirm receipt of payment', 'warning'); return; }
+      const v = parseFloat(amountInput?.value) || 0;
+      if (v > maxAmount) { e.preventDefault(); showToast(`Amount cannot exceed ${maxAmount.toLocaleString()} UGX`, 'danger'); return; }
+      if (v <= 0) { e.preventDefault(); showToast('Amount must be greater than 0', 'danger'); return; }
+      const btn = document.getElementById('submitPaymentBtn');
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Processing…'; }
+    });
+  }
 
-    // Payment method icon update
-    const paymentMethodSelect = document.getElementById('payment_method');
-    const paymentMethodIcon = document.getElementById('payment-method-icon');
-
-    if (paymentMethodSelect && paymentMethodIcon) {
-        const methodIcons = {
-            'CASH': 'bi-cash-coin',
-            'CARD': 'bi-credit-card',
-            'MOBILE_MONEY': 'bi-phone',
-            'BANK_TRANSFER': 'bi-bank',
-            'OTHER': 'bi-cash-stack'
-        };
-
-        paymentMethodSelect.addEventListener('change', function() {
-            const iconClass = methodIcons[this.value] || 'bi-cash-coin';
-            paymentMethodIcon.className = `bi ${iconClass} fs-1 text-success`;
-        });
-    }
-
-    // Reset form when modal is hidden
-    const paymentModal = document.getElementById('paymentModal');
-    if (paymentModal) {
-        paymentModal.addEventListener('hidden.bs.modal', function() {
-            if (paymentForm) {
-                paymentForm.reset();
-            }
-            if (paymentAmountInput) {
-                paymentAmountInput.setCustomValidity('');
-            }
-            if (paymentMethodIcon) {
-                paymentMethodIcon.className = 'bi bi-cash-coin fs-1 text-success';
-            }
-            // Reset submit button
-            const submitBtn = document.getElementById('submitPaymentBtn');
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Record Payment';
-            }
-        });
-    }
+  const modal = document.getElementById('paymentModal');
+  if (modal) {
+    modal.addEventListener('hidden.bs.modal', () => {
+      paymentForm?.reset();
+      if (amountInput) amountInput.setCustomValidity('');
+      if (methodIcon) { methodIcon.className = 'bi bi-cash-coin'; methodIcon.style.color = 'var(--emerald)'; }
+      if (methodHint) methodHint.textContent = 'Select a payment method above';
+      const btn = document.getElementById('submitPaymentBtn');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Record Payment'; }
+    });
+  }
 });
 
-// Keyboard shortcuts
-document.addEventListener('keydown', function(e) {
-    // Ctrl+P for print
-    if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
-        e.preventDefault();
-        window.print();
-    }
-
-    // Alt+P for payment modal (if balance due exists)
-    if (e.altKey && e.key === 'p' && parseFloat('{{ balance_due }}') > 0) {
-        e.preventDefault();
-        const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
-        paymentModal.show();
-    }
-
-    // Escape to close modals
-    if (e.key === 'Escape') {
-        const modals = document.querySelectorAll('.modal.show');
-        modals.forEach(modal => {
-            const modalInstance = bootstrap.Modal.getInstance(modal);
-            if (modalInstance) {
-                modalInstance.hide();
-            }
-        });
-    }
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'p') { e.preventDefault(); window.print(); }
+  if (e.altKey && e.key === 'p' && parseFloat('{{ balance_due }}') > 0) {
+    e.preventDefault();
+    new bootstrap.Modal(document.getElementById('paymentModal')).show();
+  }
 });
 </script>
 {% endblock %}

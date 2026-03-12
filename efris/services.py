@@ -8939,10 +8939,13 @@ class EnhancedEFRISAPIClient:
                     "error": f"Authentication failed: {auth_result.get('error')}"
                 }
 
-            # Build request content
-            content = {"id": application_id}
+            # Build request content with id and hardcoded invoiceType=2 (Credit Note)
+            content = {
+                "id": application_id,
+                "invoiceType": "2"  # Hardcoded to Credit Note
+            }
 
-            logger.info(f"Querying credit/debit note detail (T118) - ID: {application_id}")
+            logger.info(f"Querying credit note detail (T118) - ID: {application_id}, invoiceType: 2 (Credit Note)")
 
             # Make encrypted request
             response = self._make_request("T118", content, encrypt=True)
@@ -8961,6 +8964,12 @@ class EnhancedEFRISAPIClient:
                 "basic_information": response.get("basicInformation", {}),
                 "raw_data": response
             }
+
+            # Log the invoice type from response for verification
+            response_invoice_type = response.get("basicInformation", {}).get("invoiceType")
+            if response_invoice_type:
+                response_desc = "Credit Note" if response_invoice_type == "2" else "Debit Note" if response_invoice_type == "4" else "Unknown"
+                logger.info(f"Response invoiceType: {response_invoice_type} ({response_desc})")
 
             logger.info(
                 f"T118 query successful - "
@@ -9026,10 +9035,38 @@ class EnhancedEFRISAPIClient:
                 f"Querying credit note applications (T111) - "
                 f"QueryType: {query_type}, Page: {page_no}, Status: {approve_status}"
             )
-            logger.debug(f"T111 Request Content: {content}")
+            logger.debug(f"T111 Request Content: {json.dumps(content, indent=2)}")
 
             # Make encrypted request
             response = self._make_request("T111", content, encrypt=True)
+
+            # ✅ LOG THE FULL RAW RESPONSE
+            logger.debug(f"T111 Full Raw Response: {response}")
+            logger.debug(f"T111 Full Raw Response JSON: {json.dumps(response, indent=2)}")
+
+            # ✅ LOG SPECIFIC PARTS OF THE RESPONSE
+            logger.debug(f"T111 Response keys: {list(response.keys())}")
+
+            # Check for records field
+            if "records" in response:
+                logger.debug(f"T111 'records' field exists with {len(response.get('records', []))} items")
+                if response.get('records'):
+                    logger.debug(
+                        f"T111 First record sample: {json.dumps(response['records'][0] if response['records'] else {}, indent=2)}")
+
+            # Check for invoiceApplyList field
+            if "invoiceApplyList" in response:
+                logger.debug(
+                    f"T111 'invoiceApplyList' field exists with {len(response.get('invoiceApplyList', []))} items")
+                if response.get('invoiceApplyList'):
+                    logger.debug(
+                        f"T111 First invoiceApplyList sample: {json.dumps(response['invoiceApplyList'][0] if response['invoiceApplyList'] else {}, indent=2)}")
+
+            # Check for page object
+            if "page" in response:
+                logger.debug(f"T111 'page' field exists: {json.dumps(response['page'], indent=2)}")
+            else:
+                logger.debug("T111 No 'page' field found in response")
 
             # ✅ FIX: Handle the response structure correctly
             # The response has:
@@ -9040,6 +9077,8 @@ class EnhancedEFRISAPIClient:
             applications = response.get("records", [])
             if not applications or not isinstance(applications, list):
                 applications = response.get("invoiceApplyList", [])
+                if applications:
+                    logger.debug("T111 Using 'invoiceApplyList' as applications source")
 
             # ✅ FIX: Get pagination from the 'page' object
             pagination_obj = response.get("page", {})
@@ -9050,12 +9089,15 @@ class EnhancedEFRISAPIClient:
                 page_count = int(pagination_obj.get("pageCount", 0))
                 current_page = int(pagination_obj.get("pageNo", page_no))
                 current_page_size = int(pagination_obj.get("pageSize", page_size))
+                logger.debug(
+                    f"T111 Pagination parsed: totalSize={total_size}, pageCount={page_count}, currentPage={current_page}")
             else:
                 # Fallback: calculate from applications
                 total_size = len(applications)
                 page_count = 1
                 current_page = page_no
                 current_page_size = page_size
+                logger.debug("T111 No pagination object found, using fallback calculation")
 
             # Calculate page range for pagination UI
             page_range = []
@@ -9092,11 +9134,17 @@ class EnhancedEFRISAPIClient:
             if "page" in response:
                 logger.debug(f"T111 Pagination object: {response['page']}")
 
+            # Log final result summary
+            logger.debug(
+                f"T111 Final result - Applications count: {len(applications)}, Pagination: {result['pagination']}")
+
             return result
 
         except Exception as e:
             logger.error(f"T111 query failed: {e}", exc_info=True)
             logger.error(f"T111 Response that caused error: {response if 'response' in locals() else 'N/A'}")
+            if 'response' in locals():
+                logger.error(f"T111 Error response JSON: {json.dumps(response, indent=2)}")
             return {
                 "success": False,
                 "error": str(e),

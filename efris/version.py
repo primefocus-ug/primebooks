@@ -560,6 +560,13 @@ def invoice_detail_view(request, invoice_no):
             # Query invoice details from EFRIS
             result = client.t108_query_invoice_detail(invoice_no)
 
+            # 🔹 Log full API response structure
+            logger.info(
+                "EFRIS T108 Invoice Response for %s:\n%s",
+                invoice_no,
+                json.dumps(result, indent=4, default=str)
+            )
+
             if result.get('success'):
                 invoice_data = result.get('invoice')
 
@@ -852,8 +859,9 @@ def credit_note_applications_view(request):
 @login_required
 def credit_note_application_detail_view(request, application_id):
     """
-    T112/T118 - Credit Note Application Detail
-    Display detailed information about a credit note application
+    T108 - Credit Note Application Detail
+    T108 response is nested: basicInformation, buyerDetails, sellerDetails,
+    goodsDetails, taxDetails, payWay, summary, creditNoteExtend, extend
     """
     company = request.tenant
 
@@ -864,47 +872,38 @@ def credit_note_application_detail_view(request, application_id):
     try:
         client = EnhancedEFRISAPIClient(company)
 
-        # Get basic application info (T112)
-        basic_result = client.t112_query_credit_note_application_detail(application_id)
+        invoice_no = request.GET.get('invoice_no') or application_id
+
+        if not invoice_no:
+            messages.error(request, "Invoice number is required to load application detail")
+            return redirect('efris:credit_note_applications')
+
+        basic_result = client.t108_query_invoice_detail(invoice_no)
 
         if not basic_result.get('success'):
             error = basic_result.get('error') or "Unknown error"
             messages.error(request, f"Failed to load application: {error}")
             return redirect('efris:credit_note_applications')
 
-        application_data = basic_result.get('application_detail', {})
+        # ✅ T108 response is the full invoice object — unpack nested sub-objects
+        invoice = basic_result.get('invoice', {})
+        basic_info_raw   = invoice.get('basicInformation', {})
+        buyer            = invoice.get('buyerDetails', {})
+        seller           = invoice.get('sellerDetails', {})
+        extend           = invoice.get('extend', {})
+        credit_extend    = invoice.get('creditNoteExtend', {})
+        raw_summary      = invoice.get('summary', {})
+        goods_details    = invoice.get('goodsDetails', [])
+        tax_details      = invoice.get('taxDetails', [])
+        payment_methods  = invoice.get('payWay', [])   # T108 uses 'payWay', not 'paymentMethods'
 
-        # ✅ EFRIS status codes (from T111 docs):
-        # 101 = Approved
-        # 102 = Submitted (Pending approval)
-        # 103 = Rejected
-        # 104 = Voided
-        EFRIS_STATUS_MAP = {
-            '101': 'Approved',
-            '102': 'Submitted',
-            '103': 'Rejected',
-            '104': 'Voided',
-        }
+        # ✅ invoiceNo  = the Credit Note number (this IS the credit note)
+        # ✅ oriInvoiceNo = the original invoice it was raised against
+        credit_note_no     = basic_info_raw.get('invoiceNo')
+        original_invoice_no = basic_info_raw.get('oriInvoiceNo')
 
-        # ✅ Read status - EFRIS may return as approveStatus or approveStatusCode
-        approve_status = (
-            application_data.get('approveStatus') or
-            application_data.get('approveStatusCode') or
-            ''
-        )
-        approve_status = str(approve_status).strip()
-
-        # ✅ can_approve only when Submitted (102) - pending approval
-        can_approve = approve_status == '102'
-
-        # ✅ Reason code - T112 returns selectRefundReasonCode
-        reason_code = str(
-            application_data.get('selectRefundReasonCode') or
-            application_data.get('reasonCode') or
-            application_data.get('invoiceApplyCategoryCode') or
-            ''
-        )
-
+        # Reason from extend sub-object
+        reason_code = str(extend.get('reasonCode') or '')
         reason_codes = {
             '101': 'Return of products due to expiry or damage',
             '102': 'Cancellation of the purchase',
@@ -913,94 +912,78 @@ def credit_note_application_detail_view(request, application_id):
             '105': 'Others',
         }
 
+        # T108 credit notes don't have an approval workflow — they are already issued
+        # isRefund flag indicates credit note
+        is_refund = basic_info_raw.get('isRefund') == '1'
+        is_invalid = basic_info_raw.get('isInvalid') == '1'
+
         basic_info = {
-            'application_id': application_data.get('id') or application_id,
-            'original_invoice_no': (
-                application_data.get('oriInvoiceNo') or
-                application_data.get('toinvoiceNo')
-            ),
-            'credit_note_no': application_data.get('referenceNo'),
-            'application_date': application_data.get('applicationTime'),
-            'status': EFRIS_STATUS_MAP.get(approve_status, f'Unknown ({approve_status})'),
-            'approve_status': approve_status,
-            'currency': application_data.get('currency') or 'UGX',
+            'application_id': application_id,
+            'credit_note_no': credit_note_no,
+            'original_invoice_no': original_invoice_no,
+            'issued_date': basic_info_raw.get('issuedDate'),
+            'ori_issued_date': basic_info_raw.get('oriIssuedDate'),
+            'currency': basic_info_raw.get('currency', 'UGX'),
+            'operator': basic_info_raw.get('operator'),
+            'device_no': basic_info_raw.get('deviceNo'),
+            'antifake_code': basic_info_raw.get('antifakeCode'),
+            'is_invalid': is_invalid,
+            'is_refund': is_refund,
+
+            # Reason
             'reason_code': reason_code,
-            'reason_description': reason_codes.get(reason_code, reason_code),
-            'reason': application_data.get('reason') or application_data.get('remarks'),
-            'contact_name': application_data.get('contactName'),
-            'contact_mobile': (
-                application_data.get('contactMobileNum') or
-                application_data.get('mobilePhone')
-            ),
-            'contact_email': application_data.get('contactEmail'),
-            'remarks': application_data.get('remarks'),
-            'gross_amount': float(
-                application_data.get('totalAmount') or
-                application_data.get('grossAmount') or 0
-            ),
-            'net_amount': 0,
-            'tax_amount': 0,
-            'applicant_tin': application_data.get('tin'),
-            'applicant_name': application_data.get('legalName'),
-            'buyer_tin': application_data.get('buyerTin'),
-            'buyer_name': application_data.get('buyerLegalName'),
-            'buyer_email': (
-                application_data.get('buyerEmailAddress') or
-                application_data.get('buyerEmail')
-            ),
-            'buyer_mobile': application_data.get('buyerMobilePhone'),
-            'approve_remarks': application_data.get('approveRemarks'),
-            'issued_date': (
-                application_data.get('refundIssuedDate') or
-                application_data.get('issuedDate')
-            ),
-            'task_id': application_data.get('taskId'),
-            'address': application_data.get('address'),
-            'can_approve': can_approve,
+            'reason_description': reason_codes.get(reason_code, f'Code: {reason_code}'),
+            'reason': extend.get('reason') or raw_summary.get('remarks'),
+            'remarks': raw_summary.get('remarks'),
+
+            # Seller (applicant)
+            'applicant_tin': seller.get('tin'),
+            'applicant_name': seller.get('legalName') or seller.get('businessName'),
+            'address': seller.get('address'),
+
+            # Buyer
+            'buyer_tin': buyer.get('buyerTin'),
+            'buyer_name': buyer.get('buyerLegalName') or buyer.get('buyerBusinessName'),
+            'buyer_email': buyer.get('buyerEmailAddress') or buyer.get('buyerEmail'),
+            'buyer_mobile': buyer.get('buyerMobilePhone'),
+
+            # Amounts (from summary)
+            'gross_amount': float(raw_summary.get('grossAmount') or 0),
+            'net_amount': float(raw_summary.get('netAmount') or 0),
+            'tax_amount': float(raw_summary.get('taxAmount') or 0),
+
+            # QR code
+            'qr_code': raw_summary.get('qrCode'),
+
+            # No approval workflow for T108 issued credit notes
+            'approve_status': None,
+            'status': 'Invalid' if is_invalid else 'Issued',
+            'can_approve': False,
+            'approve_remarks': None,
+            'task_id': None,
+            'validation_errors': [],
+
+            # Contact — T108 doesn't have separate contact fields; use buyer
+            'contact_name': buyer.get('buyerLegalName'),
+            'contact_mobile': buyer.get('buyerMobilePhone'),
+            'contact_email': buyer.get('buyerEmailAddress'),
         }
 
-        # Validate if application can be approved
-        validation_errors = []
-        if can_approve:
-            if not basic_info['task_id']:
-                validation_errors.append("Task ID is missing - cannot approve")
-            if not basic_info['original_invoice_no']:
-                validation_errors.append("Original invoice number is missing")
-
-        basic_info['validation_errors'] = validation_errors
-
-        # Process detail result (T118)
-        goods_details = []
-        tax_details = []
-        payment_methods = []
-        summary = {}
-
-        detail_result = client.t118_query_credit_debit_note_detail(application_id)
-        if detail_result.get('success'):
-            goods_details = detail_result.get('goods_details', [])
-            tax_details = detail_result.get('tax_details', [])
-            payment_methods = detail_result.get('payment_methods', [])
-
-            detail_summary = detail_result.get('summary', {})
-            summary = {
-                'gross_amount': float(detail_summary.get('grossAmount') or 0),
-                'net_amount': float(detail_summary.get('netAmount') or 0),
-                'tax_amount': float(detail_summary.get('taxAmount') or 0),
-                'previous_gross_amount': float(detail_summary.get('previousGrossAmount') or 0),
-                'previous_net_amount': float(detail_summary.get('previousNetAmount') or 0),
-                'previous_tax_amount': float(detail_summary.get('previousTaxAmount') or 0),
-                'remarks': detail_summary.get('remarks'),
-                'item_count': len(goods_details),
-            }
-
-            basic_info['net_amount'] = summary['net_amount']
-            basic_info['tax_amount'] = summary['tax_amount']
-
-            if can_approve and summary.get('gross_amount', 0) >= 0:
-                validation_errors.append("Summary gross amount must be negative for credit note")
+        summary = {
+            'gross_amount': float(raw_summary.get('grossAmount') or 0),
+            'net_amount': float(raw_summary.get('netAmount') or 0),
+            'tax_amount': float(raw_summary.get('taxAmount') or 0),
+            # Previous amounts come from creditNoteExtend
+            'previous_gross_amount': float(credit_extend.get('preGrossAmount') or 0),
+            'previous_net_amount': float(credit_extend.get('preNetAmount') or 0),
+            'previous_tax_amount': float(credit_extend.get('preTaxAmount') or 0),
+            'remarks': raw_summary.get('remarks'),
+            'item_count': int(raw_summary.get('itemCount') or len(goods_details)),
+            'qr_code': raw_summary.get('qrCode'),
+        }
 
         context = {
-            'page_title': f'Credit Note Application {application_id}',
+            'page_title': f'Credit Note {credit_note_no}',
             'application': basic_info,
             'goods_details': goods_details,
             'tax_details': tax_details,
@@ -1102,7 +1085,7 @@ def print_credit_note(request, application_id):
         application = {
             'application_id':      application_data.get('id') or application_id,
             'original_invoice_no': application_data.get('oriInvoiceNo') or application_data.get('toinvoiceNo'),
-            'credit_note_no':      application_data.get('referenceNo'),
+            'credit_note_no':      application_data.get('creditNoteNo'),
             'refund_invoice_no':   application_data.get('refundInvoiceNo'),
             'application_date':    application_data.get('applicationTime'),
             'issued_date':         application_data.get('refundIssuedDate') or application_data.get('issuedDate'),

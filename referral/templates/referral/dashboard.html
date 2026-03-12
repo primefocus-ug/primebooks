@@ -1,0 +1,161 @@
+{% extends "referral/base.html" %}
+
+{% block title %}Dashboard — Partner Portal — PRIMEBOOKS{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+
+{% if not partner.is_approved %}
+<div class="alert alert-warning" style="margin-bottom:1.5rem">
+    ⏳ Your account is awaiting admin approval. Your referral link will be available once approved.
+</div>
+{% endif %}
+
+<!-- Welcome + date -->
+<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.75rem">
+    <div>
+        <h2 style="font-size:1.3rem;font-weight:300;color:var(--text-primary);margin-bottom:0.2rem">
+            Welcome back, {{ partner.full_name|truncatechars:25 }}
+        </h2>
+        <p style="font-size:0.85rem;color:var(--text-tertiary)">
+            Here's a summary of your referral activity
+        </p>
+    </div>
+    {% if partner.is_approved %}
+    <a href="{% url 'referral:referrals_list' %}" class="btn btn-secondary btn-sm">View all referrals →</a>
+    {% endif %}
+</div>
+
+<!-- Stats -->
+<div class="stat-grid">
+    <div class="stat-card accent-card">
+        <div class="stat-label">Total Referrals</div>
+        <div class="stat-value">{{ stats.total }}</div>
+    </div>
+    <div class="stat-card success-card">
+        <div class="stat-label">Completed</div>
+        <div class="stat-value">{{ stats.completed }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Pending</div>
+        <div class="stat-value" style="color:var(--warning)">{{ stats.pending }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Cancelled</div>
+        <div class="stat-value" style="color:var(--text-tertiary)">{{ stats.cancelled }}</div>
+    </div>
+</div>
+
+<!-- Referral link card -->
+{% if partner.is_approved %}
+<div class="card" style="margin-bottom:1.5rem">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Your Referral Link</div>
+            <div class="card-subtitle">Share this link — every company that signs up through it is tracked to you</div>
+        </div>
+    </div>
+
+    <div class="ref-link-box">
+        <div style="flex:1">
+            <div class="ref-link-label">Shareable link</div>
+            <div class="ref-link-url" id="refLinkText">{{ referral_link }}</div>
+        </div>
+        <button class="btn btn-accent btn-sm" onclick="copyRef()" id="copyBtn">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copy Link
+        </button>
+    </div>
+
+    <div style="margin-top:0.9rem;padding-top:0.9rem;border-top:1px solid var(--border-color);display:flex;align-items:center;flex-wrap:wrap;gap:1rem">
+        <span style="font-size:0.82rem;color:var(--text-tertiary)">
+            Referral code:
+            <code style="background:var(--bg-tertiary);padding:2px 8px;border-radius:4px;font-size:0.8rem;color:#6b78ff;letter-spacing:1px">{{ referral_code }}</code>
+        </span>
+        <span style="font-size:0.82rem;color:var(--text-tertiary)">
+            You can also share the code directly — companies can enter it at signup.
+        </span>
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent referrals -->
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Recent Referrals</div>
+            <div class="card-subtitle">Latest companies that signed up through your link</div>
+        </div>
+        {% if stats.total > 5 %}
+        <a href="{% url 'referral:referrals_list' %}" class="btn btn-secondary btn-sm">See all</a>
+        {% endif %}
+    </div>
+
+    {% if recent_referrals %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ref in recent_referrals %}
+                <tr>
+                    <td style="color:var(--text-primary);font-weight:500">{{ ref.company_name }}</td>
+                    <td>{{ ref.company_email }}</td>
+                    <td>
+                        <span class="badge badge-{{ ref.status }}">
+                            {% if ref.status == 'pending' %}⏳{% elif ref.status == 'completed' %}✓{% else %}✕{% endif %}
+                            {{ ref.get_status_display }}
+                        </span>
+                    </td>
+                    <td>{{ ref.registered_at|date:"M d, Y" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <p>No referrals yet.
+            {% if partner.is_approved %}
+            Copy your link above and start sharing.
+            {% else %}
+            Your referral link will appear here once your account is approved.
+            {% endif %}
+        </p>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function copyRef() {
+    const url = document.getElementById('refLinkText').textContent.trim();
+    navigator.clipboard.writeText(url).then(() => {
+        const btn = document.getElementById('copyBtn');
+        const original = btn.innerHTML;
+        btn.innerHTML = '✓ Copied!';
+        btn.style.background = 'var(--success)';
+        setTimeout(() => {
+            btn.innerHTML = original;
+            btn.style.background = '';
+        }, 2200);
+    });
+}
+</script>
+{% endblock %}

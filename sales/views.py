@@ -1205,8 +1205,8 @@ class SaleDetailView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMi
 
         fiscal_data = self._get_fiscalization_data(sale)
 
-        # ========== FIXED PAYMENT CALCULATION ==========
-        # Get total paid from CONFIRMED and NON-VOIDED payments only
+        # ── PAYMENT CALCULATION ───────────────────────────────────────────
+        # Sum only confirmed, non-voided Payment rows.
         total_paid = sale.payments.filter(
             is_confirmed=True,
             is_voided=False
@@ -1214,34 +1214,44 @@ class SaleDetailView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMi
             Sum('amount')
         )['amount__sum'] or Decimal('0')
 
-        # Calculate balance with proper Decimal handling
         try:
-            sale_total = Decimal(str(sale.total_amount or 0))
+            sale_total         = Decimal(str(sale.total_amount or 0))
             total_paid_decimal = Decimal(str(total_paid))
 
-            balance_due = max(Decimal('0'), sale_total - total_paid_decimal)
-            is_paid_in_full = balance_due <= Decimal('0.01')
-
-            # ✅ RECEIPTS are always paid (immediate payment)
+            # RECEIPTS: always fully paid at point-of-sale.
+            # Even if no Payment row exists (legacy/import), show total as paid.
             if sale.document_type == 'RECEIPT':
-                is_paid_in_full = True
-                balance_due = Decimal('0')
+                is_paid_in_full    = True
+                balance_due        = Decimal('0')
+                if total_paid_decimal == Decimal('0'):
+                    total_paid_decimal = sale_total   # display fix: show real amount
 
-            # ✅ Non-credit INVOICES: Check if payment received
+            # Non-credit INVOICE: collected upfront — trust stored payment_status.
             elif sale.document_type == 'INVOICE' and sale.payment_method != 'CREDIT':
-                if total_paid_decimal >= sale_total:
-                    is_paid_in_full = True
-                    balance_due = Decimal('0')
+                if sale.payment_status == 'PAID' or total_paid_decimal >= sale_total:
+                    is_paid_in_full    = True
+                    balance_due        = Decimal('0')
+                    if total_paid_decimal == Decimal('0'):
+                        total_paid_decimal = sale_total  # display fix
+                else:
+                    balance_due     = max(Decimal('0'), sale_total - total_paid_decimal)
+                    is_paid_in_full = balance_due <= Decimal('0.01')
+
+            # Credit INVOICE: calculate from actual Payment records.
+            else:
+                balance_due     = max(Decimal('0'), sale_total - total_paid_decimal)
+                is_paid_in_full = balance_due <= Decimal('0.01')
 
         except (ValueError, TypeError) as e:
             logger.error(f"Error calculating balance for sale {sale.id}: {e}")
-            balance_due = Decimal('0')
-            is_paid_in_full = True
+            balance_due        = Decimal('0')
+            is_paid_in_full    = True
+            total_paid_decimal = sale_total
 
-        # ========== AUTO-UPDATE PAYMENT STATUS ==========
+        # ── AUTO-UPDATE PAYMENT STATUS ────────────────────────────────────
+        # Only write to DB when a genuine correction is needed.
+        # Never regress a non-credit invoice from PAID → PENDING.
         if sale.document_type in ['RECEIPT', 'INVOICE']:
-            new_payment_status = None
-
             if is_paid_in_full:
                 new_payment_status = 'PAID'
             elif total_paid_decimal > Decimal('0'):
@@ -1249,15 +1259,20 @@ class SaleDetailView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMi
             elif sale.due_date and sale.due_date < timezone.now().date():
                 new_payment_status = 'OVERDUE'
             else:
-                new_payment_status = 'PENDING'
+                # Guard: non-credit invoices should never be set to PENDING here.
+                if (sale.document_type == 'INVOICE'
+                        and sale.payment_method != 'CREDIT'
+                        and sale.payment_status == 'PAID'):
+                    new_payment_status = 'PAID'   # preserve correct stored status
+                else:
+                    new_payment_status = 'PENDING'
 
-            # Update if changed
             if new_payment_status != sale.payment_status:
                 sale.payment_status = new_payment_status
                 if is_paid_in_full:
                     sale.status = 'COMPLETED'
                 sale.save(update_fields=['payment_status', 'status'])
-                logger.info(f"✅ Updated sale {sale.id}: {sale.payment_status}")
+                logger.info(f"✅ Updated sale {sale.id}: payment_status={sale.payment_status}")
 
         # Payment breakdown by method
         payments_by_method = sale.payments.filter(
@@ -2070,8 +2085,39 @@ def _process_sale_atomic(request, company):
     if sale.customer and hasattr(sale.customer, 'notes') and sale.customer.notes:
         logger.info(f"Customer notes for sale {sale.id}: {sale.customer.notes}")
 
-    if sale.payment_method != 'CREDIT' and request.POST.get('payment_amount'):
-        handle_payment(sale, request.POST)
+    # ── Auto-create a confirmed Payment record for every non-credit sale ──
+    # This covers both RECEIPTs and non-credit INVOICEs (CASH, CARD,
+    # MOBILE_MONEY, BANK_TRANSFER).  Without a Payment row the detail view
+    # sees total_paid=0 and incorrectly shows "Pending Payment".
+    # We prefer an explicit `payment_amount` from the form; otherwise we
+    # fall back to the sale's total_amount (the whole amount was collected).
+    if sale.payment_method != 'CREDIT':
+        explicit_amount = request.POST.get('payment_amount', '').strip()
+        try:
+            pay_amount = Decimal(explicit_amount) if explicit_amount else Decimal(str(sale.total_amount))
+        except Exception:
+            pay_amount = Decimal(str(sale.total_amount))
+
+        if pay_amount > 0:
+            try:
+                Payment.objects.create(
+                    sale=sale,
+                    store=sale.store,
+                    amount=pay_amount,
+                    payment_method=sale.payment_method,
+                    transaction_reference=request.POST.get('payment_reference', ''),
+                    is_confirmed=True,
+                    confirmed_at=timezone.now(),
+                    created_by=sale.created_by,
+                    payment_type='FULL',
+                )
+                logger.info(
+                    f"Auto-created Payment {pay_amount} ({sale.payment_method}) "
+                    f"for {sale.document_type} {sale.document_number}"
+                )
+            except Exception as e:
+                # Log but never let a Payment creation failure roll back the sale.
+                logger.error(f"Failed to auto-create Payment for sale {sale.id}: {e}", exc_info=True)
 
     if getattr(sale, '_defer_auto_fiscalize', False):
         try:

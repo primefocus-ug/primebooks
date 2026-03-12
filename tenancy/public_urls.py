@@ -15,7 +15,7 @@ urlpatterns = [
     path('pricing/', TemplateView.as_view(template_name='public_router/pricing.html'), name='pricing'),
     path('features/', TemplateView.as_view(template_name='public_router/features.html'), name='features'),
     path('about/', TemplateView.as_view(template_name='public_router/about.html'), name='about'),
-
+    path('partners/', include('referral.urls', )),
     # Tenant signup
     path('prime-books/', include('public_router.urls')),
 

@@ -4,418 +4,17 @@
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}Invoice {{ invoice.number }} - EFRIS{% endblock %}
+{% block title %}Invoice {{ invoice_no }} - EFRIS{% endblock %}
 
 {% block breadcrumb_items %}
 <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
 <li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
-<li class="breadcrumb-item"><a href="{% url 'efris:invoice_list' %}">Invoices</a></li>
-<li class="breadcrumb-item active">{{ invoice.number }}</li>
+<li class="breadcrumb-item"><a href="{% url 'efris:normal_invoices' %}">Normal Invoices</a></li>
+<li class="breadcrumb-item active">{{ invoice_no }}</li>
 {% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
-<style>
-
-</style>
-
-{% endblock %}
-{% block content %}
-<div class="container-fluid">
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h2 mb-1">Invoice {{ invoice.number }}</h1>
-            <p class="text-muted mb-0">Fiscalization details and audit trail</p>
-        </div>
-        <div class="d-flex gap-2">
-            {% if not invoice.is_fiscalized %}
-            <form method="POST" action="{% url 'efris:invoice_fiscalize' invoice.id %}" class="d-inline">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-primary" onclick="return confirm('Fiscalize this invoice with EFRIS?')">
-                    <i class="bi bi-send-check"></i> Fiscalize Now
-                </button>
-            </form>
-            {% endif %}
-            <a href="{% url 'efris:invoice_list' %}" class="btn btn-outline-secondary">
-                <i class="bi bi-arrow-left"></i> Back to List
-            </a>
-        </div>
-    </div>
-
-    <div class="row">
-        <!-- Left Column - Main Content -->
-        <div class="col-lg-8">
-            <!-- Invoice Information Card -->
-            <div class="card mb-4">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0 totall"><i class="bi bi-receipt me-2"></i>Invoice Information</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row g-3 totall">
-                        <div class="col-md-6">
-                            <div class="p-3 dre rounded">
-                                <label class="small fw-bold text-muted d-block mb-1">Invoice Number</label>
-                                <h5 class="mb-0 text-primary totall">{{ invoice.number }}</h5>
-                            </div>
-                        </div>
-                        <div class="col-md-6 totall">
-                            <div class="p-3 dre rounded">
-                                <label class="small fw-bold text-muted d-block mb-1">Invoice Date</label>
-                                <p class="mb-0 totall"><i class="bi bi-calendar3 me-1"></i>{{ invoice.created_at|date:"F d, Y" }}</p>
-                                <small class="text-muted">{{ invoice.created_at|date:"h:i A" }}</small>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="p-3 dre rounded">
-                                <label class="small fw-bold text-muted d-block mb-1">Customer</label>
-                                <p class="mb-0 totall">
-                                    <i class="bi bi-person me-1"></i>
-                                    {{ invoice.customer.name|default:"Walk-in Customer" }}
-                                </p>
-                                {% if invoice.customer.tin %}
-                                <small class="text-muted">TIN: {{ invoice.customer.tin }}</small>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="p-3 dre rounded">
-                                <label class="small fw-bold text-muted d-block mb-1">Invoice Status</label>
-                                <p class="mb-0">
-                                    {% if invoice.status == 'paid' %}
-                                    <span class="badge bg-success px-3 py-2">
-                                        <i class="bi bi-check-circle me-1"></i>Paid
-                                    </span>
-                                    {% elif invoice.status == 'draft' %}
-                                    <span class="badge bg-secondary px-3 py-2">
-                                        <i class="bi bi-pencil me-1"></i>Draft
-                                    </span>
-                                    {% elif invoice.status == 'pending' %}
-                                    <span class="badge bg-warning px-3 py-2">
-                                        <i class="bi bi-clock me-1"></i>Pending
-                                    </span>
-                                    {% else %}
-                                    <span class="badge bg-info px-3 py-2">{{ invoice.status|title }}</span>
-                                    {% endif %}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <hr class="my-4">
-
-                    <!-- EFRIS Fiscalization Details -->
-                    <div class="row g-3">
-                        <div class="col-12">
-                            <h6 class="text-muted mb-3"><i class="bi bi-shield-check me-2"></i>EFRIS Fiscalization Details</h6>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="p-3 border rounded">
-                                <label class="small fw-bold text-muted d-block mb-2">Fiscalization Status</label>
-                                {% if invoice.is_fiscalized %}
-                                <span class="badge bg-success px-3 py-2">
-                                    <i class="bi bi-shield-check me-1"></i>Fiscalized
-                                </span>
-                                {% else %}
-                                <span class="badge bg-warning px-3 py-2">
-                                    <i class="bi bi-hourglass-split me-1"></i>Pending Fiscalization
-                                </span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% if invoice.is_fiscalized %}
-                        <div class="col-md-6">
-                            <div class="p-3 border rounded">
-                                <label class="small fw-bold text-muted d-block mb-2">Fiscalization Date</label>
-                                <p class="mb-0">
-                                    {% if invoice.fiscalization_date %}
-                                    <i class="bi bi-calendar-check me-1"></i>{{ invoice.fiscalization_date|date:"F d, Y" }}
-                                    <br><small class="text-muted">{{ invoice.fiscalization_date|date:"h:i:s A" }}</small>
-                                    {% else %}
-                                    <span class="text-muted">Not available</span>
-                                    {% endif %}
-                                </p>
-                            </div>
-                        </div>
-                        <div class="col-md-12">
-                            <div class="p-3 border rounded bg-success bg-opacity-10">
-                                <label class="small fw-bold text-muted d-block mb-2">Fiscal Document Code</label>
-                                {% if invoice.fiscal_code %}
-                                <div class="d-flex align-items-center justify-content-between">
-                                    <code class="fs-5 text-success">{{ invoice.fiscal_code }}</code>
-                                    <button class="btn btn-sm btn-outline-success" onclick="copyFiscalCode('{{ invoice.fiscal_code }}')">
-                                        <i class="bi bi-clipboard"></i> Copy
-                                    </button>
-                                </div>
-                                {% else %}
-                                <span class="text-muted">No fiscal code assigned</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Audit Trail Card -->
-            <div class="card">
-                <div class="card-header bg-secondary text-white">
-                    <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Fiscalization Audit Trail</h5>
-                </div>
-                <div class="card-body">
-                    {% if audits %}
-                    <div class="timeline position-relative">
-                        {% for audit in audits %}
-                        <div class="timeline-item mb-4 position-relative">
-                            <div class="d-flex">
-                                <!-- Timeline Icon -->
-                                <div class="timeline-icon me-3 flex-shrink-0">
-                                    {% if audit.success %}
-                                    <div class="bg-success text-white rounded-circle d-flex align-items-center justify-content-center"
-                                         style="width: 44px; height: 44px;">
-                                        <i class="bi bi-check-lg fs-5"></i>
-                                    </div>
-                                    {% else %}
-                                    <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center"
-                                         style="width: 44px; height: 44px;">
-                                        <i class="bi bi-x-lg fs-5"></i>
-                                    </div>
-                                    {% endif %}
-                                </div>
-
-                                <!-- Timeline Content -->
-                                <div class="timeline-content flex-grow-1 border rounded p-3 {% if audit.success %}border-success{% else %}border-danger{% endif %} dre">
-                                    <div class="d-flex justify-content-between align-items-start mb-2">
-                                        <div>
-                                            <h6 class="mb-1 fw-bold">{{ audit.action|title }}</h6>
-                                            <small class="text-muted">
-                                                <i class="bi bi-clock me-1"></i>{{ audit.created_at|date:"F d, Y - h:i:s A" }}
-                                            </small>
-                                        </div>
-                                        {% if audit.success %}
-                                        <span class="badge bg-success">
-                                            <i class="bi bi-check-circle me-1"></i>Success
-                                        </span>
-                                        {% else %}
-                                        <span class="badge bg-danger">
-                                            <i class="bi bi-x-circle me-1"></i>Failed
-                                        </span>
-                                        {% endif %}
-                                    </div>
-
-                                    {% if audit.performed_by %}
-                                    <p class="mb-2 small">
-                                        <i class="bi bi-person-badge me-1"></i>
-                                        <strong>Performed by:</strong> {{ audit.performed_by.get_full_name|default:audit.performed_by.username }}
-                                    </p>
-                                    {% endif %}
-
-                                    {% if audit.error_message %}
-                                    <div class="alert alert-danger mb-2">
-                                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                                        <strong>Error:</strong> {{ audit.error_message }}
-                                    </div>
-                                    {% endif %}
-
-                                    {% if audit.details %}
-                                    <div class="mt-2">
-                                        <button class="btn btn-sm btn-outline-secondary" type="button"
-                                                data-bs-toggle="collapse" data-bs-target="#details{{ audit.id }}">
-                                            <i class="bi bi-code-square me-1"></i>View Details
-                                        </button>
-                                        <div class="collapse mt-2" id="details{{ audit.id }}">
-                                            <div class="bg-dark text-light p-3 rounded">
-                                                <pre class="mb-0 text-light" style="max-height: 300px; overflow-y: auto; font-size: 0.8rem; white-space: pre-wrap;">{{ audit.details }}</pre>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            <!-- Connecting Line (except for last item) -->
-                            {% if not forloop.last %}
-                            <div style="position: absolute; left: 21px; top: 44px; bottom: -16px; width: 2px; background-color: #dee2e6;"></div>
-                            {% endif %}
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                    <div class="text-center py-5">
-                        <i class="bi bi-clock-history text-muted" style="font-size: 4rem; opacity: 0.3;"></i>
-                        <p class="text-muted mt-3 mb-1 fw-bold">No Fiscalization Attempts Yet</p>
-                        <p class="text-muted small">This invoice has not been submitted to EFRIS for fiscalization.</p>
-                        {% if not invoice.is_fiscalized %}
-                        <form method="POST" action="{% url 'efris:invoice_fiscalize' invoice.id %}" class="mt-3">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-primary" onclick="return confirm('Fiscalize this invoice now?')">
-                                <i class="bi bi-send-check"></i> Fiscalize Invoice
-                            </button>
-                        </form>
-                        {% endif %}
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Right Column - Sidebar -->
-        <div class="col-lg-4">
-            <!-- Quick Actions Card -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-lightning-charge me-2"></i>Quick Actions</h5>
-                </div>
-                <div class="card-body">
-                    <div class="d-grid gap-2">
-                        <button type="button" class="btn btn-outline-info" id="refreshStatusBtn">
-                            <i class="bi bi-arrow-repeat me-1"></i> Refresh Status
-                        </button>
-                        {% if invoice.is_fiscalized %}
-                        <button type="button" class="btn btn-outline-success">
-                            <i class="bi bi-printer me-1"></i> Print Receipt
-                        </button>
-                        <button type="button" class="btn btn-outline-primary">
-                            <i class="bi bi-download me-1"></i> Download PDF
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="copyFiscalCode('{{ invoice.fiscal_code }}')">
-                            <i class="bi bi-clipboard me-1"></i> Copy Fiscal Code
-                        </button>
-                        {% else %}
-                        <form method="POST" action="{% url 'efris:invoice_fiscalize' invoice.id %}">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-primary w-100" onclick="return confirm('Fiscalize this invoice?')">
-                                <i class="bi bi-send-check me-1"></i> Fiscalize Now
-                            </button>
-                        </form>
-                        {% endif %}
-                        <hr>
-                        <a href="{% url 'efris:diagnostic_tool' %}" class="btn btn-outline-warning">
-                            <i class="bi bi-activity me-1"></i> Run Diagnostics
-                        </a>
-                        <a href="{% url 'efris:api_logs' %}" class="btn btn-outline-secondary">
-                            <i class="bi bi-journal-text me-1"></i> View API Logs
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Financial Summary Card -->
-            <div class="card mb-4">
-                <div class="card-header bg-success text-white">
-                    <h5 class="mb-0"><i class="bi bi-calculator me-2"></i>Financial Summary</h5>
-                </div>
-                <div class="card-body">
-                    <div class="mb-3 pb-3 border-bottom">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="text-muted">Subtotal:</span>
-                            <span class="fw-bold totall">UGX {{ invoice.subtotal|money|default:"0.00" }}</span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="text-muted">Tax (18%):</span>
-                            <span class="fw-bold totall">UGX {{ invoice.tax_amount|money|default:"0.00" }}</span>
-                        </div>
-                        {% if invoice.discount_amount %}
-                        <div class="d-flex justify-content-between align-items-center text-danger">
-                            <span>Discount:</span>
-                            <span class="fw-bold totall">-UGX {{ invoice.discount_amount|money }}</span>
-                        </div>
-                        {% endif %}
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0 text-success">Total:</h5>
-                        <h4 class="mb-0 text-success">UGX {{ invoice.total_amount|money|default:"0.00" }}</h4>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Invoice Statistics Card -->
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Invoice Statistics</h5>
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <small class="text-muted d-block mb-1">Total Items</small>
-                        <h4 class="mb-0 totall">{{ invoice.items.count|default:"0" }}</h4>
-                    </div>
-                    <hr>
-                    <div class="mb-3">
-                        <small class="text-muted d-block mb-1">Created By</small>
-                        <p class="mb-0 totall">
-                            <i class="bi bi-person-circle me-1 totall"></i>
-                            {{ invoice.created_by.get_full_name|default:invoice.created_by.username|default:"System" }}
-                        </p>
-                    </div>
-                    <hr>
-                    <div class="mb-3">
-                        <small class="text-muted d-block mb-1">Last Updated</small>
-                        <p class="mb-0">
-                            <i class="bi bi-clock me-1 totall"></i>
-                            {{ invoice.updated_at|date:"M d, Y H:i"|default:invoice.created_at|date:"M d, Y H:i" }}
-                        </p>
-                    </div>
-                    {% if invoice.is_fiscalized %}
-                    <hr>
-                    <div>
-                        <small class="text-muted d-block mb-1">Fiscalization Attempts</small>
-                        <h4 class="mb-0 text-primary">{{ audits.count }}</h4>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Refresh Status Button
-    const refreshBtn = document.getElementById('refreshStatusBtn');
-
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', function() {
-            refreshBtn.disabled = true;
-            const originalHTML = refreshBtn.innerHTML;
-            refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Checking...';
-
-            fetch("{% url 'efris:ajax_invoice_status' invoice.id %}")
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        window.showAlert('Status refreshed successfully!', 'success', 2000);
-                        setTimeout(() => location.reload(), 1500);
-                    } else {
-                        window.showAlert('Failed to refresh status', 'danger');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    window.showAlert('Error refreshing status: ' + error.message, 'danger');
-                })
-                .finally(() => {
-                    refreshBtn.disabled = false;
-                    refreshBtn.innerHTML = originalHTML;
-                });
-        });
-    }
-});
-
-// Copy Fiscal Code Function
-function copyFiscalCode(code) {
-    if (!code) {
-        window.showAlert('No fiscal code to copy', 'warning');
-        return;
-    }
-
-    navigator.clipboard.writeText(code).then(function() {
-        window.showAlert('Fiscal code copied to clipboard!', 'success', 2000);
-    }).catch(function(err) {
-        console.error('Failed to copy:', err);
-        window.showAlert('Failed to copy fiscal code', 'danger');
-    });
-}
-</script>
-
 <style>
 /* Timeline specific styles */
 .timeline {
@@ -450,5 +49,356 @@ function copyFiscalCode(code) {
         font-size: 1rem !important;
     }
 }
+
+/* Fiscal code styling */
+.fiscal-code {
+    font-family: monospace;
+    font-size: 1.1rem;
+    word-break: break-all;
+}
 </style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">Invoice {{ invoice_no }}</h1>
+            <p class="text-muted mb-0">Fiscalization details from EFRIS</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'efris:normal_invoices' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to List
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Left Column - Main Content -->
+        <div class="col-lg-8">
+            <!-- Invoice Information Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-receipt me-2"></i>Invoice Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="p-3 bg-light rounded">
+                                <label class="small fw-bold text-muted d-block mb-1">Invoice Number</label>
+                                <h5 class="mb-0 text-primary">{{ invoice_no }}</h5>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-3 bg-light rounded">
+                                <label class="small fw-bold text-muted d-block mb-1">Invoice Date</label>
+                                <p class="mb-0"><i class="bi bi-calendar3 me-1"></i>
+                                    {% with basic_info=invoice.basicInformation %}
+                                        {% if basic_info and basic_info.issuedDate %}
+                                            {{ basic_info.issuedDate }}
+                                        {% endif %}
+                                    {% endwith %}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-3 bg-light rounded">
+                                <label class="small fw-bold text-muted d-block mb-1">Customer</label>
+                                <p class="mb-0">
+                                    <i class="bi bi-person me-1"></i>
+                                    {% with buyer=invoice.buyerDetails %}
+                                        {% if buyer %}
+                                            {{ buyer.buyerLegalName|default:"Walk-in Customer" }}
+                                        {% endif %}
+                                    {% endwith %}
+                                </p>
+                                {% with buyer=invoice.buyerDetails %}
+                                    {% if buyer and buyer.buyerTin %}
+                                    <small class="text-muted">TIN: {{ buyer.buyerTin }}</small>
+                                    {% endif %}
+                                {% endwith %}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-3 bg-light rounded">
+                                <label class="small fw-bold text-muted d-block mb-1">Invoice Status</label>
+                                <p class="mb-0">
+                                    <span class="badge bg-success px-3 py-2">
+                                        <i class="bi bi-check-circle me-1"></i>Fiscalized
+                                    </span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+
+                    <!-- EFRIS Fiscalization Details -->
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <h6 class="text-muted mb-3"><i class="bi bi-shield-check me-2"></i>EFRIS Fiscalization Details</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-3 border rounded">
+                                <label class="small fw-bold text-muted d-block mb-2">Fiscalization Status</label>
+                                <span class="badge bg-success px-3 py-2">
+                                    <i class="bi bi-shield-check me-1"></i>Fiscalized
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-3 border rounded">
+                                <label class="small fw-bold text-muted d-block mb-2">Fiscalization Date</label>
+                                <p class="mb-0">
+                                    {% with basic_info=invoice.basicInformation %}
+                                        {% if basic_info and basic_info.issuedDate %}
+                                            <i class="bi bi-calendar-check me-1"></i>{{ basic_info.issuedDate }}
+                                        {% else %}
+                                            <span class="text-muted">Not available</span>
+                                        {% endif %}
+                                    {% endwith %}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="col-md-12">
+                            <div class="p-3 border rounded bg-success bg-opacity-10">
+                                <label class="small fw-bold text-muted d-block mb-2">Anti-Fake Code</label>
+                                {% with basic_info=invoice.basicInformation %}
+                                    {% if basic_info and basic_info.antifakeCode %}
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <code class="fiscal-code text-success">{{ basic_info.antifakeCode }}</code>
+                                        <button class="btn btn-sm btn-outline-success ms-2 flex-shrink-0" onclick="copyFiscalCode('{{ basic_info.antifakeCode }}')">
+                                            <i class="bi bi-clipboard"></i> Copy
+                                        </button>
+                                    </div>
+                                    {% else %}
+                                    <span class="text-muted">No anti-fake code assigned</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </div>
+                        </div>
+                        {% with summary=invoice.summary %}
+                            {% if summary and summary.qrCode %}
+                            <div class="col-md-12 mt-3">
+                                <div class="p-3 border rounded">
+                                    <label class="small fw-bold text-muted d-block mb-2">QR Code Validation Link</label>
+                                    <a href="{{ summary.qrCode }}" target="_blank" class="text-break">
+                                        {{ summary.qrCode }}
+                                        <i class="bi bi-box-arrow-up-right ms-1"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            {% endif %}
+                        {% endwith %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Goods/Services Items Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>Invoice Items</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-3">#</th>
+                                    <th>Item Description</th>
+                                    <th>Code</th>
+                                    <th class="text-center">Qty</th>
+                                    <th class="text-end">Unit Price</th>
+                                    <th class="text-end">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% with goods=invoice.goodsDetails %}
+                                    {% if goods %}
+                                        {% for item in goods %}
+                                        <tr>
+                                            <td class="ps-3">{{ forloop.counter }}</td>
+                                            <td>{{ item.item|default:"N/A" }}</td>
+                                            <td>{{ item.itemCode|default:"-" }}</td>
+                                            <td class="text-center">{{ item.qty|default:"0" }} {{ item.unitOfMeasure|default:"" }}</td>
+                                            <td class="text-end">UGX {{ item.unitPrice|floatformat:2|default:"0.00" }}</td>
+                                            <td class="text-end">UGX {{ item.total|floatformat:2|default:"0.00" }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr>
+                                            <td colspan="6" class="text-center py-4 text-muted">
+                                                No items found for this invoice
+                                            </td>
+                                        </tr>
+                                    {% endif %}
+                                {% endwith %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tax Details Card -->
+            {% with tax_details=invoice.taxDetails %}
+                {% if tax_details %}
+                <div class="card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-percent me-2"></i>Tax Breakdown</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-3">Tax Rate</th>
+                                        <th class="text-end">Gross Amount</th>
+                                        <th class="text-end">Tax Amount</th>
+                                        <th class="text-end pe-3">Net Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for tax in tax_details %}
+                                    <tr>
+                                        <td class="ps-3">{{ tax.taxRateName|default:tax.taxRate|default:"-" }}</td>
+                                        <td class="text-end">UGX {{ tax.grossAmount|floatformat:2|default:"0.00" }}</td>
+                                        <td class="text-end">UGX {{ tax.taxAmount|floatformat:2|default:"0.00" }}</td>
+                                        <td class="text-end pe-3">UGX {{ tax.netAmount|floatformat:2|default:"0.00" }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        <!-- Right Column - Sidebar -->
+        <div class="col-lg-4">
+            <!-- Quick Actions Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-lightning-charge me-2"></i>Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="https://efristest.ura.go.ug/site_new/#/invoiceValidation?invoiceNo={{ invoice_no }}"
+                           target="_blank"
+                           class="btn btn-outline-primary">
+                            <i class="bi bi-shield-check me-1"></i> Validate on URA Portal
+                        </a>
+                        <button type="button" class="btn btn-outline-success" onclick="window.print()">
+                            <i class="bi bi-printer me-1"></i> Print Invoice
+                        </button>
+                        {% with basic_info=invoice.basicInformation %}
+                            {% if basic_info and basic_info.antifakeCode %}
+                            <button type="button" class="btn btn-outline-secondary" onclick="copyFiscalCode('{{ basic_info.antifakeCode }}')">
+                                <i class="bi bi-clipboard me-1"></i> Copy Anti-Fake Code
+                            </button>
+                            {% endif %}
+                        {% endwith %}
+                        <hr>
+                        <a href="{% url 'efris:normal_invoices' %}" class="btn btn-outline-info">
+                            <i class="bi bi-list me-1"></i> View All Invoices
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Financial Summary Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-calculator me-2"></i>Financial Summary</h5>
+                </div>
+                <div class="card-body">
+                    {% with summary=invoice.summary %}
+                        {% if summary %}
+                            <div class="mb-3 pb-3 border-bottom">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="text-muted">Subtotal:</span>
+                                    <span class="fw-bold">UGX {{ summary.grossAmount|floatformat:2|default:"0.00" }}</span>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="text-muted">Total Tax:</span>
+                                    <span class="fw-bold">UGX {{ summary.taxAmount|floatformat:2|default:"0.00" }}</span>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0 text-success">Total Amount:</h5>
+                                <h4 class="mb-0 text-success">UGX {{ summary.netAmount|floatformat:2|default:"0.00" }}</h4>
+                            </div>
+                            {% if summary.itemCount %}
+                            <div class="mt-3 text-muted small">
+                                <i class="bi bi-box me-1"></i> Total Items: {{ summary.itemCount }}
+                            </div>
+                            {% endif %}
+                        {% else %}
+                            <p class="text-muted text-center mb-0">No summary data available</p>
+                        {% endif %}
+                    {% endwith %}
+                </div>
+            </div>
+
+            <!-- Seller Information Card -->
+            {% with seller=invoice.sellerDetails %}
+                {% if seller %}
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-building me-2"></i>Seller Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <small class="text-muted d-block">Business Name</small>
+                            <p class="mb-0 fw-bold">{{ seller.businessName|default:"N/A" }}</p>
+                        </div>
+                        <div class="mb-3">
+                            <small class="text-muted d-block">TIN</small>
+                            <p class="mb-0">{{ seller.tin|default:"N/A" }}</p>
+                        </div>
+                        {% if seller.branchName %}
+                        <div class="mb-3">
+                            <small class="text-muted d-block">Branch</small>
+                            <p class="mb-0">{{ seller.branchName }}</p>
+                        </div>
+                        {% endif %}
+                        {% if seller.address %}
+                        <div class="mb-3">
+                            <small class="text-muted d-block">Address</small>
+                            <p class="mb-0">{{ seller.address }}</p>
+                        </div>
+                        {% endif %}
+                        {% if seller.mobilePhone %}
+                        <div>
+                            <small class="text-muted d-block">Contact</small>
+                            <p class="mb-0">{{ seller.mobilePhone }}</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            {% endwith %}
+        </div>
+    </div>
+</div>
+
+<script>
+// Copy Fiscal Code Function
+function copyFiscalCode(code) {
+    if (!code) {
+        alert('No fiscal code to copy');
+        return;
+    }
+
+    navigator.clipboard.writeText(code).then(function() {
+        // Simple alert since showAlert might not be available
+        alert('Anti-fake code copied to clipboard!');
+    }).catch(function(err) {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy fiscal code');
+    });
+}
+</script>
 {% endblock %}
