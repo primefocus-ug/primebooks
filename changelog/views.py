@@ -251,117 +251,134 @@ def changelog_admin_preview(request, pk):
     release     = get_object_or_404(ChangelogRelease, pk=pk)
     slides_data = _build_slides_data(release)
 
-    # Build a minimal HTML page that renders the modal immediately
-    push_url    = reverse('changelog_push', args=[pk])
-    back_url    = reverse('admin:changelog_changelogrelease_change', args=[pk])
-
+    # Build URLs
+    push_url = reverse('changelog_push', args=[pk])
+    back_url = reverse('admin:changelog_changelogrelease_change', args=[pk])
     slides_json = json.dumps(slides_data)
 
-    html = f"""<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Preview: {release.version_tag}</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
-<style>
-body {{ margin:0; background:#f3f4f6; font-family: system-ui, sans-serif; }}
-.preview-bar {{
-    position: fixed; top: 0; left: 0; right: 0; z-index: 99999;
-    background: #1e293b; color: #f1f5f9;
-    padding: 0.6rem 1.25rem;
-    display: flex; align-items: center; gap: 1rem; font-size: 0.82rem;
-}}
-.preview-bar strong {{ color: #818cf8; }}
-.preview-bar a {{
-    margin-left: auto; background: #8b5cf6; color: #fff;
-    padding: 0.3rem 0.9rem; border-radius: 6px; text-decoration: none;
-    font-weight: 600; font-size: 0.78rem;
-}}
-.preview-bar a.back {{ background: #374151; margin-left: 0; }}
-.preview-notice {{
-    margin-top: 44px; padding: 0.5rem 1rem;
-    background: #fef3c7; border-bottom: 1px solid #fcd34d;
-    font-size: 0.78rem; color: #92400e; text-align: center;
-}}
-</style>
-</head>
-<body>
-<div class="preview-bar">
-    <a href="{back_url}" class="back">← Back to admin</a>
-    <span>Preview: <strong>{release.version_tag}</strong> — {release.title}</span>
-    <a href="{push_url}">📢 Push to all users</a>
-</div>
-<div class="preview-notice">
-    ⚠️ Admin preview — this modal will appear to users on their next login.
-    View records are <strong>not</strong> recorded during preview.
-</div>
+    # ── Build slides HTML separately to avoid nested f-string issues
+    #    (nested triple-quoted f-strings are a SyntaxError in Python < 3.12)
+    if slides_data:
+        slide_parts = []
+        for s in slides_data:
+            tag_html = (
+                '<div style="font-size:0.67rem;font-weight:700;text-transform:uppercase;'
+                'letter-spacing:0.06em;color:#6366f1;margin-bottom:0.35rem">'
+                + s['tag_display']
+                + '</div>'
+            )
+            title_html = (
+                '<div style="font-size:0.95rem;font-weight:700;color:#111827;margin-bottom:0.35rem">'
+                + s['title']
+                + '</div>'
+            )
+            desc_html = (
+                '<div style="font-size:0.835rem;color:#6b7280;line-height:1.6">'
+                + s['description']
+                + '</div>'
+            )
+            slide_parts.append(
+                '<div style="border:1px solid #e5e7eb;border-radius:10px;'
+                'padding:1rem;margin-bottom:0.75rem">'
+                + tag_html + title_html + desc_html
+                + '</div>'
+            )
+        slides_html = ''.join(slide_parts)
+    else:
+        slides_html = (
+            '<p style="color:#9ca3af;text-align:center;padding:2rem 0">'
+            'No slides yet \u2014 add slides in the admin.</p>'
+        )
 
-<!-- Inject slides as JSON for the modal JS -->
-<script>
-window.__PREVIEW_RELEASE__ = {{
-    id:          {release.pk},
-    version_tag: "{release.version_tag}",
-    title:       "{release.title}",
-    subtitle:    "{release.subtitle}",
-    slides:      {slides_json},
-}};
-window.__IS_PREVIEW__ = true;
-</script>
+    slide_count_label = '{} slide(s) \u00b7 {}'.format(
+        len(slides_data),
+        release.get_release_type_display(),
+    )
 
-<!-- Include the changelog modal CSS+JS inline via template tag in production.
-     For the preview page we load it from a static file. -->
-<link rel="stylesheet" href="/static/css/changelog_modal.css" onerror="this.remove()">
-
-<!-- Fallback: render a minimal preview if the CSS file doesn't exist yet -->
-<div id="cl-preview-fallback" style="
-    display:flex; align-items:center; justify-content:center;
-    min-height:calc(100vh - 80px); padding: 2rem;
-">
-    <div style="
-        background:#fff; border:1px solid #e5e7eb; border-radius:16px;
-        width:100%; max-width:640px; padding:2rem;
-        box-shadow:0 20px 60px rgba(0,0,0,0.12);
-        font-family: system-ui, sans-serif;
-    ">
-        <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem">
-            <span style="
-                background:linear-gradient(135deg,#6366f1,#8b5cf6);
-                color:#fff;border-radius:20px;padding:0.2rem 0.75rem;
-                font-size:0.7rem;font-weight:700;letter-spacing:0.06em
-            ">✦ WHAT'S NEW</span>
-            <code style="
-                background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;
-                padding:0.15rem 0.5rem;font-size:0.7rem;color:#6b7280
-            ">{release.version_tag}</code>
-            <div>
-                <div style="font-size:0.85rem;font-weight:700;color:#111827">{release.title}</div>
-                <div style="font-size:0.72rem;color:#6b7280">{release.subtitle}</div>
-            </div>
-        </div>
-        {''.join([
-            f"""<div style="border:1px solid #e5e7eb;border-radius:10px;padding:1rem;margin-bottom:0.75rem;">
-                <div style="font-size:0.67rem;font-weight:700;text-transform:uppercase;
-                            letter-spacing:0.06em;color:#6366f1;margin-bottom:0.35rem">
-                    {s['tag_display']}
-                </div>
-                <div style="font-size:0.95rem;font-weight:700;color:#111827;margin-bottom:0.35rem">
-                    {s['title']}
-                </div>
-                <div style="font-size:0.835rem;color:#6b7280;line-height:1.6">
-                    {s['description']}
-                </div>
-            </div>"""
-            for s in slides_data
-        ] or ['<p style="color:#9ca3af;text-align:center;padding:2rem 0">No slides yet — add slides in the admin.</p>'])}
-        <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #e5e7eb;
-                    font-size:0.75rem;color:#9ca3af;text-align:center">
-            {len(slides_data)} slide(s) · {release.get_release_type_display()}
-        </div>
-    </div>
-</div>
-</body>
-</html>"""
+    html = (
+        '<!DOCTYPE html>'
+        '<html lang="en" data-theme="light">'
+        '<head>'
+        '<meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>Preview: ' + release.version_tag + '</title>'
+        '<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">'
+        '<style>'
+        'body{margin:0;background:#f3f4f6;font-family:system-ui,sans-serif}'
+        '.preview-bar{'
+            'position:fixed;top:0;left:0;right:0;z-index:99999;'
+            'background:#1e293b;color:#f1f5f9;'
+            'padding:0.6rem 1.25rem;'
+            'display:flex;align-items:center;gap:1rem;font-size:0.82rem}'
+        '.preview-bar strong{color:#818cf8}'
+        '.preview-bar a{'
+            'margin-left:auto;background:#8b5cf6;color:#fff;'
+            'padding:0.3rem 0.9rem;border-radius:6px;text-decoration:none;'
+            'font-weight:600;font-size:0.78rem}'
+        '.preview-bar a.back{background:#374151;margin-left:0}'
+        '.preview-notice{'
+            'margin-top:44px;padding:0.5rem 1rem;'
+            'background:#fef3c7;border-bottom:1px solid #fcd34d;'
+            'font-size:0.78rem;color:#92400e;text-align:center}'
+        '</style>'
+        '</head>'
+        '<body>'
+        '<div class="preview-bar">'
+            '<a href="' + back_url + '" class="back">\u2190 Back to admin</a>'
+            '<span>Preview: <strong>' + release.version_tag + '</strong> \u2014 ' + release.title + '</span>'
+            '<a href="' + push_url + '">\U0001f4e2 Push to all users</a>'
+        '</div>'
+        '<div class="preview-notice">'
+            '\u26a0\ufe0f Admin preview \u2014 this modal will appear to users on their next login. '
+            'View records are <strong>not</strong> recorded during preview.'
+        '</div>'
+        '<script>'
+        'window.__PREVIEW_RELEASE__ = {'
+            'id:' + str(release.pk) + ','
+            'version_tag:"' + release.version_tag + '",'
+            'title:"' + release.title.replace('"', '\\"') + '",'
+            'subtitle:"' + release.subtitle.replace('"', '\\"') + '",'
+            'slides:' + slides_json +
+        '};'
+        'window.__IS_PREVIEW__ = true;'
+        '</script>'
+        '<link rel="stylesheet" href="/static/css/changelog_modal.css" onerror="this.remove()">'
+        '<div id="cl-preview-fallback" style="'
+            'display:flex;align-items:center;justify-content:center;'
+            'min-height:calc(100vh - 80px);padding:2rem">'
+            '<div style="'
+                'background:#fff;border:1px solid #e5e7eb;border-radius:16px;'
+                'width:100%;max-width:640px;padding:2rem;'
+                'box-shadow:0 20px 60px rgba(0,0,0,0.12);'
+                'font-family:system-ui,sans-serif">'
+                '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem">'
+                    '<span style="'
+                        'background:linear-gradient(135deg,#6366f1,#8b5cf6);'
+                        'color:#fff;border-radius:20px;padding:0.2rem 0.75rem;'
+                        'font-size:0.7rem;font-weight:700;letter-spacing:0.06em">'
+                        '\u2736 WHAT\'S NEW'
+                    '</span>'
+                    '<code style="'
+                        'background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;'
+                        'padding:0.15rem 0.5rem;font-size:0.7rem;color:#6b7280">'
+                        + release.version_tag +
+                    '</code>'
+                    '<div>'
+                        '<div style="font-size:0.85rem;font-weight:700;color:#111827">' + release.title + '</div>'
+                        '<div style="font-size:0.72rem;color:#6b7280">' + release.subtitle + '</div>'
+                    '</div>'
+                '</div>'
+                + slides_html +
+                '<div style="'
+                    'margin-top:1rem;padding-top:1rem;border-top:1px solid #e5e7eb;'
+                    'font-size:0.75rem;color:#9ca3af;text-align:center">'
+                    + slide_count_label +
+                '</div>'
+            '</div>'
+        '</div>'
+        '</body>'
+        '</html>'
+    )
 
     return HttpResponse(html)
 
