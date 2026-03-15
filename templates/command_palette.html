@@ -1,0 +1,447 @@
+{% load static %}
+
+{% if user.is_authenticated %}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+    --cp-bg:      rgba(15,23,42,0.8);
+    --cp-surface: #0f172a;
+    --cp-surface2:#1e293b;
+    --cp-border:  rgba(255,255,255,0.08);
+    --cp-accent:  #6366f1;
+    --cp-text:    #f1f5f9;
+    --cp-muted:   #94a3b8;
+    --cp-font:    'Plus Jakarta Sans', sans-serif;
+}
+[data-theme="light"] {
+    --cp-bg:      rgba(15,23,42,0.55);
+    --cp-surface: #ffffff;
+    --cp-surface2:#f8fafc;
+    --cp-border:  rgba(0,0,0,0.07);
+    --cp-text:    #0f172a;
+    --cp-muted:   #64748b;
+}
+
+/* ── Backdrop ── */
+#cpBackdrop {
+    display: none; position: fixed; inset: 0; z-index: 9500;
+    background: var(--cp-bg);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+#cpBackdrop.open { display: block; animation: cpFade 0.18s ease; }
+@keyframes cpFade { from{opacity:0}to{opacity:1} }
+
+/* ── Dialog ── */
+#cpDialog {
+    display: none; position: fixed;
+    top: 12vh; left: 50%; transform: translateX(-50%);
+    z-index: 9501;
+    width: calc(100% - 2rem); max-width: 620px;
+    background: var(--cp-surface);
+    border: 1px solid var(--cp-border);
+    border-radius: 16px;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
+    overflow: hidden;
+    font-family: var(--cp-font);
+    max-height: 72vh;
+    display: none;
+    flex-direction: column;
+}
+#cpDialog.open {
+    display: flex;
+    animation: cpSlideDown 0.24s cubic-bezier(0.16,1,0.3,1);
+}
+@keyframes cpSlideDown {
+    from{opacity:0;transform:translateX(-50%) translateY(-12px) scale(0.98)}
+    to  {opacity:1;transform:translateX(-50%) translateY(0)     scale(1)}
+}
+[data-theme="light"] #cpDialog {
+    box-shadow: 0 24px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05);
+}
+
+/* ── Search bar ── */
+.cp-search-row {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.875rem 1.125rem;
+    border-bottom: 1px solid var(--cp-border);
+    flex-shrink: 0;
+}
+.cp-search-icon { font-size: 1.05rem; color: var(--cp-muted); flex-shrink: 0; }
+#cpInput {
+    flex: 1; background: transparent; border: none; outline: none;
+    font-size: 1rem; font-weight: 500; color: var(--cp-text);
+    font-family: var(--cp-font);
+    caret-color: var(--cp-accent);
+}
+#cpInput::placeholder { color: var(--cp-muted); }
+.cp-kbd {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+    color: var(--cp-muted); background: var(--cp-surface2);
+    border: 1px solid var(--cp-border); border-radius: 5px;
+    padding: 0.15rem 0.45rem; flex-shrink: 0;
+}
+
+/* ── Results ── */
+#cpResults {
+    flex: 1; overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(99,102,241,0.3) transparent;
+}
+#cpResults::-webkit-scrollbar { width: 4px; }
+#cpResults::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 4px; }
+
+.cp-group-label {
+    padding: 0.6rem 1.125rem 0.3rem;
+    font-size: 0.67rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--cp-muted);
+    position: sticky; top: 0;
+    background: var(--cp-surface);
+    border-bottom: 1px solid var(--cp-border);
+    z-index: 1;
+}
+.cp-item {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.65rem 1.125rem;
+    cursor: pointer; transition: background 0.1s;
+    position: relative;
+}
+.cp-item:hover, .cp-item.active {
+    background: rgba(99,102,241,0.08);
+}
+.cp-item.active::before {
+    content: ''; position: absolute; left: 0; top: 20%; bottom: 20%;
+    width: 3px; background: var(--cp-accent); border-radius: 0 3px 3px 0;
+}
+.cp-item-icon {
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem;
+    background: var(--cp-surface2); color: var(--cp-muted);
+    border: 1px solid var(--cp-border);
+}
+.cp-item-icon.nav     { background:rgba(99,102,241,0.1);  color:#818cf8; }
+.cp-item-icon.action  { background:rgba(16,185,129,0.1);  color:#34d399; }
+.cp-item-icon.record  { background:rgba(245,158,11,0.1);  color:#fbbf24; }
+.cp-item-icon.toggle  { background:rgba(139,92,246,0.1);  color:#a78bfa; }
+.cp-item-icon.recent  { background:rgba(100,116,139,0.1); color:#94a3b8; }
+
+.cp-item-main  { flex: 1; min-width: 0; }
+.cp-item-label {
+    font-size: 0.855rem; font-weight: 600; color: var(--cp-text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cp-item-label mark {
+    background: rgba(99,102,241,0.2); color: var(--cp-accent);
+    border-radius: 2px; padding: 0 1px;
+}
+.cp-item-sub   { font-size: 0.72rem; color: var(--cp-muted); margin-top: 0.1rem; }
+.cp-item-kbd   {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.63rem;
+    color: var(--cp-muted); background: var(--cp-surface2);
+    border: 1px solid var(--cp-border); border-radius: 5px;
+    padding: 0.12rem 0.4rem; flex-shrink: 0;
+}
+
+/* Empty / loading */
+.cp-empty, .cp-loading {
+    padding: 2.5rem 1rem; text-align: center;
+    color: var(--cp-muted); font-size: 0.84rem;
+}
+.cp-loading i { animation: cpSpin 0.7s linear infinite; font-size: 1.25rem; }
+@keyframes cpSpin { to{transform:rotate(360deg)} }
+
+/* ── Footer hint ── */
+.cp-footer {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 0.55rem 1.125rem;
+    border-top: 1px solid var(--cp-border);
+    flex-shrink: 0;
+}
+.cp-hint {
+    display: flex; align-items: center; gap: 0.35rem;
+    font-size: 0.68rem; color: var(--cp-muted);
+}
+.cp-hint .cp-kbd { font-size: 0.6rem; padding: 0.1rem 0.35rem; }
+
+/* ── Mobile touch adjustments ── */
+@media (max-width: 600px) {
+    #cpDialog { top: 0; left: 0; right: 0; transform: none; width: 100%; max-width: 100%; border-radius: 0 0 16px 16px; max-height: 80vh; }
+    @keyframes cpSlideDown {
+        from{opacity:0;transform:translateY(-100%)}
+        to  {opacity:1;transform:translateY(0)}
+    }
+}
+</style>
+
+<div id="cpBackdrop"></div>
+<div id="cpDialog" role="combobox" aria-haspopup="listbox" aria-expanded="false">
+    <div class="cp-search-row">
+        <i class="bi bi-search cp-search-icon"></i>
+        <input id="cpInput" type="text" placeholder="Search pages, records, actions…"
+               autocomplete="off" spellcheck="false" aria-label="Command palette search"
+               role="searchbox">
+        <span class="cp-kbd">ESC</span>
+    </div>
+    <div id="cpResults" role="listbox"></div>
+    <div class="cp-footer">
+        <div class="cp-hint"><span class="cp-kbd">↑↓</span> navigate</div>
+        <div class="cp-hint"><span class="cp-kbd">↵</span> select</div>
+        <div class="cp-hint"><span class="cp-kbd">ESC</span> close</div>
+    </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const SEARCH_URL  = '{% url "palette_search" %}';
+const RECENT_KEY  = 'pb_cp_recent';
+const MAX_RECENT  = 8;
+const CSRF        = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+const backdrop = document.getElementById('cpBackdrop');
+const dialog   = document.getElementById('cpDialog');
+const input    = document.getElementById('cpInput');
+const results  = document.getElementById('cpResults');
+
+let activeIdx  = -1;
+let allItems   = [];
+let searchTimer = null;
+let isOpen     = false;
+
+// ── Static nav items ─────────────────────────────────────────
+const NAV_ITEMS = [
+    { label:'Dashboard',         sub:'Home',                   icon:'bi-grid-1x2',          url:'{% url "user_dashboard" %}',          group:'nav', kbd:'G D' },
+    { label:'Invoices',          sub:'Sales → Invoices',       icon:'bi-receipt',           url:'{% url "sales:sales_list" %}',        group:'nav', kbd:'G I' },
+    { label:'Products',          sub:'Inventory → Products',   icon:'bi-box-seam',          url:'{% url "inventory:product_list" %}',  group:'nav', kbd:'G P' },
+    { label:'Reports',           sub:'Analytics',              icon:'bi-bar-chart-line',    url:'{% url "suggestions:report_my_reports" %}', group:'nav', kbd:'G R' },
+    { label:'Users',             sub:'Accounts → Users',       icon:'bi-people',            url:'{% url "user_list" %}',               group:'nav', kbd:'G U' },
+    { label:'Settings',          sub:'Company settings',       icon:'bi-gear',              url:'/settings/',                          group:'nav' },
+    { label:'My Reports',        sub:'Support tickets',        icon:'bi-ticket-detailed',   url:'{% url "suggestions:report_my_reports" %}',        group:'nav' },
+];
+
+const ACTIONS = [
+    { label:'New Invoice',       sub:'Create a new sale',      icon:'bi-plus-circle',       action:'nav', url:'{% url "sales:create_sale" %}',       group:'action', kbd:'C I' },
+    { label:'New Product',       sub:'Add to inventory',       icon:'bi-plus-square',       action:'nav', url:'{% url "inventory:product_create" %}', group:'action', kbd:'C P' },
+    { label:'New User',          sub:'Invite team member',     icon:'bi-person-plus',       action:'nav', url:'{% url "user_create" %}',              group:'action', kbd:'C U' },
+    { label:'Submit a Report',   sub:'Report an issue',        icon:'bi-flag',              action:'fn',  fn: () => document.getElementById('rpFab')?.click(), group:'action' },
+];
+
+const TOGGLES = [
+    { label:'Toggle Dark Mode',  sub:'Switch theme',           icon:'bi-moon-stars',        action:'fn',  fn:() => document.getElementById('themeToggle')?.click(), group:'toggle' },
+    { label:'Toggle Sidebar',    sub:'Collapse / expand',      icon:'bi-layout-sidebar',    action:'fn',  fn:() => document.getElementById('sidebarToggle')?.click(), group:'toggle' },
+    { label:'Toggle Flyout Menus', sub:'Sidebar expand style', icon:'bi-layout-sidebar-reverse', action:'fn', fn:() => window.NavigationUtils?.setExpandMode(document.getElementById('navigationSidebar')?.classList.contains('expand-flyout') ? 'vertical' : 'flyout'), group:'toggle' },
+    { label:'Open What\'s New',  sub:'Changelog modal',        icon:'bi-stars',             action:'fn',  fn:() => window.clOpenChangelog?.(), group:'toggle' },
+    { label:'Keyboard Shortcuts',sub:'Show all shortcuts',     icon:'bi-keyboard',          action:'fn',  fn:() => window.PBShortcuts?.showOverlay(), group:'toggle' },
+];
+
+// ── Open / Close ──────────────────────────────────────────────
+function open() {
+    isOpen = true;
+    backdrop.classList.add('open');
+    dialog.classList.add('open');
+    dialog.setAttribute('aria-expanded', 'true');
+    input.value = '';
+    activeIdx = -1;
+    renderDefault();
+    requestAnimationFrame(() => input.focus());
+    // Track current page as recent on open
+    trackRecent({ label: document.title.replace(' | PrimeBooks','').trim(), url: location.pathname + location.search, group:'recent' });
+}
+
+function close() {
+    isOpen = false;
+    backdrop.classList.remove('open');
+    dialog.classList.remove('open');
+    dialog.setAttribute('aria-expanded', 'false');
+    clearTimeout(searchTimer);
+}
+
+backdrop.addEventListener('click', close);
+document.addEventListener('keydown', e => {
+    const tag = document.activeElement?.tagName;
+    // Open: ⌘K or Ctrl+K
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); isOpen ? close() : open(); return; }
+    // Also open on / when not in input
+    if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault(); if (!isOpen) open(); return;
+    }
+    if (!isOpen) return;
+    if (e.key === 'Escape')     { close(); return; }
+    if (e.key === 'ArrowDown')  { e.preventDefault(); moveActive(1);  return; }
+    if (e.key === 'ArrowUp')    { e.preventDefault(); moveActive(-1); return; }
+    if (e.key === 'Enter')      { e.preventDefault(); selectActive(); return; }
+});
+
+// ── Rendering ──────────────────────────────────────────────────
+function renderDefault() {
+    const recent = getRecent();
+    let html = '';
+
+    if (recent.length) {
+        html += groupHeader('Recent');
+        recent.slice(0,5).forEach((item, i) => { html += itemHtml({...item, icon:'bi-clock-history', group:'recent'}, i); });
+    }
+
+    html += groupHeader('Navigate');
+    NAV_ITEMS.forEach((item, i) => { html += itemHtml(item, (recent.length ? recent.slice(0,5).length : 0) + i); });
+
+    html += groupHeader('Actions');
+    ACTIONS.forEach((item, i) => { html += itemHtml(item, (recent.length ? recent.slice(0,5).length : 0) + NAV_ITEMS.length + i); });
+
+    html += groupHeader('Toggles');
+    TOGGLES.forEach((item, i) => { html += itemHtml(item, (recent.length ? recent.slice(0,5).length : 0) + NAV_ITEMS.length + ACTIONS.length + i); });
+
+    results.innerHTML = html;
+    buildItems();
+}
+
+function renderSearch(q) {
+    // Filter static items
+    const lq = q.toLowerCase();
+    const matched = [...NAV_ITEMS, ...ACTIONS, ...TOGGLES].filter(
+        item => item.label.toLowerCase().includes(lq) || (item.sub||'').toLowerCase().includes(lq)
+    );
+
+    let html = '';
+    if (matched.length) {
+        html += groupHeader('Results');
+        matched.forEach((item, i) => {
+            html += itemHtml({...item, label: highlight(item.label, q)}, i);
+        });
+    } else {
+        html += `<div class="cp-loading"><i class="bi bi-arrow-clockwise"></i></div>`;
+    }
+    results.innerHTML = html;
+    buildItems();
+
+    // Also fetch server-side records
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => fetchRecords(q, matched.length), 200);
+}
+
+function fetchRecords(q, offset) {
+    fetch(`${SEARCH_URL}?q=${encodeURIComponent(q)}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.results?.length) return;
+        // Append record results
+        let html = results.innerHTML.replace('<div class="cp-loading"><i class="bi bi-arrow-clockwise"></i></div>', '');
+        html += groupHeader('Records');
+        data.results.forEach((item, i) => {
+            html += itemHtml({
+                label:  item.title,
+                sub:    item.subtitle || item.type,
+                icon:   item.icon || 'bi-file-earmark',
+                url:    item.url,
+                group:  'record',
+            }, offset + i);
+        });
+        results.innerHTML = html;
+        buildItems();
+    })
+    .catch(() => {
+        // Silently remove loading spinner
+        results.innerHTML = results.innerHTML.replace('<div class="cp-loading"><i class="bi bi-arrow-clockwise"></i></div>', '');
+    });
+}
+
+function groupHeader(label) {
+    return `<div class="cp-group-label">${label}</div>`;
+}
+
+function itemHtml(item, idx) {
+    const iconClass = {nav:'nav', action:'action', record:'record', toggle:'toggle', recent:'recent'}[item.group] || '';
+    return `<div class="cp-item" data-idx="${idx}" role="option"
+                 data-url="${item.url||''}" data-fn="${item.fn ? 'true' : ''}">
+        <div class="cp-item-icon ${iconClass}"><i class="bi ${item.icon}"></i></div>
+        <div class="cp-item-main">
+            <div class="cp-item-label">${item.label}</div>
+            ${item.sub ? `<div class="cp-item-sub">${item.sub}</div>` : ''}
+        </div>
+        ${item.kbd ? `<span class="cp-item-kbd">${item.kbd}</span>` : ''}
+    </div>`;
+}
+
+function highlight(text, q) {
+    if (!q) return text;
+    return text.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'),
+        '<mark>$1</mark>');
+}
+
+function buildItems() {
+    allItems = [...results.querySelectorAll('.cp-item')];
+    allItems.forEach((el, i) => {
+        el.addEventListener('mouseenter', () => setActive(i));
+        el.addEventListener('click', () => selectItem(el));
+    });
+    activeIdx = -1;
+}
+
+function setActive(i) {
+    allItems.forEach(el => el.classList.remove('active'));
+    if (i >= 0 && i < allItems.length) {
+        allItems[i].classList.add('active');
+        allItems[i].scrollIntoView({ block:'nearest' });
+        activeIdx = i;
+    }
+}
+
+function moveActive(dir) {
+    const next = Math.max(0, Math.min(allItems.length - 1, activeIdx + dir));
+    setActive(next);
+}
+
+function selectActive() {
+    if (activeIdx >= 0 && allItems[activeIdx]) selectItem(allItems[activeIdx]);
+    else if (allItems.length > 0) selectItem(allItems[0]);
+}
+
+function selectItem(el) {
+    const url = el.dataset.url;
+    const hasFn = el.dataset.fn === 'true';
+    const label = el.querySelector('.cp-item-label')?.textContent?.trim();
+
+    if (url) {
+        trackRecent({ label, url, group:'recent' });
+        close();
+        window.location.href = url;
+    } else if (hasFn) {
+        close();
+        // Find and call the matching fn
+        const all = [...NAV_ITEMS, ...ACTIONS, ...TOGGLES];
+        const match = all.find(item => item.fn && item.label === label);
+        if (match?.fn) setTimeout(match.fn, 50);
+    }
+}
+
+// ── Recent pages ─────────────────────────────────────────────
+function getRecent() {
+    try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; }
+}
+
+function trackRecent(item) {
+    try {
+        let recent = getRecent().filter(r => r.url !== item.url);
+        recent.unshift(item);
+        recent = recent.slice(0, MAX_RECENT);
+        localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
+    } catch {}
+}
+
+// ── Input handler ─────────────────────────────────────────────
+input.addEventListener('input', () => {
+    const q = input.value.trim();
+    if (q.length === 0) { renderDefault(); return; }
+    renderSearch(q);
+});
+
+// ── Expose global open ──────────────────────────────────────
+window.PBCommandPalette = { open, close };
+
+})();
+</script>
+{% endif %}

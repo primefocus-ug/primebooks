@@ -2,346 +2,932 @@
 {% load static %}
 
 {% block extra_css %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
 <style>
-    .efris-sidebar {
-        background: #f8f9fa;
-        border-right: 1px solid #dee2e6;
-        min-height: calc(100vh - 56px);
-    }
+  /* ── TOKENS ─────────────────────────────────────────────── */
+  :root,
+  [data-theme="light"] {
+    --bg:          #f4f5f7;
+    --surface:     #ffffff;
+    --surface-2:   #f0f1f3;
+    --border:      #e2e4e9;
+    --text:        #111827;
+    --text-2:      #6b7280;
+    --text-3:      #9ca3af;
+    --accent:      #2563eb;
+    --accent-dim:  #dbeafe;
+    --accent-glow: rgba(37,99,235,.15);
+    --danger:      #ef4444;
+    --success:     #22c55e;
+    --warn:        #f59e0b;
+    --nav-h:       56px;
+    --radius:      10px;
+    --shadow-sm:   0 1px 3px rgba(0,0,0,.08);
+    --shadow-md:   0 4px 16px rgba(0,0,0,.10);
+    --transition:  0.18s ease;
+  }
 
-    .efris-nav-link {
-        color: #495057;
-        padding: 0.75rem 1rem;
-        display: block;
-        text-decoration: none;
-        transition: all 0.3s;
-    }
+  [data-theme="dark"] {
+    --bg:          #0d0f14;
+    --surface:     #161b25;
+    --surface-2:   #1e2433;
+    --border:      #252d3d;
+    --text:        #e8eaf0;
+    --text-2:      #8892a4;
+    --text-3:      #4b5568;
+    --accent:      #3b82f6;
+    --accent-dim:  #1e3a5f;
+    --accent-glow: rgba(59,130,246,.18);
+    --danger:      #f87171;
+    --success:     #4ade80;
+    --warn:        #fbbf24;
+    --shadow-sm:   0 1px 4px rgba(0,0,0,.35);
+    --shadow-md:   0 6px 24px rgba(0,0,0,.5);
+  }
 
-    .efris-nav-link:hover,
-    .efris-nav-link.active {
-        background: #e9ecef;
-        color: #007bff;
-        border-left: 3px solid #007bff;
-    }
+  /* ── RESET ──────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    .efris-nav-section {
-        padding: 0.5rem 1rem;
-        font-size: 0.875rem;
-        font-weight: 600;
-        color: #6c757d;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.55;
+    transition: background var(--transition), color var(--transition);
+    -webkit-font-smoothing: antialiased;
+  }
 
-    .efris-card {
-        border: none;
-        box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
-        margin-bottom: 1.5rem;
-    }
+  /* ── TOP NAV ─────────────────────────────────────────────── */
+  .top-nav {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    height: var(--nav-h);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 8px;
+    transition: background var(--transition), border-color var(--transition);
+  }
 
-    .efris-badge {
-        padding: 0.35rem 0.65rem;
-        font-size: 0.875rem;
-    }
+  /* Logo */
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    text-decoration: none;
+    margin-right: 8px;
+    flex-shrink: 0;
+  }
+  .nav-logo-icon {
+    width: 32px; height: 32px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: grid; place-items: center;
+    color: #fff;
+    font-size: 15px;
+    box-shadow: 0 2px 8px var(--accent-glow);
+    flex-shrink: 0;
+  }
+  .nav-logo-text {
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.3px;
+    color: var(--text);
+  }
+  .nav-logo-text span {
+    color: var(--accent);
+  }
 
-    .status-approved {
-        background-color: #28a745;
-        color: white;
-    }
+  /* Divider */
+  .nav-divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+    margin: 0 4px;
+    flex-shrink: 0;
+  }
 
-    .status-pending {
-        background-color: #ffc107;
-        color: #000;
-    }
+  /* Primary links */
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .nav-links::-webkit-scrollbar { display: none; }
 
-    .status-rejected {
-        background-color: #dc3545;
-        color: white;
-    }
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--text-2);
+    font-size: 13.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background var(--transition), color var(--transition);
+  }
+  .nav-link i { font-size: 13px; }
+  .nav-link:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .nav-link.active {
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
 
-    .invoice-type-1 { border-left: 4px solid #007bff; }
-    .invoice-type-2 { border-left: 4px solid #28a745; }
-    .invoice-type-4 { border-left: 4px solid #dc3545; }
+  /* Dropdown groups */
+  .nav-group {
+    position: relative;
+  }
+  .nav-group-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border-radius: 7px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-2);
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background var(--transition), color var(--transition);
+  }
+  .nav-group-btn i.caret {
+    font-size: 10px;
+    transition: transform 0.2s;
+    opacity: .6;
+  }
+  .nav-group:hover .nav-group-btn { background: var(--surface-2); color: var(--text); }
+  .nav-group:hover .caret { transform: rotate(180deg); }
 
-    .table-hover tbody tr:hover {
-        background-color: #f8f9fa;
-    }
+  .nav-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    min-width: 210px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    padding: 6px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-6px);
+    transition: opacity 0.17s, transform 0.17s;
+    z-index: 200;
+  }
+  .nav-group:hover .nav-dropdown,
+  .nav-group:focus-within .nav-dropdown {
+    opacity: 1;
+    pointer-events: all;
+    transform: translateY(0);
+  }
+  .nav-dropdown a {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    text-decoration: none;
+    color: var(--text-2);
+    font-size: 13px;
+    font-weight: 500;
+    transition: background var(--transition), color var(--transition);
+  }
+  .nav-dropdown a i { font-size: 12px; width: 14px; text-align: center; }
+  .nav-dropdown a:hover { background: var(--surface-2); color: var(--text); }
+  .nav-dropdown a.active { background: var(--accent-dim); color: var(--accent); }
+  .nav-dropdown-label {
+    padding: 5px 10px 3px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+    color: var(--text-3);
+    margin-top: 2px;
+  }
 
-    .search-box {
-        background: #ffffff;
-        padding: 1.5rem;
-        border-radius: 0.25rem;
-        box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
-        margin-bottom: 1.5rem;
-    }
+  /* Right side of nav */
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  /* Icon buttons */
+  .nav-icon-btn {
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    display: grid; place-items: center;
+    color: var(--text-2);
+    font-size: 15px;
+    transition: background var(--transition), color var(--transition);
+    position: relative;
+  }
+  .nav-icon-btn:hover { background: var(--surface-2); color: var(--text); }
+
+  /* Badge on icon */
+  .nav-badge {
+    position: absolute;
+    top: 5px; right: 5px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--danger);
+    border: 2px solid var(--surface);
+  }
+
+  /* Theme toggle */
+  .theme-toggle {
+    width: 52px; height: 28px;
+    border-radius: 14px;
+    background: var(--surface-2);
+    border: 1.5px solid var(--border);
+    cursor: pointer;
+    display: flex; align-items: center;
+    padding: 3px;
+    transition: background var(--transition);
+    position: relative;
+  }
+  .theme-toggle-thumb {
+    width: 20px; height: 20px;
+    border-radius: 10px;
+    background: var(--accent);
+    transition: transform 0.25s cubic-bezier(.34,1.56,.64,1);
+    display: grid; place-items: center;
+    color: #fff;
+    font-size: 10px;
+  }
+  [data-theme="dark"] .theme-toggle-thumb { transform: translateX(24px); }
+
+  /* Avatar */
+  .nav-avatar {
+    width: 34px; height: 34px;
+    border-radius: 9px;
+    background: var(--accent);
+    display: grid; place-items: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px var(--accent-dim);
+  }
+
+  /* ── BREADCRUMB ──────────────────────────────────────────── */
+  .page-header {
+    padding: 22px 28px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .page-header-left h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+    line-height: 1.2;
+    color: var(--text);
+  }
+  .breadcrumb-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .breadcrumb-row a { color: var(--text-3); text-decoration: none; }
+  .breadcrumb-row a:hover { color: var(--accent); }
+  .breadcrumb-row i { font-size: 9px; }
+
+  .page-header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  /* ── MAIN LAYOUT ─────────────────────────────────────────── */
+  .page-body {
+    padding: 20px 28px 40px;
+  }
+
+  /* ── ALERTS ──────────────────────────────────────────────── */
+  .alerts-wrap { padding: 16px 28px 0; }
+  .alert {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 13.5px;
+    font-weight: 500;
+    border: 1px solid transparent;
+    animation: slide-in .2s ease;
+  }
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .alert-success  { background: color-mix(in srgb, var(--success) 12%, transparent); border-color: color-mix(in srgb, var(--success) 30%, transparent); color: var(--success); }
+  .alert-warning  { background: color-mix(in srgb, var(--warn)    12%, transparent); border-color: color-mix(in srgb, var(--warn)    30%, transparent); color: var(--warn);    }
+  .alert-danger,
+  .alert-error    { background: color-mix(in srgb, var(--danger)  12%, transparent); border-color: color-mix(in srgb, var(--danger)  30%, transparent); color: var(--danger);  }
+  .alert-info     { background: color-mix(in srgb, var(--accent)  10%, transparent); border-color: color-mix(in srgb, var(--accent)  25%, transparent); color: var(--accent);  }
+  .alert-dismiss {
+    margin-left: auto;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    opacity: .6;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  .alert-dismiss:hover { opacity: 1; }
+
+  /* ── CARDS ───────────────────────────────────────────────── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 20px;
+    overflow: hidden;
+    transition: border-color var(--transition);
+  }
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title i { color: var(--accent); }
+  .card-body { padding: 20px; }
+
+  /* ── STAT CARD ───────────────────────────────────────────── */
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow var(--transition), border-color var(--transition);
+  }
+  .stat-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--accent);
+  }
+  .stat-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .stat-icon.blue   { background: var(--accent-dim); color: var(--accent); }
+  .stat-icon.green  { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+  .stat-icon.yellow { background: color-mix(in srgb, var(--warn)    15%, transparent); color: var(--warn); }
+  .stat-icon.red    { background: color-mix(in srgb, var(--danger)  15%, transparent); color: var(--danger); }
+  .stat-info { flex: 1; min-width: 0; }
+  .stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 500;
+    line-height: 1.1;
+    color: var(--text);
+    letter-spacing: -0.5px;
+  }
+  .stat-label {
+    font-size: 12px;
+    color: var(--text-3);
+    margin-top: 2px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+  .stat-delta {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 20px;
+  }
+  .stat-delta.up   { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+  .stat-delta.down { background: color-mix(in srgb, var(--danger)  15%, transparent); color: var(--danger); }
+
+  /* ── TABLE ───────────────────────────────────────────────── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: var(--text-3);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 11px 14px;
+    font-size: 13.5px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface-2); }
+  .mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+
+  /* ── BADGES ──────────────────────────────────────────────── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .badge.approved { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+  .badge.pending  { background: color-mix(in srgb, var(--warn)    15%, transparent); color: var(--warn);    }
+  .badge.rejected { background: color-mix(in srgb, var(--danger)  15%, transparent); color: var(--danger);  }
+
+  /* ── BUTTONS ─────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1.5px solid transparent;
+    text-decoration: none;
+    transition: all var(--transition);
+    white-space: nowrap;
+  }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 2px 6px var(--accent-glow); }
+  .btn-primary:hover { filter: brightness(1.1); box-shadow: 0 4px 12px var(--accent-glow); }
+  .btn-ghost { background: transparent; border-color: var(--border); color: var(--text-2); }
+  .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
+  .btn-danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+  .btn-danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 6px; }
+
+  /* ── FORM ELEMENTS ───────────────────────────────────────── */
+  .search-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-sm);
+  }
+  .form-row { display: flex; flex-wrap: wrap; gap: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 180px; }
+  .form-label { font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .4px; }
+  .form-control {
+    padding: 8px 11px;
+    border-radius: 7px;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13.5px;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    outline: none;
+  }
+  .form-control::placeholder { color: var(--text-3); }
+  .form-control:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  select.form-control { cursor: pointer; }
+
+  /* ── INVOICE TYPE CHIPS ──────────────────────────────────── */
+  .type-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; }
+  .type-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .type-1 .dot { background: var(--accent); }
+  .type-2 .dot { background: var(--success); }
+  .type-4 .dot { background: var(--danger); }
+
+  /* ── UTILITIES ───────────────────────────────────────────── */
+  .text-mono { font-family: 'JetBrains Mono', monospace; }
+  .text-muted { color: var(--text-3); }
+  .grid { display: grid; gap: 16px; }
+  .grid-4 { grid-template-columns: repeat(4,1fr); }
+  .grid-3 { grid-template-columns: repeat(3,1fr); }
+  .grid-2 { grid-template-columns: repeat(2,1fr); }
+  @media (max-width: 900px) {
+    .grid-4, .grid-3 { grid-template-columns: repeat(2,1fr); }
+  }
+  @media (max-width: 560px) {
+    .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+    .page-header { flex-direction: column; align-items: flex-start; }
+    .nav-links { display: none; }
+  }
+
+  /* ── MOBILE HAMBURGER ────────────────────────────────────── */
+  .mobile-menu-btn {
+    display: none;
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-2);
+    font-size: 18px;
+    align-items: center;
+    justify-content: center;
+  }
+  @media (max-width: 560px) { .mobile-menu-btn { display: flex; } }
+
+  /* Mobile drawer */
+  .mobile-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    pointer-events: none;
+  }
+  .mobile-drawer.open { pointer-events: all; }
+  .mobile-drawer-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,.5);
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  .mobile-drawer.open .mobile-drawer-overlay { opacity: 1; }
+  .mobile-drawer-panel {
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 280px;
+    background: var(--surface);
+    transform: translateX(-100%);
+    transition: transform .22s ease;
+    overflow-y: auto;
+    padding: 20px 0;
+  }
+  .mobile-drawer.open .mobile-drawer-panel { transform: translateX(0); }
+  .mobile-drawer-panel a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 20px;
+    text-decoration: none;
+    color: var(--text-2);
+    font-size: 13.5px;
+    font-weight: 500;
+  }
+  .mobile-drawer-panel a:hover,
+  .mobile-drawer-panel a.active { color: var(--accent); background: var(--accent-dim); }
+  .mobile-drawer-label {
+    padding: 16px 20px 4px;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--text-3);
+  }
 </style>
 {% endblock %}
 
+
 {% block content %}
-<div class="container-fluid">
-    <div class="row">
-        <!-- Sidebar -->
-        <nav class="col-md-2 d-md-block efris-sidebar">
-            <div class="position-sticky pt-3">
-                <h6 class="efris-nav-section">
-                    <i class="fas fa-receipt"></i> Invoice Management
-                </h6>
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
-                           href="{% url 'efris:dashboard' %}">
-                            <i class="fas fa-tachometer-alt"></i> Dashboard
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'invoice' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:invoice_search' %}">
-                            <i class="fas fa-search"></i> Invoice Search
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'normal_invoices' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:normal_invoices' %}">
-                            <i class="fas fa-file-invoice"></i> Normal Invoices
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'credit_note' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:credit_note_applications' %}">
-                            <i class="fas fa-undo"></i> Credit/Debit Notes
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'batch' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:batch_invoice_upload' %}">
-                            <i class="fas fa-upload"></i> Batch Upload
-                        </a>
-                    </li>
-                </ul>
 
-                <h6 class="efris-nav-section mt-3">
-                    <i class="fas fa-cog"></i> System Management
-                </h6>
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'exception_logs' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:exception_logs' %}">
-                            <i class="fas fa-exclamation-triangle"></i> Exception Logs
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'system_upgrade' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:system_upgrade' %}">
-                            <i class="fas fa-arrow-up"></i> System Upgrade
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'commodity_category_updates' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:commodity_category_updates' %}">
-                            <i class="fas fa-tags"></i> Category Updates
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'certificate_upload' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:certificate_upload' %}">
-                            <i class="fas fa-certificate"></i> Certificate Upload
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'branches_list' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:branches_list' %}">
-                            <i class="fas fa-code-branch"></i> Branches
-                        </a>
-                    </li>
-                </ul>
+<!-- ── TOP NAVIGATION ───────────────────────────────────────── -->
+<nav class="top-nav">
 
-                <h6 class="efris-nav-section mt-3">
-                    <i class="fas fa-users"></i> Taxpayer Management
-                </h6>
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'taxpayer_exemption_check' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:taxpayer_exemption_check' %}">
-                            <i class="fas fa-user-check"></i> Exemption Check
-                        </a>
-                    </li>
-                </ul>
+  <!-- Logo -->
+  <a href="{% url 'efris:dashboard' %}" class="nav-logo">
+    <div class="nav-logo-icon"><i class="fas fa-receipt"></i></div>
+    <span class="nav-logo-text">EF<span>RIS</span></span>
+  </a>
 
-                <h6 class="efris-nav-section mt-3">
-                    <i class="fas fa-database"></i> Data & Reports
-                </h6>
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'exchange_rates' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:exchange_rates' %}">
-                            <i class="fas fa-exchange-alt"></i> Exchange Rates
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'excise_duty' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:excise_duty_list' %}">
-                            <i class="fas fa-percentage"></i> Excise Duty
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'reports' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:reports' %}">
-                            <i class="fas fa-chart-bar"></i> Reports
-                        </a>
-                    </li>
+  <div class="nav-divider"></div>
 
-                </ul>
-                <!-- Add this section after the existing sidebar sections -->
-                <h6 class="efris-nav-section mt-3">
-                    <i class="fas fa-star"></i> Advanced Features
-                </h6>
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:commodity_category_by_date' %}">
-                            <i class="fas fa-calendar-alt"></i> Category by Date
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:fuel_types_list' %}">
-                            <i class="fas fa-gas-pump"></i> Fuel Types
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:frequent_contacts_management' %}">
-                            <i class="fas fa-address-book"></i> Frequent Contacts
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:hs_code_list' %}">
-                            <i class="fas fa-barcode"></i> HS Codes
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link {% if 'credit_note' in request.resolver_match.url_name %}active{% endif %}"
-                           href="{% url 'efris:credit_note_applications' %}">
-                            <i class="fas fa-undo"></i> Credit/Debit Notes
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:fdn_status_query' %}">
-                            <i class="fas fa-shipping-fast"></i> FDN Status
-                        </a>
-                    </li>
-                </ul>
+  <!-- Primary Links -->
+  <div class="nav-links">
 
-                <h6 class="efris-nav-section mt-3">
-                    <i class="fas fa-gas-pump"></i> Fuel Station (EDC)
-                </h6>
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:upload_shift_information' %}">
-                            <i class="fas fa-clock"></i> Shift Information
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:edc_invoice_inquiry' %}">
-                            <i class="fas fa-search"></i> EDC Invoices
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:fuel_equipment_query' %}">
-                            <i class="fas fa-tools"></i> Equipment Query
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:efd_location_query' %}">
-                            <i class="fas fa-map-marker-alt"></i> EFD Location
-                        </a>
-                    </li>
-                </ul>
+    <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
+       href="{% url 'efris:dashboard' %}">
+      <i class="fas fa-tachometer-alt"></i> Dashboard
+    </a>
 
-                <h6 class="efris-nav-section mt-3">
-                    <i class="fas fa-user-shield"></i> Agent Management
-                </h6>
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:agent_relations' %}">
-                            <i class="fas fa-network-wired"></i> Agent Relations
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="efris-nav-link" href="{% url 'efris:principal_agent_info' %}">
-                            <i class="fas fa-info-circle"></i> Principal Info
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </nav>
+    <a class="nav-link {% if 'invoice' in request.resolver_match.url_name %}active{% endif %}"
+       href="{% url 'efris:invoice_search' %}">
+      <i class="fas fa-search"></i> Search
+    </a>
 
-        <!-- Main content -->
-        <main class="col-md-10 ms-sm-auto px-md-4">
-            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-                <h1 class="h2">{{ page_title }}</h1>
-                <div class="btn-toolbar mb-2 mb-md-0">
-                    {% block page_actions %}
-                    {% endblock %}
-                </div>
-            </div>
+    <a class="nav-link {% if 'normal_invoices' in request.resolver_match.url_name %}active{% endif %}"
+       href="{% url 'efris:normal_invoices' %}">
+      <i class="fas fa-file-invoice"></i> Invoices
+    </a>
 
-            {% if messages %}
-                {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                {% endfor %}
-            {% endif %}
-
-            {% block efris_content %}
-            {% endblock %}
-        </main>
+    <!-- System dropdown -->
+    <div class="nav-group" tabindex="0">
+      <button class="nav-group-btn">
+        <i class="fas fa-cog"></i> System
+        <i class="fas fa-chevron-down caret"></i>
+      </button>
+      <div class="nav-dropdown">
+        <div class="nav-dropdown-label">Management</div>
+        <a href="{% url 'efris:exception_logs' %}"
+           class="{% if 'exception_logs' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-exclamation-triangle"></i> Exception Logs
+        </a>
+        <a href="{% url 'efris:system_upgrade' %}"
+           class="{% if 'system_upgrade' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-arrow-up"></i> System Upgrade
+        </a>
+        <a href="{% url 'efris:commodity_category_updates' %}"
+           class="{% if 'commodity_category_updates' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-tags"></i> Category Updates
+        </a>
+        <a href="{% url 'efris:certificate_upload' %}"
+           class="{% if 'certificate_upload' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-certificate"></i> Certificate Upload
+        </a>
+        <a href="{% url 'efris:branches_list' %}"
+           class="{% if 'branches_list' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-code-branch"></i> Branches
+        </a>
+      </div>
     </div>
+
+    <!-- Data dropdown -->
+    <div class="nav-group" tabindex="0">
+      <button class="nav-group-btn">
+        <i class="fas fa-chart-bar"></i> Reports
+        <i class="fas fa-chevron-down caret"></i>
+      </button>
+      <div class="nav-dropdown">
+        <div class="nav-dropdown-label">Data & Reports</div>
+        <a href="{% url 'efris:exchange_rates' %}"
+           class="{% if 'exchange_rates' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-exchange-alt"></i> Exchange Rates
+        </a>
+        <a href="{% url 'efris:excise_duty_list' %}"
+           class="{% if 'excise_duty' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-percentage"></i> Excise Duty
+        </a>
+        <a href="{% url 'efris:reports' %}"
+           class="{% if 'reports' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-chart-bar"></i> Reports
+        </a>
+        <a href="{% url 'efris:taxpayer_exemption_check' %}"
+           class="{% if 'taxpayer_exemption_check' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-user-check"></i> Exemption Check
+        </a>
+      </div>
+    </div>
+
+    <!-- Advanced dropdown -->
+    <div class="nav-group" tabindex="0">
+      <button class="nav-group-btn">
+        <i class="fas fa-star"></i> Advanced
+        <i class="fas fa-chevron-down caret"></i>
+      </button>
+      <div class="nav-dropdown">
+        <div class="nav-dropdown-label">Advanced Features</div>
+        <a href="{% url 'efris:batch_invoice_upload' %}"
+           class="{% if 'batch' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-upload"></i> Batch Upload
+        </a>
+        <a href="{% url 'efris:credit_note_applications' %}"
+           class="{% if 'credit_note' in request.resolver_match.url_name %}active{% endif %}">
+          <i class="fas fa-undo"></i> Credit/Debit Notes
+        </a>
+        <a href="{% url 'efris:commodity_category_by_date' %}">
+          <i class="fas fa-calendar-alt"></i> Category by Date
+        </a>
+        <a href="{% url 'efris:fuel_types_list' %}">
+          <i class="fas fa-gas-pump"></i> Fuel Types
+        </a>
+        <a href="{% url 'efris:frequent_contacts_management' %}">
+          <i class="fas fa-address-book"></i> Frequent Contacts
+        </a>
+        <a href="{% url 'efris:hs_code_list' %}">
+          <i class="fas fa-barcode"></i> HS Codes
+        </a>
+        <a href="{% url 'efris:fdn_status_query' %}">
+          <i class="fas fa-shipping-fast"></i> FDN Status
+        </a>
+        <div class="nav-dropdown-label">Fuel Station (EDC)</div>
+        <a href="{% url 'efris:upload_shift_information' %}">
+          <i class="fas fa-clock"></i> Shift Information
+        </a>
+        <a href="{% url 'efris:edc_invoice_inquiry' %}">
+          <i class="fas fa-search"></i> EDC Invoices
+        </a>
+        <a href="{% url 'efris:fuel_equipment_query' %}">
+          <i class="fas fa-tools"></i> Equipment Query
+        </a>
+        <a href="{% url 'efris:efd_location_query' %}">
+          <i class="fas fa-map-marker-alt"></i> EFD Location
+        </a>
+        <div class="nav-dropdown-label">Agent Management</div>
+        <a href="{% url 'efris:agent_relations' %}">
+          <i class="fas fa-network-wired"></i> Agent Relations
+        </a>
+        <a href="{% url 'efris:principal_agent_info' %}">
+          <i class="fas fa-info-circle"></i> Principal Info
+        </a>
+      </div>
+    </div>
+
+  </div><!-- /nav-links -->
+
+  <!-- Right controls -->
+  <div class="nav-right">
+    <button class="nav-icon-btn" title="Notifications" aria-label="Notifications">
+      <i class="fas fa-bell"></i>
+      <span class="nav-badge"></span>
+    </button>
+
+    <!-- Theme toggle -->
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle theme">
+      <div class="theme-toggle-thumb" id="themeThumb">
+        <i class="fas fa-moon" id="themeIcon"></i>
+      </div>
+    </button>
+
+    <div class="nav-avatar" title="{{ request.user.get_full_name|default:request.user.username }}">
+      {{ request.user.get_full_name|default:request.user.username|first|upper }}
+    </div>
+
+    <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu">
+      <i class="fas fa-bars"></i>
+    </button>
+  </div>
+</nav>
+
+<!-- ── MOBILE DRAWER ────────────────────────────────────────── -->
+<div class="mobile-drawer" id="mobileDrawer">
+  <div class="mobile-drawer-overlay" id="drawerOverlay"></div>
+  <div class="mobile-drawer-panel">
+    <div class="mobile-drawer-label">Invoice Management</div>
+    <a href="{% url 'efris:dashboard' %}"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+    <a href="{% url 'efris:invoice_search' %}"><i class="fas fa-search"></i> Invoice Search</a>
+    <a href="{% url 'efris:normal_invoices' %}"><i class="fas fa-file-invoice"></i> Normal Invoices</a>
+    <a href="{% url 'efris:credit_note_applications' %}"><i class="fas fa-undo"></i> Credit/Debit Notes</a>
+    <a href="{% url 'efris:batch_invoice_upload' %}"><i class="fas fa-upload"></i> Batch Upload</a>
+    <div class="mobile-drawer-label">System Management</div>
+    <a href="{% url 'efris:exception_logs' %}"><i class="fas fa-exclamation-triangle"></i> Exception Logs</a>
+    <a href="{% url 'efris:system_upgrade' %}"><i class="fas fa-arrow-up"></i> System Upgrade</a>
+    <a href="{% url 'efris:branches_list' %}"><i class="fas fa-code-branch"></i> Branches</a>
+    <div class="mobile-drawer-label">Data & Reports</div>
+    <a href="{% url 'efris:exchange_rates' %}"><i class="fas fa-exchange-alt"></i> Exchange Rates</a>
+    <a href="{% url 'efris:excise_duty_list' %}"><i class="fas fa-percentage"></i> Excise Duty</a>
+    <a href="{% url 'efris:reports' %}"><i class="fas fa-chart-bar"></i> Reports</a>
+  </div>
 </div>
+
+<!-- ── FLASH MESSAGES ───────────────────────────────────────── -->
+{% if messages %}
+<div class="alerts-wrap">
+  {% for message in messages %}
+  <div class="alert alert-{{ message.tags }}" role="alert">
+    <i class="fas {% if 'success' in message.tags %}fa-check-circle{% elif 'error' in message.tags or 'danger' in message.tags %}fa-times-circle{% elif 'warning' in message.tags %}fa-exclamation-circle{% else %}fa-info-circle{% endif %}"></i>
+    {{ message }}
+    <button class="alert-dismiss" aria-label="Close">&times;</button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ── PAGE HEADER ──────────────────────────────────────────── -->
+<div class="page-header">
+  <div class="page-header-left">
+    <h1>{{ page_title }}</h1>
+    <div class="breadcrumb-row">
+      <a href="{% url 'efris:dashboard' %}">EFRIS</a>
+      <i class="fas fa-chevron-right"></i>
+      <span>{{ page_title }}</span>
+    </div>
+  </div>
+  <div class="page-header-actions">
+    {% block page_actions %}{% endblock %}
+  </div>
+</div>
+
+<!-- ── MAIN CONTENT ─────────────────────────────────────────── -->
+<div class="page-body">
+  {% block efris_content %}{% endblock %}
+</div>
+
 {% endblock %}
+
 
 {% block extra_js %}
 <script>
-// Global EFRIS JavaScript functions
-const EFRIS = {
-    formatCurrency: function(amount, currency = 'UGX') {
-        return new Intl.NumberFormat('en-UG', {
-            style: 'currency',
-            currency: currency
-        }).format(amount);
-    },
+/* ── THEME ─────────────────────────────────────────────────── */
+(function () {
+  const root = document.documentElement;
+  const btn  = document.getElementById('themeToggle');
+  const icon = document.getElementById('themeIcon');
 
-    formatDate: function(dateString) {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-UG', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric'
-        });
-    },
+  const saved = localStorage.getItem('efris-theme') || 'light';
+  applyTheme(saved);
 
-    getInvoiceTypeLabel: function(type) {
-        const types = {
-            '1': 'Invoice/Receipt',
-            '2': 'Credit Note',
-            '4': 'Debit Note',
-            '5': 'Credit Memo'
-        };
-        return types[type] || 'Unknown';
-    },
+  btn.addEventListener('click', function () {
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    localStorage.setItem('efris-theme', next);
+  });
 
-    getApprovalStatusLabel: function(status) {
-        const statuses = {
-            '101': '<span class="badge status-approved">Approved</span>',
-            '102': '<span class="badge status-pending">Pending</span>',
-            '103': '<span class="badge status-rejected">Rejected</span>'
-        };
-        return statuses[status] || '<span class="badge bg-secondary">Unknown</span>';
-    }
-};
+  function applyTheme(t) {
+    root.dataset.theme = t;
+    icon.className = t === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+  }
+})();
 
-// Auto-dismiss alerts after 5 seconds
-setTimeout(function() {
-    $('.alert').fadeOut('slow');
+/* ── ALERTS ────────────────────────────────────────────────── */
+document.querySelectorAll('.alert-dismiss').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    this.closest('.alert').remove();
+  });
+});
+setTimeout(function () {
+  document.querySelectorAll('.alert').forEach(function (el) {
+    el.style.transition = 'opacity .4s, transform .4s';
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(-4px)';
+    setTimeout(function () { el.remove(); }, 420);
+  });
 }, 5000);
+
+/* ── MOBILE DRAWER ─────────────────────────────────────────── */
+const drawer  = document.getElementById('mobileDrawer');
+const overlay = document.getElementById('drawerOverlay');
+document.getElementById('mobileMenuBtn').addEventListener('click', function () {
+  drawer.classList.add('open');
+});
+overlay.addEventListener('click', function () {
+  drawer.classList.remove('open');
+});
+
+/* ── GLOBAL EFRIS HELPERS ──────────────────────────────────── */
+const EFRIS = {
+  formatCurrency: function (amount, currency) {
+    currency = currency || 'UGX';
+    return new Intl.NumberFormat('en-UG', { style: 'currency', currency: currency }).format(amount);
+  },
+  formatDate: function (dateString) {
+    return new Date(dateString).toLocaleDateString('en-UG', { year: 'numeric', month: 'short', day: 'numeric' });
+  },
+  getInvoiceTypeLabel: function (type) {
+    return ({ '1': 'Invoice/Receipt', '2': 'Credit Note', '4': 'Debit Note', '5': 'Credit Memo' })[type] || 'Unknown';
+  },
+  getApprovalStatusLabel: function (status) {
+    return ({
+      '101': '<span class="badge approved">Approved</span>',
+      '102': '<span class="badge pending">Pending</span>',
+      '103': '<span class="badge rejected">Rejected</span>'
+    })[status] || '<span class="badge">Unknown</span>';
+  }
+};
 </script>
 {% endblock %}

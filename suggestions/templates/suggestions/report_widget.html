@@ -1,0 +1,714 @@
+{% load static %}
+
+{% if user.is_authenticated %}
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap');
+
+/* ── Variables ── */
+:root {
+    --rp-accent:   #3b82f6;
+    --rp-surface:  var(--bg-primary, #ffffff);
+    --rp-surface2: var(--bg-secondary, #f9fafb);
+    --rp-border:   var(--border-color, #e5e7eb);
+    --rp-text:     var(--text-primary, #111827);
+    --rp-muted:    var(--text-muted, #6b7280);
+    --rp-radius:   14px;
+    --rp-shadow:   0 24px 60px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08);
+}
+[data-theme="dark"] {
+    --rp-surface:  #161b22;
+    --rp-surface2: #21262d;
+    --rp-border:   rgba(255,255,255,0.08);
+    --rp-text:     #f0f6fc;
+    --rp-muted:    #8b949e;
+    --rp-shadow:   0 24px 60px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.3);
+}
+
+/* ════════════════ FAB BUTTON ════════════════ */
+#rpFab {
+    position: fixed;
+    bottom: 1.75rem;
+    right: 1.75rem;
+    z-index: 8000;
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    border: none; cursor: pointer;
+    box-shadow: 0 4px 20px rgba(239,68,68,0.45);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 1.25rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    outline: none;
+}
+#rpFab:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 28px rgba(239,68,68,0.55);
+}
+#rpFab:active { transform: scale(0.96); }
+#rpFab .rp-fab-tooltip {
+    position: absolute;
+    right: calc(100% + 10px); top: 50%;
+    transform: translateY(-50%);
+    background: var(--rp-text);
+    color: var(--rp-surface);
+    font-family: 'Sora', sans-serif;
+    font-size: 0.72rem; font-weight: 600;
+    white-space: nowrap;
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.15s;
+}
+#rpFab:hover .rp-fab-tooltip { opacity: 1; }
+
+/* ════════════════ BACKDROP ════════════════ */
+#rpBackdrop {
+    display: none;
+    position: fixed; inset: 0;
+    z-index: 8001;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    animation: rpFadeIn 0.2s ease;
+}
+#rpBackdrop.open { display: block; }
+@keyframes rpFadeIn  { from{opacity:0} to{opacity:1} }
+@keyframes rpFadeOut { to{opacity:0} }
+
+/* ════════════════ PANEL ════════════════ */
+#rpPanel {
+    display: none;
+    position: fixed;
+    bottom: 0; right: 0;
+    z-index: 8002;
+    width: 100%; max-width: 480px;
+    max-height: 92vh;
+    background: var(--rp-surface);
+    border-radius: var(--rp-radius) var(--rp-radius) 0 0;
+    box-shadow: var(--rp-shadow);
+    border: 1px solid var(--rp-border);
+    border-bottom: none;
+    display: none;
+    flex-direction: column;
+    font-family: 'Sora', sans-serif;
+    overflow: hidden;
+}
+#rpPanel.open {
+    display: flex;
+    animation: rpSlideUp 0.32s cubic-bezier(0.16,1,0.3,1);
+}
+#rpPanel.closing {
+    animation: rpSlideDown 0.22s ease forwards;
+}
+@keyframes rpSlideUp   { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
+@keyframes rpSlideDown { to{transform:translateY(110%);opacity:0} }
+
+/* On desktop: keep it as a corner panel */
+@media (min-width: 540px) {
+    #rpPanel {
+        bottom: 1.75rem; right: 1.75rem;
+        border-radius: var(--rp-radius);
+        border-bottom: 1px solid var(--rp-border);
+        max-height: 88vh;
+    }
+}
+
+/* ── Panel header ── */
+.rp-header {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 1rem 1.25rem 0.875rem;
+    border-bottom: 1px solid var(--rp-border);
+    flex-shrink: 0;
+}
+.rp-header-icon {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: rgba(239,68,68,0.1);
+    display: flex; align-items: center; justify-content: center;
+    color: #ef4444; font-size: 1rem; flex-shrink: 0;
+}
+.rp-header-title {
+    font-size: 0.9rem; font-weight: 700; color: var(--rp-text); flex: 1;
+}
+.rp-header-sub { font-size: 0.71rem; color: var(--rp-muted); margin-top: 0.05rem; }
+.rp-close {
+    background: var(--rp-surface2); border: 1px solid var(--rp-border);
+    color: var(--rp-muted); border-radius: 8px;
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 1rem; flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+}
+.rp-close:hover { color: var(--rp-text); background: rgba(239,68,68,0.08); }
+
+/* ── Tabs (type selector) ── */
+.rp-tabs {
+    display: flex; gap: 0.35rem; padding: 0.75rem 1rem 0;
+    overflow-x: auto; flex-shrink: 0;
+    scrollbar-width: none;
+}
+.rp-tabs::-webkit-scrollbar { display: none; }
+.rp-tab {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.38rem 0.75rem;
+    border-radius: 20px; border: 1px solid var(--rp-border);
+    background: transparent; color: var(--rp-muted);
+    font-size: 0.72rem; font-weight: 600; cursor: pointer;
+    white-space: nowrap; font-family: 'Sora', sans-serif;
+    transition: all 0.15s;
+}
+.rp-tab:hover { border-color: var(--rp-accent); color: var(--rp-accent); }
+.rp-tab.active {
+    background: var(--rp-accent); color: #fff;
+    border-color: var(--rp-accent);
+    box-shadow: 0 2px 8px rgba(59,130,246,0.3);
+}
+.rp-tab i { font-size: 0.75rem; }
+
+/* ── Form body ── */
+.rp-body {
+    flex: 1; overflow-y: auto; padding: 1rem 1.25rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(59,130,246,0.2) transparent;
+    display: flex; flex-direction: column; gap: 0.875rem;
+}
+
+.rp-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.rp-label {
+    font-size: 0.75rem; font-weight: 600; color: var(--rp-text);
+    display: flex; align-items: center; gap: 0.25rem;
+}
+.rp-label .rp-required { color: #ef4444; }
+.rp-input, .rp-textarea, .rp-select {
+    width: 100%; padding: 0.6rem 0.875rem;
+    background: var(--rp-surface2);
+    border: 1px solid var(--rp-border);
+    border-radius: 8px;
+    color: var(--rp-text);
+    font-size: 0.835rem; font-family: 'Sora', sans-serif;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    outline: none;
+}
+.rp-input:focus, .rp-textarea:focus, .rp-select:focus {
+    border-color: var(--rp-accent);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+.rp-input.error, .rp-textarea.error { border-color: #ef4444 !important; }
+.rp-textarea { resize: vertical; min-height: 90px; max-height: 180px; }
+.rp-select { appearance: none; cursor: pointer; }
+.rp-field-error { font-size: 0.71rem; color: #ef4444; margin-top: 0.15rem; }
+
+/* Priority selector */
+.rp-priority-group {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem;
+}
+.rp-priority-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 0.2rem;
+    padding: 0.45rem 0.25rem;
+    border-radius: 8px; border: 1px solid var(--rp-border);
+    background: transparent; cursor: pointer;
+    font-size: 0.68rem; font-weight: 600; font-family: 'Sora', sans-serif;
+    color: var(--rp-muted);
+    transition: all 0.15s;
+}
+.rp-priority-btn i { font-size: 0.9rem; }
+.rp-priority-btn[data-priority="low"].active    { background:rgba(34,197,94,0.1);  border-color:#22c55e; color:#22c55e; }
+.rp-priority-btn[data-priority="medium"].active { background:rgba(245,158,11,0.1); border-color:#f59e0b; color:#f59e0b; }
+.rp-priority-btn[data-priority="high"].active   { background:rgba(239,68,68,0.1);  border-color:#ef4444; color:#ef4444; }
+.rp-priority-btn[data-priority="urgent"].active { background:rgba(220,38,38,0.15); border-color:#dc2626; color:#dc2626; }
+.rp-priority-btn:hover { border-color: var(--rp-accent); }
+
+/* Screenshot upload */
+.rp-upload-zone {
+    border: 2px dashed var(--rp-border);
+    border-radius: 10px; padding: 1rem;
+    text-align: center; cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+    color: var(--rp-muted); font-size: 0.78rem;
+}
+.rp-upload-zone:hover, .rp-upload-zone.dragover {
+    border-color: var(--rp-accent);
+    background: rgba(59,130,246,0.04);
+}
+.rp-upload-zone input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.rp-upload-zone i { font-size: 1.5rem; display: block; margin-bottom: 0.3rem; color: var(--rp-accent); }
+.rp-upload-preview {
+    display: none; margin-top: 0.6rem;
+    position: relative;
+}
+.rp-upload-preview img {
+    max-width: 100%; max-height: 120px; object-fit: cover;
+    border-radius: 6px; border: 1px solid var(--rp-border); display: block; margin: 0 auto;
+}
+.rp-upload-remove {
+    position: absolute; top: 4px; right: 4px;
+    background: rgba(0,0,0,0.55); color: #fff;
+    border: none; border-radius: 50%; width: 22px; height: 22px;
+    font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+
+/* Captured URL field */
+.rp-captured {
+    display: flex; align-items: center; gap: 0.4rem;
+    background: var(--rp-surface2); border: 1px solid var(--rp-border);
+    border-radius: 8px; padding: 0.5rem 0.875rem;
+    font-size: 0.75rem; color: var(--rp-muted);
+    word-break: break-all;
+}
+.rp-captured i { color: var(--rp-accent); flex-shrink: 0; }
+
+/* ── Footer ── */
+.rp-footer {
+    display: flex; align-items: center; gap: 0.65rem;
+    padding: 0.875rem 1.25rem;
+    border-top: 1px solid var(--rp-border); flex-shrink: 0;
+}
+.rp-my-reports-link {
+    font-size: 0.73rem; color: var(--rp-accent);
+    text-decoration: none; display: flex; align-items: center; gap: 0.3rem;
+    flex: 1;
+}
+.rp-my-reports-link:hover { text-decoration: underline; color: var(--rp-accent); }
+.rp-submit {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    padding: 0.6rem 1.25rem;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: #fff; border: none; border-radius: 8px;
+    font-size: 0.82rem; font-weight: 700; font-family: 'Sora', sans-serif;
+    cursor: pointer; transition: all 0.15s;
+    box-shadow: 0 2px 10px rgba(239,68,68,0.3);
+}
+.rp-submit:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(239,68,68,0.4); }
+.rp-submit:active { transform: none; }
+.rp-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+/* ── Success state ── */
+.rp-success {
+    display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    padding: 2.5rem 1.5rem; text-align: center; gap: 0.75rem;
+    flex: 1;
+}
+.rp-success.show { display: flex; animation: rpFadeIn 0.3s ease; }
+.rp-success-icon {
+    width: 60px; height: 60px; border-radius: 50%;
+    background: rgba(34,197,94,0.12);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.75rem; color: #22c55e;
+    animation: rpPopIn 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+@keyframes rpPopIn { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
+.rp-success-title { font-size: 1rem; font-weight: 700; color: var(--rp-text); }
+.rp-success-sub   { font-size: 0.82rem; color: var(--rp-muted); line-height: 1.6; }
+.rp-ticket-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.1rem; font-weight: 700; color: var(--rp-accent);
+    background: rgba(59,130,246,0.08);
+    border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 8px; padding: 0.4rem 1rem;
+    letter-spacing: 0.05em;
+}
+.rp-success-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; margin-top: 0.25rem; }
+.rp-btn-outline {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.5rem 1rem; border-radius: 8px;
+    border: 1px solid var(--rp-border); background: transparent;
+    color: var(--rp-muted); font-size: 0.78rem; font-weight: 600;
+    font-family: 'Sora', sans-serif; cursor: pointer; text-decoration: none;
+    transition: all 0.15s;
+}
+.rp-btn-outline:hover { border-color: var(--rp-accent); color: var(--rp-accent); }
+.rp-btn-solid {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.5rem 1rem; border-radius: 8px;
+    background: var(--rp-accent); color: #fff; border: none;
+    font-size: 0.78rem; font-weight: 600; font-family: 'Sora', sans-serif;
+    cursor: pointer; text-decoration: none; transition: opacity 0.15s;
+}
+.rp-btn-solid:hover { opacity: 0.9; color: #fff; }
+
+/* Rate limit warning */
+.rp-rate-limit-warning {
+    display: flex; align-items: flex-start; gap: 0.5rem;
+    background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 8px; padding: 0.65rem 0.875rem;
+    font-size: 0.77rem; color: #92400e; line-height: 1.5;
+}
+[data-theme="dark"] .rp-rate-limit-warning { color: #fcd34d; }
+.rp-rate-limit-warning i { flex-shrink: 0; margin-top: 2px; }
+</style>
+
+<!-- ══════════ FAB ══════════ -->
+<button id="rpFab" aria-label="Report an issue" title="Report an issue">
+    <i class="bi bi-flag-fill"></i>
+    <span class="rp-fab-tooltip">Report an Issue or Suggest an Improvement</span>
+</button>
+
+<!-- ══════════ BACKDROP ══════════ -->
+<div id="rpBackdrop"></div>
+
+<!-- ══════════ PANEL ══════════ -->
+<div id="rpPanel" role="dialog" aria-modal="true" aria-labelledby="rpPanelTitle">
+
+    <!-- Header -->
+    <div class="rp-header">
+        <div class="rp-header-icon"><i class="bi bi-flag-fill"></i></div>
+        <div>
+            <div class="rp-header-title" id="rpPanelTitle">Report an Issue or Suggest an Improvement</div>
+            <div class="rp-header-sub">We'll get back to you via email</div>
+        </div>
+        <button class="rp-close" id="rpClose" aria-label="Close"><i class="bi bi-x"></i></button>
+    </div>
+
+    <!-- Type tabs -->
+    <div class="rp-tabs" role="tablist" aria-label="Report type">
+        <button class="rp-tab active" data-type="bug"       role="tab"><i class="bi bi-bug"></i> Bug</button>
+        <button class="rp-tab"        data-type="feature"   role="tab"><i class="bi bi-stars"></i> Feature</button>
+        <button class="rp-tab"        data-type="billing"   role="tab"><i class="bi bi-credit-card"></i> Billing</button>
+        <button class="rp-tab"        data-type="complaint" role="tab"><i class="bi bi-person-exclamation"></i> Complaint</button>
+        <button class="rp-tab"        data-type="data"      role="tab"><i class="bi bi-database-exclamation"></i> Data Error</button>
+    </div>
+
+    <!-- Form -->
+    <form id="rpForm" novalidate>
+        {% csrf_token %}
+        <input type="hidden" id="rpType" name="type" value="bug">
+        <input type="hidden" id="rpAffectedUrl" name="affected_url">
+
+        <div class="rp-body" id="rpFormBody">
+
+            <!-- Title -->
+            <div class="rp-field">
+                <label class="rp-label" for="rpTitle">
+                    Subject <span class="rp-required">*</span>
+                </label>
+                <input class="rp-input" id="rpTitle" name="title"
+                       placeholder="Brief summary of the issue" maxlength="160" autocomplete="off">
+                <div class="rp-field-error" id="rpTitleError"></div>
+            </div>
+
+            <!-- Description -->
+            <div class="rp-field">
+                <label class="rp-label" for="rpDescription">
+                    Description <span class="rp-required">*</span>
+                </label>
+                <textarea class="rp-textarea" id="rpDescription" name="description"
+                          placeholder="Describe the issue in detail. What happened? What did you expect?"></textarea>
+                <div class="rp-field-error" id="rpDescError"></div>
+            </div>
+
+            <!-- Priority -->
+            <div class="rp-field">
+                <label class="rp-label">Priority</label>
+                <div class="rp-priority-group">
+                    <button type="button" class="rp-priority-btn active" data-priority="low">
+                        <i class="bi bi-arrow-down-circle"></i> Low
+                    </button>
+                    <button type="button" class="rp-priority-btn" data-priority="medium">
+                        <i class="bi bi-dash-circle"></i> Medium
+                    </button>
+                    <button type="button" class="rp-priority-btn" data-priority="high">
+                        <i class="bi bi-arrow-up-circle"></i> High
+                    </button>
+                    <button type="button" class="rp-priority-btn" data-priority="urgent">
+                        <i class="bi bi-exclamation-circle"></i> Urgent
+                    </button>
+                </div>
+                <input type="hidden" id="rpPriority" name="priority" value="low">
+            </div>
+
+            <!-- Affected record -->
+            <div class="rp-field">
+                <label class="rp-label" for="rpAffectedRecord">
+                    Affected Record <span style="font-weight:400;color:var(--rp-muted)">(optional)</span>
+                </label>
+                <input class="rp-input" id="rpAffectedRecord" name="affected_record"
+                       placeholder="e.g. Invoice #1042, Order #892, User: john@..." maxlength="200">
+            </div>
+
+            <!-- Current page (auto-captured) -->
+            <div class="rp-field">
+                <label class="rp-label"><i class="bi bi-link-45deg"></i> Current Page</label>
+                <div class="rp-captured" id="rpCapturedUrl">
+                    <i class="bi bi-globe2"></i>
+                    <span id="rpCapturedUrlText">Captured automatically</span>
+                </div>
+            </div>
+
+            <!-- Screenshot -->
+            <div class="rp-field">
+                <label class="rp-label">
+                    Screenshot <span style="font-weight:400;color:var(--rp-muted)">(optional)</span>
+                </label>
+                <div class="rp-upload-zone" id="rpUploadZone">
+                    <input type="file" id="rpScreenshot" name="screenshot"
+                           accept="image/png,image/jpeg,image/webp,image/gif">
+                    <i class="bi bi-image"></i>
+                    <div>Click to upload or drag & drop</div>
+                    <div style="font-size:0.68rem;margin-top:0.2rem">PNG, JPG, WebP — max 5 MB</div>
+                </div>
+                <div class="rp-upload-preview" id="rpUploadPreview">
+                    <img id="rpPreviewImg" src="" alt="Preview">
+                    <button type="button" class="rp-upload-remove" id="rpRemoveScreenshot" aria-label="Remove">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+            </div>
+
+        </div><!-- /rp-body -->
+
+        <!-- Footer -->
+        <div class="rp-footer">
+            <a href="{% url 'suggestions:report_my_reports' %}" class="rp-my-reports-link" target="_blank">
+                <i class="bi bi-ticket-detailed"></i> My Reports
+            </a>
+            <button type="submit" class="rp-submit" id="rpSubmitBtn">
+                <i class="bi bi-send"></i> Submit
+            </button>
+        </div>
+
+    </form>
+
+    <!-- Success state (replaces form after submit) -->
+    <div class="rp-success" id="rpSuccess">
+        <div class="rp-success-icon"><i class="bi bi-check-lg"></i></div>
+        <div class="rp-success-title">Report Submitted!</div>
+        <div class="rp-ticket-number" id="rpSuccessTicket">PB-XXXXXX</div>
+        <div class="rp-success-sub">
+            We've sent a confirmation to your email.<br>
+            You can track updates under <strong>My Reports</strong>.
+        </div>
+        <div class="rp-success-actions">
+            <button class="rp-btn-outline" id="rpSubmitAnother">
+                <i class="bi bi-plus"></i> Submit Another
+            </button>
+            <a href="{% url 'suggestions:report_my_reports' %}" class="rp-btn-solid">
+                <i class="bi bi-ticket-detailed"></i> View My Reports
+            </a>
+        </div>
+    </div>
+
+</div><!-- /rpPanel -->
+
+<script>
+(function () {
+'use strict';
+
+const SUBMIT_URL = '{% url "suggestions:report_submit" %}';
+const CSRF       = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+// ── Elements ─────────────────────────────────────────────────
+const fab        = document.getElementById('rpFab');
+const backdrop   = document.getElementById('rpBackdrop');
+const panel      = document.getElementById('rpPanel');
+const btnClose   = document.getElementById('rpClose');
+const form       = document.getElementById('rpForm');
+const formBody   = document.getElementById('rpFormBody');
+const successDiv = document.getElementById('rpSuccess');
+const submitBtn  = document.getElementById('rpSubmitBtn');
+
+// ── Open / Close ─────────────────────────────────────────────
+function openPanel() {
+    // Capture current URL
+    document.getElementById('rpAffectedUrl').value = window.location.href;
+    document.getElementById('rpCapturedUrlText').textContent = window.location.pathname + window.location.search;
+
+    backdrop.classList.add('open');
+    panel.classList.add('open');
+    panel.classList.remove('closing');
+    setTimeout(() => document.getElementById('rpTitle').focus(), 320);
+}
+
+function closePanel() {
+    panel.classList.add('closing');
+    backdrop.style.animation = 'rpFadeOut 0.2s ease forwards';
+    setTimeout(() => {
+        panel.classList.remove('open', 'closing');
+        backdrop.classList.remove('open');
+        backdrop.style.animation = '';
+    }, 220);
+}
+
+fab.addEventListener('click', openPanel);
+btnClose.addEventListener('click', closePanel);
+backdrop.addEventListener('click', closePanel);
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+});
+
+// ── Type tabs ─────────────────────────────────────────────────
+document.querySelectorAll('.rp-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.rp-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('rpType').value = tab.dataset.type;
+        // Update placeholder text based on type
+        const placeholders = {
+            bug:       'Describe what happened and what you expected instead.',
+            feature:   'Describe the feature you would like to see and why it would help.',
+            billing:   'Describe the billing issue, including amounts, dates, or invoice numbers.',
+            complaint: 'Describe the issue with a user or staff member.',
+            data:      'Describe the data error — what record is wrong and what the correct value should be.',
+        };
+        document.getElementById('rpDescription').placeholder = placeholders[tab.dataset.type] || '';
+    });
+});
+
+// ── Priority ──────────────────────────────────────────────────
+document.querySelectorAll('.rp-priority-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.rp-priority-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('rpPriority').value = btn.dataset.priority;
+    });
+});
+
+// ── Screenshot upload ─────────────────────────────────────────
+const uploadZone   = document.getElementById('rpUploadZone');
+const screenshotInput = document.getElementById('rpScreenshot');
+const preview      = document.getElementById('rpUploadPreview');
+const previewImg   = document.getElementById('rpPreviewImg');
+const removeBtn    = document.getElementById('rpRemoveScreenshot');
+
+screenshotInput.addEventListener('change', () => handleFile(screenshotInput.files[0]));
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+        // Create a new DataTransfer to set the file input's files
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        screenshotInput.files = dt.files;
+        handleFile(file);
+    }
+});
+
+function handleFile(file) {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+        alert('File is too large. Maximum size is 5 MB.');
+        screenshotInput.value = '';
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = e => {
+        previewImg.src = e.target.result;
+        preview.style.display = 'block';
+        uploadZone.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+}
+
+removeBtn.addEventListener('click', () => {
+    screenshotInput.value = '';
+    preview.style.display = 'none';
+    previewImg.src = '';
+    uploadZone.style.display = '';
+});
+
+// ── Validation ────────────────────────────────────────────────
+function clearErrors() {
+    document.getElementById('rpTitleError').textContent = '';
+    document.getElementById('rpDescError').textContent  = '';
+    document.getElementById('rpTitle').classList.remove('error');
+    document.getElementById('rpDescription').classList.remove('error');
+}
+
+function showFieldError(fieldId, errorId, message) {
+    document.getElementById(fieldId).classList.add('error');
+    document.getElementById(errorId).textContent = message;
+}
+
+// ── Submit ────────────────────────────────────────────────────
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearErrors();
+
+    const title = document.getElementById('rpTitle').value.trim();
+    const desc  = document.getElementById('rpDescription').value.trim();
+    let valid   = true;
+
+    if (!title) { showFieldError('rpTitle', 'rpTitleError', 'Please enter a subject.'); valid = false; }
+    if (!desc)  { showFieldError('rpDescription', 'rpDescError', 'Please describe the issue.'); valid = false; }
+    if (!valid) return;
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="bi bi-arrow-clockwise" style="animation:spin 0.8s linear infinite"></i> Submitting…';
+
+    const formData = new FormData(form);
+
+    try {
+        const res  = await fetch(SUBMIT_URL, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF },
+            body: formData,
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+            // Show success
+            formBody.style.display = 'none';
+            form.querySelector('.rp-footer').style.display = 'none';
+            document.querySelector('.rp-tabs').style.display = 'none';
+            document.getElementById('rpSuccessTicket').textContent = data.ticket_number;
+            successDiv.classList.add('show');
+        } else if (res.status === 429) {
+            // Rate limited
+            formBody.insertAdjacentHTML('afterbegin',
+                `<div class="rp-rate-limit-warning">
+                    <i class="bi bi-clock-history"></i>
+                    <span>${data.error}</span>
+                </div>`
+            );
+        } else if (data.errors) {
+            if (data.errors.title)       showFieldError('rpTitle',       'rpTitleError', data.errors.title);
+            if (data.errors.description) showFieldError('rpDescription', 'rpDescError',  data.errors.description);
+        } else {
+            alert('Something went wrong. Please try again.');
+        }
+    } catch (err) {
+        alert('Network error. Please check your connection and try again.');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="bi bi-send"></i> Submit';
+    }
+});
+
+// ── Submit another ────────────────────────────────────────────
+document.getElementById('rpSubmitAnother').addEventListener('click', () => {
+    form.reset();
+    clearErrors();
+    previewImg.src = '';
+    preview.style.display = 'none';
+    uploadZone.style.display = '';
+    // Remove rate limit warning if present
+    document.querySelector('.rp-rate-limit-warning')?.remove();
+    // Reset tabs to Bug
+    document.querySelectorAll('.rp-tab').forEach(t => t.classList.toggle('active', t.dataset.type === 'bug'));
+    document.getElementById('rpType').value = 'bug';
+    // Reset priority
+    document.querySelectorAll('.rp-priority-btn').forEach(b => b.classList.toggle('active', b.dataset.priority === 'low'));
+    document.getElementById('rpPriority').value = 'low';
+    // Show form again
+    formBody.style.display = '';
+    form.querySelector('.rp-footer').style.display = '';
+    document.querySelector('.rp-tabs').style.display = '';
+    successDiv.classList.remove('show');
+});
+
+// ── Spin keyframe ─────────────────────────────────────────────
+const s = document.createElement('style');
+s.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+document.head.appendChild(s);
+
+})();
+</script>
+
+{% endif %}

@@ -1,0 +1,459 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}My Reports — PrimeBooks{% endblock %}
+
+{% block extra_css %}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+.rp-page { font-family: 'Sora', sans-serif; max-width: 860px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+
+/* ── Page header ── */
+.rp-page-header {
+    display: flex; align-items: center; gap: 1rem;
+    margin-bottom: 1.75rem; flex-wrap: wrap;
+}
+.rp-page-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: rgba(239,68,68,0.1);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; color: #ef4444; flex-shrink: 0;
+}
+.rp-page-title  { font-size: 1.35rem; font-weight: 700; color: var(--text-primary); margin: 0; }
+.rp-page-sub    { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.1rem; }
+.rp-active-badge {
+    margin-left: auto;
+    background: rgba(59,130,246,0.1);
+    border: 1px solid rgba(59,130,246,0.25);
+    color: #3b82f6; border-radius: 20px;
+    padding: 0.3rem 0.85rem; font-size: 0.75rem; font-weight: 600;
+}
+
+/* ── Filter bar ── */
+.rp-filters {
+    display: flex; gap: 0.4rem; margin-bottom: 1.25rem;
+    overflow-x: auto; scrollbar-width: none; padding-bottom: 2px;
+}
+.rp-filters::-webkit-scrollbar { display: none; }
+.rp-filter-btn {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.38rem 0.85rem; border-radius: 20px;
+    border: 1px solid var(--border-color);
+    background: transparent; color: var(--text-muted);
+    font-size: 0.73rem; font-weight: 600; cursor: pointer;
+    white-space: nowrap; font-family: 'Sora', sans-serif;
+    transition: all 0.15s;
+}
+.rp-filter-btn:hover  { border-color: #3b82f6; color: #3b82f6; }
+.rp-filter-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+
+/* ── Ticket cards ── */
+.rp-empty {
+    text-align: center; padding: 3.5rem 1rem;
+    color: var(--text-muted); font-size: 0.85rem;
+}
+.rp-empty i { font-size: 2.5rem; display: block; margin-bottom: 0.75rem; opacity: 0.35; }
+
+.rp-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px; margin-bottom: 0.875rem;
+    overflow: hidden;
+    transition: box-shadow 0.15s, transform 0.15s;
+    cursor: pointer;
+}
+.rp-card:hover {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    transform: translateY(-1px);
+}
+[data-theme="dark"] .rp-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+
+.rp-card-header {
+    display: flex; align-items: flex-start; gap: 0.875rem;
+    padding: 1rem 1.125rem 0.75rem;
+}
+.rp-card-type-icon {
+    width: 36px; height: 36px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; flex-shrink: 0; margin-top: 1px;
+}
+.type-bug       .rp-card-type-icon { background:rgba(239,68,68,0.1);  color:#ef4444; }
+.type-feature   .rp-card-type-icon { background:rgba(59,130,246,0.1); color:#3b82f6; }
+.type-billing   .rp-card-type-icon { background:rgba(139,92,246,0.1); color:#8b5cf6; }
+.type-complaint .rp-card-type-icon { background:rgba(245,158,11,0.1); color:#f59e0b; }
+.type-data      .rp-card-type-icon { background:rgba(16,185,129,0.1); color:#10b981; }
+
+.rp-card-meta { flex: 1; min-width: 0; }
+.rp-card-ticket {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.2rem;
+    display: flex; align-items: center; gap: 0.4rem;
+}
+.rp-card-title {
+    font-size: 0.9rem; font-weight: 700; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-bottom: 0.25rem;
+}
+.rp-card-badges { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+
+.rp-badge {
+    display: inline-flex; align-items: center; gap: 0.2rem;
+    padding: 0.15rem 0.55rem; border-radius: 12px;
+    font-size: 0.67rem; font-weight: 600; white-space: nowrap;
+}
+.rp-badge-type     { background: var(--bg-secondary); color: var(--text-muted); border: 1px solid var(--border-color); }
+.rp-badge-open        { background:rgba(59,130,246,0.1);  color:#3b82f6;  border:1px solid rgba(59,130,246,0.2);  }
+.rp-badge-in_progress { background:rgba(139,92,246,0.1);  color:#8b5cf6;  border:1px solid rgba(139,92,246,0.2);  }
+.rp-badge-waiting     { background:rgba(245,158,11,0.1);  color:#f59e0b;  border:1px solid rgba(245,158,11,0.2);  }
+.rp-badge-resolved    { background:rgba(34,197,94,0.1);   color:#22c55e;  border:1px solid rgba(34,197,94,0.2);   }
+.rp-badge-closed      { background:rgba(107,114,128,0.1); color:#6b7280;  border:1px solid rgba(107,114,128,0.2); }
+.rp-badge-low         { color:#22c55e; }
+.rp-badge-medium      { color:#f59e0b; }
+.rp-badge-high        { color:#ef4444; }
+.rp-badge-urgent      { color:#dc2626; font-weight:700; }
+
+.rp-card-date {
+    font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0;
+    margin-top: 0.2rem;
+}
+
+/* Updates strip */
+.rp-card-updates {
+    border-top: 1px solid var(--border-color);
+    padding: 0.6rem 1.125rem;
+    font-size: 0.76rem; color: var(--text-muted);
+    display: flex; align-items: center; gap: 0.4rem;
+    background: var(--bg-secondary);
+}
+.rp-update-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #3b82f6; flex-shrink: 0;
+    animation: rpDotPulse 2s ease infinite;
+}
+@keyframes rpDotPulse {
+    0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,0.4)}
+    50%{box-shadow:0 0 0 4px rgba(59,130,246,0)}
+}
+
+/* ── Detail modal ── */
+#rpDetailModal {
+    display: none; position: fixed; inset: 0; z-index: 9000;
+    align-items: center; justify-content: center; padding: 1rem;
+    background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);
+    font-family: 'Sora', sans-serif;
+}
+#rpDetailModal.open { display: flex; animation: rpFadeIn 0.2s ease; }
+@keyframes rpFadeIn { from{opacity:0}to{opacity:1} }
+.rp-detail-dialog {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 14px; width: 100%; max-width: 600px; max-height: 88vh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.2);
+    animation: rpSlideUp 0.28s cubic-bezier(0.16,1,0.3,1);
+    overflow: hidden;
+}
+[data-theme="dark"] .rp-detail-dialog { box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+@keyframes rpSlideUp { from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1} }
+
+.rp-detail-header {
+    display: flex; align-items: flex-start; gap: 0.875rem;
+    padding: 1.125rem 1.25rem 1rem;
+    border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+}
+.rp-detail-header-info { flex: 1; min-width: 0; }
+.rp-detail-ticket {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+    color: var(--text-muted); margin-bottom: 0.3rem;
+}
+.rp-detail-title  { font-size: 1rem; font-weight: 700; color: var(--text-primary); line-height: 1.35; }
+.rp-detail-badges { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.4rem; }
+.rp-detail-close {
+    background: var(--bg-secondary); border: 1px solid var(--border-color);
+    color: var(--text-muted); border-radius: 8px;
+    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 1rem; flex-shrink: 0; transition: all 0.15s;
+}
+.rp-detail-close:hover { color: var(--text-primary); }
+
+.rp-detail-body { flex: 1; overflow-y: auto; padding: 1.125rem 1.25rem; }
+
+.rp-detail-section-label {
+    font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.4rem;
+}
+.rp-detail-desc {
+    font-size: 0.84rem; color: var(--text-primary); line-height: 1.65;
+    background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: 8px; padding: 0.75rem 0.875rem; margin-bottom: 1rem;
+    white-space: pre-wrap; word-break: break-word;
+}
+.rp-detail-meta-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;
+}
+.rp-detail-meta-item {
+    background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: 8px; padding: 0.6rem 0.75rem;
+}
+.rp-detail-meta-item .label { font-size: 0.67rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.rp-detail-meta-item .value { font-size: 0.8rem; color: var(--text-primary); font-weight: 600; margin-top: 0.15rem; word-break: break-all; }
+
+/* Timeline */
+.rp-timeline { margin-top: 0.5rem; }
+.rp-timeline-entry {
+    display: flex; gap: 0.75rem; margin-bottom: 1rem; position: relative;
+}
+.rp-timeline-entry::before {
+    content: ''; position: absolute;
+    left: 15px; top: 30px; bottom: -10px; width: 2px;
+    background: var(--border-color);
+}
+.rp-timeline-entry:last-child::before { display: none; }
+.rp-timeline-dot {
+    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; border: 2px solid var(--border-color);
+    background: var(--bg-primary); z-index: 1;
+}
+.rp-timeline-dot.admin   { background: rgba(59,130,246,0.1);  border-color: rgba(59,130,246,0.3); color: #3b82f6; }
+.rp-timeline-dot.status  { background: rgba(139,92,246,0.1);  border-color: rgba(139,92,246,0.3); color: #8b5cf6; }
+.rp-timeline-dot.created { background: rgba(34,197,94,0.1);   border-color: rgba(34,197,94,0.3);  color: #22c55e; }
+.rp-timeline-content { flex: 1; min-width: 0; }
+.rp-timeline-author { font-size: 0.75rem; font-weight: 700; color: var(--text-primary); }
+.rp-timeline-date   { font-size: 0.69rem; color: var(--text-muted); margin-left: 0.4rem; }
+.rp-timeline-msg    { font-size: 0.815rem; color: var(--text-secondary); line-height: 1.6; margin-top: 0.25rem; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 0 8px 8px 8px; padding: 0.6rem 0.75rem; }
+.rp-timeline-status-change { font-size: 0.775rem; color: var(--text-muted); margin-top: 0.2rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rp-page">
+
+    <!-- Page header -->
+    <div class="rp-page-header">
+        <div class="rp-page-icon"><i class="bi bi-ticket-detailed-fill"></i></div>
+        <div>
+            <h1 class="rp-page-title">My Reports</h1>
+            <div class="rp-page-sub">Track the status of your submitted reports and complaints</div>
+        </div>
+        {% if active_count %}
+        <div class="rp-active-badge"><i class="bi bi-circle-fill" style="font-size:0.5rem;vertical-align:middle"></i> {{ active_count }} active</div>
+        {% endif %}
+    </div>
+
+    <!-- Filter bar -->
+    <div class="rp-filters">
+        <button class="rp-filter-btn active" data-filter="all">All</button>
+        <button class="rp-filter-btn" data-filter="open">Open</button>
+        <button class="rp-filter-btn" data-filter="in_progress">In Progress</button>
+        <button class="rp-filter-btn" data-filter="waiting">Waiting</button>
+        <button class="rp-filter-btn" data-filter="resolved">Resolved</button>
+        <button class="rp-filter-btn" data-filter="closed">Closed</button>
+    </div>
+
+    <!-- Cards -->
+    {% if reports %}
+        {% for report in reports %}
+        <div class="rp-card type-{{ report.type }}"
+             data-status="{{ report.status }}"
+             data-ticket="{{ report.ticket_number }}"
+             onclick="rpOpenDetail('{{ report.ticket_number }}')">
+            <div class="rp-card-header">
+                <div class="rp-card-type-icon">
+                    <i class="bi {% if report.type == 'bug' %}bi-bug{% elif report.type == 'feature' %}bi-stars{% elif report.type == 'billing' %}bi-credit-card{% elif report.type == 'complaint' %}bi-person-exclamation{% else %}bi-database-exclamation{% endif %}"></i>
+                </div>
+                <div class="rp-card-meta">
+                    <div class="rp-card-ticket">
+                        {{ report.ticket_number }}
+                        <span style="opacity:0.5">·</span>
+                        {{ report.get_type_display }}
+                    </div>
+                    <div class="rp-card-title">{{ report.title }}</div>
+                    <div class="rp-card-badges">
+                        <span class="rp-badge rp-badge-{{ report.status }}">
+                            <i class="bi {% if report.status == 'open' %}bi-circle{% elif report.status == 'in_progress' %}bi-arrow-repeat{% elif report.status == 'waiting' %}bi-hourglass-split{% elif report.status == 'resolved' %}bi-check-circle{% else %}bi-x-circle{% endif %}"></i>
+                            {{ report.get_status_display }}
+                        </span>
+                        <span class="rp-badge rp-badge-type rp-badge-{{ report.priority }}">
+                            <i class="bi bi-flag-fill"></i> {{ report.get_priority_display }}
+                        </span>
+                    </div>
+                </div>
+                <div class="rp-card-date">{{ report.created_at|date:"d M Y" }}</div>
+            </div>
+            {% with latest=report.updates.last %}
+            {% if latest and not latest.is_internal %}
+            <div class="rp-card-updates">
+                <span class="rp-update-dot"></span>
+                <strong style="color:var(--text-primary)">{{ latest.author|default:"Support" }}:</strong>
+                {{ latest.message|truncatechars:80 }}
+            </div>
+            {% endif %}
+            {% endwith %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="rp-empty">
+            <i class="bi bi-inbox"></i>
+            You haven't submitted any reports yet.<br>
+            Use the <strong>red flag button</strong> at the bottom right to report an issue.
+        </div>
+    {% endif %}
+
+</div>
+
+<!-- ══════════ DETAIL MODAL ══════════ -->
+<div id="rpDetailModal">
+    <div class="rp-detail-dialog" id="rpDetailDialog">
+        <div class="rp-detail-header">
+            <div class="rp-detail-header-info">
+                <div class="rp-detail-ticket" id="rdTicket"></div>
+                <div class="rp-detail-title"  id="rdTitle"></div>
+                <div class="rp-detail-badges" id="rdBadges"></div>
+            </div>
+            <button class="rp-detail-close" onclick="rpCloseDetail()" aria-label="Close"><i class="bi bi-x"></i></button>
+        </div>
+        <div class="rp-detail-body" id="rpDetailBody">
+            <div style="text-align:center;padding:2rem;color:var(--text-muted)">
+                <i class="bi bi-arrow-clockwise" style="animation:rpSpin 0.8s linear infinite;font-size:1.5rem"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+@keyframes rpSpin  { to{transform:rotate(360deg)} }
+@keyframes rpFadeIn{ from{opacity:0}to{opacity:1} }
+</style>
+
+<script>
+/* ── Report data from Django (passed as JSON to avoid extra AJAX) ── */
+const RP_REPORTS = {
+    {% for report in reports %}
+    "{{ report.ticket_number }}": {
+        ticket:          "{{ report.ticket_number }}",
+        title:           "{{ report.title|escapejs }}",
+        type:            "{{ report.type }}",
+        type_display:    "{{ report.get_type_display }}",
+        priority:        "{{ report.priority }}",
+        priority_display:"{{ report.get_priority_display }}",
+        status:          "{{ report.status }}",
+        status_display:  "{{ report.get_status_display }}",
+        description:     `{{ report.description|escapejs }}`,
+        affected_url:    "{{ report.affected_url|escapejs }}",
+        affected_record: "{{ report.affected_record|escapejs }}",
+        created_at:      "{{ report.created_at|date:'d M Y, H:i' }}",
+        resolved_at:     "{{ report.resolved_at|date:'d M Y, H:i'|default:'' }}",
+        screenshot:      "{% if report.screenshot %}{{ report.screenshot.url }}{% endif %}",
+        updates: [
+            {% for u in report.updates.all %}
+            {% if not u.is_internal %}{
+                author:      "{{ u.author.get_full_name|default:u.author.username|default:'Support'|escapejs }}",
+                type:        "{{ u.update_type }}",
+                message:     `{{ u.message|escapejs }}`,
+                old_status:  "{{ u.old_status }}",
+                new_status:  "{{ u.new_status }}",
+                created_at:  "{{ u.created_at|date:'d M Y, H:i' }}",
+            },{% endif %}
+            {% endfor %}
+        ],
+    },
+    {% endfor %}
+};
+
+const STATUS_ICON = {
+    open:'bi-circle', in_progress:'bi-arrow-repeat',
+    waiting:'bi-hourglass-split', resolved:'bi-check-circle', closed:'bi-x-circle',
+};
+const STATUS_CLASS = {
+    open:'rp-badge-open', in_progress:'rp-badge-in_progress',
+    waiting:'rp-badge-waiting', resolved:'rp-badge-resolved', closed:'rp-badge-closed',
+};
+const PRIORITY_CLASS = { low:'rp-badge-low', medium:'rp-badge-medium', high:'rp-badge-high', urgent:'rp-badge-urgent' };
+
+function rpOpenDetail(ticket) {
+    const r = RP_REPORTS[ticket];
+    if (!r) return;
+
+    document.getElementById('rdTicket').textContent = r.ticket;
+    document.getElementById('rdTitle').textContent  = r.title;
+    document.getElementById('rdBadges').innerHTML   =
+        `<span class="rp-badge ${STATUS_CLASS[r.status]}"><i class="bi ${STATUS_ICON[r.status]}"></i> ${r.status_display}</span>
+         <span class="rp-badge rp-badge-type ${PRIORITY_CLASS[r.priority]}"><i class="bi bi-flag-fill"></i> ${r.priority_display}</span>
+         <span class="rp-badge rp-badge-type">${r.type_display}</span>`;
+
+    // Build body
+    let html = `
+        <div class="rp-detail-section-label">Description</div>
+        <div class="rp-detail-desc">${escHtml(r.description)}</div>
+        <div class="rp-detail-meta-grid">
+            <div class="rp-detail-meta-item"><div class="label">Submitted</div><div class="value">${r.created_at}</div></div>
+            ${r.resolved_at ? `<div class="rp-detail-meta-item"><div class="label">Resolved</div><div class="value">${r.resolved_at}</div></div>` : ''}
+            ${r.affected_url ? `<div class="rp-detail-meta-item" style="grid-column:1/-1"><div class="label">Affected Page</div><div class="value">${escHtml(r.affected_url)}</div></div>` : ''}
+            ${r.affected_record ? `<div class="rp-detail-meta-item" style="grid-column:1/-1"><div class="label">Affected Record</div><div class="value">${escHtml(r.affected_record)}</div></div>` : ''}
+        </div>
+        ${r.screenshot ? `<div style="margin-bottom:1rem"><div class="rp-detail-section-label">Screenshot</div><a href="${r.screenshot}" target="_blank"><img src="${r.screenshot}" style="max-width:100%;border-radius:8px;border:1px solid var(--border-color)"></a></div>` : ''}
+    `;
+
+    // Timeline
+    html += `<div class="rp-detail-section-label" style="margin-bottom:0.6rem">Timeline</div><div class="rp-timeline">`;
+    // Created entry
+    html += `<div class="rp-timeline-entry"><div class="rp-timeline-dot created"><i class="bi bi-plus-lg"></i></div><div class="rp-timeline-content"><span class="rp-timeline-author">You</span><span class="rp-timeline-date">${r.created_at}</span><div class="rp-timeline-msg">Ticket submitted: <em>${escHtml(r.title)}</em></div></div></div>`;
+
+    r.updates.forEach(u => {
+        const dotClass = u.type === 'status_change' ? 'status' : 'admin';
+        const icon     = u.type === 'status_change' ? 'bi-arrow-left-right' : 'bi-person-fill';
+        html += `<div class="rp-timeline-entry">
+            <div class="rp-timeline-dot ${dotClass}"><i class="bi ${icon}"></i></div>
+            <div class="rp-timeline-content">
+                <span class="rp-timeline-author">${escHtml(u.author)}</span>
+                <span class="rp-timeline-date">${u.created_at}</span>
+                ${u.type === 'status_change'
+                    ? `<div class="rp-timeline-status-change">Status changed: <strong>${u.old_status}</strong> → <strong>${u.new_status}</strong></div>`
+                    : ''}
+                ${u.message ? `<div class="rp-timeline-msg">${escHtml(u.message)}</div>` : ''}
+            </div>
+        </div>`;
+    });
+
+    html += '</div>';
+    document.getElementById('rpDetailBody').innerHTML = html;
+
+    const modal = document.getElementById('rpDetailModal');
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function rpCloseDetail() {
+    document.getElementById('rpDetailModal').classList.remove('open');
+    document.body.style.overflow = '';
+}
+
+document.getElementById('rpDetailModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('rpDetailModal')) rpCloseDetail();
+});
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') rpCloseDetail();
+});
+
+function escHtml(str) {
+    return String(str)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Filter bar ────────────────────────────────────────────────
+document.querySelectorAll('.rp-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.rp-filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const filter = btn.dataset.filter;
+        document.querySelectorAll('.rp-card').forEach(card => {
+            card.style.display = (filter === 'all' || card.dataset.status === filter) ? '' : 'none';
+        });
+    });
+});
+</script>
+{% endblock %}

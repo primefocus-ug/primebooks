@@ -93,6 +93,553 @@ def payment_receipt_view(request, pk, payment_id):
 
         return render(request, 'invoices/payment_receipt_print.html', context)
 
+
+@login_required
+@permission_required('invoices.view_invoice')
+def customer_invoice_lookup(request):
+    """
+    Step 1 — Search a customer by name/phone/email and display all their
+    pending credit invoices with checkboxes.  A 'Generate Unified Invoice'
+    button posts the selected IDs to unified_credit_invoice_pdf.
+    """
+    from customers.models import Customer
+
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found.')
+        return redirect('invoices:list')
+
+    with tenant_context(company):
+        query = request.GET.get('q', '').strip()
+        customer = None
+        customer_id = request.GET.get('customer_id')
+        pending_invoices = []
+        all_customers = []
+
+        # ── Customer search ────────────────────────────────────────────────
+        if query:
+            all_customers = Customer.objects.filter(
+                Q(name__icontains=query) |
+                Q(phone__icontains=query) |
+                Q(email__icontains=query) |
+                Q(tin__icontains=query),
+                is_active=True
+            ).order_by('name')[:20]
+
+        # ── Load invoices once a customer is chosen ─────────────────────────
+        if customer_id:
+            customer = get_object_or_404(Customer, pk=customer_id)
+            pending_invoices = Invoice.objects.filter(
+                sale__customer=customer,
+                sale__document_type='INVOICE',
+                sale__payment_method='CREDIT',
+                sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+            ).select_related(
+                'sale', 'sale__store'
+            ).prefetch_related('payments').order_by('sale__due_date', 'sale__created_at')
+
+            # Annotate each invoice with its running balance for display
+            for inv in pending_invoices:
+                inv.balance = inv.amount_outstanding
+
+        context = {
+            'query': query,
+            'all_customers': all_customers,
+            'customer': customer,
+            'pending_invoices': pending_invoices,
+            'total_outstanding': sum(inv.amount_outstanding for inv in pending_invoices),
+        }
+        return render(request, 'invoices/customer_invoice_lookup.html', context)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. UNIFIED CREDIT INVOICE PDF — receive selected invoice IDs via POST,
+#    build one consolidated PDF statement with all chosen invoices.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@permission_required('invoices.view_invoice')
+def unified_credit_invoice_pdf(request):
+    """
+    POST: invoice_ids (list of int), customer_id (int)
+    Generates a single shareable PDF covering multiple outstanding invoices
+    for one customer, with a combined total due.
+    """
+    if request.method != 'POST':
+        return redirect('invoices:customer_invoice_lookup')
+
+    company = get_current_tenant(request)
+    if not company:
+        return HttpResponse('No company context', status=403)
+
+    with tenant_context(company):
+        from customers.models import Customer
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.platypus import (
+            SimpleDocTemplate, Table, TableStyle, Paragraph,
+            Spacer, HRFlowable,
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+        from io import BytesIO
+        from datetime import datetime
+
+        invoice_ids = request.POST.getlist('invoice_ids')
+        customer_id = request.POST.get('customer_id')
+
+        if not invoice_ids:
+            messages.error(request, 'No invoices selected.')
+            return redirect('invoices:customer_invoice_lookup')
+        if not customer_id:
+            messages.error(request, 'Customer not specified.')
+            return redirect('invoices:customer_invoice_lookup')
+
+        customer = get_object_or_404(Customer, pk=customer_id)
+
+        invoices = Invoice.objects.filter(
+            id__in=invoice_ids,
+            sale__customer=customer,
+            sale__store__company=company,
+        ).select_related(
+            'sale', 'sale__store', 'sale__customer'
+        ).prefetch_related('payments', 'sale__items__product', 'sale__items__service')
+
+        if not invoices.exists():
+            messages.error(request, 'No matching invoices found.')
+            return redirect('invoices:customer_invoice_lookup')
+
+        # ── Color palette ──────────────────────────────────────────────────
+        PRIMARY = colors.HexColor('#7c3aed')
+        DARK = colors.HexColor('#1f2937')
+        GRAY = colors.HexColor('#6b7280')
+        LIGHT = colors.HexColor('#f3f4f6')
+        BORDER = colors.HexColor('#e5e7eb')
+        SUCCESS = colors.HexColor('#059669')
+        WARNING = colors.HexColor('#d97706')
+        ROSE = colors.HexColor('#dc2626')
+        WHITE = colors.white
+        STRIPE = colors.HexColor('#faf5ff')
+        STRIPE2 = colors.HexColor('#f0fdf4')
+
+        # ── Document setup ─────────────────────────────────────────────────
+        buffer = BytesIO()
+        PAGE_W, PAGE_H = A4
+        MARGIN = 15 * mm
+        CONTENT = PAGE_W - 2 * MARGIN
+
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            leftMargin=MARGIN,
+            rightMargin=MARGIN,
+            topMargin=MARGIN,
+            bottomMargin=MARGIN,
+        )
+        elements = []
+        base = getSampleStyleSheet()
+
+        def S(name, **kw):
+            return ParagraphStyle(name, parent=base['Normal'], **kw)
+
+        # ── Styles ─────────────────────────────────────────────────────────
+        S_COMPANY = S('Co', fontSize=18, fontName='Helvetica-Bold',
+                      textColor=PRIMARY, alignment=TA_CENTER, spaceAfter=8)
+        S_SUB = S('Sub', fontSize=9, fontName='Helvetica',
+                  textColor=GRAY, alignment=TA_CENTER, spaceAfter=2)
+        S_TITLE = S('Ti', fontSize=15, fontName='Helvetica-Bold',
+                    textColor=DARK, alignment=TA_CENTER, spaceAfter=4)
+        S_REF = S('Rf', fontSize=8, fontName='Courier',
+                  textColor=GRAY, alignment=TA_CENTER, spaceAfter=0)
+        S_SECT = S('Sc', fontSize=9, fontName='Helvetica-Bold',
+                   textColor=PRIMARY, spaceBefore=0, spaceAfter=2)
+        S_LBL = S('Lb', fontSize=8, fontName='Helvetica-Bold', textColor=GRAY)
+        S_VAL = S('Vl', fontSize=9, fontName='Helvetica-Bold', textColor=DARK)
+        S_MONO = S('Mo', fontSize=9, fontName='Courier-Bold', textColor=DARK)
+        S_TH = S('Th', fontSize=9, fontName='Helvetica-Bold',
+                 textColor=WHITE, alignment=TA_CENTER)
+        S_TD = S('Td', fontSize=8, fontName='Helvetica', textColor=DARK)
+        S_TD_R = S('Tr', fontSize=8, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_RIGHT)
+        S_TD_C = S('Tc', fontSize=8, fontName='Helvetica', textColor=DARK, alignment=TA_CENTER)
+        S_ITEM = S('It', fontSize=8, fontName='Helvetica-Bold', textColor=DARK)
+        S_ITEM_SUB = S('Is', fontSize=7, fontName='Courier', textColor=GRAY)
+        S_FOOTER = S('Ft', fontSize=8, fontName='Helvetica', textColor=GRAY, alignment=TA_CENTER)
+        S_WARN = S('Wn', fontSize=9, fontName='Helvetica-Bold',
+                   textColor=WHITE, alignment=TA_CENTER)
+        S_TOT_L = S('TL', fontSize=10, fontName='Helvetica', textColor=GRAY, alignment=TA_LEFT)
+        S_TOT_V = S('TV', fontSize=10, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_RIGHT)
+        S_GRAND_L = S('GL', fontSize=13, fontName='Helvetica-Bold', textColor=PRIMARY, alignment=TA_LEFT)
+        S_GRAND_V = S('GV', fontSize=13, fontName='Helvetica-Bold', textColor=PRIMARY, alignment=TA_RIGHT)
+
+        now_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+        ref_code = f"STMT-{customer.id}-{datetime.now().strftime('%Y%m%d%H%M')}"
+
+        # ════════════════════════════════════════════════════════════════════
+        # HEADER — company info
+        # ════════════════════════════════════════════════════════════════════
+        elements.append(Paragraph(company.name.upper(), S_COMPANY))
+        addr_parts = []
+        if getattr(company, 'physical_address', None): addr_parts.append(company.physical_address)
+        if getattr(company, 'phone', None): addr_parts.append(f"Tel: {company.phone}")
+        if getattr(company, 'email', None): addr_parts.append(company.email)
+        if getattr(company, 'tin', None): addr_parts.append(f"TIN: {company.tin}")
+        if addr_parts:
+            elements.append(Paragraph('  |  '.join(addr_parts), S_SUB))
+
+        elements.append(HRFlowable(width=CONTENT, thickness=3, color=PRIMARY, spaceAfter=6))
+
+        elements.append(Paragraph('CONSOLIDATED CREDIT STATEMENT', S_TITLE))
+        elements.append(Paragraph(f'Ref: {ref_code}  ·  Generated: {now_str}', S_REF))
+        elements.append(Spacer(1, 10))
+
+        # ════════════════════════════════════════════════════════════════════
+        # CUSTOMER + STATEMENT INFO  (two-column grid)
+        # ════════════════════════════════════════════════════════════════════
+        LEFT_W = CONTENT * 0.55
+        RIGHT_W = CONTENT * 0.45 - 4 * mm
+
+        cust_rows = [[Paragraph('BILL TO', S_SECT), '']]
+        cust_fields = [
+            ('Name', customer.name),
+            ('Phone', getattr(customer, 'phone', None)),
+            ('Email', getattr(customer, 'email', None)),
+            ('TIN', getattr(customer, 'tin', None)),
+            ('Address', getattr(customer, 'physical_address', None)),
+        ]
+        for lbl, val in cust_fields:
+            if val:
+                cust_rows.append([Paragraph(lbl, S_LBL), Paragraph(str(val), S_VAL)])
+
+        cust_t = Table(cust_rows, colWidths=[LEFT_W * 0.33, LEFT_W * 0.67])
+        cust_t.setStyle(TableStyle([
+            ('SPAN', (0, 0), (1, 0)),
+            ('BACKGROUND', (0, 0), (-1, -1), STRIPE),
+            ('BOX', (0, 0), (-1, -1), 2, PRIMARY),
+            ('LINEBELOW', (0, 0), (1, 0), 1, PRIMARY),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+
+        info_rows = [
+            [Paragraph('STATEMENT INFO', S_SECT), ''],
+            [Paragraph('Date', S_LBL), Paragraph(datetime.now().strftime('%d/%m/%Y'), S_MONO)],
+            [Paragraph('Reference', S_LBL), Paragraph(ref_code, S_MONO)],
+            [Paragraph('Invoices', S_LBL), Paragraph(str(len(invoice_ids)), S_VAL)],
+            [Paragraph('Currency', S_LBL), Paragraph(invoices[0].sale.currency if invoices else 'UGX', S_VAL)],
+        ]
+        info_t = Table(info_rows, colWidths=[RIGHT_W * 0.4, RIGHT_W * 0.6])
+        info_t.setStyle(TableStyle([
+            ('SPAN', (0, 0), (1, 0)),
+            ('BACKGROUND', (0, 0), (-1, -1), LIGHT),
+            ('BOX', (0, 0), (-1, -1), 2, BORDER),
+            ('LINEBELOW', (0, 0), (1, 0), 1, BORDER),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+
+        grid = Table([[cust_t, info_t]], colWidths=[LEFT_W, RIGHT_W + 4 * mm])
+        grid.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(grid)
+        elements.append(Spacer(1, 14))
+
+        # ════════════════════════════════════════════════════════════════════
+        # INVOICE SUMMARY TABLE  (one row per invoice)
+        # ════════════════════════════════════════════════════════════════════
+        elements.append(HRFlowable(width=CONTENT, thickness=1, color=BORDER, spaceAfter=6))
+        elements.append(Paragraph('INVOICE SUMMARY', S_SECT))
+
+        summary_header = [
+            Paragraph('#', S_TH),
+            Paragraph('Invoice No', S_TH),
+            Paragraph('Date', S_TH),
+            Paragraph('Due Date', S_TH),
+            Paragraph('Invoice Total', S_TH),
+            Paragraph('Paid', S_TH),
+            Paragraph('Balance Due', S_TH),
+            Paragraph('Status', S_TH),
+        ]
+        summary_data = [summary_header]
+
+        grand_total = Decimal('0')
+        grand_paid = Decimal('0')
+        grand_balance = Decimal('0')
+
+        for idx, inv in enumerate(invoices, 1):
+            total = inv.total_amount or Decimal('0')
+            paid = inv.amount_paid or Decimal('0')
+            balance = inv.amount_outstanding or Decimal('0')
+            grand_total += total
+            grand_paid += paid
+            grand_balance += balance
+
+            status_map = {
+                'PENDING': ('Pending', WARNING),
+                'PARTIALLY_PAID': ('Part. Paid', colors.HexColor('#2563eb')),
+                'OVERDUE': ('Overdue', ROSE),
+            }
+            status_label, status_color = status_map.get(
+                inv.sale.payment_status, (inv.sale.payment_status, GRAY)
+            )
+
+            due_str = inv.sale.due_date.strftime('%d/%m/%y') if inv.sale.due_date else '—'
+            created_str = inv.sale.created_at.strftime('%d/%m/%y') if inv.sale.created_at else '—'
+
+            summary_data.append([
+                Paragraph(str(idx), S_TD_C),
+                Paragraph(str(inv.invoice_number), S_MONO),
+                Paragraph(created_str, S_TD_C),
+                Paragraph(due_str, S_TD_C),
+                Paragraph(f"{total:,.0f}", S_TD_R),
+                Paragraph(f"{paid:,.0f}", S_TD_R),
+                Paragraph(f"{balance:,.0f}", S_TD_R),
+                Paragraph(status_label, S('St', fontSize=8, fontName='Helvetica-Bold',
+                                          textColor=status_color, alignment=TA_CENTER)),
+            ])
+
+        # Totals footer row
+        summary_data.append([
+            Paragraph('', S_TD),
+            Paragraph('TOTAL', S('Tot', fontSize=9, fontName='Helvetica-Bold',
+                                 textColor=DARK, alignment=TA_LEFT)),
+            Paragraph('', S_TD),
+            Paragraph('', S_TD),
+            Paragraph(f"{grand_total:,.0f}", S('GTV', fontSize=9, fontName='Helvetica-Bold',
+                                               textColor=DARK, alignment=TA_RIGHT)),
+            Paragraph(f"{grand_paid:,.0f}", S('GPV', fontSize=9, fontName='Helvetica-Bold',
+                                              textColor=SUCCESS, alignment=TA_RIGHT)),
+            Paragraph(f"{grand_balance:,.0f}", S('GBV', fontSize=9, fontName='Helvetica-Bold',
+                                                 textColor=ROSE, alignment=TA_RIGHT)),
+            Paragraph('', S_TD),
+        ])
+
+        # Column widths
+        N = 8
+        col_w = [
+            8 * mm,  # #
+            32 * mm,  # invoice no
+            20 * mm,  # date
+            20 * mm,  # due
+            28 * mm,  # total
+            24 * mm,  # paid
+            28 * mm,  # balance
+            CONTENT - 8 * mm - 32 * mm - 20 * mm - 20 * mm - 28 * mm - 24 * mm - 28 * mm,  # status
+        ]
+
+        summ_t = Table(summary_data, colWidths=col_w, repeatRows=1)
+        n_rows = len(summary_data)
+        summ_t.setStyle(TableStyle([
+            # Header
+            ('BACKGROUND', (0, 0), (-1, 0), PRIMARY),
+            ('ROWBACKGROUNDS', (0, 1), (-1, n_rows - 2), [WHITE, STRIPE]),
+            # Totals row
+            ('BACKGROUND', (0, n_rows - 1), (-1, n_rows - 1), LIGHT),
+            ('LINEABOVE', (0, n_rows - 1), (-1, n_rows - 1), 1.5, DARK),
+            # Grid
+            ('GRID', (0, 0), (-1, -1), 0.4, BORDER),
+            # Padding
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 5),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(summ_t)
+        elements.append(Spacer(1, 16))
+
+        # ════════════════════════════════════════════════════════════════════
+        # PER-INVOICE ITEM BREAKDOWN
+        # ════════════════════════════════════════════════════════════════════
+        elements.append(HRFlowable(width=CONTENT, thickness=1, color=BORDER, spaceAfter=6))
+        elements.append(Paragraph('INVOICE BREAKDOWN', S_SECT))
+        elements.append(Spacer(1, 4))
+
+        for idx, inv in enumerate(invoices, 1):
+            # Invoice mini-header
+            sale = inv.sale
+            due_disp = sale.due_date.strftime('%d %b %Y') if sale.due_date else 'N/A'
+            date_disp = sale.created_at.strftime('%d %b %Y') if sale.created_at else 'N/A'
+
+            inv_header_data = [[
+                Paragraph(
+                    f'<b>#{idx}  Invoice {inv.invoice_number}</b>'
+                    f'  ·  Date: {date_disp}  ·  Due: {due_disp}',
+                    S('IH', fontSize=9, fontName='Helvetica-Bold',
+                      textColor=WHITE, alignment=TA_LEFT)
+                ),
+                Paragraph(
+                    f'Balance: {inv.amount_outstanding:,.0f} {sale.currency}',
+                    S('IHR', fontSize=9, fontName='Helvetica-Bold',
+                      textColor=WHITE, alignment=TA_RIGHT)
+                ),
+            ]]
+            inv_hdr_t = Table(inv_header_data, colWidths=[CONTENT * 0.65, CONTENT * 0.35])
+            inv_hdr_t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), PRIMARY),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(inv_hdr_t)
+
+            # Items table for this invoice
+            items = list(sale.items.all())
+            item_rows = [[
+                Paragraph('Qty', S_TH),
+                Paragraph('Item', S_TH),
+                Paragraph('Price', S_TH),
+                Paragraph('Total', S_TH),
+            ]]
+            for item in items:
+                if getattr(item, 'item_type', None) == 'SERVICE' and getattr(item, 'service', None):
+                    iname = item.service.name
+                elif getattr(item, 'product', None):
+                    iname = item.product.name
+                else:
+                    iname = getattr(item, 'description', getattr(item, 'item_name', '—'))
+
+                qty_val = item.quantity
+                unit_price = getattr(item, 'unit_price', 0)
+                line_total = getattr(item, 'line_total', getattr(item, 'total_price', 0))
+
+                try:
+                    qty_disp = f"{qty_val:g}"
+                except Exception:
+                    qty_disp = str(qty_val)
+
+                item_rows.append([
+                    Paragraph(qty_disp, S_TD_C),
+                    Paragraph(iname, S_ITEM),
+                    Paragraph(f"{unit_price:,.0f}", S_TD_R),
+                    Paragraph(f"{line_total:,.0f}", S_TD_R),
+                ])
+
+            C_QTY = 14 * mm
+            C_PRICE = 26 * mm
+            C_TOTAL = 26 * mm
+            C_DESC = CONTENT - C_QTY - C_PRICE - C_TOTAL
+            items_t = Table(item_rows, colWidths=[C_QTY, C_DESC, C_PRICE, C_TOTAL], repeatRows=1)
+            items_t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4c1d95')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, STRIPE]),
+                ('GRID', (0, 0), (-1, -1), 0.3, BORDER),
+                ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+                ('ALIGN', (2, 1), (3, -1), 'RIGHT'),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('LEFTPADDING', (0, 0), (-1, -1), 5),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(items_t)
+
+            # Subtotals for this invoice
+            sub_rows = []
+            if inv.subtotal:
+                sub_rows.append([Paragraph('Subtotal:', S_TOT_L),
+                                 Paragraph(f"{inv.subtotal:,.0f} {sale.currency}", S_TOT_V)])
+            if inv.tax_amount:
+                sub_rows.append([Paragraph('Tax:', S_TOT_L),
+                                 Paragraph(f"{inv.tax_amount:,.0f} {sale.currency}", S_TOT_V)])
+            if inv.discount_amount:
+                sub_rows.append([Paragraph('Discount:', S_TOT_L),
+                                 Paragraph(f"-{inv.discount_amount:,.0f} {sale.currency}", S_TOT_V)])
+            sub_rows.append([Paragraph('Invoice Total:', S_TOT_L),
+                             Paragraph(f"{inv.total_amount:,.0f} {sale.currency}", S_TOT_V)])
+            sub_rows.append([Paragraph('Paid:', S_TOT_L),
+                             Paragraph(f"{inv.amount_paid:,.0f} {sale.currency}",
+                                       S('PV', fontSize=10, fontName='Helvetica-Bold',
+                                         textColor=SUCCESS, alignment=TA_RIGHT))])
+            sub_rows.append([Paragraph('Balance Due:', S_TOT_L),
+                             Paragraph(f"{inv.amount_outstanding:,.0f} {sale.currency}",
+                                       S('BV', fontSize=10, fontName='Helvetica-Bold',
+                                         textColor=ROSE, alignment=TA_RIGHT))])
+
+            sub_t = Table(sub_rows, colWidths=[CONTENT * 0.78, CONTENT * 0.22])
+            sub_t.setStyle(TableStyle([
+                ('LINEABOVE', (0, len(sub_rows) - 3), (-1, len(sub_rows) - 3), 1, DARK),
+                ('LINEABOVE', (0, len(sub_rows) - 1), (-1, len(sub_rows) - 1), 1.5, ROSE),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(sub_t)
+            elements.append(Spacer(1, 12))
+
+        # ════════════════════════════════════════════════════════════════════
+        # GRAND TOTAL BANNER
+        # ════════════════════════════════════════════════════════════════════
+        elements.append(HRFlowable(width=CONTENT, thickness=2, color=PRIMARY, spaceAfter=0))
+
+        grand_rows = [
+            [Paragraph('Total Invoice Amount:', S_TOT_L),
+             Paragraph(f"UGX {grand_total:,.0f}", S_TOT_V)],
+            [Paragraph('Total Paid:', S_TOT_L),
+             Paragraph(f"UGX {grand_paid:,.0f}",
+                       S('GPaid', fontSize=10, fontName='Helvetica-Bold',
+                         textColor=SUCCESS, alignment=TA_RIGHT))],
+            [Paragraph('TOTAL AMOUNT DUE:', S_GRAND_L),
+             Paragraph(f"UGX {grand_balance:,.0f}", S_GRAND_V)],
+        ]
+        grand_t = Table(grand_rows, colWidths=[CONTENT * 0.65, CONTENT * 0.35])
+        grand_t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), LIGHT),
+            ('LINEBELOW', (0, 1), (-1, 1), 1.5, DARK),
+            ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#ede9fe')),
+            ('LINEABOVE', (0, 2), (-1, 2), 2, PRIMARY),
+            ('LINEBELOW', (0, 2), (-1, 2), 2, PRIMARY),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(grand_t)
+        elements.append(Spacer(1, 10))
+
+        # ════════════════════════════════════════════════════════════════════
+        # FOOTER
+        # ════════════════════════════════════════════════════════════════════
+        elements.append(HRFlowable(width=CONTENT, thickness=1, color=BORDER, spaceAfter=6))
+        elements.append(Paragraph(
+            f'Please quote reference <b>{ref_code}</b> when making payment.  '
+            f'All amounts in UGX.',
+            S_FOOTER
+        ))
+        elements.append(Paragraph('Thank you for your business!', S_FOOTER))
+        elements.append(Paragraph(
+            f'Generated by <b>{request.user.get_full_name() or request.user.username}</b>'
+            f' on {now_str}  ·  Powered by <b>Primebooks</b>',
+            S_FOOTER
+        ))
+
+        # ── Build PDF ──────────────────────────────────────────────────────
+        doc.build(elements)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+
+        filename = f"credit_statement_{customer.name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        response.write(pdf_bytes)
+        return response
+
 class InvoiceListView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, ListView):
     model = Invoice
     template_name = 'invoices/invoice_list.html'

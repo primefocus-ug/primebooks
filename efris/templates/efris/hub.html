@@ -1,0 +1,1505 @@
+{% extends "efris/base.html" %}
+{% load static %}
+{% load i18n %}
+{% load humanize %}
+{% load custom_filters %}
+
+
+
+{% block extra_css %}
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@300;400;500;600;700&display=swap');
+<style>
+/* ── Design tokens ─────────────────────────────────────────────── */
+.efris-hub {
+  --h-accent:      #0ea5e9;
+  --h-accent2:     #6366f1;
+  --h-success:     #10b981;
+  --h-warning:     #f59e0b;
+  --h-danger:      #ef4444;
+  --h-surface:     var(--bg-primary, #fff);
+  --h-surface2:    var(--bg-secondary, #f8fafc);
+  --h-border:      var(--border-color, #e2e8f0);
+  --h-text:        var(--text-primary, #0f172a);
+  --h-muted:       var(--text-secondary, #64748b);
+  --h-radius:      10px;
+  --h-mono:        'JetBrains Mono', monospace;
+  --h-sans:        'Sora', system-ui, sans-serif;
+  --h-ease:        cubic-bezier(.4,0,.2,1);
+  font-family: var(--h-sans);
+}
+
+/* ── Shell ─────────────────────────────────────────────────────── */
+.efris-hub {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 60px);
+  background: var(--h-surface2);
+}
+
+/* ── Top tab bar ───────────────────────────────────────────────── */
+.hub-tabbar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  background: var(--h-surface);
+  border-bottom: 1px solid var(--h-border);
+  padding: 0 1.25rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.hub-tabbar::-webkit-scrollbar { display: none; }
+
+.hub-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--h-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 180ms var(--h-ease), border-color 180ms var(--h-ease);
+  cursor: pointer;
+}
+.hub-tab i { font-size: 0.85rem; }
+.hub-tab:hover { color: var(--h-text); }
+.hub-tab.active {
+  color: var(--h-accent);
+  border-bottom-color: var(--h-accent);
+  font-weight: 600;
+}
+
+/* Tab groups separator */
+.hub-tab-sep {
+  width: 1px;
+  background: var(--h-border);
+  margin: 0.6rem 0.3rem;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+/* ── Content area ──────────────────────────────────────────────── */
+.hub-body { flex: 1; padding: 1.5rem; }
+
+.hub-panel { display: none; }
+.hub-panel.active { display: block; animation: fadeUp 220ms var(--h-ease) both; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Cards ─────────────────────────────────────────────────────── */
+.hc {
+  background: var(--h-surface);
+  border: 1px solid var(--h-border);
+  border-radius: var(--h-radius);
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+}
+.hc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--h-border);
+  gap: 0.75rem;
+}
+.hc-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--h-text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+.hc-title i { color: var(--h-accent); }
+.hc-body { padding: 1.25rem; }
+
+/* ── Stat cards ────────────────────────────────────────────────── */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+.stat-card {
+  background: var(--h-surface);
+  border: 1px solid var(--h-border);
+  border-radius: var(--h-radius);
+  padding: 1.25rem;
+  position: relative;
+  overflow: hidden;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--stat-color, var(--h-accent));
+}
+.stat-label { font-size: 0.72rem; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--h-muted); margin-bottom: 0.5rem; }
+.stat-value { font-size: 2rem; font-weight: 700; color: var(--h-text); font-family: var(--h-mono); line-height: 1; }
+.stat-sub   { font-size: 0.75rem; color: var(--h-muted); margin-top: 0.35rem; }
+.stat-icon  { position: absolute; top: 1.1rem; right: 1.1rem; font-size: 1.5rem; opacity: 0.12; }
+
+/* ── Tables ────────────────────────────────────────────────────── */
+.hub-table-wrap { overflow-x: auto; border-radius: var(--h-radius); border: 1px solid var(--h-border); }
+.hub-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: var(--h-surface); }
+.hub-table thead tr { background: var(--h-surface2); border-bottom: 1px solid var(--h-border); }
+.hub-table th {
+  padding: 0.65rem 1rem;
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--h-muted);
+  font-family: var(--h-mono);
+  white-space: nowrap;
+}
+.hub-table td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--h-border); color: var(--h-text); vertical-align: middle; }
+.hub-table tbody tr:last-child td { border-bottom: none; }
+.hub-table tbody tr { transition: background 140ms; }
+.hub-table tbody tr:hover { background: color-mix(in srgb, var(--h-accent) 4%, transparent); }
+.hub-table th.text-end, .hub-table td.text-end { text-align: right; }
+
+/* ── Status badges ─────────────────────────────────────────────── */
+.hbadge {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.22rem 0.55rem; border-radius: 20px;
+  font-size: 0.72rem; font-weight: 600; font-family: var(--h-mono);
+  letter-spacing: .03em;
+}
+.hbadge::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; flex-shrink:0; }
+.hbadge-approved { background:#f0fdf4; color:#16a34a; }
+.hbadge-pending  { background:#fffbeb; color:#d97706; }
+.hbadge-rejected { background:#fef2f2; color:#dc2626; }
+.hbadge-voided   { background:#f1f5f9; color:#64748b; }
+.hbadge-info     { background:#eff6ff; color:#2563eb; }
+.hbadge-neutral  { background:var(--h-surface2); color:var(--h-muted); }
+[data-theme="dark"] .hbadge-approved { background:#052e16; color:#4ade80; }
+[data-theme="dark"] .hbadge-pending  { background:#1c1506; color:#fbbf24; }
+[data-theme="dark"] .hbadge-rejected { background:#1c0505; color:#f87171; }
+[data-theme="dark"] .hbadge-info     { background:#0c1a3a; color:#60a5fa; }
+
+/* ── Buttons ───────────────────────────────────────────────────── */
+.hbtn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.45rem 0.9rem; border-radius: 7px;
+  font-size: 0.82rem; font-weight: 500; cursor: pointer;
+  border: 1px solid transparent; transition: all 160ms var(--h-ease);
+  text-decoration: none; white-space: nowrap; font-family: var(--h-sans);
+}
+.hbtn-primary { background: var(--h-accent); color: #fff; border-color: var(--h-accent); }
+.hbtn-primary:hover { filter: brightness(1.1); color: #fff; transform: translateY(-1px); box-shadow: 0 4px 12px color-mix(in srgb, var(--h-accent) 35%, transparent); }
+.hbtn-ghost   { background: transparent; color: var(--h-text); border-color: var(--h-border); }
+.hbtn-ghost:hover   { background: var(--h-surface2); color: var(--h-accent); border-color: var(--h-accent); }
+.hbtn-danger  { background: #fef2f2; color: var(--h-danger); border-color: #fecaca; }
+.hbtn-danger:hover  { background: var(--h-danger); color: #fff; }
+.hbtn-success { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+.hbtn-success:hover { background: #16a34a; color: #fff; }
+.hbtn-sm { padding: 0.3rem 0.65rem; font-size: 0.76rem; }
+
+/* ── Filter box ────────────────────────────────────────────────── */
+.hub-filter {
+  background: var(--h-surface);
+  border: 1px solid var(--h-border);
+  border-radius: var(--h-radius);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+/* ── Form controls ─────────────────────────────────────────────── */
+.hub-form-control {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--h-border);
+  border-radius: 7px;
+  background: var(--h-surface);
+  color: var(--h-text);
+  font-size: 0.875rem;
+  font-family: var(--h-sans);
+  transition: border-color 160ms;
+}
+.hub-form-control:focus { outline: none; border-color: var(--h-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--h-accent) 15%, transparent); }
+.hub-label { font-size: 0.78rem; font-weight: 600; color: var(--h-muted); display: block; margin-bottom: 0.35rem; letter-spacing: .04em; }
+
+/* ── Pagination ────────────────────────────────────────────────── */
+.hub-pagination { display: flex; align-items: center; justify-content: center; gap: 0.3rem; margin-top: 1rem; }
+.hub-page-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 32px; height: 32px; padding: 0 0.5rem;
+  border-radius: 6px; border: 1px solid var(--h-border);
+  background: var(--h-surface); color: var(--h-text);
+  font-size: 0.82rem; font-weight: 500; text-decoration: none;
+  transition: all 140ms;
+}
+.hub-page-btn:hover, .hub-page-btn.active { background: var(--h-accent); color: #fff; border-color: var(--h-accent); }
+.hub-page-btn.disabled { opacity: 0.4; pointer-events: none; }
+
+/* ── Empty state ───────────────────────────────────────────────── */
+.hub-empty { text-align: center; padding: 3rem 1rem; color: var(--h-muted); }
+.hub-empty i { font-size: 2.5rem; opacity: .35; margin-bottom: 0.75rem; display: block; }
+.hub-empty p { margin: 0; font-size: 0.9rem; }
+
+/* ── Code / mono text ──────────────────────────────────────────── */
+.mono { font-family: var(--h-mono); font-size: 0.82rem; }
+
+/* ── Info grid (key-value pairs) ───────────────────────────────── */
+.info-kv { display: grid; grid-template-columns: 160px 1fr; gap: 0.5rem 1rem; font-size: 0.875rem; }
+.info-kv dt { font-weight: 600; color: var(--h-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing:.04em; padding-top: 0.1rem; }
+.info-kv dd { color: var(--h-text); margin: 0; word-break: break-word; }
+@media (max-width: 576px) { .info-kv { grid-template-columns: 1fr; } .info-kv dt { margin-bottom: 0; } }
+
+/* ── Negative amount ───────────────────────────────────────────── */
+.neg { color: var(--h-danger); font-weight: 600; }
+
+/* ── Two-col layout helper ─────────────────────────────────────── */
+.hub-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+.hub-row-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 1rem; }
+@media (max-width: 768px) { .hub-row, .hub-row-3 { grid-template-columns: 1fr; } }
+
+/* ── Comparison grid (credit note) ────────────────────────────── */
+.comparison-wrap { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: center; margin-bottom: 1.25rem; }
+.comparison-arrow { color: var(--h-muted); font-size: 1.25rem; text-align: center; }
+@media (max-width: 600px) { .comparison-wrap { grid-template-columns: 1fr; } .comparison-arrow { display: none; } }
+
+/* ── Progress bar ──────────────────────────────────────────────── */
+.hub-progress { height: 8px; background: var(--h-border); border-radius: 20px; overflow: hidden; }
+.hub-progress-bar { height: 100%; background: var(--h-accent); border-radius: 20px; transition: width .4s; }
+
+/* ── Rate card (exchange rates) ────────────────────────────────── */
+.rate-card {
+  background: var(--h-surface);
+  border: 1px solid var(--h-border);
+  border-radius: var(--h-radius);
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.rate-currency { font-size: 1.5rem; font-weight: 700; font-family: var(--h-mono); color: var(--h-text); }
+.rate-value { font-size: 1.25rem; font-weight: 600; color: var(--h-accent); font-family: var(--h-mono); }
+.rate-sub { font-size: 0.72rem; color: var(--h-muted); }
+
+/* ── Upload progress modal ─────────────────────────────────────── */
+.hub-modal-backdrop {
+  display: none;
+  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  z-index: 1000; align-items: center; justify-content: center;
+}
+.hub-modal-backdrop.open { display: flex; }
+.hub-modal {
+  background: var(--h-surface); border-radius: 14px;
+  padding: 2rem; max-width: 420px; width: 90%;
+  text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+
+/* ── Responsive ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .hub-body { padding: 1rem; }
+  .hub-tabbar { padding: 0 0.5rem; }
+  .hub-tab { padding: 0.75rem 0.7rem; font-size: 0.75rem; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="efris-hub">
+
+  {# ── TOP TAB BAR ──────────────────────────────────────────── #}
+  <nav class="hub-tabbar" id="hubTabbar" aria-label="EFRIS sections">
+
+    {# Group 1: Core #}
+    <a class="hub-tab {% if active_tab == 'dashboard' %}active{% endif %}"
+       href="?tab=dashboard" data-tab="dashboard">
+      <i class="fas fa-tachometer-alt"></i> Dashboard
+    </a>
+    <a class="hub-tab {% if active_tab == 'invoice_search' %}active{% endif %}"
+       href="?tab=invoice_search" data-tab="invoice_search">
+      <i class="fas fa-search"></i> Invoice Search
+    </a>
+    <a class="hub-tab {% if active_tab == 'normal_invoices' %}active{% endif %}"
+       href="?tab=normal_invoices" data-tab="normal_invoices">
+      <i class="fas fa-file-invoice"></i> Normal Invoices
+    </a>
+    <a class="hub-tab {% if active_tab == 'credit_notes' %}active{% endif %}"
+       href="?tab=credit_notes" data-tab="credit_notes">
+      <i class="fas fa-undo"></i> Credit Notes
+    </a>
+    <a class="hub-tab {% if active_tab == 'batch_upload' %}active{% endif %}"
+       href="?tab=batch_upload" data-tab="batch_upload">
+      <i class="fas fa-cloud-upload-alt"></i> Batch Upload
+    </a>
+
+    <div class="hub-tab-sep"></div>
+
+    {# Group 2: System #}
+    <a class="hub-tab {% if active_tab == 'exception_logs' %}active{% endif %}"
+       href="?tab=exception_logs" data-tab="exception_logs">
+      <i class="fas fa-exclamation-triangle"></i> Exception Logs
+    </a>
+    <a class="hub-tab {% if active_tab == 'system_upgrade' %}active{% endif %}"
+       href="?tab=system_upgrade" data-tab="system_upgrade">
+      <i class="fas fa-arrow-up"></i> System Upgrade
+    </a>
+    <a class="hub-tab {% if active_tab == 'certificate_upload' %}active{% endif %}"
+       href="?tab=certificate_upload" data-tab="certificate_upload">
+      <i class="fas fa-certificate"></i> Certificate
+    </a>
+    <a class="hub-tab {% if active_tab == 'branches' %}active{% endif %}"
+       href="?tab=branches" data-tab="branches">
+      <i class="fas fa-code-branch"></i> Branches
+    </a>
+
+    <div class="hub-tab-sep"></div>
+
+    {# Group 3: Data #}
+    <a class="hub-tab {% if active_tab == 'exchange_rates' %}active{% endif %}"
+       href="?tab=exchange_rates" data-tab="exchange_rates">
+      <i class="fas fa-exchange-alt"></i> Exchange Rates
+    </a>
+    <a class="hub-tab {% if active_tab == 'excise_duty' %}active{% endif %}"
+       href="?tab=excise_duty" data-tab="excise_duty">
+      <i class="fas fa-percentage"></i> Excise Duty
+    </a>
+    <a class="hub-tab {% if active_tab == 'reports' %}active{% endif %}"
+       href="?tab=reports" data-tab="reports">
+      <i class="fas fa-chart-bar"></i> Reports
+    </a>
+    <a class="hub-tab {% if active_tab == 'taxpayer_check' %}active{% endif %}"
+       href="?tab=taxpayer_check" data-tab="taxpayer_check">
+      <i class="fas fa-user-check"></i> Taxpayer
+    </a>
+    <a class="hub-tab {% if active_tab == 'commodity_categories' %}active{% endif %}"
+       href="?tab=commodity_categories" data-tab="commodity_categories">
+      <i class="fas fa-tags"></i> Categories
+    </a>
+  </nav>
+
+  {# ── MAIN BODY ────────────────────────────────────────────── #}
+  <div class="hub-body">
+
+    {# ── PANEL: DASHBOARD ──────────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'dashboard' %}active{% endif %}" id="panel-dashboard">
+      <div class="stat-grid">
+        <div class="stat-card" style="--stat-color: var(--h-accent)">
+          <div class="stat-label">30-Day Success Rate</div>
+          <div class="stat-value">{{ stats.success_rate|floatformat:1|default:"0" }}%</div>
+          <div class="stat-sub">{{ stats.successful_fiscalized_30d|default:0 }} / {{ stats.total_fiscalized_30d|default:0 }} successful</div>
+          <i class="fas fa-chart-line stat-icon"></i>
+        </div>
+        <div class="stat-card" style="--stat-color: var(--h-warning)">
+          <div class="stat-label">Pending Applications</div>
+          <div class="stat-value">{{ pending_count|default:0 }}</div>
+          <div class="stat-sub">Requiring attention</div>
+          <i class="fas fa-clock stat-icon"></i>
+        </div>
+        <div class="stat-card" style="--stat-color: var(--h-success)">
+          <div class="stat-label">EFRIS Status</div>
+          <div class="stat-value" style="font-size:1.1rem; padding-top:.5rem">
+            <span class="hbadge hbadge-approved">Operational</span>
+          </div>
+          <div class="stat-sub">System active</div>
+          <i class="fas fa-shield-alt stat-icon"></i>
+        </div>
+      </div>
+
+      <div class="hub-row">
+        <div class="hc">
+          <div class="hc-head">
+            <h6 class="hc-title"><i class="fas fa-file-invoice"></i> Pending Credit Note Applications</h6>
+            <a href="?tab=credit_notes&approve_status=102" class="hbtn hbtn-ghost hbtn-sm">View All</a>
+          </div>
+          {% if pending_applications %}
+          <div class="hub-table-wrap">
+            <table class="hub-table">
+              <thead><tr><th>Ref No</th><th>Invoice No</th><th>Amount</th><th>Date</th><th></th></tr></thead>
+              <tbody>
+                {% for app in pending_applications %}
+                <tr>
+                  <td class="mono">{{ app.referenceNo|default:"—" }}</td>
+                  <td class="mono">{{ app.oriInvoiceNo|default:"—" }}</td>
+                  <td class="text-end mono">{{ app.grossAmount|floatformat:2 }} {{ app.currency|default:"UGX" }}</td>
+                  <td>{{ app.applicationTime|default:"—" }}</td>
+                  <td><a href="{% url 'efris:credit_note_application_detail' app.id %}" class="hbtn hbtn-ghost hbtn-sm"><i class="fas fa-eye"></i></a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="hub-empty"><i class="fas fa-check-circle" style="color:var(--h-success)"></i><p>No pending applications</p></div>
+          {% endif %}
+        </div>
+
+        <div>
+          <div class="hc" style="margin-bottom:1.25rem">
+            <div class="hc-head"><h6 class="hc-title"><i class="fas fa-exchange-alt"></i> Exchange Rates</h6></div>
+            <div class="hc-body" style="display:flex;flex-direction:column;gap:.5rem">
+              {% if exchange_rates %}
+                {% for currency, rate_data in exchange_rates %}
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--h-border)">
+                  <span style="font-weight:600" class="mono">{{ currency }}</span>
+                  <span class="hbadge hbadge-info mono">{{ rate_data.rate|floatformat:2 }} UGX</span>
+                </div>
+                {% endfor %}
+                <a href="?tab=exchange_rates" class="hbtn hbtn-ghost hbtn-sm" style="margin-top:.5rem">View all rates</a>
+              {% else %}
+                <p style="color:var(--h-muted);font-size:.875rem;margin:0">No rates available</p>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="hc">
+            <div class="hc-head"><h6 class="hc-title"><i class="fas fa-history"></i> Recent API Activity</h6></div>
+            {% if recent_logs %}
+            <div class="hub-table-wrap">
+              <table class="hub-table">
+                <thead><tr><th>Time</th><th>Code</th><th>Status</th><th>ms</th></tr></thead>
+                <tbody>
+                  {% for log in recent_logs %}
+                  <tr>
+                    <td style="font-size:.78rem">{{ log.created_at|date:"M d, H:i" }}</td>
+                    <td><code style="font-size:.78rem">{{ log.interface_code }}</code></td>
+                    <td>
+                      {% if log.status == 'SUCCESS' %}<span class="hbadge hbadge-approved">OK</span>
+                      {% else %}<span class="hbadge hbadge-rejected">Fail</span>{% endif %}
+                    </td>
+                    <td class="mono" style="font-size:.78rem">{{ log.duration_ms|default:"—" }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <div class="hub-empty"><i class="fas fa-broadcast-tower"></i><p>No recent activity</p></div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── PANEL: INVOICE SEARCH ──────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'invoice_search' %}active{% endif %}" id="panel-invoice_search">
+      <div class="hub-filter">
+        <form method="get" action="">
+          <input type="hidden" name="tab" value="invoice_search">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-bottom:.75rem">
+            <div><label class="hub-label">Invoice No</label><input class="hub-form-control" name="invoice_number" value="{{ search_params.invoice_no|default:'' }}"></div>
+            <div><label class="hub-label">Buyer TIN</label><input class="hub-form-control" name="buyer_tin" value="{{ search_params.buyer_tin|default:'' }}"></div>
+            <div><label class="hub-label">Buyer Name</label><input class="hub-form-control" name="buyer_legal_name" value="{{ search_params.buyer_legal_name|default:'' }}"></div>
+            <div><label class="hub-label">Start Date</label><input type="date" class="hub-form-control" name="start_date" value="{{ search_params.start_date|default:'' }}"></div>
+            <div><label class="hub-label">End Date</label><input type="date" class="hub-form-control" name="end_date" value="{{ search_params.end_date|default:'' }}"></div>
+            <div><label class="hub-label">Type</label>
+              <select class="hub-form-control" name="invoice_type">
+                <option value="">All</option>
+                <option value="1">Invoice/Receipt</option>
+                <option value="2">Credit Note</option>
+                <option value="4">Debit Note</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:.5rem">
+            <button type="submit" class="hbtn hbtn-primary"><i class="fas fa-search"></i> Search</button>
+            <a href="?tab=invoice_search" class="hbtn hbtn-ghost"><i class="fas fa-times"></i> Clear</a>
+            {% if search_performed %}<a href="{% url 'efris:export_invoices_csv' %}?{{ request.GET.urlencode }}" class="hbtn hbtn-ghost"><i class="fas fa-download"></i> CSV</a>{% endif %}
+          </div>
+        </form>
+      </div>
+
+      {% if search_performed %}
+      <div class="hc">
+        <div class="hc-head">
+          <h6 class="hc-title"><i class="fas fa-list"></i> Results</h6>
+          {% if pagination %}<span class="hbadge hbadge-info">{{ pagination.total_size }} total</span>{% endif %}
+        </div>
+        {% if invoices %}
+        <div class="hub-table-wrap">
+          <table class="hub-table">
+            <thead><tr><th>Invoice No</th><th>Buyer</th><th>Date</th><th>Currency</th><th class="text-end">Gross</th><th class="text-end">Tax</th><th>Type</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              {% for inv in invoices %}
+              <tr>
+                <td class="mono">{{ inv.invoiceNo }}</td>
+                <td>
+                  <div style="font-weight:500">{{ inv.buyerLegalName|default:"Walk-in"|truncatechars:22 }}</div>
+                  {% if inv.buyerTin %}<small class="mono" style="color:var(--h-muted)">{{ inv.buyerTin }}</small>{% endif %}
+                </td>
+                <td style="white-space:nowrap">{{ inv.issuedDate|default:"—" }}</td>
+                <td class="mono">{{ inv.currency|default:"UGX" }}</td>
+                <td class="text-end mono">{{ inv.grossAmount|floatformat:2|intcomma }}</td>
+                <td class="text-end mono">{{ inv.taxAmount|floatformat:2|intcomma }}</td>
+                <td>{{ EFRIS.getInvoiceTypeLabel|default:inv.invoiceType }}</td>
+                <td>{% if inv.isInvalid == "1" %}<span class="hbadge hbadge-rejected">Invalid</span>{% else %}<span class="hbadge hbadge-approved">Valid</span>{% endif %}</td>
+                <td><a href="{% url 'efris:invoice_detail' inv.invoiceNo %}" class="hbtn hbtn-ghost hbtn-sm"><i class="fas fa-eye"></i></a></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="hub-empty"><i class="fas fa-search"></i><p>No invoices found for your search criteria</p></div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="hub-empty" style="padding:4rem 1rem"><i class="fas fa-search"></i><p>Enter search criteria above and press Search</p></div>
+      {% endif %}
+    </div>
+
+    {# ── PANEL: NORMAL INVOICES ─────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'normal_invoices' %}active{% endif %}" id="panel-normal_invoices">
+      <div class="hub-filter">
+        <form method="get" action="">
+          <input type="hidden" name="tab" value="normal_invoices">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-bottom:.75rem">
+            <div><label class="hub-label">Buyer TIN</label><input class="hub-form-control" name="buyer_tin" value="{{ request.GET.buyer_tin|default:'' }}"></div>
+            <div><label class="hub-label">Start Date</label><input type="date" class="hub-form-control" name="start_date" value="{{ request.GET.start_date|default:'' }}"></div>
+            <div><label class="hub-label">End Date</label><input type="date" class="hub-form-control" name="end_date" value="{{ request.GET.end_date|default:'' }}"></div>
+          </div>
+          <button type="submit" class="hbtn hbtn-primary"><i class="fas fa-filter"></i> Filter</button>
+          <a href="?tab=normal_invoices" class="hbtn hbtn-ghost">Clear</a>
+        </form>
+      </div>
+      <div class="hc">
+        <div class="hc-head"><h6 class="hc-title"><i class="fas fa-file-invoice"></i> Normal Invoices (Eligible for Credit Notes)</h6></div>
+        {% if invoices %}
+        <div class="hub-table-wrap">
+          <table class="hub-table">
+            <thead><tr><th>Invoice No</th><th>Buyer</th><th>Date</th><th class="text-end">Amount</th><th></th></tr></thead>
+            <tbody>
+              {% for inv in invoices %}
+              <tr>
+                <td class="mono">{{ inv.invoiceNo }}</td>
+                <td>
+                  <div style="font-weight:500">{{ inv.buyerLegalName|default:"Walk-in"|truncatechars:25 }}</div>
+                  {% if inv.buyerTin %}<small class="mono" style="color:var(--h-muted)">{{ inv.buyerTin }}</small>{% endif %}
+                </td>
+                <td>{{ inv.issuedDate|default:"—" }}</td>
+                <td class="text-end mono">{{ inv.grossAmount|floatformat:2|intcomma }}</td>
+                <td>
+                  <button class="hbtn hbtn-ghost hbtn-sm" onclick="openCreditNoteModal('{{ inv.invoiceNo }}', '{{ inv.id }}')">
+                    <i class="fas fa-undo"></i> Credit Note
+                  </button>
+                  <a href="{% url 'efris:invoice_detail' inv.invoiceNo %}" class="hbtn hbtn-ghost hbtn-sm"><i class="fas fa-eye"></i></a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {# Pagination #}
+        {% if pagination %}
+        <div class="hub-pagination">
+          {% if pagination.page_no > 1 %}<a class="hub-page-btn" href="?tab=normal_invoices&page={{ pagination.page_no|add:'-1' }}&{{ request.GET.urlencode }}"><i class="fas fa-chevron-left"></i></a>{% endif %}
+          <span class="hub-page-btn active">{{ pagination.page_no }}</span>
+          {% if pagination.page_no < pagination.page_count %}<a class="hub-page-btn" href="?tab=normal_invoices&page={{ pagination.page_no|add:'1' }}&{{ request.GET.urlencode }}"><i class="fas fa-chevron-right"></i></a>{% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="hub-empty"><i class="fas fa-file-invoice"></i><p>No invoices found</p></div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── PANEL: CREDIT NOTES ────────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'credit_notes' %}active{% endif %}" id="panel-credit_notes">
+      <div class="hub-filter">
+        <form method="get" action="">
+          <input type="hidden" name="tab" value="credit_notes">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin-bottom:.75rem">
+            <div>
+              <label class="hub-label">Status</label>
+              <select class="hub-form-control" name="approve_status">
+                {% for val, label in status_options %}<option value="{{ val }}" {% if filters.approve_status == val %}selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="hub-label">Category</label>
+              <select class="hub-form-control" name="category_code">
+                <option value="">All Categories</option>
+                <option value="101">Credit Note</option>
+                <option value="102">Debit Note</option>
+              </select>
+            </div>
+            <div><label class="hub-label">Start Date</label><input type="date" class="hub-form-control" name="start_date" value="{{ filters.start_date|default:'' }}"></div>
+            <div><label class="hub-label">End Date</label><input type="date" class="hub-form-control" name="end_date" value="{{ filters.end_date|default:'' }}"></div>
+          </div>
+          <div style="display:flex;gap:.5rem">
+            <button type="submit" class="hbtn hbtn-primary"><i class="fas fa-filter"></i> Filter</button>
+            <a href="?tab=credit_notes" class="hbtn hbtn-ghost">Clear</a>
+            <a href="{% url 'efris:export_credit_notes_pdf' %}?{{ request.GET.urlencode }}" class="hbtn hbtn-ghost"><i class="fas fa-file-pdf"></i> PDF</a>
+          </div>
+        </form>
+      </div>
+      <div class="hc">
+        <div class="hc-head">
+          <h6 class="hc-title"><i class="fas fa-undo"></i> Credit / Debit Note Applications</h6>
+          {% if pagination %}<span class="hbadge hbadge-info">{{ pagination.total_size }} total</span>{% endif %}
+        </div>
+        {% if applications %}
+        <div class="hub-table-wrap">
+          <table class="hub-table">
+            <thead><tr><th>Ref No</th><th>Invoice No</th><th>Buyer</th><th class="text-end">Amount</th><th>Date</th><th>Status</th><th>Wait</th><th></th></tr></thead>
+            <tbody>
+              {% for app in applications %}
+              <tr>
+                <td class="mono">{{ app.referenceNo|default:"—" }}</td>
+                <td class="mono">{{ app.oriInvoiceNo|default:"—" }}</td>
+                <td>{{ app.buyerLegalName|default:"—"|truncatechars:20 }}</td>
+                <td class="text-end mono {% if app.grossAmount < 0 %}neg{% endif %}">{{ app.grossAmount|floatformat:2|intcomma }} {{ app.currency|default:"UGX" }}</td>
+                <td style="white-space:nowrap">{{ app.applicationTime|default:"—" }}</td>
+                <td>
+                  {% if app.approveStatus == '101' %}<span class="hbadge hbadge-approved">Approved</span>
+                  {% elif app.approveStatus == '102' %}<span class="hbadge hbadge-pending">Submitted</span>
+                  {% elif app.approveStatus == '103' %}<span class="hbadge hbadge-rejected">Rejected</span>
+                  {% elif app.approveStatus == '104' %}<span class="hbadge hbadge-voided">Voided</span>
+                  {% else %}<span class="hbadge hbadge-neutral">{{ app.approveStatus|default:"?" }}</span>{% endif %}
+                </td>
+                <td>{% if app.waitingDate and app.waitingDate != '0' %}<span class="hbadge hbadge-pending">{{ app.waitingDate }}d</span>{% else %}—{% endif %}</td>
+                <td>
+                  <a href="{% url 'efris:credit_note_application_detail' app.id %}?invoice_no={{ app.invoiceNo }}" class="hbtn hbtn-ghost hbtn-sm" title="View"><i class="fas fa-eye"></i></a>
+                  {% if app.can_approve %}
+                  <button class="hbtn hbtn-success hbtn-sm" onclick="openApprovalModal('{{ app.id }}','{{ app.referenceNo }}','{{ app.taskId|default:'' }}')" title="Approve/Reject"><i class="fas fa-check"></i></button>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if pagination.page_count > 1 %}
+        <div class="hub-pagination">
+          {% if pagination.page_no > 1 %}<a class="hub-page-btn" href="?tab=credit_notes&page={{ pagination.page_no|add:'-1' }}&{{ request.GET.urlencode }}"><i class="fas fa-chevron-left"></i></a>{% endif %}
+          <span class="hub-page-btn active">{{ pagination.page_no }} / {{ pagination.page_count }}</span>
+          {% if pagination.page_no < pagination.page_count %}<a class="hub-page-btn" href="?tab=credit_notes&page={{ pagination.page_no|add:'1' }}&{{ request.GET.urlencode }}"><i class="fas fa-chevron-right"></i></a>{% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="hub-empty"><i class="fas fa-file-invoice"></i><p>No credit note applications found</p></div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── PANEL: EXCEPTION LOGS ──────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'exception_logs' %}active{% endif %}" id="panel-exception_logs">
+      {% if pending_count > 0 %}
+      <div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
+        <button class="hbtn hbtn-primary" onclick="uploadPendingLogs()">
+          <i class="fas fa-cloud-upload-alt"></i> Upload Pending ({{ pending_count }})
+        </button>
+      </div>
+      {% endif %}
+      <div class="hub-filter">
+        <form method="get" action="">
+          <input type="hidden" name="tab" value="exception_logs">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.75rem;margin-bottom:.75rem">
+            <div>
+              <label class="hub-label">Status</label>
+              <select class="hub-form-control" name="uploaded">
+                <option value="">All</option>
+                <option value="0" {% if request.GET.uploaded == '0' %}selected{% endif %}>Pending</option>
+                <option value="1" {% if request.GET.uploaded == '1' %}selected{% endif %}>Uploaded</option>
+              </select>
+            </div>
+            <div>
+              <label class="hub-label">Type</label>
+              <select class="hub-form-control" name="type">
+                <option value="">All Types</option>
+                <option value="101">Disconnected</option>
+                <option value="102">Login Failure</option>
+                <option value="103">Upload Failure</option>
+                <option value="104">System Errors</option>
+                <option value="105">Paper Roll</option>
+              </select>
+            </div>
+            <div><label class="hub-label">Start Date</label><input type="date" class="hub-form-control" name="start_date" value="{{ request.GET.start_date|default:'' }}"></div>
+            <div><label class="hub-label">End Date</label><input type="date" class="hub-form-control" name="end_date" value="{{ request.GET.end_date|default:'' }}"></div>
+          </div>
+          <button type="submit" class="hbtn hbtn-primary"><i class="fas fa-filter"></i> Filter</button>
+        </form>
+      </div>
+      <div class="hc">
+        <div class="hc-head"><h6 class="hc-title"><i class="fas fa-exclamation-triangle"></i> Exception Logs</h6></div>
+        {% if logs %}
+        <div class="hub-table-wrap">
+          <table class="hub-table">
+            <thead><tr><th>Time</th><th>Type</th><th>Description</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              {% for log in logs %}
+              <tr>
+                <td style="white-space:nowrap;font-size:.8rem">{{ log.interruption_time|date:"M d, Y H:i" }}</td>
+                <td><span class="hbadge hbadge-pending">{{ log.get_interruption_type_code_display }}</span></td>
+                <td>{{ log.description|truncatewords:10 }}</td>
+                <td>{% if log.uploaded %}<span class="hbadge hbadge-approved">Uploaded</span>{% else %}<span class="hbadge hbadge-neutral">Pending</span>{% endif %}</td>
+                <td><button class="hbtn hbtn-ghost hbtn-sm" onclick="showLogDetail('{{ log.description|escapejs }}','{{ log.error_detail|escapejs }}')"><i class="fas fa-eye"></i></button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if logs.has_other_pages %}
+        <div class="hub-pagination">
+          {% if logs.has_previous %}<a class="hub-page-btn" href="?tab=exception_logs&page={{ logs.previous_page_number }}&{{ request.GET.urlencode }}"><i class="fas fa-chevron-left"></i></a>{% endif %}
+          <span class="hub-page-btn active">{{ logs.number }} / {{ logs.paginator.num_pages }}</span>
+          {% if logs.has_next %}<a class="hub-page-btn" href="?tab=exception_logs&page={{ logs.next_page_number }}&{{ request.GET.urlencode }}"><i class="fas fa-chevron-right"></i></a>{% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="hub-empty"><i class="fas fa-check-circle" style="color:var(--h-success)"></i><p>No exception logs found</p></div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── PANEL: SYSTEM UPGRADE ──────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'system_upgrade' %}active{% endif %}" id="panel-system_upgrade">
+      <div class="hub-row">
+        <div class="hc">
+          <div class="hc-head"><h6 class="hc-title"><i class="fas fa-arrow-up"></i> TCS Version Status</h6></div>
+          <div class="hc-body">
+            <dl class="info-kv" style="margin-bottom:1.5rem">
+              <dt>Current Version</dt><dd class="mono">{{ current_version|default:"—" }}</dd>
+              <dt>Latest Version</dt><dd class="mono">{{ latest_version|default:"—" }}</dd>
+              <dt>Update Status</dt>
+              <dd>
+                {% if update_available %}
+                  <span class="hbadge hbadge-pending">Update Available</span>
+                {% else %}
+                  <span class="hbadge hbadge-approved">Up to Date</span>
+                {% endif %}
+              </dd>
+            </dl>
+            {% if update_available %}
+            <form method="post" action="{% url 'efris:download_upgrade_files' %}" id="upgradeForm">
+              {% csrf_token %}
+              <input type="hidden" name="tcs_version" value="{{ latest_version }}">
+              <div style="margin-bottom:1rem">
+                <label class="hub-label">Operating System</label>
+                <select class="hub-form-control" name="os_type" style="max-width:200px">
+                  <option value="1">Windows</option>
+                  <option value="2">Linux</option>
+                </select>
+              </div>
+              <button type="submit" class="hbtn hbtn-primary"><i class="fas fa-download"></i> Download Upgrade Files</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+        <div class="hc">
+          <div class="hc-head"><h6 class="hc-title"><i class="fas fa-certificate"></i> Quick Access</h6></div>
+          <div class="hc-body" style="display:flex;flex-direction:column;gap:.5rem">
+            <a href="?tab=certificate_upload" class="hbtn hbtn-ghost"><i class="fas fa-certificate"></i> Upload Certificate</a>
+            <a href="?tab=commodity_categories" class="hbtn hbtn-ghost"><i class="fas fa-tags"></i> Category Updates</a>
+            <a href="?tab=exception_logs" class="hbtn hbtn-ghost"><i class="fas fa-exclamation-triangle"></i> Exception Logs</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── PANEL: CERTIFICATE UPLOAD ──────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'certificate_upload' %}active{% endif %}" id="panel-certificate_upload">
+      <div style="max-width:640px;margin:0 auto">
+        <div class="hc">
+          <div class="hc-head"><h6 class="hc-title"><i class="fas fa-certificate"></i> Certificate Public Key Upload (T136)</h6></div>
+          <div class="hc-body">
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.85rem 1rem;margin-bottom:1.5rem;font-size:.875rem;color:#1d4ed8">
+              <i class="fas fa-info-circle" style="margin-right:.4rem"></i>
+              Upload .crt or .cer certificate files for secure URA EFRIS communication.
+            </div>
+            <form method="post" action="?tab=certificate_upload" enctype="multipart/form-data" id="certForm">
+              {% csrf_token %}
+              <div style="margin-bottom:1.25rem">
+                <label class="hub-label">Certificate File <span style="color:var(--h-danger)">*</span></label>
+                <input type="file" class="hub-form-control" name="certificate_file" id="certFile" accept=".crt,.cer" required>
+                <div style="font-size:.75rem;color:var(--h-muted);margin-top:.3rem">Only .crt and .cer files, max 10MB</div>
+              </div>
+              <div style="margin-bottom:1.25rem">
+                <label class="hub-label">Verify String (Optional)</label>
+                <input type="text" class="hub-form-control" name="verify_string" id="verifyStr" placeholder="Auto-generated if empty">
+                <div style="font-size:.75rem;color:var(--h-muted);margin-top:.3rem">Format: TIN (10 chars) + date (yymmdd)</div>
+              </div>
+              <div id="filePreview" style="display:none;border:1px solid var(--h-border);border-radius:8px;padding:1rem;margin-bottom:1.25rem;background:var(--h-surface2)">
+                <div style="display:flex;align-items:center;gap:.75rem">
+                  <i class="fas fa-file-certificate" style="color:var(--h-accent);font-size:1.5rem"></i>
+                  <div>
+                    <div id="previewName" style="font-weight:600"></div>
+                    <div id="previewSize" style="font-size:.78rem;color:var(--h-muted)"></div>
+                  </div>
+                </div>
+              </div>
+              <dl class="info-kv" style="margin-bottom:1.5rem;padding:1rem;background:var(--h-surface2);border-radius:8px">
+                <dt>Company TIN</dt><dd class="mono">{{ company.tin|default:"Not configured" }}</dd>
+                <dt>Device No</dt><dd class="mono">{{ company.efris_device_no|default:"Not configured" }}</dd>
+              </dl>
+              <button type="submit" class="hbtn hbtn-primary" id="certUploadBtn">
+                <i class="fas fa-upload"></i> Upload Certificate
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── PANEL: BRANCHES ────────────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'branches' %}active{% endif %}" id="panel-branches">
+      <div class="stat-grid" style="margin-bottom:1.25rem">
+        <div class="stat-card" style="--stat-color:var(--h-accent)">
+          <div class="stat-label">Total Branches</div>
+          <div class="stat-value">{{ total_branches|default:0 }}</div>
+          <i class="fas fa-code-branch stat-icon"></i>
+        </div>
+        <div class="stat-card" style="--stat-color:var(--h-success)">
+          <div class="stat-label">Company</div>
+          <div class="stat-value" style="font-size:1rem;padding-top:.5rem">{{ company.name|truncatechars:20 }}</div>
+          <i class="fas fa-building stat-icon"></i>
+        </div>
+      </div>
+      <div class="hc">
+        <div class="hc-head">
+          <h6 class="hc-title"><i class="fas fa-code-branch"></i> All Branches</h6>
+          <button class="hbtn hbtn-ghost hbtn-sm" onclick="refreshBranches()"><i class="fas fa-sync-alt"></i> Refresh</button>
+        </div>
+        {% if branches %}
+        <div class="hub-table-wrap">
+          <table class="hub-table">
+            <thead><tr><th>Code</th><th>Branch Name</th><th>Address</th><th>Phone</th><th>Email</th><th>Status</th></tr></thead>
+            <tbody>
+              {% for branch in branches %}
+              <tr>
+                <td><span class="hbadge hbadge-neutral mono">{{ branch.branchCode|default:"—" }}</span></td>
+                <td style="font-weight:500">{{ branch.branchName|default:"Unnamed Branch" }}</td>
+                <td>{{ branch.address|default:"—" }}{% if branch.city %}<br><small style="color:var(--h-muted)">{{ branch.city }}</small>{% endif %}</td>
+                <td class="mono">{{ branch.phone|default:"—" }}</td>
+                <td>{{ branch.email|default:"—" }}</td>
+                <td>{% if branch.status == "1" or branch.status == "101" %}<span class="hbadge hbadge-approved">Active</span>{% else %}<span class="hbadge hbadge-neutral">Inactive</span>{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="hub-empty"><i class="fas fa-code-branch"></i><p>No branches found. <button class="hbtn hbtn-ghost hbtn-sm" onclick="refreshBranches()">Load Branches</button></p></div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── PANEL: EXCHANGE RATES ──────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'exchange_rates' %}active{% endif %}" id="panel-exchange_rates">
+      <div class="hub-filter">
+        <form method="get" action="">
+          <input type="hidden" name="tab" value="exchange_rates">
+          <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap">
+            <div><label class="hub-label">Select Date</label><input type="date" class="hub-form-control" name="date" value="{{ issue_date|date:'Y-m-d' }}" style="width:180px"></div>
+            <button type="submit" class="hbtn hbtn-primary"><i class="fas fa-calendar"></i> Load Rates</button>
+            <div style="margin-left:auto;font-size:.82rem;color:var(--h-muted);align-self:center">Showing: <strong>{{ issue_date|date:"F d, Y" }}</strong></div>
+          </div>
+        </form>
+      </div>
+      {% if rates %}
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem">
+        {% for rate_info in rates %}
+        <div class="rate-card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="rate-currency">{{ rate_info.currency }}</div>
+            <div class="rate-value">{{ rate_info.rate|floatformat:2 }}</div>
+          </div>
+          <div class="rate-sub">to UGX</div>
+          {% if rate_info.importDutyLevy %}<div class="rate-sub">Import Duty: {{ rate_info.importDutyLevy|floatformat:4 }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="hc">
+        <div class="hc-head"><h6 class="hc-title"><i class="fas fa-calculator"></i> Currency Converter</h6></div>
+        <div class="hc-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin-bottom:.75rem;align-items:end">
+            <div><label class="hub-label">Amount</label><input type="number" class="hub-form-control" id="convAmount" value="1" step="0.01" min="0"></div>
+            <div><label class="hub-label">From</label>
+              <select class="hub-form-control" id="convFrom">
+                <option value="UGX">UGX</option>
+                {% for rate_info in rates %}<option value="{{ rate_info.currency }}">{{ rate_info.currency }}</option>{% endfor %}
+              </select>
+            </div>
+            <div><label class="hub-label">To</label>
+              <select class="hub-form-control" id="convTo">
+                <option value="UGX">UGX</option>
+                {% for rate_info in rates %}<option value="{{ rate_info.currency }}" {% if forloop.first %}selected{% endif %}>{{ rate_info.currency }}</option>{% endfor %}
+              </select>
+            </div>
+            <button class="hbtn hbtn-primary" onclick="convertCurrency()"><i class="fas fa-exchange-alt"></i> Convert</button>
+          </div>
+          <div id="convResult" style="display:none;padding:.75rem 1rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-weight:600;font-family:var(--h-mono)"></div>
+        </div>
+      </div>
+      {% else %}
+      <div class="hub-empty"><i class="fas fa-exchange-alt"></i><p>No exchange rates available for the selected date</p></div>
+      {% endif %}
+    </div>
+
+    {# ── PANEL: EXCISE DUTY ─────────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'excise_duty' %}active{% endif %}" id="panel-excise_duty">
+      <div class="hc">
+        <div class="hc-head">
+          <h6 class="hc-title"><i class="fas fa-percentage"></i> Excise Duty Rates <span class="hbadge hbadge-info">{{ total_count|default:0 }} items</span></h6>
+          <div style="position:relative;max-width:280px"><input class="hub-form-control" id="exciseSearch" placeholder="Search…" oninput="filterExcise(this.value)"></div>
+        </div>
+        {% if excise_duties %}
+        <div class="hub-table-wrap">
+          <table class="hub-table" id="exciseTable">
+            <thead><tr><th>Code</th><th>Goods/Service</th><th>Rate Text</th><th>Effective Date</th><th>Leaf</th><th></th></tr></thead>
+            <tbody>
+              {% for duty in excise_duties %}
+              <tr>
+                <td class="mono">{{ duty.exciseDutyCode }}</td>
+                <td>{{ duty.goodService }}</td>
+                <td>{{ duty.rateText }}</td>
+                <td>{{ duty.effectiveDate }}</td>
+                <td>{% if duty.isLeafNode == '1' %}<span class="hbadge hbadge-approved">Yes</span>{% else %}<span class="hbadge hbadge-neutral">No</span>{% endif %}</td>
+                <td><button class="hbtn hbtn-ghost hbtn-sm" onclick="showExciseDetails({{ duty.exciseDutyDetailsList|safe }})"><i class="fas fa-info-circle"></i></button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if excise_duties.has_other_pages %}
+        <div class="hub-pagination">
+          {% if excise_duties.has_previous %}<a class="hub-page-btn" href="?tab=excise_duty&page={{ excise_duties.previous_page_number }}"><i class="fas fa-chevron-left"></i></a>{% endif %}
+          <span class="hub-page-btn active">{{ excise_duties.number }} / {{ excise_duties.paginator.num_pages }}</span>
+          {% if excise_duties.has_next %}<a class="hub-page-btn" href="?tab=excise_duty&page={{ excise_duties.next_page_number }}"><i class="fas fa-chevron-right"></i></a>{% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="hub-empty"><i class="fas fa-percentage"></i><p>No excise duty rates available</p></div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── PANEL: REPORTS ─────────────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'reports' %}active{% endif %}" id="panel-reports">
+      <div class="hub-filter">
+        <form method="get" action="">
+          <input type="hidden" name="tab" value="reports">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.75rem;margin-bottom:.75rem;align-items:end">
+            <div>
+              <label class="hub-label">Report Type</label>
+              <select class="hub-form-control" name="type">
+                <option value="summary" {% if report_type == 'summary' %}selected{% endif %}>Summary</option>
+                <option value="invoices" {% if report_type == 'invoices' %}selected{% endif %}>Invoices</option>
+                <option value="credit_notes" {% if report_type == 'credit_notes' %}selected{% endif %}>Credit Notes</option>
+                <option value="api_logs" {% if report_type == 'api_logs' %}selected{% endif %}>API Logs</option>
+              </select>
+            </div>
+            <div><label class="hub-label">Start Date</label><input type="date" class="hub-form-control" name="start_date" value="{{ start_date }}"></div>
+            <div><label class="hub-label">End Date</label><input type="date" class="hub-form-control" name="end_date" value="{{ end_date }}"></div>
+            <button type="submit" class="hbtn hbtn-primary"><i class="fas fa-chart-bar"></i> Generate</button>
+          </div>
+        </form>
+      </div>
+      {% if report_type == 'invoices' and invoices %}
+      <div class="stat-grid" style="margin-bottom:1.25rem">
+        <div class="stat-card" style="--stat-color:var(--h-accent)"><div class="stat-label">Total Invoices</div><div class="stat-value mono">{{ total_invoices }}</div></div>
+        <div class="stat-card" style="--stat-color:var(--h-success)"><div class="stat-label">Total Amount</div><div class="stat-value" style="font-size:1.1rem">{{ summary.total_amount|floatformat:0|intcomma }}</div><div class="stat-sub">UGX</div></div>
+        <div class="stat-card" style="--stat-color:var(--h-warning)"><div class="stat-label">Total Tax</div><div class="stat-value" style="font-size:1.1rem">{{ summary.total_tax|floatformat:0|intcomma }}</div><div class="stat-sub">UGX</div></div>
+      </div>
+      <div class="hc"><div class="hc-head"><h6 class="hc-title"><i class="fas fa-file-invoice"></i> Invoice Report</h6></div>
+      <div class="hub-table-wrap"><table class="hub-table"><thead><tr><th>Invoice No</th><th>Buyer</th><th>Date</th><th class="text-end">Gross</th><th class="text-end">Tax</th></tr></thead>
+      <tbody>{% for inv in invoices %}<tr><td class="mono">{{ inv.invoiceNo }}</td><td>{{ inv.buyerLegalName|default:"—"|truncatechars:25 }}</td><td>{{ inv.issuedDate|default:"—" }}</td><td class="text-end mono">{{ inv.grossAmount|floatformat:2|intcomma }}</td><td class="text-end mono">{{ inv.taxAmount|floatformat:2|intcomma }}</td></tr>{% endfor %}</tbody></table></div></div>
+      {% elif report_type == 'credit_notes' and applications %}
+      <div class="stat-grid">
+        <div class="stat-card" style="--stat-color:var(--h-accent)"><div class="stat-label">Total</div><div class="stat-value">{{ total_applications }}</div></div>
+        <div class="stat-card" style="--stat-color:var(--h-success)"><div class="stat-label">Approved</div><div class="stat-value">{{ status_breakdown.approved }}</div></div>
+        <div class="stat-card" style="--stat-color:var(--h-warning)"><div class="stat-label">Pending</div><div class="stat-value">{{ status_breakdown.pending }}</div></div>
+        <div class="stat-card" style="--stat-color:var(--h-danger)"><div class="stat-label">Rejected</div><div class="stat-value">{{ status_breakdown.rejected }}</div></div>
+      </div>
+      {% elif report_type == 'api_logs' and logs %}
+      <div class="hc"><div class="hc-head"><h6 class="hc-title"><i class="fas fa-history"></i> API Logs</h6></div>
+      <div class="hub-table-wrap"><table class="hub-table"><thead><tr><th>Time</th><th>Interface</th><th>Type</th><th>Status</th><th>Duration</th></tr></thead>
+      <tbody>{% for log in logs %}<tr><td>{{ log.request_time|date:"M d, H:i" }}</td><td class="mono">{{ log.interface_code }}</td><td>{{ log.request_type }}</td><td>{% if log.status == 'SUCCESS' %}<span class="hbadge hbadge-approved">OK</span>{% else %}<span class="hbadge hbadge-rejected">Fail</span>{% endif %}</td><td class="mono">{{ log.duration_ms|default:"—" }}ms</td></tr>{% endfor %}</tbody></table></div></div>
+      {% else %}
+      <div class="hub-empty"><i class="fas fa-chart-bar"></i><p>Select a report type and date range, then click Generate</p></div>
+      {% endif %}
+    </div>
+
+    {# ── PANEL: TAXPAYER CHECK ──────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'taxpayer_check' %}active{% endif %}" id="panel-taxpayer_check">
+      <div style="max-width:520px;margin:0 auto">
+        <div class="hc">
+          <div class="hc-head"><h6 class="hc-title"><i class="fas fa-user-check"></i> Taxpayer Exemption Check (T137)</h6></div>
+          <div class="hc-body">
+            <form method="post" action="?tab=taxpayer_check">
+              {% csrf_token %}
+              <div style="margin-bottom:1rem">
+                <label class="hub-label">TIN <span style="color:var(--h-danger)">*</span></label>
+                <input class="hub-form-control" name="tin" value="{{ searched_tin|default:'' }}" placeholder="Enter taxpayer TIN" required>
+              </div>
+              <div style="margin-bottom:1.25rem">
+                <label class="hub-label">Commodity Category Codes (Optional)</label>
+                <input class="hub-form-control" name="commodity_codes" placeholder="e.g. 101,102">
+              </div>
+              <button type="submit" class="hbtn hbtn-primary"><i class="fas fa-search"></i> Check Status</button>
+            </form>
+            {% if check_result %}
+            <div style="margin-top:1.5rem;padding:1.25rem;background:var(--h-surface2);border-radius:8px;border:1px solid var(--h-border)">
+              <h6 style="font-weight:600;margin-bottom:1rem">Result for TIN: <span class="mono">{{ searched_tin }}</span></h6>
+              <dl class="info-kv">
+                {% for key, val in check_result.items %}
+                {% if key != 'success' %}<dt>{{ key }}</dt><dd class="mono">{{ val }}</dd>{% endif %}
+                {% endfor %}
+              </dl>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── PANEL: COMMODITY CATEGORIES ────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'commodity_categories' %}active{% endif %}" id="panel-commodity_categories">
+      <div class="hub-row">
+        <div class="hc">
+          <div class="hc-head"><h6 class="hc-title"><i class="fas fa-tags"></i> Category Information</h6></div>
+          <div class="hc-body">
+            <div class="hub-row-3" style="margin-bottom:1.5rem">
+              <div style="background:var(--h-surface2);border-radius:8px;padding:1rem;text-align:center;border:1px solid var(--h-border)">
+                <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--h-muted)">Total Categories</div>
+                <div style="font-size:2rem;font-weight:700;font-family:var(--h-mono)">{{ total_categories|default:0 }}</div>
+              </div>
+              <div style="background:var(--h-surface2);border-radius:8px;padding:1rem;text-align:center;border:1px solid var(--h-border);grid-column:span 2">
+                <div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--h-muted)">Last Synced</div>
+                <div style="font-size:1rem;font-weight:600;margin-top:.25rem">{% if last_sync %}{{ last_sync.last_synced|date:"Y-m-d H:i" }}{% else %}<span style="color:var(--h-muted)">Never</span>{% endif %}</div>
+              </div>
+            </div>
+            <form method="post" action="?tab=commodity_categories">
+              {% csrf_token %}
+              <div style="margin-bottom:1rem">
+                <label class="hub-label">Current Version</label>
+                <input class="hub-form-control" name="current_version" value="1.0" placeholder="1.0" style="max-width:160px">
+              </div>
+              <button type="submit" class="hbtn hbtn-primary"><i class="fas fa-sync-alt"></i> Check for Updates</button>
+            </form>
+          </div>
+        </div>
+        <div class="hc">
+          <div class="hc-head"><h6 class="hc-title"><i class="fas fa-info-circle"></i> About Category Updates</h6></div>
+          <div class="hc-body" style="font-size:.875rem;color:var(--h-muted)">
+            <p>Commodity category updates ensure your system has the latest tax classifications, rates, and exemptions.</p>
+            <ol style="padding-left:1.25rem;margin:1rem 0">
+              <li>Check your current version</li>
+              <li>Click "Check for Updates"</li>
+              <li>System applies changes automatically</li>
+              <li>Verify updated categories</li>
+            </ol>
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:7px;padding:.75rem;font-size:.82rem;color:#1d4ed8">
+              <i class="fas fa-info-circle"></i> Regular updates ensure compliance with current tax regulations.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── PANEL: BATCH UPLOAD ────────────────────────────────── #}
+    <div class="hub-panel {% if active_tab == 'batch_upload' %}active{% endif %}" id="panel-batch_upload">
+      {% if batch_results %}
+      <div class="stat-grid" style="margin-bottom:1.25rem">
+        <div class="stat-card" style="--stat-color:var(--h-accent)"><div class="stat-label">Total Processed</div><div class="stat-value mono">{{ batch_total_count }}</div></div>
+        <div class="stat-card" style="--stat-color:var(--h-success)"><div class="stat-label">Successful</div><div class="stat-value mono">{{ batch_success_count }}</div></div>
+        <div class="stat-card" style="--stat-color:var(--h-danger)"><div class="stat-label">Failed</div><div class="stat-value mono">{{ batch_failed_count }}</div></div>
+      </div>
+      <div class="hc" style="margin-bottom:1.25rem">
+        <div class="hc-head"><h6 class="hc-title"><i class="fas fa-list-check"></i> Upload Results</h6></div>
+        <div class="hub-table-wrap">
+          <table class="hub-table" id="batchResultsTable">
+            <thead><tr><th>#</th><th>Status</th><th>Code</th><th>Message</th><th></th></tr></thead>
+            <tbody>
+              {% for result in batch_results %}
+              <tr>
+                <td class="mono">{{ forloop.counter }}</td>
+                <td>{% if result.invoiceReturnCode == '00' %}<span class="hbadge hbadge-approved">Success</span>{% else %}<span class="hbadge hbadge-rejected">Failed</span>{% endif %}</td>
+                <td class="mono">{{ result.invoiceReturnCode }}</td>
+                <td>{{ result.invoiceReturnMessage }}</td>
+                <td><button class="hbtn hbtn-ghost hbtn-sm" onclick="showBatchDetail({{ forloop.counter0 }})"><i class="fas fa-eye"></i></button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="hub-row">
+        <div class="hc">
+          <div class="hc-head">
+            <h6 class="hc-title"><i class="fas fa-cloud-upload-alt"></i> Select Invoices for Upload</h6>
+            <div style="display:flex;gap:.5rem;align-items:center">
+              <button class="hbtn hbtn-ghost hbtn-sm" onclick="selectAllInv(true)">Select All</button>
+              <button class="hbtn hbtn-ghost hbtn-sm" onclick="selectAllInv(false)">Deselect</button>
+              <span id="invSelCount" style="font-size:.82rem;color:var(--h-muted)">0 selected</span>
+            </div>
+          </div>
+          {% if pending_invoices %}
+          <form method="post" action="?tab=batch_upload" id="batchForm">
+            {% csrf_token %}
+            <div class="hub-table-wrap">
+              <table class="hub-table">
+                <thead><tr><th style="width:36px"><input type="checkbox" id="batchSelectAll" onchange="selectAllInv(this.checked)"></th><th>Invoice No</th><th>Date</th><th>Customer</th><th class="text-end">Amount</th><th>Status</th></tr></thead>
+                <tbody>
+                  {% for inv in pending_invoices %}
+                  <tr>
+                    <td><input type="checkbox" class="inv-cb" name="invoice_ids" value="{{ inv.id }}" onchange="updateInvCount()"></td>
+                    <td style="font-weight:600">{{ inv.number }}</td>
+                    <td>{{ inv.created_at|date:"M d, Y" }}</td>
+                    <td>{{ inv.customer.name|truncatewords:3|default:"—" }}</td>
+                    <td class="text-end mono">{{ inv.total_amount|floatformat:2 }} UGX</td>
+                    <td><span class="hbadge hbadge-pending">Pending</span></td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div style="padding:1rem">
+              <button type="submit" class="hbtn hbtn-primary" id="batchUploadBtn" onclick="return confirmBatchUpload()">
+                <i class="fas fa-cloud-upload-alt"></i> Upload Selected
+              </button>
+            </div>
+          </form>
+          {% else %}
+          <div class="hub-empty"><i class="fas fa-check-circle" style="color:var(--h-success)"></i><p>No pending invoices available for upload</p></div>
+          {% endif %}
+        </div>
+        <div class="hc">
+          <div class="hc-head"><h6 class="hc-title"><i class="fas fa-info-circle"></i> Upload Guide</h6></div>
+          <div class="hc-body" style="font-size:.875rem;color:var(--h-muted)">
+            <ol style="padding-left:1.25rem;margin-bottom:1rem">
+              <li>Select invoices to upload</li>
+              <li>Maximum 50 per batch</li>
+              <li>Ensure all have valid data</li>
+              <li>Click Upload Selected</li>
+            </ol>
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:.75rem;font-size:.82rem;color:#92400e">
+              <i class="fas fa-exclamation-triangle"></i> Batch upload may take several minutes.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>{# /hub-body #}
+</div>{# /efris-hub #}
+
+{# ── SHARED MODALS ──────────────────────────────────────────── #}
+
+{# Approval modal #}
+<div class="hub-modal-backdrop" id="approvalModal">
+  <div class="hub-modal" style="max-width:500px">
+    <h5 style="font-weight:700;margin-bottom:1rem"><i class="fas fa-check-circle" style="color:var(--h-accent)"></i> Approve / Reject Application</h5>
+    <form id="approvalForm">
+      {% csrf_token %}
+      <input type="hidden" id="m_app_id">
+      <input type="hidden" id="m_ref_no">
+      <input type="hidden" id="m_task_id">
+      <div style="background:var(--h-surface2);border-radius:8px;padding:.875rem;margin-bottom:1rem;text-align:left">
+        <div style="font-size:.82rem;color:var(--h-muted)">Reference No</div>
+        <div id="m_ref_display" style="font-weight:700;font-family:var(--h-mono)"></div>
+      </div>
+      <div style="margin-bottom:1rem;text-align:left">
+        <label class="hub-label">Decision <span style="color:var(--h-danger)">*</span></label>
+        <select class="hub-form-control" id="m_decision" required>
+          <option value="">Select…</option>
+          <option value="101">✅ Approve</option>
+          <option value="103">❌ Reject</option>
+        </select>
+      </div>
+      <div style="margin-bottom:1.25rem;text-align:left">
+        <label class="hub-label">Remarks <span style="color:var(--h-danger)">*</span> <span id="m_char_count" style="float:right;color:var(--h-muted)">0 / 1024</span></label>
+        <textarea class="hub-form-control" id="m_remark" rows="4" maxlength="1024" required placeholder="Enter remarks…" oninput="document.getElementById('m_char_count').textContent=this.value.length+' / 1024'"></textarea>
+      </div>
+      <div style="display:flex;gap:.75rem;justify-content:flex-end">
+        <button type="button" class="hbtn hbtn-ghost" onclick="closeApprovalModal()">Cancel</button>
+        <button type="submit" class="hbtn hbtn-primary" id="m_submit_btn"><i class="fas fa-paper-plane"></i> Submit</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Credit note creation modal #}
+<div class="hub-modal-backdrop" id="creditNoteModal">
+  <div class="hub-modal" style="max-width:460px">
+    <h5 style="font-weight:700;margin-bottom:1rem"><i class="fas fa-undo" style="color:var(--h-accent)"></i> Create Credit Note</h5>
+    <form method="post" action="?tab=normal_invoices" id="creditNoteForm">
+      {% csrf_token %}
+      <input type="hidden" name="invoice_no" id="cn_invoice_no">
+      <input type="hidden" name="invoice_id" id="cn_invoice_id">
+      <div style="background:var(--h-surface2);border-radius:8px;padding:.875rem;margin-bottom:1rem;text-align:left">
+        <div style="font-size:.82rem;color:var(--h-muted)">Invoice No</div>
+        <div id="cn_invoice_display" style="font-weight:700;font-family:var(--h-mono)"></div>
+      </div>
+      <div style="margin-bottom:1rem;text-align:left">
+        <label class="hub-label">Reason <span style="color:var(--h-danger)">*</span></label>
+        <select class="hub-form-control" name="reason_code" id="cn_reason_code" onchange="toggleCnReason(this.value)" required>
+          {% for code, label in reason_codes %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div id="cn_reason_text_wrap" style="display:none;margin-bottom:1.25rem;text-align:left">
+        <label class="hub-label">Specify Reason</label>
+        <textarea class="hub-form-control" name="reason" rows="3" placeholder="Describe the reason…"></textarea>
+      </div>
+      <div style="display:flex;gap:.75rem;justify-content:flex-end">
+        <button type="button" class="hbtn hbtn-ghost" onclick="closeCreditNoteModal()">Cancel</button>
+        <button type="submit" class="hbtn hbtn-primary"><i class="fas fa-paper-plane"></i> Submit Application</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Generic detail modal #}
+<div class="hub-modal-backdrop" id="detailModal">
+  <div class="hub-modal" style="max-width:600px;text-align:left">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h5 style="font-weight:700;margin:0" id="detailModalTitle">Details</h5>
+      <button class="hbtn hbtn-ghost hbtn-sm" onclick="closeDetailModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <pre id="detailModalContent" style="background:var(--h-surface2);border:1px solid var(--h-border);border-radius:8px;padding:1rem;font-size:.8rem;font-family:var(--h-mono);overflow:auto;max-height:400px;white-space:pre-wrap"></pre>
+    <div style="text-align:right;margin-top:1rem">
+      <button class="hbtn hbtn-ghost" onclick="closeDetailModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+{# Upload progress modal #}
+<div class="hub-modal-backdrop" id="progressModal">
+  <div class="hub-modal">
+    <div style="width:56px;height:56px;border:4px solid var(--h-border);border-top-color:var(--h-accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 1rem"></div>
+    <h5 style="font-weight:700;margin-bottom:.5rem">Uploading Invoices…</h5>
+    <p style="color:var(--h-muted);font-size:.875rem;margin-bottom:1rem">Please wait while we process your invoices.</p>
+    <div class="hub-progress"><div class="hub-progress-bar" id="uploadBar" style="width:0%"></div></div>
+    <div style="font-size:.82rem;color:var(--h-muted);margin-top:.5rem" id="uploadPct">0%</div>
+  </div>
+</div>
+<style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* ── Exchange rates data for converter ── */
+const __rates = {UGX:1,{% for r in rates %}'{{r.currency}}':{{r.rate}},{% endfor %}};
+
+/* ── Batch results data ── */
+const __batchResults = {{ batch_results|default:"[]"|safe }};
+
+/* ── Approval modal ─────────────────────────────────────────── */
+function openApprovalModal(appId, refNo, taskId) {
+  document.getElementById('m_app_id').value = appId;
+  document.getElementById('m_ref_no').value = refNo || appId;
+  document.getElementById('m_task_id').value = taskId || '';
+  document.getElementById('m_ref_display').textContent = refNo || appId;
+  document.getElementById('m_decision').value = '';
+  document.getElementById('m_remark').value = '';
+  document.getElementById('m_char_count').textContent = '0 / 1024';
+  document.getElementById('approvalModal').classList.add('open');
+}
+function closeApprovalModal() {
+  document.getElementById('approvalModal').classList.remove('open');
+}
+document.getElementById('approvalForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const appId    = document.getElementById('m_app_id').value;
+  const refNo    = document.getElementById('m_ref_no').value;
+  const taskId   = document.getElementById('m_task_id').value;
+  const decision = document.getElementById('m_decision').value;
+  const remark   = document.getElementById('m_remark').value;
+  const btn      = document.getElementById('m_submit_btn');
+  if (!confirm(decision === '101' ? 'Approve this application?' : 'Reject this application?')) return;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing…';
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  const formData = new FormData();
+  formData.append('reference_no', refNo);
+  formData.append('approve_status', decision);
+  formData.append('task_id', taskId);
+  formData.append('remark', remark);
+  formData.append('application_id', appId);
+  fetch(}`.replace('000', appId), {
+    method: 'POST', body: formData,
+    headers: { 'X-CSRFToken': csrfToken }
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) {
+      closeApprovalModal();
+      EFRIS.showAlert(d.message || 'Application processed successfully', 'success');
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      EFRIS.showAlert(d.error || 'Unknown error', 'danger');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit';
+    }
+  })
+  .catch(err => {
+    EFRIS.showAlert('Network error: ' + err.message, 'danger');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit';
+  });
+});
+
+/* ── Credit note modal ──────────────────────────────────────── */
+function openCreditNoteModal(invoiceNo, invoiceId) {
+  document.getElementById('cn_invoice_no').value = invoiceNo;
+  document.getElementById('cn_invoice_id').value = invoiceId || '';
+  document.getElementById('cn_invoice_display').textContent = invoiceNo;
+  document.getElementById('creditNoteModal').classList.add('open');
+}
+function closeCreditNoteModal() {
+  document.getElementById('creditNoteModal').classList.remove('open');
+}
+function toggleCnReason(val) {
+  document.getElementById('cn_reason_text_wrap').style.display = val === '105' ? 'block' : 'none';
+}
+
+/* ── Log detail modal ───────────────────────────────────────── */
+function showLogDetail(desc, errorDetail) {
+  document.getElementById('detailModalTitle').textContent = 'Exception Log Details';
+  document.getElementById('detailModalContent').textContent =
+    'Description:\n' + desc + '\n\nError Detail:\n' + (errorDetail || 'No additional details');
+  document.getElementById('detailModal').classList.add('open');
+}
+function showExciseDetails(details) {
+  if (!details || !details.length) {
+    document.getElementById('detailModalContent').textContent = 'No detailed rate information available.';
+  } else {
+    document.getElementById('detailModalContent').textContent = JSON.stringify(details, null, 2);
+  }
+  document.getElementById('detailModalTitle').textContent = 'Excise Duty Details';
+  document.getElementById('detailModal').classList.add('open');
+}
+function showBatchDetail(idx) {
+  const result = __batchResults[idx];
+  if (!result) return;
+  document.getElementById('detailModalTitle').textContent = result.invoiceReturnCode === '00' ? 'Invoice Details' : 'Error Details';
+  try {
+    const inv = JSON.parse(result.invoiceContent);
+    document.getElementById('detailModalContent').textContent = JSON.stringify(inv, null, 2);
+  } catch {
+    document.getElementById('detailModalContent').textContent = JSON.stringify(result, null, 2);
+  }
+  document.getElementById('detailModal').classList.add('open');
+}
+function closeDetailModal() {
+  document.getElementById('detailModal').classList.remove('open');
+}
+
+/* Close modals on backdrop click */
+['approvalModal','creditNoteModal','detailModal','progressModal'].forEach(id => {
+  document.getElementById(id).addEventListener('click', function(e) {
+    if (e.target === this) this.classList.remove('open');
+  });
+});
+
+/* ── Currency converter ──────────────────────────────────────── */
+function convertCurrency() {
+  const amount = parseFloat(document.getElementById('convAmount').value);
+  const from   = document.getElementById('convFrom').value;
+  const to     = document.getElementById('convTo').value;
+  if (!amount || amount <= 0) return EFRIS.showAlert('Enter a valid amount', 'warning');
+  let result;
+  if (from === 'UGX' && to !== 'UGX')       result = amount / __rates[to];
+  else if (from !== 'UGX' && to === 'UGX')  result = amount * __rates[from];
+  else if (from !== 'UGX' && to !== 'UGX')  result = (amount * __rates[from]) / __rates[to];
+  else                                        result = amount;
+  const el = document.getElementById('convResult');
+  el.textContent = `${amount.toFixed(2)} ${from} = ${result.toFixed(2)} ${to}`;
+  el.style.display = 'block';
+}
+
+/* ── Exception log upload ───────────────────────────────────── */
+function uploadPendingLogs() {
+  if (!confirm('Upload all pending exception logs to EFRIS?')) return;
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  fetch('{% url "efris:upload_exception_logs" %}', {
+    method: 'POST',
+    headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' }
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) { EFRIS.showAlert(`Uploaded ${d.logs_count} logs`, 'success'); setTimeout(() => location.reload(), 1500); }
+    else EFRIS.showAlert('Upload failed: ' + d.error, 'danger');
+  })
+  .catch(err => EFRIS.showAlert('Error: ' + err, 'danger'));
+}
+
+/* ── Branches refresh ───────────────────────────────────────── */
+function refreshBranches() {
+  if (!confirm('Refresh branch data from EFRIS?')) return;
+  fetch()
+  .then(r => r.json())
+  .then(d => {
+    if (d.success) { EFRIS.showAlert('Branches refreshed', 'success'); setTimeout(() => location.reload(), 1000); }
+    else EFRIS.showAlert('Failed: ' + d.error, 'danger');
+  });
+}
+
+/* ── Certificate upload preview ─────────────────────────────── */
+const certInput = document.getElementById('certFile');
+if (certInput) {
+  certInput.addEventListener('change', function() {
+    if (!this.files.length) return;
+    const f = this.files[0];
+    if (f.size > 10 * 1024 * 1024) {
+      EFRIS.showAlert('File too large (max 10MB)', 'danger'); this.value = ''; return;
+    }
+    document.getElementById('previewName').textContent = f.name;
+    document.getElementById('previewSize').textContent = (f.size / 1048576).toFixed(2) + ' MB';
+    document.getElementById('filePreview').style.display = 'block';
+  });
+  document.getElementById('certForm').addEventListener('submit', function() {
+    const btn = document.getElementById('certUploadBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;margin-right:.4rem"></span>Uploading…';
+  });
+}
+
+/* ── Batch upload controls ──────────────────────────────────── */
+function selectAllInv(checked) {
+  document.querySelectorAll('.inv-cb').forEach(c => c.checked = checked);
+  updateInvCount();
+}
+function updateInvCount() {
+  const n = document.querySelectorAll('.inv-cb:checked').length;
+  document.getElementById('invSelCount').textContent = n + ' selected';
+  const all = document.querySelectorAll('.inv-cb').length;
+  const allCb = document.getElementById('batchSelectAll');
+  if (allCb) allCb.checked = n === all && all > 0;
+}
+function confirmBatchUpload() {
+  const n = document.querySelectorAll('.inv-cb:checked').length;
+  if (!n) { EFRIS.showAlert('Please select at least one invoice', 'warning'); return false; }
+  if (n > 50) { EFRIS.showAlert('Maximum 50 invoices per batch', 'warning'); return false; }
+  if (!confirm(`Upload ${n} invoice(s) to EFRIS?`)) return false;
+  document.getElementById('progressModal').classList.add('open');
+  let p = 0;
+  const iv = setInterval(() => {
+    p = Math.min(p + 5, 95);
+    document.getElementById('uploadBar').style.width = p + '%';
+    document.getElementById('uploadPct').textContent = p + '%';
+    if (p >= 95) clearInterval(iv);
+  }, 400);
+  return true;
+}
+
+/* ── Excise duty search ─────────────────────────────────────── */
+function filterExcise(q) {
+  const rows = document.querySelectorAll('#exciseTable tbody tr');
+  const lq = q.toLowerCase();
+  rows.forEach(r => r.style.display = r.textContent.toLowerCase().includes(lq) ? '' : 'none');
+}
+
+/* ── Tab keyboard navigation ────────────────────────────────── */
+document.querySelectorAll('.hub-tab').forEach(t => {
+  t.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); location.href = t.href; }
+  });
+});
+</script>
+{% endblock %}

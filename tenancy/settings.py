@@ -608,6 +608,7 @@ SHARED_APPS = [
     "crispy_forms",
     "crispy_bootstrap5",
     'corsheaders',
+    'changelog',
 ]
 LOCAL_DEV_PORT = 8000
 # Add web-specific apps only for web mode
@@ -638,6 +639,8 @@ TENANT_APPS = [
     'errors',
     'taggit',
     'pos_app',
+    'onboarding',
+    'suggestions',
 ]
 
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
@@ -751,11 +754,14 @@ TEMPLATES = [
                 'errors.context_processors.error_context_processor',
                 'messaging.context_processors.messaging_context',
                 'public_seo.context_processors.seo_metadata',
+                'onboarding.views.onboarding_context',
+                'changelog.views.changelog_context',
             ],
         },
     },
 ]
-
+REPORT_ADMIN_EMAIL = os.getenv('REPORT_ADMIN_EMAIL', 'primefocusug@gmail.com')
+SITE_URL = FRONTEND_URL
 WSGI_APPLICATION = 'tenancy.wsgi.application'
 
 # ASGI only for web mode (needed for channels/websockets)

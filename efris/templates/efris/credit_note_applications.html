@@ -4,479 +4,390 @@
 {% load humanize %}
 {% load custom_filters %}
 
-{% block title %}Credit Note Applications - EFRIS{% endblock %}
-
-{% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
-<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
-<li class="breadcrumb-item active">Credit Note Applications</li>
-{% endblock %}
-
-{% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
-<style>
-    /* Status badge styles */
-    .badge-status-pending { background-color: #ffc107; color: #000; }
-    .badge-status-approved { background-color: #28a745; color: #fff; }
-    .badge-status-rejected { background-color: #dc3545; color: #fff; }
-    .badge-status-voided { background-color: #6c757d; color: #fff; }
-    .badge-status-processed { background-color: #17a2b8; color: #fff; }
-
-    /* Negative amount styling */
-    .negative-amount { color: #dc3545; font-weight: 600; }
-</style>
-{% endblock %}
+{% block title %}Credit Note Applications — EFRIS{% endblock %}
+{% block page_title %}Credit / Debit Notes{% endblock %}
 
 {% block page_actions %}
-<a href="{% url 'efris:export_credit_notes_pdf' %}?{{ request.GET.urlencode }}"
-   class="btn btn-outline-primary">
-    <i class="fas fa-file-pdf"></i> Export PDF
+<a href="{% url 'efris:export_credit_notes_pdf' %}?{{ request.GET.urlencode }}" class="btn btn-ghost">
+  <i class="fas fa-file-pdf"></i> Export PDF
 </a>
 <a href="{% url 'efris:credit_note_application' %}" class="btn btn-primary">
-    <i class="fas fa-plus"></i> New Credit Note
+  <i class="fas fa-plus"></i> New Credit Note
 </a>
 {% endblock %}
 
 {% block efris_content %}
-<!-- Filter Form -->
+
+<!-- ── FILTERS ───────────────────────────────────────────────── -->
 <div class="search-box">
-    <form method="get" id="filterForm">
-        <div class="row g-3">
-            <div class="col-md-3">
-                <label for="approve_status" class="form-label">Approval Status</label>
-                <select class="form-select" id="approve_status" name="approve_status">
-    <option value="">All Statuses</option>
-    <option value="101" {% if filters.approve_status == '101' %}selected{% endif %}>Approved</option>
-    <option value="102" {% if filters.approve_status == '102' %}selected{% endif %}>Submitted/Pending</option>
-    <option value="103" {% if filters.approve_status == '103' %}selected{% endif %}>Rejected</option>
-    <option value="104" {% if filters.approve_status == '104' %}selected{% endif %}>Voided/Cancelled</option>
-</select>
-            </div>
-
-            <div class="col-md-3">
-                <label for="category_code" class="form-label">Category</label>
-                <select class="form-select" id="category_code" name="category_code">
-                    <option value="">All Categories</option>
-                    <option value="101" {% if filters.category_code == '101' %}selected{% endif %}>Credit Note</option>
-                    <option value="102" {% if filters.category_code == '102' %}selected{% endif %}>Debit Note</option>
-                    <option value="103" {% if filters.category_code == '103' %}selected{% endif %}>Cancel Debit Note</option>
-                    <option value="104" {% if filters.category_code == '104' %}selected{% endif %}>Cancel Credit Note</option>
-                </select>
-            </div>
-
-            <div class="col-md-3">
-                <label for="start_date" class="form-label">Start Date</label>
-                <input type="date" class="form-control" id="start_date" name="start_date"
-                       value="{{ filters.start_date }}">
-            </div>
-
-            <div class="col-md-3">
-                <label for="end_date" class="form-label">End Date</label>
-                <input type="date" class="form-control" id="end_date" name="end_date"
-                       value="{{ filters.end_date }}">
-            </div>
-        </div>
-
-        <div class="row mt-3">
-            <div class="col-12">
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-filter"></i> Filter
-                </button>
-                <button type="button" class="btn btn-outline-secondary" onclick="clearFilters()">
-                    <i class="fas fa-times"></i> Clear
-                </button>
-            </div>
-        </div>
-    </form>
+  <form method="get" id="filterForm">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Approval Status</label>
+        <select class="form-control" name="approve_status">
+          <option value="">All Statuses</option>
+          <option value="101" {% if filters.approve_status == '101' %}selected{% endif %}>Approved</option>
+          <option value="102" {% if filters.approve_status == '102' %}selected{% endif %}>Submitted / Pending</option>
+          <option value="103" {% if filters.approve_status == '103' %}selected{% endif %}>Rejected</option>
+          <option value="104" {% if filters.approve_status == '104' %}selected{% endif %}>Voided / Cancelled</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category</label>
+        <select class="form-control" name="category_code">
+          <option value="">All Categories</option>
+          <option value="101" {% if filters.category_code == '101' %}selected{% endif %}>Credit Note</option>
+          <option value="102" {% if filters.category_code == '102' %}selected{% endif %}>Debit Note</option>
+          <option value="103" {% if filters.category_code == '103' %}selected{% endif %}>Cancel Debit Note</option>
+          <option value="104" {% if filters.category_code == '104' %}selected{% endif %}>Cancel Credit Note</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Start Date</label>
+        <input type="date" class="form-control" name="start_date" value="{{ filters.start_date }}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">End Date</label>
+        <input type="date" class="form-control" name="end_date" value="{{ filters.end_date }}">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button type="submit" class="btn btn-primary"><i class="fas fa-filter"></i> Filter</button>
+      <button type="button" class="btn btn-ghost" onclick="clearFilters()"><i class="fas fa-times"></i> Clear</button>
+    </div>
+  </form>
 </div>
 
-<!-- Applications List -->
-<div class="card efris-card mt-4">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h5 class="card-title mb-0">
-            <i class="fas fa-file-invoice me-2"></i>Credit Note Applications
-            {% if pagination %}
-            <span class="badge bg-secondary ms-2">{{ pagination.total_size }} total</span>
-            {% endif %}
-        </h5>
-
-        {% if pagination %}
-        <div class="text-muted small">
-            Page {{ pagination.page_no }} of {{ pagination.page_count }}
-        </div>
-        {% endif %}
+<!-- ── TABLE ─────────────────────────────────────────────────── -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">
+      <i class="fas fa-file-invoice"></i> Credit Note Applications
+      {% if pagination %}
+      <span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-3);margin-left:6px;">{{ pagination.total_size }} total</span>
+      {% endif %}
     </div>
-    <div class="card-body">
-        {% if applications %}
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>Ref No</th>
-                        <th>Invoice No</th>
-                        <th>Category</th>
-                        <th>Buyer</th>
-                        <th class="text-end">Amount</th>
-                        <th>Application Date</th>
-                        <th>Status</th>
-                        <th>Waiting Days</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for app in applications %}
-                    <tr>
-                        <td>
-                            <strong>{{ app.referenceNo|default:"-" }}</strong>
-                            {% if app.id %}
-                            <br><small class="text-muted">ID: {{ app.id|truncatechars:10 }}</small>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if app.oriInvoiceNo %}
-                            {{ app.oriInvoiceNo }}
-                            {% else %}
-                            <span class="text-muted">-</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if app.invoiceApplyCategoryCode == '101' %}
-                            <span class="badge bg-success">Credit Note</span>
-                            {% elif app.invoiceApplyCategoryCode == '102' %}
-                            <span class="badge bg-warning">Debit Note</span>
-                            {% elif app.invoiceApplyCategoryCode == '103' %}
-                            <span class="badge bg-info">Cancel Debit</span>
-                            {% elif app.invoiceApplyCategoryCode == '104' %}
-                            <span class="badge bg-secondary">Cancel Credit</span>
-                            {% else %}
-                            <span class="badge bg-dark">{{ app.invoiceApplyCategoryCode }}</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if app.buyerLegalName %}
-                            <div>{{ app.buyerLegalName|truncatechars:20 }}</div>
-                            <small class="text-muted">{{ app.buyerTin|default:"" }}</small>
-                            {% else %}
-                            <span class="text-muted">No buyer</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-end">
-                            {% if app.grossAmount %}
-                                {% with amount=app.grossAmount|floatformat:2 %}
-                                {% if app.grossAmount < 0 %}
-                                    <span class="negative-amount">{{ amount }} {{ app.currency|default:"UGX" }}</span>
-                                {% else %}
-                                    {{ amount }} {{ app.currency|default:"UGX" }}
-                                {% endif %}
-                                {% endwith %}
-                            {% else %}
-                                <span class="text-muted">-</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if app.applicationTime %}
-                            {{ app.applicationTime }}
-                            {% else %}
-                            <span class="text-muted">-</span>
-                            {% endif %}
-                        </td>
-                        <td>
-    {% if app.approveStatus == '101' %}
-        <span class="badge badge-status-approved">Approved</span>
-    {% elif app.approveStatus == '102' %}
-        <span class="badge badge-status-pending">Submitted/Pending</span>
-    {% elif app.approveStatus == '103' %}
-        <span class="badge badge-status-rejected">Rejected</span>
-    {% elif app.approveStatus == '104' %}
-        <span class="badge badge-status-voided">Voided/Cancelled</span>
-    {% elif app.approveStatus == '105' %}
-        <span class="badge badge-status-processed">Processed</span>
-    {% else %}
-        <span class="badge bg-dark">Unknown ({{ app.approveStatus|default:"-" }})</span>
+    {% if pagination %}
+    <span style="font-size:12px;color:var(--text-3);">Page {{ pagination.page_no }} of {{ pagination.page_count }}</span>
     {% endif %}
-</td>
-                        <td>
-                            {% if app.waitingDate and app.waitingDate != '0' %}
-                            <span class="badge bg-warning">{{ app.waitingDate }} days</span>
-                            {% else %}
-                            <span class="text-muted">-</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <div class="btn-group btn-group-sm" role="group">
-                                <a href="{% url 'efris:credit_note_application_detail' app.id %}?invoice_no={{ app.invoiceNo }}"
-                                   class="btn btn-outline-primary" title="View Details">
-                                    <i class="fas fa-eye"></i>
-                                </a>
+  </div>
 
-                                {% if app.referenceNo %}
-                                <a href="{% url 'efris:credit_note_application_status' app.referenceNo %}"
-                                   class="btn btn-outline-info" title="Check Status">
-                                    <i class="fas fa-sync-alt"></i>
-                                </a>
-                                {% endif %}
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+  <div class="card-body" style="padding:0;">
+    {% if applications %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ref No</th>
+            <th>Invoice No</th>
+            <th>Category</th>
+            <th>Buyer</th>
+            <th style="text-align:right;">Amount</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th>Waiting</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for app in applications %}
+          <tr>
+            <td>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;color:var(--text);">{{ app.referenceNo|default:"—" }}</span>
+              {% if app.id %}<br><span style="font-size:11px;color:var(--text-3);">{{ app.id|truncatechars:10 }}</span>{% endif %}
+            </td>
 
-        <!-- Pagination -->
-        {% if pagination.page_count > 1 %}
-        <nav aria-label="Applications pagination" class="mt-4">
-            <ul class="pagination justify-content-center">
-                {% if pagination.page_no > 1 %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ pagination.page_no|add:"-1" }}&{{ request.GET.urlencode }}">
-                        <i class="fas fa-chevron-left"></i> Previous
-                    </a>
-                </li>
+            <td>
+              {% if app.oriInvoiceNo %}
+              <span class="mono">{{ app.oriInvoiceNo }}</span>
+              {% else %}
+              <span style="color:var(--text-3);">—</span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if app.invoiceApplyCategoryCode == '101' %}
+              <span class="badge approved">Credit Note</span>
+              {% elif app.invoiceApplyCategoryCode == '102' %}
+              <span class="badge pending">Debit Note</span>
+              {% elif app.invoiceApplyCategoryCode == '103' %}
+              <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);">Cancel Debit</span>
+              {% elif app.invoiceApplyCategoryCode == '104' %}
+              <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;background:var(--surface-2);color:var(--text-3);">Cancel Credit</span>
+              {% else %}
+              <span style="color:var(--text-3);font-size:12px;">{{ app.invoiceApplyCategoryCode }}</span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if app.buyerLegalName %}
+              <div style="font-size:13px;font-weight:500;color:var(--text);">{{ app.buyerLegalName|truncatechars:22 }}</div>
+              <div style="font-size:11px;color:var(--text-3);">{{ app.buyerTin|default:"" }}</div>
+              {% else %}
+              <span style="color:var(--text-3);">No buyer</span>
+              {% endif %}
+            </td>
+
+            <td style="text-align:right;">
+              {% if app.grossAmount %}
+                {% with amount=app.grossAmount|floatformat:2 %}
+                <span class="mono {% if app.grossAmount < 0 %}text-danger{% endif %}" style="{% if app.grossAmount < 0 %}color:var(--danger);font-weight:600;{% endif %}">
+                  {{ amount }}
+                </span>
+                <span style="font-size:11px;color:var(--text-3);margin-left:2px;">{{ app.currency|default:"UGX" }}</span>
+                {% endwith %}
+              {% else %}
+              <span style="color:var(--text-3);">—</span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if app.applicationTime %}
+              <span style="font-size:12.5px;color:var(--text);">{{ app.applicationTime }}</span>
+              {% else %}
+              <span style="color:var(--text-3);">—</span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if app.approveStatus == '101' %}
+              <span class="badge approved">Approved</span>
+              {% elif app.approveStatus == '102' %}
+              <span class="badge pending">Pending</span>
+              {% elif app.approveStatus == '103' %}
+              <span class="badge rejected">Rejected</span>
+              {% elif app.approveStatus == '104' %}
+              <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;background:var(--surface-2);color:var(--text-3);">Voided</span>
+              {% elif app.approveStatus == '105' %}
+              <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);">Processed</span>
+              {% else %}
+              <span style="color:var(--text-3);font-size:12px;">{{ app.approveStatus|default:"—" }}</span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if app.waitingDate and app.waitingDate != '0' %}
+              <span class="badge pending">{{ app.waitingDate }}d</span>
+              {% else %}
+              <span style="color:var(--text-3);">—</span>
+              {% endif %}
+            </td>
+
+            <td>
+              <div style="display:flex;gap:4px;align-items:center;">
+                {% if app.invoiceNo %}
+                <a href="{% url 'efris:credit_note_application_detail' app.id %}?invoice_no={{ app.invoiceNo }}"
+                   class="btn btn-ghost btn-sm" title="View Details">
+                  <i class="fas fa-eye"></i>
+                </a>
+                {% else %}
+                <button class="btn btn-ghost btn-sm" disabled title="No issued invoice" style="opacity:.4;cursor:default;">
+                  <i class="fas fa-eye-slash"></i>
+                </button>
                 {% endif %}
 
-                <!-- Page numbers -->
-                {% for page_num in pagination.page_range %}
-                    {% if page_num == pagination.page_no %}
-                    <li class="page-item active">
-                        <span class="page-link">{{ page_num }}</span>
-                    </li>
-                    {% else %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ page_num }}&{{ request.GET.urlencode }}">{{ page_num }}</a>
-                    </li>
-                    {% endif %}
-                {% endfor %}
-
-                {% if pagination.page_no < pagination.page_count %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ pagination.page_no|add:"1" }}&{{ request.GET.urlencode }}">
-                        Next <i class="fas fa-chevron-right"></i>
-                    </a>
-                </li>
+                {% if app.referenceNo %}
+                <a href="{% url 'efris:credit_note_application_status' app.referenceNo %}"
+                   class="btn btn-ghost btn-sm" title="Check Status">
+                  <i class="fas fa-sync-alt"></i>
+                </a>
                 {% endif %}
-            </ul>
-        </nav>
-        {% endif %}
+
+                {% if app.invoiceNo %}
+                <a href="{% url 'efris:print_credit_note' app.id %}?invoice_no={{ app.invoiceNo }}"
+                   target="_blank" class="btn btn-ghost btn-sm" title="Print">
+                  <i class="fas fa-print"></i>
+                </a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if pagination.page_count > 1 %}
+    <div style="display:flex;justify-content:center;align-items:center;gap:4px;padding:16px 20px;border-top:1px solid var(--border);">
+      {% if pagination.page_no > 1 %}
+      <a href="?page={{ pagination.page_no|add:"-1" }}&{{ request.GET.urlencode }}" class="btn btn-ghost btn-sm">
+        <i class="fas fa-chevron-left"></i>
+      </a>
+      {% endif %}
+
+      {% for page_num in pagination.page_range %}
+        {% if page_num == pagination.page_no %}
+        <span style="width:32px;height:32px;display:grid;place-items:center;border-radius:7px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;">{{ page_num }}</span>
         {% else %}
-        <div class="text-center py-5">
-            <i class="fas fa-file-invoice fa-3x text-muted mb-3"></i>
-            <h5 class="text-muted">No Credit Note Applications Found</h5>
-            <p class="text-muted">Try adjusting your filters or create a new credit note application.</p>
-            <a href="{% url 'efris:credit_note_application' %}" class="btn btn-primary mt-2">
-                <i class="fas fa-plus"></i> Create New Credit Note
-            </a>
-        </div>
+        <a href="?page={{ page_num }}&{{ request.GET.urlencode }}"
+           style="width:32px;height:32px;display:grid;place-items:center;border-radius:7px;color:var(--text-2);font-size:13px;font-weight:500;text-decoration:none;transition:background .18s;">
+          {{ page_num }}
+        </a>
         {% endif %}
+      {% endfor %}
+
+      {% if pagination.page_no < pagination.page_count %}
+      <a href="?page={{ pagination.page_no|add:"1" }}&{{ request.GET.urlencode }}" class="btn btn-ghost btn-sm">
+        <i class="fas fa-chevron-right"></i>
+      </a>
+      {% endif %}
     </div>
+    {% endif %}
+
+    {% else %}
+    <div style="text-align:center;padding:56px 20px;">
+      <i class="fas fa-file-invoice" style="font-size:3rem;color:var(--text-3);"></i>
+      <h5 style="color:var(--text-2);margin:16px 0 8px;">No Credit Note Applications Found</h5>
+      <p style="color:var(--text-3);font-size:13px;margin:0 0 20px;">Try adjusting your filters or create a new credit note application.</p>
+      <a href="{% url 'efris:credit_note_application' %}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Create New Credit Note
+      </a>
+    </div>
+    {% endif %}
+  </div>
 </div>
 
-<!-- Approval Modal -->
-<div class="modal fade" id="approvalModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post" id="approvalForm">
-                {% csrf_token %}
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title">
-                        <i class="fas fa-check-circle me-2"></i>Approve/Reject Application
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" name="reference_no" id="modal_reference_no">
-                    <input type="hidden" name="task_id" id="modal_task_id">
-                    <input type="hidden" name="application_id" id="modal_application_id">
+<!-- ── APPROVAL MODAL ─────────────────────────────────────────── -->
+<div id="approvalModal" style="display:none;position:fixed;inset:0;z-index:3000;align-items:center;justify-content:center;padding:20px;">
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,.5);" onclick="closeApprovalModal()"></div>
+  <div style="position:relative;width:100%;max-width:480px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-md);overflow:hidden;">
+    <form method="post" id="approvalForm">
+      {% csrf_token %}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--accent);">
+        <span style="font-size:14px;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px;">
+          <i class="fas fa-check-circle"></i> Approve / Reject Application
+        </span>
+        <button type="button" onclick="closeApprovalModal()" style="background:none;border:none;color:rgba(255,255,255,.7);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
+      </div>
+      <div style="padding:20px;">
+        <input type="hidden" name="reference_no" id="modal_reference_no">
+        <input type="hidden" name="task_id" id="modal_task_id">
+        <input type="hidden" name="application_id" id="modal_application_id">
 
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>
-                        <strong>Note:</strong> This action will submit the decision to URA EFRIS system.
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Application Details:</label>
-                        <div class="card bg-light">
-                            <div class="card-body">
-                                <p class="mb-1"><strong>Reference No:</strong> <span id="display_reference_no" class="fw-bold"></span></p>
-                                <p class="mb-0"><strong>Application ID:</strong> <span id="display_application_id" class="text-muted"></span></p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="modal_approve_status" class="form-label">Decision *</label>
-                        <select class="form-select" name="approve_status" id="modal_approve_status" required>
-                            <option value="">Select decision</option>
-                            <!-- T113 API uses 101 for Approve, 103 for Reject -->
-                            <option value="101">✅ Approve (Submit to URA)</option>
-                            <option value="103">❌ Reject (Submit to URA)</option>
-                        </select>
-                        <small class="form-text text-muted">
-                            Note: Only applications with status "Pending" (102) can be approved or rejected.
-                        </small>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="modal_remark" class="form-label">Remarks * (max 1024 characters)</label>
-                        <textarea class="form-control" name="remark" id="modal_remark"
-                                  rows="4" required maxlength="1024"
-                                  placeholder="Enter detailed approval or rejection remarks..."></textarea>
-                        <div class="d-flex justify-content-between mt-1">
-                            <small class="form-text text-muted">
-                                Required for approval/rejection
-                            </small>
-                            <small class="form-text text-muted">
-                                <span id="remarkCharCount">0</span> / 1024 characters
-                            </small>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-2"></i> Cancel
-                    </button>
-                    <button type="submit" class="btn btn-primary" id="submitApprovalBtn">
-                        <i class="fas fa-paper-plane me-2"></i> Submit Decision
-                    </button>
-                </div>
-            </form>
+        <div class="alert alert-info" style="margin-bottom:16px;">
+          <i class="fas fa-info-circle"></i>
+          This will submit the decision to the URA EFRIS system.
         </div>
-    </div>
+
+        <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;">
+          <div style="display:flex;gap:8px;margin-bottom:6px;">
+            <span style="color:var(--text-3);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;width:100px;">Ref No</span>
+            <span id="display_reference_no" style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--text);"></span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <span style="color:var(--text-3);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;width:100px;">App ID</span>
+            <span id="display_application_id" style="font-size:12px;color:var(--text-2);"></span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">Decision *</label>
+          <select class="form-control" name="approve_status" id="modal_approve_status" required>
+            <option value="">Select decision</option>
+            <option value="101">✅ Approve (Submit to URA)</option>
+            <option value="103">❌ Reject (Submit to URA)</option>
+          </select>
+          <p style="font-size:11px;color:var(--text-3);margin-top:4px;">Only applications with status "Pending" (102) can be approved or rejected.</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Remarks * <span style="font-weight:400;text-transform:none;letter-spacing:0;">(max 1024 chars)</span></label>
+          <textarea class="form-control" name="remark" id="modal_remark" rows="4" required maxlength="1024"
+                    placeholder="Enter detailed approval or rejection remarks..."></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:4px;">
+            <span style="font-size:11px;color:var(--text-3);"><span id="remarkCharCount">0</span> / 1024</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--border);">
+        <button type="button" class="btn btn-ghost" onclick="closeApprovalModal()">
+          <i class="fas fa-times"></i> Cancel
+        </button>
+        <button type="submit" class="btn btn-primary" id="submitApprovalBtn">
+          <i class="fas fa-paper-plane"></i> Submit Decision
+        </button>
+      </div>
+    </form>
+  </div>
 </div>
+
 {% endblock %}
 
 {% block extra_js %}
 <script>
 function clearFilters() {
-    document.getElementById('filterForm').reset();
-    // Optionally submit the form to show all results
-    document.getElementById('filterForm').submit();
+  document.getElementById('filterForm').reset();
+  document.getElementById('filterForm').submit();
 }
 
 function showApprovalModal(appId, referenceNo, taskId) {
-    // Set form values
-    document.getElementById('modal_application_id').value = appId;
-    document.getElementById('modal_reference_no').value = referenceNo || appId;
-    document.getElementById('modal_task_id').value = taskId || '';
+  document.getElementById('modal_application_id').value = appId;
+  document.getElementById('modal_reference_no').value = referenceNo || appId;
+  document.getElementById('modal_task_id').value = taskId || '';
+  document.getElementById('display_reference_no').textContent = referenceNo || appId;
+  document.getElementById('display_application_id').textContent = appId;
+  document.getElementById('modal_approve_status').selectedIndex = 0;
+  document.getElementById('modal_remark').value = '';
+  document.getElementById('remarkCharCount').textContent = '0';
 
-    // Display values
-    document.getElementById('display_reference_no').textContent = referenceNo || appId;
-    document.getElementById('display_application_id').textContent = appId;
+  const langPrefix = window.location.pathname.match(/^\/[a-z]{2}\//)?.[0] || '/';
+  document.getElementById('approvalForm').action = `${langPrefix}efris/credit-notes/approve/${appId}/`;
 
-    // Reset form state
-    document.getElementById('modal_approve_status').selectedIndex = 0;
-    document.getElementById('modal_remark').value = '';
-    document.getElementById('remarkCharCount').textContent = '0';
+  const btn = document.getElementById('submitApprovalBtn');
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Decision';
 
-    // FIX: Use Django's URL reverse with language prefix
-    const form = document.getElementById('approvalForm');
-    // Don't hardcode the URL - use the template tag or get current language prefix
-    const languagePrefix = window.location.pathname.match(/^\/[a-z]{2}\//)?.[0] || '/';
-    form.action = `${languagePrefix}efris/credit-notes/approve/${appId}/`;
-
-    // Reset submit button
-    const submitBtn = document.getElementById('submitApprovalBtn');
-    submitBtn.disabled = false;
-    submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i> Submit Decision';
-
-    // Show modal
-    const modal = new bootstrap.Modal(document.getElementById('approvalModal'));
-    modal.show();
+  const modal = document.getElementById('approvalModal');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
 }
 
-// Character count for remarks
-document.addEventListener('DOMContentLoaded', function() {
-    const remarkField = document.getElementById('modal_remark');
-    const charCount = document.getElementById('remarkCharCount');
+function closeApprovalModal() {
+  document.getElementById('approvalModal').style.display = 'none';
+  document.body.style.overflow = '';
+}
 
-    if (remarkField && charCount) {
-        remarkField.addEventListener('input', function() {
-            charCount.textContent = this.value.length;
-        });
-    }
+document.addEventListener('DOMContentLoaded', function () {
+  const remark = document.getElementById('modal_remark');
+  const count  = document.getElementById('remarkCharCount');
+  if (remark) remark.addEventListener('input', () => count.textContent = remark.value.length);
 
-    // Handle form submission
-    const approvalForm = document.getElementById('approvalForm');
-    if (approvalForm) {
-        approvalForm.addEventListener('submit', function(e) {
-            e.preventDefault();
+  document.getElementById('approvalForm')?.addEventListener('submit', function (e) {
+    e.preventDefault();
+    const decision = document.getElementById('modal_approve_status').value;
+    const msg = decision === '101'
+      ? 'Are you sure you want to APPROVE this application? This cannot be undone.'
+      : 'Are you sure you want to REJECT this application? This cannot be undone.';
+    if (!confirm(msg)) return;
 
-            const confirmMessage = document.getElementById('modal_approve_status').value === '101'
-                ? 'Are you sure you want to APPROVE this application? This action cannot be undone.'
-                : 'Are you sure you want to REJECT this application? This action cannot be undone.';
+    const btn = document.getElementById('submitApprovalBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
 
-            if (!confirm(confirmMessage)) {
-                return false;
-            }
-
-            const formData = new FormData(this);
-            const submitBtn = document.getElementById('submitApprovalBtn');
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Processing...';
-
-            fetch(this.action, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-CSRFToken': '{{ csrf_token }}',
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                }
-                throw new Error('Network response was not ok');
-            })
-            .then(data => {
-                if (data.success) {
-                    // Show success message
-                    const successAlert = document.createElement('div');
-                    successAlert.className = 'alert alert-success alert-dismissible fade show position-fixed top-0 end-0 m-3';
-                    successAlert.style.zIndex = '9999';
-                    successAlert.innerHTML = `
-                        <i class="fas fa-check-circle me-2"></i>
-                        <strong>Success!</strong> Application has been ${data.status.toLowerCase()}.
-                        <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
-                    `;
-                    document.body.appendChild(successAlert);
-
-                    // Auto-remove alert after 5 seconds
-                    setTimeout(() => {
-                        if (successAlert.parentElement) {
-                            successAlert.remove();
-                        }
-                    }, 5000);
-
-                    // Close modal and reload page after 2 seconds
-                    setTimeout(() => {
-                        bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
-                        location.reload();
-                    }, 2000);
-                } else {
-                    alert('Error: ' + (data.error || 'Unknown error occurred'));
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i> Submit Decision';
-                }
-            })
-            .catch(error => {
-                alert('Request failed: ' + error.message);
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i> Submit Decision';
-            });
-        });
-    }
-
-    // Add query type filter if needed
-    const queryTypeSelect = document.createElement('select');
-    queryTypeSelect.className = 'form-select';
-    queryTypeSelect.innerHTML = `
-        <option value="1">My Applications</option>
-        <option value="2">To-Do List</option>
-        <option value="3">Approval Completed</option>
-    `;
-
-    // You can add this to your filter form if needed
+    fetch(this.action, {
+      method: 'POST',
+      body: new FormData(this),
+      headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.ok ? r.json() : Promise.reject('Network error'))
+    .then(data => {
+      if (data.success) {
+        closeApprovalModal();
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Decision';
+      }
+    })
+    .catch(err => {
+      alert('Request failed: ' + err);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Decision';
+    });
+  });
 });
 </script>
 {% endblock %}

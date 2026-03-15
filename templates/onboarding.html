@@ -1,0 +1,268 @@
+{% load static %}
+
+{% if user.is_authenticated %}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+    --ob-accent:   #6366f1;
+    --ob-accent2:  #8b5cf6;
+    --ob-success:  #10b981;
+    --ob-surface:  var(--bg-primary, #fff);
+    --ob-surface2: var(--bg-secondary, #f9fafb);
+    --ob-border:   var(--border-color, #e5e7eb);
+    --ob-text:     var(--text-primary, #111827);
+    --ob-muted:    var(--text-muted, #6b7280);
+    --ob-radius:   16px;
+    --ob-font:     'Plus Jakarta Sans', sans-serif;
+}
+[data-theme="dark"] {
+    --ob-surface:  #0f172a;
+    --ob-surface2: #1e293b;
+    --ob-border:   rgba(255,255,255,0.08);
+    --ob-text:     #f1f5f9;
+    --ob-muted:    #94a3b8;
+}
+
+/* ════════════ WELCOME MODAL ════════════ */
+#obWelcome {
+    display: none; position: fixed; inset: 0; z-index: 9800;
+    align-items: center; justify-content: center; padding: 1rem;
+    background: rgba(15,23,42,0.75);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    font-family: var(--ob-font);
+}
+#obWelcome.open { display: flex; animation: obFadeIn 0.3s ease; }
+@keyframes obFadeIn { from{opacity:0} to{opacity:1} }
+
+.ob-welcome-dialog {
+    background: var(--ob-surface);
+    border: 1px solid var(--ob-border);
+    border-radius: var(--ob-radius);
+    width: 100%; max-width: 560px;
+    overflow: hidden;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.35);
+    animation: obSlideUp 0.38s cubic-bezier(0.16,1,0.3,1);
+    position: relative;
+}
+@keyframes obSlideUp { from{transform:translateY(32px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+/* Hero gradient bar */
+.ob-hero {
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #db2777 100%);
+    padding: 2.25rem 2rem 1.75rem;
+    position: relative; overflow: hidden;
+}
+.ob-hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+.ob-hero-emoji { font-size: 2.5rem; margin-bottom: 0.75rem; display: block; }
+.ob-hero-title {
+    font-size: 1.5rem; font-weight: 800; color: #fff;
+    line-height: 1.25; margin-bottom: 0.4rem;
+}
+.ob-hero-sub { font-size: 0.88rem; color: rgba(255,255,255,0.8); line-height: 1.6; }
+
+/* Steps preview */
+.ob-steps-preview {
+    padding: 1.5rem 2rem;
+    display: flex; flex-direction: column; gap: 0.75rem;
+}
+.ob-step-row {
+    display: flex; align-items: center; gap: 0.875rem;
+    padding: 0.75rem 0.875rem;
+    border: 1px solid var(--ob-border);
+    border-radius: 10px; background: var(--ob-surface2);
+    transition: border-color 0.15s;
+}
+.ob-step-row:hover { border-color: var(--ob-accent); }
+.ob-step-num {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--ob-accent), var(--ob-accent2));
+    color: #fff; font-size: 0.72rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.ob-step-label { font-size: 0.835rem; font-weight: 600; color: var(--ob-text); flex: 1; }
+.ob-step-time  { font-size: 0.7rem; color: var(--ob-muted); font-family: 'JetBrains Mono', monospace; }
+
+/* Footer */
+.ob-welcome-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 2rem 1.5rem; gap: 1rem;
+}
+.ob-skip-link {
+    font-size: 0.78rem; color: var(--ob-muted); cursor: pointer;
+    background: none; border: none; font-family: var(--ob-font);
+    transition: color 0.15s;
+}
+.ob-skip-link:hover { color: var(--ob-text); }
+.ob-start-btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.7rem 1.5rem; border-radius: 10px;
+    background: linear-gradient(135deg, var(--ob-accent), var(--ob-accent2));
+    color: #fff; border: none; font-size: 0.88rem; font-weight: 700;
+    font-family: var(--ob-font); cursor: pointer;
+    box-shadow: 0 4px 14px rgba(99,102,241,0.4);
+    transition: all 0.15s;
+}
+.ob-start-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99,102,241,0.5); }
+
+/* ════════════ SIDEBAR PROGRESS INJECTION ════════════ */
+.ob-sidebar-progress {
+    margin: 0.25rem 0.5rem 0.5rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--ob-surface2);
+    border: 1px solid var(--ob-border);
+    border-radius: 10px; cursor: pointer;
+    transition: border-color 0.15s;
+}
+.ob-sidebar-progress:hover { border-color: var(--ob-accent); }
+.ob-sp-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.45rem;
+}
+.ob-sp-label { font-size: 0.72rem; font-weight: 700; color: var(--ob-text); font-family: var(--ob-font); display: flex; align-items: center; gap: 0.35rem; }
+.ob-sp-pct   { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--ob-accent); font-weight: 600; }
+.ob-sp-bar   { height: 4px; background: var(--ob-border); border-radius: 4px; overflow: hidden; }
+.ob-sp-fill  {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, var(--ob-accent), var(--ob-accent2));
+    transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+}
+/* Hide progress in mini mode */
+.navigation-sidebar.mini:not(.sidebar-hover):not(.sidebar-pinned) .ob-sidebar-progress { display: none; }
+</style>
+
+<!-- ══════════ WELCOME MODAL ══════════ -->
+{% if ob_is_new_user %}
+<div id="obWelcome" role="dialog" aria-modal="true" aria-labelledby="obWelcomeTitle">
+    <div class="ob-welcome-dialog">
+        <div class="ob-hero">
+            <span class="ob-hero-emoji">👋</span>
+            <div class="ob-hero-title" id="obWelcomeTitle">
+                Welcome to PrimeBooks,<br>{{ user.get_full_name|default:user.username }}!
+            </div>
+            <div class="ob-hero-sub">
+                Let's get your business set up in a few quick steps.<br>
+                It only takes about 5 minutes.
+            </div>
+        </div>
+        <div class="ob-steps-preview">
+            <div class="ob-step-row">
+                <span class="ob-step-num">1</span>
+                <span class="ob-step-label">Complete your company profile</span>
+                <span class="ob-step-time">~1 min</span>
+            </div>
+            <div class="ob-step-row">
+                <span class="ob-step-num">2</span>
+                <span class="ob-step-label">Add your first product or service</span>
+                <span class="ob-step-time">~1 min</span>
+            </div>
+            <div class="ob-step-row">
+                <span class="ob-step-num">3</span>
+                <span class="ob-step-label">Invite a team member</span>
+                <span class="ob-step-time">~30 sec</span>
+            </div>
+            <div class="ob-step-row">
+                <span class="ob-step-num">4</span>
+                <span class="ob-step-label">Create your first invoice or sale</span>
+                <span class="ob-step-time">~2 min</span>
+            </div>
+            <div class="ob-step-row">
+                <span class="ob-step-num">5</span>
+                <span class="ob-step-label">Configure EFRIS (if applicable)</span>
+                <span class="ob-step-time">~1 min</span>
+            </div>
+        </div>
+        <div class="ob-welcome-footer">
+            <button class="ob-skip-link" id="obSkipWelcome">Skip for now</button>
+            <button class="ob-start-btn" id="obStartSetup">
+                Let's get started <i class="bi bi-arrow-right"></i>
+            </button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+(function(){
+'use strict';
+const WELCOME_KEY = 'pb_ob_welcome_seen';
+const OB_STEPS_KEY = 'pb_ob_steps';
+
+// ── Welcome modal ──
+{% if ob_is_new_user %}
+const welcomeModal = document.getElementById('obWelcome');
+if (!localStorage.getItem(WELCOME_KEY)) {
+    setTimeout(() => welcomeModal?.classList.add('open'), 800);
+}
+document.getElementById('obSkipWelcome')?.addEventListener('click', () => {
+    localStorage.setItem(WELCOME_KEY, '1');
+    welcomeModal.classList.remove('open');
+});
+document.getElementById('obStartSetup')?.addEventListener('click', () => {
+    localStorage.setItem(WELCOME_KEY, '1');
+    welcomeModal.classList.remove('open');
+    // Open checklist panel if it exists
+    document.getElementById('obChecklistPanel')?.classList.add('open');
+    // Kick off the tour
+    if (window.PBTour) window.PBTour.start();
+});
+{% endif %}
+
+// ── Inject sidebar progress bar ──
+function injectSidebarProgress() {
+    const footer = document.querySelector('.nav-footer');
+    if (!footer || document.getElementById('obSidebarProgress')) return;
+    const pct = {{ ob_percent|default:0 }};
+    const div = document.createElement('div');
+    div.id = 'obSidebarProgress';
+    div.className = 'ob-sidebar-progress';
+    div.setAttribute('title', 'Setup progress — click to view checklist');
+    div.innerHTML = `
+        <div class="ob-sp-header">
+            <span class="ob-sp-label"><i class="bi bi-check2-circle"></i> Setup</span>
+            <span class="ob-sp-pct" id="obSpPct">${pct}%</span>
+        </div>
+        <div class="ob-sp-bar"><div class="ob-sp-fill" id="obSpFill" style="width:${pct}%"></div></div>
+    `;
+    div.addEventListener('click', () => {
+        document.getElementById('obChecklistPanel')?.classList.toggle('open');
+    });
+    footer.insertBefore(div, footer.firstChild);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectSidebarProgress);
+} else {
+    injectSidebarProgress();
+}
+
+// ── Global progress updater (called when a step is completed) ──
+window.PBOnboarding = {
+    updateProgress(pct) {
+        const fill = document.getElementById('obSpFill');
+        const label = document.getElementById('obSpPct');
+        if (fill)  fill.style.width = pct + '%';
+        if (label) label.textContent = pct + '%';
+    },
+    completeStep(stepKey) {
+        fetch('{% url "onboarding_complete_step" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+            },
+            body: JSON.stringify({ step: stepKey }),
+            keepalive: true,
+        })
+        .then(r => r.json())
+        .then(d => { if (d.percent !== undefined) this.updateProgress(d.percent); })
+        .catch(() => {});
+    },
+};
+})();
+</script>
+{% endif %}

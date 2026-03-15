@@ -263,6 +263,16 @@
         {% endif %}
         {% endif %}
     </div>
+
+    <!-- Hover style preference toggle (desktop mini mode only) -->
+    <button class="nav-pref-toggle d-none d-md-flex"
+            id="navHoverPrefToggle"
+            title="Switch hover style"
+            aria-label="Toggle sidebar hover style">
+        <i class="bi bi-layout-sidebar" id="navPrefIcon"></i>
+        <span class="pref-label">Hover style:</span>
+        <span class="pref-mode-label" id="navPrefModeLabel">Flyout</span>
+    </button>
 </div>
 
 <!-- Overlay for mobile -->
@@ -277,8 +287,12 @@
             this.elements = {};
             this.isInitialized = false;
             this.resizeTimeout = null;
-            this._hoverLeaveTimer = null;   // debounce mouse-leave collapse
-            this._hoverSection = null;      // which section triggered hover-expand
+            this._hoverLeaveTimer = null;
+            this._hoverEnterTimer = null;   // new: debounce hover enter
+            this._hoverSection = null;
+            this._hoverOpenedIds = new Set();
+            // Preference: 'flyout' (default) | 'expand'
+            this._hoverStyle = localStorage.getItem('sidebarHoverStyle') || 'flyout';
 
             this.init();
         }
@@ -290,8 +304,9 @@
                 this.initMobileMenu();
                 this.initEnhancedFeatures();
                 this.bindEvents();
+                // Apply saved hover style preference
+                this._applyHoverStyle(this._hoverStyle);
                 this.isInitialized = true;
-                // Reveal sidebar now that all classes/styles are applied — no flash
                 if (this.elements.sidebar) {
                     this.elements.sidebar.style.visibility = '';
                     this.elements.sidebar.style.transition = '';
@@ -319,6 +334,33 @@
         get isMini()   { return this.elements.sidebar.classList.contains('mini'); }
         get isPinned() { return this.elements.sidebar.classList.contains('sidebar-pinned'); }
         get isHover()  { return this.elements.sidebar.classList.contains('sidebar-hover'); }
+        get isFlyoutMode() { return this._hoverStyle === 'flyout'; }
+
+        // Apply/persist the hover style preference
+        _applyHoverStyle(style) {
+            this._hoverStyle = style;
+            localStorage.setItem('sidebarHoverStyle', style);
+
+            const body = this.elements.body;
+            const icon = document.getElementById('navPrefIcon');
+            const label = document.getElementById('navPrefModeLabel');
+
+            if (style === 'flyout') {
+                body.classList.add('sidebar-flyout-mode');
+                if (icon)  icon.className = 'bi bi-layout-sidebar';
+                if (label) label.textContent = 'Flyout';
+            } else {
+                body.classList.remove('sidebar-flyout-mode');
+                // Close any open flyouts when switching back
+                this._closeAllFlyouts();
+                if (icon)  icon.className = 'bi bi-layout-sidebar-reverse';
+                if (label) label.textContent = 'Expand';
+            }
+        }
+
+        _toggleHoverStyle() {
+            this._applyHoverStyle(this.isFlyoutMode ? 'expand' : 'flyout');
+        }
 
         _setHover(on) {
             this.elements.sidebar.classList.toggle('sidebar-hover', on);
@@ -335,70 +377,146 @@
         }
 
         // ─────────────────────────────────────────────────────────
-        // HOVER EXPAND
-        // • Sidebar mouseenter  → widen to full width (sidebar-hover)
-        // • Nav-section hover   → open ONLY that section's collapse
-        // • Nav-section leave   → close it again (unless it was
-        //                         already open before the hover)
-        // • Sidebar mouseleave  → collapse back to mini
+        // FLYOUT PANEL HELPERS
+        // ─────────────────────────────────────────────────────────
+        _showFlyout(section) {
+            const flyout = section.querySelector('.nav-flyout');
+            if (!flyout) return;
+            this._closeAllFlyouts();
+
+            // Add class first so the element becomes block (display: block !important from CSS)
+            flyout.classList.add('flyout-open');
+
+            // Now position it using fixed coords — this escapes ALL overflow containers
+            requestAnimationFrame(() => {
+                const sidebarRect = this.elements.sidebar.getBoundingClientRect();
+                const sectionRect = section.getBoundingClientRect();
+                const vpH = window.innerHeight;
+
+                // Place flyout to the right of sidebar, vertically aligned with the section
+                const left = sidebarRect.right + 8;
+                let top = sectionRect.top;
+
+                // Clamp so panel doesn't overflow viewport bottom
+                const flyoutH = flyout.offsetHeight;
+                if (top + flyoutH > vpH - 8) {
+                    top = Math.max(8, vpH - flyoutH - 8);
+                }
+
+                flyout.style.left = left + 'px';
+                flyout.style.top  = top  + 'px';
+            });
+        }
+
+        _closeFlyout(section) {
+            const flyout = section.querySelector('.nav-flyout');
+            if (flyout) {
+                flyout.classList.remove('flyout-open');
+                flyout.style.left = '';
+                flyout.style.top  = '';
+            }
+        }
+
+        _closeAllFlyouts() {
+            this.elements.sidebar?.querySelectorAll('.nav-flyout.flyout-open').forEach(f => {
+                f.classList.remove('flyout-open');
+                f.style.left = '';
+                f.style.top  = '';
+            });
+        }
+
+        // ─────────────────────────────────────────────────────────
+        // HOVER EXPAND — dual mode with enter delay
+        // Expand mode : mini sidebar only (isMini && !isPinned)
+        // Flyout mode : works in BOTH mini and full sidebar
         // ─────────────────────────────────────────────────────────
         initHoverExpand() {
             const { sidebar } = this.elements;
+            const ENTER_DELAY = 150;
+            const LEAVE_DELAY = 120;
 
-            // ── Widen/narrow the sidebar ──
+            // ── Sidebar-level: only expand mode cares about this ──
             sidebar.addEventListener('mouseenter', () => {
+                if (this.isFlyoutMode) return; // flyout: sections handle it
                 if (!this.isMini || this.isPinned) return;
                 clearTimeout(this._hoverLeaveTimer);
-                this._setHover(true);
+                clearTimeout(this._hoverEnterTimer);
+                this._hoverEnterTimer = setTimeout(() => this._setHover(true), ENTER_DELAY);
             });
 
             sidebar.addEventListener('mouseleave', () => {
+                clearTimeout(this._hoverEnterTimer);
+                if (this.isFlyoutMode) {
+                    this._hoverLeaveTimer = setTimeout(() => this._closeAllFlyouts(), LEAVE_DELAY);
+                    return;
+                }
                 if (!this.isMini || this.isPinned) return;
                 this._hoverLeaveTimer = setTimeout(() => {
                     this._setHover(false);
                     this._closeHoverSections();
-                }, 120);
+                }, LEAVE_DELAY);
             });
 
-            // ── Per-section: open only the hovered section's collapse ──
+            // ── Per-section ──
             sidebar.querySelectorAll('.nav-section').forEach(section => {
-                const toggle = section.querySelector('.btn-toggle');
-                if (!toggle) return;
-
-                const targetId = toggle.getAttribute('data-bs-target')?.replace('#', '');
-                if (!targetId) return;
-
-                const collapseEl = document.getElementById(targetId);
-                if (!collapseEl) return;
+                const toggle     = section.querySelector('.btn-toggle');
+                const targetId   = toggle?.getAttribute('data-bs-target')?.replace('#', '');
+                const collapseEl = targetId ? document.getElementById(targetId) : null;
+                const flyout     = section.querySelector('.nav-flyout');
+                let sectionLeaveTimer = null;
 
                 section.addEventListener('mouseenter', () => {
+                    if (this.isFlyoutMode) {
+                        // ── FLYOUT MODE: works mini + full ──
+                        clearTimeout(sectionLeaveTimer);
+                        clearTimeout(this._hoverLeaveTimer);
+                        clearTimeout(this._hoverEnterTimer);
+                        this._hoverEnterTimer = setTimeout(() => {
+                            this._showFlyout(section);
+                        }, ENTER_DELAY);
+                        return;
+                    }
+                    // ── EXPAND MODE: mini only ──
                     if (!this.isMini || this.isPinned) return;
-                    // Track which sections we opened purely from hover
-                    if (!collapseEl.classList.contains('show')) {
-                        this._hoverOpenedIds = this._hoverOpenedIds || new Set();
+                    if (collapseEl && !collapseEl.classList.contains('show')) {
                         this._hoverOpenedIds.add(targetId);
                         if (typeof bootstrap !== 'undefined') {
                             bootstrap.Collapse.getOrCreateInstance(collapseEl).show();
                         } else {
                             collapseEl.classList.add('show');
                         }
-                        toggle.setAttribute('aria-expanded', 'true');
+                        toggle?.setAttribute('aria-expanded', 'true');
                     }
                 });
 
                 section.addEventListener('mouseleave', () => {
+                    clearTimeout(this._hoverEnterTimer);
+                    if (this.isFlyoutMode) {
+                        sectionLeaveTimer = setTimeout(() => this._closeFlyout(section), LEAVE_DELAY);
+                        return;
+                    }
                     if (!this.isMini || this.isPinned) return;
-                    // Close it again only if WE opened it (not already open before hover)
-                    if (this._hoverOpenedIds?.has(targetId)) {
+                    if (targetId && this._hoverOpenedIds?.has(targetId)) {
                         this._hoverOpenedIds.delete(targetId);
                         if (typeof bootstrap !== 'undefined') {
                             bootstrap.Collapse.getOrCreateInstance(collapseEl).hide();
                         } else {
-                            collapseEl.classList.remove('show');
+                            collapseEl?.classList.remove('show');
                         }
-                        toggle.setAttribute('aria-expanded', 'false');
+                        toggle?.setAttribute('aria-expanded', 'false');
                     }
                 });
+
+                // Flyout panel itself: keep it open while cursor is inside it
+                if (flyout) {
+                    flyout.addEventListener('mouseenter', () => {
+                        clearTimeout(sectionLeaveTimer);
+                        clearTimeout(this._hoverLeaveTimer);
+                    });
+                    flyout.addEventListener('mouseleave', () => {
+                        sectionLeaveTimer = setTimeout(() => this._closeFlyout(section), LEAVE_DELAY);
+                    });
+                }
             });
         }
 
@@ -426,25 +544,40 @@
         }
 
         // ─────────────────────────────────────────────────────────
-        // CLICK-TO-PIN — clicking a parent nav item in mini mode
-        // while hovered pins the sidebar open persistently
+        // CLICK-TO-PIN / CLICK-TO-FLYOUT
         // ─────────────────────────────────────────────────────────
         initClickPin() {
             const { sidebar } = this.elements;
 
-            // Intercept parent toggle buttons in mini mode
             sidebar.querySelectorAll('.btn-toggle').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    if (!this.isMini) return; // full mode: normal collapse behaviour
+
+                    // ── FLYOUT MODE: click opens the flyout, never collapses ──
+                    if (this.isFlyoutMode) {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const section = btn.closest('.nav-section');
+                        if (!section) return;
+                        const flyout = section.querySelector('.nav-flyout');
+                        if (!flyout) return;
+                        // Toggle: if already open, close it; otherwise open
+                        if (flyout.classList.contains('flyout-open')) {
+                            this._closeFlyout(section);
+                        } else {
+                            this._showFlyout(section);
+                        }
+                        return;
+                    }
+
+                    // ── EXPAND MODE mini: first click while hovering → PIN ──
+                    if (!this.isMini) return; // full non-flyout mode: normal collapse
 
                     if (this.isHover && !this.isPinned) {
-                        // First click while hovering → PIN open
                         e.stopPropagation();
                         e.preventDefault();
                         clearTimeout(this._hoverLeaveTimer);
                         this._saveOpenCollapses();
                         this._setPinned(true);
-                        // Now open the clicked section
                         const targetId = btn.getAttribute('data-bs-target')?.replace('#', '');
                         if (targetId) {
                             const col = document.getElementById(targetId);
@@ -454,8 +587,9 @@
                             }
                         }
                     }
-                    // If already pinned: let Bootstrap handle collapse normally (no intercept)
-                }, true); // capture
+                    // If already pinned: let Bootstrap collapse normally
+
+                }, true); // capture phase so we intercept before Bootstrap
             });
 
             // Pin badge → unpin
@@ -510,8 +644,6 @@
                 body.classList.add('sidebar-open');
                 const icon = hamburgerBtn.querySelector('i');
                 if (icon) icon.className = 'bi bi-x fs-4';
-                sidebar.style.display = 'block';
-                sidebar.offsetHeight;
                 this.focusFirstElement();
             };
 
@@ -559,6 +691,11 @@
             this.addKeyboardNavigation();
             this.addLoadingStates();
             this._saveOpenCollapses();
+
+            // Wire preference toggle button
+            document.getElementById('navHoverPrefToggle')?.addEventListener('click', () => {
+                this._toggleHoverStyle();
+            });
         }
 
         expandActiveNavigation() {
@@ -622,16 +759,16 @@
 
         addLoadingStates() {
             this.elements.sidebar.querySelectorAll('.nav-link[href]:not([href="#"])').forEach(link => {
-                link.addEventListener('click', function() {
-                    if (this.hostname !== window.location.hostname || this.hash) return;
-                    const icon = this.querySelector('i:not(.active-indicator):not(.toggle-icon)');
+                link.addEventListener('click', (e) => {
+                    if (link.hostname !== window.location.hostname || link.hash) return;
+                    const icon = link.querySelector('i:not(.active-indicator):not(.toggle-icon)');
                     if (icon) {
                         const orig = icon.className;
                         icon.className = 'bi bi-arrow-clockwise loading';
                         setTimeout(() => { if (icon.className.includes('loading')) icon.className = orig; }, 3000);
                     }
                     if (window.innerWidth < 768) this.closeSidebar?.();
-                }.bind(this));
+                });
             });
         }
 
@@ -640,10 +777,18 @@
         // ─────────────────────────────────────────────────────────
         bindEvents() {
             document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && this.elements.sidebar.classList.contains('active')) {
-                    this.closeSidebar?.();
+                if (e.key === 'Escape') {
+                    if (this.isFlyoutMode) { this._closeAllFlyouts(); return; }
+                    if (this.elements.sidebar.classList.contains('active')) this.closeSidebar?.();
                 }
             });
+
+            // Close flyouts when clicking outside sidebar
+            document.addEventListener('click', (e) => {
+                if (this.isFlyoutMode && !this.elements.sidebar.contains(e.target)) {
+                    this._closeAllFlyouts();
+                }
+            }, true);
 
             window.addEventListener('resize', () => {
                 clearTimeout(this.resizeTimeout);
@@ -712,11 +857,13 @@
     }
 
     window.NavigationUtils = {
-        expandAll:   () => window.navigationSidebar?.expandAll(),
-        collapseAll: () => window.navigationSidebar?.collapseAll(),
-        refresh:     () => window.navigationSidebar?.refresh(),
-        closeMobile: () => window.navigationSidebar?.closeSidebar(),
-        openMobile:  () => window.navigationSidebar?.openSidebar(),
-        unpin:       () => window.navigationSidebar?._setPinned(false),
+        expandAll:         () => window.navigationSidebar?.expandAll(),
+        collapseAll:       () => window.navigationSidebar?.collapseAll(),
+        refresh:           () => window.navigationSidebar?.refresh(),
+        closeMobile:       () => window.navigationSidebar?.closeSidebar(),
+        openMobile:        () => window.navigationSidebar?.openSidebar(),
+        unpin:             () => window.navigationSidebar?._setPinned(false),
+        setHoverStyle:     (s) => window.navigationSidebar?._applyHoverStyle(s),
+        toggleHoverStyle:  () => window.navigationSidebar?._toggleHoverStyle(),
     };
 </script>

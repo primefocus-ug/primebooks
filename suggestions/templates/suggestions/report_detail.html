@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} — PrimeBooks{% endblock %}
+
+{% block extra_css %}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+.rd-page {
+    font-family: 'Sora', sans-serif;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 3rem;
+}
+
+/* ── Back nav ── */
+.rd-back {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-size: 0.78rem; font-weight: 600; color: var(--text-muted);
+    text-decoration: none; margin-bottom: 1.5rem;
+    transition: color 0.15s;
+}
+.rd-back:hover { color: #3b82f6; }
+.rd-back i { font-size: 0.8rem; }
+
+/* ── Page header ── */
+.rd-header {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 1.25rem 1.375rem 1.125rem;
+    margin-bottom: 1.25rem;
+}
+.rd-header-top {
+    display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap;
+}
+.rd-type-icon {
+    width: 44px; height: 44px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.15rem; flex-shrink: 0;
+}
+.type-bug       .rd-type-icon { background:rgba(239,68,68,0.1);  color:#ef4444; }
+.type-feature   .rd-type-icon { background:rgba(59,130,246,0.1); color:#3b82f6; }
+.type-billing   .rd-type-icon { background:rgba(139,92,246,0.1); color:#8b5cf6; }
+.type-complaint .rd-type-icon { background:rgba(245,158,11,0.1); color:#f59e0b; }
+.type-data      .rd-type-icon { background:rgba(16,185,129,0.1); color:#10b981; }
+
+.rd-header-info { flex: 1; min-width: 0; }
+.rd-ticket {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem; color: var(--text-muted);
+    margin-bottom: 0.3rem;
+    display: flex; align-items: center; gap: 0.4rem;
+}
+.rd-title {
+    font-size: 1.15rem; font-weight: 700; color: var(--text-primary);
+    line-height: 1.35; margin-bottom: 0.6rem;
+    word-break: break-word;
+}
+.rd-badges { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+
+/* ── Badges (reuse rp- naming for consistency) ── */
+.rp-badge {
+    display: inline-flex; align-items: center; gap: 0.2rem;
+    padding: 0.18rem 0.6rem; border-radius: 12px;
+    font-size: 0.68rem; font-weight: 600; white-space: nowrap;
+}
+.rp-badge-type        { background: var(--bg-secondary); color: var(--text-muted); border: 1px solid var(--border-color); }
+.rp-badge-open        { background:rgba(59,130,246,0.1);  color:#3b82f6;  border:1px solid rgba(59,130,246,0.2);  }
+.rp-badge-in_progress { background:rgba(139,92,246,0.1);  color:#8b5cf6;  border:1px solid rgba(139,92,246,0.2);  }
+.rp-badge-waiting     { background:rgba(245,158,11,0.1);  color:#f59e0b;  border:1px solid rgba(245,158,11,0.2);  }
+.rp-badge-resolved    { background:rgba(34,197,94,0.1);   color:#22c55e;  border:1px solid rgba(34,197,94,0.2);   }
+.rp-badge-closed      { background:rgba(107,114,128,0.1); color:#6b7280;  border:1px solid rgba(107,114,128,0.2); }
+.rp-badge-low         { color:#22c55e; }
+.rp-badge-medium      { color:#f59e0b; }
+.rp-badge-high        { color:#ef4444; }
+.rp-badge-urgent      { color:#dc2626; font-weight:700; }
+
+/* ── Section label ── */
+.rd-section-label {
+    font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--text-muted);
+    margin-bottom: 0.5rem;
+}
+
+/* ── Description ── */
+.rd-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.125rem 1.25rem;
+    margin-bottom: 1.125rem;
+}
+.rd-desc {
+    font-size: 0.855rem; color: var(--text-primary); line-height: 1.7;
+    white-space: pre-wrap; word-break: break-word;
+}
+
+/* ── Meta grid ── */
+.rd-meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+    margin-bottom: 1.125rem;
+}
+@media (max-width: 480px) {
+    .rd-meta-grid { grid-template-columns: 1fr; }
+}
+.rd-meta-item {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px; padding: 0.65rem 0.875rem;
+}
+.rd-meta-item .label {
+    font-size: 0.67rem; color: var(--text-muted);
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.rd-meta-item .value {
+    font-size: 0.82rem; color: var(--text-primary);
+    font-weight: 600; margin-top: 0.2rem; word-break: break-all;
+}
+.rd-meta-item.full { grid-column: 1 / -1; }
+
+/* ── Screenshot ── */
+.rd-screenshot {
+    margin-bottom: 1.125rem;
+}
+.rd-screenshot img {
+    max-width: 100%; border-radius: 10px;
+    border: 1px solid var(--border-color);
+    display: block;
+}
+
+/* ── Timeline ── */
+.rd-timeline-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.125rem 1.25rem;
+}
+.rd-timeline { margin-top: 0.75rem; }
+
+.rd-timeline-entry {
+    display: flex; gap: 0.875rem;
+    margin-bottom: 1.125rem; position: relative;
+}
+.rd-timeline-entry::before {
+    content: ''; position: absolute;
+    left: 15px; top: 32px; bottom: -10px; width: 2px;
+    background: var(--border-color);
+}
+.rd-timeline-entry:last-child::before { display: none; }
+.rd-timeline-entry:last-child { margin-bottom: 0; }
+
+.rd-timeline-dot {
+    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; border: 2px solid var(--border-color);
+    background: var(--bg-primary); z-index: 1;
+}
+.rd-timeline-dot.created { background:rgba(34,197,94,0.1);  border-color:rgba(34,197,94,0.35);  color:#22c55e; }
+.rd-timeline-dot.admin   { background:rgba(59,130,246,0.1);  border-color:rgba(59,130,246,0.3);  color:#3b82f6; }
+.rd-timeline-dot.status  { background:rgba(139,92,246,0.1);  border-color:rgba(139,92,246,0.3);  color:#8b5cf6; }
+.rd-timeline-dot.note    { background:rgba(245,158,11,0.1);  border-color:rgba(245,158,11,0.3);  color:#f59e0b; }
+
+.rd-timeline-content { flex: 1; min-width: 0; padding-top: 0.1rem; }
+.rd-timeline-meta {
+    display: flex; align-items: baseline; gap: 0.45rem;
+    margin-bottom: 0.3rem; flex-wrap: wrap;
+}
+.rd-timeline-author {
+    font-size: 0.78rem; font-weight: 700; color: var(--text-primary);
+}
+.rd-timeline-date {
+    font-size: 0.69rem; color: var(--text-muted);
+}
+.rd-timeline-msg {
+    font-size: 0.835rem; color: var(--text-secondary);
+    line-height: 1.65;
+    background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: 0 10px 10px 10px; padding: 0.65rem 0.875rem;
+    white-space: pre-wrap; word-break: break-word;
+}
+.rd-timeline-status-change {
+    font-size: 0.78rem; color: var(--text-muted);
+    margin-bottom: 0.3rem;
+}
+.rd-timeline-status-change .status-pill {
+    display: inline-flex; align-items: center; gap: 0.2rem;
+    padding: 0.1rem 0.5rem; border-radius: 10px;
+    font-size: 0.67rem; font-weight: 600;
+}
+
+/* Resolved banner */
+.rd-resolved-banner {
+    display: flex; align-items: center; gap: 0.65rem;
+    background: rgba(34,197,94,0.08);
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: 10px; padding: 0.75rem 1rem;
+    font-size: 0.82rem; color: #16a34a; margin-bottom: 1.125rem;
+    font-weight: 600;
+}
+[data-theme="dark"] .rd-resolved-banner { color: #4ade80; }
+.rd-resolved-banner i { font-size: 1.1rem; flex-shrink: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rd-page">
+
+    <!-- Back link -->
+    <a href="{% url 'suggestions:report_my_reports' %}" class="rd-back">
+        <i class="bi bi-arrow-left"></i> Back to My Reports
+    </a>
+
+    <!-- ── Header card ── -->
+    <div class="rd-header type-{{ report.type }}">
+        <div class="rd-header-top">
+            <div class="rd-type-icon">
+                <i class="bi {% if report.type == 'bug' %}bi-bug{% elif report.type == 'feature' %}bi-stars{% elif report.type == 'billing' %}bi-credit-card{% elif report.type == 'complaint' %}bi-person-exclamation{% else %}bi-database-exclamation{% endif %}"></i>
+            </div>
+            <div class="rd-header-info">
+                <div class="rd-ticket">
+                    {{ report.ticket_number }}
+                    <span style="opacity:0.4">·</span>
+                    {{ report.get_type_display }}
+                </div>
+                <div class="rd-title">{{ report.title }}</div>
+                <div class="rd-badges">
+                    <span class="rp-badge rp-badge-{{ report.status }}">
+                        <i class="bi {% if report.status == 'open' %}bi-circle{% elif report.status == 'in_progress' %}bi-arrow-repeat{% elif report.status == 'waiting' %}bi-hourglass-split{% elif report.status == 'resolved' %}bi-check-circle{% else %}bi-x-circle{% endif %}"></i>
+                        {{ report.get_status_display }}
+                    </span>
+                    <span class="rp-badge rp-badge-type rp-badge-{{ report.priority }}">
+                        <i class="bi bi-flag-fill"></i> {{ report.get_priority_display }}
+                    </span>
+                    <span class="rp-badge rp-badge-type">{{ report.get_type_display }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resolved banner -->
+    {% if report.status == 'resolved' or report.status == 'closed' %}
+    <div class="rd-resolved-banner">
+        <i class="bi bi-check-circle-fill"></i>
+        {% if report.status == 'resolved' %}
+            This ticket was resolved{% if report.resolved_at %} on {{ report.resolved_at|date:"d M Y" }}{% endif %}.
+        {% else %}
+            This ticket has been closed.
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- ── Description ── -->
+    <div class="rd-card">
+        <div class="rd-section-label">Description</div>
+        <div class="rd-desc">{{ report.description }}</div>
+    </div>
+
+    <!-- ── Meta grid ── -->
+    <div class="rd-meta-grid">
+        <div class="rd-meta-item">
+            <div class="label">Submitted</div>
+            <div class="value">{{ report.created_at|date:"d M Y, H:i" }}</div>
+        </div>
+        <div class="rd-meta-item">
+            <div class="label">Last Updated</div>
+            <div class="value">{{ report.updated_at|date:"d M Y, H:i" }}</div>
+        </div>
+        {% if report.resolved_at %}
+        <div class="rd-meta-item">
+            <div class="label">Resolved</div>
+            <div class="value">{{ report.resolved_at|date:"d M Y, H:i" }}</div>
+        </div>
+        {% endif %}
+        {% if report.assigned_to %}
+        <div class="rd-meta-item">
+            <div class="label">Assigned To</div>
+            <div class="value">{{ report.assigned_to.get_full_name|default:report.assigned_to.username }}</div>
+        </div>
+        {% endif %}
+        {% if report.affected_url %}
+        <div class="rd-meta-item full">
+            <div class="label">Affected Page</div>
+            <div class="value">{{ report.affected_url }}</div>
+        </div>
+        {% endif %}
+        {% if report.affected_record %}
+        <div class="rd-meta-item full">
+            <div class="label">Affected Record</div>
+            <div class="value">{{ report.affected_record }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ── Screenshot ── -->
+    {% if report.screenshot %}
+    <div class="rd-screenshot">
+        <div class="rd-section-label">Screenshot</div>
+        <a href="{{ report.screenshot.url }}" target="_blank" rel="noopener">
+            <img src="{{ report.screenshot.url }}" alt="Attached screenshot">
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- ── Feedback ── -->
+    {% include 'suggestions/report_feedback.html' %}
+
+    <!-- ── Timeline ── -->
+    <div class="rd-timeline-card">
+        <div class="rd-section-label">Timeline</div>
+        <div class="rd-timeline">
+
+            <!-- Ticket created -->
+            <div class="rd-timeline-entry">
+                <div class="rd-timeline-dot created">
+                    <i class="bi bi-plus-lg"></i>
+                </div>
+                <div class="rd-timeline-content">
+                    <div class="rd-timeline-meta">
+                        <span class="rd-timeline-author">You</span>
+                        <span class="rd-timeline-date">{{ report.created_at|date:"d M Y, H:i" }}</span>
+                    </div>
+                    <div class="rd-timeline-msg">
+                        Ticket submitted — <em>{{ report.title }}</em>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Updates -->
+            {% for update in updates %}
+            <div class="rd-timeline-entry">
+                {% if update.update_type == 'status_change' %}
+                    <div class="rd-timeline-dot status"><i class="bi bi-arrow-left-right"></i></div>
+                {% elif update.update_type == 'note' %}
+                    <div class="rd-timeline-dot note"><i class="bi bi-sticky-fill"></i></div>
+                {% else %}
+                    <div class="rd-timeline-dot admin"><i class="bi bi-person-fill"></i></div>
+                {% endif %}
+                <div class="rd-timeline-content">
+                    <div class="rd-timeline-meta">
+                        <span class="rd-timeline-author">
+                            {% if update.author %}
+                                {{ update.author.get_full_name|default:update.author.username }}
+                            {% else %}
+                                Support
+                            {% endif %}
+                        </span>
+                        <span class="rd-timeline-date">{{ update.created_at|date:"d M Y, H:i" }}</span>
+                    </div>
+                    {% if update.update_type == 'status_change' %}
+                    <div class="rd-timeline-status-change">
+                        Status changed:
+                        <span class="status-pill rp-badge rp-badge-{{ update.old_status }}">{{ update.old_status|title }}</span>
+                        <i class="bi bi-arrow-right" style="font-size:0.65rem;vertical-align:middle;margin:0 0.1rem"></i>
+                        <span class="status-pill rp-badge rp-badge-{{ update.new_status }}">{{ update.new_status|title }}</span>
+                    </div>
+                    {% endif %}
+                    {% if update.message %}
+                    <div class="rd-timeline-msg">{{ update.message }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            {% empty %}
+            <div style="font-size:0.82rem;color:var(--text-muted);padding:0.5rem 0">
+                No updates yet. We'll notify you by email when there's an update.
+            </div>
+            {% endfor %}
+
+        </div>
+    </div>
+
+</div>
+{% endblock %}

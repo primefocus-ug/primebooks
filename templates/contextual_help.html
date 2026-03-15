@@ -1,0 +1,370 @@
+{% load static %}
+
+{% if user.is_authenticated %}
+<style>
+/* ════════════ FIELD-LEVEL TOOLTIP ════════════ */
+.pb-help {
+    display: inline-flex; align-items: center;
+    cursor: pointer; position: relative; z-index: 1;
+}
+.pb-help i {
+    font-size: 0.8rem; color: var(--text-muted, #9ca3af);
+    transition: color 0.15s;
+}
+.pb-help:hover i { color: var(--primary-500, #3b82f6); }
+
+/* Tooltip bubble */
+.pb-help-tooltip {
+    position: fixed; z-index: 9400;
+    max-width: 260px; min-width: 160px;
+    background: var(--bg-primary, #fff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 10px; padding: 0.65rem 0.875rem;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+    font-size: 0.785rem; color: var(--text-primary, #111827);
+    line-height: 1.6; pointer-events: none;
+    opacity: 0; transform: translateY(4px) scale(0.97);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.pb-help-tooltip.visible {
+    opacity: 1; transform: translateY(0) scale(1);
+}
+[data-theme="dark"] .pb-help-tooltip {
+    background: #1e293b; border-color: rgba(255,255,255,0.1);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    color: #e2e8f0;
+}
+.pb-help-tooltip-title {
+    font-weight: 700; color: var(--primary-600, #2563eb);
+    margin-bottom: 0.25rem; font-size: 0.72rem;
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+[data-theme="dark"] .pb-help-tooltip-title { color: #818cf8; }
+
+/* Arrow */
+.pb-help-tooltip::before {
+    content: ''; position: absolute;
+    border: 6px solid transparent;
+}
+.pb-help-tooltip.arrow-top::before {
+    border-bottom-color: var(--border-color, #e5e7eb);
+    top: -13px; left: 16px;
+}
+.pb-help-tooltip.arrow-top::after {
+    content: ''; position: absolute; border: 5px solid transparent;
+    border-bottom-color: var(--bg-primary, #fff);
+    top: -10px; left: 17px;
+}
+[data-theme="dark"] .pb-help-tooltip.arrow-top::before { border-bottom-color: rgba(255,255,255,0.1); }
+[data-theme="dark"] .pb-help-tooltip.arrow-top::after  { border-bottom-color: #1e293b; }
+
+/* ════════════ PAGE HINT OVERLAY ════════════ */
+#pbHintOverlay {
+    display: none; position: fixed; inset: 0; z-index: 9200;
+    pointer-events: none;
+}
+#pbHintOverlay.active { display: block; }
+
+/* Dark veil */
+.pb-hint-veil {
+    position: absolute; inset: 0;
+    background: rgba(15,23,42,0.55);
+    backdrop-filter: blur(1px);
+    pointer-events: auto;
+}
+
+/* Individual hint spotlight */
+.pb-hint-spot {
+    position: absolute; z-index: 2;
+    pointer-events: auto;
+    animation: hintPop 0.3s cubic-bezier(0.16,1,0.3,1);
+}
+@keyframes hintPop { from{opacity:0;transform:scale(0.9)} to{opacity:1;transform:scale(1)} }
+.pb-hint-highlight {
+    border: 2px solid #6366f1;
+    border-radius: 8px;
+    box-shadow: 0 0 0 4px rgba(99,102,241,0.2);
+    position: absolute; inset: -4px;
+    animation: hintPulse 2s ease infinite;
+}
+@keyframes hintPulse {
+    0%,100%{box-shadow:0 0 0 4px rgba(99,102,241,0.2)}
+    50%    {box-shadow:0 0 0 8px rgba(99,102,241,0)}
+}
+.pb-hint-bubble {
+    position: absolute; top: calc(100% + 12px); left: 0;
+    min-width: 200px; max-width: 260px;
+    background: #0f172a; color: #f1f5f9;
+    border: 1px solid rgba(99,102,241,0.4);
+    border-radius: 10px; padding: 0.6rem 0.875rem;
+    font-size: 0.775rem; line-height: 1.6;
+    font-family: var(--font-family, 'Segoe UI', sans-serif);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    z-index: 3;
+    white-space: normal; word-break: break-word;
+}
+.pb-hint-bubble-title {
+    font-size: 0.68rem; font-weight: 700;
+    color: #818cf8; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-bottom: 0.2rem;
+}
+.pb-hint-bubble-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #6366f1; color: #fff;
+    font-size: 0.6rem; font-weight: 700;
+    margin-right: 0.35rem; flex-shrink: 0;
+    vertical-align: middle;
+}
+
+/* ════════════ FLOATING ? BUTTON ════════════ */
+#pbHintToggle {
+    position: fixed; bottom: 1.75rem; left: 1.75rem; z-index: 8500;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--bg-primary, #fff);
+    border: 1.5px solid var(--border-color, #e5e7eb);
+    color: var(--text-muted, #6b7280);
+    display: none; align-items: center; justify-content: center;
+    font-size: 1rem; cursor: pointer;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+    transition: all 0.15s;
+    font-weight: 700; font-family: serif;
+}
+[data-theme="dark"] #pbHintToggle { background:#1e293b; border-color:rgba(255,255,255,0.1); color:#94a3b8; }
+#pbHintToggle.visible { display: flex; animation: hintBtnPop 0.3s cubic-bezier(0.16,1,0.3,1); }
+@keyframes hintBtnPop { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
+#pbHintToggle:hover { border-color: #6366f1; color: #6366f1; transform: scale(1.08); }
+#pbHintToggle.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+
+/* Hint counter badge on button */
+.pb-hint-count {
+    position: absolute; top: -4px; right: -4px;
+    background: #6366f1; color: #fff;
+    font-size: 0.6rem; font-weight: 700;
+    width: 16px; height: 16px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Hint dismiss overlay controls */
+#pbHintControls {
+    position: fixed; bottom: 1.75rem; left: 50%; transform: translateX(-50%);
+    z-index: 9300; display: none;
+    align-items: center; gap: 0.75rem;
+    background: #0f172a; border: 1px solid rgba(99,102,241,0.4);
+    border-radius: 30px; padding: 0.5rem 1rem;
+    font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.78rem; color: #f1f5f9;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+#pbHintControls.show { display: flex; }
+.pb-hint-ctrl-btn {
+    background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3);
+    color: #a5b4fc; border-radius: 20px; padding: 0.25rem 0.75rem;
+    font-size: 0.73rem; font-weight: 600; cursor: pointer;
+    font-family: inherit; transition: all 0.15s;
+}
+.pb-hint-ctrl-btn:hover { background: rgba(99,102,241,0.3); color: #fff; }
+.pb-hint-ctrl-done {
+    background: #6366f1; border-color: #6366f1; color: #fff;
+}
+.pb-hint-ctrl-done:hover { background: #4f46e5; }
+</style>
+
+<!-- Tooltip bubble (single, repositioned on hover) -->
+<div class="pb-help-tooltip" id="pbHelpTooltip" role="tooltip" aria-live="polite"></div>
+
+<!-- Page hint overlay -->
+<div id="pbHintOverlay">
+    <div class="pb-hint-veil" id="pbHintVeil"></div>
+</div>
+
+<!-- Floating ? button (shown when page has hints) -->
+<button id="pbHintToggle" aria-label="Show page hints"></button>
+
+<!-- Hint controls bar -->
+<div id="pbHintControls">
+    <span id="pbHintProgress" style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#94a3b8"></span>
+    <button class="pb-hint-ctrl-btn" id="pbHintPrev"><i class="bi bi-arrow-left"></i> Prev</button>
+    <button class="pb-hint-ctrl-btn" id="pbHintNext">Next <i class="bi bi-arrow-right"></i></button>
+    <button class="pb-hint-ctrl-btn pb-hint-ctrl-done" id="pbHintDone">Done</button>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+// ── Field-level tooltip ───────────────────────────────────────
+const tooltip = document.getElementById('pbHelpTooltip');
+let tooltipTarget = null;
+
+function showTooltip(el, text, title) {
+    tooltip.innerHTML = (title ? `<div class="pb-help-tooltip-title">${title}</div>` : '') + text;
+    tooltip.classList.remove('arrow-top', 'arrow-bottom');
+    tooltip.classList.add('visible');
+
+    const rect = el.getBoundingClientRect();
+    const tw   = 260;
+    const th   = tooltip.offsetHeight || 80;
+
+    let left = rect.left;
+    let top  = rect.bottom + 10;
+
+    // Flip up if no space below
+    if (top + th > window.innerHeight - 20) {
+        top = rect.top - th - 10;
+        tooltip.classList.add('arrow-bottom');
+    } else {
+        tooltip.classList.add('arrow-top');
+    }
+
+    // Keep within viewport
+    left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+    tooltip.style.top  = top  + window.scrollY + 'px';
+    tooltip.style.left = left + 'px';
+    tooltip.style.maxWidth = tw + 'px';
+}
+
+function hideTooltip() {
+    tooltip.classList.remove('visible');
+}
+
+// Attach to all .pb-help elements (and re-attach on DOM changes)
+function attachHelpTooltips() {
+    document.querySelectorAll('.pb-help[data-help]').forEach(el => {
+        if (el._pbHelpInit) return;
+        el._pbHelpInit = true;
+        el.addEventListener('mouseenter', () => {
+            showTooltip(el, el.dataset.help, el.dataset.helpTitle || null);
+        });
+        el.addEventListener('focus', () => {
+            showTooltip(el, el.dataset.help, el.dataset.helpTitle || null);
+        });
+        el.addEventListener('mouseleave', hideTooltip);
+        el.addEventListener('blur', hideTooltip);
+        el.setAttribute('tabindex', '0');
+        el.setAttribute('role', 'button');
+        el.setAttribute('aria-label', 'Help: ' + el.dataset.help);
+    });
+}
+
+// ── Page-level hints ──────────────────────────────────────────
+const overlay     = document.getElementById('pbHintOverlay');
+const veil        = document.getElementById('pbHintVeil');
+const hintToggle  = document.getElementById('pbHintToggle');
+const hintControls= document.getElementById('pbHintControls');
+const hintPrev    = document.getElementById('pbHintPrev');
+const hintNext    = document.getElementById('pbHintNext');
+const hintDone    = document.getElementById('pbHintDone');
+const hintProg    = document.getElementById('pbHintProgress');
+
+let hintEls       = [];
+let hintActive    = false;
+let hintCurrent   = 0;
+let spots         = [];
+
+function collectHints() {
+    return [...document.querySelectorAll('[data-page-hint]')];
+}
+
+function initHintButton() {
+    hintEls = collectHints();
+    if (!hintEls.length) { hintToggle.classList.remove('visible'); return; }
+    hintToggle.classList.add('visible');
+    hintToggle.innerHTML = `?<span class="pb-hint-count">${hintEls.length}</span>`;
+}
+
+function showHints() {
+    hintEls = collectHints();
+    if (!hintEls.length) return;
+    hintActive  = true;
+    hintCurrent = 0;
+    overlay.classList.add('active');
+    hintControls.classList.add('show');
+    hintToggle.classList.add('active');
+    overlay.style.pointerEvents = 'auto';
+    renderHintSpots();
+    highlightHint(0);
+}
+
+function hideHints() {
+    hintActive = false;
+    overlay.classList.remove('active');
+    hintControls.classList.remove('show');
+    hintToggle.classList.remove('active');
+    overlay.style.pointerEvents = 'none';
+    // Remove spots
+    spots.forEach(s => s.remove());
+    spots = [];
+}
+
+function renderHintSpots() {
+    spots.forEach(s => s.remove());
+    spots = [];
+    hintEls.forEach((el, i) => {
+        const rect = el.getBoundingClientRect();
+        const spot = document.createElement('div');
+        spot.className = 'pb-hint-spot';
+        spot.style.cssText = `top:${rect.top + window.scrollY}px;left:${rect.left}px;width:${rect.width}px;height:${rect.height}px;`;
+        spot.innerHTML = `
+            <div class="pb-hint-highlight"></div>
+            <div class="pb-hint-bubble" style="display:none">
+                <div class="pb-hint-bubble-title">
+                    <span class="pb-hint-bubble-num">${i+1}</span>
+                    ${el.dataset.hintLabel || 'Info'}
+                </div>
+                ${el.dataset.pageHint}
+            </div>
+        `;
+        overlay.appendChild(spot);
+        spots.push(spot);
+    });
+}
+
+function highlightHint(idx) {
+    spots.forEach((s, i) => {
+        const bubble = s.querySelector('.pb-hint-bubble');
+        s.style.zIndex = i === idx ? '3' : '2';
+        if (bubble) bubble.style.display = i === idx ? '' : 'none';
+    });
+    hintProg.textContent = `${idx + 1} / ${hintEls.length}`;
+    // Scroll to hint
+    hintEls[idx]?.scrollIntoView({ behavior:'smooth', block:'center' });
+    hintCurrent = idx;
+}
+
+hintToggle.addEventListener('click', () => hintActive ? hideHints() : showHints());
+veil.addEventListener('click', hideHints);
+hintDone.addEventListener('click', hideHints);
+hintPrev.addEventListener('click', () => {
+    if (hintCurrent > 0) highlightHint(hintCurrent - 1);
+});
+hintNext.addEventListener('click', () => {
+    if (hintCurrent < hintEls.length - 1) highlightHint(hintCurrent + 1);
+    else hideHints();
+});
+
+document.addEventListener('keydown', e => {
+    if (!hintActive) return;
+    if (e.key === 'Escape')     hideHints();
+    if (e.key === 'ArrowRight') hintCurrent < hintEls.length - 1 ? highlightHint(hintCurrent + 1) : hideHints();
+    if (e.key === 'ArrowLeft')  hintCurrent > 0 && highlightHint(hintCurrent - 1);
+});
+
+// ── Init ─────────────────────────────────────────────────────
+function init() {
+    attachHelpTooltips();
+    initHintButton();
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();
+
+// Re-init on dynamic content
+const obs = new MutationObserver(() => { attachHelpTooltips(); initHintButton(); });
+obs.observe(document.body, { childList: true, subtree: true });
+
+window.PBHelp = { showHints, hideHints, refreshHints: initHintButton };
+
+})();
+</script>
+{% endif %}

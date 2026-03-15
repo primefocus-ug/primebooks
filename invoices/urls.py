@@ -14,7 +14,8 @@ urlpatterns = [
     path('credit-detail/<int:pk>/',views.customer_credit_detail,name='customer_credit_detail'),
     path('credit-report/',views.credit_aging_report,name='credit_aging_report'),
     path('export-credit-report',views.export_credit_aging_csv,name='export_credit_aging_csv'),
-
+    path('customer-lookup/', views.customer_invoice_lookup, name='customer_invoice_lookup'),
+    path('unified-credit-pdf/', views.unified_credit_invoice_pdf, name='unified_credit_pdf'),
     # Invoice CRUD operations
     path('create/', views.InvoiceCreateView.as_view(), name='create'),
     path('<int:pk>/', views.InvoiceDetailView.as_view(), name='detail'),

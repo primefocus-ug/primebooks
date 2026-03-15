@@ -6,6 +6,7 @@ from . import version
 from . import views_advanced
 from inventory import view
 from . import efris_export_views
+from . import efris_hub_view
 
 
 
@@ -13,6 +14,7 @@ app_name = 'efris'
 
 urlpatterns = [
     # Dashboard & Configuration
+    path('hub/', efris_hub_view.efris_hub_view, name='hub'),
     path('', ura.efris_dashboard, name='dashboard'),
     path('configuration/', ura.efris_configuration, name='configuration'),
     path('stock/dashboard/', view.EnhancedStockDashboardView.as_view(), name='stock_management_dashboard'),

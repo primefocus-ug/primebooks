@@ -14,6 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.core import serializers
 import json
+from onboarding.search import palette_search
 import logging
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,10 @@ urlpatterns = [
     path('pos/', include('pos_app.urls')),
     path("api/v1/",       include("sync.urls")),
     path("api/desk/",  include("sync.desktop_urls")),
+    path('new', include('changelog.urls')),
+    path('suggestions/', include('suggestions.urls')),
+    path('onboarding/', include('onboarding.urls')),
+    path('search/palette/', palette_search, name='palette_search'),
     path('api/', include('accounts.api_urls')),
     path('api/', include('primebooks.api_urls')),
     path('api/v1/', include('sales.api_urls')),

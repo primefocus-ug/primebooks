@@ -1,0 +1,401 @@
+{% load static %}
+
+{% if user.is_authenticated %}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+/* ── Overlay ── */
+#pbTourOverlay {
+    display: none; position: fixed; inset: 0; z-index: 9700;
+    pointer-events: none;
+}
+#pbTourOverlay.active { display: block; }
+.pb-tour-veil {
+    position: absolute; inset: 0;
+    background: rgba(10,14,26,0.72);
+    pointer-events: auto;
+}
+
+/* ── Spotlight cutout ── */
+.pb-tour-spotlight {
+    position: absolute; z-index: 2; pointer-events: none;
+    box-shadow: 0 0 0 9999px rgba(10,14,26,0.72);
+    border-radius: 12px;
+    border: 2px solid #6366f1;
+    transition: all 0.38s cubic-bezier(0.4,0,0.2,1);
+    animation: tourSpotPulse 2s ease infinite;
+}
+@keyframes tourSpotPulse {
+    0%,100%{border-color:#6366f1;box-shadow:0 0 0 9999px rgba(10,14,26,0.72),0 0 0 0 rgba(99,102,241,0.5)}
+    50%    {border-color:#818cf8;box-shadow:0 0 0 9999px rgba(10,14,26,0.72),0 0 0 8px rgba(99,102,241,0)}
+}
+
+/* ── Tour card ── */
+.pb-tour-card {
+    position: absolute; z-index: 9701;
+    width: 300px;
+    background: #0f172a;
+    border: 1px solid rgba(99,102,241,0.35);
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.3);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    overflow: hidden;
+    animation: tourCardIn 0.3s cubic-bezier(0.16,1,0.3,1);
+    pointer-events: auto;
+}
+@keyframes tourCardIn {
+    from{opacity:0;transform:translateY(10px) scale(0.97)}
+    to  {opacity:1;transform:translateY(0) scale(1)}
+}
+
+.pb-tour-card-header {
+    background: linear-gradient(135deg, #312e81, #4c1d95);
+    padding: 0.875rem 1rem 0.75rem;
+    display: flex; align-items: center; gap: 0.5rem;
+}
+.pb-tour-step-badge {
+    font-size: 0.6rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+    background: rgba(255,255,255,0.15); color: #c7d2fe;
+    border-radius: 20px; padding: 0.15rem 0.55rem; flex-shrink: 0;
+}
+.pb-tour-card-title { font-size: 0.875rem; font-weight: 700; color: #fff; flex: 1; }
+.pb-tour-close {
+    background: none; border: none; color: rgba(255,255,255,0.5);
+    cursor: pointer; font-size: 1rem; padding: 0; line-height: 1;
+    transition: color 0.15s;
+}
+.pb-tour-close:hover { color: #fff; }
+
+.pb-tour-card-body {
+    padding: 0.875rem 1rem;
+    font-size: 0.81rem; color: #94a3b8; line-height: 1.65;
+}
+.pb-tour-card-body strong { color: #e2e8f0; font-weight: 600; }
+.pb-tour-card-body .pb-tour-shortcut {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.67rem;
+    background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.25);
+    color: #a5b4fc; border-radius: 5px; padding: 0.1rem 0.4rem;
+    margin: 0 1px;
+}
+
+.pb-tour-card-footer {
+    display: flex; align-items: center; padding: 0.7rem 1rem;
+    border-top: 1px solid rgba(255,255,255,0.06); gap: 0.5rem;
+}
+.pb-tour-dots { display: flex; gap: 0.3rem; flex: 1; }
+.pb-tour-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: rgba(255,255,255,0.15); transition: all 0.2s;
+    border: none; padding: 0; cursor: pointer;
+}
+.pb-tour-dot.active { background: #6366f1; width: 14px; border-radius: 3px; }
+
+.pb-tour-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.45rem 0.875rem; border-radius: 8px; font-size: 0.76rem; font-weight: 700;
+    font-family: 'Plus Jakarta Sans', sans-serif; cursor: pointer; border: none;
+    transition: all 0.15s;
+}
+.pb-tour-btn-ghost { background: rgba(255,255,255,0.06); color: #64748b; }
+.pb-tour-btn-ghost:hover { background: rgba(255,255,255,0.1); color: #94a3b8; }
+.pb-tour-btn-primary {
+    background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff;
+    box-shadow: 0 2px 10px rgba(99,102,241,0.35);
+}
+.pb-tour-btn-primary:hover { box-shadow: 0 3px 14px rgba(99,102,241,0.5); }
+
+/* Arrow pointer from card to element */
+.pb-tour-arrow {
+    position: absolute; z-index: 9702; pointer-events: none;
+    width: 0; height: 0;
+}
+.pb-tour-arrow.down  { border-left:8px solid transparent; border-right:8px solid transparent; border-top:10px solid rgba(99,102,241,0.6); }
+.pb-tour-arrow.up    { border-left:8px solid transparent; border-right:8px solid transparent; border-bottom:10px solid rgba(99,102,241,0.6); }
+.pb-tour-arrow.right { border-top:8px solid transparent;  border-bottom:8px solid transparent; border-left:10px solid rgba(99,102,241,0.6); }
+.pb-tour-arrow.left  { border-top:8px solid transparent;  border-bottom:8px solid transparent; border-right:10px solid rgba(99,102,241,0.6); }
+
+/* Skip bar at bottom */
+#pbTourSkipBar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9703;
+    background: rgba(10,14,26,0.9); backdrop-filter: blur(4px);
+    padding: 0.5rem 1.5rem; display: none;
+    align-items: center; justify-content: space-between;
+    font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.78rem; color: #64748b;
+    border-bottom: 1px solid rgba(99,102,241,0.2);
+}
+#pbTourSkipBar.show { display: flex; }
+.pb-tour-skip {
+    background: none; border: 1px solid rgba(255,255,255,0.1);
+    color: #64748b; border-radius: 6px; padding: 0.25rem 0.75rem;
+    font-size: 0.73rem; cursor: pointer; font-family: inherit; transition: all 0.15s;
+}
+.pb-tour-skip:hover { border-color: rgba(239,68,68,0.4); color: #f87171; }
+</style>
+
+<div id="pbTourOverlay">
+    <div class="pb-tour-veil" id="pbTourVeil"></div>
+    <div class="pb-tour-spotlight" id="pbTourSpot" style="display:none"></div>
+</div>
+<div id="pbTourSkipBar">
+    <span><i class="bi bi-compass" style="color:#6366f1"></i> Guided Tour is active</span>
+    <button class="pb-tour-skip" id="pbTourSkipBtn">Skip Tour <i class="bi bi-x"></i></button>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const TOUR_KEY = 'pb_tour_completed';
+
+// ── Tour steps definition ───────────────────────────────────
+// selector: CSS selector of element to spotlight
+// position: where to place card (top|bottom|left|right|center)
+// If selector not found on current page, step is skipped
+const STEPS = [
+    {
+        id:       'sidebar-overview',
+        selector: '#navigationSidebar',
+        position: 'right',
+        title:    'Navigation Sidebar',
+        body:     'This is your main navigation. Use it to move between all sections of PrimeBooks. It has two modes — <strong>full</strong> (text + icons) and <strong>mini</strong> (icons only).',
+    },
+    {
+        id:       'sidebar-mini',
+        selector: '#sidebarToggle',
+        position: 'bottom',
+        title:    'Collapse the Sidebar',
+        body:     'Click the hamburger icon to collapse the sidebar to icon-only mode. Hover any icon to see its submenu. Press <span class="pb-tour-shortcut">[</span> to toggle it with a keyboard shortcut.',
+    },
+    {
+        id:       'sidebar-flyout',
+        selector: '#navExpandToggle',
+        position: 'right',
+        title:    'Flyout Menu Mode',
+        body:     'Toggle between <strong>vertical expand</strong> (submenus drop down) and <strong>flyout mode</strong> (submenus slide out to the right). Your preference is saved automatically.',
+    },
+    {
+        id:       'header-theme',
+        selector: '#themeToggle',
+        position: 'bottom',
+        title:    'Dark / Light Mode',
+        body:     'Switch between dark and light theme with this toggle. Your preference is remembered across sessions. Shortcut: <span class="pb-tour-shortcut">⌘ ⇧ L</span>',
+    },
+    {
+        id:       'header-notifications',
+        selector: '#notificationsDropdown',
+        position: 'bottom',
+        title:    'Notifications',
+        body:     'Your notification bell lives here. It shows a badge with unread count. Click to see all recent alerts, EFRIS updates, and system messages.',
+    },
+    {
+        id:       'header-search',
+        selector: '#sidebarToggle',
+        position: 'bottom',
+        title:    'Command Palette',
+        body:     'Press <span class="pb-tour-shortcut">⌘ K</span> (or <span class="pb-tour-shortcut">Ctrl K</span>) to open the command palette. Jump to any page, search records, or trigger actions without using the mouse.',
+    },
+    {
+        id:       'dashboard-widgets',
+        selector: '.main-content',
+        position: 'center',
+        title:    'Dashboard Overview',
+        body:     'Your dashboard shows key business metrics at a glance — sales totals, invoice status, inventory levels, and recent activity. Widgets update in real time.',
+    },
+    {
+        id:       'invoice-create',
+        selector: '[href*="invoices/create"], [href*="invoice/new"], .btn-create-invoice',
+        position: 'bottom',
+        title:    'Create Your First Invoice',
+        body:     'Click here to create a new invoice or sale. You can add products, set quantities, apply taxes, and submit to EFRIS — all from one screen. Shortcut: <span class="pb-tour-shortcut">C I</span>',
+    },
+    {
+        id:       'reports-nav',
+        selector: '[data-bs-target*="report"], [href*="/reports/"]',
+        position: 'right',
+        title:    'Reports & Analytics',
+        body:     'The Reports section gives you real-time insights on sales, inventory, and EFRIS compliance. Use filters and date ranges to drill into exactly what you need. Shortcut: <span class="pb-tour-shortcut">G R</span>',
+    },
+    {
+        id:       'report-widget',
+        selector: '#rpFab',
+        position: 'left',
+        title:    'Report an Issue',
+        body:     'The red flag button lets you report a bug, request a feature, or raise a complaint at any time. You\'ll get a ticket number and email updates as we work on it.',
+    },
+];
+
+// ── State ─────────────────────────────────────────────────────
+const overlay   = document.getElementById('pbTourOverlay');
+const spot      = document.getElementById('pbTourSpot');
+const skipBar   = document.getElementById('pbTourSkipBar');
+const skipBtn   = document.getElementById('pbTourSkipBtn');
+const veil      = document.getElementById('pbTourVeil');
+
+let currentStep = 0;
+let isActive    = false;
+let cardEl      = null;
+let arrowEl     = null;
+
+function getElement(selector) {
+    if (!selector) return null;
+    const selectors = selector.split(',').map(s => s.trim());
+    for (const s of selectors) {
+        const el = document.querySelector(s);
+        if (el) return el;
+    }
+    return null;
+}
+
+function start(startIdx = 0) {
+    if (isActive) return;
+    isActive    = true;
+    currentStep = startIdx;
+    overlay.classList.add('active');
+    overlay.style.pointerEvents = 'auto';
+    skipBar.classList.add('show');
+    goToStep(currentStep);
+}
+
+function stop() {
+    isActive = false;
+    overlay.classList.remove('active');
+    overlay.style.pointerEvents = 'none';
+    spot.style.display = 'none';
+    skipBar.classList.remove('show');
+    cardEl?.remove();
+    arrowEl?.remove();
+    cardEl = null; arrowEl = null;
+    try { localStorage.setItem(TOUR_KEY, '1'); } catch {}
+}
+
+function goToStep(idx) {
+    // Find next valid step (element exists on page)
+    let attempts = 0;
+    while (attempts < STEPS.length) {
+        const step = STEPS[idx];
+        if (!step) { stop(); return; }
+        const el = getElement(step.selector);
+        if (el) { renderStep(step, el, idx); return; }
+        idx = (idx + 1) % STEPS.length;
+        attempts++;
+    }
+    // No steps found — end tour
+    stop();
+}
+
+function renderStep(step, el, idx) {
+    currentStep = idx;
+    cardEl?.remove();
+    arrowEl?.remove();
+
+    // Spotlight
+    const rect = el.getBoundingClientRect();
+    const pad  = 8;
+    spot.style.cssText = `
+        display:block;
+        top:${rect.top + window.scrollY - pad}px;
+        left:${rect.left - pad}px;
+        width:${rect.width + pad*2}px;
+        height:${rect.height + pad*2}px;
+    `;
+
+    // Card
+    cardEl = document.createElement('div');
+    cardEl.className = 'pb-tour-card';
+    cardEl.innerHTML = `
+        <div class="pb-tour-card-header">
+            <span class="pb-tour-step-badge">Step ${idx+1} / ${STEPS.length}</span>
+            <span class="pb-tour-card-title">${step.title}</span>
+            <button class="pb-tour-close" id="tourCloseBtn" aria-label="Close tour"><i class="bi bi-x"></i></button>
+        </div>
+        <div class="pb-tour-card-body">${step.body}</div>
+        <div class="pb-tour-card-footer">
+            <div class="pb-tour-dots" id="tourDots"></div>
+            ${idx > 0 ? '<button class="pb-tour-btn pb-tour-btn-ghost" id="tourPrev"><i class="bi bi-arrow-left"></i></button>' : ''}
+            <button class="pb-tour-btn pb-tour-btn-primary" id="tourNext">
+                ${idx === STEPS.length-1 ? 'Finish <i class="bi bi-check-lg"></i>' : 'Next <i class="bi bi-arrow-right"></i>'}
+            </button>
+        </div>
+    `;
+    document.body.appendChild(cardEl);
+
+    // Dots
+    const dotsContainer = document.getElementById('tourDots');
+    STEPS.forEach((_, i) => {
+        const d = document.createElement('button');
+        d.className = 'pb-tour-dot' + (i === idx ? ' active' : '');
+        d.addEventListener('click', () => goToStep(i));
+        dotsContainer.appendChild(d);
+    });
+
+    // Events
+    document.getElementById('tourCloseBtn').addEventListener('click', stop);
+    document.getElementById('tourNext').addEventListener('click', () => {
+        if (idx === STEPS.length - 1) stop();
+        else goToStep(idx + 1);
+    });
+    document.getElementById('tourPrev')?.addEventListener('click', () => goToStep(idx - 1));
+
+    // Position card
+    positionCard(cardEl, rect, step.position);
+
+    // Scroll into view
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function positionCard(card, targetRect, position) {
+    const cw = 300; const ch = 200; // approx card dimensions
+    const margin = 16;
+    let top, left;
+
+    // Calculate screen real-estate
+    const ww = window.innerWidth;
+    const wh = window.innerHeight;
+
+    if (position === 'right' && targetRect.right + margin + cw < ww) {
+        top  = targetRect.top + window.scrollY;
+        left = targetRect.right + margin;
+    } else if (position === 'left' && targetRect.left - margin - cw > 0) {
+        top  = targetRect.top + window.scrollY;
+        left = targetRect.left - margin - cw;
+    } else if (position === 'bottom' && targetRect.bottom + margin + ch < wh) {
+        top  = targetRect.bottom + window.scrollY + margin;
+        left = targetRect.left;
+    } else if (position === 'top' && targetRect.top - margin - ch > 0) {
+        top  = targetRect.top + window.scrollY - ch - margin;
+        left = targetRect.left;
+    } else {
+        // Center fallback
+        top  = wh / 2 - ch / 2 + window.scrollY;
+        left = ww / 2 - cw / 2;
+    }
+
+    // Clamp to viewport
+    left = Math.max(8, Math.min(left, ww - cw - 8));
+    top  = Math.max(window.scrollY + 8, top);
+
+    card.style.cssText += `top:${top}px;left:${left}px;width:${cw}px;`;
+}
+
+// Keyboard nav during tour
+document.addEventListener('keydown', e => {
+    if (!isActive) return;
+    if (e.key === 'Escape')     { e.preventDefault(); stop(); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); goToStep(currentStep + 1); }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); currentStep > 0 && goToStep(currentStep - 1); }
+});
+
+skipBtn.addEventListener('click', stop);
+
+// ── Public API ────────────────────────────────────────────────
+window.PBTour = {
+    start:   (idx = 0) => start(idx),
+    startAt: (idx) => start(idx),
+    stop,
+    isActive: () => isActive,
+};
+
+})();
+</script>
+{% endif %}

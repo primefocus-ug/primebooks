@@ -9876,8 +9876,6 @@ class EnhancedEFRISAPIClient:
                 }
 
             logger.info(f"T108 query successful for invoice {invoice_no}")
-            logger.info(
-                f"Original invoice items from T108: {json.dumps(response.get('goodsDetails', []), indent=2)}")  # ✅ Fixed: response not invoice_data
 
             return {
                 "success": True,

@@ -2,661 +2,489 @@
 {% load static %}
 {% load humanize %}
 
-{% block extra_css %}
-<style>
-    .detail-card {
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 0.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-    }
-    .detail-card-header {
-        background: #f8f9fa;
-        border-bottom: 1px solid #dee2e6;
-        padding: 1rem 1.5rem;
-        border-radius: 0.5rem 0.5rem 0 0;
-    }
-    .detail-card-body {
-        padding: 1.5rem;
-    }
-    .status-badge {
-        font-size: 0.8rem;
-        padding: 0.25rem 0.75rem;
-    }
-    .info-grid {
-        display: grid;
-        grid-template-columns: 180px 1fr;
-        gap: 0.75rem;
-        align-items: start;
-    }
-    @media (max-width: 768px) {
-        .info-grid { grid-template-columns: 1fr; gap: 0.25rem; }
-    }
-    .info-label { font-weight: 600; color: #495057; }
-    .info-value { color: #212529; word-break: break-word; }
-    .goods-table th {
-        background-color: #f8f9fa;
-        border-top: 2px solid #dee2e6;
-        font-weight: 600;
-    }
-    .amount-cell { text-align: right; font-family: 'Courier New', monospace; }
-    .negative-amount { color: #dc3545; font-weight: 600; }
-    .positive-amount { color: #28a745; font-weight: 600; }
-    .tax-breakdown { background: #f8f9fa; border-radius: 0.25rem; padding: 1rem; }
-    .action-buttons .btn { min-width: 120px; }
-    .data-missing { color: #6c757d; font-style: italic; }
-    .comparison-grid {
-        display: grid;
-        grid-template-columns: 1fr auto 1fr;
-        gap: 1rem;
-        align-items: center;
-    }
-    .comparison-arrow { font-size: 1.5rem; color: #6c757d; text-align: center; }
+{% block page_title %}Credit Note Detail{% endblock %}
 
-    /* ✅ CORRECTED STATUS COLORS:
-       101 = Approved   → green
-       102 = Submitted  → yellow (pending)
-       103 = Rejected   → red
-       104 = Voided     → grey  */
-    .status-101 { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
-    .status-102 { background-color: #fff3cd; color: #856404; border-color: #ffeaa7; }
-    .status-103 { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
-    .status-104 { background-color: #6c757d; color: white; border-color: #545b62; }
-</style>
+{% block page_actions %}
+<div style="display:flex;gap:8px;align-items:center;">
+  {% if application.is_invalid %}
+  <span class="badge rejected" style="padding:5px 12px;font-size:12px;">INVALID</span>
+  {% else %}
+  <span class="badge approved" style="padding:5px 12px;font-size:12px;">ISSUED</span>
+  {% endif %}
+
+  {% if application.credit_note_no %}
+  <a href="{% url 'efris:print_credit_note' application_id %}?invoice_no={{ application.credit_note_no }}"
+     target="_blank" class="btn btn-primary btn-sm">
+    <i class="fas fa-print"></i> Print
+  </a>
+  {% endif %}
+  {% if summary.qr_code %}
+  <a href="{{ summary.qr_code }}" target="_blank" class="btn btn-ghost btn-sm">
+    <i class="fas fa-qrcode"></i> Verify
+  </a>
+  {% endif %}
+  <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-ghost btn-sm">
+    <i class="fas fa-arrow-left"></i> Back
+  </a>
+</div>
 {% endblock %}
 
 {% block efris_content %}
-<div class="container-fluid">
-    <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h4 class="mb-0">
-                <i class="fas fa-file-invoice text-primary me-2"></i>
-                Credit Note: {{ application.credit_note_no|default:application_id }}
-            </h4>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
-                    <li class="breadcrumb-item"><a href="{% url 'efris:credit_note_applications' %}">Credit Notes</a></li>
-                    <li class="breadcrumb-item active">Application Detail</li>
-                </ol>
-            </nav>
+
+{% if application.validation_errors %}
+<div class="alert alert-warning" style="margin-bottom:16px;">
+  <i class="fas fa-exclamation-triangle"></i>
+  <strong>Validation Issues:</strong>
+  <ul style="margin:6px 0 0 18px;padding:0;">
+    {% for error in application.validation_errors %}<li style="font-size:13px;">{{ error }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<!-- ── 2-COL HEADER CARDS ───────────────────────────────────── -->
+<div class="grid grid-2" style="margin-bottom:20px;">
+
+  <!-- Application Info -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><i class="fas fa-file-invoice"></i> Application Information</div>
+    </div>
+    <div class="card-body" style="padding:0;">
+
+      {% for label, value, mono in info_rows|default:'' %}{% endfor %}
+
+      <div style="display:grid;grid-template-columns:160px 1fr;">
+
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:flex;align-items:center;">Credit Note No</div>
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--accent);">{{ application.credit_note_no|default:"N/A" }}</div>
+
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:flex;align-items:center;">Original Invoice</div>
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:13px;">{{ application.original_invoice_no|default:"N/A" }}</div>
+
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:flex;align-items:center;">Credit Note Date</div>
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text);">{{ application.issued_date|default:"N/A" }}</div>
+
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:flex;align-items:center;">Orig. Invoice Date</div>
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text);">{{ application.ori_issued_date|default:"N/A" }}</div>
+
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:flex;align-items:center;">Operator</div>
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text);">{{ application.operator|default:"N/A" }}</div>
+
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:flex;align-items:center;">Currency</div>
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text);">{{ application.currency }}</div>
+
+        <div style="padding:11px 20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:flex;align-items:center;">Reason</div>
+        <div style="padding:11px 20px;font-size:13px;color:var(--text);">
+          <strong>{{ application.reason_code }}</strong>
+          {% if application.reason_description %} — {{ application.reason_description }}{% endif %}
         </div>
-        <div>
-            {# T108 issued credit notes: show Issued or Invalid #}
-            {% if application.is_invalid %}
-                <span class="badge status-badge status-103">INVALID</span>
-            {% else %}
-                <span class="badge status-badge status-101">ISSUED</span>
-            {% endif %}
-        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Parties -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <div class="card" style="flex:1;">
+      <div class="card-header">
+        <div class="card-title"><i class="fas fa-store"></i> Seller</div>
+      </div>
+      <div class="card-body">
+        <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:4px;">{{ application.applicant_name|default:"N/A" }}</div>
+        <div style="font-size:12px;color:var(--text-3);">TIN: <span class="mono">{{ application.applicant_tin|default:"N/A" }}</span></div>
+      </div>
     </div>
 
-    <!-- Alert Messages -->
-    {% if messages %}
-        {% for message in messages %}
-            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                <i class="fas fa-{% if message.tags == 'success' %}check-circle{% else %}exclamation-circle{% endif %} me-2"></i>
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
+    <div class="card" style="flex:1;">
+      <div class="card-header">
+        <div class="card-title"><i class="fas fa-user"></i> Buyer</div>
+      </div>
+      <div class="card-body">
+        <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:4px;">{{ application.buyer_name|default:"N/A" }}</div>
+        <div style="font-size:12px;color:var(--text-3);">TIN: <span class="mono">{{ application.buyer_tin|default:"N/A" }}</span></div>
+        <div style="font-size:12px;color:var(--text-3);margin-top:2px;">📱 {{ application.buyer_mobile|default:"N/A" }}</div>
+      </div>
+    </div>
+
+    {% if application.remarks %}
+    <div class="card" style="flex:1;">
+      <div class="card-header">
+        <div class="card-title"><i class="fas fa-comment-alt"></i> Remarks</div>
+      </div>
+      <div class="card-body">
+        <p style="font-size:13px;color:var(--text-2);margin:0;line-height:1.6;">{{ application.remarks }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<!-- ── FINANCIAL SUMMARY ─────────────────────────────────────── -->
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">
+    <div class="card-title"><i class="fas fa-chart-bar"></i> Financial Summary</div>
+  </div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:1fr 48px 1fr;gap:16px;align-items:center;margin-bottom:20px;">
+
+      <!-- Original Invoice -->
+      <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+        <div style="padding:12px 16px;background:var(--surface-2);border-bottom:1px solid var(--border);">
+          <span style="font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px;">
+            <i class="fas fa-file-invoice" style="color:var(--text-3);"></i> Original Invoice
+          </span>
+        </div>
+        <div style="padding:16px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px;">
+            <span style="color:var(--text-3);">Net Amount</span>
+            <span class="mono" style="font-weight:600;color:var(--text);">{{ summary.previous_net_amount|floatformat:2|intcomma }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;">
+            <span style="color:var(--text-3);">Tax Amount</span>
+            <span class="mono" style="font-weight:600;color:var(--text);">{{ summary.previous_tax_amount|floatformat:2|intcomma }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border);">
+            <span style="font-weight:700;font-size:13px;color:var(--text);">Gross Amount</span>
+            <span class="mono" style="font-weight:700;font-size:16px;color:var(--text);">{{ summary.previous_gross_amount|floatformat:2|intcomma }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align:center;color:var(--text-3);font-size:20px;">
+        <i class="fas fa-arrow-right"></i>
+      </div>
+
+      <!-- Credit Note -->
+      <div style="border:2px solid var(--accent);border-radius:10px;overflow:hidden;box-shadow:0 0 0 4px var(--accent-glow);">
+        <div style="padding:12px 16px;background:var(--accent);border-bottom:1px solid var(--accent);">
+          <span style="font-size:13px;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px;">
+            <i class="fas fa-undo"></i> Credit Note
+          </span>
+        </div>
+        <div style="padding:16px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px;">
+            <span style="color:var(--text-3);">Net Amount</span>
+            <span class="mono" style="font-weight:600;color:var(--danger);">{{ summary.net_amount|floatformat:2|intcomma }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;">
+            <span style="color:var(--text-3);">Tax Amount</span>
+            <span class="mono" style="font-weight:600;color:var(--danger);">{{ summary.tax_amount|floatformat:2|intcomma }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border);">
+            <span style="font-weight:700;font-size:13px;color:var(--text);">Gross Amount</span>
+            <span class="mono" style="font-weight:700;font-size:16px;color:var(--danger);">{{ summary.gross_amount|floatformat:2|intcomma }}</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Tax Breakdown -->
+    <div style="background:var(--surface-2);border-radius:8px;padding:16px;">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);margin-bottom:12px;display:flex;align-items:center;gap:6px;">
+        <i class="fas fa-percentage" style="color:var(--accent);"></i> Tax Breakdown
+      </div>
+      {% if tax_details %}
+        {% for tax in tax_details %}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;{% if not forloop.last %}border-bottom:1px solid var(--border);{% endif %}font-size:13px;">
+          <span style="color:var(--text-2);">
+            {{ tax.taxRateName|default:tax.taxRate|default:"Tax" }}
+            {% if tax.taxRate %}<span style="font-size:11px;color:var(--text-3);">({{ tax.taxRate }})</span>{% endif %}
+          </span>
+          <span class="mono" style="font-weight:600;{% with a=tax.taxAmount|default:0 %}{% if a < 0 %}color:var(--danger);{% else %}color:var(--text);{% endif %}{% endwith %}">
+            {% with a=tax.taxAmount|default:0 %}{{ a|floatformat:2|intcomma }}{% endwith %}
+          </span>
+        </div>
         {% endfor %}
-    {% endif %}
-
-    <!-- Validation Errors -->
-    {% if application.validation_errors %}
-    <div class="alert alert-warning">
-        <i class="fas fa-exclamation-triangle me-2"></i>
-        <strong>Validation Issues:</strong>
-        <ul class="mb-0 mt-1">
-            {% for error in application.validation_errors %}
-                <li>{{ error }}</li>
-            {% endfor %}
-        </ul>
+      {% else %}
+      <p style="color:var(--text-3);font-size:13px;text-align:center;margin:0;font-style:italic;">No tax details available</p>
+      {% endif %}
     </div>
-    {% endif %}
-
-    <!-- Application Information -->
-    <div class="detail-card">
-        <div class="detail-card-header">
-            <h5 class="mb-0"><i class="fas fa-info-circle text-primary me-2"></i>Application Information</h5>
-        </div>
-        <div class="detail-card-body">
-            <div class="row">
-                <div class="col-md-6">
-                    {# invoiceNo from T108 = the Credit Note number #}
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Credit Note No:</span>
-                        <span class="info-value font-monospace text-primary fw-bold">
-                            {{ application.credit_note_no|default:"N/A" }}
-                        </span>
-                    </div>
-                    {# oriInvoiceNo from T108 = the original invoice this credit note was raised against #}
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Original Invoice No:</span>
-                        <span class="info-value font-monospace">
-                            {% if application.original_invoice_no %}
-                                {{ application.original_invoice_no }}
-                            {% else %}
-                                <span class="data-missing">N/A</span>
-                            {% endif %}
-                        </span>
-                    </div>
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Credit Note Date:</span>
-                        <span class="info-value">{{ application.issued_date|default:"N/A" }}</span>
-                    </div>
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Original Invoice Date:</span>
-                        <span class="info-value">{{ application.ori_issued_date|default:"N/A" }}</span>
-                    </div>
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Operator:</span>
-                        <span class="info-value">{{ application.operator|default:"N/A" }}</span>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Status:</span>
-                        <span class="info-value">
-                            <span class="badge bg-success">Issued</span>
-                        </span>
-                    </div>
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Seller:</span>
-                        <span class="info-value">
-                            {{ application.applicant_name|default:"N/A" }}<br>
-                            <small class="text-muted">TIN: {{ application.applicant_tin|default:"N/A" }}</small>
-                        </span>
-                    </div>
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Buyer:</span>
-                        <span class="info-value">
-                            {{ application.buyer_name|default:"N/A" }}<br>
-                            <small class="text-muted">
-                                TIN: {{ application.buyer_tin|default:"N/A" }}<br>
-                                Mobile: {{ application.buyer_mobile|default:"N/A" }}
-                            </small>
-                        </span>
-                    </div>
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Currency:</span>
-                        <span class="info-value">{{ application.currency }}</span>
-                    </div>
-                    <div class="info-grid mb-3">
-                        <span class="info-label">Reason:</span>
-                        <span class="info-value">
-                            <strong>{{ application.reason_code }}</strong>
-                            {% if application.reason_description %} — {{ application.reason_description }}{% endif %}
-                        </span>
-                    </div>
-                </div>
-            </div>
-            {% if application.remarks %}
-            <div class="mt-3">
-                <span class="info-label">Remarks:</span>
-                <div class="info-value mt-1 p-3 bg-light rounded border">
-                    <i class="fas fa-comment-alt text-muted me-2"></i>{{ application.remarks }}
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- Financial Summary -->
-    <div class="detail-card">
-        <div class="detail-card-header">
-            <h5 class="mb-0"><i class="fas fa-chart-bar text-primary me-2"></i>Financial Summary</h5>
-        </div>
-        <div class="detail-card-body">
-            <div class="comparison-grid mb-4">
-                <div class="card">
-                    <div class="card-header bg-light">
-                        <h6 class="mb-0"><i class="fas fa-file-invoice me-2"></i>Original Invoice</h6>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between mb-2">
-                            <span>Net Amount:</span>
-                            <span class="fw-bold">{{ summary.previous_net_amount|floatformat:2|intcomma }}</span>
-                        </div>
-                        <div class="d-flex justify-content-between mb-2">
-                            <span>Tax Amount:</span>
-                            <span class="fw-bold">{{ summary.previous_tax_amount|floatformat:2|intcomma }}</span>
-                        </div>
-                        <div class="d-flex justify-content-between border-top pt-2">
-                            <span class="fw-bold">Gross Amount:</span>
-                            <span class="fw-bold fs-5">{{ summary.previous_gross_amount|floatformat:2|intcomma }}</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="comparison-arrow"><i class="fas fa-arrow-right"></i></div>
-                <div class="card border-primary">
-                    <div class="card-header bg-primary text-white">
-                        <h6 class="mb-0"><i class="fas fa-undo me-2"></i>Credit Note</h6>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between mb-2">
-                            <span>Net Amount:</span>
-                            <span class="fw-bold negative-amount">{{ summary.net_amount|floatformat:2|intcomma }}</span>
-                        </div>
-                        <div class="d-flex justify-content-between mb-2">
-                            <span>Tax Amount:</span>
-                            <span class="fw-bold negative-amount">{{ summary.tax_amount|floatformat:2|intcomma }}</span>
-                        </div>
-                        <div class="d-flex justify-content-between border-top pt-2">
-                            <span class="fw-bold">Gross Amount:</span>
-                            <span class="fw-bold fs-5 negative-amount">{{ summary.gross_amount|floatformat:2|intcomma }}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Tax Breakdown -->
-            <div class="tax-breakdown">
-                <h6 class="mb-3"><i class="fas fa-percentage me-2"></i>Tax Breakdown</h6>
-                {% if tax_details %}
-                    {% for tax in tax_details %}
-                    <div class="d-flex justify-content-between mb-2">
-                        <span>
-                            {# T108 uses taxRateName e.g. "Exempt (-)" #}
-                            {{ tax.taxRateName|default:"Tax"|default:tax.taxCategory }}
-                            {% if tax.taxRate %}<small class="text-muted ms-1">({{ tax.taxRate }})</small>{% endif %}
-                        </span>
-                        <span class="fw-bold">
-                            {% with tax_amount=tax.taxAmount|default:0 %}
-                            {% if tax_amount < 0 %}
-                                <span class="negative-amount">{{ tax_amount|floatformat:2|intcomma }}</span>
-                            {% else %}
-                                {{ tax_amount|floatformat:2|intcomma }}
-                            {% endif %}
-                            {% endwith %}
-                        </span>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <p class="data-missing text-center"><i class="fas fa-info-circle me-1"></i>No tax details available</p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-
-    <!-- Goods Details -->
-    <div class="detail-card">
-        <div class="detail-card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">
-                <i class="fas fa-boxes text-primary me-2"></i>Goods & Services Details
-                <span class="badge bg-secondary ms-2">{{ goods_details|length }} item(s)</span>
-            </h5>
-        </div>
-        <div class="detail-card-body">
-            {% if goods_details %}
-            <div class="table-responsive">
-                <table class="table table-hover mb-0 goods-table">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Item</th>
-                            <th>Category</th>
-                            <th class="text-end">Qty</th>
-                            <th class="text-end">Unit Price</th>
-                            <th class="text-end">Tax Rate</th>
-                            <th class="text-end">Tax</th>
-                            <th class="text-end">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in goods_details %}
-                        <tr>
-                            <td>{{ forloop.counter }}</td>
-                            <td>
-                                <strong>{{ item.item|default:"Unnamed Item" }}</strong><br>
-                                <small class="text-muted">{{ item.itemCode|default:"N/A" }}</small>
-                            </td>
-                            <td><small>{{ item.goodsCategoryName|default:"N/A" }}</small></td>
-                            <td class="amount-cell">
-                                {% with qty=item.qty|default:0 %}
-                                {% if qty < 0 %}
-                                    <span class="negative-amount">{{ qty|floatformat:2 }}</span>
-                                {% else %}{{ qty|floatformat:2 }}{% endif %}
-                                {% endwith %}
-                            </td>
-                            <td class="amount-cell">{{ item.unitPrice|default:0|floatformat:2|intcomma }}</td>
-                            <td class="amount-cell">{{ item.taxRate|default:"-" }}</td>
-                            <td class="amount-cell">
-                                {% with tax=item.tax|default:0 %}
-                                {% if tax < 0 %}
-                                    <span class="negative-amount">{{ tax|floatformat:2|intcomma }}</span>
-                                {% else %}{{ tax|floatformat:2|intcomma }}{% endif %}
-                                {% endwith %}
-                            </td>
-                            <td class="amount-cell">
-                                {% with total=item.total|default:0 %}
-                                {% if total < 0 %}
-                                    <span class="negative-amount fw-bold">{{ total|floatformat:2|intcomma }}</span>
-                                {% else %}
-                                    <span class="fw-bold">{{ total|floatformat:2|intcomma }}</span>
-                                {% endif %}
-                                {% endwith %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-active">
-                            <td colspan="6" class="text-end fw-bold">Totals:</td>
-                            <td class="amount-cell fw-bold">
-                                {% if summary.tax_amount < 0 %}
-                                    <span class="negative-amount">{{ summary.tax_amount|floatformat:2|intcomma }}</span>
-                                {% else %}{{ summary.tax_amount|floatformat:2|intcomma }}{% endif %}
-                            </td>
-                            <td class="amount-cell fw-bold">
-                                {% if summary.gross_amount < 0 %}
-                                    <span class="negative-amount">{{ summary.gross_amount|floatformat:2|intcomma }}</span>
-                                {% else %}{{ summary.gross_amount|floatformat:2|intcomma }}{% endif %}
-                            </td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-            {% else %}
-            <div class="text-center py-5">
-                <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
-                <h5 class="text-muted">No Goods Details Available</h5>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- Payment Information -->
-    {% if payment_methods %}
-    <div class="detail-card">
-        <div class="detail-card-header">
-            <h5 class="mb-0"><i class="fas fa-credit-card text-primary me-2"></i>Payment Information</h5>
-        </div>
-        <div class="detail-card-body">
-            <div class="row">
-                {% for payment in payment_methods %}
-                <div class="col-md-4 mb-3">
-                    <div class="card border">
-                        <div class="card-body">
-                            <h6 class="card-title">
-                                {% if payment.paymentMode == '101' %}<i class="fas fa-money-bill-wave me-2"></i>Cash
-                                {% elif payment.paymentMode == '102' %}<i class="fas fa-credit-card me-2"></i>Credit Card
-                                {% elif payment.paymentMode == '103' %}<i class="fas fa-university me-2"></i>Bank Transfer
-                                {% elif payment.paymentMode == '104' %}<i class="fas fa-mobile-alt me-2"></i>Mobile Money
-                                {% else %}<i class="fas fa-wallet me-2"></i>Payment {{ payment.paymentMode }}{% endif %}
-                            </h6>
-                            <div class="h5 fw-bold">
-                                {% with amount=payment.paymentAmount|default:0 %}
-                                {% if amount < 0 %}
-                                    <span class="negative-amount">{{ amount|floatformat:2|intcomma }}</span>
-                                {% else %}{{ amount|floatformat:2|intcomma }}{% endif %}
-                                {% endwith %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Additional Information -->
-    <div class="detail-card">
-        <div class="detail-card-header">
-            <h5 class="mb-0"><i class="fas fa-sticky-note text-primary me-2"></i>Additional Information</h5>
-        </div>
-        <div class="detail-card-body">
-            <div class="row">
-                <div class="col-md-6">
-                    <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-user me-2"></i>Contact Information</h6>
-                    <div class="info-grid mb-2">
-                        <span class="info-label">Name:</span>
-                        <span class="info-value">{{ application.contact_name|default:"Not specified" }}</span>
-                    </div>
-                    <div class="info-grid mb-2">
-                        <span class="info-label">Mobile:</span>
-                        <span class="info-value">{{ application.contact_mobile|default:"Not specified" }}</span>
-                    </div>
-                    <div class="info-grid">
-                        <span class="info-label">Email:</span>
-                        <span class="info-value">{{ application.contact_email|default:"Not specified" }}</span>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-comment me-2"></i>Remarks</h6>
-                    <div class="bg-light rounded p-3 border">
-                        {% if application.remarks %}
-                            {{ application.remarks|linebreaks }}
-                        {% else %}
-                            <span class="data-missing">No remarks provided</span>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Action Buttons -->
-    <div class="detail-card">
-        <div class="detail-card-body">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-arrow-left me-2"></i>Back to Applications
-                    </a>
-                </div>
-                <div class="d-flex gap-2">
-                    {# T108 credit notes are already issued — no approval workflow #}
-                    {% if application.credit_note_no %}
-                        <a href="{% url 'efris:print_credit_note' application_id %}"
-                           target="_blank"
-                           class="btn btn-primary">
-                            <i class="fas fa-print me-2"></i>Print Credit Note
-                        </a>
-                    {% endif %}
-                    {% if summary.qr_code %}
-                        <a href="{{ summary.qr_code }}" target="_blank" class="btn btn-outline-info">
-                            <i class="fas fa-qrcode me-2"></i>Verify on EFRIS
-                        </a>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Footer info -->
-    <div class="text-center text-muted small mt-3">
-        <i class="fas fa-info-circle me-1"></i>
-        Credit Note No: {{ application.credit_note_no|default:application_id }} |
-        Original Invoice: {{ application.original_invoice_no|default:"N/A" }} |
-        Viewed on {% now "Y-m-d H:i:s" %} |
-        Company: {{ company.name }}
-    </div>
+  </div>
 </div>
 
-<!-- Approval Modal -->
-<div class="modal fade" id="approvalModal" tabindex="-1" aria-labelledby="approvalModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="POST" id="approvalForm">
-                {% csrf_token %}
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title" id="approvalModalLabel">
-                        <i class="fas fa-check-circle me-2"></i>Approve/Reject Application
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" name="reference_no" id="modal_reference_no">
-                    <input type="hidden" name="task_id" id="modal_task_id">
-                    <input type="hidden" name="application_id" id="modal_application_id">
-
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>
-                        This action will submit the decision to URA EFRIS system.
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Application Details:</label>
-                        <div class="card bg-light">
-                            <div class="card-body">
-                                <p class="mb-1"><strong>Reference No:</strong> <span id="display_reference_no" class="fw-bold"></span></p>
-                                <p class="mb-0"><strong>Application ID:</strong> <span id="display_application_id" class="text-muted"></span></p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="modal_approve_status" class="form-label">Decision *</label>
-                        <select class="form-select" name="approve_status" id="modal_approve_status" required>
-                            <option value="">Select decision</option>
-                            <option value="101">Approve</option>
-                            <option value="103">Reject</option>
-                        </select>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="modal_remark" class="form-label">Remarks * (max 1024 characters)</label>
-                        <textarea class="form-control" name="remark" id="modal_remark"
-                                  rows="4" required maxlength="1024"
-                                  placeholder="Enter approval or rejection remarks..."></textarea>
-                        <div class="d-flex justify-content-end mt-1">
-                            <small class="text-muted"><span id="remarkCharCount">0</span> / 1024</small>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-2"></i>Cancel
-                    </button>
-                    <button type="submit" class="btn btn-primary" id="submitApprovalBtn">
-                        <i class="fas fa-paper-plane me-2"></i>Submit Decision
-                    </button>
-                </div>
-            </form>
-        </div>
+<!-- ── GOODS TABLE ───────────────────────────────────────────── -->
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">
+    <div class="card-title">
+      <i class="fas fa-boxes"></i> Goods &amp; Services
+      <span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-3);margin-left:6px;">{{ goods_details|length }} item(s)</span>
     </div>
+  </div>
+  <div class="card-body" style="padding:0;">
+    {% if goods_details %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Item</th>
+            <th>Category</th>
+            <th style="text-align:right;">Qty</th>
+            <th style="text-align:right;">Unit Price</th>
+            <th style="text-align:right;">Tax Rate</th>
+            <th style="text-align:right;">Tax</th>
+            <th style="text-align:right;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in goods_details %}
+          <tr>
+            <td style="color:var(--text-3);font-size:12px;">{{ forloop.counter }}</td>
+            <td>
+              <div style="font-weight:600;font-size:13px;color:var(--text);">{{ item.item|default:"Unnamed Item" }}</div>
+              <div class="mono" style="font-size:11px;color:var(--text-3);">{{ item.itemCode|default:"N/A" }}</div>
+            </td>
+            <td style="font-size:12px;color:var(--text-2);">{{ item.goodsCategoryName|default:"N/A" }}</td>
+            <td style="text-align:right;">
+              <span class="mono {% if item.qty|default:0 < 0 %}text-danger{% endif %}" style="{% if item.qty|default:0 < 0 %}color:var(--danger);font-weight:600;{% endif %}">
+                {{ item.qty|default:0|floatformat:2 }}
+              </span>
+            </td>
+            <td style="text-align:right;" class="mono">{{ item.unitPrice|default:0|floatformat:2|intcomma }}</td>
+            <td style="text-align:right;font-size:12px;color:var(--text-3);">{{ item.taxRate|default:"—" }}</td>
+            <td style="text-align:right;">
+              <span class="mono {% if item.tax|default:0 < 0 %}text-danger{% endif %}" style="{% if item.tax|default:0 < 0 %}color:var(--danger);font-weight:600;{% endif %}">
+                {{ item.tax|default:0|floatformat:2|intcomma }}
+              </span>
+            </td>
+            <td style="text-align:right;">
+              <span class="mono" style="font-weight:700;{% if item.total|default:0 < 0 %}color:var(--danger);{% else %}color:var(--text);{% endif %}">
+                {{ item.total|default:0|floatformat:2|intcomma }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--surface-2);">
+            <td colspan="6" style="text-align:right;font-weight:700;font-size:13px;padding:12px 14px;color:var(--text);">Totals:</td>
+            <td style="text-align:right;font-weight:700;padding:12px 14px;">
+              <span class="mono" style="{% if summary.tax_amount < 0 %}color:var(--danger);{% else %}color:var(--text);{% endif %}">
+                {{ summary.tax_amount|floatformat:2|intcomma }}
+              </span>
+            </td>
+            <td style="text-align:right;font-weight:700;padding:12px 14px;">
+              <span class="mono" style="font-size:14px;{% if summary.gross_amount < 0 %}color:var(--danger);{% else %}color:var(--text);{% endif %}">
+                {{ summary.gross_amount|floatformat:2|intcomma }}
+              </span>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:48px 20px;">
+      <i class="fas fa-box-open" style="font-size:2.5rem;color:var(--text-3);"></i>
+      <p style="color:var(--text-3);margin:12px 0 0;font-size:13px;">No goods details available</p>
+    </div>
+    {% endif %}
+  </div>
 </div>
+
+<!-- ── PAYMENT + CONTACT ─────────────────────────────────────── -->
+{% if payment_methods or application.contact_name %}
+<div class="grid grid-2" style="margin-bottom:20px;">
+
+  {% if payment_methods %}
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><i class="fas fa-credit-card"></i> Payment Information</div>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:10px;">
+      {% for payment in payment_methods %}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-2);border-radius:8px;border:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <i class="fas {% if payment.paymentMode == '101' %}fa-money-bill-wave{% elif payment.paymentMode == '102' %}fa-credit-card{% elif payment.paymentMode == '103' %}fa-university{% elif payment.paymentMode == '104' %}fa-mobile-alt{% else %}fa-wallet{% endif %}" style="font-size:18px;color:var(--accent);"></i>
+          <span style="font-size:13px;font-weight:600;color:var(--text);">
+            {% if payment.paymentMode == '101' %}Cash
+            {% elif payment.paymentMode == '102' %}Credit Card
+            {% elif payment.paymentMode == '103' %}Bank Transfer
+            {% elif payment.paymentMode == '104' %}Mobile Money
+            {% else %}Payment {{ payment.paymentMode }}{% endif %}
+          </span>
+        </div>
+        <span class="mono" style="font-weight:700;font-size:15px;{% if payment.paymentAmount|default:0 < 0 %}color:var(--danger);{% else %}color:var(--text);{% endif %}">
+          {{ payment.paymentAmount|default:0|floatformat:2|intcomma }}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><i class="fas fa-address-card"></i> Contact Information</div>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <div style="display:grid;grid-template-columns:100px 1fr;">
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:flex;align-items:center;">Name</div>
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text);">{{ application.contact_name|default:"Not specified" }}</div>
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:flex;align-items:center;">Mobile</div>
+        <div style="padding:11px 20px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text);">{{ application.contact_mobile|default:"Not specified" }}</div>
+        <div style="padding:11px 20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-3);display:flex;align-items:center;">Email</div>
+        <div style="padding:11px 20px;font-size:13px;color:var(--text);">{{ application.contact_email|default:"Not specified" }}</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endif %}
+
+<!-- ── FOOTER ─────────────────────────────────────────────────── -->
+<div style="text-align:center;font-size:11.5px;color:var(--text-3);padding:12px 0;border-top:1px solid var(--border);">
+  Credit Note: <span class="mono">{{ application.credit_note_no|default:application_id }}</span>
+  &nbsp;·&nbsp; Original Invoice: <span class="mono">{{ application.original_invoice_no|default:"N/A" }}</span>
+  &nbsp;·&nbsp; Viewed: {% now "Y-m-d H:i:s" %}
+  &nbsp;·&nbsp; {{ company.name }}
+</div>
+
+<!-- ── APPROVAL MODAL ─────────────────────────────────────────── -->
+<div id="approvalModal" style="display:none;position:fixed;inset:0;z-index:3000;align-items:center;justify-content:center;padding:20px;">
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,.5);" onclick="closeApprovalModal()"></div>
+  <div style="position:relative;width:100%;max-width:480px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-md);overflow:hidden;">
+    <form method="POST" id="approvalForm">
+      {% csrf_token %}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--accent);">
+        <span style="font-size:14px;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px;">
+          <i class="fas fa-check-circle"></i> Approve / Reject Application
+        </span>
+        <button type="button" onclick="closeApprovalModal()" style="background:none;border:none;color:rgba(255,255,255,.7);font-size:18px;cursor:pointer;line-height:1;">&times;</button>
+      </div>
+      <div style="padding:20px;">
+        <input type="hidden" name="reference_no" id="modal_reference_no">
+        <input type="hidden" name="task_id" id="modal_task_id">
+        <input type="hidden" name="application_id" id="modal_application_id">
+
+        <div class="alert alert-info" style="margin-bottom:16px;">
+          <i class="fas fa-info-circle"></i> This action will submit the decision to URA EFRIS system.
+        </div>
+
+        <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px;">
+          <div style="display:flex;gap:12px;margin-bottom:6px;font-size:13px;">
+            <span style="color:var(--text-3);width:90px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Ref No</span>
+            <span id="display_reference_no" class="mono" style="font-weight:700;color:var(--text);"></span>
+          </div>
+          <div style="display:flex;gap:12px;font-size:13px;">
+            <span style="color:var(--text-3);width:90px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">App ID</span>
+            <span id="display_application_id" style="font-size:12px;color:var(--text-2);"></span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">Decision *</label>
+          <select class="form-control" name="approve_status" id="modal_approve_status" required>
+            <option value="">Select decision</option>
+            <option value="101">Approve</option>
+            <option value="103">Reject</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Remarks * <span style="font-weight:400;text-transform:none;letter-spacing:0;">(max 1024)</span></label>
+          <textarea class="form-control" name="remark" id="modal_remark" rows="4" required maxlength="1024"
+                    placeholder="Enter approval or rejection remarks..."></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:4px;">
+            <span style="font-size:11px;color:var(--text-3);"><span id="remarkCharCount">0</span> / 1024</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--border);">
+        <button type="button" class="btn btn-ghost" onclick="closeApprovalModal()"><i class="fas fa-times"></i> Cancel</button>
+        <button type="submit" class="btn btn-primary" id="submitApprovalBtn"><i class="fas fa-paper-plane"></i> Submit Decision</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
 <script>
 function showApprovalModal(appId, referenceNo, taskId) {
-    const modal = new bootstrap.Modal(document.getElementById('approvalModal'));
-    const form = document.getElementById('approvalForm');
+  document.getElementById('modal_application_id').value = appId;
+  document.getElementById('modal_reference_no').value = referenceNo || appId;
+  document.getElementById('modal_task_id').value = taskId || '';
+  document.getElementById('display_reference_no').textContent = referenceNo || appId;
+  document.getElementById('display_application_id').textContent = appId;
 
-    document.getElementById('modal_application_id').value = appId;
-    document.getElementById('modal_reference_no').value = referenceNo || appId;
-    document.getElementById('modal_task_id').value = taskId || '';
-    document.getElementById('display_reference_no').textContent = referenceNo || appId;
-    document.getElementById('display_application_id').textContent = appId;
+  if (!taskId || taskId === '' || taskId === 'None') {
+    alert('WARNING: This application is missing a Task ID and may not be approvable.');
+  }
 
-    if (!taskId || taskId === '' || taskId === 'None') {
-        alert('WARNING: This application is missing a Task ID and may not be approvable.');
-    }
+  const langPrefix = window.location.pathname.match(/^\/[a-z]{2}\//)?.[0] || '/';
+  document.getElementById('approvalForm').action = `${langPrefix}efris/credit-notes/approve/${appId}/`;
 
-    const currentPath = window.location.pathname;
-    const langPrefix = currentPath.startsWith('/en/') ? 'en' : null;
-    form.action = langPrefix
-        ? `/${langPrefix}/efris/credit-notes/approve/${appId}/`
-        : `/efris/credit-notes/approve/${appId}/`;
+  document.getElementById('approvalForm').reset();
+  document.getElementById('modal_application_id').value = appId;
+  document.getElementById('modal_reference_no').value = referenceNo || appId;
+  document.getElementById('modal_task_id').value = taskId || '';
+  document.getElementById('remarkCharCount').textContent = '0';
 
-    form.reset();
-    document.getElementById('modal_application_id').value = appId;
-    document.getElementById('modal_reference_no').value = referenceNo || appId;
-    document.getElementById('modal_task_id').value = taskId || '';
-    document.getElementById('remarkCharCount').textContent = '0';
+  const modal = document.getElementById('approvalModal');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
 
-    modal.show();
+function closeApprovalModal() {
+  document.getElementById('approvalModal').style.display = 'none';
+  document.body.style.overflow = '';
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-    const remarkField = document.getElementById('modal_remark');
-    const charCount = document.getElementById('remarkCharCount');
+  const remark = document.getElementById('modal_remark');
+  const count  = document.getElementById('remarkCharCount');
+  if (remark) remark.addEventListener('input', () => count.textContent = remark.value.length);
 
-    if (remarkField && charCount) {
-        remarkField.addEventListener('input', function () {
-            charCount.textContent = remarkField.value.length;
-        });
-    }
+  const form    = document.getElementById('approvalForm');
+  const submitBtn = document.getElementById('submitApprovalBtn');
 
-    const approvalForm = document.getElementById('approvalForm');
-    const submitBtn = document.getElementById('submitApprovalBtn');
+  if (form && submitBtn) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (!form.checkValidity()) { form.reportValidity(); return; }
 
-    if (approvalForm && submitBtn) {
-        approvalForm.addEventListener('submit', function (e) {
-            e.preventDefault();
+      submitBtn.disabled = true;
+      const orig = submitBtn.innerHTML;
+      submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
 
-            if (!approvalForm.checkValidity()) {
-                approvalForm.reportValidity();
-                return;
-            }
-
-            submitBtn.disabled = true;
-            const originalText = submitBtn.innerHTML;
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Submitting...';
-
-            const formData = new FormData(approvalForm);
-            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-
-            fetch(approvalForm.action, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-CSRFToken': csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                credentials: 'same-origin'
-            })
-            .then(response => {
-                const contentType = response.headers.get('content-type');
-                if (contentType && contentType.includes('application/json')) {
-                    return response.json().then(data => ({ ok: response.ok, data }));
-                }
-                return response.text().then(text => ({
-                    ok: false,
-                    data: { error: 'Unexpected response format' }
-                }));
-            })
-            .then(result => {
-                if (result.ok && result.data.success) {
-                    showAlert(result.data.message || 'Application processed successfully', 'success');
-                    bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
-                    setTimeout(() => {
-                        window.location.href = result.data.redirect_url || window.location.href;
-                    }, 1500);
-                } else {
-                    showAlert(result.data.error || 'Unknown error occurred', 'danger');
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = originalText;
-                }
-            })
-            .catch(error => {
-                showAlert('Network error: ' + error.message, 'danger');
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = originalText;
-            });
-        });
-    }
+      fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: { 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value, 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      })
+      .then(r => r.json().then(data => ({ ok: r.ok, data })))
+      .then(result => {
+        if (result.ok && result.data.success) {
+          showAlert(result.data.message || 'Application processed successfully', 'success');
+          closeApprovalModal();
+          setTimeout(() => window.location.href = result.data.redirect_url || window.location.href, 1500);
+        } else {
+          showAlert(result.data.error || 'Unknown error', 'danger');
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = orig;
+        }
+      })
+      .catch(err => {
+        showAlert('Network error: ' + err.message, 'danger');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = orig;
+      });
+    });
+  }
 });
 
 function showAlert(message, type) {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-    alertDiv.innerHTML = `
-        <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i>
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    const container = document.querySelector('.container-fluid');
-    if (container) {
-        container.insertBefore(alertDiv, container.firstChild);
-        setTimeout(() => alertDiv.remove(), 5000);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+  const el = document.createElement('div');
+  el.className = `alert alert-${type}`;
+  el.style.marginBottom = '16px';
+  el.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${message} <button class="alert-dismiss" onclick="this.closest('.alert').remove()">&times;</button>`;
+  const body = document.querySelector('.page-body');
+  if (body) { body.insertBefore(el, body.firstChild); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  setTimeout(() => el.remove(), 5000);
 }
 </script>
 {% endblock %}

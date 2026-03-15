@@ -1,0 +1,678 @@
+{% load static %}
+{#
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  PRIMEBOOKS — Changelog & Announcements                         ║
+  ║                                                                  ║
+  ║  Features:                                                       ║
+  ║  • Version-aware: shows when release > user's last_seen          ║
+  ║  • "Don't show again" (localStorage opt-out)                    ║
+  ║  • Slide resume (picks up from last-seen slide)                 ║
+  ║  • Engagement tracking (POST on dismiss)                        ║
+  ║  • All media types: video, embed, image/GIF, comparison, text   ║
+  ║  • Before/after drag comparison                                 ║
+  ║  • Feature highlight overlay ("Show me" button)                 ║
+  ║  • Announcements banner (separate, urgent notices)              ║
+  ║  • "What's New" reopen button injected into sidebar footer      ║
+  ║                                                                  ║
+  ║  Integration:                                                    ║
+  ║    {% include 'changelog_modal.html' %}  before </body>         ║
+  ║    inside {% if user.is_authenticated %}                         ║
+  ║                                                                  ║
+  ║  Requires context processor: changelog.views.changelog_context  ║
+  ╚══════════════════════════════════════════════════════════════════╝
+#}
+
+{% if changelog_release and changelog_slides and not changelog_opted_out %}
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+    --cl-bg:       rgba(10,13,20,0.82);
+    --cl-surface:  #161b22;
+    --cl-surface2: #21262d;
+    --cl-border:   rgba(255,255,255,0.08);
+    --cl-accent:   #3b82f6;
+    --cl-accent2:  #8b5cf6;
+    --cl-text:     #f0f6fc;
+    --cl-muted:    #8b949e;
+    --cl-success:  #3fb950;
+    --cl-warning:  #f59e0b;
+    --cl-danger:   #ef4444;
+    --cl-radius:   16px;
+    --cl-slide-h:  300px;
+}
+[data-theme="light"] {
+    --cl-bg:       rgba(0,0,0,0.48);
+    --cl-surface:  #ffffff;
+    --cl-surface2: #f6f8fa;
+    --cl-border:   rgba(0,0,0,0.08);
+    --cl-text:     #0d1117;
+    --cl-muted:    #57606a;
+}
+
+/* ════════════════ ANNOUNCEMENTS ════════════════ */
+#clAnnouncements {
+    position: fixed; top: 70px; left: 0; right: 0;
+    z-index: 9990; pointer-events: none;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 0.5rem; padding: 0.75rem 1rem;
+}
+.cl-announcement {
+    pointer-events: auto;
+    display: flex; align-items: flex-start; gap: 0.75rem;
+    max-width: 720px; width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 10px; border: 1px solid transparent;
+    font-family: 'Sora', sans-serif; font-size: 0.82rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+    animation: clSlideDown 0.3s cubic-bezier(0.16,1,0.3,1);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+@keyframes clSlideDown { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
+.cl-ann-info        { background:rgba(59,130,246,0.12);  border-color:rgba(59,130,246,0.25);  color:#93c5fd; }
+.cl-ann-warning     { background:rgba(245,158,11,0.12);  border-color:rgba(245,158,11,0.25);  color:#fcd34d; }
+.cl-ann-maintenance { background:rgba(16,185,129,0.1);   border-color:rgba(16,185,129,0.25);  color:#6ee7b7; }
+.cl-ann-billing     { background:rgba(139,92,246,0.12);  border-color:rgba(139,92,246,0.25);  color:#c4b5fd; }
+.cl-ann-promo       { background:rgba(236,72,153,0.1);   border-color:rgba(236,72,153,0.25);  color:#f9a8d4; }
+.cl-ann-critical    { background:rgba(239,68,68,0.14);   border-color:rgba(239,68,68,0.3);    color:#fca5a5; }
+[data-theme="light"] .cl-ann-info        { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+[data-theme="light"] .cl-ann-warning     { background:#fffbeb; border-color:#fde68a; color:#92400e; }
+[data-theme="light"] .cl-ann-maintenance { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
+[data-theme="light"] .cl-ann-billing     { background:#f5f3ff; border-color:#ddd6fe; color:#5b21b6; }
+[data-theme="light"] .cl-ann-critical    { background:#fef2f2; border-color:#fecaca; color:#991b1b; }
+.cl-ann-icon  { font-size:1rem; flex-shrink:0; margin-top:1px; }
+.cl-ann-body  { flex:1; }
+.cl-ann-title { font-weight:700; margin-bottom:0.2rem; }
+.cl-ann-msg   { opacity:0.85; line-height:1.5; }
+.cl-ann-cta {
+    display:inline-flex; align-items:center; gap:0.3rem;
+    margin-top:0.45rem; padding:0.3rem 0.7rem;
+    background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2);
+    border-radius:6px; font-size:0.75rem; font-weight:600;
+    text-decoration:none; color:inherit; transition:background 0.15s;
+}
+.cl-ann-cta:hover { background:rgba(255,255,255,0.2); color:inherit; }
+[data-theme="light"] .cl-ann-cta { background:rgba(0,0,0,0.06); border-color:rgba(0,0,0,0.12); }
+.cl-ann-dismiss {
+    background:none; border:none; cursor:pointer;
+    color:inherit; opacity:0.5; font-size:1rem;
+    padding:0; line-height:1; flex-shrink:0; transition:opacity 0.15s;
+}
+.cl-ann-dismiss:hover { opacity:1; }
+
+/* ════════════════ BACKDROP ════════════════ */
+#clModal {
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    align-items: center; justify-content: center; padding: 1rem;
+    font-family: 'Sora', sans-serif;
+    background: var(--cl-bg);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+#clModal.open { display: flex; animation: clFadeIn 0.25s ease; }
+@keyframes clFadeIn  { from{opacity:0} to{opacity:1} }
+@keyframes clFadeOut { to{opacity:0} }
+
+/* ════════════════ DIALOG ════════════════ */
+.cl-dialog {
+    background: var(--cl-surface);
+    border: 1px solid var(--cl-border);
+    border-radius: var(--cl-radius);
+    width: 100%; max-width: 640px; max-height: 94vh;
+    overflow: hidden; display: flex; flex-direction: column;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    animation: clSlideUp 0.32s cubic-bezier(0.16,1,0.3,1);
+    position: relative;
+}
+@keyframes clSlideUp {
+    from { opacity:0; transform:translateY(28px) scale(0.97); }
+    to   { opacity:1; transform:translateY(0) scale(1); }
+}
+[data-theme="light"] .cl-dialog {
+    box-shadow: 0 24px 60px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.06);
+}
+
+/* ── Header ── */
+.cl-header {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 1rem 1.25rem 0.875rem;
+    border-bottom: 1px solid var(--cl-border); flex-shrink: 0;
+}
+.cl-badge {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.63rem;
+    font-weight: 500; letter-spacing: 0.07em;
+    background: linear-gradient(135deg, var(--cl-accent), var(--cl-accent2));
+    color: #fff; border-radius: 20px; padding: 0.2rem 0.65rem;
+    text-transform: uppercase; flex-shrink: 0;
+}
+.cl-version-tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.63rem;
+    color: var(--cl-muted); background: var(--cl-surface2);
+    border: 1px solid var(--cl-border); border-radius: 6px;
+    padding: 0.15rem 0.5rem;
+}
+.cl-header-info { flex: 1; }
+.cl-header-title { font-size: 0.82rem; font-weight: 700; color: var(--cl-text); line-height: 1.3; }
+.cl-header-sub   { font-size: 0.72rem; color: var(--cl-muted); margin-top: 0.1rem; }
+.cl-close {
+    background: var(--cl-surface2); border: 1px solid var(--cl-border);
+    color: var(--cl-muted); border-radius: 8px;
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 1.05rem;
+    transition: color 0.15s, background 0.15s; flex-shrink: 0;
+}
+.cl-close:hover { color: var(--cl-text); background: rgba(255,255,255,0.08); }
+[data-theme="light"] .cl-close:hover { background: rgba(0,0,0,0.06); }
+
+/* ── Carousel ── */
+.cl-viewport { position: relative; overflow: hidden; flex: 1; min-height: 0; }
+.cl-track {
+    display: flex; height: 100%;
+    transition: transform 0.38s cubic-bezier(0.4,0,0.2,1);
+    will-change: transform;
+}
+.cl-slide {
+    flex: 0 0 100%; width: 100%;
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+
+/* ── Media ── */
+.cl-media {
+    width: 100%; height: var(--cl-slide-h);
+    flex-shrink: 0; overflow: hidden;
+    position: relative; background: var(--cl-surface2);
+}
+.cl-media img, .cl-media video, .cl-media iframe {
+    width: 100%; height: 100%; object-fit: cover; display: block; border: none;
+}
+.cl-media::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 72px;
+    background: linear-gradient(to top, var(--cl-surface), transparent);
+    pointer-events: none;
+}
+.cl-media-placeholder {
+    width: 100%; height: var(--cl-slide-h); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg, var(--cl-surface2), rgba(59,130,246,0.06));
+}
+.cl-media-placeholder::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+        radial-gradient(circle at 20% 50%, rgba(59,130,246,0.13) 0%, transparent 60%),
+        radial-gradient(circle at 80% 30%, rgba(139,92,246,0.1)  0%, transparent 55%);
+}
+.cl-placeholder-icon { font-size: 3.5rem; opacity: 0.16; position: relative; z-index: 1; color: var(--cl-accent); }
+
+/* ── Before/After ── */
+.cl-comparison {
+    position: relative; width: 100%; height: var(--cl-slide-h);
+    flex-shrink: 0; overflow: hidden;
+    user-select: none; cursor: col-resize; background: var(--cl-surface2);
+}
+.cl-comparison img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.cl-comparison-after { clip-path: inset(0 50% 0 0); }
+.cl-comparison-divider {
+    position: absolute; top: 0; bottom: 0; left: 50%; width: 2px;
+    background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
+    pointer-events: none; z-index: 5; transform: translateX(-50%);
+}
+.cl-comparison-handle {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 36px; height: 36px; background: #fff; border-radius: 50%;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 6; pointer-events: none; font-size: 0.75rem; color: #333; gap: 2px;
+}
+.cl-comparison-label {
+    position: absolute; bottom: 10px;
+    background: rgba(0,0,0,0.55); color: #fff;
+    font-size: 0.68rem; font-weight: 600; padding: 0.2rem 0.55rem;
+    border-radius: 20px; pointer-events: none; z-index: 4;
+    font-family: 'Sora', sans-serif;
+}
+.cl-comparison-label.before { left: 12px; }
+.cl-comparison-label.after  { right: 12px; }
+
+/* ── Body text ── */
+.cl-body { padding: 1.1rem 1.25rem 0.875rem; flex: 1; }
+.cl-slide-tag {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.67rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.45rem;
+}
+.cl-slide-tag.tag-new      { color: var(--cl-accent); }
+.cl-slide-tag.tag-improved { color: var(--cl-accent2); }
+.cl-slide-tag.tag-tip      { color: var(--cl-success); }
+.cl-slide-tag.tag-fixed    { color: var(--cl-warning); }
+.cl-slide-tag.tag-removed  { color: var(--cl-danger);  }
+.cl-slide-title { font-size: 1.05rem; font-weight: 700; color: var(--cl-text); margin-bottom: 0.45rem; line-height: 1.35; }
+.cl-slide-desc  { font-size: 0.835rem; color: var(--cl-muted); line-height: 1.65; }
+.cl-slide-desc strong { color: var(--cl-text); font-weight: 600; }
+.cl-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.7rem; }
+.cl-chip {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    background: var(--cl-surface2); border: 1px solid var(--cl-border);
+    border-radius: 20px; padding: 0.22rem 0.6rem;
+    font-size: 0.71rem; color: var(--cl-muted); font-weight: 500;
+}
+.cl-chip i { font-size: 0.73rem; }
+.cl-show-me {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    margin-top: 0.75rem; padding: 0.45rem 0.9rem;
+    background: transparent; border: 1px solid var(--cl-accent);
+    color: var(--cl-accent); border-radius: 8px;
+    font-size: 0.78rem; font-weight: 600; font-family: 'Sora', sans-serif;
+    cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.cl-show-me:hover { background: rgba(59,130,246,0.1); }
+
+/* ── Footer ── */
+.cl-footer {
+    display: flex; align-items: center; gap: 0.65rem;
+    padding: 0.8rem 1.25rem;
+    border-top: 1px solid var(--cl-border); flex-shrink: 0;
+    background: var(--cl-surface);
+}
+.cl-dots { display: flex; gap: 0.3rem; flex: 1; align-items: center; }
+.cl-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--cl-border); cursor: pointer;
+    transition: background 0.2s, width 0.22s, border-radius 0.22s;
+    border: none; padding: 0; flex-shrink: 0;
+}
+.cl-dot.active { background: var(--cl-accent); width: 18px; border-radius: 3px; }
+.cl-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.67rem; color: var(--cl-muted); flex-shrink: 0; }
+.cl-opt-out { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
+.cl-opt-out input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; accent-color: var(--cl-accent); }
+.cl-opt-out label { font-size: 0.71rem; color: var(--cl-muted); cursor: pointer; white-space: nowrap; }
+.cl-btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.52rem 1rem; border-radius: 8px;
+    font-size: 0.79rem; font-weight: 600; font-family: 'Sora', sans-serif;
+    cursor: pointer; border: 1px solid transparent;
+    transition: all 0.15s; text-decoration: none; white-space: nowrap;
+}
+.cl-btn-ghost { background: transparent; color: var(--cl-muted); border-color: var(--cl-border); }
+.cl-btn-ghost:hover { color: var(--cl-text); border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.04); }
+[data-theme="light"] .cl-btn-ghost:hover { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.15); }
+.cl-btn-primary {
+    background: linear-gradient(135deg, var(--cl-accent), #1d4ed8);
+    color: #fff; box-shadow: 0 2px 10px rgba(59,130,246,0.32);
+}
+.cl-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(59,130,246,0.42); }
+.cl-btn-primary:active { transform: none; }
+
+/* ── Feature Highlight Overlay ── */
+#clHighlightOverlay { display: none; position: fixed; inset: 0; z-index: 10000; pointer-events: none; }
+#clHighlightOverlay.active { display: block; }
+.cl-highlight-cutout {
+    position: absolute;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.65);
+    border-radius: 10px; border: 2px solid var(--cl-accent);
+    pointer-events: none;
+    animation: clPulseOutline 1.5s ease infinite;
+}
+@keyframes clPulseOutline {
+    0%,100% { box-shadow: 0 0 0 9999px rgba(0,0,0,0.65), 0 0 0 0 rgba(59,130,246,0.6); }
+    50%      { box-shadow: 0 0 0 9999px rgba(0,0,0,0.65), 0 0 0 8px rgba(59,130,246,0); }
+}
+.cl-highlight-tooltip {
+    position: absolute; background: var(--cl-surface);
+    border: 1px solid var(--cl-border); border-radius: 10px;
+    padding: 0.65rem 0.9rem; font-family: 'Sora', sans-serif;
+    font-size: 0.78rem; color: var(--cl-text); max-width: 220px; line-height: 1.5;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4); pointer-events: auto;
+}
+.cl-highlight-dismiss {
+    display: block; margin-top: 0.5rem;
+    background: var(--cl-accent); color: #fff; border: none; border-radius: 6px;
+    padding: 0.35rem 0.75rem; font-size: 0.73rem; font-weight: 600;
+    font-family: 'Sora', sans-serif; cursor: pointer; width: 100%;
+    transition: opacity 0.15s;
+}
+.cl-highlight-dismiss:hover { opacity: 0.9; }
+
+/* ── What's New reopen button ── */
+.cl-whats-new-btn {
+    display: flex; align-items: center; gap: 0.55rem;
+    padding: 0.5rem 0.75rem; margin: 0.25rem 0.5rem 0.5rem;
+    border: 1px solid var(--border-color, rgba(255,255,255,0.08));
+    border-radius: 8px; background: transparent;
+    color: var(--text-muted, #8b949e);
+    font-size: 0.78rem; font-weight: 500;
+    cursor: pointer; width: calc(100% - 1rem); text-align: left;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    font-family: 'Sora', sans-serif; position: relative;
+}
+.cl-whats-new-btn:hover { background: rgba(59,130,246,0.06); color: #3b82f6; border-color: rgba(59,130,246,0.3); }
+.cl-whats-new-btn .cl-new-dot {
+    position: absolute; top: 7px; right: 10px;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.3);
+    animation: clDotPulse 2s ease infinite;
+}
+@keyframes clDotPulse {
+    0%,100% { box-shadow: 0 0 0 2px rgba(59,130,246,0.3); }
+    50%      { box-shadow: 0 0 0 5px rgba(59,130,246,0); }
+}
+
+@media (max-width: 480px) {
+    :root { --cl-slide-h: 210px; }
+    .cl-dialog { border-radius: 12px; max-height: 96vh; }
+    .cl-slide-title { font-size: 0.95rem; }
+    .cl-btn { padding: 0.48rem 0.8rem; font-size: 0.75rem; }
+    .cl-opt-out label { display: none; }
+    #clAnnouncements { top: 60px; padding: 0.5rem; }
+}
+</style>
+
+<!-- ══════════ ANNOUNCEMENTS BANNER ══════════ -->
+{% if active_announcements %}
+<div id="clAnnouncements">
+    {% for ann in active_announcements %}
+    <div class="cl-announcement cl-ann-{{ ann.type }}" data-ann-id="{{ ann.id }}">
+        <i class="bi {% if ann.type == 'info' %}bi-info-circle{% elif ann.type == 'warning' %}bi-exclamation-triangle{% elif ann.type == 'maintenance' %}bi-tools{% elif ann.type == 'billing' %}bi-credit-card{% elif ann.type == 'promo' %}bi-stars{% else %}bi-shield-exclamation{% endif %} cl-ann-icon"></i>
+        <div class="cl-ann-body">
+            <div class="cl-ann-title">{{ ann.title }}</div>
+            <div class="cl-ann-msg">{{ ann.message }}</div>
+            {% if ann.action_text and ann.action_url %}
+            <a href="{{ ann.action_url }}" class="cl-ann-cta">{{ ann.action_text }} <i class="bi bi-arrow-right"></i></a>
+            {% endif %}
+        </div>
+        {% if ann.is_dismissible %}
+        <button class="cl-ann-dismiss" onclick="clDismissAnnouncement({{ ann.id }}, this)" aria-label="Dismiss">
+            <i class="bi bi-x"></i>
+        </button>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- ══════════ CHANGELOG MODAL ══════════ -->
+<div id="clModal" role="dialog" aria-modal="true" aria-labelledby="clModalHeading">
+    <div class="cl-dialog">
+
+        <!-- Header -->
+        <div class="cl-header">
+            <span class="cl-badge">✦ What's New</span>
+            <span class="cl-version-tag">{{ changelog_release.version_tag }}</span>
+            <div class="cl-header-info">
+                <div class="cl-header-title" id="clModalHeading">{{ changelog_release.title }}</div>
+                <div class="cl-header-sub">{{ changelog_release.subtitle }}</div>
+            </div>
+            <button class="cl-close" id="clClose" aria-label="Dismiss"><i class="bi bi-x"></i></button>
+        </div>
+
+        <!-- Carousel -->
+        <div class="cl-viewport">
+            <div class="cl-track" id="clTrack">
+                {% for slide in changelog_slides %}
+                <div class="cl-slide" data-slide-id="{{ slide.id }}" data-index="{{ forloop.counter0 }}">
+
+                    {% if slide.media_type == 'image' and slide.media_url %}
+                    <div class="cl-media">
+                        <img src="{{ slide.media_url }}" alt="{{ slide.media_alt }}" loading="lazy">
+                    </div>
+                    {% elif slide.media_type == 'video' and slide.media_url %}
+                    <div class="cl-media">
+                        <video autoplay muted loop playsinline {% if slide.media_poster %}poster="{{ slide.media_poster }}"{% endif %}>
+                            <source src="{{ slide.media_url }}" type="video/mp4">
+                        </video>
+                    </div>
+                    {% elif slide.media_type == 'embed' and slide.media_url %}
+                    <div class="cl-media">
+                        <iframe src="{{ slide.media_url }}" allowfullscreen allow="autoplay; encrypted-media" loading="lazy"></iframe>
+                    </div>
+                    {% elif slide.media_type == 'comparison' and slide.before_image and slide.after_image %}
+                    <div class="cl-comparison" data-comparison>
+                        <img class="cl-comparison-before" src="{{ slide.before_image }}" alt="Before" draggable="false">
+                        <img class="cl-comparison-after"  src="{{ slide.after_image }}"  alt="After"  draggable="false">
+                        <div class="cl-comparison-divider"></div>
+                        <div class="cl-comparison-handle"><i class="bi bi-chevron-left"></i><i class="bi bi-chevron-right"></i></div>
+                        <span class="cl-comparison-label before">Before</span>
+                        <span class="cl-comparison-label after">After</span>
+                    </div>
+                    {% else %}
+                    <div class="cl-media-placeholder">
+                        <i class="bi {% if slide.tag == 'tip' %}bi-lightbulb{% elif slide.tag == 'improved' %}bi-graph-up-arrow{% elif slide.tag == 'fixed' %}bi-bug{% else %}bi-stars{% endif %} cl-placeholder-icon"></i>
+                    </div>
+                    {% endif %}
+
+                    <div class="cl-body">
+                        <div class="cl-slide-tag tag-{{ slide.tag }}">
+                            <i class="bi {% if slide.tag == 'new' %}bi-stars{% elif slide.tag == 'improved' %}bi-graph-up-arrow{% elif slide.tag == 'tip' %}bi-lightbulb{% elif slide.tag == 'fixed' %}bi-bug-fill{% elif slide.tag == 'removed' %}bi-trash3{% endif %}"></i>
+                            {{ slide.tag_display }}
+                        </div>
+                        <div class="cl-slide-title">{{ slide.title }}</div>
+                        <div class="cl-slide-desc">{{ slide.description|safe }}</div>
+                        {% if slide.chips %}
+                        <div class="cl-chips">
+                            {% for chip in slide.chips %}
+                            <span class="cl-chip">{% if chip.icon %}<i class="bi {{ chip.icon }}"></i>{% endif %} {{ chip.label }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        {% if slide.highlight_selector %}
+                        <button class="cl-show-me" data-selector="{{ slide.highlight_selector }}" data-label="{{ slide.highlight_label|default:'Here it is!' }}">
+                            <i class="bi bi-cursor"></i> {% if slide.highlight_label %}{{ slide.highlight_label }}{% else %}Show me{% endif %}
+                        </button>
+                        {% endif %}
+                    </div>
+
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="cl-footer">
+            <div class="cl-dots" id="clDots" role="tablist" aria-label="Slide navigation"></div>
+            <span class="cl-counter" id="clCounter"></span>
+            <div class="cl-opt-out">
+                <input type="checkbox" id="clOptOut" name="clOptOut">
+                <label for="clOptOut">Don't show again</label>
+            </div>
+            <button class="cl-btn cl-btn-ghost" id="clPrev" aria-label="Previous"><i class="bi bi-arrow-left"></i></button>
+            <button class="cl-btn cl-btn-primary" id="clNext">Next <i class="bi bi-arrow-right"></i></button>
+        </div>
+    </div>
+</div>
+
+<!-- Feature Highlight Overlay -->
+<div id="clHighlightOverlay">
+    <div class="cl-highlight-cutout" id="clHighlightCutout"></div>
+    <div class="cl-highlight-tooltip" id="clHighlightTooltip">
+        <span id="clHighlightLabel"></span>
+        <button class="cl-highlight-dismiss" onclick="clHideHighlight()"><i class="bi bi-check-lg"></i> Got it</button>
+    </div>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+const RELEASE_ID  = {{ changelog_release.id }};
+const VERSION_TAG = '{{ changelog_release.version_tag }}';
+const TOTAL       = {{ changelog_slides|length }};
+const DISMISS_URL = '{% url "changelog_dismiss" %}';
+const OPT_OUT_KEY = 'pb_cl_optout_' + VERSION_TAG;
+const RESUME_KEY  = 'pb_cl_resume_' + VERSION_TAG;
+const CSRF        = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+const modal    = document.getElementById('clModal');
+const track    = document.getElementById('clTrack');
+const dotsEl   = document.getElementById('clDots');
+const counter  = document.getElementById('clCounter');
+const btnPrev  = document.getElementById('clPrev');
+const btnNext  = document.getElementById('clNext');
+const btnClose = document.getElementById('clClose');
+const chkOptOut= document.getElementById('clOptOut');
+
+let current = 0;
+let maxSeen  = 0;
+
+// Build dots
+for (let i = 0; i < TOTAL; i++) {
+    const d = document.createElement('button');
+    d.className = 'cl-dot' + (i === 0 ? ' active' : '');
+    d.setAttribute('aria-label', 'Slide ' + (i + 1));
+    d.setAttribute('role', 'tab');
+    d.addEventListener('click', () => goTo(i));
+    dotsEl.appendChild(d);
+}
+
+function goTo(index) {
+    current = Math.max(0, Math.min(TOTAL - 1, index));
+    if (current > maxSeen) maxSeen = current;
+    track.style.transform = `translateX(-${current * 100}%)`;
+    counter.textContent   = `${current + 1} / ${TOTAL}`;
+    try { sessionStorage.setItem(RESUME_KEY, current); } catch(e) {}
+    dotsEl.querySelectorAll('.cl-dot').forEach((d, i) => d.classList.toggle('active', i === current));
+    btnPrev.style.visibility = current === 0 ? 'hidden' : 'visible';
+    btnNext.innerHTML = current === TOTAL - 1
+        ? 'Got it <i class="bi bi-check-lg"></i>'
+        : 'Next <i class="bi bi-arrow-right"></i>';
+    initComparisonsOnSlide(current);
+}
+
+btnPrev.addEventListener('click', () => goTo(current - 1));
+btnNext.addEventListener('click', () => { if (current === TOTAL - 1) dismiss(); else goTo(current + 1); });
+
+function dismiss() {
+    const optedOut = chkOptOut.checked;
+    if (optedOut) { try { localStorage.setItem(OPT_OUT_KEY, '1'); } catch(e) {} }
+    fetch(DISMISS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({ release_id: RELEASE_ID, last_slide: maxSeen, opted_out: optedOut }),
+        keepalive: true,
+    }).catch(() => {});
+    modal.style.animation = 'clFadeOut 0.2s ease forwards';
+    setTimeout(() => { modal.classList.remove('open'); modal.style.animation = ''; showReopenButton(); }, 200);
+}
+
+btnClose.addEventListener('click', dismiss);
+modal.addEventListener('click', e => { if (e.target === modal) dismiss(); });
+document.addEventListener('keydown', e => {
+    if (!modal.classList.contains('open')) return;
+    if (e.key === 'Escape') dismiss();
+    if (e.key === 'ArrowRight') goTo(current + 1);
+    if (e.key === 'ArrowLeft')  goTo(current - 1);
+});
+
+// Touch swipe
+let touchX = 0;
+track.addEventListener('touchstart', e => { touchX = e.changedTouches[0].clientX; }, { passive: true });
+track.addEventListener('touchend',   e => { const dx = e.changedTouches[0].clientX - touchX; if (Math.abs(dx) > 44) goTo(current + (dx < 0 ? 1 : -1)); }, { passive: true });
+
+// Before/After comparison
+function initComparisonsOnSlide(si) {
+    const slide = track.querySelectorAll('.cl-slide')[si];
+    if (!slide) return;
+    const comp = slide.querySelector('[data-comparison]');
+    if (!comp || comp._init) return;
+    comp._init = true;
+    const after    = comp.querySelector('.cl-comparison-after');
+    const divider  = comp.querySelector('.cl-comparison-divider');
+    const handle   = comp.querySelector('.cl-comparison-handle');
+    function setPos(cx) {
+        const r = comp.getBoundingClientRect();
+        let p = Math.max(2, Math.min(98, ((cx - r.left) / r.width) * 100));
+        after.style.clipPath = `inset(0 ${100 - p}% 0 0)`;
+        divider.style.left = handle.style.left = p + '%';
+    }
+    let drag = false;
+    comp.addEventListener('mousedown', () => drag = true);
+    window.addEventListener('mouseup',   () => drag = false);
+    window.addEventListener('mousemove', e => { if (drag) setPos(e.clientX); });
+    comp.addEventListener('click', e => setPos(e.clientX));
+    comp.addEventListener('touchmove', e => { e.preventDefault(); setPos(e.touches[0].clientX); }, { passive: false });
+}
+
+// Feature highlight
+const overlay  = document.getElementById('clHighlightOverlay');
+const cutout   = document.getElementById('clHighlightCutout');
+const tooltip  = document.getElementById('clHighlightTooltip');
+const ttLabel  = document.getElementById('clHighlightLabel');
+
+document.querySelectorAll('.cl-show-me').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const el = document.querySelector(btn.dataset.selector);
+        if (!el) { alert('Navigate to the feature first to highlight it.'); return; }
+        dismiss();
+        setTimeout(() => {
+            const rect = el.getBoundingClientRect();
+            const pad  = 8;
+            cutout.style.cssText  = `top:${rect.top - pad + window.scrollY}px;left:${rect.left - pad}px;width:${rect.width + pad*2}px;height:${rect.height + pad*2}px;`;
+            ttLabel.textContent   = btn.dataset.label;
+            tooltip.style.cssText = `top:${rect.bottom + pad + 12 + window.scrollY}px;left:${Math.max(8, rect.left - 8)}px;`;
+            overlay.classList.add('active');
+            overlay.style.pointerEvents = 'auto';
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 260);
+    });
+});
+
+window.clHideHighlight = function() {
+    overlay.classList.remove('active');
+    overlay.style.pointerEvents = 'none';
+};
+overlay.addEventListener('click', e => { if (e.target === overlay) clHideHighlight(); });
+
+// What's New reopen button
+function showReopenButton() {
+    const footer = document.querySelector('.nav-footer');
+    if (!footer || document.getElementById('clReopenBtn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'clReopenBtn';
+    btn.className = 'cl-whats-new-btn';
+    btn.innerHTML = '<i class="bi bi-stars"></i><span>What\'s New</span><span class="cl-new-dot"></span>';
+    btn.addEventListener('click', reopen);
+    footer.insertBefore(btn, footer.firstChild);
+}
+
+function reopen() {
+    goTo(0);
+    modal.classList.add('open');
+    setTimeout(() => btnClose.focus(), 300);
+    const dot = document.querySelector('#clReopenBtn .cl-new-dot');
+    if (dot) dot.remove();
+}
+
+window.clOpenChangelog = reopen;
+
+// Announcement dismiss
+window.clDismissAnnouncement = function(id, triggerEl) {
+    const card = triggerEl.closest('.cl-announcement');
+    if (card) { card.style.transition = 'opacity 0.2s,transform 0.2s'; card.style.opacity = '0'; card.style.transform = 'translateY(-6px)'; setTimeout(() => card.remove(), 200); }
+    fetch(`/announcements/${id}/dismiss/`, { method: 'POST', headers: { 'X-CSRFToken': CSRF }, keepalive: true }).catch(() => {});
+};
+
+// Init
+function init() {
+    try { if (localStorage.getItem(OPT_OUT_KEY)) { showReopenButton(); return; } } catch(e) {}
+    let start = {{ changelog_resume_slide|default:0 }};
+    try { const s = parseInt(sessionStorage.getItem(RESUME_KEY) || ''); if (!isNaN(s)) start = s; } catch(e) {}
+    goTo(start);
+    modal.classList.add('open');
+    setTimeout(() => btnClose.focus(), 340);
+}
+
+const s = document.createElement('style');
+s.textContent = '@keyframes clFadeOut{to{opacity:0}}';
+document.head.appendChild(s);
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(init, 600));
+else setTimeout(init, 600);
+
+})();
+</script>
+
+{% endif %}

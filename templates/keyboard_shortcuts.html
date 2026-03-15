@@ -1,0 +1,329 @@
+{% load static %}
+
+{% if user.is_authenticated %}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+/* ── Shortcuts overlay ── */
+#pbShortcutsOverlay {
+    display: none; position: fixed; inset: 0; z-index: 9600;
+    align-items: center; justify-content: center; padding: 1rem;
+    background: rgba(15,23,42,0.75);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+#pbShortcutsOverlay.open { display: flex; animation: scFade 0.2s ease; }
+@keyframes scFade { from{opacity:0}to{opacity:1} }
+
+.sc-dialog {
+    background: var(--bg-primary, #fff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 16px;
+    width: 100%; max-width: 640px; max-height: 88vh;
+    overflow: hidden; display: flex; flex-direction: column;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.3);
+    animation: scSlide 0.28s cubic-bezier(0.16,1,0.3,1);
+}
+@keyframes scSlide { from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1} }
+[data-theme="dark"] .sc-dialog { background:#0f172a; border-color:rgba(255,255,255,0.08); box-shadow:0 32px 80px rgba(0,0,0,0.6); }
+
+.sc-header {
+    display: flex; align-items: center; padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    flex-shrink: 0;
+}
+[data-theme="dark"] .sc-header { border-color: rgba(255,255,255,0.08); }
+.sc-header-title { font-size: 0.9rem; font-weight: 700; color: var(--text-primary, #0f172a); flex: 1; display: flex; align-items: center; gap: 0.5rem; }
+[data-theme="dark"] .sc-header-title { color: #f1f5f9; }
+.sc-header-badge {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.62rem;
+    background: rgba(99,102,241,0.1); color: #6366f1;
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 6px; padding: 0.15rem 0.5rem;
+}
+.sc-close {
+    background: var(--bg-secondary, #f9fafb); border: 1px solid var(--border-color, #e5e7eb);
+    color: var(--text-muted, #6b7280); border-radius: 8px;
+    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 1rem; transition: all 0.15s;
+}
+.sc-close:hover { color: var(--text-primary, #0f172a); }
+[data-theme="dark"] .sc-close { background:#1e293b; border-color:rgba(255,255,255,0.08); color:#94a3b8; }
+[data-theme="dark"] .sc-close:hover { color:#f1f5f9; }
+
+.sc-body { overflow-y: auto; padding: 1rem 1.5rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+@media (max-width: 520px) { .sc-body { grid-template-columns: 1fr; } }
+
+.sc-group-title {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-muted, #6b7280);
+    margin-bottom: 0.5rem; padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+[data-theme="dark"] .sc-group-title { border-color:rgba(255,255,255,0.08); color:#64748b; }
+
+.sc-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.3rem 0; gap: 0.5rem;
+}
+.sc-row-label { font-size: 0.8rem; color: var(--text-secondary, #374151); }
+[data-theme="dark"] .sc-row-label { color: #cbd5e1; }
+.sc-keys { display: flex; align-items: center; gap: 0.25rem; flex-shrink: 0; }
+.sc-key {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; font-weight: 600;
+    background: var(--bg-secondary, #f9fafb);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-bottom: 2px solid var(--border-color, #e5e7eb);
+    border-radius: 5px; padding: 0.18rem 0.5rem;
+    color: var(--text-primary, #0f172a);
+    box-shadow: 0 1px 0 rgba(0,0,0,0.05);
+}
+[data-theme="dark"] .sc-key { background:#1e293b; border-color:rgba(255,255,255,0.12); color:#e2e8f0; }
+.sc-then {
+    font-size: 0.6rem; color: var(--text-muted, #9ca3af);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* ── Sequence indicator (G, then...) ── */
+#pbSeqIndicator {
+    position: fixed; bottom: 5.5rem; right: 2rem; z-index: 9900;
+    background: rgba(15,23,42,0.9); color: #f1f5f9;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 600;
+    padding: 0.45rem 0.875rem; border-radius: 8px;
+    border: 1px solid rgba(99,102,241,0.4);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    display: none; align-items: center; gap: 0.5rem;
+    animation: scFade 0.15s ease;
+}
+#pbSeqIndicator.show { display: flex; }
+[data-theme="light"] #pbSeqIndicator { background: rgba(15,23,42,0.85); }
+</style>
+
+<!-- Shortcuts overlay -->
+<div id="pbShortcutsOverlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+    <div class="sc-dialog">
+        <div class="sc-header">
+            <div class="sc-header-title">
+                <i class="bi bi-keyboard"></i> Keyboard Shortcuts
+                <span class="sc-header-badge">Press ? anytime</span>
+            </div>
+            <button class="sc-close" id="scClose" aria-label="Close"><i class="bi bi-x"></i></button>
+        </div>
+        <div class="sc-body">
+            <!-- Navigation -->
+            <div>
+                <div class="sc-group-title">Navigate (G then…)</div>
+                <div class="sc-row"><span class="sc-row-label">Dashboard</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">D</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Invoices</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">I</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Products</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">P</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Reports</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">R</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Users</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">U</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Settings</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">S</span></div></div>
+            </div>
+            <!-- Quick create -->
+            <div>
+                <div class="sc-group-title">Quick Create (C then…)</div>
+                <div class="sc-row"><span class="sc-row-label">New Invoice</span><div class="sc-keys"><span class="sc-key">C</span><span class="sc-then">then</span><span class="sc-key">I</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">New Product</span><div class="sc-keys"><span class="sc-key">C</span><span class="sc-then">then</span><span class="sc-key">P</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">New User</span><div class="sc-keys"><span class="sc-key">C</span><span class="sc-then">then</span><span class="sc-key">U</span></div></div>
+            </div>
+            <!-- UI -->
+            <div>
+                <div class="sc-group-title">Interface</div>
+                <div class="sc-row"><span class="sc-row-label">Command palette</span><div class="sc-keys"><span class="sc-key">⌘</span><span class="sc-key">K</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Focus search</span><div class="sc-keys"><span class="sc-key">/</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Toggle sidebar</span><div class="sc-keys"><span class="sc-key">[</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Toggle theme</span><div class="sc-keys"><span class="sc-key">⌘</span><span class="sc-key">⇧</span><span class="sc-key">L</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">This overlay</span><div class="sc-keys"><span class="sc-key">?</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Close / Cancel</span><div class="sc-keys"><span class="sc-key">ESC</span></div></div>
+            </div>
+            <!-- Table -->
+            <div>
+                <div class="sc-group-title">Table Rows (when row focused)</div>
+                <div class="sc-row"><span class="sc-row-label">Open / View</span><div class="sc-keys"><span class="sc-key">↵ Enter</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Edit row</span><div class="sc-keys"><span class="sc-key">E</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Delete row</span><div class="sc-keys"><span class="sc-key">Del</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Next row</span><div class="sc-keys"><span class="sc-key">↓</span></div></div>
+                <div class="sc-row"><span class="sc-row-label">Prev row</span><div class="sc-keys"><span class="sc-key">↑</span></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sequence indicator (shows G→ waiting for next key) -->
+<div id="pbSeqIndicator">
+    <i class="bi bi-keyboard"></i>
+    <span id="pbSeqText">G</span>
+    <span style="opacity:0.5;font-size:0.65rem">→ then…</span>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+const overlay    = document.getElementById('pbShortcutsOverlay');
+const seqIndicator = document.getElementById('pbSeqIndicator');
+const seqText    = document.getElementById('pbSeqText');
+
+// Sequence state
+let seqKey = null;
+let seqTimer = null;
+
+function clearSeq() {
+    seqKey = null;
+    clearTimeout(seqTimer);
+    seqIndicator.classList.remove('show');
+}
+
+function startSeq(key) {
+    seqKey = key;
+    seqText.textContent = key.toUpperCase();
+    seqIndicator.classList.add('show');
+    seqTimer = setTimeout(clearSeq, 1500);
+}
+
+// Navigation map
+const GO_MAP = {
+    d: '{% url "user_dashboard" %}',
+    i: '{% url "sales:sales_list" %}',
+    p: '{% url "inventory:product_list" %}',
+    r: '{% url "suggestions:report_my_reports" %}',
+    u: '{% url "user_list" %}',
+    s: '/settings/',  {# no settings url name available — update when known #}
+};
+const CREATE_MAP = {
+    i: '{% url "sales:create_sale" %}',
+    p: '{% url "inventory:product_create" %}',
+    u: '{% url "user_create" %}',
+};
+
+document.addEventListener('keydown', e => {
+    const tag  = document.activeElement?.tagName;
+    const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
+
+    // Never trigger shortcuts inside inputs (except ESC)
+    if (isInput && e.key !== 'Escape') return;
+
+    // ESC — close any open overlay
+    if (e.key === 'Escape') {
+        if (overlay.classList.contains('open')) { showOverlay(false); clearSeq(); }
+        clearSeq();
+        return;
+    }
+
+    // ? — toggle shortcuts overlay
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        overlay.classList.contains('open') ? showOverlay(false) : showOverlay(true);
+        return;
+    }
+
+    // [ — toggle sidebar
+    if (e.key === '[' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        document.getElementById('sidebarToggle')?.click();
+        return;
+    }
+
+    // ⌘⇧L — toggle theme
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        document.getElementById('themeToggle')?.click();
+        return;
+    }
+
+    const key = e.key.toLowerCase();
+
+    // Sequence: G then letter
+    if (seqKey === 'g') {
+        clearSeq();
+        if (GO_MAP[key]) {
+            e.preventDefault();
+            window.location.href = GO_MAP[key];
+        }
+        return;
+    }
+
+    // Sequence: C then letter
+    if (seqKey === 'c') {
+        clearSeq();
+        if (CREATE_MAP[key]) {
+            e.preventDefault();
+            window.location.href = CREATE_MAP[key];
+        }
+        return;
+    }
+
+    // Start sequences
+    if (key === 'g' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); startSeq('g'); return; }
+    if (key === 'c' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); startSeq('c'); return; }
+});
+
+// ── Table row shortcuts ────────────────────────────────────────
+// Works on any <tr> with data-shortcut-edit, data-shortcut-delete, data-shortcut-url attributes
+function initTableShortcuts() {
+    document.querySelectorAll('table tbody tr[data-shortcut-url], table tbody tr[data-shortcut-edit]').forEach(row => {
+        row.setAttribute('tabindex', '0');
+        row.style.cursor = 'pointer';
+
+        row.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const url = row.dataset.shortcutUrl;
+                if (url) window.location.href = url;
+            }
+            if (e.key === 'e' || e.key === 'E') {
+                const url = row.dataset.shortcutEdit;
+                if (url) window.location.href = url;
+            }
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                const url = row.dataset.shortcutDelete;
+                if (url && confirm('Delete this item?')) window.location.href = url;
+            }
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const next = row.nextElementSibling;
+                if (next) next.focus();
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prev = row.previousElementSibling;
+                if (prev) prev.focus();
+            }
+        });
+
+        row.addEventListener('click', () => {
+            const url = row.dataset.shortcutUrl;
+            if (url) window.location.href = url;
+        });
+    });
+}
+
+// ── Overlay helpers ───────────────────────────────────────────
+function showOverlay(show) {
+    overlay.classList.toggle('open', show);
+    if (show) document.getElementById('scClose').focus();
+}
+
+document.getElementById('scClose').addEventListener('click', () => showOverlay(false));
+overlay.addEventListener('click', e => { if (e.target === overlay) showOverlay(false); });
+
+// ── Public API ────────────────────────────────────────────────
+window.PBShortcuts = {
+    showOverlay: () => showOverlay(true),
+    initTableShortcuts,
+};
+
+// Auto-init tables
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTableShortcuts);
+} else {
+    initTableShortcuts();
+}
+
+// Re-init on HTMX/AJAX swaps if applicable
+document.addEventListener('htmx:afterSwap', initTableShortcuts);
+
+})();
+</script>
+{% endif %}

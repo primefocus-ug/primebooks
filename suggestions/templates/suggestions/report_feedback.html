@@ -1,0 +1,288 @@
+{% load static %}
+{#
+  ╔══════════════════════════════════════════════════════════════╗
+  ║  PRIMEBOOKS — Report Resolution Feedback                    ║
+  ║                                                              ║
+  ║  Two components:                                             ║
+  ║  1. In-app prompt: shown when user views a resolved ticket  ║
+  ║     Include in report_detail.html / my_reports.html         ║
+  ║  2. Email feedback token view (suggestions/feedback/<token>/)║
+  ║     Handles thumb up/down from resolution email             ║
+  ║                                                              ║
+  ║  Django model: SuggestionFeedback (add to models.py)        ║
+  ║  View:         submit_feedback in views.py                  ║
+  ║  URL:          suggestions/<ticket>/feedback/               ║
+  ║                                                              ║
+  ║  Integration:                                                ║
+  ║    {% include 'suggestions/report_feedback.html' %}         ║
+  ║    in report_detail.html when report.status == 'resolved'   ║
+  ╚══════════════════════════════════════════════════════════════╝
+#}
+
+{% if report.status == 'resolved' %}
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+.pb-feedback-card {
+    background: var(--bg-primary, #fff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 14px; margin: 1.5rem 0;
+    overflow: hidden;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+}
+[data-theme="dark"] .pb-feedback-card {
+    background: #0f172a; border-color: rgba(255,255,255,0.08);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+}
+.pb-feedback-header {
+    background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(5,150,105,0.04));
+    border-bottom: 1px solid rgba(16,185,129,0.15);
+    padding: 1rem 1.25rem;
+    display: flex; align-items: center; gap: 0.75rem;
+}
+.pb-feedback-icon {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(16,185,129,0.12); color: #10b981;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; flex-shrink: 0;
+}
+.pb-feedback-header-title { font-size: 0.875rem; font-weight: 700; color: var(--text-primary, #111827); }
+[data-theme="dark"] .pb-feedback-header-title { color: #f1f5f9; }
+.pb-feedback-header-sub  { font-size: 0.72rem; color: var(--text-muted, #6b7280); margin-top: 0.1rem; }
+
+.pb-feedback-body { padding: 1.25rem; }
+
+/* Resolution question */
+.pb-resolved-q { font-size: 0.875rem; font-weight: 600; color: var(--text-primary, #111827); margin-bottom: 0.75rem; }
+[data-theme="dark"] .pb-resolved-q { color: #e2e8f0; }
+.pb-resolved-btns { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; }
+.pb-resolved-btn {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    padding: 0.55rem 1rem; border-radius: 10px;
+    border: 1.5px solid var(--border-color, #e5e7eb);
+    background: transparent; cursor: pointer; font-size: 0.835rem; font-weight: 600;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    color: var(--text-secondary, #4b5563);
+    transition: all 0.15s;
+}
+[data-theme="dark"] .pb-resolved-btn { border-color:rgba(255,255,255,0.1); color:#94a3b8; }
+.pb-resolved-btn:hover { border-color: var(--primary-500, #3b82f6); color: var(--primary-600, #2563eb); }
+.pb-resolved-btn.yes.selected { background: rgba(16,185,129,0.1); border-color: #10b981; color: #059669; }
+.pb-resolved-btn.no.selected  { background: rgba(239,68,68,0.08);  border-color: #ef4444; color: #dc2626; }
+[data-theme="dark"] .pb-resolved-btn.yes.selected { color: #34d399; }
+[data-theme="dark"] .pb-resolved-btn.no.selected  { color: #f87171; }
+
+/* Star rating */
+.pb-rating-label { font-size: 0.8rem; color: var(--text-muted, #6b7280); margin-bottom: 0.4rem; }
+.pb-stars { display: flex; gap: 0.25rem; margin-bottom: 1.1rem; }
+.pb-star {
+    font-size: 1.5rem; cursor: pointer; color: var(--border-color, #d1d5db);
+    transition: color 0.12s, transform 0.12s;
+    background: none; border: none; padding: 0; line-height: 1;
+}
+.pb-star:hover, .pb-star.lit { color: #f59e0b; transform: scale(1.15); }
+.pb-star:hover ~ .pb-star { color: var(--border-color, #d1d5db); transform: scale(1); }
+
+/* Comment */
+.pb-feedback-comment {
+    width: 100%; padding: 0.65rem 0.875rem;
+    background: var(--bg-secondary, #f9fafb);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 8px; resize: vertical; min-height: 75px;
+    font-size: 0.835rem; color: var(--text-primary, #111827);
+    font-family: 'Plus Jakarta Sans', sans-serif; outline: none;
+    transition: border-color 0.15s;
+    margin-bottom: 1rem;
+    box-sizing: border-box;
+}
+[data-theme="dark"] .pb-feedback-comment { background:#1e293b; border-color:rgba(255,255,255,0.08); color:#f1f5f9; }
+.pb-feedback-comment:focus { border-color: var(--primary-500, #3b82f6); }
+.pb-feedback-comment::placeholder { color: var(--text-muted, #9ca3af); }
+
+.pb-feedback-submit {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.6rem 1.25rem; border-radius: 10px;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #fff; border: none; font-size: 0.845rem; font-weight: 700;
+    font-family: 'Plus Jakarta Sans', sans-serif; cursor: pointer;
+    box-shadow: 0 2px 10px rgba(16,185,129,0.3);
+    transition: all 0.15s;
+}
+.pb-feedback-submit:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(16,185,129,0.4); }
+.pb-feedback-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+/* Submitted state */
+.pb-feedback-done {
+    display: none; flex-direction: column; align-items: center;
+    padding: 1.5rem; text-align: center; gap: 0.6rem;
+}
+.pb-feedback-done.show { display: flex; animation: fbFadeIn 0.3s ease; }
+@keyframes fbFadeIn { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)} }
+.pb-feedback-done-icon {
+    width: 52px; height: 52px; border-radius: 50%;
+    background: rgba(16,185,129,0.12); color: #10b981;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem;
+}
+.pb-feedback-done-title { font-size: 0.95rem; font-weight: 700; color: var(--text-primary, #111827); }
+[data-theme="dark"] .pb-feedback-done-title { color: #f1f5f9; }
+.pb-feedback-done-sub   { font-size: 0.8rem; color: var(--text-muted, #6b7280); }
+
+/* Already submitted state */
+.pb-feedback-already {
+    padding: 1rem 1.25rem; display: flex; align-items: center; gap: 0.75rem;
+    background: rgba(16,185,129,0.06); border-top: 1px solid rgba(16,185,129,0.12);
+    font-size: 0.8rem; color: #059669;
+}
+[data-theme="dark"] .pb-feedback-already { color: #34d399; }
+.pb-feedback-already i { font-size: 1rem; flex-shrink: 0; }
+</style>
+
+{% if report.feedback %}
+{# Already submitted — show summary #}
+<div class="pb-feedback-card">
+    <div class="pb-feedback-header">
+        <div class="pb-feedback-icon"><i class="bi bi-chat-heart"></i></div>
+        <div>
+            <div class="pb-feedback-header-title">Feedback Submitted</div>
+            <div class="pb-feedback-header-sub">Thank you for your response</div>
+        </div>
+    </div>
+    <div class="pb-feedback-already">
+        <i class="bi bi-check-circle-fill"></i>
+        You rated this ticket <strong>{{ report.feedback.rating }}/5</strong>
+        and marked it as <strong>{% if report.feedback.resolved_ok %}resolved ✓{% else %}not resolved ✗{% endif %}</strong>.
+        {% if report.feedback.comment %}<br><em>"{{ report.feedback.comment|truncatechars:100 }}"</em>{% endif %}
+    </div>
+</div>
+
+{% else %}
+{# Not yet submitted — show form #}
+<div class="pb-feedback-card" id="pbFeedbackCard">
+    <div class="pb-feedback-header">
+        <div class="pb-feedback-icon"><i class="bi bi-chat-heart"></i></div>
+        <div>
+            <div class="pb-feedback-header-title">Was this resolved for you?</div>
+            <div class="pb-feedback-header-sub">Your feedback helps us improve our support</div>
+        </div>
+    </div>
+
+    <div class="pb-feedback-body" id="pbFeedbackForm">
+        <!-- Resolved question -->
+        <div class="pb-resolved-q">Did this ticket resolve your issue?</div>
+        <div class="pb-resolved-btns">
+            <button class="pb-resolved-btn yes" data-val="true" onclick="pbSelectResolved(this, true)">
+                <i class="bi bi-hand-thumbs-up"></i> Yes, resolved
+            </button>
+            <button class="pb-resolved-btn no" data-val="false" onclick="pbSelectResolved(this, false)">
+                <i class="bi bi-hand-thumbs-down"></i> Not quite
+            </button>
+        </div>
+
+        <!-- Star rating -->
+        <div class="pb-rating-label">How would you rate our support?</div>
+        <div class="pb-stars" id="pbStars" role="group" aria-label="Star rating">
+            <button class="pb-star" data-val="1" onclick="pbSetRating(1)" aria-label="1 star">★</button>
+            <button class="pb-star" data-val="2" onclick="pbSetRating(2)" aria-label="2 stars">★</button>
+            <button class="pb-star" data-val="3" onclick="pbSetRating(3)" aria-label="3 stars">★</button>
+            <button class="pb-star" data-val="4" onclick="pbSetRating(4)" aria-label="4 stars">★</button>
+            <button class="pb-star" data-val="5" onclick="pbSetRating(5)" aria-label="5 stars">★</button>
+        </div>
+
+        <!-- Optional comment -->
+        <textarea class="pb-feedback-comment" id="pbFeedbackComment"
+                  placeholder="Optional: Any other comments? (max 500 chars)"
+                  maxlength="500"></textarea>
+
+        <button class="pb-feedback-submit" id="pbFeedbackSubmitBtn"
+                onclick="pbSubmitFeedback('{{ report.ticket_number }}')">
+            <i class="bi bi-send"></i> Send Feedback
+        </button>
+    </div>
+
+    <!-- Success state -->
+    <div class="pb-feedback-done" id="pbFeedbackDone">
+        <div class="pb-feedback-done-icon"><i class="bi bi-heart-fill"></i></div>
+        <div class="pb-feedback-done-title">Thank you!</div>
+        <div class="pb-feedback-done-sub">Your feedback has been recorded and helps us serve you better.</div>
+    </div>
+</div>
+
+<script>
+(function(){
+let resolvedOk = null;
+let rating     = 0;
+const CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+window.pbSelectResolved = function(btn, val) {
+    document.querySelectorAll('.pb-resolved-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    resolvedOk = val;
+};
+
+window.pbSetRating = function(val) {
+    rating = val;
+    document.querySelectorAll('.pb-star').forEach((s, i) => {
+        s.classList.toggle('lit', i < val);
+    });
+};
+
+window.pbSubmitFeedback = function(ticket) {
+    if (resolvedOk === null) { alert('Please let us know if this was resolved.'); return; }
+    if (rating === 0)        { alert('Please give a star rating.'); return; }
+
+    const btn = document.getElementById('pbFeedbackSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-arrow-clockwise" style="animation:fbSpin 0.7s linear infinite"></i> Sending…';
+
+    fetch(`{% url 'suggestions:report_feedback' report.ticket_number %}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({
+            resolved_ok: resolvedOk,
+            rating:      rating,
+            comment:     document.getElementById('pbFeedbackComment').value.trim(),
+        }),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.ok) {
+            document.getElementById('pbFeedbackForm').style.display = 'none';
+            document.getElementById('pbFeedbackDone').classList.add('show');
+            // If ticket was re-opened, update the done message
+            if (d.resolved_ok === false) {
+                document.querySelector('.pb-feedback-done-title').textContent = 'Feedback received';
+                document.querySelector('.pb-feedback-done-sub').textContent =
+                    'We\'re sorry the issue wasn\'t fully resolved. Your ticket has been re-opened and our team will follow up.';
+            }
+        } else {
+            alert(d.error || 'Something went wrong.');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-send"></i> Send Feedback';
+        }
+    })
+    .catch(() => {
+        alert('Network error. Please try again.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-send"></i> Send Feedback';
+    });
+};
+
+// Handle URL param ?resolved=1 or ?resolved=0 (from email link)
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.has('resolved')) {
+    const val = urlParams.get('resolved') === '1';
+    const btn = document.querySelector(`.pb-resolved-btn.${val ? 'yes' : 'no'}`);
+    if (btn) pbSelectResolved(btn, val);
+    // Auto-scroll to feedback card
+    document.getElementById('pbFeedbackCard')?.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+const style = document.createElement('style');
+style.textContent = '@keyframes fbSpin{to{transform:rotate(360deg)}}';
+document.head.appendChild(style);
+})();
+</script>
+{% endif %}
+{% endif %}

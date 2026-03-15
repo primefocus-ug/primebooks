@@ -8,318 +8,320 @@
     <title>Credit Note - {{ application.credit_note_no|default:application_id }}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     <style>
-        /* ==========================================
-           DESIGN SYSTEM - mirrors receipt.html
-           ========================================== */
         :root {
-            --receipt-primary: #7c3aed;
-            --receipt-primary-dark: #6d28d9;
-            --receipt-secondary: #ec4899;
-            --receipt-accent: #f97316;
-            --receipt-dark: #1f2937;
-            --receipt-gray: #6b7280;
-            --receipt-light-gray: #f3f4f6;
-            --receipt-border: #e5e7eb;
-            --receipt-success: #10b981;
-            --receipt-danger: #dc2626;
-            --receipt-white: #ffffff;
+            --primary:      #7c3aed;
+            --primary-dark: #5b21b6;
+            --dark:         #1f2937;
+            --gray:         #6b7280;
+            --light:        #f9fafb;
+            --border:       #e5e7eb;
+            --danger:       #dc2626;
+            --white:        #ffffff;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--receipt-light-gray);
+            background: #ede9fe;
+            color: var(--dark);
+            font-size: 13px;
         }
 
-        /* ── A4 CONTAINER ── */
+        .page-wrapper { max-width: 210mm; margin: 2rem auto; }
+
+        /* ══ CONTAINERS ══ */
         .receipt-print-container.format-a4 {
-            max-width: 210mm;
-            min-height: 297mm;
-            margin: 2rem auto;
-            padding: 15mm;
-            background: var(--receipt-white);
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
-            border-radius: 8px;
+            width: 210mm;
+            margin: 0 auto;
+            padding: 14mm 16mm;
+            background: var(--white);
+            box-shadow: 0 8px 30px rgba(124,58,237,.15);
+            border-radius: 10px;
         }
-
-        /* ── THERMAL 80mm CONTAINER ── */
         .receipt-print-container.format-thermal {
-            max-width: 80mm;
-            width: 80mm;
-            margin: 2rem auto;
-            padding: 5mm;
-            background: var(--receipt-white);
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,.1);
-            border-radius: 4px;
-            font-size: 11px;
+            max-width: 80mm; width: 80mm;
+            margin: 0 auto; padding: 6mm;
+            background: var(--white);
+            box-shadow: 0 4px 12px rgba(0,0,0,.1);
+            border-radius: 4px; font-size: 11px;
         }
 
-        .format-thermal .receipt-header         { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 2px dashed var(--receipt-dark); }
-        .format-thermal .receipt-logo           { width: 50px; height: 50px; }
-        .format-thermal .receipt-store-name     { font-size: 16px; }
-        .format-thermal .receipt-store-details  { font-size: 9px; flex-direction: column; gap: 2px; }
-        .format-thermal .receipt-info-grid      { grid-template-columns: 1fr; gap: 8px; margin-bottom: 10px; }
-        .format-thermal .receipt-bottom-section { grid-template-columns: 1fr; gap: 10px; }
-        .format-thermal .receipt-efris-qr       { width: 100px; height: 100px; }
-        .format-thermal .receipt-efris-details  { font-size: 8px; }
-        .format-thermal .receipt-total-row      { font-size: 10px; padding: 4px 0; }
-        .format-thermal .receipt-total-row.final{ font-size: 14px; }
-        .format-thermal .receipt-footer         { border-top: 2px dashed var(--receipt-dark); }
-
-        /* ── PRINT MEDIA ── */
+        /* ══ PRINT ══ */
         @media print {
-            body                                { background: white !important; }
-            .print-controls, .format-selector  { display: none !important; }
-
+            body { background: white !important; }
+            .print-controls, .format-selector { display: none !important; }
             .receipt-print-container.format-a4 {
-                width: 210mm !important; min-height: 297mm !important;
-                margin: 0 !important; padding: 15mm !important;
+                width: 210mm !important;
+                margin: 0 !important; padding: 14mm 16mm !important;
                 box-shadow: none !important; border-radius: 0 !important;
             }
             .receipt-print-container.format-thermal {
                 width: 80mm !important; max-width: 80mm !important;
-                margin: 0 !important; padding: 5mm !important;
+                margin: 0 !important; padding: 6mm !important;
                 box-shadow: none !important; border-radius: 0 !important;
             }
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            @page          { margin: 0; }
-            .format-a4     { page: a4-page; }
-            @page a4-page  { size: A4; }
-            .format-thermal{ page: thermal-page; }
+            @page { margin: 0; }
+            @page a4-page { size: A4; }
             @page thermal-page { size: 80mm auto; }
+            .format-a4     { page: a4-page; }
+            .format-thermal { page: thermal-page; }
         }
 
-        /* ── HEADER ── */
-        .receipt-header {
-            text-align: center;
-            padding-bottom: 20px;
-            border-bottom: 3px solid var(--receipt-primary);
-            margin-bottom: 20px;
-            background: linear-gradient(to bottom, rgba(124,58,237,.02), transparent);
-        }
-        .receipt-logo-section  { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-        .receipt-logo          { width: 90px; height: 90px; object-fit: contain; margin-bottom: 5px; }
-        .receipt-store-info    { max-width: 600px; margin: 0 auto; }
-        .receipt-store-name    { font-size: 26px; font-weight: 800; color: var(--receipt-primary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-        .receipt-store-tagline { font-size: 12px; color: var(--receipt-gray); font-style: italic; margin-bottom: 12px; }
-        .receipt-store-details { font-size: 11px; color: var(--receipt-dark); line-height: 1.8; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; }
-        .receipt-store-details div { display: flex; align-items: center; gap: 6px; }
-        .receipt-store-details i   { color: var(--receipt-primary); width: 14px; }
-
-        /* Credit Note title banner */
-        .credit-note-banner {
-            background: linear-gradient(135deg, var(--receipt-primary), var(--receipt-primary-dark));
-            color: white;
-            text-align: center;
-            padding: 10px 20px;
-            border-radius: 8px;
-            margin: 16px 0 20px;
-            font-size: 16px;
-            font-weight: 800;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-        }
-        .credit-note-banner .cn-subtitle {
-            font-size: 11px;
-            font-weight: 400;
-            opacity: .85;
-            margin-top: 3px;
-            letter-spacing: .5px;
-        }
-
-        /* ── TWO-COLUMN INFO GRID ── */
-        .receipt-info-grid {
-            display: grid;
-            grid-template-columns: 1.2fr 1fr;
+        /* ══ HEADER ══ */
+        .doc-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding-bottom: 18px; border-bottom: 3px solid var(--primary); margin-bottom: 16px;
             gap: 20px;
-            margin-bottom: 20px;
         }
+        .doc-header-left { display: flex; align-items: center; gap: 16px; }
+        .company-logo {
+            width: 72px; height: 72px; object-fit: contain;
+            border-radius: 8px; border: 2px solid var(--border); flex-shrink: 0;
+        }
+        .company-logo-placeholder {
+            width: 72px; height: 72px; border-radius: 8px; flex-shrink: 0;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 900; font-size: 28px;
+        }
+        .company-name {
+            font-size: 20px; font-weight: 900; color: var(--primary);
+            text-transform: uppercase; letter-spacing: .5px; line-height: 1.2;
+            margin-bottom: 5px;
+        }
+        .company-meta { font-size: 11px; color: var(--gray); line-height: 1.9; }
+        .company-meta span { margin-right: 14px; }
 
-        /* Left: Buyer info */
-        .receipt-customer-section {
-            background: linear-gradient(135deg, rgba(124,58,237,.05), rgba(236,72,153,.05));
-            border: 2px solid var(--receipt-primary);
-            border-radius: 10px;
-            padding: 18px;
-            box-shadow: 0 2px 8px rgba(124,58,237,.08);
+        .doc-header-right { text-align: right; flex-shrink: 0; }
+        .doc-type-label {
+            font-size: 26px; font-weight: 900; color: var(--primary);
+            text-transform: uppercase; letter-spacing: 3px;
         }
-        .receipt-customer-title {
-            font-size: 12px; font-weight: 800; color: var(--receipt-primary);
-            margin-bottom: 12px; text-transform: uppercase; letter-spacing: .8px;
-            border-bottom: 2px solid var(--receipt-primary); padding-bottom: 6px;
-            display: flex; align-items: center; gap: 8px;
-        }
-        .receipt-customer-row {
-            display: flex; justify-content: space-between; align-items: baseline;
-            font-size: 11px; margin-bottom: 8px; padding: 6px 0;
-            border-bottom: 1px solid rgba(124,58,237,.1);
-        }
-        .receipt-customer-row:last-child { margin-bottom: 0; border-bottom: none; }
-        .receipt-customer-label { font-weight: 700; color: var(--receipt-gray); text-transform: uppercase; font-size: 9px; letter-spacing: .5px; flex-shrink: 0; }
-        .receipt-customer-value { font-weight: 600; color: var(--receipt-dark); font-size: 11px; text-align: right; word-break: break-word; }
-
-        /* Right: Document details */
-        .receipt-details-section {
-            background: var(--receipt-light-gray);
-            border: 2px solid var(--receipt-border);
-            border-radius: 10px; padding: 18px;
-            display: flex; flex-direction: column; justify-content: center; gap: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,.05);
-        }
-        .receipt-info-row {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 8px 0; border-bottom: 2px solid var(--receipt-border);
-        }
-        .receipt-info-row:last-child { border-bottom: none; }
-        .receipt-info-label {
-            font-weight: 700; color: var(--receipt-gray); text-transform: uppercase;
-            font-size: 10px; letter-spacing: .6px; display: flex; align-items: center; gap: 6px;
-        }
-        .receipt-info-label i { color: var(--receipt-primary); font-size: 12px; }
-        .receipt-info-value {
-            font-weight: 800; color: var(--receipt-dark); font-size: 12px;
-            font-family: 'Courier New', monospace; background: white;
-            padding: 4px 10px; border-radius: 4px; border: 1px solid var(--receipt-border);
-            max-width: 55%; text-align: right; word-break: break-all;
-        }
-        .receipt-info-value.status-approved { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
-        .receipt-info-value.status-pending  { color: #92400e; border-color: #fde68a; background: #fffbeb; }
-        .receipt-info-value.status-rejected { color: #991b1b; border-color: #fecaca; background: #fef2f2; }
-
-        /* ── ITEMS TABLE ── */
-        .receipt-items-table {
-            width: 100%; border-collapse: collapse; margin-bottom: 15px;
-        }
-        .receipt-items-table thead {
-            background: linear-gradient(135deg, var(--receipt-primary), var(--receipt-primary-dark));
-            color: white;
-        }
-        .receipt-items-table th {
-            padding: 12px 10px; text-align: left; font-size: 11px;
-            font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
-        }
-        .receipt-items-table th.text-right,
-        .receipt-items-table td.text-right { text-align: right; }
-        .receipt-items-table tbody tr { border-bottom: 1px solid var(--receipt-border); }
-        .receipt-items-table tbody tr:nth-child(even) { background: var(--receipt-light-gray); }
-        .receipt-items-table td { padding: 12px 10px; font-size: 12px; color: var(--receipt-dark); }
-        .receipt-items-table tfoot td {
-            padding: 10px; font-weight: 800; font-size: 12px;
-            background: var(--receipt-light-gray); border-top: 2px solid var(--receipt-primary);
-        }
-        .receipt-item-name { font-weight: 600; color: var(--receipt-dark); margin-bottom: 3px; }
-        .receipt-item-code { font-size: 10px; color: var(--receipt-gray); font-family: 'Courier New', monospace; }
-        .negative-amount   { color: var(--receipt-danger); font-weight: 700; }
-
-        /* ── BOTTOM 50/50: QR LEFT, SUMMARY RIGHT ── */
-        .receipt-bottom-section {
-            display: grid; grid-template-columns: 1fr 1fr;
-            gap: 20px; margin-bottom: 15px;
-        }
-
-        /* QR left */
-        .receipt-qr-section {
-            display: flex; align-items: center; justify-content: center; padding: 15px;
-            border: 2px solid var(--receipt-border); border-radius: 10px;
-            background: linear-gradient(135deg, rgba(124,58,237,.03), rgba(236,72,153,.03));
-        }
-        .receipt-efris-container { text-align: center; }
-        .receipt-efris-qr {
-            width: 150px; height: 150px; margin: 0 auto;
-            border: 2px solid var(--receipt-border); border-radius: 8px; padding: 5px; background: white;
-        }
-        .receipt-efris-details   { font-size: 10px; color: var(--receipt-dark); margin-top: 10px; line-height: 1.7; }
-        .receipt-efris-details strong { color: var(--receipt-primary); }
-        .ura-verify-label {
+        .doc-type-sub { font-size: 11px; color: var(--gray); margin-top: 3px; }
+        .doc-status-badge {
             display: inline-block; margin-top: 8px;
-            background: var(--receipt-primary); color: white;
-            font-size: 9px; font-weight: 700; padding: 3px 10px;
+            font-size: 11px; font-weight: 800; padding: 4px 14px; border-radius: 4px;
+        }
+        .doc-status-badge.issued  { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+        .doc-status-badge.invalid { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
+        /* ══ SECTIONS ══ */
+        .section { margin-bottom: 14px; }
+
+        .section-title {
+            font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+            color: var(--white);
+            background: linear-gradient(90deg, var(--primary), var(--primary-dark));
+            padding: 6px 14px; border-radius: 5px 5px 0 0;
+            display: flex; align-items: center; gap: 7px;
+        }
+
+        .section-body {
+            border: 1.5px solid var(--border); border-top: none;
+            border-radius: 0 0 6px 6px; padding: 14px 16px;
+            background: var(--white);
+        }
+        .section-body.shaded { background: #faf9ff; }
+        .section-body.no-pad { padding: 0; }
+
+        /* Simple two-col layout for A+B */
+        .ab-row { display: grid; grid-template-columns: 1.05fr 1fr; gap: 14px; margin-bottom: 14px; }
+
+        /* Field rows — label left, value right */
+        .fr {
+            display: flex; justify-content: space-between; align-items: baseline;
+            padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+            gap: 12px;
+        }
+        .fr:last-child { border-bottom: none; padding-bottom: 0; }
+        .fl {
+            font-weight: 600; color: var(--gray); font-size: 11px;
+            white-space: nowrap; flex-shrink: 0;
+        }
+        .fv { font-weight: 700; color: var(--dark); text-align: right; word-break: break-word; }
+        .fv.mono { font-family: 'Courier New', monospace; }
+        .fv.big  { font-size: 14px; font-weight: 900; color: var(--primary); font-family: 'Courier New', monospace; }
+        .fv.sm   { font-size: 10px; font-family: 'Courier New', monospace; word-break: break-all; }
+
+        /* Two-col field grid for buyer section */
+        .field-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+
+        /* ══ GOODS TABLE ══ */
+        .goods-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .goods-table thead tr {
+            background: linear-gradient(90deg, var(--primary), var(--primary-dark)); color: white;
+        }
+        .goods-table th {
+            padding: 9px 10px; text-align: left; font-size: 10px;
+            font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+        }
+        .goods-table th.r, .goods-table td.r { text-align: right; }
+        .goods-table tbody tr { border-bottom: 1px solid var(--border); }
+        .goods-table tbody tr:nth-child(even) { background: #faf5ff; }
+        .goods-table td { padding: 9px 10px; vertical-align: top; }
+        .goods-table tfoot td {
+            padding: 9px 10px; font-weight: 800;
+            background: #f3f0ff; border-top: 2px solid var(--primary);
+        }
+        .item-name { font-weight: 700; }
+        .item-cat  { font-size: 10px; color: var(--gray); margin-top: 2px; }
+        .neg { color: var(--danger); font-weight: 700; }
+        .mono { font-family: 'Courier New', monospace; }
+
+        /* ══ TAX TABLE ══ */
+        .tax-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .tax-table th {
+            background: #f3f0ff; color: var(--primary); padding: 8px 10px;
+            text-align: left; font-size: 10px; font-weight: 800; text-transform: uppercase;
+            border-bottom: 2px solid var(--primary);
+        }
+        .tax-table th.r, .tax-table td.r { text-align: right; }
+        .tax-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); }
+
+        /* ══ SUMMARY F ══ */
+        .summary-cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; margin-bottom: 14px; }
+
+        /* Three-col comparison */
+        .comp-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; }
+        .comp-table th {
+            padding: 8px 10px; font-size: 10px; font-weight: 800; text-transform: uppercase;
+            border: 1px solid var(--border);
+        }
+        .comp-table th.lbl { text-align: left; background: var(--light); color: var(--gray); }
+        .comp-table th.prev { text-align: right; background: var(--light); color: var(--gray); }
+        .comp-table th.cn   { text-align: right; background: #f3f0ff; color: var(--primary); }
+        .comp-table th.curr { text-align: right; background: var(--light); color: var(--gray); }
+        .comp-table td {
+            padding: 9px 10px; border: 1px solid var(--border);
+            font-weight: 700; text-align: right; font-family: 'Courier New', monospace;
+        }
+        .comp-table td:first-child { text-align: left; font-family: inherit; font-weight: 600; color: var(--gray); }
+
+        /* Payment block */
+        .pay-block { border: 1.5px solid var(--border); border-radius: 6px; overflow: hidden; }
+        .pay-header {
+            background: #f3f0ff; color: var(--primary); padding: 7px 12px;
+            font-size: 10px; font-weight: 800; text-transform: uppercase;
+            border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px;
+        }
+        .pay-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 12px; font-size: 12px; border-bottom: 1px solid var(--border);
+        }
+        .pay-row:last-child { border-bottom: none; }
+        .pay-mode { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+
+        /* Doc info block */
+        .info-block { border: 1.5px solid var(--border); border-radius: 6px; overflow: hidden; }
+        .info-block-header {
+            background: #f3f0ff; color: var(--primary); padding: 7px 12px;
+            font-size: 10px; font-weight: 800; text-transform: uppercase;
+            border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px;
+        }
+        .info-row {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            padding: 8px 12px; font-size: 12px; border-bottom: 1px solid var(--border);
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-lbl { color: var(--gray); font-weight: 600; flex-shrink: 0; padding-right: 8px; }
+        .info-val { font-weight: 700; text-align: right; }
+
+        /* Total banner */
+        .total-banner {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white; border-radius: 8px; padding: 13px 20px;
+            display: flex; justify-content: space-between; align-items: center;
+            margin-top: 14px;
+        }
+        .total-banner .lbl { font-size: 13px; font-weight: 700; opacity: .9; }
+        .total-banner .val {
+            font-size: 24px; font-weight: 900;
+            font-family: 'Courier New', monospace;
+        }
+        .total-banner .val.neg { color: #fca5a5; }
+
+        /* ══ QR ══ */
+        .qr-section {
+            display: flex; align-items: center; gap: 20px;
+            border: 1.5px solid var(--border); border-radius: 8px; padding: 16px 18px;
+            background: linear-gradient(135deg, rgba(124,58,237,.03), rgba(139,92,246,.05));
+            margin-bottom: 14px;
+        }
+        .qr-img {
+            width: 130px; height: 130px; flex-shrink: 0;
+            border: 2px solid var(--border); border-radius: 6px;
+            padding: 5px; background: white;
+        }
+        .qr-no-img {
+            width: 130px; height: 130px; flex-shrink: 0;
+            border: 2px dashed var(--border); border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--gray); font-size: 11px; text-align: center;
+        }
+        .qr-details { font-size: 11px; color: var(--dark); line-height: 2.1; flex: 1; }
+        .qr-details strong { color: var(--primary); }
+        .qr-badge {
+            display: inline-flex; align-items: center; gap: 5px; margin-top: 8px;
+            background: var(--primary); color: white;
+            font-size: 10px; font-weight: 700; padding: 4px 14px;
             border-radius: 20px; text-transform: uppercase; letter-spacing: .5px;
         }
 
-        /* Totals / comparison right */
-        .receipt-totals-section { border-top: 2px solid var(--receipt-primary); padding-top: 15px; }
-
-        .comparison-block       { margin-bottom: 12px; }
-        .comparison-block-title {
-            font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .7px;
-            color: var(--receipt-gray); margin-bottom: 6px; padding-bottom: 4px;
-            border-bottom: 1px solid var(--receipt-border);
+        /* ══ FOOTER ══ */
+        .doc-footer {
+            text-align: center; padding-top: 14px;
+            border-top: 2px dashed var(--border); margin-top: 10px;
         }
-        .comparison-block-title.credit { color: var(--receipt-primary); border-color: var(--receipt-primary); }
+        .end-mark { font-weight: 900; font-size: 13px; letter-spacing: 2px; margin-bottom: 6px; }
+        .footer-meta { font-size: 10px; color: var(--gray); line-height: 1.9; }
+        .powered { font-size: 11px; color: var(--gray); margin-top: 4px; }
+        .powered strong { color: var(--primary); }
+        .powered a { color: var(--primary); text-decoration: none; }
 
-        .receipt-total-row      { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--receipt-border); }
-        .receipt-total-row:last-child { border-bottom: none; }
-        .receipt-total-label    { font-weight: 600; color: var(--receipt-gray); }
-        .receipt-total-value    { font-weight: 700; color: var(--receipt-dark); }
-        .receipt-total-value.negative { color: var(--receipt-danger); }
-
-        .receipt-total-row.final {
-            border-top: 2px solid var(--receipt-dark); margin-top: 5px;
-            padding-top: 12px; font-size: 17px; border-bottom: none;
-        }
-        .receipt-total-row.final .receipt-total-label,
-        .receipt-total-row.final .receipt-total-value { color: var(--receipt-primary); font-weight: 800; }
-        .receipt-total-row.final .receipt-total-value.negative { color: var(--receipt-danger); }
-
-        /* Reason box */
-        .reason-box {
-            background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
-            padding: 10px 14px; margin-bottom: 15px; font-size: 11px;
-            display: flex; align-items: flex-start; gap: 8px;
-        }
-        .reason-box i { color: var(--receipt-accent); margin-top: 1px; flex-shrink: 0; }
-        .reason-box .reason-label { font-weight: 700; color: var(--receipt-dark); }
-        .reason-box .reason-text  { color: var(--receipt-gray); }
-
-        /* ── FOOTER ── */
-        .receipt-footer {
-            margin-top: 10px; padding-top: 15px;
-            border-top: 2px solid var(--receipt-border); text-align: center;
-        }
-        .receipt-footer-main    { font-size: 12px; color: var(--receipt-gray); margin-bottom: 5px; }
-        .receipt-footer-powered { font-size: 11px; color: var(--receipt-gray); margin-top: 5px; }
-        .receipt-footer-powered strong { color: var(--receipt-primary); font-weight: 700; }
-        .receipt-footer-powered a { color: var(--receipt-primary); text-decoration: none; font-weight: 600; }
-
-        /* ── FORMAT SELECTOR ── */
+        /* ══ FORMAT SELECTOR ══ */
         .format-selector {
             position: fixed; top: 20px; right: 20px; background: white;
-            padding: 15px 20px; border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,.15); z-index: 1000;
-            border: 2px solid var(--receipt-primary);
+            padding: 14px 18px; border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(124,58,237,.2); z-index: 1000;
+            border: 2px solid var(--primary);
         }
-        .format-selector-title { font-size: 12px; font-weight: 700; color: var(--receipt-gray); text-transform: uppercase; margin-bottom: 10px; letter-spacing: .5px; }
-        .format-options        { display: flex; gap: 10px; }
+        .format-selector-title { font-size: 11px; font-weight: 700; color: var(--gray); text-transform: uppercase; margin-bottom: 8px; }
+        .format-options { display: flex; gap: 8px; }
         .format-option {
-            padding: 10px 16px; border: 2px solid var(--receipt-border); border-radius: 8px;
-            background: white; cursor: pointer; font-size: 13px; font-weight: 600;
-            transition: all .3s ease; display: flex; align-items: center; gap: 8px;
+            padding: 8px 14px; border: 2px solid var(--border); border-radius: 6px;
+            background: white; cursor: pointer; font-size: 12px; font-weight: 600;
+            transition: all .2s; display: flex; align-items: center; gap: 6px;
         }
-        .format-option:hover  { border-color: var(--receipt-primary); background: rgba(124,58,237,.05); }
-        .format-option.active { background: linear-gradient(135deg, var(--receipt-primary), var(--receipt-primary-dark)); color: white; border-color: var(--receipt-primary); }
+        .format-option:hover  { border-color: var(--primary); }
+        .format-option.active { background: var(--primary); color: white; border-color: var(--primary); }
 
-        /* ── PRINT CONTROLS ── */
+        /* ══ PRINT CONTROLS ══ */
         .print-controls {
-            position: fixed; bottom: 30px; right: 30px; display: flex; gap: 15px; z-index: 1000;
+            position: fixed; bottom: 28px; right: 28px; display: flex; gap: 12px; z-index: 1000;
         }
         .print-btn {
-            padding: 12px 24px; border: none; border-radius: 8px; font-weight: 600;
+            padding: 12px 24px; border: none; border-radius: 8px; font-weight: 700;
             font-size: 14px; cursor: pointer; display: flex; align-items: center;
-            gap: 8px; transition: all .3s ease; box-shadow: 0 4px 6px rgba(0,0,0,.1);
+            gap: 8px; transition: all .2s; box-shadow: 0 4px 10px rgba(0,0,0,.12);
         }
-        .print-btn.primary { background: linear-gradient(135deg, var(--receipt-primary), var(--receipt-primary-dark)); color: white; }
-        .print-btn.primary:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(124,58,237,.3); }
-        .print-btn.secondary { background: white; color: var(--receipt-dark); border: 2px solid var(--receipt-border); }
-        .print-btn.secondary:hover { background: var(--receipt-light-gray); transform: translateY(-2px); }
+        .print-btn.primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; }
+        .print-btn.primary:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(124,58,237,.35); }
+        .print-btn.secondary { background: white; color: var(--dark); border: 2px solid var(--border); }
+        .print-btn.secondary:hover { background: var(--light); transform: translateY(-2px); }
+
+        /* thermal overrides */
+        .format-thermal .ab-row         { grid-template-columns: 1fr; }
+        .format-thermal .summary-cols   { grid-template-columns: 1fr; }
+        .format-thermal .field-2col     { grid-template-columns: 1fr; }
+        .format-thermal .qr-section     { flex-direction: column; }
+        .format-thermal .doc-header     { flex-direction: column; text-align: center; gap: 8px; }
 
         @media screen and (max-width: 768px) {
-            .receipt-info-grid, .receipt-bottom-section { grid-template-columns: 1fr; }
-            .format-selector { top: 10px; right: 10px; left: 10px; padding: 12px; }
-            .format-options  { width: 100%; }
-            .format-option   { flex: 1; justify-content: center; font-size: 11px; }
-            .print-controls  { bottom: 20px; right: 20px; flex-direction: column; }
+            .ab-row, .summary-cols, .field-2col { grid-template-columns: 1fr !important; }
+            .format-selector { top: 10px; right: 10px; left: 10px; }
+            .print-controls  { bottom: 16px; right: 16px; flex-direction: column; }
         }
     </style>
 </head>
@@ -330,353 +332,326 @@
     <div class="format-selector-title"><i class="bi bi-printer"></i> Print Format</div>
     <div class="format-options">
         <div class="format-option active" data-format="a4" onclick="switchFormat('a4')">
-            <i class="bi bi-file-earmark-text"></i><span>A4</span>
+            <i class="bi bi-file-earmark-text"></i> A4
         </div>
         <div class="format-option" data-format="thermal" onclick="switchFormat('thermal')">
-            <i class="bi bi-receipt"></i><span>Thermal 80mm</span>
+            <i class="bi bi-receipt"></i> Thermal
         </div>
     </div>
 </div>
 
+<div class="page-wrapper">
 <div class="receipt-print-container format-a4" id="receiptContainer">
 
     <!-- ══ HEADER ══ -->
-    <div class="receipt-header">
-        <div class="receipt-logo-section">
+    <div class="doc-header">
+        <div class="doc-header-left">
             {% if company.logo %}
-                <img src="{{ company.logo.url }}" alt="{{ company.name }}" class="receipt-logo">
+                <img src="{{ company.logo.url }}" alt="{{ company.name }}" class="company-logo">
             {% else %}
-                <div class="receipt-logo" style="background: linear-gradient(135deg, #7c3aed, #ec4899); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 32px; box-shadow: 0 4px 12px rgba(124,58,237,.2);">
-                    {{ company.name|first|upper }}
-                </div>
+                <div class="company-logo-placeholder">{{ company.name|first|upper }}</div>
             {% endif %}
-            <div class="receipt-store-info">
-                <div class="receipt-store-name">{{ company.name }}</div>
-                {% if company.address %}
-                <div class="receipt-store-tagline">{{ company.address }}</div>
-                {% endif %}
-                <div class="receipt-store-details">
-                    {% if company.address %}
-                    <div><i class="bi bi-geo-alt-fill"></i> {{ company.address }}</div>
-                    {% endif %}
-                    {% if company.phone %}
-                    <div><i class="bi bi-telephone-fill"></i> {{ company.phone }}</div>
-                    {% endif %}
-                    {% if company.email %}
-                    <div><i class="bi bi-envelope-fill"></i> {{ company.email }}</div>
-                    {% endif %}
-                    {% if company.tin %}
-                    <div><strong>TIN:</strong> {{ company.tin }}</div>
-                    {% endif %}
+            <div>
+                <div class="company-name">{{ company.name }}</div>
+                <div class="company-meta">
+                    {% if company.tin %}<span><strong>TIN:</strong> {{ company.tin }}</span>{% endif %}
+                    {% if company.phone %}<span><i class="bi bi-telephone-fill"></i> {{ company.phone }}</span>{% endif %}
+                    {% if company.email %}<span><i class="bi bi-envelope-fill"></i> {{ company.email }}</span>{% endif %}
+                    {% if company.address %}<br><span><i class="bi bi-geo-alt-fill"></i> {{ company.address }}</span>{% endif %}
                 </div>
+            </div>
+        </div>
+        <div class="doc-header-right">
+            <div class="doc-type-label">Credit Note</div>
+            <div class="doc-type-sub">URA EFRIS Fiscal Document</div>
+            {% if application.is_invalid %}
+                <span class="doc-status-badge invalid">INVALID</span>
+            {% else %}
+                <span class="doc-status-badge issued">ISSUED</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ══ SECTION A + B ══ -->
+    <div class="ab-row">
+
+        <!-- A: Seller -->
+        <div class="section">
+            <div class="section-title"><i class="bi bi-building"></i> Section A: Seller's Details</div>
+            <div class="section-body">
+                {% if application.applicant_tin %}
+                <div class="fr">
+                    <span class="fl">TIN</span>
+                    <span class="fv mono">{{ application.applicant_tin }}</span>
+                </div>
+                {% endif %}
+
+                <div class="fr">
+                    <span class="fl">Legal Name</span>
+                    <span class="fv">{{ application.applicant_name|default:company.name }}</span>
+                </div>
+                {% if application.applicant_address %}
+                <div class="fr">
+                    <span class="fl">Address</span>
+                    <span class="fv" style="font-size:11px;">{{ application.applicant_address }}</span>
+                </div>
+                {% endif %}
+                {% if application.operator %}
+                <div class="fr">
+                    <span class="fl">Served by</span>
+                    <span class="fv">{{ application.operator }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- B: URA Info -->
+        <div class="section">
+            <div class="section-title"><i class="bi bi-shield-fill-check"></i> Section B: URA Information</div>
+            <div class="section-body shaded">
+                <div class="fr">
+                    <span class="fl">Credit Note No</span>
+                    <span class="fv big">{{ application.credit_note_no|default:"N/A" }}</span>
+                </div>
+                <div class="fr">
+                    <span class="fl">Fiscal Document No</span>
+                    <span class="fv mono">{{ application.original_invoice_no|default:"N/A" }}</span>
+                </div>
+                {% if application.issued_date %}
+                <div class="fr">
+                    <span class="fl">Issued Date</span>
+                    <span class="fv">{{ application.issued_date }}</span>
+                </div>
+                {% endif %}
+                {% if anti_fake_code %}
+                <div class="fr">
+                    <span class="fl">Verification Code</span>
+                    <span class="fv sm">{{ anti_fake_code }}</span>
+                </div>
+                {% endif %}
+                <div class="fr">
+                    <span class="fl">Issued Reasons</span>
+                    <span class="fv">{{ application.reason_description|default:"N/A" }}</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ══ SECTION C: Buyer ══ -->
+    <div class="section">
+        <div class="section-title"><i class="bi bi-person-fill"></i> Section C: Buyer's Details</div>
+        <div class="section-body">
+            <div class="field-2col">
+                {% if application.buyer_tin %}
+                <div class="fr">
+                    <span class="fl">TIN</span>
+                    <span class="fv mono">{{ application.buyer_tin }}</span>
+                </div>
+                {% endif %}
+                <div class="fr">
+                    <span class="fl">Name</span>
+                    <span class="fv">{{ application.buyer_name|default:"Walk-in Customer" }}</span>
+                </div>
+                {% if application.buyer_mobile %}
+                <div class="fr">
+                    <span class="fl">Mobile</span>
+                    <span class="fv">{{ application.buyer_mobile }}</span>
+                </div>
+                {% endif %}
+                {% if application.buyer_email %}
+                <div class="fr">
+                    <span class="fl">Email</span>
+                    <span class="fv">{{ application.buyer_email }}</span>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
 
-    <!-- CREDIT NOTE BANNER -->
-    <div class="credit-note-banner">
-        <div>CREDIT NOTE</div>
-        {% if application.original_invoice_no %}
-        <div class="cn-subtitle">{{ application.original_invoice_no }}</div>
+    <!-- ══ SECTION D: Goods ══ -->
+    <div class="section">
+        <div class="section-title"><i class="bi bi-boxes"></i> Section D: Goods &amp; Services Details</div>
+        <div class="section-body no-pad">
+            <table class="goods-table">
+                <thead>
+                    <tr>
+                        <th style="width:4%">No.</th>
+                        <th style="width:33%">Item</th>
+                        <th class="r" style="width:8%">Qty</th>
+                        <th style="width:12%">Unit Measure</th>
+                        <th class="r" style="width:14%">Unit Price</th>
+                        <th class="r" style="width:9%">Tax Rate</th>
+                        <th class="r" style="width:20%">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in goods_details %}
+                    {% with qty=item.qty|default:"0" total=item.total|default:"0" tax=item.tax|default:"0" %}
+                    <tr>
+                        <td>{{ forloop.counter }}</td>
+                        <td>
+                            <div class="item-name">{{ item.item|default:"Unnamed Item" }}</div>
+                            {% if item.goodsCategoryName %}
+                            <div class="item-cat">{{ item.goodsCategoryName }}</div>
+                            {% endif %}
+                        </td>
+                        <td class="r">
+                            {% if qty|slice:"0:1" == "-" %}<span class="neg">{{ qty|floatformat:0 }}</span>
+                            {% else %}{{ qty|floatformat:0 }}{% endif %}
+                        </td>
+                        <td>{{ item.unitOfMeasure|default:"—" }}</td>
+                        <td class="r mono">{{ item.unitPrice|default:0|floatformat:0|intcomma }}</td>
+                        <td class="r">{{ item.taxRate|default:"—" }}</td>
+                        <td class="r mono">
+                            {% if total|slice:"0:1" == "-" %}<span class="neg">{{ total|floatformat:0|intcomma }}</span>
+                            {% else %}<strong>{{ total|floatformat:0|intcomma }}</strong>{% endif %}
+                        </td>
+                    </tr>
+                    {% endwith %}
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" style="text-align:center; padding:24px; color:var(--gray);">
+                            <i class="bi bi-box-seam"></i> No goods details available
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="6" class="r" style="font-family:inherit;">Totals:</td>
+                        <td class="r mono">
+                            {% if summary.gross_amount < 0 %}<span class="neg">{{ summary.gross_amount|floatformat:0|intcomma }}</span>
+                            {% else %}{{ summary.gross_amount|default:0|floatformat:0|intcomma }}{% endif %}
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- ══ SECTION E: Tax ══ -->
+    <div class="section">
+        <div class="section-title"><i class="bi bi-percent"></i> Section E: Tax Details</div>
+        <div class="section-body no-pad">
+            <table class="tax-table">
+                <thead>
+                    <tr>
+                        <th style="width:34%">Tax Category</th>
+                        <th class="r" style="width:22%">Net Amount</th>
+                        <th class="r" style="width:22%">Tax Amount</th>
+                        <th class="r" style="width:22%">Gross Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tax in tax_details %}
+                    <tr>
+                        <td>{{ tax.taxRateName|default:tax.taxRate|default:"—" }}</td>
+                        <td class="r mono">
+                            {% with v=tax.netAmount|default:"0" %}
+                            {% if v|slice:"0:1" == "-" %}<span class="neg">{{ v|floatformat:0|intcomma }}</span>
+                            {% else %}{{ v|floatformat:0|intcomma }}{% endif %}
+                            {% endwith %}
+                        </td>
+                        <td class="r mono">{{ tax.taxAmount|default:0|floatformat:0|intcomma }}</td>
+                        <td class="r mono">
+                            {% with v=tax.grossAmount|default:"0" %}
+                            {% if v|slice:"0:1" == "-" %}<span class="neg">{{ v|floatformat:0|intcomma }}</span>
+                            {% else %}{{ v|floatformat:0|intcomma }}{% endif %}
+                            {% endwith %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" style="text-align:center; padding:16px; color:var(--gray);">No tax details available</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ══ SECTION F: Summary ══ -->
+    <div class="section">
+        <div class="section-title"><i class="bi bi-calculator-fill"></i> Section F: Summary</div>
+        <div class="section-body">
+
+            <!-- Amount comparison — mirrors official PDF table -->
+            <table class="comp-table">
+                <thead>
+                    <tr>
+                        <th class="lbl" style="width:22%"> </th>
+                        <th class="prev" style="width:26%">Previous Receipt Amount</th>
+                        <th class="cn"   style="width:26%">Credit Note Amount</th>
+                        <th class="curr" style="width:26%">Current Receipt Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Gross Amount:</td>
+                        <td>{{ summary.previous_gross_amount|default:0|floatformat:0|intcomma }}</td>
+                        <td>
+                            {% if summary.gross_amount < 0 %}<span class="neg">{{ summary.gross_amount|floatformat:0|intcomma }}</span>
+                            {% else %}{{ summary.gross_amount|default:0|floatformat:0|intcomma }}{% endif %}
+                        </td>
+                        <td>
+                            {% with curr=summary.previous_gross_amount|add:summary.gross_amount %}
+                            {{ curr|floatformat:0|intcomma }}
+                            {% endwith %}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+
+            <!-- Total Amount -->
+            <div class="total-banner">
+                <span class="lbl">Total Amount</span>
+                <span class="val {% if summary.gross_amount < 0 %}neg{% endif %}">
+                    {{ application.currency|default:"UGX" }} {{ summary.gross_amount|default:0|floatformat:0|intcomma }}
+                </span>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ══ QR CODE ══ -->
+    <div class="qr-section">
+        {% if qr_image_src %}
+        <img src="{{ qr_image_src }}" alt="URA EFRIS QR Code" class="qr-img">
+        {% else %}
+        <div class="qr-no-img">QR not available</div>
         {% endif %}
-    </div>
-
-    <!-- ══ INFO GRID: Buyer (left) + Document details (right) ══ -->
-    <div class="receipt-info-grid">
-
-        <!-- LEFT: Buyer / Applicant -->
-        <div class="receipt-customer-section">
-            <div class="receipt-customer-title">
-                <i class="bi bi-person-circle"></i> Buyer / Customer
-            </div>
-
-            {% if application.buyer_name %}
-            <div class="receipt-customer-row">
-                <span class="receipt-customer-label">Name:</span>
-                <span class="receipt-customer-value">{{ application.buyer_name }}</span>
-            </div>
+        <div class="qr-details">
+            <div><strong>Credit Note No:</strong> {{ application.credit_note_no|default:"N/A" }}</div>
+            <div><strong>Fiscal Document No:</strong> {{ application.original_invoice_no|default:"N/A" }}</div>
+            {% if anti_fake_code %}
+            <div><strong>Verification Code:</strong> {{ anti_fake_code }}</div>
             {% endif %}
-
-            {% if application.buyer_tin %}
-            <div class="receipt-customer-row">
-                <span class="receipt-customer-label">TIN:</span>
-                <span class="receipt-customer-value">{{ application.buyer_tin }}</span>
-            </div>
-            {% endif %}
-
-            {% if application.buyer_email %}
-            <div class="receipt-customer-row">
-                <span class="receipt-customer-label">Email:</span>
-                <span class="receipt-customer-value">{{ application.buyer_email }}</span>
-            </div>
-            {% endif %}
-
-            {% if application.buyer_mobile %}
-            <div class="receipt-customer-row">
-                <span class="receipt-customer-label">Mobile:</span>
-                <span class="receipt-customer-value">{{ application.buyer_mobile }}</span>
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- RIGHT: Document details -->
-        <div class="receipt-details-section">
-            {% if application.credit_note_no %}
-            <div class="receipt-info-row">
-                <span class="receipt-info-label"><i class="bi bi-file-earmark-minus"></i> Credit Note No:</span>
-                <span class="receipt-info-value">{{ application.original_invoice_no|default:"N/A" }}</span>
-            </div>
-            {% endif %}
-
-            <div class="receipt-info-row">
-                <span class="receipt-info-label"><i class="bi bi-receipt"></i> Original Invoice:</span>
-                <span class="receipt-info-value">{{ application.original_invoice_no|default:"N/A" }}</span>
-            </div>
-
-            <div class="receipt-info-row">
-                <span class="receipt-info-label"><i class="bi bi-hash"></i> Application ID:</span>
-                <span class="receipt-info-value">{{ application.application_id }}</span>
-            </div>
-
-            {% if application.application_date %}
-            <div class="receipt-info-row">
-                <span class="receipt-info-label"><i class="bi bi-calendar"></i> Date:</span>
-                <span class="receipt-info-value">{{ application.application_date }}</span>
-            </div>
-            {% endif %}
-
             {% if application.issued_date %}
-            <div class="receipt-info-row">
-                <span class="receipt-info-label"><i class="bi bi-calendar-check"></i> Issued:</span>
-                <span class="receipt-info-value">{{ application.issued_date }}</span>
-            </div>
+            <div><strong>Issued:</strong> {{ application.issued_date }}</div>
             {% endif %}
-
-            <div class="receipt-info-row">
-                <span class="receipt-info-label"><i class="bi bi-info-circle"></i> Status:</span>
-                <span class="receipt-info-value
-                    {% if application.approve_status == '101' %}status-approved
-                    {% elif application.approve_status == '102' %}status-pending
-                    {% elif application.approve_status == '103' %}status-rejected
-                    {% endif %}">
-                    {{ application.status|upper }}
+            <div>
+                <span class="qr-badge">
+                    <i class="bi bi-shield-fill-check"></i> Verify with URA EFRIS
                 </span>
             </div>
-
-            <div class="receipt-info-row">
-                <span class="receipt-info-label"><i class="bi bi-currency-exchange"></i> Currency:</span>
-                <span class="receipt-info-value">{{ application.currency|default:"UGX" }}</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- REASON BOX -->
-    {% if application.reason_description or application.reason_code %}
-    <div class="reason-box">
-        <i class="bi bi-exclamation-circle-fill"></i>
-        <div>
-            <span class="reason-label">Reason for Credit Note: </span>
-            <span class="reason-text">
-                {% if application.reason_code %}[{{ application.reason_code }}]{% endif %}
-                {{ application.reason_description|default:"" }}
-                {% if application.remarks %} — {{ application.remarks }}{% endif %}
-            </span>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- ══ GOODS TABLE ══ -->
-    <table class="receipt-items-table {% if goods_details|length > 10 %}many-items{% endif %}">
-        <thead>
-            <tr>
-                <th style="width:5%">#</th>
-                <th style="width:30%">Description</th>
-                <th style="width:12%">Code</th>
-                <th style="width:7%">Unit</th>
-                <th class="text-right" style="width:8%">Qty</th>
-                <th class="text-right" style="width:13%">Unit Price</th>
-                <th class="text-right" style="width:10%">Tax Rate</th>
-                <th class="text-right" style="width:15%">Amount</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in goods_details %}
-            {% with qty=item.qty|default:"0"|floatformat:0 unit_price=item.unitPrice|default:"0" total=item.total|default:"0" %}
-            <tr>
-                <td>{{ forloop.counter }}</td>
-                <td>
-                    <div class="receipt-item-name">{{ item.itemName|default:"Unnamed Item" }}</div>
-                    {% if item.goodsCategoryName %}
-                    <div class="receipt-item-code">{{ item.goodsCategoryName }}</div>
-                    {% endif %}
-                </td>
-                <td><span class="receipt-item-code">{{ item.itemCode|default:"—" }}</span></td>
-                <td>{{ item.unit|default:"—" }}</td>
-                <td class="text-right">
-                    {% if qty|slice:"0:1" == "-" %}
-                        <span class="negative-amount">{{ qty }}</span>
-                    {% else %}
-                        {{ qty }}
-                    {% endif %}
-                </td>
-                <td class="text-right">{{ unit_price|floatformat:0|intcomma }}</td>
-                <td class="text-right">{{ item.taxRate|default:"—" }}</td>
-                <td class="text-right">
-                    {% if total|slice:"0:1" == "-" %}
-                        <span class="negative-amount">{{ total|floatformat:0|intcomma }}</span>
-                    {% else %}
-                        <strong>{{ total|floatformat:0|intcomma }}</strong>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endwith %}
-            {% empty %}
-            <tr>
-                <td colspan="8" style="text-align:center; padding: 24px; color: var(--receipt-gray);">
-                    <i class="bi bi-box-seam"></i> No goods details available
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        <tfoot>
-            <tr>
-                <td colspan="6" style="text-align: right;">Totals:</td>
-                <td class="text-right">
-                    {% if summary.tax_amount %}
-                        {% if summary.tax_amount < 0 %}
-                            <span class="negative-amount">{{ summary.tax_amount|floatformat:0|intcomma }}</span>
-                        {% else %}
-                            {{ summary.tax_amount|floatformat:0|intcomma }}
-                        {% endif %}
-                    {% else %}0{% endif %}
-                </td>
-                <td class="text-right">
-                    {% if summary.gross_amount %}
-                        {% if summary.gross_amount < 0 %}
-                            <span class="negative-amount">{{ summary.gross_amount|floatformat:0|intcomma }}</span>
-                        {% else %}
-                            {{ summary.gross_amount|floatformat:0|intcomma }}
-                        {% endif %}
-                    {% else %}0{% endif %}
-                </td>
-            </tr>
-        </tfoot>
-    </table>
-
-    <!-- ══ BOTTOM: QR (left) + Financial Summary (right) ══ -->
-    <div class="receipt-bottom-section">
-
-        <!-- LEFT: QR Code + EFRIS details -->
-        <div class="receipt-qr-section">
-            <div class="receipt-efris-container">
-                {% if qr_image_src %}
-                <img src="{{ qr_image_src }}" alt="URA EFRIS QR Code" class="receipt-efris-qr">
-                {% else %}
-                <div style="width:150px; height:150px; border:2px dashed var(--receipt-border); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--receipt-gray); font-size:11px; text-align:center; padding: 10px;">
-                    QR code not available
-                </div>
-                {% endif %}
-
-                <div class="receipt-efris-details">
-                    {% if application.credit_note_no %}
-                    <div><strong>Credit Note No:</strong> {{ application.original_invoice_no }}</div>
-                    {% endif %}
-                    {% if application.applicant_tin %}
-                    <div><strong>TIN:</strong> {{ application.applicant_tin }}</div>
-                    {% endif %}
-                    {% if application.issued_date %}
-                    <div><strong>Issued:</strong> {{ application.issued_date }}</div>
-                    {% endif %}
-                </div>
-
-                <span class="ura-verify-label">
-                    <i class="bi bi-shield-check"></i> Verify with URA EFRIS
-                </span>
-            </div>
-        </div>
-
-        <!-- RIGHT: Financial Summary comparison -->
-        <div class="receipt-totals-section">
-
-            <!-- Original Invoice amounts -->
-            <div class="comparison-block">
-                <div class="comparison-block-title">
-                    <i class="bi bi-file-earmark-text"></i> Original Invoice
-                </div>
-                <div class="receipt-total-row">
-                    <span class="receipt-total-label">Net Amount:</span>
-                    <span class="receipt-total-value">
-                        {{ application.currency|default:"UGX" }} {{ summary.previous_net_amount|default:0|floatformat:0|intcomma }}
-                    </span>
-                </div>
-                <div class="receipt-total-row">
-                    <span class="receipt-total-label">Tax Amount:</span>
-                    <span class="receipt-total-value">
-                        {{ application.currency|default:"UGX" }} {{ summary.previous_tax_amount|default:0|floatformat:0|intcomma }}
-                    </span>
-                </div>
-                <div class="receipt-total-row">
-                    <span class="receipt-total-label">Gross Amount:</span>
-                    <span class="receipt-total-value">
-                        {{ application.currency|default:"UGX" }} {{ summary.previous_gross_amount|default:0|floatformat:0|intcomma }}
-                    </span>
-                </div>
-            </div>
-
-            <!-- Credit Note amounts -->
-            <div class="comparison-block" style="margin-top: 10px;">
-                <div class="comparison-block-title credit">
-                    <i class="bi bi-arrow-counterclockwise"></i> This Credit Note
-                </div>
-                <div class="receipt-total-row">
-                    <span class="receipt-total-label">Net Amount:</span>
-                    <span class="receipt-total-value {% if summary.net_amount < 0 %}negative{% endif %}">
-                        {{ application.currency|default:"UGX" }} {{ summary.net_amount|default:0|floatformat:0|intcomma }}
-                    </span>
-                </div>
-                <div class="receipt-total-row">
-                    <span class="receipt-total-label">Tax Amount:</span>
-                    <span class="receipt-total-value {% if summary.tax_amount < 0 %}negative{% endif %}">
-                        {{ application.currency|default:"UGX" }} {{ summary.tax_amount|default:0|floatformat:0|intcomma }}
-                    </span>
-                </div>
-                <div class="receipt-total-row final">
-                    <span class="receipt-total-label">Gross Amount:</span>
-                    <span class="receipt-total-value {% if summary.gross_amount < 0 %}negative{% endif %}">
-                        {{ application.currency|default:"UGX" }} {{ summary.gross_amount|default:0|floatformat:0|intcomma }}
-                    </span>
-                </div>
-            </div>
-
         </div>
     </div>
 
     <!-- ══ FOOTER ══ -->
-    <div class="receipt-footer">
-        <div class="receipt-footer-main">
-            {% if summary.remarks %}
-            <div style="font-style: italic; margin-bottom: 6px; color: var(--receipt-dark);">
-                {{ summary.remarks }}
-            </div>
-            {% endif %}
-            <div style="font-weight: 600; color: var(--receipt-dark); font-size: 13px;">
-                This is an official EFRIS credit note issued via URA.
-            </div>
+    <div class="doc-footer">
+        <div class="footer-meta">
+            Generated: {% now "d/m/Y H:i" %} &nbsp;|&nbsp;
+            {{ company.name }} &nbsp;|&nbsp;
+            TIN: {{ company.tin|default:"N/A" }}
         </div>
-
-        <div style="font-size: 10px; color: var(--receipt-gray); margin: 10px 0 5px 0;">
-            Generated: {% now "d/m/Y H:i" %} &nbsp;|&nbsp; {{ company.name }} &nbsp;|&nbsp; TIN: {{ company.tin|default:"N/A" }}
-        </div>
-
-        <div class="receipt-footer-powered">
-            <p style="margin:0;">
-                Powered by <strong>Primebooks</strong>
-                (<a href="https://www.primebooks.sale" target="_blank">www.primebooks.sale</a>)
-            </p>
+        <div class="powered">
+            Powered by <strong>Primebooks</strong>
+            (<a href="https://www.primebooks.sale" target="_blank">www.primebooks.sale</a>)
         </div>
     </div>
 
 </div><!-- /receipt-print-container -->
+</div><!-- /page-wrapper -->
 
 <!-- PRINT CONTROLS -->
 <div class="print-controls">
@@ -701,7 +676,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const saved = localStorage.getItem('cnPrintFormat');
     if (saved) switchFormat(saved);
 });
-window.onafterprint = function () { console.log('Print closed'); };
 </script>
 </body>
 </html>
