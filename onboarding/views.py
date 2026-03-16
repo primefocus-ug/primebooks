@@ -25,21 +25,61 @@ from .models import OnboardingProgress, ALL_STEP_KEYS
 #   'onboarding.views.onboarding_context'
 # ═════════════════════════════════════════════════════════════
 
+def _empty_onboarding_context():
+    return {
+        'ob_is_new_user': False,
+        'ob_percent':     0,
+        'ob_steps':       [],
+        'ob_progress':    None,
+    }
+
+
+def _is_public_schema():
+    """
+    Return True when the current DB connection is on the public schema.
+
+    OnboardingProgress lives in TENANT_APPS — its table only exists inside
+    tenant schemas. Calling it from the public schema (e.g. the SaaS admin
+    panel at primebooks.sale/admin) raises:
+        ValueError: Cannot query "...": Must be "CustomUser" instance.
+    because CustomUser's table doesn't exist in the public schema either.
+
+    django-tenants stores the active schema name on the connection.
+    """
+    try:
+        from django.db import connection
+        schema = getattr(connection, 'schema_name', None)
+        if schema is None:
+            # Older django-tenants versions use get_schema()
+            schema = getattr(connection, 'get_schema', lambda: None)()
+        return schema == 'public'
+    except Exception:
+        return False
+
+
 def onboarding_context(request):
-    """Inject onboarding data into every template for authenticated users."""
+    """
+    Inject onboarding data into every template for authenticated users.
+
+    Skips silently on the public schema (admin panel) where
+    OnboardingProgress and CustomUser tables do not exist.
+    """
     if not getattr(request, 'user', None) or not request.user.is_authenticated:
-        return {
-            'ob_is_new_user': False,
-            'ob_percent':     0,
-            'ob_steps':       [],
-            'ob_progress':    None,
-        }
+        return _empty_onboarding_context()
+
+    # ✅ Skip on public schema — tenant tables don't exist there
+    if _is_public_schema():
+        return _empty_onboarding_context()
 
     try:
-        # Auto-detect on each request (lightweight — uses update_fields)
         progress = OnboardingProgress.auto_detect_completed_steps(request.user)
     except Exception:
-        progress = OnboardingProgress.get_or_create_for_user(request.user)
+        # Fallback: try a simple get_or_create; if that also fails
+        # (e.g. table missing in this schema), return empty context
+        try:
+            progress = OnboardingProgress.get_or_create_for_user(request.user)
+        except Exception:
+            return _empty_onboarding_context()
 
     return {
         'ob_is_new_user': progress.is_new_user,

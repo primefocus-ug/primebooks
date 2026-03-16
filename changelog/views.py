@@ -33,6 +33,25 @@ from .models import (
 # Context Processor
 # ═════════════════════════════════════════════════════════════
 
+def _is_public_schema():
+    """
+    Return True when the active DB connection is on the public schema.
+    changelog's ChangelogRelease/Announcement models live in SHARED_APPS
+    (public schema) so they are always accessible. However we still skip
+    the full context on the public schema admin to avoid unnecessary DB
+    hits and any edge-case issues with AnnouncementDismissal user_id
+    lookups when there are no tenant users present.
+    """
+    try:
+        from django.db import connection
+        schema = getattr(connection, 'schema_name', None)
+        if schema is None:
+            schema = getattr(connection, 'get_schema', lambda: None)()
+        return schema == 'public'
+    except Exception:
+        return False
+
+
 def changelog_context(request):
     """
     Injects changelog + announcement data into every authenticated template.
@@ -52,6 +71,11 @@ def changelog_context(request):
         → Never show, regardless of push.
     """
     if not getattr(request, 'user', None) or not request.user.is_authenticated:
+        return _empty_context()
+
+    # Skip the full context on the public schema admin panel —
+    # no changelog modal needed there and avoids edge-case DB issues.
+    if _is_public_schema():
         return _empty_context()
 
     user_id = request.user.id
