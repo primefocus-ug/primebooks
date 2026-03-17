@@ -57,6 +57,10 @@ def changelog_context(request):
     """
     Injects changelog + announcement data into every authenticated template.
 
+    Announcements and the changelog modal are fetched independently so that
+    a missing release, schema guard, or any exception in one path never
+    silences the other.
+
     Show logic:
       For major/minor releases:
         → Show if the user has no ChangelogView record for this release
@@ -74,70 +78,76 @@ def changelog_context(request):
     if not getattr(request, 'user', None) or not request.user.is_authenticated:
         return _empty_context()
 
-    # Skip the full context on the public schema admin panel —
-    # no changelog modal needed there and avoids edge-case DB issues.
-    if _is_public_schema():
-        return _empty_context()
-
     user_id = request.user.id
 
+    # ── Announcements ──────────────────────────────────────────────
+    # Fetched first, independently — a broken changelog release must never
+    # silence announcements.  Announcement model is in SHARED_APPS so it is
+    # always reachable regardless of the active schema.
+    active_announcements = []
     try:
-        release = ChangelogRelease.get_latest_active()
-    except Exception:
-        return _empty_context()
+        dismissed_ann_ids = AnnouncementDismissal.objects.filter(
+            user_id=user_id
+        ).values_list('announcement_id', flat=True)
 
+        now = timezone.now()
+        active_announcements = list(
+            Announcement.objects
+            .filter(is_active=True, starts_at__lte=now)
+            .exclude(pk__in=dismissed_ann_ids)
+            .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now))
+            .order_by('-starts_at')
+        )
+    except Exception:
+        pass  # never let announcement errors break the page
+
+    # ── Changelog modal ────────────────────────────────────────────
+    # Skip on the public-schema admin panel — no tenant users there and
+    # ChangelogView cross-schema lookups can cause edge-case DB issues.
     show_release = None
     resume_slide = 0
     opted_out    = False
 
-    if release:
-        view_record = ChangelogView.objects.filter(
-            user_id=user_id, release=release
-        ).first()
+    if not _is_public_schema():
+        try:
+            release = ChangelogRelease.get_latest_active()
+        except Exception:
+            release = None
 
-        if view_record and view_record.opted_out:
-            # User permanently opted out — never show
-            show_release = None
-            opted_out    = True
+        if release:
+            view_record = ChangelogView.objects.filter(
+                user_id=user_id, release=release
+            ).first()
 
-        elif view_record and view_record.dismissed_at:
-            # User has previously seen and dismissed this release.
-            # Only re-show if admin pushed a new minor update.
-            if release.is_minor_push:
-                show_release = release
-                resume_slide = 0  # always start from beginning on a push
-            else:
+            if view_record and view_record.opted_out:
+                # User permanently opted out — never show
                 show_release = None
+                opted_out    = True
 
-        elif view_record and not view_record.dismissed_at:
-            # User opened modal but never dismissed — resume where they left off
-            show_release = release
-            resume_slide = view_record.last_slide
+            elif view_record and view_record.dismissed_at:
+                # User has previously seen and dismissed this release.
+                # Only re-show if admin pushed a new minor update.
+                if release.is_minor_push:
+                    show_release = release
+                    resume_slide = 0  # always start from beginning on a push
+                else:
+                    show_release = None
 
-        else:
-            # No view record at all — first time seeing this release
-            # For patch releases, only show if admin explicitly pushed
-            if release.release_type == 'patch' and not release.is_minor_push:
-                show_release = None
-            else:
+            elif view_record and not view_record.dismissed_at:
+                # User opened modal but never dismissed — resume where they left off
                 show_release = release
-                resume_slide = 0
+                resume_slide = view_record.last_slide
+
+            else:
+                # No view record at all — first time seeing this release
+                # For patch releases, only show if admin explicitly pushed
+                if release.release_type == 'patch' and not release.is_minor_push:
+                    show_release = None
+                else:
+                    show_release = release
+                    resume_slide = 0
 
     slides_data = _build_slides_data(show_release)
-
-    # ── Announcements ──────────────────────────────────────────────
-    dismissed_ann_ids = AnnouncementDismissal.objects.filter(
-        user_id=user_id
-    ).values_list('announcement_id', flat=True)
-
-    now = timezone.now()
-    active_announcements = list(
-        Announcement.objects
-        .filter(is_active=True, starts_at__lte=now)
-        .exclude(pk__in=dismissed_ann_ids)
-        .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now))
-        .order_by('-starts_at')
-    )
 
     return {
         'changelog_release':      show_release,
@@ -193,11 +203,11 @@ def _build_slides_data(release):
             'description':        slide.description,
             'chips':              slide.chips,
             'media_type':         slide.media_type,
-            'media_url':          _normalize_embed_url(slide.media_url),
+            'media_url':          _normalize_embed_url(slide.resolved_media_url),
             'media_alt':          slide.media_alt,
-            'media_poster':       slide.media_poster,
-            'before_image':       slide.before_image,
-            'after_image':        slide.after_image,
+            'media_poster':       slide.resolved_media_poster,
+            'before_image':       slide.resolved_before_image,
+            'after_image':        slide.resolved_after_image,
             'highlight_selector': slide.highlight_selector,
             'highlight_label':    slide.highlight_label,
         }

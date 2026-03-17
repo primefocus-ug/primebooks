@@ -1,17 +1,20 @@
 """
 changelog/admin.py
 
-Key additions over the previous version:
-  - "Push to all users" action  — triggers re-show of a release to all users
-  - "Unpush" action             — reverts the push without affecting view records
-  - push_status column          — shows Live / Pushed / Patch / Inactive badge
-  - Preview button              — links to /changelog/preview/<pk>/ to see the
-                                  modal exactly as users will see it
-  - push_info readonly panel    — shows push count, last pushed, pushed by
+Upload support added:
+  - MediaUploadWidget  — replaces plain text inputs for media fields.
+    Shows the current file/URL as a thumbnail, a "Choose file" button,
+    and a "Clear upload" checkbox.  Falls back gracefully when no file
+    is stored yet.
+  - ChangelogSlideForm — wires the widget onto the four upload-capable
+    fields and keeps the original URL fields visible beneath each upload
+    widget as a fallback option.
+  - Everything else is unchanged from the previous version.
 """
 
+from django import forms
 from django.contrib        import admin, messages
-from django.utils.html     import format_html
+from django.utils.html     import format_html, mark_safe
 from django.utils          import timezone
 from django.urls           import path, reverse
 from django.http           import HttpResponseRedirect
@@ -22,11 +25,134 @@ from .models import (
 
 
 # ─────────────────────────────────────────────────────────────
+# Custom widget: file upload + thumbnail preview
+# ─────────────────────────────────────────────────────────────
+
+class MediaUploadWidget(forms.ClearableFileInput):
+    """
+    Extends Django's built-in ClearableFileInput with:
+      - A thumbnail preview for images and a filename badge for videos.
+      - Styled "Upload file" button matching the admin's look.
+      - Accepts images AND video (mp4/webm/mov/gif).
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('attrs', {})
+        kwargs['attrs']['accept'] = 'image/*,video/mp4,video/webm,video/quicktime,.gif'
+        kwargs['attrs']['style']  = 'display:none'
+        kwargs['attrs']['class']  = 'cl-upload-input'
+        super().__init__(*args, **kwargs)
+
+    def render(self, name, value, attrs=None, renderer=None):
+        base_html = super().render(name, value, attrs, renderer)
+
+        # Preview of the currently-stored file
+        preview_html = ''
+        if value and hasattr(value, 'url'):
+            url   = value.url
+            fname = str(value).split('/')[-1]
+            is_image = any(url.lower().endswith(ext)
+                           for ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'))
+            if is_image:
+                preview_html = (
+                    f'<div style="margin-bottom:6px">'
+                    f'<img src="{url}" alt="preview" style="'
+                    f'max-height:120px;max-width:100%;border-radius:6px;'
+                    f'border:1px solid #d1d5db;object-fit:cover;display:block">'
+                    f'<span style="font-size:0.72rem;color:#6b7280">{fname}</span>'
+                    f'</div>'
+                )
+            else:
+                preview_html = (
+                    f'<div style="display:inline-flex;align-items:center;gap:6px;'
+                    f'background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;'
+                    f'padding:4px 10px;margin-bottom:6px;font-size:0.78rem;color:#374151">'
+                    f'🎬 {fname}'
+                    f'</div>'
+                )
+
+        has_file     = bool(value and hasattr(value, 'url'))
+        button_label = 'Replace file' if has_file else 'Upload file'
+        trigger_id   = f'cl_trigger_{name}'
+        display_id   = f'cl_fname_{name}'
+
+        # Use the input's element ID for both onclick and the JS listener —
+        # avoids ALL quote nesting inside HTML attributes and inline scripts.
+        input_id = attrs.get('id', f'id_{name}') if attrs else f'id_{name}'
+        trigger_html = (
+            '<button type="button" id="' + trigger_id + '" '
+            'onclick="document.getElementById(\'' + input_id + '\').click()" '
+            'style="display:inline-flex;align-items:center;gap:6px;'
+            'padding:5px 14px;border-radius:6px;cursor:pointer;'
+            'font-size:0.8rem;font-weight:600;border:1px solid #d1d5db;'
+            'background:#fff;color:#374151">'
+            '📎 ' + button_label +
+            '</button>'
+            '<span id="' + display_id + '" '
+            'style="font-size:0.72rem;color:#6b7280;margin-left:8px"></span>'
+        )
+
+        script_html = (
+            '<script>'
+            '(function(){'
+            '  var inp=document.getElementById("' + input_id + '");'
+            '  var lbl=document.getElementById("' + display_id + '");'
+            '  if(inp)inp.addEventListener("change",function(){'
+            '    if(lbl)lbl.textContent=this.files[0]?this.files[0].name:"";'
+            '  });'
+            '})();'
+            '</script>'
+        )
+
+        return mark_safe(
+            '<div style="margin:4px 0">'
+            + preview_html
+            + base_html
+            + trigger_html
+            + script_html
+            + '</div>'
+        )
+
+
+# ─────────────────────────────────────────────────────────────
+# Slide form
+# ─────────────────────────────────────────────────────────────
+
+class ChangelogSlideForm(forms.ModelForm):
+
+    class Meta:
+        model   = ChangelogSlide
+        fields  = '__all__'
+        widgets = {
+            'media_upload':         MediaUploadWidget(),
+            'media_poster_upload':  MediaUploadWidget(),
+            'before_image_upload':  MediaUploadWidget(),
+            'after_image_upload':   MediaUploadWidget(),
+        }
+        help_texts = {
+            'media_url': (
+                '↑ Upload a file above, OR paste a URL here '
+                '(YouTube, Loom, hosted image/video). Upload takes priority.'
+            ),
+            'media_poster': (
+                '↑ Upload a poster image above, OR paste a URL. Upload takes priority.'
+            ),
+            'before_image': (
+                '↑ Upload the "before" image above, OR paste a URL. Upload takes priority.'
+            ),
+            'after_image': (
+                '↑ Upload the "after" image above, OR paste a URL. Upload takes priority.'
+            ),
+        }
+
+
+# ─────────────────────────────────────────────────────────────
 # Inline: Slides inside a Release
 # ─────────────────────────────────────────────────────────────
 
 class ChangelogSlideInline(admin.StackedInline):
     model    = ChangelogSlide
+    form     = ChangelogSlideForm
     extra    = 1
     ordering = ('order',)
     fields   = (
@@ -34,8 +160,18 @@ class ChangelogSlideInline(admin.StackedInline):
         'title',
         'description',
         'chips',
-        ('media_url', 'media_alt', 'media_poster'),
-        ('before_image', 'after_image'),
+        # Main media
+        'media_upload',
+        ('media_url', 'media_alt'),
+        # Video poster
+        'media_poster_upload',
+        'media_poster',
+        # Before/After
+        'before_image_upload',
+        'before_image',
+        'after_image_upload',
+        'after_image',
+        # Highlight
         ('highlight_selector', 'highlight_label'),
     )
 
@@ -165,7 +301,7 @@ class ChangelogReleaseAdmin(admin.ModelAdmin):
     def preview_link(self, obj):
         if not obj.pk:
             return '—'
-        url = reverse('changelog_admin_preview', args=[obj.pk])
+        url = reverse('changelog:changelog_admin_preview', args=[obj.pk])
         return format_html(
             '<a href="{}" target="_blank" style="'
             'background:#3b82f6;color:#fff;padding:4px 12px;border-radius:6px;'
@@ -176,7 +312,6 @@ class ChangelogReleaseAdmin(admin.ModelAdmin):
 
     @admin.display(description='')
     def push_button(self, obj):
-        """Inline push button in the list view."""
         if not obj.is_active:
             return '—'
         if obj.is_minor_push:
@@ -188,7 +323,7 @@ class ChangelogReleaseAdmin(admin.ModelAdmin):
                 '↩ Unpush</a>',
                 url, obj.pk,
             )
-        url = reverse('changelog_admin_push', args=[obj.pk])
+        url = reverse('changelog:changelog_push', args=[obj.pk])
         return format_html(
             '<a href="{}" style="background:#8b5cf6;color:#fff;padding:3px 10px;'
             'border-radius:6px;text-decoration:none;font-size:0.78rem;font-weight:600"'
@@ -243,21 +378,18 @@ class ChangelogReleaseAdmin(admin.ModelAdmin):
             messages.SUCCESS,
         )
 
-    # ── Custom URL for per-row push button ────────────────────────────
-
     def get_urls(self):
         urls = super().get_urls()
         custom = [
             path(
                 '<int:release_id>/push/',
                 self.admin_site.admin_view(self.push_single_view),
-                name='changelog_admin_push_single',  # internal — not used by name externally
+                name='changelog_admin_push_single',
             ),
         ]
         return custom + urls
 
     def push_single_view(self, request, release_id):
-        """Handles the per-row 📢 Push button click."""
         try:
             release = ChangelogRelease.objects.get(pk=release_id)
             deleted = release.push_to_all_users(pushed_by_username=request.user.username)
@@ -281,10 +413,34 @@ class ChangelogReleaseAdmin(admin.ModelAdmin):
 
 @admin.register(ChangelogSlide)
 class ChangelogSlideAdmin(admin.ModelAdmin):
-    list_display  = ('release', 'order', 'tag', 'title', 'media_type', 'has_highlight')
+    form          = ChangelogSlideForm
+    list_display  = ('release', 'order', 'tag', 'title', 'media_type', 'has_upload', 'has_highlight')
     list_filter   = ('release', 'tag', 'media_type')
     search_fields = ('title', 'description')
     ordering      = ('release', 'order')
+    fields        = (
+        ('release', 'order'),
+        ('tag', 'media_type'),
+        'title',
+        'description',
+        'chips',
+        'media_upload',
+        ('media_url', 'media_alt'),
+        'media_poster_upload',
+        'media_poster',
+        'before_image_upload',
+        'before_image',
+        'after_image_upload',
+        'after_image',
+        ('highlight_selector', 'highlight_label'),
+    )
+
+    @admin.display(description='Uploaded?', boolean=True)
+    def has_upload(self, obj):
+        return bool(
+            obj.media_upload or obj.media_poster_upload
+            or obj.before_image_upload or obj.after_image_upload
+        )
 
     @admin.display(description='Highlight?', boolean=True)
     def has_highlight(self, obj):

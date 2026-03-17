@@ -1,9 +1,55 @@
 """
 changelog/models.py
+
+Upload support added:
+  - Four new FileField/ImageField columns on ChangelogSlide for direct uploads.
+  - Original CharField URL fields kept intact — existing data is unaffected.
+  - Helper property `resolved_<field>` picks the upload over the URL when both
+    are present, so views/templates only need to call one thing.
+  - Run:  python manage.py makemigrations changelog && python manage.py migrate
 """
 
-from django.db import models
+import os
+from django.db    import models
 from django.utils import timezone
+
+
+# ─────────────────────────────────────────────────────────────
+# Upload path helpers  (keeps MEDIA_ROOT organised)
+# ─────────────────────────────────────────────────────────────
+
+class SlideUploadPath:
+    """
+    Callable upload_to class for ChangelogSlide file fields.
+
+    Using a class (rather than a closure) makes this fully serializable
+    by Django's migration writer — closures cannot be serialized.
+
+    Files are stored at:
+        MEDIA_ROOT/changelog/<version_tag>/<field_name>/<original_filename>
+    """
+
+    def __init__(self, field_name):
+        self.field_name = field_name
+
+    def __call__(self, instance, filename):
+        version = 'unattached'
+        if instance.release_id:
+            try:
+                version = instance.release.version_tag.replace('/', '-')
+            except Exception:
+                pass
+        ext  = os.path.splitext(filename)[1].lower()
+        name = os.path.splitext(filename)[0]
+        return f'changelog/{version}/{self.field_name}/{name}{ext}'
+
+    def deconstruct(self):
+        """Required so Django migrations can serialize this callable."""
+        return (
+            'changelog.models.SlideUploadPath',
+            [self.field_name],
+            {},
+        )
 
 
 class ChangelogRelease(models.Model):
@@ -134,7 +180,14 @@ class ChangelogRelease(models.Model):
 
 
 class ChangelogSlide(models.Model):
-    """One slide in a changelog carousel."""
+    """
+    One slide in a changelog carousel.
+
+    Media resolution priority (upload beats URL):
+      If a file is uploaded it takes precedence over the URL field.
+      This lets you migrate gradually — old slides using URLs keep
+      working while new slides use uploads.
+    """
 
     TAG_CHOICES = [
         ('new',      'New Feature'),
@@ -168,11 +221,48 @@ class ChangelogSlide(models.Model):
     media_type         = models.CharField(
         max_length=20, choices=MEDIA_TYPE_CHOICES, default='none',
     )
-    media_url          = models.CharField(max_length=500, blank=True)
+
+    # ── Original URL fields (kept for backwards compatibility) ───────
+    media_url          = models.CharField(
+        max_length=500, blank=True,
+        help_text='Paste a URL, or use the Upload button below.',
+    )
     media_alt          = models.CharField(max_length=200, blank=True)
-    media_poster       = models.CharField(max_length=500, blank=True)
-    before_image       = models.CharField(max_length=500, blank=True)
-    after_image        = models.CharField(max_length=500, blank=True)
+    media_poster       = models.CharField(
+        max_length=500, blank=True,
+        help_text='Poster image URL shown before a video plays. Or upload below.',
+    )
+    before_image       = models.CharField(
+        max_length=500, blank=True,
+        help_text='Before image URL for comparison slider. Or upload below.',
+    )
+    after_image        = models.CharField(
+        max_length=500, blank=True,
+        help_text='After image URL for comparison slider. Or upload below.',
+    )
+
+    # ── Upload fields (take priority over URL fields when set) ───────
+    media_upload       = models.FileField(
+        upload_to=SlideUploadPath('media'),
+        blank=True, null=True,
+        help_text='Upload an image, GIF, or MP4. Overrides the URL field above.',
+    )
+    media_poster_upload = models.ImageField(
+        upload_to=SlideUploadPath('poster'),
+        blank=True, null=True,
+        help_text='Upload a poster/thumbnail image. Overrides the URL field above.',
+    )
+    before_image_upload = models.ImageField(
+        upload_to=SlideUploadPath('before'),
+        blank=True, null=True,
+        help_text='Upload the "before" comparison image. Overrides the URL field.',
+    )
+    after_image_upload  = models.ImageField(
+        upload_to=SlideUploadPath('after'),
+        blank=True, null=True,
+        help_text='Upload the "after" comparison image. Overrides the URL field.',
+    )
+
     highlight_selector = models.CharField(max_length=200, blank=True)
     highlight_label    = models.CharField(max_length=100, blank=True)
 
@@ -183,6 +273,34 @@ class ChangelogSlide(models.Model):
 
     def __str__(self):
         return f'[{self.release.version_tag}] Slide {self.order}: {self.title}'
+
+    # ── Resolved media helpers ────────────────────────────────────────
+    # Upload wins over URL.  Views call these instead of raw fields.
+
+    @property
+    def resolved_media_url(self):
+        """Uploaded file URL if present, else the manual URL field."""
+        if self.media_upload:
+            return self.media_upload.url
+        return self.media_url
+
+    @property
+    def resolved_media_poster(self):
+        if self.media_poster_upload:
+            return self.media_poster_upload.url
+        return self.media_poster
+
+    @property
+    def resolved_before_image(self):
+        if self.before_image_upload:
+            return self.before_image_upload.url
+        return self.before_image
+
+    @property
+    def resolved_after_image(self):
+        if self.after_image_upload:
+            return self.after_image_upload.url
+        return self.after_image
 
 
 class ChangelogView(models.Model):
