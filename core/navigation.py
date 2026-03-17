@@ -119,12 +119,6 @@ NAVIGATION_ITEMS = [
         permission="company.view_company"
     ),
     NavigationItem(
-        name="Users Dashboard",
-        url_name="user_dashboard",
-        icon="bi bi-speedometer2",
-        permission="accounts.view_customuser"
-    ),
-    NavigationItem(
         name="Create Sale",
         url_name="sales:create_sale",
         icon="bi bi-receipt-cutoff",
@@ -580,6 +574,12 @@ NavigationItem(
                 permission="accounts.view_customuser"
             ),
             NavigationItem(
+                    name="Users Dashboard",
+                    url_name="user_dashboard",
+                    icon="bi bi-speedometer2",
+                    permission="accounts.view_customuser"
+                ),
+            NavigationItem(
                 name="Add User",
                 url_name="invite_user",
                 icon="bi bi-person-plus",
@@ -693,41 +693,70 @@ NavigationItem(
 
 def get_navigation_for_user(user, request=None, **context_kwargs):
     """
-    Returns navigation items that are visible to the given user
-    Enhanced to support URL parameters and EFRIS checks
+    Returns navigation items that are visible to the given user.
+    Enhanced to support URL parameters, EFRIS checks, and per-user
+    customisation preferences (hidden_items stored in UserNavigationPreference).
     """
+    # ── Load the user's hidden-item keys (e.g. ["Sales", "Inventory.Low Stock Report"])
+    hidden_keys: set = set()
+    if user and user.is_authenticated:
+        try:
+            from .models import UserNavigationPreference  # adjust import path
+            pref = UserNavigationPreference.get_for_user(user)
+            hidden_keys = set(pref.hidden_items)
+        except Exception:
+            pass  # Gracefully degrade if the table doesn't exist yet
 
-    def filter_items(items):
+    def filter_items(items, parent_key=None):
         visible_items = []
         for item in items:
-            # Pass request to is_visible for EFRIS check
-            if item.is_visible(user, request):
-                # Filter children recursively
-                filtered_children = filter_items(item.children)
-
-                # Create a copy of the item with filtered children
-                filtered_item = NavigationItem(
-                    name=item.name,
-                    url_name=item.url_name,
-                    url=item.url,
-                    icon=item.icon,
-                    permission=item.permission,
-                    children=filtered_children,
-                    visible_func=item.visible_func,
-                    css_class=item.css_class,
-                    url_params=item.url_params,
-                    url_kwargs_func=item.url_kwargs_func,
-                    requires_efris=item.requires_efris,
-                    is_divider=item.is_divider
-                )
-
-                # Only include if has children, has its own URL, or is a divider
-                if filtered_children or item.url_name or item.url or item.is_divider:
-                    visible_items.append(filtered_item)
-
+            if not item.is_visible(user, request):
+                continue
+            item_key = f"{parent_key}.{item.name}" if parent_key else item.name
+            if item_key in hidden_keys:
+                continue
+            filtered_children = filter_items(item.children, parent_key=item_key)
+            filtered_item = NavigationItem(
+                name=item.name,
+                url_name=item.url_name,
+                url=item.url,
+                icon=item.icon,
+                permission=item.permission,
+                children=filtered_children,
+                visible_func=item.visible_func,
+                css_class=item.css_class,
+                url_params=item.url_params,
+                url_kwargs_func=item.url_kwargs_func,
+                requires_efris=item.requires_efris,
+                is_divider=item.is_divider
+            )
+            if filtered_children or item.url_name or item.url or item.is_divider:
+                visible_items.append(filtered_item)
         return visible_items
 
-    return filter_items(NAVIGATION_ITEMS)
+    def clean_dividers(items):
+        """
+        Remove dividers orphaned after permission/preference filtering:
+        - leading dividers  (nothing real before them)
+        - trailing dividers (nothing real after them)
+        - consecutive dividers (two or more in a row)
+        """
+        cleaned = []
+        for item in items:
+            if item.is_divider:
+                # Only keep a divider when something real precedes it
+                # and the previous item was NOT already a divider
+                if cleaned and not cleaned[-1].is_divider:
+                    cleaned.append(item)
+                # else: skip leading / consecutive divider
+            else:
+                cleaned.append(item)
+        # Drop any trailing divider
+        while cleaned and cleaned[-1].is_divider:
+            cleaned.pop()
+        return cleaned
+
+    return clean_dividers(filter_items(NAVIGATION_ITEMS))
 
 
 def get_contextual_navigation(user, request, **context):

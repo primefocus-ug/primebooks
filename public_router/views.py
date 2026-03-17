@@ -954,36 +954,11 @@ def validate_and_consume_token(token):
 
 def find_user_tenant_by_email(email):
     """
-    Find user's tenant by email
-    Returns (tenant_schema, tenant_object) or (None, None)
+    Delegate to tenant_lookup so there is only one implementation.
+    Returns list of (schema_name, tenant) — callers must handle multiple.
     """
-    from company.models import Company
-    from django.contrib.auth import get_user_model
-    from django_tenants.utils import schema_context
-
-    User = get_user_model()
-
-    try:
-        # Search across all active tenants.
-        # WARNING: This performs one DB query per tenant — can be slow at scale.
-        # Consider caching email→schema mappings or a cross-tenant user index.
-        tenants = Company.objects.filter(is_active=True).exclude(schema_name='public')
-
-        for tenant in tenants:
-            try:
-                with schema_context(tenant.schema_name):
-                    if User.objects.filter(email__iexact=email).exists():
-                        return tenant.schema_name, tenant
-            except Exception as e:
-                logger.error(f"Error searching tenant {tenant.schema_name}: {e}")
-                continue
-
-        return None, None
-
-    except Exception as e:
-        logger.error(f"Error in find_user_tenant_by_email: {e}")
-        return None, None
-
+    from .tenant_lookup import find_user_tenants_by_email
+    return find_user_tenants_by_email(email)
 
 def verify_user_credentials(email, password, tenant_schema):
     """
@@ -1062,9 +1037,14 @@ def get_tenant_login_url(tenant_schema, token=None):
 @rate_limit(max_attempts=MAX_LOGIN_ATTEMPTS, window=LOGIN_ATTEMPT_WINDOW)
 def public_login_router(request):
     """
-    Public login router - handles authentication and redirects to tenant
+    Public login router.
+
+    Flow:
+      • Single tenant  → verify credentials → bridge → tenant dashboard
+      • Multi-tenant   → verify credentials → store choices in session
+                         → redirect to select_tenant_view (picker page)
+                         → user picks company → bridge → tenant dashboard
     """
-    # Redirect if already authenticated
     if request.user.is_authenticated:
         if hasattr(request, 'tenant') and request.tenant.schema_name != 'public':
             from accounts.views import get_dashboard_url
@@ -1074,62 +1054,100 @@ def public_login_router(request):
         email = request.POST.get('email', '').strip().lower()
         password = request.POST.get('password', '')
 
-        # Input validation
         if not email or not password:
-            messages.error(request, 'Please provide both email and password')
+            messages.error(request, 'Please provide both email and password.')
             return render(request, 'public_router/login.html', get_login_context())
 
-        # Basic email format validation
         if '@' not in email or len(email) < 5:
-            messages.error(request, 'Invalid email format')
+            messages.error(request, 'Invalid email format.')
             return render(request, 'public_router/login.html', get_login_context())
 
-        # Password length check (prevent very long passwords DoS)
         if len(password) > 128:
-            messages.error(request, 'Invalid credentials')
+            messages.error(request, 'Invalid credentials.')
             return render(request, 'public_router/login.html', get_login_context())
 
         try:
-            # Find user's tenant
-            tenant_schema, tenant = find_user_tenant_by_email(email)
+            from .tenant_lookup import find_user_tenants_by_email
+            tenant_matches = find_user_tenants_by_email(email)
 
-            if not tenant_schema:
-                # Generic error message to prevent email enumeration
-                messages.error(request, 'Invalid credentials')
+            if not tenant_matches:
+                messages.error(request, 'Invalid credentials.')
                 logger.warning(
-                    f"Login attempt with non-existent email: {email} from IP: {get_client_ip(request)}"
+                    f"Login attempt — email not found in any tenant: {email} "
+                    f"from IP: {get_client_ip(request)}"
                 )
                 return render(request, 'public_router/login.html', get_login_context())
 
-            # Verify credentials in tenant schema
+            # ── Multi-tenant: verify creds first, then show picker ────────
+            if len(tenant_matches) > 1:
+                # Verify the password against the first tenant we find the
+                # user in.  We only need one successful check to know the
+                # password is correct; the user will then pick which company
+                # to enter.
+                verified_user = None
+                verified_schema = None
+                for schema, _tenant in tenant_matches:
+                    u = verify_user_credentials(email, password, schema)
+                    if u:
+                        verified_user = u
+                        verified_schema = schema
+                        break
+
+                if not verified_user:
+                    messages.error(request, 'Invalid credentials.')
+                    logger.warning(
+                        f"Failed multi-tenant login for {email} "
+                        f"from IP: {get_client_ip(request)}"
+                    )
+                    return render(request, 'public_router/login.html', get_login_context())
+
+                # Store enough in the session for the picker to finish login
+                request.session['pending_mt_email'] = email
+                request.session['pending_mt_user_id'] = verified_user.id
+                request.session['pending_mt_choices'] = [
+                    {
+                        'schema': schema,
+                        'name': tenant.display_name,
+                        'subdomain': schema.replace('tenant_', ''),
+                    }
+                    for schema, tenant in tenant_matches
+                ]
+                request.session['login_initiated_at'] = timezone.now().isoformat()
+
+                logger.info(
+                    f"Multi-tenant login for {email}: "
+                    f"{[s for s, _ in tenant_matches]} — showing picker"
+                )
+                return redirect('public_router:select_tenant')
+
+            # ── Single tenant: original flow ──────────────────────────────
+            tenant_schema, tenant = tenant_matches[0]
             user = verify_user_credentials(email, password, tenant_schema)
 
             if not user:
-                # Generic error message
-                messages.error(request, 'Invalid credentials')
+                messages.error(request, 'Invalid credentials.')
                 logger.warning(
-                    f"Failed login attempt for {email} in tenant {tenant_schema} from IP: {get_client_ip(request)}"
+                    f"Failed login for {email} in {tenant_schema} "
+                    f"from IP: {get_client_ip(request)}"
                 )
                 return render(request, 'public_router/login.html', get_login_context())
 
-            # Create secure login token
             token = create_login_token(email, tenant_schema, user.id)
-
-            # Store minimal data in session
             request.session['login_token'] = token
             request.session['tenant_schema'] = tenant_schema
             request.session['tenant_name'] = tenant.display_name
             request.session['login_initiated_at'] = timezone.now().isoformat()
 
-            # Clear rate limiting on successful login
-            identifier = f"{get_client_ip(request)}:{request.META.get('HTTP_USER_AGENT', '')[:50]}"
+            identifier = (
+                f"{get_client_ip(request)}:"
+                f"{request.META.get('HTTP_USER_AGENT', '')[:50]}"
+            )
             cache.delete(f"rate_limit:{identifier}")
 
             logger.info(
-                f"Successful login for {email} in tenant {tenant_schema} from IP: {get_client_ip(request)}"
+                f"Successful login for {email} in {tenant_schema} "
+                f"from IP: {get_client_ip(request)}"
             )
-
-            # Redirect to bridge page
             return redirect('public_router:login_bridge')
 
         except Exception as e:
@@ -1137,8 +1155,88 @@ def public_login_router(request):
             messages.error(request, 'An error occurred. Please try again.')
             return render(request, 'public_router/login.html', get_login_context())
 
-    # GET request
     return render(request, 'public_router/login.html', get_login_context())
+
+
+# ── 3. NEW view — add this to public_router/views.py ─────────────────────────
+
+@never_cache
+@require_http_methods(["GET", "POST"])
+def select_tenant_view(request):
+    """
+    Company/tenant picker shown when a user belongs to multiple tenants.
+
+    Session keys written by public_login_router:
+        pending_mt_email    — verified email address
+        pending_mt_user_id  — PK of the verified user
+        pending_mt_choices  — list of {'schema', 'name', 'subdomain'} dicts
+
+    On valid POST, clears the picker session keys, writes the standard
+    bridge session keys, and redirects to login_bridge as normal.
+    """
+    email = request.session.get('pending_mt_email')
+    choices = request.session.get('pending_mt_choices')
+
+    if not email or not choices:
+        messages.error(request, 'Session expired. Please log in again.')
+        return redirect('public_router:login')
+
+    if request.method == 'POST':
+        selected_schema = request.POST.get('tenant_schema', '').strip()
+        valid_schemas = {c['schema'] for c in choices}
+
+        if selected_schema not in valid_schemas:
+            messages.error(request, 'Invalid selection. Please choose a company below.')
+            return render(request, 'public_router/select_tenant.html', {
+                'choices': choices,
+                'email': email,
+                'title': 'Select Company',
+            })
+
+        # Look up the tenant object for display_name
+        try:
+            tenant = Company.objects.get(schema_name=selected_schema)
+        except Company.DoesNotExist:
+            messages.error(request, 'Selected company no longer exists.')
+            return redirect('public_router:login')
+
+        user_id = request.session.get('pending_mt_user_id')
+
+        # Verify credentials again inside the chosen tenant to get the user
+        # object with the correct schema context (needed for create_login_token)
+        user = verify_user_credentials(email, None, selected_schema)
+        # verify_user_credentials requires password — use user_id lookup instead
+        from django.contrib.auth import get_user_model
+        from django_tenants.utils import schema_context as _sc
+        User = get_user_model()
+        with _sc(selected_schema):
+            try:
+                user = User.objects.get(id=user_id, is_active=True)
+            except User.DoesNotExist:
+                messages.error(request, 'User account not found.')
+                return redirect('public_router:login')
+
+        # Clean up picker session keys
+        for key in ('pending_mt_email', 'pending_mt_user_id', 'pending_mt_choices'):
+            request.session.pop(key, None)
+
+        # Write standard bridge session keys
+        token = create_login_token(email, selected_schema, user.id)
+        request.session['login_token'] = token
+        request.session['tenant_schema'] = selected_schema
+        request.session['tenant_name'] = tenant.display_name
+        request.session['login_initiated_at'] = timezone.now().isoformat()
+
+        logger.info(
+            f"User {email} selected tenant {selected_schema} — proceeding to bridge"
+        )
+        return redirect('public_router:login_bridge')
+
+    return render(request, 'public_router/select_tenant.html', {
+        'choices': choices,
+        'email': email,
+        'title': 'Select Company',
+    })
 
 
 def get_login_context():

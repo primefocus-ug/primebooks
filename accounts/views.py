@@ -659,8 +659,23 @@ def custom_logout(request):
 
 @never_cache
 def token_login_complete(request):
-    """Complete login using token from public router"""
+    """
+    Complete login using token from public router.
+
+    This is the final step of the cross-subdomain bridge:
+      public.localhost → login_bridge → mbale.localhost/accounts/login/complete/?token=...
+
+    IMPORTANT: never call login() when the user is already authenticated in
+    this tenant — doing so rotates the session key, which immediately triggers
+    StrictSingleSessionMiddleware's session_superseded redirect on the very
+    next request.
+    """
     from public_router.tenant_lookup import verify_login_token
+
+    # Guard: already authenticated → just go to dashboard.
+    # Handles browser back/refresh after the token was already consumed.
+    if request.user.is_authenticated:
+        return redirect(get_dashboard_url(request.user))
 
     token = request.GET.get('token')
 

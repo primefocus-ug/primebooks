@@ -336,12 +336,12 @@ elif DEBUG:
     REDIS_URL = 'redis://127.0.0.1:6379'
 
     # Email
-    EMAIL_BACKEND = 'company.email.TenantAwareEmailBackend'
-    EMAIL_HOST = 'smtp.gmail.com'
-    EMAIL_PORT = 587
-    EMAIL_USE_TLS = True
-    EMAIL_HOST_USER = 'kondenationafrica@gmail.com'
-    EMAIL_HOST_PASSWORD = 'ckpbealacabdnyal'
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    EMAIL_HOST = 'localhost'
+    EMAIL_PORT = 25
+    EMAIL_USE_TLS = False
+    EMAIL_HOST_USER = ''
+    EMAIL_HOST_PASSWORD = ''
     DEFAULT_FROM_EMAIL = 'kondenationafrica@gmail.com'
     SUPPORT_EMAIL = 'primefocusug@gmail.com'
 
@@ -641,6 +641,7 @@ TENANT_APPS = [
     'pos_app',
     'onboarding',
     'suggestions',
+    'support_widget',
 ]
 
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
@@ -746,6 +747,7 @@ TEMPLATES = [
                 'company.context_processors.current_company',
                 'branches.context_processors.current_store',
                 'stores.context_processors.store_context',
+                'support_widget.context_processors.support_widget_context',
                 'stores.context_processors.current_store',
                 'accounts.context_processors.saas_admin_context',
                 'accounts.context_processors.user_role_context',

@@ -8,17 +8,63 @@ from django.http import JsonResponse
 from django.db.models import Q
 from .models import PublicUser, PasswordResetToken, PublicUserActivity
 from .forms import (
-    PublicLoginForm, PublicUserCreationForm, PublicUserChangeForm,
-    PasswordResetRequestForm, PasswordResetForm, PasswordChangeForm
+    PublicUserCreationForm, PublicUserChangeForm,
+    PasswordResetRequestForm, PasswordResetConfirmForm, PasswordChangeForm
 )
 import secrets
 from public_support.models import SupportTicket
 from public_seo.models import SEOPage
 from public_blog.models import BlogPost
 from company.models import Company
-from django.shortcuts import render
-from django.contrib.auth.decorators import login_required
 from .dashboard_widgets import get_signup_stats
+
+
+# ---------------------------------------------------------------------------
+# PublicLoginForm defined here because it is not in forms.py
+# ---------------------------------------------------------------------------
+
+from django import forms
+
+
+class PublicLoginForm(forms.Form):
+    """Login form for the public admin panel (uses internal identifier, not email)"""
+
+    identifier = forms.CharField(
+        label='Login Identifier',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'PRIME-XXXXPF-YYMM-LTD',
+            'autofocus': True,
+            'autocomplete': 'username',
+        })
+    )
+    password = forms.CharField(
+        label='Password',
+        widget=forms.PasswordInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Enter your password',
+            'autocomplete': 'current-password',
+        })
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def get_client_ip(request):
+    """Get client IP address"""
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
+
+
+# ---------------------------------------------------------------------------
+# Dashboard views
+# ---------------------------------------------------------------------------
 
 @login_required(login_url='public_accounts:login')
 def dashboard_view(request):
@@ -30,20 +76,10 @@ def dashboard_view(request):
     return render(request, 'public_admin/dashboard.html', context)
 
 
-def get_client_ip(request):
-    """Get client IP address"""
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(',')[0]
-    else:
-        ip = request.META.get('REMOTE_ADDR')
-    return ip
-
-@login_required
+@login_required(login_url='public_accounts:login')
 def public_admin_index(request):
     user = request.user
 
-    # Stats (replace with tenant-aware queries if needed)
     stats = {
         'total_companies': Company.objects.count(),
         'total_blog_posts': BlogPost.objects.count(),
@@ -60,7 +96,6 @@ def public_admin_index(request):
         user.can_manage_support = user.has_perm('support.change_supportticket')
         user.can_manage_companies = user.has_perm('companies.view_company')
     else:
-        # Public users: no company-level permissions
         user.can_manage_blog = False
         user.can_manage_seo = False
         user.can_manage_support = False
@@ -73,8 +108,20 @@ def public_admin_index(request):
         'user': user,
     })
 
+
+# ---------------------------------------------------------------------------
+# Auth views
+# ---------------------------------------------------------------------------
+
 def login_view(request):
-    """Public admin login view"""
+    """
+    Public admin login view.
+
+    For a SaaS admin whose PublicUser account has access to multiple tenants,
+    after successful credential check we redirect to a company-selector page
+    instead of immediately logging in. The actual Django login() call happens
+    once the user picks a company.
+    """
     if request.user.is_authenticated:
         return redirect('public_accounts:public_admin_index')
 
@@ -91,54 +138,152 @@ def login_view(request):
             )
 
             if user is not None:
-                login(request, user, backend='public_accounts.backends.PublicIdentifierBackend')
+                # ----------------------------------------------------------
+                # Multi-tenant company selector
+                # ----------------------------------------------------------
+                # If this PublicUser is linked to more than one Company,
+                # show a picker so they choose which tenant to work in.
+                # Adjust the related-name below to match your actual model
+                # (e.g. user.companies, user.managed_companies, etc.)
+                # ----------------------------------------------------------
+                try:
+                    accessible_companies = Company.objects.filter(
+                        publicuser=user,   # ← change to your actual reverse relation
+                        is_active=True
+                    )
+                except Exception:
+                    # If the relation doesn't exist yet (e.g. plain admin),
+                    # fall back to no company filtering
+                    accessible_companies = Company.objects.none()
 
-                # Log activity
-                PublicUserActivity.objects.create(
-                    user=user,
-                    action='LOGIN',
-                    ip_address=get_client_ip(request),
-                    user_agent=request.META.get('HTTP_USER_AGENT', '')
-                )
+                if accessible_companies.count() > 1:
+                    # Stash the authenticated user's pk in the session so the
+                    # selector view can finish the login without re-authenticating.
+                    request.session['pending_login_user_id'] = user.pk
+                    request.session['pending_login_backend'] = (
+                        'public_accounts.backends.PublicIdentifierBackend'
+                    )
+                    return redirect('public_accounts:select_company')
 
-                messages.success(request, f'Welcome back, {user.get_full_name()}!')
+                # Single company — store it for downstream tenant switching
+                if accessible_companies.count() == 1:
+                    request.session['active_company_id'] = str(
+                        accessible_companies.first().pk
+                    )
 
-                # Check if password change required
+                # ----------------------------------------------------------
+                # Standard login (single tenant or no company link)
+                # ----------------------------------------------------------
+                _complete_login(request, user)
+
+                # Check if password change is required
                 if user.force_password_change:
                     messages.warning(request, 'Please change your password.')
                     return redirect('public_accounts:change_password')
 
-                # Redirect to next or dashboard
                 next_url = request.GET.get('next')
-                if next_url:
-                    return redirect(next_url)
-                return redirect('public_accounts:public_admin_index')
+                return redirect(
+                    next_url if next_url else 'public_accounts:public_admin_index'
+                )
+
             else:
                 messages.error(request, 'Invalid identifier or password.')
+
     else:
         form = PublicLoginForm()
 
     return render(request, 'public_admin/login.html', {
         'form': form,
-        'title': 'Login'
+        'title': 'Login',
     })
+
+
+def select_company_view(request):
+    """
+    Shown when a SaaS admin has access to multiple companies/tenants.
+    They pick one, then get fully logged in and the active_company_id is
+    stored in the session for your tenant middleware to use.
+    """
+    user_id = request.session.get('pending_login_user_id')
+    if not user_id:
+        messages.error(request, 'Invalid session. Please log in again.')
+        return redirect('public_accounts:login')
+
+    user = get_object_or_404(PublicUser, pk=user_id)
+
+    # Fetch the same company queryset used in login_view
+    try:
+        companies = Company.objects.filter(
+            publicuser=user,   # ← same relation as above
+            is_active=True
+        )
+    except Exception:
+        companies = Company.objects.none()
+
+    if request.method == 'POST':
+        company_id = request.POST.get('company_id')
+
+        # Validate the chosen company is actually in the allowed set
+        if not companies.filter(pk=company_id).exists():
+            messages.error(request, 'Invalid company selection. Please try again.')
+            return render(request, 'public_admin/select_company.html', {
+                'companies': companies,
+                'title': 'Select Company',
+            })
+
+        # Store the selection and complete the login
+        request.session['active_company_id'] = company_id
+        backend = request.session.pop('pending_login_backend',
+                                      'public_accounts.backends.PublicIdentifierBackend')
+        request.session.pop('pending_login_user_id', None)
+
+        _complete_login(request, user, backend=backend)
+
+        if user.force_password_change:
+            messages.warning(request, 'Please change your password.')
+            return redirect('public_accounts:change_password')
+
+        return redirect('public_accounts:public_admin_index')
+
+    return render(request, 'public_admin/select_company.html', {
+        'companies': companies,
+        'title': 'Select Company',
+    })
+
+
+def _complete_login(request, user,
+                    backend='public_accounts.backends.PublicIdentifierBackend'):
+    """Internal helper: log the user in and record the activity."""
+    login(request, user, backend=backend)
+
+    PublicUserActivity.objects.create(
+        user=user,
+        action='LOGIN',
+        ip_address=get_client_ip(request),
+        user_agent=request.META.get('HTTP_USER_AGENT', ''),
+    )
+
+    messages.success(request, f'Welcome back, {user.get_full_name()}!')
 
 
 @login_required(login_url='public_accounts:login')
 def logout_view(request):
     """Logout view"""
-    # Log activity
     PublicUserActivity.objects.create(
         user=request.user,
         action='LOGOUT',
         ip_address=get_client_ip(request),
-        user_agent=request.META.get('HTTP_USER_AGENT', '')
+        user_agent=request.META.get('HTTP_USER_AGENT', ''),
     )
 
     logout(request)
     messages.success(request, 'You have been logged out successfully.')
     return redirect('public_accounts:login')
 
+
+# ---------------------------------------------------------------------------
+# Profile & password views
+# ---------------------------------------------------------------------------
 
 @login_required(login_url='public_accounts:login')
 def profile_view(request):
@@ -148,12 +293,11 @@ def profile_view(request):
         if form.is_valid():
             form.save()
 
-            # Log activity
             PublicUserActivity.objects.create(
                 user=request.user,
                 action='UPDATE',
                 description='Updated profile',
-                ip_address=get_client_ip(request)
+                ip_address=get_client_ip(request),
             )
 
             messages.success(request, 'Profile updated successfully.')
@@ -161,7 +305,6 @@ def profile_view(request):
     else:
         form = PublicUserChangeForm(instance=request.user)
 
-    # Get recent activities
     recent_activities = PublicUserActivity.objects.filter(
         user=request.user
     ).order_by('-timestamp')[:10]
@@ -169,7 +312,7 @@ def profile_view(request):
     return render(request, 'public_admin/profile.html', {
         'form': form,
         'recent_activities': recent_activities,
-        'title': 'My Profile'
+        'title': 'My Profile',
     })
 
 
@@ -181,20 +324,19 @@ def change_password_view(request):
         if form.is_valid():
             user = form.save()
 
-            # Update password metadata
             user.password_changed_at = timezone.now()
             user.force_password_change = False
             user.save(update_fields=['password_changed_at', 'force_password_change'])
 
-            # Log activity
             PublicUserActivity.objects.create(
                 user=user,
                 action='PASSWORD_CHANGE',
-                ip_address=get_client_ip(request)
+                ip_address=get_client_ip(request),
             )
 
-            # Re-login user
-            login(request, user, backend='public_accounts.backends.PublicIdentifierBackend')
+            # Re-authenticate so the session stays valid after password change
+            login(request, user,
+                  backend='public_accounts.backends.PublicIdentifierBackend')
 
             messages.success(request, 'Password changed successfully.')
             return redirect('public_accounts:public_admin_index')
@@ -203,7 +345,7 @@ def change_password_view(request):
 
     return render(request, 'public_admin/change_password.html', {
         'form': form,
-        'title': 'Change Password'
+        'title': 'Change Password',
     })
 
 
@@ -217,18 +359,16 @@ def password_reset_request_view(request):
             try:
                 user = PublicUser.objects.get(email=email, is_active=True)
 
-                # Generate reset token
                 token = PasswordResetToken.generate_token()
                 expires_at = timezone.now() + timezone.timedelta(hours=24)
 
-                reset_token = PasswordResetToken.objects.create(
+                PasswordResetToken.objects.create(
                     user=user,
                     token=token,
                     expires_at=expires_at,
-                    ip_address=get_client_ip(request)
+                    ip_address=get_client_ip(request),
                 )
 
-                # Send reset email
                 user.send_password_reset_email(token)
 
                 messages.success(
@@ -236,7 +376,7 @@ def password_reset_request_view(request):
                     'Password reset instructions have been sent to your email.'
                 )
             except PublicUser.DoesNotExist:
-                # Don't reveal if email exists
+                # Generic message — don't reveal whether the email exists
                 messages.success(
                     request,
                     'If that email exists, password reset instructions have been sent.'
@@ -248,12 +388,16 @@ def password_reset_request_view(request):
 
     return render(request, 'public_admin/password_reset_request.html', {
         'form': form,
-        'title': 'Reset Password'
+        'title': 'Reset Password',
     })
 
 
 def password_reset_confirm_view(request, token):
-    """Confirm password reset with token"""
+    """
+    Confirm password reset with token.
+    FIX: was importing the non-existent PasswordResetForm — now uses
+    PasswordResetConfirmForm from forms.py.
+    """
     try:
         reset_token = PasswordResetToken.objects.get(token=token)
 
@@ -262,34 +406,31 @@ def password_reset_confirm_view(request, token):
             return redirect('public_accounts:password_reset_request')
 
         if request.method == 'POST':
-            form = PasswordResetForm(request.POST)
+            form = PasswordResetConfirmForm(request.POST)   # ← fixed form class
             if form.is_valid():
-                # Update password
                 user = reset_token.user
-                user.set_password(form.cleaned_data['password'])
+                user.set_password(form.cleaned_data['new_password1'])
                 user.force_password_change = False
                 user.password_changed_at = timezone.now()
                 user.save()
 
-                # Mark token as used
                 reset_token.mark_as_used(ip_address=get_client_ip(request))
 
-                # Log activity
                 PublicUserActivity.objects.create(
                     user=user,
                     action='PASSWORD_RESET',
-                    ip_address=get_client_ip(request)
+                    ip_address=get_client_ip(request),
                 )
 
                 messages.success(request, 'Password reset successfully. You can now login.')
                 return redirect('public_accounts:login')
         else:
-            form = PasswordResetForm()
+            form = PasswordResetConfirmForm()   # ← fixed form class
 
         return render(request, 'public_admin/password_reset_confirm.html', {
             'form': form,
             'token': token,
-            'title': 'Set New Password'
+            'title': 'Set New Password',
         })
 
     except PasswordResetToken.DoesNotExist:
@@ -297,31 +438,31 @@ def password_reset_confirm_view(request, token):
         return redirect('public_accounts:password_reset_request')
 
 
+# ---------------------------------------------------------------------------
+# Activity log API
+# ---------------------------------------------------------------------------
+
 @login_required(login_url='public_accounts:login')
 @require_http_methods(["POST"])
 def activity_log_api(request):
     """API to log user activities"""
-    action = request.POST.get('action')
-    app_name = request.POST.get('app_name', '')
-    model_name = request.POST.get('model_name', '')
-    object_id = request.POST.get('object_id', '')
-    description = request.POST.get('description', '')
-
     PublicUserActivity.objects.create(
         user=request.user,
-        action=action,
-        app_name=app_name,
-        model_name=model_name,
-        object_id=object_id,
-        description=description,
+        action=request.POST.get('action'),
+        app_name=request.POST.get('app_name', ''),
+        model_name=request.POST.get('model_name', ''),
+        object_id=request.POST.get('object_id', ''),
+        description=request.POST.get('description', ''),
         ip_address=get_client_ip(request),
-        user_agent=request.META.get('HTTP_USER_AGENT', '')
+        user_agent=request.META.get('HTTP_USER_AGENT', ''),
     )
-
     return JsonResponse({'success': True})
 
 
-# Admin User Management Views (for superusers)
+# ---------------------------------------------------------------------------
+# Admin user-management views (superuser only)
+# ---------------------------------------------------------------------------
+
 @login_required(login_url='public_accounts:login')
 def user_list_view(request):
     """List all public users (superuser only)"""
@@ -331,7 +472,6 @@ def user_list_view(request):
 
     users = PublicUser.objects.all().order_by('-date_joined')
 
-    # Search
     search_query = request.GET.get('q')
     if search_query:
         users = users.filter(
@@ -345,7 +485,7 @@ def user_list_view(request):
     return render(request, 'public_admin/user_list.html', {
         'users': users,
         'search_query': search_query,
-        'title': 'Manage Users'
+        'title': 'Manage Users',
     })
 
 
@@ -361,7 +501,6 @@ def user_create_view(request):
         if form.is_valid():
             user = form.save()
 
-            # Log activity
             PublicUserActivity.objects.create(
                 user=request.user,
                 action='CREATE',
@@ -369,7 +508,7 @@ def user_create_view(request):
                 model_name='PublicUser',
                 object_id=str(user.id),
                 description=f'Created user: {user.identifier}',
-                ip_address=get_client_ip(request)
+                ip_address=get_client_ip(request),
             )
 
             messages.success(
@@ -383,7 +522,7 @@ def user_create_view(request):
     return render(request, 'public_admin/user_form.html', {
         'form': form,
         'title': 'Create New User',
-        'action': 'Create'
+        'action': 'Create',
     })
 
 
@@ -401,7 +540,6 @@ def user_edit_view(request, user_id):
         if form.is_valid():
             form.save()
 
-            # Log activity
             PublicUserActivity.objects.create(
                 user=request.user,
                 action='UPDATE',
@@ -409,7 +547,7 @@ def user_edit_view(request, user_id):
                 model_name='PublicUser',
                 object_id=str(user.id),
                 description=f'Updated user: {user.identifier}',
-                ip_address=get_client_ip(request)
+                ip_address=get_client_ip(request),
             )
 
             messages.success(request, 'User updated successfully.')
@@ -421,7 +559,7 @@ def user_edit_view(request, user_id):
         'form': form,
         'user_obj': user,
         'title': 'Edit User',
-        'action': 'Update'
+        'action': 'Update',
     })
 
 
@@ -441,7 +579,6 @@ def user_delete_view(request, user_id):
     if request.method == 'POST':
         identifier = user.identifier
 
-        # Log activity before deletion
         PublicUserActivity.objects.create(
             user=request.user,
             action='DELETE',
@@ -449,7 +586,7 @@ def user_delete_view(request, user_id):
             model_name='PublicUser',
             object_id=str(user.id),
             description=f'Deleted user: {identifier}',
-            ip_address=get_client_ip(request)
+            ip_address=get_client_ip(request),
         )
 
         user.delete()
@@ -458,5 +595,5 @@ def user_delete_view(request, user_id):
 
     return render(request, 'public_admin/user_confirm_delete.html', {
         'user_obj': user,
-        'title': 'Delete User'
+        'title': 'Delete User',
     })

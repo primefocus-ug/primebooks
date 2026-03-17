@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Support Dashboard{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<style>
+.sw-wrap{display:grid;grid-template-columns:300px 1fr;height:calc(100vh - 64px);overflow:hidden;border:1px solid #e5e7eb;border-radius:12px;background:#fff}
+.sw-sidebar{background:#f8fafc;border-right:1px solid #e5e7eb;display:flex;flex-direction:column;overflow:hidden}
+.sw-sidebar-top{padding:14px 14px 10px;border-bottom:1px solid #e5e7eb;flex-shrink:0}
+.sw-sidebar-top h2{font-size:.9rem;font-weight:800;color:#111827;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.sw-unread-pill{background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:20px;display:none}
+.sw-status-row{display:flex;gap:6px}
+.sw-status-btn{flex:1;padding:6px 4px;border-radius:7px;border:1px solid #d1d5db;font-size:.72rem;font-weight:700;cursor:pointer;background:#fff;color:#374151;transition:all .15s;white-space:nowrap}
+.sw-status-btn:hover{border-color:#6366f1;color:#6366f1}
+.sw-status-btn.is-online{background:#10b981;color:#fff;border-color:#10b981}
+.sw-status-btn.is-busy{background:#f59e0b;color:#fff;border-color:#f59e0b}
+.sw-status-btn.is-offline{background:#6b7280;color:#fff;border-color:#6b7280}
+.sw-search{width:100%;padding:7px 10px;border:1px solid #e5e7eb;border-radius:7px;font-size:.82rem;margin-top:8px;outline:none;background:#fff}
+.sw-search:focus{border-color:#6366f1}
+.sw-session-list{flex:1;overflow-y:auto}
+.sw-session-item{padding:11px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background .12s;position:relative}
+.sw-session-item:hover{background:#f0f9ff}
+.sw-session-item.active{background:#ede9fe;border-left:3px solid #6366f1}
+.sw-session-item.has-unread::after{content:'';position:absolute;right:12px;top:50%;transform:translateY(-50%);width:8px;height:8px;background:#6366f1;border-radius:50%}
+.sw-sess-name{font-weight:700;font-size:.85rem;color:#111827}
+.sw-sess-email{font-size:.73rem;color:#6b7280;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw-sess-meta{display:flex;align-items:center;gap:6px;margin-top:4px}
+.sw-badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:.63rem;font-weight:700;text-transform:uppercase}
+.sw-badge.escalated{background:#fef3c7;color:#92400e}
+.sw-badge.chatting{background:#d1fae5;color:#065f46}
+.sw-badge.in_call{background:#dbeafe;color:#1e40af}
+.sw-badge.resolved{background:#f3f4f6;color:#6b7280}
+.sw-sess-time{font-size:.65rem;color:#9ca3af;margin-left:auto}
+.sw-empty{padding:32px 16px;text-align:center;color:#9ca3af;font-size:.83rem}
+.sw-empty svg{width:40px;height:40px;margin:0 auto 10px;display:block;opacity:.3}
+.sw-chat{display:flex;flex-direction:column;overflow:hidden}
+.sw-chat-hdr{padding:12px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#fff}
+.sw-chat-hdr-info{flex:1;min-width:0}
+.sw-chat-hdr-name{font-weight:800;font-size:.95rem;color:#111827}
+.sw-chat-hdr-email{font-size:.75rem;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw-hdr-actions{display:flex;gap:8px}
+.sw-btn{padding:7px 14px;border-radius:8px;border:none;cursor:pointer;font-size:.8rem;font-weight:700;font-family:inherit;transition:opacity .15s,transform .1s;display:inline-flex;align-items:center;gap:5px}
+.sw-btn:hover{opacity:.85;transform:translateY(-1px)}
+.sw-btn-call{background:#10b981;color:#fff}
+.sw-btn-resolve{background:#f59e0b;color:#fff}
+.sw-messages{flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:8px;background:#f8fafc}
+.sw-msg{max-width:78%;padding:9px 13px;border-radius:12px;font-size:.85rem;line-height:1.55;word-break:break-word}
+.sw-msg.visitor{background:#6366f1;color:#fff;align-self:flex-start;border-bottom-left-radius:4px}
+.sw-msg.agent{background:#fff;color:#111827;align-self:flex-end;border:1px solid #e5e7eb;border-bottom-right-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.sw-msg.bot{background:#fff;color:#111827;align-self:flex-start;border:1px dashed #d1d5db}
+.sw-msg.system{background:#fffbeb;color:#92400e;align-self:center;font-size:.76rem;border-radius:8px;max-width:100%;text-align:center;padding:6px 12px}
+.sw-msg-meta{font-size:.67rem;margin-top:3px}
+.sw-msg.agent .sw-msg-meta{color:#9ca3af}
+.sw-msg.visitor .sw-msg-meta{color:rgba(255,255,255,.65)}
+.sw-typing-bar{font-size:.74rem;color:#9ca3af;padding:4px 18px;min-height:20px;flex-shrink:0}
+.sw-chat-footer{padding:10px 14px;border-top:1px solid #e5e7eb;background:#fff;display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
+.sw-chat-footer textarea{flex:1;border:1px solid #d1d5db;border-radius:8px;padding:8px 12px;font-size:.87rem;resize:none;max-height:120px;font-family:inherit;outline:none;line-height:1.5}
+.sw-chat-footer textarea:focus{border-color:#6366f1}
+.sw-send-btn{width:40px;height:40px;background:#6366f1;border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s}
+.sw-send-btn:hover{background:#4f46e5}
+.sw-send-btn svg{width:16px;height:16px;fill:#fff}
+.sw-placeholder{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#9ca3af;gap:12px}
+.sw-placeholder svg{width:56px;height:56px;opacity:.2}
+.sw-placeholder p{font-size:.88rem}
+#sw-toast-area{position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.sw-toast{background:#1e293b;color:#f1f5f9;padding:12px 18px;border-radius:10px;font-size:.84rem;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.3);animation:sw-ti .3s ease;cursor:pointer;pointer-events:all;max-width:300px;border-left:4px solid #6366f1}
+.sw-toast.call{border-left-color:#10b981}
+@keyframes sw-ti{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+#sw-conn-dot{width:8px;height:8px;border-radius:50%;background:#9ca3af;display:inline-block;margin-right:4px;transition:background .3s}
+#sw-conn-dot.on{background:#10b981}
+#sw-conn-dot.off{background:#ef4444}
+</style>
+
+<div id="sw-toast-area"></div>
+
+<div class="sw-wrap">
+  <div class="sw-sidebar">
+    <div class="sw-sidebar-top">
+      <h2>
+        <span id="sw-conn-dot"></span>
+        Support Queue
+        <span class="sw-unread-pill" id="sw-unread-pill"></span>
+      </h2>
+      <div class="sw-status-row">
+        <button class="sw-status-btn" data-s="online"  id="btn-online">🟢 Online</button>
+        <button class="sw-status-btn" data-s="busy"    id="btn-busy">🟡 Busy</button>
+        <button class="sw-status-btn" data-s="offline" id="btn-offline">⚫ Offline</button>
+      </div>
+      <input type="text" class="sw-search" id="sw-search" placeholder="Search by name or email…">
+    </div>
+    <div class="sw-session-list" id="sw-session-list">
+      <div class="sw-empty">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/></svg>
+        No active sessions
+      </div>
+    </div>
+  </div>
+
+  <div class="sw-chat" id="sw-chat">
+    <div class="sw-placeholder">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/></svg>
+      <p>Select a session from the left to start chatting</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+const WS   = location.protocol==='https:'?'wss':'ws';
+const UID  = '{{ request.user.pk }}';
+const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+let status='offline', curToken=null, chatWS=null, queueWS=null;
+let typingTmr=null, hbTmr=null, allSessions=[], unread=new Set();
+
+const dot      = document.getElementById('sw-conn-dot');
+const pill     = document.getElementById('sw-unread-pill');
+const sList    = document.getElementById('sw-session-list');
+const chatPane = document.getElementById('sw-chat');
+const srch     = document.getElementById('sw-search');
+
+// ── Status ────────────────────────────────────────────────────────────
+document.querySelectorAll('.sw-status-btn').forEach(b=>b.addEventListener('click',()=>setStatus(b.dataset.s)));
+
+async function setStatus(s){
+  status=s;
+  localStorage.setItem('sw_agent_status', s);
+  document.querySelectorAll('.sw-status-btn').forEach(b=>{b.className='sw-status-btn'+(b.dataset.s===s?' is-'+s:'');});
+  await api('/support/agent/status/','POST',{status:s});
+  if(s==='online') connectQ();
+  else if(queueWS){queueWS.close();queueWS=null;setDot(false);}
+}
+
+// ── Queue WS ──────────────────────────────────────────────────────────
+function connectQ(){
+  if(queueWS&&queueWS.readyState<2)return;
+  queueWS=new WebSocket(`${WS}://${location.host}/ws/support/agent/${UID}/`);
+  queueWS.onopen=()=>{setDot(true);startHB();};
+  queueWS.onclose=()=>{setDot(false);clearInterval(hbTmr);if(status==='online')setTimeout(connectQ,3000);};
+  queueWS.onerror=()=>setDot(false);
+  queueWS.onmessage=evt=>{
+    let d;try{d=JSON.parse(evt.data);}catch(_){return;}
+    if(d.type==='new_session'){
+      unread.add(d.session_token);loadSessions();
+      toast(`💬 New chat — ${d.visitor_name}`,()=>openSession(d.session_token));
+      ping();notify(`New chat from ${d.visitor_name}`);
+    } else if(d.type==='incoming_call'){
+      toast(`📞 Incoming call — ${d.visitor_name}`,()=>joinCall(d.call_room_id),'call');
+      ping();notify(`Incoming call from ${d.visitor_name}`);
+    } else if(d.type==='session_resolved'){
+      unread.delete(d.session_token);
+      if(curToken===d.session_token)renderPlaceholder();
+      loadSessions();
+    }
+  };
+}
+function startHB(){clearInterval(hbTmr);hbTmr=setInterval(()=>{if(queueWS&&queueWS.readyState===1)queueWS.send(JSON.stringify({type:'heartbeat'}));},25000);}
+function setDot(on){dot.className=on?'on':'off';}
+
+// ── Sessions ──────────────────────────────────────────────────────────
+loadSessions();setInterval(loadSessions,20000);
+async function loadSessions(){
+  const r=await api('/support/agent/sessions/');
+  if(!r||!r.sessions)return;
+  allSessions=r.sessions;renderList(allSessions);updatePill();
+}
+function renderList(sess){
+  const q=(srch.value||'').toLowerCase();
+  const f=q?sess.filter(s=>s.name.toLowerCase().includes(q)||(s.email||'').toLowerCase().includes(q)):sess;
+  if(!f.length){sList.innerHTML=`<div class="sw-empty"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/></svg>${q?'No matching sessions':'No active sessions'}</div>`;return;}
+  sList.innerHTML=f.map(s=>`<div class="sw-session-item${curToken===s.token?' active':''}${unread.has(s.token)?' has-unread':''}" data-t="${s.token}">
+    <div class="sw-sess-name">${esc(s.name)}</div>
+    <div class="sw-sess-email">${esc(s.email||'No email')}</div>
+    <div class="sw-sess-meta"><span class="sw-badge ${s.status}">${s.status}</span><span class="sw-sess-time">${ago(s.created)}</span></div>
+  </div>`).join('');
+  sList.querySelectorAll('.sw-session-item').forEach(el=>el.addEventListener('click',()=>openSession(el.dataset.t)));
+}
+function updatePill(){const n=unread.size;pill.textContent=n>9?'9+':n;pill.style.display=n?'inline':'none';}
+srch.addEventListener('input',()=>renderList(allSessions));
+
+// ── Open session ──────────────────────────────────────────────────────
+async function openSession(token){
+  curToken=token;unread.delete(token);updatePill();
+  if(chatWS){chatWS.close();chatWS=null;}
+  const r=await api(`/support/agent/session/${token}/messages/`);
+  if(!r){toast('Failed to load session');return;}
+  // Handle both response shapes: {session, messages} from messages endpoint
+  const sessionData = r.session || r;
+  const messages    = r.messages || [];
+  buildChatPane(sessionData);
+  messages.forEach(m=>addMsg(m.sender,m.body,m.timestamp,m.agent_name,true));
+  const a=document.getElementById('sw-msgs');if(a)a.scrollTop=a.scrollHeight;
+  connectChatWS(token);renderList(allSessions);
+}
+
+function buildChatPane(session){
+  chatPane.innerHTML=`
+  <div class="sw-chat-hdr">
+    <div class="sw-chat-hdr-info">
+      <div class="sw-chat-hdr-name">${esc(session.name)}</div>
+      <div class="sw-chat-hdr-email">${esc(session.email||'No email')}</div>
+    </div>
+    <div class="sw-hdr-actions">
+      <button class="sw-btn sw-btn-call"    id="sw-call-btn">📞 Voice Call</button>
+      <button class="sw-btn sw-btn-resolve" id="sw-resolve-btn">✅ Resolve</button>
+    </div>
+  </div>
+  <div class="sw-messages" id="sw-msgs"></div>
+  <div class="sw-typing-bar" id="sw-typing"></div>
+  <div class="sw-chat-footer">
+    <textarea id="sw-inp" placeholder="Type a reply… (Enter to send)" rows="1"></textarea>
+    <button class="sw-send-btn" id="sw-send"><svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
+  </div>`;
+
+  document.getElementById('sw-send').onclick=sendMsg;
+  document.getElementById('sw-resolve-btn').onclick=()=>resolveSession(curToken);
+  document.getElementById('sw-call-btn').onclick=()=>initiateCall(curToken);
+  const inp=document.getElementById('sw-inp');
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
+    else if(chatWS&&chatWS.readyState===1)chatWS.send(JSON.stringify({type:'typing',sender:'agent'}));
+  });
+  inp.addEventListener('input',()=>{inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,120)+'px';});
+}
+
+function renderPlaceholder(){
+  chatPane.innerHTML=`<div class="sw-placeholder"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/></svg><p>Select a session from the left to start chatting</p></div>`;
+  curToken=null;
+}
+
+// ── Chat WS ───────────────────────────────────────────────────────────
+function connectChatWS(token){
+  chatWS=new WebSocket(`${WS}://${location.host}/ws/support/${token}/`);
+  chatWS.onmessage=evt=>{
+    let d;try{d=JSON.parse(evt.data);}catch(_){return;}
+    if(d.type==='chat_message'){
+      addMsg(d.sender,d.body,d.timestamp);
+      if(d.sender==='visitor'){
+        loadSessions();
+        // Flash the page title to alert agent
+        document.title='💬 New message — Support Dashboard';
+        setTimeout(()=>document.title='Support Dashboard',3000);
+      }
+    }
+    else if(d.type==='typing'&&d.sender==='visitor'){showTyping('Visitor is typing…');}
+    else if(d.type==='start_call'){
+      // Visitor accepted a call — show the call room button
+      const hdr=document.getElementById('sw-msgs');
+      if(hdr){const n=document.createElement('div');n.className='sw-msg system';
+        n.innerHTML=`📞 Visitor accepted call. <a href="/support/call/${d.call_room_id}/?role=agent" target="_blank" style="color:#6366f1;font-weight:700">Join Call Room →</a>`;
+        hdr.appendChild(n);hdr.scrollTop=hdr.scrollHeight;}
+    }
+  };
+}
+
+function sendMsg(){
+  const inp=document.getElementById('sw-inp');if(!inp)return;
+  const txt=inp.value.trim();
+  if(!txt||!chatWS||chatWS.readyState!==1)return;
+  inp.value='';inp.style.height='auto';
+  chatWS.send(JSON.stringify({type:'chat_message',sender:'agent',body:txt,agent_id:UID}));
+}
+
+function addMsg(sender,body,ts,agentName,isHist){
+  const a=document.getElementById('sw-msgs');if(!a)return;
+  const d=document.createElement('div');d.className='sw-msg '+sender;
+  const b=document.createElement('div');b.textContent=body;d.appendChild(b);
+  if(ts){const m=document.createElement('div');m.className='sw-msg-meta';
+    m.textContent=(agentName?agentName+' · ':'')+new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    d.appendChild(m);}
+  a.appendChild(d);if(!isHist)a.scrollTop=a.scrollHeight;
+}
+function showTyping(t){const e=document.getElementById('sw-typing');if(e)e.textContent=t;clearTimeout(typingTmr);typingTmr=setTimeout(()=>{const e=document.getElementById('sw-typing');if(e)e.textContent='';},2500);}
+
+// ── Resolve ───────────────────────────────────────────────────────────
+async function resolveSession(token){
+  if(!confirm('Mark this session as resolved?'))return;
+  const r=await api(`/support/agent/session/${token}/resolve/`,'POST');
+  if(r&&r.ok){toast('✅ Session resolved');renderPlaceholder();loadSessions();}
+}
+
+// ── Call ──────────────────────────────────────────────────────────────
+async function initiateCall(token){
+  const btn=document.getElementById('sw-call-btn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Initiating…';}
+  const r=await api('/support/call/create/','POST',{session_token:token});
+  if(btn){btn.disabled=false;btn.textContent='📞 Voice Call';}
+  if(!r||!r.ok){toast('❌ Could not start call');return;}
+  joinCall(r.call_room_id,r.recording_notice);
+}
+function joinCall(roomId,notice){
+  const n=notice?encodeURIComponent(notice):'';
+  window.open(`/support/call/${roomId}/?role=agent&notice=${n}`,'sw_call','width=520,height=420,toolbar=no,menubar=no');
+}
+
+// ── Browser notify + sound ────────────────────────────────────────────
+function notify(txt){
+  if(!('Notification'in window))return;
+  if(Notification.permission==='granted')new Notification('PrimeBooks Support',{body:txt});
+  else if(Notification.permission!=='denied')Notification.requestPermission().then(p=>{if(p==='granted')new Notification('PrimeBooks Support',{body:txt});});
+}
+function ping(){
+  try{
+    const c=new(window.AudioContext||window.webkitAudioContext)();
+    const o=c.createOscillator(),g=c.createGain();
+    o.connect(g);g.connect(c.destination);
+    o.type='sine';o.frequency.setValueAtTime(880,c.currentTime);o.frequency.exponentialRampToValueAtTime(440,c.currentTime+0.15);
+    g.gain.setValueAtTime(0.25,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.4);
+    o.start(c.currentTime);o.stop(c.currentTime+0.4);
+  }catch(_){}
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────
+function toast(msg,onClick,type){
+  const a=document.getElementById('sw-toast-area');
+  const t=document.createElement('div');t.className='sw-toast'+(type?' '+type:'');t.textContent=msg;
+  if(onClick)t.addEventListener('click',onClick);
+  a.appendChild(t);setTimeout(()=>t.remove(),5000);
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────
+async function api(url,method='GET',body=null){
+  try{
+    const o={method,headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}};
+    if(body)o.body=JSON.stringify(body);
+    return(await fetch(url,o)).json();
+  }catch(e){console.error(e);return null;}
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function ago(iso){
+  const d=Math.floor((Date.now()-new Date(iso))/1000);
+  if(d<60)return d+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';
+  if(d<86400)return Math.floor(d/3600)+'h ago';return new Date(iso).toLocaleDateString();
+}
+
+if('Notification'in window&&Notification.permission==='default')Notification.requestPermission();
+// Restore previous status from localStorage so page refresh doesn't drop the agent offline
+const savedStatus = localStorage.getItem('sw_agent_status') || 'offline';
+setStatus(savedStatus);
+})();
+</script>
+{% endblock %}

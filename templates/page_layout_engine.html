@@ -1,0 +1,748 @@
+{% load static %}
+{% if user.is_authenticated %}
+
+
+{# ── Flash-prevent: apply saved visibility BEFORE first paint ── #}
+<script>
+(function(){
+  var pid = '{{ page_id|default:"page" }}';
+  try {
+    var d = JSON.parse(localStorage.getItem('ple__' + pid) || '{}');
+    if (!d.hidden || !d.hidden.length) return;
+    // Inject a <style> that hides saved-hidden regions immediately
+    var css = d.hidden.map(function(k){
+      return '[data-ple-region="' + k + '"]{display:none!important}';
+    }).join('');
+    var s = document.createElement('style');
+    s.id = '__ple_flash';
+    s.textContent = css;
+    document.head.appendChild(s);
+  } catch(e){}
+})();
+</script>
+
+<style>
+/* ── Column swap: reverse grid direction on the pos-layout ── */
+[data-ple-swap="1"] .pos-layout          { direction: rtl; }
+[data-ple-swap="1"] .pos-layout > *      { direction: ltr; }
+
+/* ── Floating trigger ── */
+#pleTrigger {
+  position: fixed;
+  bottom: 18px; left: 18px;
+  z-index: 1200;
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 13px;
+  background: var(--card, #1c2333);
+  border: 1px solid var(--line, #2a3042);
+  border-radius: 20px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.45);
+  color: var(--text-2, #94a3b8);
+  font-size: .74rem; font-weight: 600;
+  font-family: var(--sans, inherit);
+  cursor: pointer;
+  transition: border-color .15s, color .15s, box-shadow .15s;
+  white-space: nowrap; user-select: none;
+}
+#pleTrigger:hover {
+  border-color: var(--accent, #3b82f6);
+  color: var(--accent, #3b82f6);
+  box-shadow: 0 6px 24px rgba(0,0,0,.55);
+}
+#pleTrigger i { font-size: .88rem; }
+#pleBadge {
+  background: var(--accent, #3b82f6);
+  color: #fff; border-radius: 99px; padding: 0 5px;
+  font-size: .62rem; font-weight: 700; min-width: 16px; text-align: center;
+  display: none;
+}
+#pleBadge.show { display: inline-block; }
+
+/* ── Backdrop ── */
+#pleBackdrop {
+  display: none; position: fixed; inset: 0; z-index: 1290;
+  background: rgba(0,0,0,.45); backdrop-filter: blur(3px);
+}
+#pleBackdrop.open { display: block; animation: __pleFade .18s ease; }
+@keyframes __pleFade { from{opacity:0} to{opacity:1} }
+
+/* ── Drawer ── */
+#pleDrawer {
+  position: fixed; top: 0; left: -360px; width: 340px; height: 100%;
+  z-index: 1300;
+  background: var(--surface, #161b26);
+  border-right: 1px solid var(--line, #2a3042);
+  box-shadow: 8px 0 40px rgba(0,0,0,.5);
+  display: flex; flex-direction: column;
+  transition: left .28s cubic-bezier(.34,1.2,.64,1);
+  font-family: var(--sans, inherit);
+}
+#pleDrawer.open { left: 0; }
+
+.ple-hdr {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line, #2a3042);
+  flex-shrink: 0;
+}
+.ple-hdr-ico {
+  width: 34px; height: 34px; border-radius: 9px;
+  background: rgba(59,130,246,.15); color: var(--accent, #3b82f6);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; flex-shrink: 0;
+}
+.ple-hdr-txt { flex: 1; }
+.ple-hdr-title { font-size: .9rem; font-weight: 700; color: var(--text, #e2e8f0); }
+.ple-hdr-sub   { font-size: .68rem; color: var(--text-2, #94a3b8); margin-top: 1px; }
+.ple-close {
+  width: 28px; height: 28px; border-radius: 6px;
+  border: 1px solid var(--line, #2a3042);
+  background: transparent; color: var(--text-2, #94a3b8);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: .8rem; flex-shrink: 0; transition: background .1s;
+}
+.ple-close:hover { background: var(--lift, #222d40); }
+
+.ple-tabs {
+  display: flex; border-bottom: 1px solid var(--line, #2a3042);
+  flex-shrink: 0; padding: 0 12px;
+}
+.ple-tab {
+  padding: 8px 10px; font-size: .74rem; font-weight: 600;
+  color: var(--text-2, #94a3b8);
+  background: none; border: none; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; cursor: pointer;
+  transition: color .12s; white-space: nowrap;
+}
+.ple-tab:hover { color: var(--text, #e2e8f0); }
+.ple-tab.active { color: var(--accent, #3b82f6); border-bottom-color: var(--accent, #3b82f6); }
+
+.ple-body  { flex: 1; overflow-y: auto; padding: 14px; scrollbar-width: thin; }
+.ple-panel { display: none; }
+.ple-panel.active { display: block; }
+
+.ple-lbl {
+  font-size: .64rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--text-2, #94a3b8);
+  margin-bottom: 8px; margin-top: 2px;
+}
+.ple-info {
+  display: flex; gap: 8px; align-items: flex-start;
+  background: rgba(59,130,246,.08); border: 1px solid rgba(59,130,246,.22);
+  border-radius: 8px; padding: 9px 11px; margin-bottom: 12px;
+  font-size: .73rem; color: var(--text-2, #94a3b8); line-height: 1.5;
+}
+.ple-info i { color: var(--accent, #3b82f6); flex-shrink: 0; margin-top: 1px; }
+
+/* ── Region rows ── */
+.ple-list { display: flex; flex-direction: column; gap: 5px; }
+.ple-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 11px;
+  background: var(--card, #1c2333);
+  border: 1px solid var(--line, #2a3042);
+  border-radius: 9px; user-select: none;
+  transition: border-color .12s, opacity .12s;
+}
+.ple-row.ple-hidden-row { opacity: .45; }
+.ple-row.ple-dragging   { opacity: .3; }
+.ple-row.ple-drag-over  { border-color: var(--accent, #3b82f6); box-shadow: 0 0 0 2px rgba(59,130,246,.2); }
+
+.ple-grip {
+  cursor: grab; color: var(--text-2, #94a3b8);
+  font-size: .95rem; flex-shrink: 0; padding: 2px; touch-action: none;
+}
+.ple-grip:active { cursor: grabbing; }
+.ple-row.ple-permanent .ple-grip { cursor: not-allowed; opacity: .25; }
+
+.ple-row-icon {
+  width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .8rem; background: rgba(59,130,246,.12); color: var(--accent, #3b82f6);
+}
+.ple-row-txt { flex: 1; min-width: 0; }
+.ple-row-lbl { font-size: .8rem; font-weight: 500; color: var(--text, #e2e8f0); }
+.ple-row-sub { font-size: .66rem; color: var(--text-2, #94a3b8); margin-top: 1px; }
+
+.ple-eye {
+  width: 26px; height: 26px; border-radius: 6px;
+  border: 1px solid var(--line, #2a3042); background: transparent;
+  color: var(--text-2, #94a3b8); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .8rem; flex-shrink: 0; transition: background .1s, color .1s;
+}
+.ple-eye:hover { background: var(--lift, #222d40); color: var(--text, #e2e8f0); }
+.ple-row.ple-permanent .ple-eye { pointer-events: none; opacity: .2; }
+
+.ple-placeholder {
+  border-radius: 9px; background: rgba(59,130,246,.07);
+  border: 2px dashed rgba(59,130,246,.3);
+}
+
+.ple-sep { height: 1px; background: var(--line, #2a3042); margin: 12px 0; }
+
+/* ── Layout cards ── */
+.ple-layout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px; }
+.ple-layout-card {
+  border: 2px solid var(--line, #2a3042); border-radius: 10px;
+  padding: 10px 8px 9px; cursor: pointer; text-align: center;
+  background: transparent; font-family: var(--sans, inherit);
+  transition: border-color .15s, background .15s;
+}
+.ple-layout-card:hover { border-color: rgba(59,130,246,.5); }
+.ple-layout-card.active {
+  border-color: var(--accent, #3b82f6); background: rgba(59,130,246,.07);
+}
+.ple-lp-preview {
+  width: 100%; height: 40px; border-radius: 5px;
+  background: var(--lift, #222d40); margin-bottom: 7px;
+  overflow: hidden; display: flex; gap: 3px; padding: 4px;
+}
+.ple-lp-wide  { flex: 1.8; background: rgba(59,130,246,.3); border-radius: 3px; }
+.ple-lp-narrow{ flex: 1;   background: rgba(16,185,129,.25); border-radius: 3px; }
+.ple-layout-lbl {
+  font-size: .73rem; font-weight: 600; color: var(--text-2, #94a3b8);
+}
+.ple-layout-card.active .ple-layout-lbl { color: var(--accent, #3b82f6); }
+
+/* ── Width slider ── */
+.ple-range-row {
+  display: flex; align-items: center; gap: 10px; margin: 6px 0 12px;
+}
+.ple-range-row input[type="range"] {
+  flex: 1; height: 4px; border-radius: 2px;
+  accent-color: var(--accent, #3b82f6); cursor: pointer;
+}
+.ple-range-val {
+  min-width: 38px; text-align: right;
+  font-size: .72rem; font-weight: 600; color: var(--text-2, #94a3b8);
+}
+
+/* ── Footer ── */
+.ple-footer {
+  padding: 11px 14px; border-top: 1px solid var(--line, #2a3042);
+  display: flex; gap: 7px; flex-shrink: 0;
+}
+.ple-save {
+  flex: 1; padding: 8px; border-radius: 9px; border: none;
+  background: var(--accent, #3b82f6); color: #fff;
+  font-size: .82rem; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-family: var(--sans, inherit); transition: filter .12s;
+}
+.ple-save:hover { filter: brightness(1.1); }
+.ple-save.saved { background: var(--green, #10b981); pointer-events: none; }
+.ple-cancel {
+  padding: 8px 13px; border-radius: 9px;
+  border: 1px solid var(--line, #2a3042); background: transparent;
+  color: var(--text-2, #94a3b8); font-size: .8rem; font-weight: 500;
+  cursor: pointer; font-family: var(--sans, inherit); transition: background .1s;
+}
+.ple-cancel:hover { background: var(--lift, #222d40); }
+.ple-reset {
+  padding: 8px 11px; border-radius: 9px;
+  border: 1px solid rgba(239,68,68,.3); background: rgba(239,68,68,.08);
+  color: var(--red, #ef4444); font-size: .78rem; font-weight: 600;
+  cursor: pointer; font-family: var(--sans, inherit); transition: background .1s;
+  display: flex; align-items: center; gap: 5px;
+}
+.ple-reset:hover { background: rgba(239,68,68,.16); }
+
+/* ── Toast ── */
+#pleToast {
+  position: fixed; bottom: 20px; left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  z-index: 1400;
+  background: var(--ink-2, #1c2333); color: var(--text, #e2e8f0);
+  border-radius: 8px; padding: 7px 14px;
+  font-size: .77rem; font-weight: 500; pointer-events: none; opacity: 0;
+  transition: opacity .2s, transform .2s; white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.35);
+  font-family: var(--sans, inherit);
+}
+#pleToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+
+<!-- ═══ TRIGGER ═══ -->
+<button id="pleTrigger" aria-label="Customise page layout">
+  <i class="bi bi-layout-three-columns"></i>
+  Customise
+  <span id="pleBadge"></span>
+</button>
+
+<!-- ═══ BACKDROP ═══ -->
+<div id="pleBackdrop"></div>
+
+<!-- ═══ DRAWER ═══ -->
+<div id="pleDrawer" role="dialog" aria-modal="true" aria-label="Page Layout">
+  <div class="ple-hdr">
+    <div class="ple-hdr-ico"><i class="bi bi-layout-three-columns"></i></div>
+    <div class="ple-hdr-txt">
+      <div class="ple-hdr-title">Page Layout</div>
+      <div class="ple-hdr-sub">Customise this page for your workflow</div>
+    </div>
+    <button class="ple-close" id="pleClose" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+  </div>
+
+  <div class="ple-tabs">
+    <button class="ple-tab active" data-ple-panel="pleRegions">
+      <i class="bi bi-eye me-1"></i>Regions
+    </button>
+    <button class="ple-tab" data-ple-panel="pleColumns">
+      <i class="bi bi-layout-split me-1"></i>Columns
+    </button>
+  </div>
+
+  <div class="ple-body">
+
+    <!-- Regions panel -->
+    <div class="ple-panel active" id="pleRegions">
+      <div class="ple-info">
+        <i class="bi bi-arrows-move"></i>
+        Drag rows to reorder sections on the page. Toggle the eye to show or hide any section.
+      </div>
+      <div class="ple-lbl">Page sections</div>
+      <div class="ple-list" id="pleRegionList">
+        <div style="padding:2rem 0; text-align:center; color:var(--text-2,.94a3b8); font-size:.78rem">
+          <i class="bi bi-arrow-clockwise" style="animation:spin .7s linear infinite;display:inline-block"></i>
+          Scanning page…
+        </div>
+      </div>
+    </div>
+
+    <!-- Columns panel -->
+    <div class="ple-panel" id="pleColumns">
+      <div class="ple-info">
+        <i class="bi bi-info-circle-fill"></i>
+        Swap which side the products grid and cart appear on.
+      </div>
+      <div class="ple-lbl">Column arrangement</div>
+      <div class="ple-layout-grid">
+        <button class="ple-layout-card active" data-ple-layout="default">
+          <div class="ple-lp-preview">
+            <div class="ple-lp-wide"></div>
+            <div class="ple-lp-narrow"></div>
+          </div>
+          <div class="ple-layout-lbl">Products left</div>
+        </button>
+        <button class="ple-layout-card" data-ple-layout="swap">
+          <div class="ple-lp-preview">
+            <div class="ple-lp-narrow"></div>
+            <div class="ple-lp-wide"></div>
+          </div>
+          <div class="ple-layout-lbl">Cart left</div>
+        </button>
+      </div>
+      <div class="ple-sep"></div>
+      <div class="ple-lbl">Right panel width</div>
+      <div class="ple-range-row">
+        <span style="font-size:.7rem;color:var(--text-2)">Narrow</span>
+        <input type="range" id="pleRightWidth" min="260" max="480" step="10" value="340">
+        <span style="font-size:.7rem;color:var(--text-2)">Wide</span>
+        <span class="ple-range-val" id="pleRightWidthVal">340px</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="ple-footer">
+    <button class="ple-reset" id="pleReset">
+      <i class="bi bi-arrow-counterclockwise"></i> Reset
+    </button>
+    <button class="ple-cancel" id="pleCancel">Cancel</button>
+    <button class="ple-save" id="pleSave">
+      <i class="bi bi-check2"></i> Save
+    </button>
+  </div>
+</div>
+
+<div id="pleToast"></div>
+
+<script>
+(function(){
+'use strict';
+
+const PAGE_ID   = '{{ page_id|default:"page" }}';
+const STORE_KEY = 'ple__' + PAGE_ID;
+const DEFAULT_W = 340;
+
+// ── State ─────────────────────────────────────────────────────────
+// Snapshot of what's currently saved — used to revert on Cancel
+let saved = { hidden:[], order:[], layout:'default', rightWidth:DEFAULT_W };
+// Working copy while drawer is open
+let W     = { hidden:[], order:[], layout:'default', rightWidth:DEFAULT_W };
+
+// ── Discover regions ──────────────────────────────────────────────
+// Returns array of { key, label, icon, sub, permanent, el }
+// Excludes anything inside the drawer itself so we never list our own UI
+function discoverRegions(){
+  const drawer = document.getElementById('pleDrawer');
+  return Array.from(document.querySelectorAll('[data-ple-region]')).filter(el => {
+    return !drawer || !drawer.contains(el);
+  }).map(el => ({
+    key:       el.getAttribute('data-ple-region'),
+    label:     el.getAttribute('data-ple-label')     || el.getAttribute('data-ple-region'),
+    icon:      el.getAttribute('data-ple-icon')      || 'bi bi-layout-text-window',
+    sub:       el.getAttribute('data-ple-sub')       || '',
+    permanent: el.getAttribute('data-ple-permanent') === '1',
+    el,
+  }));
+}
+
+// ── Persist ───────────────────────────────────────────────────────
+function loadSaved(){
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    saved.hidden     = Array.isArray(d.hidden) ? d.hidden : [];
+    saved.order      = Array.isArray(d.order)  ? d.order  : [];
+    saved.layout     = d.layout === 'swap'     ? 'swap'   : 'default';
+    saved.rightWidth = (d.rightWidth >= 260 && d.rightWidth <= 480) ? d.rightWidth : DEFAULT_W;
+  } catch(_){}
+}
+
+function persist(){
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      hidden:     saved.hidden,
+      order:      saved.order,
+      layout:     saved.layout,
+      rightWidth: saved.rightWidth,
+    }));
+  } catch(_){}
+}
+
+// ── Apply saved state to the page ─────────────────────────────────
+function applyToPage(state){
+  _applyVisibility(state.hidden);
+  _applyOrder(state.order);
+  _applyLayout(state.layout);
+  _applyWidth(state.rightWidth);
+  _updateBadge(state.hidden.length);
+  // Remove the flash-hide style now we have applied real styles
+  const fl = document.getElementById('__ple_flash');
+  if (fl) fl.remove();
+}
+
+// Only add display:none to hidden items. Never touch others — the page
+// controls their own visibility (e.g. discountSection is hidden by JS).
+function _applyVisibility(hidden){
+  discoverRegions().forEach(r => {
+    if (r.permanent) return;
+    if (hidden.includes(r.key)){
+      r.el.style.setProperty('display','none','important');
+      r.el.setAttribute('data-ple-was-hidden','1');
+    } else if (r.el.getAttribute('data-ple-was-hidden') === '1'){
+      // Only restore if WE hid it — don't touch page-controlled visibility
+      r.el.style.removeProperty('display');
+      r.el.removeAttribute('data-ple-was-hidden');
+    }
+  });
+}
+
+function _applyOrder(order){
+  if (!order || !order.length) return;
+  const regions = discoverRegions();
+  // Group by parent so we only re-order within the same container
+  const byParent = new Map();
+  order.forEach(key => {
+    const r = regions.find(x => x.key === key);
+    if (!r) return;
+    const p = r.el.parentElement;
+    if (!p) return;
+    if (!byParent.has(p)) byParent.set(p, []);
+    byParent.get(p).push(r.el);
+  });
+  byParent.forEach((els, parent) => {
+    // Find the first element in this group as an anchor point
+    const anchor = parent.querySelector('[data-ple-region]');
+    els.forEach(el => parent.appendChild(el));
+  });
+}
+
+function _applyLayout(layout){
+  document.documentElement.setAttribute('data-ple-swap', layout === 'swap' ? '1' : '0');
+}
+
+function _applyWidth(w){
+  let style = document.getElementById('__ple_width');
+  if (!style){
+    style = document.createElement('style');
+    style.id = '__ple_width';
+    document.head.appendChild(style);
+  }
+  style.textContent = `.pos-layout{grid-template-columns:1fr ${w}px!important}`;
+}
+
+function _updateBadge(count){
+  const b = document.getElementById('pleBadge');
+  if (!b) return;
+  b.textContent = count;
+  b.classList.toggle('show', count > 0);
+}
+
+// ── Render the region list in the drawer ──────────────────────────
+function renderList(){
+  const list = document.getElementById('pleRegionList');
+  if (!list) return;
+
+  const regions = discoverRegions();
+  if (!regions.length){
+    list.innerHTML = '<div style="padding:2rem 0;text-align:center;color:var(--text-2,#94a3b8);font-size:.78rem">No annotated regions found on this page.</div>';
+    return;
+  }
+
+  // Sort by W.order if set, append unordered ones at the end
+  const ordered = W.order.length
+    ? [
+        ...W.order.map(k => regions.find(r => r.key === k)).filter(Boolean),
+        ...regions.filter(r => !W.order.includes(r.key)),
+      ]
+    : regions;
+
+  list.innerHTML = '';
+
+  ordered.forEach(r => {
+    const hidden = !r.permanent && W.hidden.includes(r.key);
+
+    const row = document.createElement('div');
+    row.className = 'ple-row' + (hidden ? ' ple-hidden-row' : '') + (r.permanent ? ' ple-permanent' : '');
+    row.dataset.pleKey = r.key;
+
+    // Sanitise for innerHTML
+    const safeLabel = esc(r.label);
+    const safeIcon  = esc(r.icon);
+    const safeSub   = esc(r.sub);
+
+    row.innerHTML =
+      '<span class="ple-grip" title="' + (r.permanent ? 'Cannot reorder' : 'Drag to reorder') + '">' +
+        '<i class="bi bi-grip-vertical"></i>' +
+      '</span>' +
+      '<div class="ple-row-icon"><i class="' + safeIcon + '"></i></div>' +
+      '<div class="ple-row-txt">' +
+        '<div class="ple-row-lbl">' + safeLabel + '</div>' +
+        (safeSub ? '<div class="ple-row-sub">' + safeSub + '</div>' : '') +
+        (r.permanent ? '<div class="ple-row-sub" style="opacity:.55">Always visible</div>' : '') +
+      '</div>' +
+      '<button class="ple-eye" aria-label="' + (hidden ? 'Show' : 'Hide') + ' ' + safeLabel + '">' +
+        '<i class="bi ' + (hidden ? 'bi-eye-slash' : 'bi-eye') + '"></i>' +
+      '</button>';
+
+    // Eye toggle
+    if (!r.permanent){
+      row.querySelector('.ple-eye').addEventListener('click', () => {
+        const idx = W.hidden.indexOf(r.key);
+        if (idx >= 0) W.hidden.splice(idx, 1);
+        else          W.hidden.push(r.key);
+        // Live preview
+        _applyVisibility(W.hidden);
+        _updateBadge(W.hidden.length);
+        renderList(); // re-render to show new state
+      });
+    }
+
+    // Drag (skip permanent)
+    if (!r.permanent){
+      row.querySelector('.ple-grip').addEventListener('pointerdown', e => startDrag(e, list));
+    }
+
+    list.appendChild(row);
+  });
+}
+
+// ── Drag & drop ───────────────────────────────────────────────────
+function startDrag(e, list){
+  e.preventDefault();
+  const item = e.currentTarget.closest('.ple-row');
+  if (!item || item.classList.contains('ple-permanent')) return;
+
+  const startY = e.clientY;
+  const ph = document.createElement('div');
+  ph.className = 'ple-placeholder';
+  ph.style.height = item.offsetHeight + 'px';
+  item.classList.add('ple-dragging');
+  list.insertBefore(ph, item.nextSibling);
+
+  const grip = e.currentTarget;
+  grip.setPointerCapture(e.pointerId);
+
+  const onMove = ev => {
+    const dy = ev.clientY - startY;
+    item.style.cssText += ';transform:translateY(' + dy + 'px);position:relative;z-index:9;pointer-events:none';
+    const others = Array.from(list.querySelectorAll('.ple-row:not(.ple-dragging)'));
+    const over   = others.find(el => {
+      const r = el.getBoundingClientRect();
+      return ev.clientY >= r.top && ev.clientY <= r.bottom;
+    });
+    if (over){
+      const r = over.getBoundingClientRect();
+      list.insertBefore(ph, ev.clientY < r.top + r.height / 2 ? over : over.nextSibling);
+    }
+  };
+
+  const onUp = () => {
+    item.style.transform = item.style.position = item.style.zIndex = item.style.pointerEvents = '';
+    item.classList.remove('ple-dragging');
+    list.insertBefore(item, ph);
+    ph.remove();
+    grip.releasePointerCapture(e.pointerId);
+    grip.removeEventListener('pointermove', onMove);
+    grip.removeEventListener('pointerup',   onUp);
+    // Capture new order from DOM
+    W.order = Array.from(list.querySelectorAll('.ple-row[data-ple-key]'))
+                   .map(el => el.dataset.pleKey);
+    // Live preview
+    _applyOrder(W.order);
+  };
+
+  grip.addEventListener('pointermove', onMove);
+  grip.addEventListener('pointerup',   onUp);
+}
+
+// ── Open / Close / Save / Reset ───────────────────────────────────
+function openDrawer(){
+  // Snapshot saved into working copy
+  W = {
+    hidden:     [...saved.hidden],
+    order:      [...saved.order],
+    layout:     saved.layout,
+    rightWidth: saved.rightWidth,
+  };
+  renderList();
+  syncLayoutCards();
+  syncWidthSlider();
+  document.getElementById('pleDrawer')?.classList.add('open');
+  document.getElementById('pleBackdrop')?.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDrawer(){
+  document.getElementById('pleDrawer')?.classList.remove('open');
+  document.getElementById('pleBackdrop')?.classList.remove('open');
+  document.body.style.overflow = '';
+  // Revert live preview to saved state
+  applyToPage(saved);
+}
+
+function saveLayout(){
+  saved = {
+    hidden:     [...W.hidden],
+    order:      [...W.order],
+    layout:     W.layout,
+    rightWidth: W.rightWidth,
+  };
+  persist();
+  applyToPage(saved);
+
+  const btn = document.getElementById('pleSave');
+  if (btn){ btn.classList.add('saved'); btn.innerHTML = '<i class="bi bi-check2-all"></i> Saved!'; }
+  toast('Layout saved');
+  setTimeout(() => {
+    closeDrawer();
+    if (btn){ btn.classList.remove('saved'); btn.innerHTML = '<i class="bi bi-check2"></i> Save'; }
+  }, 700);
+}
+
+function resetLayout(){
+  saved = { hidden:[], order:[], layout:'default', rightWidth:DEFAULT_W };
+  W     = { hidden:[], order:[], layout:'default', rightWidth:DEFAULT_W };
+  try { localStorage.removeItem(STORE_KEY); } catch(_){}
+  applyToPage(saved);
+  syncLayoutCards();
+  syncWidthSlider();
+  renderList();
+  toast('Layout reset to default');
+}
+
+// ── Sync UI state ─────────────────────────────────────────────────
+function syncLayoutCards(){
+  document.querySelectorAll('[data-ple-layout]').forEach(c => {
+    c.classList.toggle('active', c.getAttribute('data-ple-layout') === W.layout);
+  });
+}
+
+function syncWidthSlider(){
+  const s = document.getElementById('pleRightWidth');
+  const v = document.getElementById('pleRightWidthVal');
+  if (s) s.value = W.rightWidth;
+  if (v) v.textContent = W.rightWidth + 'px';
+}
+
+// ── Utilities ─────────────────────────────────────────────────────
+function esc(s){
+  return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+let _tt;
+function toast(msg){
+  const el = document.getElementById('pleToast');
+  if (!el) return;
+  el.innerHTML = '<i class="bi bi-check2-circle"></i> ' + esc(msg);
+  el.classList.add('show');
+  clearTimeout(_tt);
+  _tt = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────
+function boot(){
+  // Wire buttons
+  document.getElementById('pleTrigger') ?.addEventListener('click', openDrawer);
+  document.getElementById('pleClose')   ?.addEventListener('click', closeDrawer);
+  document.getElementById('pleCancel')  ?.addEventListener('click', closeDrawer);
+  document.getElementById('pleSave')    ?.addEventListener('click', saveLayout);
+  document.getElementById('pleReset')   ?.addEventListener('click', resetLayout);
+  document.getElementById('pleBackdrop')?.addEventListener('click', closeDrawer);
+
+  // Escape key
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('pleDrawer')?.classList.contains('open'))
+      closeDrawer();
+  });
+
+  // Tab switching
+  document.querySelectorAll('[data-ple-panel]').forEach(btn => {
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.ple-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.ple-panel').forEach(p => p.classList.remove('active'));
+      this.classList.add('active');
+      document.getElementById(this.getAttribute('data-ple-panel'))?.classList.add('active');
+    });
+  });
+
+  // Layout card clicks — live preview
+  document.querySelectorAll('[data-ple-layout]').forEach(c => {
+    c.addEventListener('click', () => {
+      W.layout = c.getAttribute('data-ple-layout');
+      syncLayoutCards();
+      _applyLayout(W.layout);
+    });
+  });
+
+  // Width slider — live preview
+  const slider = document.getElementById('pleRightWidth');
+  if (slider){
+    slider.addEventListener('input', () => {
+      W.rightWidth = parseInt(slider.value);
+      syncWidthSlider();
+      _applyWidth(W.rightWidth);
+    });
+  }
+
+  // Load saved prefs and apply to page
+  loadSaved();
+  applyToPage(saved);
+}
+
+if (document.readyState === 'loading')
+  document.addEventListener('DOMContentLoaded', boot);
+else
+  boot();
+
+// Public API
+window.PageLayoutEngine = { open: openDrawer, close: closeDrawer, reset: resetLayout };
+
+})();
+</script>
+{% endif %}

@@ -3,6 +3,57 @@
 {% block title %}Dashboard — Partner Portal — PRIMEBOOKS{% endblock %}
 {% block page_title %}Dashboard{% endblock %}
 
+{% block extra_css %}
+<style>
+    .earnings-strip {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .earnings-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1.25rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .earnings-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+    }
+    .earnings-card.earned::before { background: var(--accent-gradient); }
+    .earnings-card.paid::before   { background: linear-gradient(90deg, #22c55e, #16a34a); }
+    .earnings-card.pending::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
+    .earnings-label { font-size: 0.75rem; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem; }
+    .earnings-value { font-size: 1.6rem; font-weight: 300; color: var(--text-primary); }
+    .earnings-currency { font-size: 0.85rem; color: var(--text-tertiary); margin-left: 2px; }
+    .chart-wrap { position: relative; height: 180px; }
+
+    .qr-promo-banner {
+        background: linear-gradient(135deg, rgba(12,25,221,0.15), rgba(76,84,196,0.08));
+        border: 1px solid rgba(12,25,221,0.3);
+        border-radius: 8px;
+        padding: 1rem 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.5rem;
+    }
+    .qr-promo-text { font-size: 0.88rem; color: var(--text-secondary); }
+    .qr-promo-text strong { color: var(--text-primary); }
+
+    @media (max-width: 680px) {
+        .earnings-strip { grid-template-columns: 1fr 1fr; }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 
 {% if not partner.is_approved %}
@@ -11,7 +62,7 @@
 </div>
 {% endif %}
 
-<!-- Welcome + date -->
+<!-- Welcome row -->
 <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.75rem">
     <div>
         <h2 style="font-size:1.3rem;font-weight:300;color:var(--text-primary);margin-bottom:0.2rem">
@@ -22,11 +73,16 @@
         </p>
     </div>
     {% if partner.is_approved %}
-    <a href="{% url 'referral:referrals_list' %}" class="btn btn-secondary btn-sm">View all referrals →</a>
+    <a href="{% url 'referral:qr_dashboard' %}" class="btn btn-accent btn-sm">
+        <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="5" height="5"/><rect x="16" y="3" width="5" height="5"/><rect x="3" y="16" width="5" height="5"/>
+        </svg>
+        Get Share Card & QR Code
+    </a>
     {% endif %}
 </div>
 
-<!-- Stats -->
+<!-- Referral stats -->
 <div class="stat-grid">
     <div class="stat-card accent-card">
         <div class="stat-label">Total Referrals</div>
@@ -46,6 +102,24 @@
     </div>
 </div>
 
+<!-- Earnings strip -->
+{% if partner.commission_rate > 0 or stats.earned %}
+<div class="earnings-strip">
+    <div class="earnings-card earned">
+        <div class="earnings-label">Total Earned</div>
+        <div class="earnings-value">{{ stats.earned|floatformat:0 }}<span class="earnings-currency">UGX</span></div>
+    </div>
+    <div class="earnings-card paid">
+        <div class="earnings-label">Paid Out</div>
+        <div class="earnings-value" style="color:var(--success)">{{ stats.paid|floatformat:0 }}<span class="earnings-currency">UGX</span></div>
+    </div>
+    <div class="earnings-card pending">
+        <div class="earnings-label">Pending Payout</div>
+        <div class="earnings-value" style="color:var(--warning)">{{ stats.pending_payout|floatformat:0 }}<span class="earnings-currency">UGX</span></div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Referral link card -->
 {% if partner.is_approved %}
 <div class="card" style="margin-bottom:1.5rem">
@@ -54,6 +128,12 @@
             <div class="card-title">Your Referral Link</div>
             <div class="card-subtitle">Share this link — every company that signs up through it is tracked to you</div>
         </div>
+        <a href="{% url 'referral:qr_dashboard' %}" class="btn btn-secondary btn-sm">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="5" height="5"/><rect x="16" y="3" width="5" height="5"/><rect x="3" y="16" width="5" height="5"/>
+            </svg>
+            QR & Cards
+        </a>
     </div>
 
     <div class="ref-link-box">
@@ -75,9 +155,23 @@
             Referral code:
             <code style="background:var(--bg-tertiary);padding:2px 8px;border-radius:4px;font-size:0.8rem;color:#6b78ff;letter-spacing:1px">{{ referral_code }}</code>
         </span>
-        <span style="font-size:0.82rem;color:var(--text-tertiary)">
-            You can also share the code directly — companies can enter it at signup.
-        </span>
+        <a href="{% url 'referral:qr_dashboard' %}" style="font-size:0.82rem;color:#6b78ff;text-decoration:none">
+            → Download QR code & branded share card
+        </a>
+    </div>
+</div>
+
+<!-- Activity chart -->
+<div class="card" style="margin-bottom:1.5rem">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Referral Activity</div>
+            <div class="card-subtitle">Monthly completed and pending referrals over the last 12 months</div>
+        </div>
+        <a href="{% url 'referral:referrals_list' %}" class="btn btn-secondary btn-sm">View all →</a>
+    </div>
+    <div class="chart-wrap">
+        <canvas id="activityChart"></canvas>
     </div>
 </div>
 {% endif %}
@@ -102,6 +196,7 @@
                     <th>Company</th>
                     <th>Email</th>
                     <th>Status</th>
+                    <th>Commission</th>
                     <th>Date</th>
                 </tr>
             </thead>
@@ -115,6 +210,13 @@
                             {% if ref.status == 'pending' %}⏳{% elif ref.status == 'completed' %}✓{% else %}✕{% endif %}
                             {{ ref.get_status_display }}
                         </span>
+                    </td>
+                    <td>
+                        {% if ref.commission_amount %}
+                            <span style="color:var(--success)">{{ ref.commission_amount|floatformat:0 }} UGX</span>
+                        {% else %}
+                            <span style="color:var(--text-tertiary)">—</span>
+                        {% endif %}
                     </td>
                     <td>{{ ref.registered_at|date:"M d, Y" }}</td>
                 </tr>
@@ -131,7 +233,7 @@
         </svg>
         <p>No referrals yet.
             {% if partner.is_approved %}
-            Copy your link above and start sharing.
+            Copy your link above or <a href="{% url 'referral:qr_dashboard' %}" style="color:#6b78ff;text-decoration:none">download your share card</a> to start sharing.
             {% else %}
             Your referral link will appear here once your account is approved.
             {% endif %}
@@ -143,6 +245,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 function copyRef() {
     const url = document.getElementById('refLinkText').textContent.trim();
@@ -151,10 +254,61 @@ function copyRef() {
         const original = btn.innerHTML;
         btn.innerHTML = '✓ Copied!';
         btn.style.background = 'var(--success)';
-        setTimeout(() => {
-            btn.innerHTML = original;
-            btn.style.background = '';
-        }, 2200);
+        setTimeout(() => { btn.innerHTML = original; btn.style.background = ''; }, 2200);
+    });
+}
+
+// Activity chart
+const chartLabels = {{ chart_labels|safe }};
+const chartCompleted = {{ chart_completed|safe }};
+const chartPending = {{ chart_pending|safe }};
+
+if (chartLabels.length > 0 && document.getElementById('activityChart')) {
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    const labelColor = isDark ? '#888' : '#999';
+
+    new Chart(document.getElementById('activityChart'), {
+        type: 'bar',
+        data: {
+            labels: chartLabels,
+            datasets: [
+                {
+                    label: 'Completed',
+                    data: chartCompleted,
+                    backgroundColor: 'rgba(34,197,94,0.7)',
+                    borderColor: '#22c55e',
+                    borderWidth: 1,
+                    borderRadius: 4,
+                },
+                {
+                    label: 'Pending',
+                    data: chartPending,
+                    backgroundColor: 'rgba(245,158,11,0.5)',
+                    borderColor: '#f59e0b',
+                    borderWidth: 1,
+                    borderRadius: 4,
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { labels: { color: labelColor, font: { size: 11 }, boxWidth: 12 } },
+                tooltip: {
+                    backgroundColor: isDark ? '#1a1a1a' : '#fff',
+                    titleColor: isDark ? '#fff' : '#000',
+                    bodyColor: isDark ? '#aaa' : '#666',
+                    borderColor: isDark ? '#333' : '#ddd',
+                    borderWidth: 1,
+                }
+            },
+            scales: {
+                x: { ticks: { color: labelColor, font: { size: 11 } }, grid: { color: gridColor } },
+                y: { ticks: { color: labelColor, font: { size: 11 }, precision: 0 }, grid: { color: gridColor }, beginAtZero: true }
+            }
+        }
     });
 }
 </script>

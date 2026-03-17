@@ -78,6 +78,7 @@ class StrictSingleSessionMiddleware:
     # Paths that bypass enforcement entirely
     EXEMPT_PATHS = {
         '/accounts/login/',
+        '/accounts/login/complete/',   # bridge completion — login() is called here
         '/accounts/logout/',
         '/api/auth/login/',
         '/api/auth/register/',

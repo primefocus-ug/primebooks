@@ -22,7 +22,8 @@ urlpatterns = [
         views.tenant_overview,
         name='tenant_overview',
     ),
-
+    path('branch/<int:pk>/dashboard/', views.branch_dashboard, name='branch_dashboard'),
+    path('branch/detail-api/',         views.branch_dashboard_detail_api, name='branch_dashboard_detail_api'),
     path(
         'overview/detail/',
         views.tenant_overview_detail_api,

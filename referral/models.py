@@ -2,8 +2,9 @@ import uuid
 import string
 import random
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
+from decimal import Decimal
 
 
 def generate_referral_code(length=8):
@@ -52,10 +53,20 @@ class Partner(AbstractBaseUser):
     date_joined = models.DateTimeField(default=timezone.now)
     last_login = models.DateTimeField(null=True, blank=True)
 
-    # Commission/reward settings (optional, extend as needed)
+    # Commission/reward settings
     commission_rate = models.DecimalField(
         max_digits=5, decimal_places=2, default=0.00,
         help_text="Commission percentage e.g. 10.00 = 10%"
+    )
+
+    # Branding / Ad customisation for QR share cards
+    ad_tagline = models.CharField(
+        max_length=120, blank=True,
+        help_text="Custom tagline shown on the partner's shareable QR card (e.g. 'Get your business on PrimeBooks today!')"
+    )
+    ad_promo_text = models.CharField(
+        max_length=200, blank=True,
+        help_text="Short promotional text for the share card (e.g. 'Free 30-day trial + priority onboarding')"
     )
 
     objects = PartnerManager()
@@ -88,15 +99,36 @@ class Partner(AbstractBaseUser):
     def pending_referrals(self):
         return self.referrals.filter(status='pending').count()
 
+    @property
+    def total_earned(self):
+        """Sum of all commission amounts from completed referrals."""
+        result = self.referrals.filter(status='completed').aggregate(
+            total=models.Sum('commission_amount')
+        )
+        return result['total'] or Decimal('0.00')
+
+    @property
+    def total_paid(self):
+        """Sum of paid-out commissions."""
+        result = self.referrals.filter(status='completed', commission_paid=True).aggregate(
+            total=models.Sum('commission_amount')
+        )
+        return result['total'] or Decimal('0.00')
+
+    @property
+    def total_pending_payout(self):
+        """Earned but not yet paid out."""
+        return self.total_earned - self.total_paid
+
 
 class ReferralSignup(models.Model):
     """
     Records each time a company registers using a partner's referral link.
     """
     STATUS_CHOICES = [
-        ('pending', 'Pending'),        # Registered but not yet active tenant
-        ('completed', 'Completed'),    # Tenant fully set up and active
-        ('cancelled', 'Cancelled'),    # Registration abandoned / tenant deleted
+        ('pending', 'Pending'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -110,10 +142,7 @@ class ReferralSignup(models.Model):
     # Company that registered via referral
     company_name = models.CharField(max_length=200)
     company_email = models.EmailField()
-    tenant_schema_name = models.CharField(
-        max_length=100, blank=True,
-        help_text="The schema_name of the created tenant, set after tenant creation"
-    )
+    tenant_schema_name = models.CharField(max_length=100, blank=True)
     subdomain = models.CharField(max_length=100, blank=True)
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
@@ -123,9 +152,14 @@ class ReferralSignup(models.Model):
     # Commission tracking
     commission_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     commission_paid = models.BooleanField(default=False)
+    commission_paid_at = models.DateTimeField(null=True, blank=True)
 
-    # Raw referral tracking (store ref code even if partner is deleted)
+    # Raw referral tracking
     referral_code_used = models.CharField(max_length=20, blank=True)
+
+    # UTM / campaign source tracking
+    utm_source = models.CharField(max_length=100, blank=True, help_text="e.g. whatsapp, instagram, qrcode")
+    utm_campaign = models.CharField(max_length=100, blank=True)
 
     class Meta:
         verbose_name = 'Referral Signup'
@@ -136,10 +170,21 @@ class ReferralSignup(models.Model):
         return f"{self.company_name} → referred by {self.partner}"
 
     def mark_completed(self, tenant_schema_name='', subdomain=''):
+        from decimal import Decimal
         self.status = 'completed'
         self.completed_at = timezone.now()
         if tenant_schema_name:
             self.tenant_schema_name = tenant_schema_name
         if subdomain:
             self.subdomain = subdomain
+        # Auto-calculate commission based on partner rate if not already set
+        if self.commission_amount == Decimal('0.00') and self.partner:
+            # Default base: 50,000 UGX per completed referral * partner rate
+            base = Decimal('50000.00')
+            self.commission_amount = (base * self.partner.commission_rate / Decimal('100')).quantize(Decimal('0.01'))
+        self.save()
+
+    def mark_commission_paid(self):
+        self.commission_paid = True
+        self.commission_paid_at = timezone.now()
         self.save()

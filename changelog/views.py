@@ -14,6 +14,7 @@ URL wiring — add to tenancy/public_urls.py:
 """
 
 import json
+import re
 from django.http                    import HttpResponse, JsonResponse
 from django.views.decorators.http   import require_POST, require_GET
 from django.contrib.auth.decorators import login_required
@@ -157,6 +158,28 @@ def _empty_context():
     }
 
 
+def _normalize_embed_url(url):
+    """
+    Convert YouTube watch/share URLs to their embeddable /embed/ form.
+    Returns the URL unchanged for non-YouTube or already-correct embed URLs.
+
+    Handles:
+      https://www.youtube.com/watch?v=VIDEO_ID
+      https://youtu.be/VIDEO_ID
+      https://www.youtube.com/shorts/VIDEO_ID
+      https://www.youtube.com/embed/VIDEO_ID  ← already correct, left alone
+    """
+    if not url:
+        return url
+    match = re.search(
+        r'(?:youtu\.be/|youtube\.com/(?:watch\?v=|shorts/))([\w-]+)',
+        url,
+    )
+    if match:
+        return f'https://www.youtube.com/embed/{match.group(1)}'
+    return url
+
+
 def _build_slides_data(release):
     if not release:
         return []
@@ -170,7 +193,7 @@ def _build_slides_data(release):
             'description':        slide.description,
             'chips':              slide.chips,
             'media_type':         slide.media_type,
-            'media_url':          slide.media_url,
+            'media_url':          _normalize_embed_url(slide.media_url),
             'media_alt':          slide.media_alt,
             'media_poster':       slide.media_poster,
             'before_image':       slide.before_image,

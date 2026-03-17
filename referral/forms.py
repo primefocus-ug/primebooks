@@ -1,5 +1,6 @@
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
+from django.core.exceptions import ValidationError
 from .models import Partner
 
 
@@ -44,12 +45,6 @@ class PartnerRegistrationForm(forms.ModelForm):
         return partner
 
 
-from django import forms
-from django.contrib.auth.forms import AuthenticationForm
-from django.core.exceptions import ValidationError
-from .models import Partner
-
-
 class PartnerLoginForm(AuthenticationForm):
     username = forms.EmailField(
         label='Email',
@@ -68,13 +63,10 @@ class PartnerLoginForm(AuthenticationForm):
     )
 
     def clean(self):
-        email = self.cleaned_data.get('username')  # field is named 'username' by AuthenticationForm
+        email = self.cleaned_data.get('username')
         password = self.cleaned_data.get('password')
 
         if email and password:
-            # Bypass django.contrib.auth.authenticate() entirely.
-            # That function iterates ALL backends including CompanyAwareAuthBackend
-            # which queries tenant-schema tables that don't exist in the public schema.
             from referral.auth_backend import PartnerAuthBackend
             self.user_cache = PartnerAuthBackend().authenticate(
                 self.request, username=email, password=password
@@ -103,4 +95,32 @@ class PartnerProfileForm(forms.ModelForm):
             'full_name': forms.TextInput(attrs={'class': 'form-input'}),
             'phone': forms.TextInput(attrs={'class': 'form-input'}),
             'company_name': forms.TextInput(attrs={'class': 'form-input'}),
+        }
+
+
+class PartnerBrandingForm(forms.ModelForm):
+    """Controls the custom text shown on the partner's shareable QR/ad card."""
+    class Meta:
+        model = Partner
+        fields = ['ad_tagline', 'ad_promo_text']
+        widgets = {
+            'ad_tagline': forms.TextInput(attrs={
+                'class': 'form-input',
+                'placeholder': 'e.g. Get your business on PrimeBooks today!',
+                'maxlength': 120,
+            }),
+            'ad_promo_text': forms.Textarea(attrs={
+                'class': 'form-input',
+                'rows': 2,
+                'placeholder': 'e.g. Free 30-day trial + priority onboarding support',
+                'maxlength': 200,
+            }),
+        }
+        labels = {
+            'ad_tagline': 'Card Headline',
+            'ad_promo_text': 'Promotional Text',
+        }
+        help_texts = {
+            'ad_tagline': 'Appears as the big headline on your share card (max 120 chars)',
+            'ad_promo_text': 'Short offer text below the headline (max 200 chars)',
         }

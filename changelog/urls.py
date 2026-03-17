@@ -13,6 +13,7 @@ from .views import (
     push_release,
     changelog_admin_preview,
 )
+app_name = 'changelog'
 
 urlpatterns = [
     path('changelog/dismiss/', dismiss_changelog, name='changelog_dismiss'),

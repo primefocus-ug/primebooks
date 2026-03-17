@@ -15,4 +15,10 @@ urlpatterns = [
     path('dashboard/', views.dashboard, name='dashboard'),
     path('referrals/', views.referrals_list, name='referrals_list'),
     path('profile/', views.profile, name='profile'),
+    path('earnings/', views.earnings, name='earnings'),
+
+    # QR Code & Share Cards
+    path('qr/', views.qr_dashboard, name='qr_dashboard'),
+    path('qr-code/', views.qr_code_svg, name='qr_code'),
+    path('share-card-data/', views.share_card_data, name='share_card_data'),
 ]

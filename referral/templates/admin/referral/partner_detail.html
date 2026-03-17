@@ -1,0 +1,385 @@
+{% extends "public_admin/base.html" %}
+{% load i18n %}
+
+{% block title %}Partner: {{ partner.full_name }} — Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+.pd-wrap { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: var(--text-primary); }
+.pd-topbar { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.75rem; flex-wrap: wrap; gap: 0.75rem; }
+.pd-btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 1rem; border-radius: 6px; font-size: 0.83rem; font-weight: 500; text-decoration: none; border: none; cursor: pointer; font-family: inherit; transition: all 0.2s; white-space: nowrap; }
+.pd-btn-accent   { background: linear-gradient(135deg, #0c19dd, #4c54c4); color: var(--text-primary); }
+.pd-btn-accent:hover { opacity: 0.9; color: var(--text-primary); }
+.pd-btn-success  { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+.pd-btn-success:hover { background: rgba(34,197,94,0.25); }
+.pd-btn-warning  { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+.pd-btn-warning:hover { background: rgba(245,158,11,0.25); }
+.pd-btn-danger   { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); }
+.pd-btn-danger:hover  { background: rgba(239,68,68,0.22); }
+.pd-btn-secondary { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-color); }
+.pd-btn-secondary:hover { background: var(--bg-secondary); color: var(--text-primary); }
+
+.pd-grid { display: grid; grid-template-columns: 1fr 340px; gap: 1.25rem; align-items: start; }
+.pd-card { background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem; }
+.pd-card-title { font-size: 0.92rem; font-weight: 500; color: var(--text-primary); margin-bottom: 1rem; }
+
+/* Profile header */
+.pd-header-card {
+    background: linear-gradient(135deg, rgba(12,25,221,0.12), rgba(76,84,196,0.06));
+    border: 1px solid rgba(12,25,221,0.25);
+    border-radius: 10px; padding: 1.5rem; margin-bottom: 1.25rem;
+    display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;
+}
+.pd-avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: linear-gradient(135deg, #0c19dd, #4c54c4);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem; font-weight: 700; color: var(--text-primary); flex-shrink: 0;
+}
+.pd-name { font-size: 1.2rem; font-weight: 400; color: var(--text-primary); }
+.pd-meta { font-size: 0.83rem; color: var(--text-muted); margin-top: 3px; }
+
+/* Stats row */
+.pd-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.25rem; }
+.pd-stat { background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 6px; padding: 0.9rem; text-align: center; }
+.pd-stat-val { font-size: 1.6rem; font-weight: 200; }
+.pd-stat-lbl { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
+
+/* Action forms */
+.pd-action-row { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.pd-commission-form { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.pd-input {
+    padding: 0.45rem 0.75rem; background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: 6px; color: var(--text-primary); font-size: 0.87rem; font-family: inherit; outline: none;
+    transition: border-color 0.2s;
+}
+.pd-input:focus { border-color: #0c19dd; }
+
+/* Table */
+.pd-table { width: 100%; border-collapse: collapse; }
+.pd-table thead th {
+    text-align: left; font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.6px; color: var(--text-muted); padding: 0.5rem 0.75rem;
+    background: var(--bg-primary); border-bottom: 1px solid var(--border-light);
+}
+.pd-table tbody td { padding: 0.7rem 0.75rem; font-size: 0.84rem; color: var(--text-secondary); border-bottom: 1px solid var(--border-light); }
+.pd-table tbody tr:last-child td { border-bottom: none; }
+.pd-table tbody tr:hover td { background: var(--bg-tertiary); }
+
+.pd-badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 8px; border-radius: 20px; font-size: 0.72rem; font-weight: 500;
+}
+.bd-green { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.25); }
+.bd-amber { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.25); }
+.bd-red   { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); }
+.bd-paid  { background: rgba(107,120,255,0.15); color: #6b78ff; border: 1px solid rgba(107,120,255,0.25); }
+
+/* Info rows */
+.pd-info-row { display: flex; justify-content: space-between; padding: 0.55rem 0; border-bottom: 1px solid var(--border-light); font-size: 0.84rem; }
+.pd-info-row:last-child { border-bottom: none; }
+.pd-info-label { color: var(--text-muted); }
+.pd-info-value { color: var(--text-primary); font-weight: 500; text-align: right; }
+
+@media (max-width: 900px) {
+    .pd-grid { grid-template-columns: 1fr; }
+    .pd-stats { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pd-wrap">
+
+    <!-- Top bar -->
+    <div class="pd-topbar">
+        <div>
+            <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">
+                <a href="{% url 'public_admin:referral_dashboard' %}" style="color:var(--text-muted);text-decoration:none">Dashboard</a>
+                <span style="margin:0 6px">›</span>
+                <a href="{% url 'public_admin:public_admin_referral_partner_list' %}" style="color:var(--text-muted);text-decoration:none">Partners</a>
+                <span style="margin:0 6px">›</span>
+                <span style="color:var(--text-muted)">{{ partner.full_name }}</span>
+            </div>
+            <h1 style="font-size:1.3rem;font-weight:300;color:var(--text-primary);margin:4px 0 0">
+                Partner Detail
+            </h1>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+            <a href="{% url 'public_admin:referral_analytics' %}" class="pd-btn pd-btn-secondary">Analytics</a>
+            <a href="{% url 'public_admin:public_admin_referral_partner_change' partner.pk %}" class="pd-btn pd-btn-secondary">
+                ✏️ Edit Record →
+            </a>
+        </div>
+    </div>
+
+    <!-- Profile header -->
+    <div class="pd-header-card">
+        <div class="pd-avatar">{{ partner.full_name|first|upper }}</div>
+        <div style="flex:1">
+            <div class="pd-name">{{ partner.full_name }}</div>
+            <div class="pd-meta">{{ partner.email }}{% if partner.phone %} · {{ partner.phone }}{% endif %}{% if partner.company_name %} · {{ partner.company_name }}{% endif %}</div>
+            <div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+                {% if partner.is_approved %}
+                <span class="pd-badge bd-green">✓ Approved</span>
+                {% else %}
+                <span class="pd-badge bd-amber">⏳ Pending Approval</span>
+                {% endif %}
+                {% if partner.is_active %}
+                <span class="pd-badge bd-green">Active</span>
+                {% else %}
+                <span class="pd-badge bd-red">Inactive</span>
+                {% endif %}
+                <span class="pd-badge" style="background:var(--bg-elevated);color:#6b78ff;border:1px solid var(--border-color)">
+                    Code: {{ partner.referral_code }}
+                </span>
+                {% if partner.commission_rate %}
+                <span class="pd-badge" style="background:rgba(107,120,255,0.15);color:#6b78ff;border:1px solid rgba(107,120,255,0.3)">
+                    {{ partner.commission_rate }}% commission
+                </span>
+                {% endif %}
+            </div>
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-muted);text-align:right">
+            Joined {{ partner.date_joined|date:"M d, Y" }}<br>
+            {% if partner.last_login %}Last login {{ partner.last_login|date:"M d, Y" }}{% endif %}
+        </div>
+    </div>
+
+    <!-- Stats row -->
+    <div class="pd-stats">
+        <div class="pd-stat">
+            <div class="pd-stat-val" style="color:#6b78ff">{{ partner.total_referrals }}</div>
+            <div class="pd-stat-lbl">Total Referrals</div>
+        </div>
+        <div class="pd-stat">
+            <div class="pd-stat-val" style="color:#22c55e">{{ partner.successful_referrals }}</div>
+            <div class="pd-stat-lbl">Completed</div>
+        </div>
+        <div class="pd-stat">
+            <div class="pd-stat-val" style="color:#f59e0b">{{ partner.pending_referrals }}</div>
+            <div class="pd-stat-lbl">Pending</div>
+        </div>
+        <div class="pd-stat">
+            <div class="pd-stat-val" style="font-size:1.2rem;color:#6b78ff">{{ partner.total_earned|floatformat:0 }}</div>
+            <div class="pd-stat-lbl">UGX Earned</div>
+        </div>
+    </div>
+
+    <div class="pd-grid">
+
+        <!-- LEFT: Actions + Referrals table -->
+        <div>
+
+            <!-- Approval actions -->
+            <div class="pd-card">
+                <div class="pd-card-title">Account Actions</div>
+
+                <div style="margin-bottom:1.1rem">
+                    <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.5px">Approval</div>
+                    <div class="pd-action-row">
+                        {% if not partner.is_approved %}
+                        <form method="post" style="display:inline">
+                            {% csrf_token %}<input type="hidden" name="action" value="approve">
+                            <button type="submit" class="pd-btn pd-btn-success">
+                                ✓ Approve & Send Email
+                            </button>
+                        </form>
+                        {% else %}
+                        <form method="post" style="display:inline">
+                            {% csrf_token %}<input type="hidden" name="action" value="reject">
+                            <button type="submit" class="pd-btn pd-btn-danger"
+                                    onclick="return confirm('Reject and deactivate {{ partner.full_name }}?')">
+                                ✕ Reject & Deactivate
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div style="margin-bottom:1.1rem">
+                    <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.5px">Commission Rate</div>
+                    <form method="post" class="pd-commission-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="set_commission">
+                        <input type="number" name="commission_rate" class="pd-input"
+                               value="{{ partner.commission_rate }}" min="0" max="100" step="0.5"
+                               style="width:100px" placeholder="e.g. 10">
+                        <span style="font-size:0.85rem;color:var(--text-muted)">%</span>
+                        <button type="submit" class="pd-btn pd-btn-accent" style="padding:0.45rem 1rem">
+                            Update Rate
+                        </button>
+                        <div style="font-size:0.75rem;color:var(--text-muted)">
+                        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">
+                            Quick:
+                            <a href="#" data-rate="5" style="color:#6b78ff;text-decoration:none;margin-left:6px">5%</a>
+                            <a href="#" data-rate="10" style="color:#6b78ff;text-decoration:none;margin-left:6px">10%</a>
+                            <a href="#" data-rate="15" style="color:#6b78ff;text-decoration:none;margin-left:6px">15%</a>
+                            <a href="#" data-rate="20" style="color:#6b78ff;text-decoration:none;margin-left:6px">20%</a>
+                        </div>
+                    </form>
+                </div>
+
+                {% if unpaid_total > 0 %}
+                <div style="padding:0.9rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:6px;margin-bottom:0.75rem">
+                    <div style="font-size:0.82rem;color:#f59e0b;font-weight:500;margin-bottom:0.5rem">
+                        ⏳ Unpaid commission: UGX {{ unpaid_total|floatformat:0 }}
+                    </div>
+                    <form method="post">
+                        {% csrf_token %}<input type="hidden" name="action" value="pay_all">
+                        <button type="submit" class="pd-btn pd-btn-warning"
+                                onclick="return confirm('Mark all unpaid commissions as paid and notify {{ partner.full_name }} by email?')">
+                            💰 Mark All Paid & Notify Partner
+                        </button>
+                    </form>
+                </div>
+                {% else %}
+                <div style="font-size:0.82rem;color:var(--text-muted);padding:0.6rem 0">
+                    ✓ No unpaid commissions
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Referrals table -->
+            <div class="pd-card">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+                    <div class="pd-card-title">All Referrals ({{ referrals.count }})</div>
+                    <a href="{% url 'public_admin:public_admin_referral_referralsignup_list' %}?partner__id={{ partner.pk }}"
+                       class="pd-btn pd-btn-secondary" style="font-size:0.76rem;padding:3px 10px">View in list →</a>
+                </div>
+                {% if referrals %}
+                <div style="overflow-x:auto">
+                    <table class="pd-table">
+                        <thead>
+                            <tr>
+                                <th>Company</th>
+                                <th>Status</th>
+                                <th>Commission</th>
+                                <th>Paid</th>
+                                <th>Source</th>
+                                <th>Registered</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ref in referrals %}
+                            <tr>
+                                <td>
+                                    <div style="color:var(--text-primary);font-weight:500">{{ ref.company_name }}</div>
+                                    <div style="font-size:0.73rem;color:var(--text-muted)">{{ ref.company_email }}</div>
+                                </td>
+                                <td>
+                                    {% if ref.status == 'completed' %}<span class="pd-badge bd-green">✓ Done</span>
+                                    {% elif ref.status == 'pending' %}<span class="pd-badge bd-amber">⏳ Pending</span>
+                                    {% else %}<span class="pd-badge bd-red">✕ Cancelled</span>{% endif %}
+                                </td>
+                                <td>
+                                    {% if ref.commission_amount %}
+                                    <span style="color:#6b78ff;font-size:0.82rem;font-weight:500">
+                                        {{ ref.commission_amount|floatformat:0 }}
+                                    </span>
+                                    {% else %}—{% endif %}
+                                </td>
+                                <td>
+                                    {% if ref.status == 'completed' %}
+                                        {% if ref.commission_paid %}<span class="pd-badge bd-paid">✓ Paid</span>
+                                        {% else %}<span class="pd-badge bd-amber">⏳ Unpaid</span>{% endif %}
+                                    {% else %}<span style="color:var(--text-disabled);font-size:0.75rem">N/A</span>{% endif %}
+                                </td>
+                                <td style="font-size:0.75rem;color:var(--text-muted)">{{ ref.utm_source|default:"—" }}</td>
+                                <td style="font-size:0.78rem">{{ ref.registered_at|date:"M d, Y" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div style="text-align:center;padding:2rem;color:var(--text-muted);font-size:0.88rem">No referrals yet</div>
+                {% endif %}
+            </div>
+
+        </div>
+
+        <!-- RIGHT: Info sidebar -->
+        <div style="display:flex;flex-direction:column;gap:1rem">
+
+            <!-- Earnings summary -->
+            <div class="pd-card">
+                <div class="pd-card-title">Earnings Summary</div>
+                <div class="pd-info-row">
+                    <span class="pd-info-label">Total Earned</span>
+                    <span class="pd-info-value" style="color:#6b78ff">{{ partner.total_earned|floatformat:0 }} UGX</span>
+                </div>
+                <div class="pd-info-row">
+                    <span class="pd-info-label">Total Paid</span>
+                    <span class="pd-info-value" style="color:#22c55e">{{ partner.total_paid|floatformat:0 }} UGX</span>
+                </div>
+                <div class="pd-info-row">
+                    <span class="pd-info-label">Pending Payout</span>
+                    <span class="pd-info-value" style="color:#f59e0b">{{ partner.total_pending_payout|floatformat:0 }} UGX</span>
+                </div>
+                <div class="pd-info-row">
+                    <span class="pd-info-label">Commission Rate</span>
+                    <span class="pd-info-value">{{ partner.commission_rate }}%</span>
+                </div>
+            </div>
+
+            <!-- Account info -->
+            <div class="pd-card">
+                <div class="pd-card-title">Account Info</div>
+                <div class="pd-info-row">
+                    <span class="pd-info-label">Email</span>
+                    <span class="pd-info-value" style="font-size:0.8rem">{{ partner.email }}</span>
+                </div>
+                <div class="pd-info-row">
+                    <span class="pd-info-label">Phone</span>
+                    <span class="pd-info-value">{{ partner.phone|default:"—" }}</span>
+                </div>
+                <div class="pd-info-row">
+                    <span class="pd-info-label">Company</span>
+                    <span class="pd-info-value">{{ partner.company_name|default:"—" }}</span>
+                </div>
+                <div class="pd-info-row">
+                    <span class="pd-info-label">Referral Code</span>
+                    <span class="pd-info-value" style="color:#6b78ff;letter-spacing:1px">{{ partner.referral_code }}</span>
+                </div>
+                <div class="pd-info-row">
+                    <span class="pd-info-label">Joined</span>
+                    <span class="pd-info-value">{{ partner.date_joined|date:"M d, Y" }}</span>
+                </div>
+                <div class="pd-info-row">
+                    <span class="pd-info-label">Last Login</span>
+                    <span class="pd-info-value">{{ partner.last_login|date:"M d, Y"|default:"Never" }}</span>
+                </div>
+            </div>
+
+            <!-- Quick nav -->
+            <div class="pd-card">
+                <div class="pd-card-title">Quick Links</div>
+                <div style="display:flex;flex-direction:column;gap:0.4rem;margin-top:0.5rem">
+                    <a href="{% url 'public_admin:public_admin_referral_partner_change' partner.pk %}" class="pd-btn pd-btn-secondary" style="justify-content:center">
+                        ✏️ Edit Partner Record
+                    </a>
+                    <a href="{% url 'public_admin:public_admin_referral_referralsignup_list' %}?partner__id={{ partner.pk }}&status=completed&commission_paid__exact=0"
+                       class="pd-btn pd-btn-warning" style="justify-content:center">
+                        View Unpaid Only
+                    </a>
+                    <a href="{% url 'public_admin:referral_dashboard' %}" class="pd-btn pd-btn-secondary" style="justify-content:center">
+                        ← Back to Dashboard
+                    </a>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+// Quick commission rate buttons
+document.querySelectorAll('[data-rate]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelector('[name="commission_rate"]').value = btn.dataset.rate;
+    });
+});
+</script>
+{% endblock %}

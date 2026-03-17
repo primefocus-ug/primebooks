@@ -1,0 +1,187 @@
+{% extends "referral/base.html" %}
+
+{% block title %}Earnings — Partner Portal — PRIMEBOOKS{% endblock %}
+{% block page_title %}Earnings{% endblock %}
+
+{% block extra_css %}
+<style>
+    .earnings-hero {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    .e-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 1.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .e-card::after {
+        content: '';
+        position: absolute;
+        bottom: -20px; right: -20px;
+        width: 80px; height: 80px;
+        border-radius: 50%;
+        opacity: 0.07;
+    }
+    .e-card.total { border-top: 3px solid #6b78ff; }
+    .e-card.total::after { background: #6b78ff; }
+    .e-card.paid-card { border-top: 3px solid var(--success); }
+    .e-card.paid-card::after { background: var(--success); }
+    .e-card.unpaid { border-top: 3px solid var(--warning); }
+    .e-card.unpaid::after { background: var(--warning); }
+    .e-label { font-size: 0.75rem; font-weight: 500; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem; }
+    .e-value { font-size: 2.2rem; font-weight: 200; margin-bottom: 0.25rem; }
+    .e-sub { font-size: 0.8rem; color: var(--text-tertiary); }
+
+    .payout-notice {
+        background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(245,158,11,0.05));
+        border: 1px solid rgba(245,158,11,0.25);
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.88rem;
+        color: var(--warning);
+    }
+
+    @media (max-width: 680px) {
+        .earnings-hero { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom:1.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+    <div>
+        <p style="font-size:0.85rem;color:var(--text-tertiary)">Your commission earnings from completed referrals</p>
+    </div>
+    {% if partner.commission_rate > 0 %}
+    <div style="font-size:0.85rem;color:var(--text-secondary)">
+        Commission rate:
+        <span style="font-weight:600;color:var(--text-primary)">{{ partner.commission_rate }}%</span>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Hero numbers -->
+<div class="earnings-hero">
+    <div class="e-card total">
+        <div class="e-label">Total Earned</div>
+        <div class="e-value" style="color:#6b78ff">{{ total_earned|floatformat:0 }}</div>
+        <div class="e-sub">UGX from {{ partner.successful_referrals }} completed referral{{ partner.successful_referrals|pluralize }}</div>
+    </div>
+    <div class="e-card paid-card">
+        <div class="e-label">Paid Out</div>
+        <div class="e-value" style="color:var(--success)">{{ total_paid|floatformat:0 }}</div>
+        <div class="e-sub">UGX received in your account</div>
+    </div>
+    <div class="e-card unpaid">
+        <div class="e-label">Awaiting Payout</div>
+        <div class="e-value" style="color:var(--warning)">{{ total_pending_payout|floatformat:0 }}</div>
+        <div class="e-sub">UGX due to be paid out</div>
+    </div>
+</div>
+
+{% if total_pending_payout > 0 %}
+<div class="payout-notice">
+    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <div>
+        You have <strong>{{ total_pending_payout|floatformat:0 }} UGX</strong> pending payout. Commissions are typically processed monthly.
+        Contact us on <a href="https://wa.me/256785230670" style="color:var(--warning)">WhatsApp +256 785 230 670</a> to follow up.
+    </div>
+</div>
+{% endif %}
+
+<!-- Unpaid commissions -->
+{% if unpaid_referrals %}
+<div class="card" style="margin-bottom:1.5rem">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Pending Commissions</div>
+            <div class="card-subtitle">Completed referrals with unpaid commission</div>
+        </div>
+        <span style="font-size:0.82rem;padding:3px 10px;border-radius:20px;background:var(--warning-bg);color:var(--warning);border:1px solid rgba(245,158,11,0.2)">
+            {{ unpaid_referrals.count }} pending
+        </span>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Completed</th>
+                    <th>Commission</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ref in unpaid_referrals %}
+                <tr>
+                    <td style="color:var(--text-primary);font-weight:500">{{ ref.company_name }}</td>
+                    <td>{{ ref.completed_at|date:"M d, Y" }}</td>
+                    <td style="color:var(--warning);font-weight:500">{{ ref.commission_amount|floatformat:0 }} UGX</td>
+                    <td><span class="badge badge-pending">⏳ Awaiting payment</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Paid commissions -->
+<div class="card">
+    <div class="card-header">
+        <div>
+            <div class="card-title">Paid Commissions</div>
+            <div class="card-subtitle">Commission payments already received</div>
+        </div>
+    </div>
+    {% if paid_referrals %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Completed</th>
+                    <th>Commission</th>
+                    <th>Paid On</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ref in paid_referrals %}
+                <tr>
+                    <td style="color:var(--text-primary);font-weight:500">{{ ref.company_name }}</td>
+                    <td>{{ ref.completed_at|date:"M d, Y" }}</td>
+                    <td style="color:var(--success);font-weight:500">{{ ref.commission_amount|floatformat:0 }} UGX</td>
+                    <td>
+                        {% if ref.commission_paid_at %}
+                            {{ ref.commission_paid_at|date:"M d, Y" }}
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <svg width="36" height="36" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+            <line x1="12" y1="1" x2="12" y2="23"/>
+            <path d="M17 5H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6"/>
+        </svg>
+        <p>No paid commissions yet. Refer businesses to start earning.</p>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}

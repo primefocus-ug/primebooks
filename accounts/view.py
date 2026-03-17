@@ -221,16 +221,15 @@ def password_reset_confirm(request, uidb64, token):
                         if form.is_valid():
                             form.save()
 
+                            # ✅ Re-fetch user fresh from DB after password change
+                            user.refresh_from_db()
+
                             # Unlock account if locked
                             if user.is_locked:
                                 user.unlock_account()
 
-                            messages.success(
-                                request,
-                                'Your password has been reset successfully. You can now log in.'
-                            )
                             logger.info(f"Password reset successful for user {user.email} in tenant {tenant.name}")
-
+                            messages.success(request, 'Your password has been reset successfully. You can now log in.')
                             return redirect('login')
                     else:
                         form = SetPasswordForm(user)

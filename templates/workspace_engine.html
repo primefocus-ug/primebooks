@@ -1,0 +1,2286 @@
+{% load static %}
+{% if user.is_authenticated %}
+
+{# ── Inline critical layout — applied before first paint ── #}
+<script>
+(function(){
+  var ls = localStorage.getItem('wb_layout');
+  if (!ls) return;
+  try {
+    var d = JSON.parse(ls);
+    if (d.navMode) document.body.classList.add('wb-nav-' + d.navMode);
+    // Apply theme/accessibility settings immediately to prevent flash
+    if (d.accentColor) document.documentElement.style.setProperty('--wb-accent', d.accentColor);
+    if (d.fontScale)   document.documentElement.style.setProperty('--wb-font-scale', d.fontScale);
+    if (d.density)     document.documentElement.setAttribute('data-wb-density', d.density);
+    if (d.highContrast) document.documentElement.setAttribute('data-wb-hc', '1');
+    if (d.reduceMotion) document.documentElement.setAttribute('data-wb-rm', '1');
+    if (d.fontSize)    document.documentElement.style.setProperty('--wb-base-font', d.fontSize + 'px');
+    if (d.focusRings)  document.documentElement.setAttribute('data-wb-focus', '1');
+    if (d.rtl)         document.documentElement.setAttribute('dir', 'rtl');
+  } catch(e){}
+})();
+</script>
+
+<style>
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   THEME & ACCESSIBILITY CSS VARIABLES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+:root {
+  --wb-accent:     #2563eb;
+  --wb-accent-h:   #1d4ed8;
+  --wb-accent-50:  rgba(37,99,235,0.08);
+  --wb-accent-20:  rgba(37,99,235,0.2);
+  --wb-font-scale: 1;
+  --wb-base-font:  14px;
+  --wb-spacing:    1;
+}
+
+/* Density overrides */
+[data-wb-density="compact"]     { --wb-spacing: 0.78; }
+[data-wb-density="comfortable"] { --wb-spacing: 1; }
+[data-wb-density="spacious"]    { --wb-spacing: 1.28; }
+
+/* High contrast mode */
+[data-wb-hc="1"] {
+  --border-color: #374151 !important;
+  --text-secondary: #374151 !important;
+  --text-muted: #4b5563 !important;
+}
+[data-wb-hc="1"] .wb-tn-btn,
+[data-wb-hc="1"] .wb-tab-item,
+[data-wb-hc="1"] .wb-mega-link { font-weight: 600 !important; }
+[data-theme="dark"][data-wb-hc="1"] {
+  --border-color: #9ca3af !important;
+  --text-secondary: #d1d5db !important;
+}
+
+/* Reduce motion */
+[data-wb-rm="1"] *,
+[data-wb-rm="1"] *::before,
+[data-wb-rm="1"] *::after {
+  animation-duration: 0.001ms !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* Enhanced focus rings */
+[data-wb-focus="1"] *:focus-visible {
+  outline: 3px solid var(--wb-accent) !important;
+  outline-offset: 2px !important;
+  border-radius: 4px;
+}
+
+/* RTL support */
+[dir="rtl"] #navigationSidebar { left: auto !important; right: 0 !important; }
+[dir="rtl"] .main-wrapper       { margin-left: 0 !important; margin-right: var(--sidebar-width, 240px) !important; }
+[dir="rtl"] .wb-tn-inner        { flex-direction: row-reverse; }
+[dir="rtl"] .wb-mega-inner      { flex-direction: row-reverse; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LAYOUT MODE OVERRIDES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+body.wb-nav-topnav #navigationSidebar,
+body.wb-nav-tabs   #navigationSidebar { display: none !important; }
+
+body.wb-nav-topnav .main-wrapper,
+body.wb-nav-tabs   .main-wrapper { margin-left: 0 !important; }
+
+@media (min-width: 768px) {
+  body.wb-nav-topnav #sidebarToggle,
+  body.wb-nav-tabs   #sidebarToggle { display: none !important; }
+}
+
+@media (max-width: 767px) {
+  body.wb-nav-topnav #wbTopNav,
+  body.wb-nav-tabs   #wbTabNav { display: none !important; }
+
+  body.wb-nav-topnav .main-wrapper,
+  body.wb-nav-tabs   .main-wrapper {
+    margin-top: var(--header-height, 70px) !important;
+  }
+
+  body.wb-nav-topnav #navigationSidebar,
+  body.wb-nav-tabs   #navigationSidebar { display: flex !important; }
+  body.wb-nav-topnav .main-wrapper,
+  body.wb-nav-tabs   .main-wrapper { margin-left: 0 !important; }
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   TOP NAVBAR
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#wbTopNav {
+  display: none;
+  position: fixed;
+  top: var(--header-height, 70px);
+  left: 0; right: 0;
+  height: 46px;
+  z-index: 1020;
+  background: var(--bg-primary, #fff);
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  box-shadow: 0 1px 0 var(--border-color, #e5e7eb);
+  overflow: visible;
+}
+body.wb-nav-topnav #wbTopNav  { display: flex; align-items: stretch; }
+body.wb-nav-topnav .main-wrapper {
+  margin-top: calc(var(--header-height, 70px) + 46px) !important;
+}
+
+.wb-tn-inner {
+  display: flex; align-items: stretch;
+  flex: 1 1 0; min-width: 0;
+  overflow: visible;
+  height: 46px;
+  padding: 0 12px; gap: 0;
+  position: relative;
+}
+
+.wb-tn-group { display: flex; align-items: stretch; position: relative; }
+
+.wb-tn-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 16px; border: none; background: transparent;
+  color: var(--text-primary, #111827);
+  font-size: calc(0.84rem * var(--wb-font-scale, 1)); font-weight: 500; font-family: inherit;
+  cursor: pointer; white-space: nowrap; text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  position: relative;
+}
+.wb-tn-btn:hover,
+.wb-tn-btn.panel-open { color: var(--wb-accent, #2563eb); border-bottom-color: var(--wb-accent, #2563eb); }
+[data-theme="dark"] .wb-tn-btn { color: #e2e8f0; }
+[data-theme="dark"] .wb-tn-btn:hover,
+[data-theme="dark"] .wb-tn-btn.panel-open { color: #93c5fd; border-bottom-color: #93c5fd; }
+.wb-tn-btn i.wb-icon { font-size: 0.9rem; }
+.wb-tn-btn i.wb-chev {
+  font-size: 0.58rem; opacity: 0.5; margin-left: 3px;
+  transition: transform 0.2s;
+}
+.wb-tn-btn.panel-open i.wb-chev { transform: rotate(180deg); }
+
+.wb-mega {
+  display: none;
+  position: fixed;
+  left: 0; right: 0;
+  z-index: 9600;
+  background: var(--bg-primary, #fff);
+  border-top: 2px solid var(--wb-accent, #2563eb);
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.12);
+}
+
+[data-theme="dark"] .wb-mega {
+  background: #111827;
+  border-top-color: #3b82f6;
+  border-bottom-color: rgba(255,255,255,0.08);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+
+.wb-mega-inner {
+  display: flex; gap: 0;
+  padding: 28px 32px;
+  max-width: 1400px; margin: 0 auto;
+  min-height: 80px;
+}
+
+.wb-mega-col {
+  flex: 0 0 auto;
+  min-width: 160px; max-width: 220px;
+  padding-right: 32px;
+  border-right: 1px solid var(--border-color, #e5e7eb);
+  margin-right: 32px;
+}
+.wb-mega-col:last-child { border-right: none; margin-right: 0; }
+[data-theme="dark"] .wb-mega-col { border-right-color: rgba(255,255,255,0.07); }
+
+.wb-mega-flat {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 16px 32px;
+  max-width: 1400px; margin: 0 auto;
+}
+
+.wb-mega-heading {
+  display: block;
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-primary, #111827);
+  margin-bottom: 10px; text-decoration: none;
+  transition: color 0.12s;
+  white-space: nowrap;
+}
+.wb-mega-heading:hover { color: var(--wb-accent, #2563eb); }
+[data-theme="dark"] .wb-mega-heading { color: #f1f5f9; }
+[data-theme="dark"] .wb-mega-heading:hover { color: #93c5fd; }
+
+.wb-mega-link {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0; color: var(--text-secondary, #6b7280);
+  text-decoration: none; font-size: 0.81rem;
+  transition: color 0.12s; white-space: nowrap;
+  border-radius: 4px;
+}
+.wb-mega-link:hover { color: var(--wb-accent, #2563eb); }
+[data-theme="dark"] .wb-mega-link { color: #94a3b8; }
+[data-theme="dark"] .wb-mega-link:hover { color: #93c5fd; }
+.wb-mega-link i { font-size: 0.8rem; width: 15px; text-align: center; flex-shrink: 0; opacity: 0.7; }
+.wb-mega-link.highlight { color: var(--wb-accent, #2563eb); font-weight: 600; }
+
+.wb-flat-link {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 8px;
+  color: var(--text-secondary, #6b7280); text-decoration: none;
+  font-size: 0.81rem; font-weight: 500;
+  border: 1px solid var(--border-color, #e5e7eb);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.wb-flat-link:hover {
+  background: var(--wb-accent-50, rgba(37,99,235,0.08));
+  color: var(--wb-accent, #2563eb);
+  border-color: var(--wb-accent-20, rgba(37,99,235,0.2));
+}
+[data-theme="dark"] .wb-flat-link { color: #94a3b8; border-color: rgba(255,255,255,0.1); }
+[data-theme="dark"] .wb-flat-link:hover { background: rgba(59,130,246,0.1); color: #93c5fd; }
+.wb-flat-link i { font-size: 0.82rem; }
+
+#wbMegaOverlay {
+  display: none;
+  position: fixed; inset: 0;
+  z-index: 9500;
+  background: rgba(0,0,0,0.18);
+  cursor: default;
+}
+#wbMegaOverlay.open { display: block; }
+
+#wbTnMore {
+  display: none;
+  align-items: center; gap: 5px;
+  padding: 0 14px; border: none; background: transparent;
+  color: var(--text-primary, #111827);
+  font-size: calc(0.84rem * var(--wb-font-scale, 1)); font-weight: 500; font-family: inherit;
+  cursor: pointer; white-space: nowrap; height: 46px;
+  border-bottom: 2px solid transparent;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+#wbTnMore:hover,
+#wbTnMore.panel-open { color: var(--wb-accent, #2563eb); border-bottom-color: var(--wb-accent, #2563eb); }
+[data-theme="dark"] #wbTnMore { color: #e2e8f0; }
+[data-theme="dark"] #wbTnMore:hover,
+[data-theme="dark"] #wbTnMore.panel-open { color: #93c5fd; }
+
+#wbTnMoreDrop {
+  display: none;
+  position: fixed;
+  right: 8px;
+  min-width: 200px;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.14);
+  padding: 5px; z-index: 9610;
+}
+[data-theme="dark"] #wbTnMoreDrop { background: #1e293b; border-color: rgba(255,255,255,0.09); }
+#wbTnMoreDrop .wb-more-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 12px; border-radius: 7px;
+  color: var(--text-secondary, #6b7280);
+  text-decoration: none; font-size: 0.81rem;
+  cursor: pointer; transition: background 0.1s, color 0.1s;
+  white-space: nowrap; background: none; border: none;
+  font-family: inherit; width: 100%; text-align: left;
+}
+#wbTnMoreDrop .wb-more-item:hover { background: var(--bg-secondary, #f9fafb); color: var(--text-primary, #111827); }
+[data-theme="dark"] #wbTnMoreDrop .wb-more-item:hover { background: rgba(255,255,255,0.06); color: #f1f5f9; }
+#wbTnMoreDrop .wb-more-item i { font-size: 0.88rem; width: 18px; text-align: center; flex-shrink: 0; }
+#wbTnMoreDrop .wb-more-group-label {
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-muted, #9ca3af);
+  padding: 8px 12px 3px;
+}
+#wbTnMoreDrop hr { border-color: var(--border-color, #e5e7eb); margin: 4px 8px; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   TABS NAV
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#wbTabNav {
+  display: none;
+  position: fixed;
+  top: var(--header-height, 70px);
+  left: 0; right: 0;
+  z-index: 1020;
+  background: var(--bg-secondary, #f9fafb);
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  overflow: visible;
+}
+body.wb-nav-tabs #wbTabNav { display: flex; align-items: stretch; }
+body.wb-nav-tabs .main-wrapper {
+  margin-top: calc(var(--header-height, 70px) + 46px) !important;
+}
+
+.wb-tab-inner {
+  display: flex; align-items: flex-end;
+  overflow: visible;
+  min-width: 0; width: calc(100% - 90px);
+  padding: 8px 12px 0; gap: 3px;
+  min-height: 38px;
+}
+
+.wb-tab-item {
+  position: relative;
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 16px;
+  border: 1px solid transparent; border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--text-secondary, #6b7280);
+  font-size: 0.81rem; font-weight: 500; font-family: inherit;
+  cursor: pointer; white-space: nowrap; text-decoration: none;
+  margin-bottom: -1px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.wb-tab-item:hover { background: var(--bg-primary, #fff); color: var(--text-primary, #111827); }
+.wb-tab-item.active {
+  background: var(--bg-primary, #fff);
+  border-color: var(--border-color, #e5e7eb);
+  color: var(--wb-accent, #2563eb); font-weight: 600;
+}
+[data-theme="dark"] .wb-tab-item { color: #94a3b8; }
+[data-theme="dark"] .wb-tab-item:hover,
+[data-theme="dark"] .wb-tab-item.active { background: #1e293b; color: #f1f5f9; }
+[data-theme="dark"] .wb-tab-item.active { border-color: rgba(255,255,255,0.1); }
+.wb-tab-item i { font-size: 0.84rem; }
+
+.wb-tab-drop {
+  display: none;
+  position: fixed;
+  min-width: 200px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.14);
+  padding: 5px; z-index: 9610;
+  scrollbar-width: thin;
+}
+[data-theme="dark"] .wb-tab-drop { background: #1e293b; border-color: rgba(255,255,255,0.09); }
+.wb-tab-drop a, .wb-tab-drop .wb-mega-link {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 6px;
+  color: var(--text-secondary, #6b7280);
+  text-decoration: none; font-size: 0.81rem;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+}
+.wb-tab-drop a:hover, .wb-tab-drop .wb-mega-link:hover {
+  background: var(--bg-secondary, #f9fafb); color: var(--text-primary, #111827);
+}
+[data-theme="dark"] .wb-tab-drop a:hover,
+[data-theme="dark"] .wb-tab-drop .wb-mega-link:hover {
+  background: rgba(255,255,255,0.06); color: #f1f5f9;
+}
+.wb-tab-drop .wb-td-section {
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-muted, #9ca3af);
+  padding: 8px 10px 3px;
+}
+.wb-tab-drop hr { border-color: var(--border-color, #e5e7eb); margin: 4px 8px; }
+
+#wbTabMore {
+  display: none;
+  align-items: center; gap: 5px;
+  padding: 0 14px; border: none; background: transparent;
+  color: var(--text-secondary, #6b7280);
+  font-size: 0.81rem; font-weight: 500; font-family: inherit;
+  cursor: pointer; white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  flex-shrink: 0; align-self: flex-end;
+  padding-bottom: 7px;
+  transition: color 0.15s;
+}
+#wbTabMore:hover,
+#wbTabMore.open { color: var(--wb-accent, #2563eb); border-bottom-color: var(--wb-accent, #2563eb); }
+[data-theme="dark"] #wbTabMore { color: #94a3b8; }
+[data-theme="dark"] #wbTabMore:hover,
+[data-theme="dark"] #wbTabMore.open { color: #93c5fd; }
+
+#wbTabMoreDrop {
+  display: none;
+  position: fixed;
+  min-width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.14);
+  padding: 5px; z-index: 9610;
+  scrollbar-width: thin;
+}
+[data-theme="dark"] #wbTabMoreDrop { background: #1e293b; border-color: rgba(255,255,255,0.09); }
+#wbTabMoreDrop .wb-more-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 12px; border-radius: 7px;
+  color: var(--text-secondary, #6b7280);
+  text-decoration: none; font-size: 0.81rem;
+  white-space: nowrap; background: none; border: none;
+  font-family: inherit; width: 100%; text-align: left; cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+#wbTabMoreDrop .wb-more-item:hover { background: var(--bg-secondary,#f9fafb); color: var(--text-primary,#111827); }
+[data-theme="dark"] #wbTabMoreDrop .wb-more-item:hover { background: rgba(255,255,255,0.06); color: #f1f5f9; }
+#wbTabMoreDrop .wb-more-item i { font-size: 0.88rem; width: 18px; text-align: center; flex-shrink: 0; }
+#wbTabMoreDrop .wb-more-group-label {
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-muted,#9ca3af); padding: 8px 12px 3px;
+}
+#wbTabMoreDrop hr { border-color: var(--border-color,#e5e7eb); margin: 4px 8px; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   WORKSPACE ENGINE PANEL — enlarged for wider screens
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#wbModal {
+  display: none; position: fixed; inset: 0; z-index: 9800;
+  background: rgba(0,0,0,0.48); backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  align-items: flex-end; justify-content: center;
+}
+#wbModal.open { display: flex; animation: wbBd 0.18s ease; }
+@keyframes wbBd { from{opacity:0} to{opacity:1} }
+
+.wb-sheet {
+  width: 100%; max-width: 560px; max-height: 92vh;
+  background: var(--bg-primary, #fff);
+  border-radius: 20px 20px 0 0;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  box-shadow: 0 -10px 40px rgba(0,0,0,0.2);
+  display: flex; flex-direction: column; overflow: hidden;
+  animation: wbSheet 0.3s cubic-bezier(0.16,1,0.3,1);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+[data-theme="dark"] .wb-sheet { background: #111827; border-color: rgba(255,255,255,0.08); }
+@keyframes wbSheet { from{transform:translateY(100%)} to{transform:translateY(0)} }
+
+@media (min-width: 640px) {
+  #wbModal { align-items: center; justify-content: flex-end; padding: 16px; }
+  .wb-sheet { border-radius: 16px; max-height: calc(100vh - 32px); width: 520px; border: 1px solid var(--border-color,#e5e7eb); }
+}
+@media (min-width: 1400px) {
+  .wb-sheet { width: 720px; }
+}
+
+.wb-handle { width: 36px; height: 4px; background: var(--border-color,#e5e7eb); border-radius: 2px; margin: 10px auto 0; flex-shrink: 0; }
+[data-theme="dark"] .wb-handle { background: rgba(255,255,255,0.12); }
+@media (min-width:640px) { .wb-handle { display: none; } }
+
+.wb-hdr {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border-color,#e5e7eb); flex-shrink: 0;
+}
+[data-theme="dark"] .wb-hdr { border-color: rgba(255,255,255,0.08); }
+.wb-hdr-ico {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--wb-accent-50, rgba(37,99,235,0.1)); color: var(--wb-accent, #2563eb);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.05rem; flex-shrink: 0;
+}
+[data-theme="dark"] .wb-hdr-ico { background: rgba(59,130,246,0.15); color: #93c5fd; }
+.wb-hdr-txt { flex: 1; }
+.wb-hdr-title { font-size: 0.92rem; font-weight: 700; color: var(--text-primary,#111827); }
+[data-theme="dark"] .wb-hdr-title { color: #f1f5f9; }
+.wb-hdr-sub { font-size: 0.7rem; color: var(--text-muted,#9ca3af); margin-top: 1px; }
+
+.wb-tenant-badge {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 0.68rem; font-weight: 600;
+  background: var(--wb-accent-50, rgba(37,99,235,0.08)); color: var(--wb-accent, #2563eb);
+  border: 1px solid var(--wb-accent-20, rgba(37,99,235,0.2)); border-radius: 20px; padding: 2px 9px;
+}
+[data-theme="dark"] .wb-tenant-badge { background: rgba(59,130,246,0.12); color: #93c5fd; border-color: rgba(59,130,246,0.3); }
+
+.wb-x {
+  width: 30px; height: 30px; border-radius: 7px;
+  border: 1px solid var(--border-color,#e5e7eb);
+  background: transparent; color: var(--text-secondary,#6b7280);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 0.82rem; flex-shrink: 0;
+}
+.wb-x:hover { background: var(--bg-secondary,#f9fafb); }
+[data-theme="dark"] .wb-x:hover { background: #374151; }
+
+.wb-tabs {
+  display: flex; gap: 2px; padding: 8px 16px 0;
+  border-bottom: 1px solid var(--border-color,#e5e7eb); flex-shrink: 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+.wb-tabs::-webkit-scrollbar { display: none; }
+[data-theme="dark"] .wb-tabs { border-color: rgba(255,255,255,0.08); }
+.wb-tab {
+  padding: 7px 11px; font-size: 0.75rem; font-weight: 600;
+  color: var(--text-secondary,#6b7280);
+  background: none; border: none; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; cursor: pointer; font-family: inherit; transition: color 0.12s;
+  white-space: nowrap; flex-shrink: 0;
+}
+.wb-tab:hover { color: var(--text-primary,#111827); }
+[data-theme="dark"] .wb-tab:hover { color: #f1f5f9; }
+.wb-tab.active { color: var(--wb-accent,#2563eb); border-bottom-color: var(--wb-accent,#2563eb); }
+[data-theme="dark"] .wb-tab.active { color: #93c5fd; border-bottom-color: #93c5fd; }
+
+.wb-body { flex: 1; overflow-y: auto; padding: 16px; scrollbar-width: thin; }
+.wb-panel { display: none; }
+.wb-panel.active { display: block; }
+
+.wb-lbl {
+  font-size: 0.67rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-muted,#9ca3af);
+  margin-bottom: 10px; margin-top: 2px;
+}
+
+.wb-info {
+  display: flex; gap: 9px; align-items: flex-start;
+  background: var(--wb-accent-50, rgba(37,99,235,0.05)); border: 1px solid var(--wb-accent-20, rgba(37,99,235,0.18));
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 14px;
+  font-size: 0.75rem; color: var(--text-secondary,#6b7280); line-height: 1.5;
+}
+[data-theme="dark"] .wb-info { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.25); }
+.wb-info i { color: var(--wb-accent,#2563eb); flex-shrink: 0; margin-top: 1px; }
+
+.wb-mode-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 6px; }
+
+.wb-mode-card {
+  border: 2px solid var(--border-color,#e5e7eb);
+  border-radius: 12px; padding: 12px 8px 10px;
+  cursor: pointer; text-align: center; background: transparent;
+  font-family: inherit; position: relative;
+  transition: border-color 0.15s, background 0.15s;
+}
+.wb-mode-card:hover { border-color: #93c5fd; }
+.wb-mode-card.active {
+  border-color: var(--wb-accent,#2563eb);
+  background: var(--wb-accent-50, rgba(37,99,235,0.04));
+}
+[data-theme="dark"] .wb-mode-card.active { border-color: #3b82f6; background: rgba(59,130,246,0.09); }
+.wb-mode-dot {
+  display: none; position: absolute; top: 8px; right: 8px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--wb-accent,#2563eb);
+}
+.wb-mode-card.active .wb-mode-dot { display: block; }
+.wb-tenant-dot {
+  display: none; position: absolute; top: 8px; left: 8px;
+  font-size: 0.55rem; font-weight: 700;
+  background: var(--wb-accent-50, rgba(37,99,235,0.12)); color: var(--wb-accent,#2563eb);
+  border-radius: 4px; padding: 1px 4px;
+}
+.wb-mode-card.is-tenant-default .wb-tenant-dot { display: block; }
+
+.wb-prev {
+  width: 100%; height: 48px; border-radius: 7px;
+  background: var(--bg-secondary,#f9fafb);
+  margin-bottom: 7px; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+[data-theme="dark"] .wb-prev { background: #1e293b; }
+.wb-p-hdr { height: 11px; background: #c7d2fe; flex-shrink: 0; }
+.wb-mode-card.active .wb-p-hdr { background: var(--wb-accent,#2563eb); }
+.wb-p-body { flex: 1; display: flex; }
+.wb-p-sb { width: 13px; background: #dbeafe; flex-shrink: 0; }
+.wb-mode-card.active .wb-p-sb { background: rgba(37,99,235,0.35); }
+.wb-p-main { flex: 1; background: #f3f4f6; }
+[data-theme="dark"] .wb-p-main { background: #1a2332; }
+.wb-p-bar { height: 7px; background: #dbeafe; flex-shrink: 0; margin: 3px 3px 0; border-radius: 2px; }
+.wb-mode-card.active .wb-p-bar { background: rgba(37,99,235,0.4); }
+.wb-p-tabs { display: flex; gap: 2px; padding: 3px 3px 0; flex-shrink: 0; }
+.wb-p-tab { height: 7px; flex: 1; background: #dbeafe; border-radius: 2px 2px 0 0; }
+.wb-p-tab:first-child { background: #c7d2fe; }
+.wb-mode-card.active .wb-p-tab:first-child { background: var(--wb-accent,#2563eb); }
+.wb-p-content { flex: 1; background: #f3f4f6; }
+[data-theme="dark"] .wb-p-content { background: #1a2332; }
+
+.wb-mode-lbl { font-size: 0.74rem; font-weight: 600; color: var(--text-secondary,#6b7280); }
+.wb-mode-card.active .wb-mode-lbl { color: var(--wb-accent,#2563eb); }
+[data-theme="dark"] .wb-mode-card.active .wb-mode-lbl { color: #93c5fd; }
+.wb-mode-desc { font-size: 0.63rem; color: var(--text-muted,#9ca3af); margin-top: 2px; }
+
+.wb-tenant-note {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.72rem; color: var(--text-muted,#9ca3af);
+  margin-top: 10px; margin-bottom: 4px;
+}
+.wb-tenant-note button {
+  background: none; border: none; cursor: pointer;
+  color: var(--wb-accent,#2563eb); font-size: 0.72rem;
+  text-decoration: underline; padding: 0; font-family: inherit;
+}
+
+.wb-drag-list { display: flex; flex-direction: column; gap: 6px; }
+
+.wb-di {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-secondary,#f9fafb);
+  border: 1px solid var(--border-color,#e5e7eb);
+  border-radius: 10px;
+  user-select: none;
+  transition: box-shadow 0.12s, border-color 0.12s, opacity 0.12s;
+  cursor: default;
+}
+[data-theme="dark"] .wb-di { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.08); }
+.wb-di.dragging { opacity: 0.35; }
+.wb-di.drag-over { border-color: var(--wb-accent,#2563eb); box-shadow: 0 0 0 2px rgba(37,99,235,0.18); }
+
+.wb-grip {
+  cursor: grab; color: var(--text-muted,#9ca3af);
+  font-size: 1rem; flex-shrink: 0; padding: 2px;
+  touch-action: none;
+}
+.wb-grip:active { cursor: grabbing; }
+
+.wb-di-icon {
+  width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem;
+  background: var(--bg-tertiary,#f3f4f6); color: var(--text-secondary,#6b7280);
+}
+[data-theme="dark"] .wb-di-icon { background: rgba(255,255,255,0.08); color: #9ca3af; }
+
+.wb-di-text { flex: 1; min-width: 0; }
+.wb-di-lbl { font-size: 0.83rem; font-weight: 500; color: var(--text-primary,#111827); }
+[data-theme="dark"] .wb-di-lbl { color: #e2e8f0; }
+.wb-di-sub { font-size: 0.68rem; color: var(--text-muted,#9ca3af); margin-top: 1px; }
+
+/* ── Visibility toggle on drag items ── */
+.wb-di-vis {
+  width: 28px; height: 28px; border-radius: 6px;
+  border: 1px solid var(--border-color,#e5e7eb);
+  background: transparent; color: var(--text-muted,#9ca3af);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 0.82rem; flex-shrink: 0;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.wb-di-vis:hover { background: var(--bg-secondary,#f9fafb); color: var(--text-primary,#111827); }
+[data-theme="dark"] .wb-di-vis { border-color: rgba(255,255,255,0.1); }
+[data-theme="dark"] .wb-di-vis:hover { background: #374151; color: #f1f5f9; }
+.wb-di-vis.hidden { color: var(--text-muted,#9ca3af); opacity: 0.5; }
+.wb-di.wb-hidden-item { opacity: 0.5; }
+
+.wb-drag-placeholder {
+  border-radius: 10px;
+  background: rgba(37,99,235,0.06);
+  border: 2px dashed rgba(37,99,235,0.28);
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   THEME PANEL STYLES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.wb-color-swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.wb-swatch {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 3px solid transparent; cursor: pointer;
+  transition: transform 0.12s, border-color 0.12s;
+  position: relative;
+}
+.wb-swatch:hover { transform: scale(1.12); }
+.wb-swatch.active { border-color: var(--text-primary, #111827); }
+[data-theme="dark"] .wb-swatch.active { border-color: #fff; }
+.wb-swatch-check {
+  display: none; position: absolute; inset: 0;
+  align-items: center; justify-content: center;
+  font-size: 0.75rem; color: #fff;
+}
+.wb-swatch.active .wb-swatch-check { display: flex; }
+
+.wb-range-row {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+}
+.wb-range-row input[type="range"] {
+  flex: 1; height: 4px; border-radius: 2px;
+  accent-color: var(--wb-accent, #2563eb);
+  cursor: pointer;
+}
+.wb-range-val {
+  min-width: 36px; text-align: right; font-size: 0.75rem;
+  font-weight: 600; color: var(--text-secondary, #6b7280);
+}
+
+.wb-density-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 6px; }
+.wb-density-btn {
+  padding: 10px 6px; border-radius: 10px; cursor: pointer; text-align: center;
+  border: 2px solid var(--border-color,#e5e7eb); background: transparent; font-family: inherit;
+  transition: border-color 0.12s, background 0.12s;
+}
+.wb-density-btn:hover { border-color: #93c5fd; }
+.wb-density-btn.active { border-color: var(--wb-accent,#2563eb); background: var(--wb-accent-50,rgba(37,99,235,0.04)); }
+.wb-density-icon { font-size: 1.1rem; margin-bottom: 4px; }
+.wb-density-lbl { font-size: 0.72rem; font-weight: 600; color: var(--text-secondary,#6b7280); }
+.wb-density-btn.active .wb-density-lbl { color: var(--wb-accent,#2563eb); }
+
+/* Role preset badges */
+.wb-preset-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-bottom: 4px; }
+.wb-preset-btn {
+  display: flex; flex-direction: column; align-items: flex-start;
+  padding: 12px; border-radius: 10px; cursor: pointer; text-align: left;
+  border: 2px solid var(--border-color,#e5e7eb); background: transparent; font-family: inherit;
+  transition: border-color 0.12s, background 0.12s;
+}
+.wb-preset-btn:hover { border-color: #93c5fd; background: var(--bg-secondary,#f9fafb); }
+.wb-preset-btn.active { border-color: var(--wb-accent,#2563eb); background: var(--wb-accent-50,rgba(37,99,235,0.04)); }
+.wb-preset-icon { font-size: 1.2rem; margin-bottom: 5px; }
+.wb-preset-name { font-size: 0.8rem; font-weight: 600; color: var(--text-primary,#111827); }
+[data-theme="dark"] .wb-preset-name { color: #e2e8f0; }
+.wb-preset-desc { font-size: 0.67rem; color: var(--text-muted,#9ca3af); margin-top: 2px; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ACCESSIBILITY PANEL STYLES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.wb-toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 0; border-bottom: 1px solid var(--border-color,#e5e7eb);
+}
+.wb-toggle-row:last-child { border-bottom: none; }
+[data-theme="dark"] .wb-toggle-row { border-color: rgba(255,255,255,0.07); }
+.wb-toggle-info { flex: 1; }
+.wb-toggle-lbl { font-size: 0.83rem; font-weight: 500; color: var(--text-primary,#111827); }
+[data-theme="dark"] .wb-toggle-lbl { color: #e2e8f0; }
+.wb-toggle-sub { font-size: 0.68rem; color: var(--text-muted,#9ca3af); margin-top: 2px; }
+.wb-toggle-switch {
+  position: relative; width: 38px; height: 22px; flex-shrink: 0;
+}
+.wb-toggle-switch input { opacity: 0; width: 0; height: 0; }
+.wb-toggle-track {
+  position: absolute; cursor: pointer; inset: 0;
+  background: var(--border-color,#d1d5db); border-radius: 22px;
+  transition: background 0.2s;
+}
+.wb-toggle-track::before {
+  content: ''; position: absolute;
+  width: 16px; height: 16px; left: 3px; top: 3px;
+  background: #fff; border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.wb-toggle-switch input:checked + .wb-toggle-track { background: var(--wb-accent,#2563eb); }
+.wb-toggle-switch input:checked + .wb-toggle-track::before { transform: translateX(16px); }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   EXPORT/IMPORT PANEL STYLES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.wb-code-box {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.72rem;
+  background: var(--bg-secondary,#f9fafb);
+  border: 1px solid var(--border-color,#e5e7eb);
+  border-radius: 8px;
+  padding: 10px 12px;
+  word-break: break-all;
+  color: var(--text-secondary,#6b7280);
+  max-height: 80px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  cursor: text;
+  user-select: all;
+  margin-bottom: 8px;
+}
+[data-theme="dark"] .wb-code-box { background: #0f172a; color: #94a3b8; border-color: rgba(255,255,255,0.08); }
+.wb-code-actions { display: flex; gap: 8px; }
+.wb-code-btn {
+  flex: 1; padding: 8px; border-radius: 8px; cursor: pointer; font-family: inherit;
+  font-size: 0.78rem; font-weight: 600;
+  border: 1px solid var(--border-color,#e5e7eb); background: transparent;
+  color: var(--text-secondary,#6b7280);
+  transition: background 0.1s, color 0.1s;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+}
+.wb-code-btn:hover { background: var(--bg-secondary,#f9fafb); color: var(--text-primary,#111827); }
+[data-theme="dark"] .wb-code-btn { border-color: rgba(255,255,255,0.1); color: #94a3b8; }
+[data-theme="dark"] .wb-code-btn:hover { background: #1e293b; color: #f1f5f9; }
+.wb-import-area {
+  width: 100%; box-sizing: border-box;
+  font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.72rem;
+  background: var(--bg-secondary,#f9fafb);
+  border: 1px solid var(--border-color,#e5e7eb); border-radius: 8px;
+  padding: 10px 12px; color: var(--text-secondary,#6b7280);
+  min-height: 72px; resize: vertical; margin-bottom: 8px;
+}
+[data-theme="dark"] .wb-import-area { background: #0f172a; color: #94a3b8; border-color: rgba(255,255,255,0.08); }
+.wb-import-apply {
+  width: 100%; padding: 9px; border-radius: 8px; border: none; cursor: pointer;
+  background: var(--wb-accent,#2563eb); color: #fff; font-family: inherit;
+  font-size: 0.82rem; font-weight: 600; transition: background 0.12s;
+}
+.wb-import-apply:hover { background: var(--wb-accent-h,#1d4ed8); }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   FOOTER
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.wb-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color,#e5e7eb);
+  display: flex; gap: 8px; flex-shrink: 0;
+}
+[data-theme="dark"] .wb-footer { border-color: rgba(255,255,255,0.08); }
+
+.wb-save {
+  flex: 1; padding: 9px; border-radius: 10px; border: none;
+  background: var(--wb-accent,#2563eb); color: #fff;
+  font-size: 0.84rem; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  font-family: inherit; transition: background 0.12s;
+}
+.wb-save:hover { background: var(--wb-accent-h,#1d4ed8); }
+.wb-save:disabled { opacity: 0.6; cursor: not-allowed; }
+.wb-save.saved { background: #10b981; pointer-events: none; }
+
+.wb-cancel {
+  padding: 9px 14px; border-radius: 10px;
+  border: 1px solid var(--border-color,#e5e7eb);
+  background: transparent; color: var(--text-secondary,#6b7280);
+  font-size: 0.82rem; font-weight: 500; cursor: pointer;
+  font-family: inherit;
+}
+.wb-cancel:hover { background: var(--bg-secondary,#f9fafb); }
+[data-theme="dark"] .wb-cancel { border-color: rgba(255,255,255,0.1); color: #94a3b8; }
+[data-theme="dark"] .wb-cancel:hover { background: #1e293b; }
+
+.wb-tenant-save {
+  padding: 9px 14px; border-radius: 10px; border: none;
+  background: var(--wb-accent-50, rgba(37,99,235,0.1)); color: var(--wb-accent,#2563eb);
+  font-size: 0.82rem; font-weight: 600; cursor: pointer;
+  font-family: inherit; transition: background 0.12s;
+}
+.wb-tenant-save:hover { background: var(--wb-accent-20, rgba(37,99,235,0.18)); }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   TOAST
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#wbToast {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom,0px) + 20px);
+  left: 50%; transform: translateX(-50%) translateY(14px);
+  z-index: 9900; background: #111827; color: #f9fafb;
+  border-radius: 9px; padding: 8px 16px;
+  font-size: 0.79rem; font-weight: 500;
+  pointer-events: none; opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+  white-space: nowrap; max-width: calc(100vw - 32px);
+  display: flex; align-items: center; gap: 7px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+}
+[data-theme="dark"] #wbToast { background: #f1f5f9; color: #0f172a; }
+#wbToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── Floating workspace trigger ── */
+#wbFloatTrigger {
+  display: none;
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  right: 16px;
+  z-index: 1025;
+  align-items: center; gap: 7px;
+  padding: 8px 14px;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 20px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+  color: var(--text-secondary, #6b7280);
+  font-size: 0.78rem; font-weight: 600;
+  font-family: inherit; cursor: pointer;
+  transition: box-shadow 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+#wbFloatTrigger:hover {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.16);
+  color: var(--wb-accent,#2563eb);
+  border-color: var(--wb-accent,#3b82f6);
+}
+[data-theme="dark"] #wbFloatTrigger {
+  background: #1e293b;
+  border-color: rgba(255,255,255,0.12);
+  color: #94a3b8;
+}
+[data-theme="dark"] #wbFloatTrigger:hover {
+  color: #93c5fd;
+  border-color: rgba(59,130,246,0.5);
+}
+#wbFloatTrigger i { font-size: 0.9rem; }
+
+@media (max-width: 767px) {
+  #wbFloatTrigger { bottom: calc(env(safe-area-inset-bottom,0px) + 72px); }
+}
+
+@keyframes wbSpin { to { transform: rotate(360deg); } }
+.wb-spin { display: inline-block; animation: wbSpin 0.7s linear infinite; }
+
+/* Section separator */
+.wb-section-sep { height: 1px; background: var(--border-color,#e5e7eb); margin: 14px 0; }
+[data-theme="dark"] .wb-section-sep { background: rgba(255,255,255,0.07); }
+</style>
+
+<!-- ═══ TOPNAV ═══ -->
+<div id="wbTopNav" aria-label="Top navigation" role="navigation">
+  <div class="wb-tn-inner" id="wbTopNavInner"></div>
+</div>
+
+<!-- ═══ TAB NAV ═══ -->
+<div id="wbTabNav" aria-label="Tab navigation" role="navigation">
+  <div class="wb-tab-inner" id="wbTabNavInner"></div>
+</div>
+
+<!-- ═══ FLOATING TRIGGER ═══ -->
+<button id="wbFloatTrigger" aria-label="Workspace layout settings">
+  <i class="bi bi-columns-gap"></i>
+  Workspace
+</button>
+
+<!-- ═══ CUSTOMISER MODAL ═══ -->
+<div id="wbModal" role="dialog" aria-modal="true" aria-labelledby="wbTitle">
+  <div class="wb-sheet" id="wbSheet">
+    <div class="wb-handle"></div>
+
+    <div class="wb-hdr">
+      <div class="wb-hdr-ico"><i class="bi bi-columns-gap"></i></div>
+      <div class="wb-hdr-txt">
+        <div class="wb-hdr-title" id="wbTitle">Workspace Layout</div>
+        <div class="wb-hdr-sub">Personalise how PrimeBooks looks &amp; feels for you</div>
+      </div>
+      <button class="wb-x" id="wbX" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+    </div>
+
+    <div class="wb-tabs" role="tablist">
+      <button class="wb-tab active" data-panel="wbPNav" role="tab" aria-selected="true">
+        <i class="bi bi-layout-sidebar"></i> Navigation
+      </button>
+      <button class="wb-tab" data-panel="wbPHeader" role="tab" aria-selected="false">
+        <i class="bi bi-grip-horizontal"></i> Header
+      </button>
+      <button class="wb-tab" data-panel="wbPSidebar" role="tab" aria-selected="false">
+        <i class="bi bi-list-ul"></i> Sidebar
+      </button>
+      <button class="wb-tab" data-panel="wbPTheme" role="tab" aria-selected="false">
+        <i class="bi bi-palette"></i> Theme
+      </button>
+      <button class="wb-tab" data-panel="wbPAccess" role="tab" aria-selected="false">
+        <i class="bi bi-universal-access"></i> Accessibility
+      </button>
+      <button class="wb-tab" data-panel="wbPExport" role="tab" aria-selected="false">
+        <i class="bi bi-box-arrow-up"></i> Export
+      </button>
+      {% if user.is_staff or user.is_superuser %}
+      <button class="wb-tab" data-panel="wbPTenant" role="tab" aria-selected="false">
+        <i class="bi bi-building"></i> Company
+      </button>
+      {% endif %}
+    </div>
+
+    <div class="wb-body">
+
+      <!-- ═══ Navigation panel ═══ -->
+      <div class="wb-panel active" id="wbPNav">
+        <div class="wb-info">
+          <i class="bi bi-info-circle-fill"></i>
+          Pick how navigation is displayed. Clicking a style previews it instantly.
+        </div>
+        <div class="wb-lbl">Layout style</div>
+        <div class="wb-mode-grid">
+          <button class="wb-mode-card" data-mode="sidebar">
+            <div class="wb-mode-dot"></div>
+            <div class="wb-tenant-dot">Default</div>
+            <div class="wb-prev">
+              <div class="wb-p-hdr"></div>
+              <div class="wb-p-body"><div class="wb-p-sb"></div><div class="wb-p-main"></div></div>
+            </div>
+            <div class="wb-mode-lbl">Sidebar</div>
+            <div class="wb-mode-desc">Fixed side panel</div>
+          </button>
+          <button class="wb-mode-card" data-mode="topnav">
+            <div class="wb-mode-dot"></div>
+            <div class="wb-tenant-dot">Default</div>
+            <div class="wb-prev">
+              <div class="wb-p-hdr"></div>
+              <div class="wb-p-bar"></div>
+              <div class="wb-p-main" style="flex:1"></div>
+            </div>
+            <div class="wb-mode-lbl">Top nav</div>
+            <div class="wb-mode-desc">Horizontal bar</div>
+          </button>
+          <button class="wb-mode-card" data-mode="tabs">
+            <div class="wb-mode-dot"></div>
+            <div class="wb-tenant-dot">Default</div>
+            <div class="wb-prev">
+              <div class="wb-p-hdr"></div>
+              <div class="wb-p-tabs"><div class="wb-p-tab"></div><div class="wb-p-tab"></div><div class="wb-p-tab"></div></div>
+              <div class="wb-p-content"></div>
+            </div>
+            <div class="wb-mode-lbl">Tabs</div>
+            <div class="wb-mode-desc">Tab-strip style</div>
+          </button>
+        </div>
+        <div class="wb-tenant-note" id="wbNavTenantNote" style="display:none">
+          <i class="bi bi-building" style="font-size:0.75rem"></i>
+          <span>You've overridden the company default.</span>
+          <button onclick="WB.resetNavMode()">Revert to default</button>
+        </div>
+
+        <div class="wb-section-sep"></div>
+        <div class="wb-lbl">Quick presets</div>
+        <div class="wb-info" style="margin-bottom:10px">
+          <i class="bi bi-lightning-charge-fill"></i>
+          Apply a preset optimised for your role. You can still customise everything after.
+        </div>
+        <div class="wb-preset-grid" id="wbPresetGrid">
+          <button class="wb-preset-btn" data-preset="accountant">
+            <span class="wb-preset-icon">📊</span>
+            <div class="wb-preset-name">Accountant</div>
+            <div class="wb-preset-desc">Finance, reports &amp; tax first</div>
+          </button>
+          <button class="wb-preset-btn" data-preset="sales">
+            <span class="wb-preset-icon">💼</span>
+            <div class="wb-preset-name">Sales</div>
+            <div class="wb-preset-desc">Pipeline, CRM &amp; messages first</div>
+          </button>
+          <button class="wb-preset-btn" data-preset="operations">
+            <span class="wb-preset-icon">⚙️</span>
+            <div class="wb-preset-name">Operations</div>
+            <div class="wb-preset-desc">Inventory &amp; suppliers first</div>
+          </button>
+          <button class="wb-preset-btn" data-preset="executive">
+            <span class="wb-preset-icon">🏆</span>
+            <div class="wb-preset-name">Executive</div>
+            <div class="wb-preset-desc">Dashboard &amp; analytics first</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- ═══ Header panel ═══ -->
+      <div class="wb-panel" id="wbPHeader">
+        <div class="wb-info">
+          <i class="bi bi-arrows-move"></i>
+          Drag items to reorder them in the top header bar. Toggle the eye to show or hide each element.
+        </div>
+        <div class="wb-lbl">Header elements</div>
+        <div class="wb-drag-list" id="wbHeaderList"></div>
+      </div>
+
+      <!-- ═══ Sidebar panel ═══ -->
+      <div class="wb-panel" id="wbPSidebar">
+        <div class="wb-info">
+          <i class="bi bi-arrows-move"></i>
+          Drag sections to reorder them. Toggle the eye to hide sections you don't use.
+        </div>
+        <div class="wb-lbl">Sidebar sections</div>
+        <div class="wb-drag-list" id="wbSidebarList"></div>
+      </div>
+
+      <!-- ═══ Theme panel ═══ -->
+      <div class="wb-panel" id="wbPTheme">
+        <div class="wb-info">
+          <i class="bi bi-palette-fill"></i>
+          Customise colours, font size, and how compact the interface feels.
+        </div>
+
+        <div class="wb-lbl">Accent colour</div>
+        <div class="wb-color-swatches" id="wbSwatches">
+          <button class="wb-swatch" data-color="#2563eb" style="background:#2563eb" title="Blue" aria-label="Blue">
+            <span class="wb-swatch-check"><i class="bi bi-check-lg"></i></span>
+          </button>
+          <button class="wb-swatch" data-color="#7c3aed" style="background:#7c3aed" title="Violet" aria-label="Violet">
+            <span class="wb-swatch-check"><i class="bi bi-check-lg"></i></span>
+          </button>
+          <button class="wb-swatch" data-color="#059669" style="background:#059669" title="Emerald" aria-label="Emerald">
+            <span class="wb-swatch-check"><i class="bi bi-check-lg"></i></span>
+          </button>
+          <button class="wb-swatch" data-color="#dc2626" style="background:#dc2626" title="Red" aria-label="Red">
+            <span class="wb-swatch-check"><i class="bi bi-check-lg"></i></span>
+          </button>
+          <button class="wb-swatch" data-color="#d97706" style="background:#d97706" title="Amber" aria-label="Amber">
+            <span class="wb-swatch-check"><i class="bi bi-check-lg"></i></span>
+          </button>
+          <button class="wb-swatch" data-color="#0891b2" style="background:#0891b2" title="Cyan" aria-label="Cyan">
+            <span class="wb-swatch-check"><i class="bi bi-check-lg"></i></span>
+          </button>
+          <button class="wb-swatch" data-color="#db2777" style="background:#db2777" title="Pink" aria-label="Pink">
+            <span class="wb-swatch-check"><i class="bi bi-check-lg"></i></span>
+          </button>
+          <button class="wb-swatch" data-color="#374151" style="background:#374151" title="Slate" aria-label="Slate">
+            <span class="wb-swatch-check"><i class="bi bi-check-lg"></i></span>
+          </button>
+        </div>
+
+        <div class="wb-section-sep"></div>
+        <div class="wb-lbl">Font size</div>
+        <div class="wb-range-row">
+          <span style="font-size:0.7rem;color:var(--text-muted,#9ca3af)">A</span>
+          <input type="range" id="wbFontSize" min="12" max="18" step="1" value="14">
+          <span style="font-size:1rem;color:var(--text-muted,#9ca3af)">A</span>
+          <span class="wb-range-val" id="wbFontSizeVal">14px</span>
+        </div>
+
+        <div class="wb-section-sep"></div>
+        <div class="wb-lbl">UI density</div>
+        <div class="wb-density-grid">
+          <button class="wb-density-btn" data-density="compact">
+            <div class="wb-density-icon">▤</div>
+            <div class="wb-density-lbl">Compact</div>
+          </button>
+          <button class="wb-density-btn active" data-density="comfortable">
+            <div class="wb-density-icon">▦</div>
+            <div class="wb-density-lbl">Comfortable</div>
+          </button>
+          <button class="wb-density-btn" data-density="spacious">
+            <div class="wb-density-icon">▧</div>
+            <div class="wb-density-lbl">Spacious</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- ═══ Accessibility panel ═══ -->
+      <div class="wb-panel" id="wbPAccess">
+        <div class="wb-info">
+          <i class="bi bi-universal-access"></i>
+          These settings make PrimeBooks easier to use for everyone. Changes apply instantly.
+        </div>
+
+        <div class="wb-toggle-row">
+          <div class="wb-toggle-info">
+            <div class="wb-toggle-lbl">High contrast</div>
+            <div class="wb-toggle-sub">Increases border visibility and text weight throughout the UI</div>
+          </div>
+          <label class="wb-toggle-switch" aria-label="High contrast">
+            <input type="checkbox" id="wbHC">
+            <span class="wb-toggle-track"></span>
+          </label>
+        </div>
+
+        <div class="wb-toggle-row">
+          <div class="wb-toggle-info">
+            <div class="wb-toggle-lbl">Reduce motion</div>
+            <div class="wb-toggle-sub">Disables animations and transitions across the app</div>
+          </div>
+          <label class="wb-toggle-switch" aria-label="Reduce motion">
+            <input type="checkbox" id="wbRM">
+            <span class="wb-toggle-track"></span>
+          </label>
+        </div>
+
+        <div class="wb-toggle-row">
+          <div class="wb-toggle-info">
+            <div class="wb-toggle-lbl">Enhanced focus rings</div>
+            <div class="wb-toggle-sub">Shows visible focus outlines for keyboard navigation</div>
+          </div>
+          <label class="wb-toggle-switch" aria-label="Enhanced focus rings">
+            <input type="checkbox" id="wbFocus">
+            <span class="wb-toggle-track"></span>
+          </label>
+        </div>
+
+        <div class="wb-toggle-row">
+          <div class="wb-toggle-info">
+            <div class="wb-toggle-lbl">Right-to-left layout</div>
+            <div class="wb-toggle-sub">Mirrors the interface for Arabic, Hebrew, and other RTL languages</div>
+          </div>
+          <label class="wb-toggle-switch" aria-label="Right-to-left">
+            <input type="checkbox" id="wbRTL">
+            <span class="wb-toggle-track"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- ═══ Export / Import panel ═══ -->
+      <div class="wb-panel" id="wbPExport">
+        <div class="wb-info">
+          <i class="bi bi-box-arrow-up"></i>
+          Copy your layout code to share it with teammates, or paste a layout code to import one.
+        </div>
+
+        <div class="wb-lbl">Your current layout code</div>
+        <div class="wb-code-box" id="wbExportCode">—</div>
+        <div class="wb-code-actions">
+          <button class="wb-code-btn" id="wbCopyCode">
+            <i class="bi bi-clipboard"></i> Copy to clipboard
+          </button>
+          <button class="wb-code-btn" id="wbRefreshCode">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+          </button>
+        </div>
+
+        <div class="wb-section-sep"></div>
+        <div class="wb-lbl">Import a layout code</div>
+        <textarea class="wb-import-area" id="wbImportCode" placeholder="Paste a layout code here…" rows="3"></textarea>
+        <button class="wb-import-apply" id="wbImportApply">
+          <i class="bi bi-download"></i> Apply imported layout
+        </button>
+      </div>
+
+      <!-- ═══ Tenant default panel (admin only) ═══ -->
+      {% if user.is_staff or user.is_superuser %}
+      <div class="wb-panel" id="wbPTenant">
+        <div class="wb-info">
+          <i class="bi bi-building"></i>
+          Set the company-wide default layout. All users inherit this unless they override it.
+        </div>
+        <div class="wb-lbl">Default navigation style for all users</div>
+        <div class="wb-mode-grid" id="wbTenantModeGrid">
+          <button class="wb-mode-card" data-tmode="sidebar">
+            <div class="wb-mode-dot"></div>
+            <div class="wb-prev">
+              <div class="wb-p-hdr"></div>
+              <div class="wb-p-body"><div class="wb-p-sb"></div><div class="wb-p-main"></div></div>
+            </div>
+            <div class="wb-mode-lbl">Sidebar</div>
+          </button>
+          <button class="wb-mode-card" data-tmode="topnav">
+            <div class="wb-mode-dot"></div>
+            <div class="wb-prev">
+              <div class="wb-p-hdr"></div>
+              <div class="wb-p-bar"></div>
+              <div class="wb-p-main" style="flex:1"></div>
+            </div>
+            <div class="wb-mode-lbl">Top nav</div>
+          </button>
+          <button class="wb-mode-card" data-tmode="tabs">
+            <div class="wb-mode-dot"></div>
+            <div class="wb-prev">
+              <div class="wb-p-hdr"></div>
+              <div class="wb-p-tabs"><div class="wb-p-tab"></div><div class="wb-p-tab"></div><div class="wb-p-tab"></div></div>
+              <div class="wb-p-content"></div>
+            </div>
+            <div class="wb-mode-lbl">Tabs</div>
+          </button>
+        </div>
+        <div style="margin-top:14px">
+          <div class="wb-lbl">Default header order</div>
+          <div class="wb-drag-list" id="wbTenantHeaderList"></div>
+        </div>
+        <div style="margin-top:14px">
+          <div class="wb-lbl">Default sidebar section order</div>
+          <div class="wb-drag-list" id="wbTenantSidebarList"></div>
+        </div>
+      </div>
+      {% endif %}
+
+    </div><!-- /wb-body -->
+
+    <div class="wb-footer">
+      <button class="wb-cancel" id="wbCancel">Cancel</button>
+      {% if user.is_staff or user.is_superuser %}
+      <button class="wb-tenant-save" id="wbTenantSave" style="display:none">
+        <i class="bi bi-building"></i> Save as company default
+      </button>
+      {% endif %}
+      <button class="wb-save" id="wbSave">
+        <i class="bi bi-check2"></i> Save my layout
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="wbToast"></div>
+
+<script>
+(function(){
+'use strict';
+
+const URL_GET    = '{% url "nav_preferences:get" %}';
+const URL_SAVE   = '{% url "nav_preferences:save" %}';
+const URL_STRUCT = '{% url "nav_preferences:structure" %}';
+const URL_TD_GET  = '{% url "nav_preferences:tenant_default_get" %}';
+const URL_TD_SAVE = '{% url "nav_preferences:tenant_default_save" %}';
+const IS_ADMIN   = {% if user.is_staff or user.is_superuser %}true{% else %}false{% endif %};
+
+// ── Header element registry ────────────────────────────────────────────
+const HDR_DEFS = [
+  { id:'theme',    icon:'bi bi-moon-stars-fill', label:'Theme toggle',      sub:'Dark / light mode',    sel:'.header-theme-toggle'   },
+  { id:'language', icon:'bi bi-translate',       label:'Language switcher', sub:'UI language selector', sel:'.header-language-switch' },
+  { id:'messages', icon:'bi bi-chat-dots-fill',  label:'Messages',          sub:'Unread message badge', sel:'.header-right .me-3:has(a[href*="messaging"])' },
+  { id:'notifs',   icon:'bi bi-bell-fill',       label:'Notifications',     sub:'Notification bell',    sel:'#notificationsDropdown' },
+  { id:'user',     icon:'bi bi-person-circle',   label:'User menu',         sub:'Profile & logout',     sel:'#userDropdown'          },
+];
+const HDR_DEFAULT_ORDER = HDR_DEFS.map(d => d.id);
+
+// ── Role-based presets ─────────────────────────────────────────────────
+const ROLE_PRESETS = {
+  accountant:  { navMode:'sidebar', sidebarOrder:['finance','reports','tax','payroll','banking','sales','expenses'] },
+  sales:       { navMode:'topnav',  sidebarOrder:['sales','crm','messages','invoicing','products','reports'] },
+  operations:  { navMode:'sidebar', sidebarOrder:['inventory','suppliers','purchasing','warehouse','logistics','reports'] },
+  executive:   { navMode:'topnav',  sidebarOrder:['dashboard','analytics','reports','finance','sales','operations'] },
+};
+
+// ── Accent colour helpers ──────────────────────────────────────────────
+function hexToRgb(h){ const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16); return {r,g,b}; }
+function darken(h,a=0.15){ const {r,g,b}=hexToRgb(h); return `rgb(${Math.round(r*(1-a))},${Math.round(g*(1-a))},${Math.round(b*(1-a))})`; }
+function alpha(h,a){ const {r,g,b}=hexToRgb(h); return `rgba(${r},${g},${b},${a})`; }
+
+function applyAccent(color){
+  const root = document.documentElement;
+  root.style.setProperty('--wb-accent',     color);
+  root.style.setProperty('--wb-accent-h',   darken(color,0.15));
+  root.style.setProperty('--wb-accent-50',  alpha(color,0.08));
+  root.style.setProperty('--wb-accent-20',  alpha(color,0.22));
+  // Also patch primary-600 so existing components pick it up
+  root.style.setProperty('--primary-600',   color);
+  root.style.setProperty('--primary-700',   darken(color,0.12));
+}
+
+// ── State ──────────────────────────────────────────────────────────────
+let S = {
+  navStructure:   [],
+  tenantDefault:  { navMode:'sidebar', headerOrder:[], sidebarOrder:[] },
+  userLayout:     {},
+  effectiveLayout:{ navMode:'sidebar', headerOrder:[], sidebarOrder:[] },
+  loaded:         false,
+};
+
+// Working copies while modal is open
+let W = {};
+
+function resetWorking(){
+  const el = S.effectiveLayout;
+  W = {
+    navMode:           el.navMode      || 'sidebar',
+    headerOrder:       [...(el.headerOrder  || HDR_DEFAULT_ORDER)],
+    sidebarOrder:      [...(el.sidebarOrder || [])],
+    hiddenItems:       [...(el.hiddenItems  || [])],
+    accentColor:       el.accentColor  || '#2563eb',
+    fontSize:          el.fontSize     || 14,
+    density:           el.density      || 'comfortable',
+    highContrast:      el.highContrast || false,
+    reduceMotion:      el.reduceMotion || false,
+    focusRings:        el.focusRings   || false,
+    rtl:               el.rtl          || false,
+    tenantNavMode:     S.tenantDefault.navMode,
+    tenantHeaderOrder: [...(S.tenantDefault.headerOrder || HDR_DEFAULT_ORDER)],
+    tenantSidebarOrder:[...(S.tenantDefault.sidebarOrder|| [])],
+  };
+}
+
+// ── API ────────────────────────────────────────────────────────────────
+function csrf(){ return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')||''; }
+
+async function apiFetch(url, opts){
+  const ctrl = new AbortController();
+  const tid = setTimeout(()=>ctrl.abort(), 5000);
+  try {
+    const r = await fetch(url, {
+      credentials:'include',
+      headers:{'X-CSRFToken':csrf(),'Content-Type':'application/json'},
+      signal: ctrl.signal,
+      ...opts,
+    });
+    clearTimeout(tid);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  } catch(e) {
+    clearTimeout(tid);
+    // One silent retry
+    if (!opts?._retry){
+      await new Promise(r=>setTimeout(r,600));
+      return apiFetch(url, {...opts, _retry:true});
+    }
+    throw e;
+  }
+}
+
+async function loadAll(){
+  try {
+    const [pref, struct] = await Promise.all([
+      apiFetch(URL_GET),
+      apiFetch(URL_STRUCT),
+    ]);
+    S.navStructure    = struct.structure || [];
+    S.userLayout      = pref.workspace_layout || {};
+    S.tenantDefault   = pref.tenant_default   || { navMode:'sidebar', headerOrder:[], sidebarOrder:[] };
+    S.effectiveLayout = pref.effective_layout || { navMode:'sidebar', headerOrder:[], sidebarOrder:[] };
+
+    if (!S.effectiveLayout.headerOrder?.length) S.effectiveLayout.headerOrder = HDR_DEFAULT_ORDER;
+    if (!S.tenantDefault.headerOrder?.length)   S.tenantDefault.headerOrder   = HDR_DEFAULT_ORDER;
+
+    const allKeys = S.navStructure.map(n => n.key);
+    function mergeOrder(saved){
+      return [
+        ...(saved||[]).filter(k => allKeys.includes(k)),
+        ...allKeys.filter(k => !(saved||[]).includes(k)),
+      ];
+    }
+    S.effectiveLayout.sidebarOrder = mergeOrder(S.effectiveLayout.sidebarOrder);
+    S.tenantDefault.sidebarOrder   = mergeOrder(S.tenantDefault.sidebarOrder);
+
+    S.loaded = true;
+  } catch(e){
+    console.warn('WorkspaceEngine load error', e);
+  }
+  try { localStorage.setItem('wb_layout', JSON.stringify(S.effectiveLayout)); } catch(_){}
+  applyLayout(S.effectiveLayout);
+  buildAltNavs(S.navStructure, S.effectiveLayout.sidebarOrder);
+  injectTrigger();
+}
+
+// ── Apply layout to DOM ────────────────────────────────────────────────
+function applyLayout(layout){
+  const mode = layout.navMode || 'sidebar';
+  document.body.classList.remove('wb-nav-sidebar','wb-nav-topnav','wb-nav-tabs');
+  document.body.classList.add('wb-nav-' + mode);
+
+  reorderHeader(layout.headerOrder || HDR_DEFAULT_ORDER);
+  reorderSidebar(layout.sidebarOrder || []);
+  applyVisibility(layout.hiddenItems || []);
+
+  // Theme
+  if (layout.accentColor) applyAccent(layout.accentColor);
+  if (layout.fontSize)    document.documentElement.style.setProperty('--wb-base-font', layout.fontSize+'px');
+  if (layout.density)     document.documentElement.setAttribute('data-wb-density', layout.density);
+
+  // Accessibility
+  document.documentElement.setAttribute('data-wb-hc',    layout.highContrast ? '1' : '');
+  document.documentElement.setAttribute('data-wb-rm',    layout.reduceMotion ? '1' : '');
+  document.documentElement.setAttribute('data-wb-focus', layout.focusRings   ? '1' : '');
+  document.documentElement.setAttribute('dir',           layout.rtl ? 'rtl' : 'ltr');
+}
+
+function applyVisibility(hiddenItems){
+  const content = document.getElementById('navigationContent');
+  if (!content) return;
+  content.querySelectorAll('.nav-section').forEach(sec => {
+    const key = getSectionKey(sec);
+    sec.style.display = hiddenItems.includes(key) ? 'none' : '';
+  });
+}
+
+function reorderHeader(order){
+  const right = document.querySelector('.header-right');
+  if (!right) return;
+  const map = {};
+  HDR_DEFS.forEach(d => {
+    let el = null;
+    try { el = right.querySelector(d.sel); } catch(_){}
+    if (!el){ const icon = right.querySelector('.' + d.icon.split(' ').pop()); if (icon) el = icon.closest('.dropdown,.me-3,div,label') || icon.parentElement; }
+    if (el && right.contains(el)) map[d.id] = el;
+  });
+  const ordered = [...order, ...HDR_DEFS.map(d=>d.id).filter(id=>!order.includes(id))];
+  ordered.forEach(id => { if (map[id]) right.appendChild(map[id]); });
+}
+
+function getSectionKey(sec){
+  const btn  = sec.querySelector('[data-bs-target]');
+  const link = sec.querySelector('.nav-link');
+  const raw  = btn
+    ? (btn.getAttribute('data-bs-target')||'').replace('#','').replace(/collapse$/i,'')
+    : (link?.getAttribute('title')||'');
+  return raw.toLowerCase().replace(/[^a-z0-9]/g,'') || sec.getAttribute('data-wb-key') || '';
+}
+
+function reorderSidebar(order){
+  if (!order.length) return;
+  const content = document.getElementById('navigationContent');
+  if (!content) return;
+  const sections = Array.from(content.querySelectorAll('.nav-section'));
+  const map = {};
+  sections.forEach(sec => {
+    const key = getSectionKey(sec);
+    if (key) map[key] = sec;
+    const fullTitle = sec.querySelector('[data-bs-target]')?.textContent?.trim().toLowerCase().replace(/[^a-z0-9]/g,'');
+    if (fullTitle) map[fullTitle] = sec;
+  });
+  order.forEach(key => {
+    const slug = key.split('.')[0].toLowerCase().replace(/[^a-z0-9]/g,'');
+    const sec  = map[slug] || sections.find(s => {
+      const btn = s.querySelector('[data-bs-target]');
+      return btn && btn.getAttribute('data-bs-target')?.toLowerCase().includes(slug);
+    });
+    if (sec && content.contains(sec)) content.appendChild(sec);
+  });
+  const customiseTrigger = document.getElementById('navCustomizerTrigger');
+  const wbTrigger        = document.getElementById('wbOpenBtn');
+  [customiseTrigger, wbTrigger].forEach(t => { if (t && content.contains(t)) content.appendChild(t); });
+}
+
+// ── Build alternative navs ─────────────────────────────────────────────
+function buildAltNavs(structure, order){
+  const sorted = order.length
+    ? [...order.map(k => structure.find(n=>n.key===k)).filter(Boolean),
+       ...structure.filter(n=>!order.includes(n.key))]
+    : structure;
+  buildTopNav(sorted);
+  buildTabNav(sorted);
+  requestAnimationFrame(() => {
+    setupTopNavOverflow();
+    setupTabNavOverflow();
+  });
+}
+
+const currentPath = () => window.location.pathname;
+
+// ── Mega panel manager ─────────────────────────────────────────────────
+const MP = {
+  activeBtn:null, activePanel:null, overlay:null,
+  init(){
+    this.overlay = document.createElement('div');
+    this.overlay.id = 'wbMegaOverlay';
+    document.body.appendChild(this.overlay);
+    this.overlay.addEventListener('click', () => MP.close());
+    document.addEventListener('keydown', e => { if(e.key==='Escape') MP.close(); });
+  },
+  open(btn, panel){
+    if (this.activePanel === panel){ this.close(); return; }
+    this.close();
+    this.activeBtn   = btn;
+    this.activePanel = panel;
+    btn.classList.add('panel-open');
+    this.overlay.classList.add('open');
+    const navBar = document.getElementById('wbTopNav');
+    const navBottom = navBar ? navBar.getBoundingClientRect().bottom : 116;
+    panel.style.top = navBottom + 'px';
+    panel.style.display = 'block';
+    if (panel.parentElement !== document.body) document.body.appendChild(panel);
+  },
+  close(){
+    if (this.activeBtn)   this.activeBtn.classList.remove('panel-open');
+    if (this.activePanel) this.activePanel.style.display = 'none';
+    this.overlay?.classList.remove('open');
+    this.activeBtn   = null;
+    this.activePanel = null;
+  },
+};
+
+function makeNavLink(node, cls){
+  const a = document.createElement('a');
+  a.className  = cls;
+  a.href       = node.url || '#';
+  if (node.css) a.classList.add(...node.css.trim().split(/\s+/).filter(Boolean));
+  a.innerHTML  = `<i class="${x(node.icon||'bi bi-circle')}"></i>${x(node.name)}`;
+  return a;
+}
+
+function buildTopNav(nodes){
+  const inner = document.getElementById('wbTopNavInner');
+  if (!inner) return;
+  inner.innerHTML = '';
+  document.querySelectorAll('.wb-mega').forEach(p => p.remove());
+  nodes.forEach(node => {
+    const group = document.createElement('div');
+    group.className = 'wb-tn-group';
+    if (!node.children?.length){
+      const a = makeNavLink(node, 'wb-tn-btn');
+      a.innerHTML = `<i class="${x(node.icon||'bi bi-circle')} wb-icon"></i>${x(node.name)}`;
+      group.appendChild(a);
+    } else {
+      const btn = document.createElement('button');
+      btn.className = 'wb-tn-btn';
+      btn.type = 'button';
+      btn.innerHTML = `<i class="${x(node.icon||'bi bi-folder')} wb-icon"></i>${x(node.name)}<i class="bi bi-chevron-down wb-chev"></i>`;
+      const panel = document.createElement('div');
+      panel.className = 'wb-mega';
+      const hasNestedGroups = node.children.some(c => c.children?.length);
+      if (hasNestedGroups){
+        const inner2 = document.createElement('div');
+        inner2.className = 'wb-mega-inner';
+        const directKids = node.children.filter(c => !c.children?.length);
+        if (directKids.length){
+          const col = document.createElement('div'); col.className = 'wb-mega-col';
+          const hdr = document.createElement('span'); hdr.className = 'wb-mega-heading'; hdr.textContent = node.name;
+          col.appendChild(hdr);
+          directKids.forEach(child => col.appendChild(makeNavLink(child, 'wb-mega-link')));
+          inner2.appendChild(col);
+        }
+        node.children.filter(c => c.children?.length).forEach(group2 => {
+          const col = document.createElement('div'); col.className = 'wb-mega-col';
+          const hdr = group2.url
+            ? Object.assign(document.createElement('a'), { href: group2.url, className: 'wb-mega-heading' })
+            : Object.assign(document.createElement('span'), { className: 'wb-mega-heading' });
+          hdr.textContent = group2.name;
+          col.appendChild(hdr);
+          group2.children.forEach(leaf => col.appendChild(makeNavLink(leaf, 'wb-mega-link')));
+          inner2.appendChild(col);
+        });
+        panel.appendChild(inner2);
+      } else {
+        const flat = document.createElement('div'); flat.className = 'wb-mega-flat';
+        node.children.forEach(child => flat.appendChild(makeNavLink(child, 'wb-flat-link')));
+        panel.appendChild(flat);
+      }
+      let leaveTimer;
+      const openPanel  = () => { clearTimeout(leaveTimer); MP.open(btn, panel); };
+      const schedClose = () => { leaveTimer = setTimeout(() => { if (MP.activePanel === panel) MP.close(); }, 150); };
+      const cancelClose = () => clearTimeout(leaveTimer);
+      btn.addEventListener('mouseenter', openPanel);
+      btn.addEventListener('click', () => MP.activePanel===panel ? MP.close() : MP.open(btn, panel));
+      panel.addEventListener('mouseenter', cancelClose);
+      panel.addEventListener('mouseleave', schedClose);
+      group.addEventListener('mouseleave', schedClose);
+      group.appendChild(btn);
+    }
+    inner.appendChild(group);
+  });
+}
+
+// ── Tab drop manager ───────────────────────────────────────────────────
+const TD = {
+  activeBtn:null, activeDrop:null, closeTimer:null,
+  open(btn, drop){
+    clearTimeout(TD.closeTimer);
+    if (TD.activeDrop && TD.activeDrop !== drop) TD._hide();
+    TD.activeBtn = btn; TD.activeDrop = drop;
+    btn.classList.add('active');
+    if (drop.parentElement !== document.body) document.body.appendChild(drop);
+    const r = btn.getBoundingClientRect();
+    drop.style.top  = (r.bottom + 2) + 'px';
+    drop.style.left = r.left + 'px';
+    drop.style.display = 'block';
+    requestAnimationFrame(() => {
+      const dr = drop.getBoundingClientRect();
+      if (dr.right > window.innerWidth - 8)
+        drop.style.left = Math.max(8, window.innerWidth - dr.width - 8) + 'px';
+    });
+  },
+  schedClose(){ TD.closeTimer = setTimeout(() => TD._hide(), 160); },
+  cancelClose(){ clearTimeout(TD.closeTimer); },
+  _hide(){
+    if (TD.activeDrop) TD.activeDrop.style.display = 'none';
+    if (TD.activeBtn)  TD.activeBtn.classList.remove('active');
+    TD.activeBtn = null; TD.activeDrop = null;
+  },
+  close(){ clearTimeout(TD.closeTimer); TD._hide(); },
+};
+document.addEventListener('click', e => {
+  if (TD.activeDrop && !TD.activeDrop.contains(e.target) && !TD.activeBtn?.contains(e.target)) TD.close();
+});
+document.addEventListener('keydown', e => { if(e.key==='Escape') TD.close(); });
+
+function buildTabNav(nodes){
+  const inner = document.getElementById('wbTabNavInner');
+  if (!inner) return;
+  document.querySelectorAll('.wb-tab-drop').forEach(d => d.remove());
+  inner.innerHTML = '';
+  nodes.forEach((node, i) => {
+    const isLink = !node.children?.length && node.url;
+    const btn = document.createElement(isLink ? 'a' : 'button');
+    btn.className = 'wb-tab-item' + (i===0 ? ' active' : '');
+    if (isLink) { btn.href = node.url; } else { btn.type = 'button'; }
+    btn.innerHTML = `<i class="${x(node.icon||'bi bi-circle')}"></i>${x(node.name)}`;
+    if (node.children?.length){
+      const drop = document.createElement('div'); drop.className = 'wb-tab-drop';
+      node.children.forEach(child => {
+        if (child.children?.length){
+          const lbl = document.createElement('div'); lbl.className = 'wb-td-section'; lbl.textContent = child.name;
+          drop.appendChild(lbl);
+          child.children.forEach(gc => drop.appendChild(makeNavLink(gc, 'wb-mega-link')));
+          drop.appendChild(document.createElement('hr'));
+        } else {
+          drop.appendChild(makeNavLink(child, 'wb-mega-link'));
+        }
+      });
+      btn.addEventListener('mouseenter', () => TD.open(btn, drop));
+      btn.addEventListener('mouseleave', () => TD.schedClose());
+      drop.addEventListener('mouseenter', () => TD.cancelClose());
+      drop.addEventListener('mouseleave', () => TD.schedClose());
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        TD.activeDrop === drop ? TD.close() : TD.open(btn, drop);
+      });
+    }
+    btn.addEventListener('click', () => {
+      inner.querySelectorAll('.wb-tab-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+    inner.appendChild(btn);
+  });
+}
+
+// ── Overflow "More" manager ────────────────────────────────────────────
+function makeMoreDrop(dropId){
+  let drop = document.getElementById(dropId);
+  if (!drop){ drop = document.createElement('div'); drop.id = dropId; document.body.appendChild(drop); }
+  return drop;
+}
+
+function wireMoreBtn(moreBtn, moreDrop){
+  if (moreBtn._wbWired) return;
+  moreBtn._wbWired = true;
+  let t;
+  const open = () => {
+    clearTimeout(t);
+    moreBtn.classList.add('open','panel-open');
+    const r = moreBtn.getBoundingClientRect();
+    moreDrop.style.top   = r.bottom + 4 + 'px';
+    moreDrop.style.right = (window.innerWidth - r.right) + 'px';
+    moreDrop.style.left  = 'auto';
+    moreDrop.style.display = 'block';
+  };
+  const close = () => {
+    t = setTimeout(() => {
+      moreBtn.classList.remove('open','panel-open');
+      moreDrop.style.display = 'none';
+    }, 160);
+  };
+  moreBtn.addEventListener('mouseenter', open);
+  moreBtn.addEventListener('mouseleave', close);
+  moreBtn.addEventListener('click', () => moreDrop.style.display === 'block' ? close() : open());
+  moreDrop.addEventListener('mouseenter', () => clearTimeout(t));
+  moreDrop.addEventListener('mouseleave', close);
+  document.addEventListener('click', e => {
+    if (!moreBtn.contains(e.target) && !moreDrop.contains(e.target)){
+      moreBtn.classList.remove('open','panel-open');
+      moreDrop.style.display = 'none';
+    }
+  }, true);
+}
+
+function buildMoreDropContent(moreDrop, overflowItems){
+  moreDrop.innerHTML = '';
+  overflowItems.forEach(node => {
+    if (!node) return;
+    if (node.children?.length){
+      const lbl = document.createElement('div'); lbl.className = 'wb-more-group-label'; lbl.textContent = node.name;
+      moreDrop.appendChild(lbl);
+      node.children.forEach(child => {
+        if (child.children?.length){
+          const sub = document.createElement('div'); sub.className = 'wb-more-group-label'; sub.style.paddingLeft = '18px'; sub.textContent = child.name;
+          moreDrop.appendChild(sub);
+          child.children.forEach(gc => moreDrop.appendChild(makeNavLink(gc, 'wb-more-item')));
+        } else {
+          moreDrop.appendChild(makeNavLink(child, 'wb-more-item'));
+        }
+      });
+      moreDrop.appendChild(document.createElement('hr'));
+    } else {
+      moreDrop.appendChild(makeNavLink(node, 'wb-more-item'));
+    }
+  });
+}
+
+function setupNavOverflow(navId, innerId, itemSelector, moreBtnId, moreDropId, getNodeName){
+  const navEl  = document.getElementById(navId);
+  const inner  = document.getElementById(innerId);
+  if (!navEl || !inner) return;
+  let moreBtn = document.getElementById(moreBtnId);
+  if (!moreBtn){
+    moreBtn = document.createElement('button');
+    moreBtn.id   = moreBtnId;
+    moreBtn.type = 'button';
+    moreBtn.innerHTML = 'More <i class="bi bi-chevron-down" style="font-size:0.58rem;opacity:0.5;margin-left:3px"></i>';
+    navEl.appendChild(moreBtn);
+  }
+  const moreDrop = makeMoreDrop(moreDropId);
+  wireMoreBtn(moreBtn, moreDrop);
+  function check(){
+    const items = Array.from(inner.querySelectorAll(itemSelector));
+    items.forEach(el => { el.style.visibility = ''; el.style.display = ''; });
+    moreBtn.style.display = 'none';
+    const navRect = navEl.getBoundingClientRect();
+    const moreBtnW = 94;
+    const cutoff   = navRect.right - moreBtnW;
+    const overflowNodes = [];
+    items.forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.right > cutoff){
+        el.style.display = 'none';
+        const name = getNodeName(el);
+        const node = S.navStructure.find(n => n.name === name);
+        if (node) overflowNodes.push(node);
+      }
+    });
+    if (!overflowNodes.length){ moreBtn.style.display = 'none'; moreDrop.innerHTML = ''; return; }
+    moreBtn.style.display = 'flex';
+    buildMoreDropContent(moreDrop, overflowNodes);
+  }
+  requestAnimationFrame(() => requestAnimationFrame(check));
+  let _rt;
+  const ro = new ResizeObserver(() => { clearTimeout(_rt); _rt = setTimeout(check, 80); });
+  ro.observe(navEl);
+}
+
+function setupTopNavOverflow(){
+  setupNavOverflow(
+    'wbTopNav','wbTopNavInner','.wb-tn-group','wbTnMore','wbTnMoreDrop',
+    el => { const btn = el.querySelector('.wb-tn-btn'); if (!btn) return ''; return Array.from(btn.childNodes).filter(n=>n.nodeType===3).map(n=>n.textContent.trim()).join('').trim(); }
+  );
+}
+
+function setupTabNavOverflow(){
+  setupNavOverflow(
+    'wbTabNav','wbTabNavInner','.wb-tab-item','wbTabMore','wbTabMoreDrop',
+    el => Array.from(el.childNodes).filter(n=>n.nodeType===3).map(n=>n.textContent.trim()).join('').trim()
+  );
+}
+
+// ── Render panel contents ──────────────────────────────────────────────
+function renderNavPanel(){
+  document.querySelectorAll('#wbPNav .wb-mode-card').forEach(c => {
+    c.classList.toggle('active',  c.dataset.mode === W.navMode);
+    c.classList.toggle('is-tenant-default', c.dataset.mode === S.tenantDefault.navMode);
+  });
+  const note = document.getElementById('wbNavTenantNote');
+  if (note) note.style.display = (W.navMode !== S.tenantDefault.navMode) ? 'flex' : 'none';
+}
+
+function renderHeaderPanel(){
+  const list = document.getElementById('wbHeaderList');
+  if (!list) return;
+  list.innerHTML = '';
+  const order = W.headerOrder.length ? W.headerOrder : HDR_DEFAULT_ORDER;
+  const sorted = [...order.map(id => HDR_DEFS.find(d=>d.id===id)).filter(Boolean), ...HDR_DEFS.filter(d=>!order.includes(d.id))];
+  sorted.forEach(d => list.appendChild(makeDI(d.id, d.icon, d.label, d.sub, W.hiddenItems)));
+  attachDrag(list, ids => { W.headerOrder = ids; });
+}
+
+function renderSidebarPanel(){
+  const list = document.getElementById('wbSidebarList');
+  if (!list) return;
+  list.innerHTML = '';
+  const order = W.sidebarOrder.length ? W.sidebarOrder : S.navStructure.map(n=>n.key);
+  const sorted = [...order.map(k => S.navStructure.find(n=>n.key===k)).filter(Boolean), ...S.navStructure.filter(n=>!order.includes(n.key))];
+  sorted.forEach(n => {
+    const sub = n.children?.length ? `${n.children.length} sub-items` : 'Direct link';
+    list.appendChild(makeDI(n.key, n.icon||'bi bi-circle', n.name, sub, W.hiddenItems));
+  });
+  attachDrag(list, ids => { W.sidebarOrder = ids; });
+}
+
+function renderThemePanel(){
+  // Accent swatches
+  document.querySelectorAll('.wb-swatch').forEach(sw => {
+    sw.classList.toggle('active', sw.dataset.color === W.accentColor);
+  });
+  // Font size
+  const fs = document.getElementById('wbFontSize');
+  const fsv = document.getElementById('wbFontSizeVal');
+  if (fs) { fs.value = W.fontSize; }
+  if (fsv) fsv.textContent = W.fontSize + 'px';
+  // Density
+  document.querySelectorAll('.wb-density-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.density === W.density);
+  });
+}
+
+function renderAccessPanel(){
+  const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+  setChk('wbHC',    W.highContrast);
+  setChk('wbRM',    W.reduceMotion);
+  setChk('wbFocus', W.focusRings);
+  setChk('wbRTL',   W.rtl);
+}
+
+function renderExportPanel(){
+  const box = document.getElementById('wbExportCode');
+  if (!box) return;
+  const payload = {
+    navMode:     W.navMode,
+    headerOrder: W.headerOrder,
+    sidebarOrder:W.sidebarOrder,
+    hiddenItems: W.hiddenItems,
+    accentColor: W.accentColor,
+    fontSize:    W.fontSize,
+    density:     W.density,
+  };
+  box.textContent = btoa(JSON.stringify(payload));
+}
+
+function renderTenantPanel(){
+  document.querySelectorAll('#wbTenantModeGrid .wb-mode-card').forEach(c => {
+    c.classList.toggle('active', c.dataset.tmode === W.tenantNavMode);
+  });
+  const hl = document.getElementById('wbTenantHeaderList');
+  if (hl){
+    hl.innerHTML = '';
+    const order = W.tenantHeaderOrder.length ? W.tenantHeaderOrder : HDR_DEFAULT_ORDER;
+    const sorted = [...order.map(id => HDR_DEFS.find(d=>d.id===id)).filter(Boolean), ...HDR_DEFS.filter(d=>!order.includes(d.id))];
+    sorted.forEach(d => hl.appendChild(makeDI(d.id, d.icon, d.label, d.sub, [])));
+    attachDrag(hl, ids => { W.tenantHeaderOrder = ids; });
+  }
+  const sl = document.getElementById('wbTenantSidebarList');
+  if (sl){
+    sl.innerHTML = '';
+    const order = W.tenantSidebarOrder.length ? W.tenantSidebarOrder : S.navStructure.map(n=>n.key);
+    const sorted = [...order.map(k => S.navStructure.find(n=>n.key===k)).filter(Boolean), ...S.navStructure.filter(n=>!order.includes(n.key))];
+    sorted.forEach(n => { sl.appendChild(makeDI(n.key, n.icon||'bi bi-circle', n.name, n.children?.length ? n.children.length+' sub-items' : 'Direct link', [])); });
+    attachDrag(sl, ids => { W.tenantSidebarOrder = ids; });
+  }
+}
+
+// ── DOM helpers ───────────────────────────────────────────────────────
+function makeDI(id, icon, label, sub, hiddenItems){
+  const isHidden = hiddenItems && hiddenItems.includes(id);
+  const div = document.createElement('div');
+  div.className = 'wb-di' + (isHidden ? ' wb-hidden-item' : '');
+  div.dataset.id = id;
+  div.innerHTML = `
+    <span class="wb-grip" title="Drag to reorder"><i class="bi bi-grip-vertical"></i></span>
+    <div class="wb-di-icon"><i class="${x(icon)}"></i></div>
+    <div class="wb-di-text">
+      <div class="wb-di-lbl">${x(label)}</div>
+      <div class="wb-di-sub">${x(sub)}</div>
+    </div>
+    <button class="wb-di-vis${isHidden?' hidden':''}" title="${isHidden?'Show':'Hide'}" aria-label="${isHidden?'Show':'Hide'} ${x(label)}">
+      <i class="bi ${isHidden?'bi-eye-slash':'bi-eye'}"></i>
+    </button>
+    <i class="bi bi-arrow-down-up" style="color:var(--text-muted,#9ca3af);font-size:0.72rem;flex-shrink:0"></i>`;
+  // Wire visibility toggle
+  div.querySelector('.wb-di-vis').addEventListener('click', () => {
+    const hidden = W.hiddenItems;
+    const idx = hidden.indexOf(id);
+    if (idx >= 0) hidden.splice(idx, 1);
+    else hidden.push(id);
+    // Re-render the parent list
+    const parentList = div.closest('.wb-drag-list');
+    if (parentList?.id === 'wbHeaderList')  renderHeaderPanel();
+    else if (parentList?.id === 'wbSidebarList') renderSidebarPanel();
+    // Live preview
+    applyVisibility(W.hiddenItems);
+  });
+  return div;
+}
+
+// ── Drag-and-drop (pointer events) ────────────────────────────────────
+function attachDrag(list, onReorder){
+  list.querySelectorAll('.wb-grip').forEach(grip => {
+    grip.addEventListener('pointerdown', e => startDrag(e, list, onReorder));
+  });
+}
+
+function startDrag(e, list, onReorder){
+  e.preventDefault();
+  const item = e.currentTarget.closest('.wb-di');
+  if (!item) return;
+  const startY = e.clientY;
+  const ph = document.createElement('div');
+  ph.className = 'wb-drag-placeholder';
+  ph.style.height = item.offsetHeight + 'px';
+  item.classList.add('dragging');
+  list.insertBefore(ph, item.nextSibling);
+  const grip = e.currentTarget;
+  grip.setPointerCapture(e.pointerId);
+  function onMove(ev){
+    const dy = ev.clientY - startY;
+    item.style.transform    = `translateY(${dy}px)`;
+    item.style.position     = 'relative';
+    item.style.zIndex       = '9';
+    item.style.pointerEvents = 'none';
+    const others = Array.from(list.querySelectorAll('.wb-di:not(.dragging)'));
+    const over   = others.find(el => { const r = el.getBoundingClientRect(); return ev.clientY >= r.top && ev.clientY <= r.bottom; });
+    if (over){ const r = over.getBoundingClientRect(); list.insertBefore(ph, ev.clientY < r.top + r.height/2 ? over : over.nextSibling); }
+  }
+  function onUp(){
+    item.style.transform = item.style.position = item.style.zIndex = item.style.pointerEvents = '';
+    item.classList.remove('dragging');
+    list.insertBefore(item, ph);
+    ph.remove();
+    grip.releasePointerCapture(e.pointerId);
+    grip.removeEventListener('pointermove', onMove);
+    grip.removeEventListener('pointerup',   onUp);
+    onReorder(Array.from(list.querySelectorAll('.wb-di')).map(el => el.dataset.id));
+  }
+  grip.addEventListener('pointermove', onMove);
+  grip.addEventListener('pointerup',   onUp);
+}
+
+// ── Save ──────────────────────────────────────────────────────────────
+async function saveUserLayout(){
+  const btn = document.getElementById('wbSave');
+  if (btn){ btn.disabled = true; btn.innerHTML = '<span class="wb-spin"><i class="bi bi-arrow-clockwise"></i></span> Saving…'; }
+
+  const payload = {
+    workspace_layout: {
+      navMode:      W.navMode,
+      headerOrder:  W.headerOrder,
+      sidebarOrder: W.sidebarOrder,
+      hiddenItems:  W.hiddenItems,
+      accentColor:  W.accentColor,
+      fontSize:     W.fontSize,
+      density:      W.density,
+      highContrast: W.highContrast,
+      reduceMotion: W.reduceMotion,
+      focusRings:   W.focusRings,
+      rtl:          W.rtl,
+    }
+  };
+
+  const existing = await apiFetch(URL_GET);
+  // Preserve any fields we don't own
+  Object.assign(payload, { hidden_items: existing.hidden_items || [] });
+
+  await apiFetch(URL_SAVE, { method:'POST', body: JSON.stringify(payload) });
+
+  S.effectiveLayout = { ...S.effectiveLayout, ...payload.workspace_layout };
+  try { localStorage.setItem('wb_layout', JSON.stringify(S.effectiveLayout)); } catch(_){}
+
+  if (btn){ btn.classList.add('saved'); btn.innerHTML = '<i class="bi bi-check2-all"></i> Saved!'; }
+  toast('Layout saved');
+  setTimeout(() => { WB.close(); location.reload(); }, 800);
+}
+
+async function saveTenantDefault(){
+  const btn = document.getElementById('wbTenantSave');
+  if (btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+  await apiFetch(URL_TD_SAVE, { method:'POST', body: JSON.stringify({
+    navMode:      W.tenantNavMode,
+    headerOrder:  W.tenantHeaderOrder,
+    sidebarOrder: W.tenantSidebarOrder,
+  })});
+  S.tenantDefault = { navMode: W.tenantNavMode, headerOrder: W.tenantHeaderOrder, sidebarOrder: W.tenantSidebarOrder };
+  if (btn){ btn.disabled = false; btn.innerHTML = '<i class="bi bi-building"></i> Save as company default'; }
+  toast('Company default saved — users without overrides will see this on next load');
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────
+function x(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+let _tt;
+function toast(msg, icon='bi-check2-circle'){
+  const el = document.getElementById('wbToast'); if(!el) return;
+  el.innerHTML = `<i class="bi ${icon}"></i> ${x(msg)}`;
+  el.classList.add('show');
+  clearTimeout(_tt); _tt = setTimeout(()=>el.classList.remove('show'), 2800);
+}
+
+// ── Inject trigger button ─────────────────────────────────────────────
+function injectTrigger(){
+  const mode    = S.effectiveLayout?.navMode || (()=>{ try{ return JSON.parse(localStorage.getItem('wb_layout')||'{}').navMode||'sidebar'; }catch(_){ return 'sidebar'; } })();
+  const floater = document.getElementById('wbFloatTrigger');
+  if (mode === 'topnav' || mode === 'tabs'){
+    if (floater){
+      floater.style.display = 'flex';
+      if (!floater._wbWired){ floater._wbWired = true; floater.addEventListener('click', () => WB.open()); }
+    }
+    const sideBtn = document.getElementById('wbOpenBtn');
+    if (sideBtn) sideBtn.style.display = 'none';
+    return;
+  }
+  if (floater) floater.style.display = 'none';
+  if (document.getElementById('wbOpenBtn')) return;
+  const content = document.getElementById('navigationContent');
+  if (!content) return;
+  const btn = document.createElement('button');
+  btn.id = 'wbOpenBtn';
+  btn.setAttribute('aria-label', 'Workspace layout');
+  Object.assign(btn.style, {
+    display:'flex', alignItems:'center', gap:'7px',
+    width:'calc(100% - 1rem)', margin:'0 0.5rem 10px',
+    padding:'7px 12px', borderRadius:'8px',
+    border:'1px dashed var(--border-color,#e5e7eb)',
+    background:'transparent', color:'var(--text-muted,#9ca3af)',
+    fontSize:'0.78rem', fontWeight:'500', fontFamily:'inherit',
+    cursor:'pointer', textAlign:'left', whiteSpace:'nowrap', overflow:'hidden',
+    transition:'background 0.15s,color 0.15s,border-color 0.15s',
+  });
+  btn.innerHTML = '<i class="bi bi-columns-gap" style="font-size:0.88rem;flex-shrink:0"></i>'
+                + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis">Workspace layout</span>';
+  const hover = on => {
+    btn.style.background  = on ? 'var(--wb-accent-50,#eff6ff)' : 'transparent';
+    btn.style.borderColor = on ? 'var(--wb-accent,#3b82f6)'    : 'var(--border-color,#e5e7eb)';
+    btn.style.color       = on ? 'var(--wb-accent,#2563eb)'    : 'var(--text-muted,#9ca3af)';
+  };
+  btn.addEventListener('mouseover', () => hover(true));
+  btn.addEventListener('mouseout',  () => hover(false));
+  btn.addEventListener('click', () => WB.open());
+  const nc = document.getElementById('navCustomizerTrigger');
+  if (nc && nc.parentElement === content) nc.insertAdjacentElement('afterend', btn);
+  else content.appendChild(btn);
+}
+
+// ── Public API ─────────────────────────────────────────────────────────
+const WB = window.WorkspaceBuilder = {
+  open(){
+    if (!S.loaded){ loadAll().then(()=>this._show()); return; }
+    this._show();
+  },
+  _show(){
+    resetWorking();
+    renderNavPanel();
+    renderHeaderPanel();
+    renderSidebarPanel();
+    renderThemePanel();
+    renderAccessPanel();
+    renderExportPanel();
+    if (IS_ADMIN) renderTenantPanel();
+    this._syncTenantBtn('wbPNav');
+    document.getElementById('wbModal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  },
+  close(){
+    document.getElementById('wbModal')?.classList.remove('open');
+    document.body.style.overflow = '';
+    applyLayout(S.effectiveLayout);
+  },
+  previewMode(mode){
+    W.navMode = mode;
+    renderNavPanel();
+    document.body.classList.remove('wb-nav-sidebar','wb-nav-topnav','wb-nav-tabs');
+    document.body.classList.add('wb-nav-' + mode);
+    buildAltNavs(S.navStructure, W.sidebarOrder);
+  },
+  resetNavMode(){
+    this.previewMode(S.tenantDefault.navMode);
+  },
+  async save(){
+    try { await saveUserLayout(); }
+    catch(e){ toast('Save failed: '+e.message,'bi-exclamation-triangle'); }
+  },
+  async saveTenant(){
+    try { await saveTenantDefault(); }
+    catch(e){ toast('Save failed: '+e.message,'bi-exclamation-triangle'); }
+  },
+  _syncTenantBtn(activePanelId){
+    const tb = document.getElementById('wbTenantSave');
+    if (tb) tb.style.display = (IS_ADMIN && activePanelId==='wbPTenant') ? 'flex' : 'none';
+  },
+};
+
+// ── Boot ───────────────────────────────────────────────────────────────
+function boot(){
+  MP.init();
+
+  document.getElementById('wbX')     ?.addEventListener('click', ()=>WB.close());
+  document.getElementById('wbCancel')?.addEventListener('click', ()=>WB.close());
+  document.getElementById('wbSave')  ?.addEventListener('click', ()=>WB.save());
+  document.getElementById('wbTenantSave')?.addEventListener('click', ()=>WB.saveTenant());
+
+  document.getElementById('wbModal')?.addEventListener('click', e=>{
+    if (e.target===document.getElementById('wbModal')) WB.close();
+  });
+
+  document.addEventListener('keydown', e=>{
+    if (e.key==='Escape' && document.getElementById('wbModal')?.classList.contains('open')) WB.close();
+  });
+
+  let ty=0;
+  document.getElementById('wbSheet')?.addEventListener('touchstart', e=>{ ty=e.changedTouches[0].clientY; },{passive:true});
+  document.getElementById('wbSheet')?.addEventListener('touchend',   e=>{
+    if(e.changedTouches[0].clientY-ty>80) WB.close();
+  },{passive:true});
+
+  // Tab switching
+  document.querySelectorAll('.wb-tabs .wb-tab[data-panel]').forEach(btn=>{
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.wb-tabs .wb-tab').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-selected','false');});
+      document.querySelectorAll('.wb-panel').forEach(p=>p.classList.remove('active'));
+      this.classList.add('active'); this.setAttribute('aria-selected','true');
+      document.getElementById(this.dataset.panel)?.classList.add('active');
+      WB._syncTenantBtn(this.dataset.panel);
+      if (this.dataset.panel === 'wbPExport') renderExportPanel();
+    });
+  });
+
+  // Nav mode card clicks (user)
+  document.querySelectorAll('#wbPNav .wb-mode-card[data-mode]').forEach(c=>{
+    c.addEventListener('click', ()=> WB.previewMode(c.dataset.mode));
+  });
+
+  // Nav mode card clicks (tenant)
+  document.querySelectorAll('#wbTenantModeGrid .wb-mode-card[data-tmode]').forEach(c=>{
+    c.addEventListener('click', ()=>{
+      W.tenantNavMode = c.dataset.tmode;
+      document.querySelectorAll('#wbTenantModeGrid .wb-mode-card').forEach(x=>x.classList.remove('active'));
+      c.classList.add('active');
+    });
+  });
+
+  // Role preset buttons
+  document.querySelectorAll('.wb-preset-btn[data-preset]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const preset = ROLE_PRESETS[btn.dataset.preset];
+      if (!preset) return;
+      if (preset.navMode)     { W.navMode = preset.navMode; WB.previewMode(W.navMode); }
+      if (preset.sidebarOrder){ W.sidebarOrder = [...preset.sidebarOrder]; }
+      document.querySelectorAll('.wb-preset-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      toast('Preset applied — save to keep it');
+    });
+  });
+
+  // ── Theme panel wiring ──
+  document.querySelectorAll('.wb-swatch[data-color]').forEach(sw=>{
+    sw.addEventListener('click', ()=>{
+      W.accentColor = sw.dataset.color;
+      applyAccent(sw.dataset.color);
+      document.querySelectorAll('.wb-swatch').forEach(s=>s.classList.remove('active'));
+      sw.classList.add('active');
+    });
+  });
+
+  const fsSlider = document.getElementById('wbFontSize');
+  const fsVal    = document.getElementById('wbFontSizeVal');
+  if (fsSlider){
+    fsSlider.addEventListener('input', ()=>{
+      W.fontSize = parseInt(fsSlider.value);
+      document.documentElement.style.setProperty('--wb-base-font', W.fontSize+'px');
+      if (fsVal) fsVal.textContent = W.fontSize + 'px';
+    });
+  }
+
+  document.querySelectorAll('.wb-density-btn[data-density]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      W.density = b.dataset.density;
+      document.documentElement.setAttribute('data-wb-density', W.density);
+      document.querySelectorAll('.wb-density-btn').forEach(d=>d.classList.remove('active'));
+      b.classList.add('active');
+    });
+  });
+
+  // ── Accessibility panel wiring ──
+  const wireToggle = (id, setter) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', ()=>{ setter(el.checked); });
+  };
+
+  wireToggle('wbHC', v=>{
+    W.highContrast = v;
+    document.documentElement.setAttribute('data-wb-hc', v ? '1' : '');
+  });
+  wireToggle('wbRM', v=>{
+    W.reduceMotion = v;
+    document.documentElement.setAttribute('data-wb-rm', v ? '1' : '');
+  });
+  wireToggle('wbFocus', v=>{
+    W.focusRings = v;
+    document.documentElement.setAttribute('data-wb-focus', v ? '1' : '');
+  });
+  wireToggle('wbRTL', v=>{
+    W.rtl = v;
+    document.documentElement.setAttribute('dir', v ? 'rtl' : 'ltr');
+  });
+
+  // ── Export panel wiring ──
+  document.getElementById('wbCopyCode')?.addEventListener('click', ()=>{
+    const code = document.getElementById('wbExportCode')?.textContent;
+    if (!code || code === '—') return;
+    navigator.clipboard.writeText(code).then(()=> toast('Copied to clipboard')).catch(()=>toast('Copy failed','bi-exclamation-triangle'));
+  });
+
+  document.getElementById('wbRefreshCode')?.addEventListener('click', ()=> renderExportPanel());
+
+  document.getElementById('wbImportApply')?.addEventListener('click', ()=>{
+    const raw = document.getElementById('wbImportCode')?.value?.trim();
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(atob(raw));
+      if (parsed.navMode)      W.navMode      = parsed.navMode;
+      if (parsed.headerOrder)  W.headerOrder  = parsed.headerOrder;
+      if (parsed.sidebarOrder) W.sidebarOrder = parsed.sidebarOrder;
+      if (parsed.hiddenItems)  W.hiddenItems  = parsed.hiddenItems;
+      if (parsed.accentColor)  { W.accentColor = parsed.accentColor; applyAccent(W.accentColor); }
+      if (parsed.fontSize)     { W.fontSize    = parsed.fontSize; document.documentElement.style.setProperty('--wb-base-font', W.fontSize+'px'); }
+      if (parsed.density)      { W.density     = parsed.density;  document.documentElement.setAttribute('data-wb-density', W.density); }
+      renderNavPanel(); renderHeaderPanel(); renderSidebarPanel(); renderThemePanel(); renderAccessPanel(); renderExportPanel();
+      WB.previewMode(W.navMode);
+      toast('Layout imported — save to keep it');
+    } catch(e){
+      toast('Invalid layout code','bi-exclamation-triangle');
+    }
+  });
+
+  // ── Load & inject trigger ──
+  loadAll().then(()=>{
+    injectTrigger();
+    document.addEventListener('htmx:afterSwap', injectTrigger);
+  });
+}
+
+if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+else setTimeout(boot, 200);
+
+})();
+</script>
+{% endif %}

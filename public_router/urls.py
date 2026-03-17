@@ -6,6 +6,7 @@ from .views import TenantSignupView, SignupSuccessView, CheckSubdomainView
 app_name = 'public_router'
 
 urlpatterns = [
+    path('login/select-tenant/', views.select_tenant_view, name='select_tenant'),
     path('llogin/', views.public_login_router, name='login'),
     path('login/bridge/', views.login_bridge, name='login_bridge'),
     path('api/find-tenant/', views.api_find_tenant, name='api_find_tenant'),

@@ -1,0 +1,1376 @@
+{% extends "referral/base.html" %}
+{% load static %}
+
+{% block title %}QR & Share Cards — Partner Portal — PRIMEBOOKS{% endblock %}
+{% block page_title %}QR Code & Share Cards{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Card designer layout */
+    .designer-grid {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 1.5rem;
+        align-items: start;
+    }
+
+    /* Live preview canvas wrapper */
+    .preview-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    /* ── Enhancement #2: Canvas presentation frame ── */
+    .canvas-frame {
+        position: relative;
+        padding: 1.5rem 1.5rem 2.5rem;
+        background: linear-gradient(160deg, #1a1a2e 0%, #0d0d1a 100%);
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4);
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0;
+    }
+    .canvas-frame::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #0c19dd, #6b78ff, #a78bfa);
+        border-radius: 16px 16px 0 0;
+    }
+    .canvas-frame-label {
+        font-size: 0.7rem;
+        letter-spacing: 1.5px;
+        color: rgba(255,255,255,0.25);
+        text-transform: uppercase;
+        margin-top: 0.75rem;
+        font-weight: 500;
+    }
+
+    #shareCardCanvas {
+        border-radius: 8px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+        max-width: 100%;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+        display: block;
+    }
+    #shareCardCanvas:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px rgba(107,120,255,0.3);
+    }
+
+    /* ── Enhancement #1: Style tabs with swatches ── */
+    .style-tabs {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+
+    .style-tab {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.38rem 0.85rem 0.38rem 0.5rem;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        border: 1.5px solid var(--border-color-lighter);
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: inherit;
+    }
+    .style-tab-swatch {
+        width: 28px;
+        height: 18px;
+        border-radius: 4px;
+        flex-shrink: 0;
+        border: 1px solid rgba(255,255,255,0.12);
+    }
+    .swatch-dark    { background: linear-gradient(135deg, #0d0d0d 50%, #1a1a2e); }
+    .swatch-light   { background: linear-gradient(135deg, #ffffff 50%, #f0f2ff); border-color: rgba(0,0,0,0.12) !important; }
+    .swatch-blue    { background: linear-gradient(135deg, #0c19dd 50%, #0a13aa); }
+    .swatch-gradient{ background: linear-gradient(135deg, #0a0f2e 20%, #1a0a4a 60%, #2d0a3a); }
+    .swatch-minimal { background: linear-gradient(135deg, #fafafa 50%, #f0f0f0); border-color: rgba(0,0,0,0.12) !important; }
+
+    .style-tab.active {
+        border-color: #6b78ff;
+        background: rgba(107,120,255,0.12);
+        color: #6b78ff;
+    }
+    .style-tab:hover:not(.active) {
+        border-color: rgba(107,120,255,0.4);
+        color: var(--text-primary);
+        background: rgba(107,120,255,0.06);
+    }
+
+    /* Portrait mode toggle */
+    .orientation-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    .orientation-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.3rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 500;
+        border: 1.5px solid var(--border-color-lighter);
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: inherit;
+    }
+    .orientation-btn.active {
+        border-color: #6b78ff;
+        background: rgba(107,120,255,0.12);
+        color: #6b78ff;
+    }
+    .orientation-label {
+        font-size: 0.72rem;
+        color: var(--text-tertiary);
+        margin-right: 0.25rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    /* QR code preview */
+    .qr-preview-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 1.5rem;
+        background: var(--bg-tertiary);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        position: relative;
+    }
+    .qr-preview-box img {
+        border-radius: 6px;
+        background: #fff;
+        padding: 8px;
+    }
+    /* Enhancement #5: QR quick-share button */
+    .qr-modal-btn {
+        position: absolute;
+        top: 0.6rem; right: 0.6rem;
+        width: 28px; height: 28px;
+        border-radius: 6px;
+        border: 1px solid var(--border-color-lighter);
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        cursor: pointer;
+        display: flex;align-items:center;justify-content:center;
+        transition: all 0.2s;
+        font-size: 14px;
+    }
+    .qr-modal-btn:hover { background: var(--bg-primary); color: var(--text-primary); }
+
+    /* QR modal overlay */
+    .qr-modal-overlay {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.75);
+        z-index: 10000;
+        align-items: center;
+        justify-content: center;
+    }
+    .qr-modal-overlay.open { display: flex; }
+    .qr-modal-box {
+        background: var(--bg-primary, #fff);
+        border-radius: 16px;
+        padding: 2rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        max-width: 320px;
+        width: 90%;
+        position: relative;
+    }
+    .qr-modal-close {
+        position: absolute; top: 0.75rem; right: 0.75rem;
+        background: none; border: none; font-size: 1.2rem;
+        cursor: pointer; color: var(--text-secondary); line-height: 1;
+    }
+
+    /* Download row */
+    .download-row {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        width: 100%;
+    }
+
+    /* UTM links table */
+    .utm-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+    }
+
+    /* ── Enhancement #3: UTM cards with channel badge ── */
+    .utm-card {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 0.9rem 1rem;
+        position: relative;
+    }
+    .utm-channel-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        font-size: 0.68rem;
+        font-weight: 600;
+        padding: 2px 7px;
+        border-radius: 4px;
+        margin-bottom: 0.45rem;
+        letter-spacing: 0.3px;
+    }
+    .badge-mobile   { background: rgba(52,211,153,0.12); color: #34d399; }
+    .badge-desktop  { background: rgba(96,165,250,0.12); color: #60a5fa; }
+    .badge-social   { background: rgba(167,139,250,0.12); color: #a78bfa; }
+    .badge-print    { background: rgba(251,191,36,0.12); color: #fbbf24; }
+    .badge-email    { background: rgba(249,115,22,0.12); color: #f97316; }
+    .badge-general  { background: rgba(107,120,255,0.12); color: #6b78ff; }
+
+    .utm-label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text-tertiary);
+        margin-bottom: 0.4rem;
+    }
+    .utm-link {
+        font-size: 0.8rem;
+        color: #6b78ff;
+        word-break: break-all;
+        font-family: monospace;
+        line-height: 1.4;
+    }
+    .utm-copy-btn {
+        margin-top: 0.5rem;
+        font-size: 0.75rem;
+        padding: 3px 10px;
+        border-radius: 4px;
+        border: 1px solid var(--border-color-lighter);
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-family: inherit;
+        transition: all 0.2s;
+    }
+    .utm-copy-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+    .utm-copy-btn.copied { border-color: #34d399; color: #34d399; }
+
+    /* ── Enhancement #4: Collapsible tips accordion ── */
+    .tips-accordion {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .tip-item {
+        border-bottom: 1px solid var(--border-color);
+    }
+    .tip-item:last-child { border-bottom: none; }
+    .tip-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.7rem 1rem;
+        cursor: pointer;
+        background: var(--bg-tertiary);
+        transition: background 0.15s;
+        user-select: none;
+    }
+    .tip-header:hover { background: var(--bg-secondary); }
+    .tip-header-left {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .tip-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+    .tip-chevron {
+        font-size: 0.7rem;
+        color: var(--text-tertiary);
+        transition: transform 0.2s;
+    }
+    .tip-item.open .tip-chevron { transform: rotate(180deg); }
+    .tip-body {
+        display: none;
+        padding: 0.65rem 1rem 0.75rem 2.1rem;
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+        line-height: 1.55;
+        background: var(--bg-primary);
+    }
+    .tip-item.open .tip-body { display: block; }
+
+    /* ── Enhancement #6: Approval progress banner ── */
+    .approval-banner {
+        background: linear-gradient(135deg, rgba(251,191,36,0.08) 0%, rgba(251,191,36,0.04) 100%);
+        border: 1px solid rgba(251,191,36,0.25);
+        border-radius: 10px;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+    .approval-banner-title {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: #fbbf24;
+        margin-bottom: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .approval-steps {
+        display: flex;
+        align-items: center;
+        gap: 0;
+    }
+    .approval-step {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.3rem;
+        flex: 1;
+        position: relative;
+    }
+    .approval-step:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        top: 13px;
+        left: 50%;
+        width: 100%;
+        height: 2px;
+        background: var(--border-color);
+        z-index: 0;
+    }
+    .approval-step.done::after { background: #34d399; }
+    .approval-step-dot {
+        width: 26px; height: 26px;
+        border-radius: 50%;
+        display: flex;align-items:center;justify-content:center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        position: relative;
+        z-index: 1;
+    }
+    .step-done .approval-step-dot   { background: #34d399; color: #fff; }
+    .step-active .approval-step-dot { background: #fbbf24; color: #000; }
+    .step-pending .approval-step-dot{ background: var(--bg-tertiary); color: var(--text-tertiary); border: 2px solid var(--border-color); }
+    .approval-step-label {
+        font-size: 0.68rem;
+        color: var(--text-tertiary);
+        text-align: center;
+        line-height: 1.3;
+        font-weight: 500;
+    }
+    .step-done .approval-step-label   { color: #34d399; }
+    .step-active .approval-step-label { color: #fbbf24; }
+
+    /* ── Card side toggle (Front / Back) ── */
+    .card-side-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        background: var(--bg-tertiary);
+        border: 1.5px solid var(--border-color-lighter);
+        border-radius: 8px;
+        padding: 3px;
+        width: fit-content;
+        margin-bottom: 1rem;
+    }
+    .side-btn {
+        padding: 0.32rem 1rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.18s;
+        font-family: inherit;
+        letter-spacing: 0.3px;
+    }
+    .side-btn.active {
+        background: #0c19dd;
+        color: #fff;
+        box-shadow: 0 2px 8px rgba(12,25,221,0.35);
+    }
+    .side-btn:hover:not(.active) { color: var(--text-primary); }
+
+    /* ── Combined download row ── */
+    .download-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        width: 100%;
+    }
+    .download-group-label {
+        font-size: 0.68rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text-tertiary);
+    }
+    .download-group-row {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    /* ── Logo placeholder on canvas ── */
+    /* (see JS — swap LOGO_PLACEHOLDER_URL for real logo src) */
+
+    @media (max-width: 900px) {
+        .designer-grid { grid-template-columns: 1fr; }
+        .utm-grid { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if not partner.is_approved %}
+<div class="approval-banner">
+    <div class="approval-banner-title">⏳ Account Pending Approval</div>
+    <div class="approval-steps">
+        <div class="approval-step done step-done">
+            <div class="approval-step-dot">✓</div>
+            <div class="approval-step-label">Registered</div>
+        </div>
+        <div class="approval-step step-active">
+            <div class="approval-step-dot">2</div>
+            <div class="approval-step-label">Under<br>Review</div>
+        </div>
+        <div class="approval-step step-pending">
+            <div class="approval-step-dot">3</div>
+            <div class="approval-step-label">QR &amp;<br>Cards Ready</div>
+        </div>
+        <div class="approval-step step-pending">
+            <div class="approval-step-dot">4</div>
+            <div class="approval-step-label">Earn<br>Commissions</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="designer-grid">
+
+    <!-- LEFT: QR + Card Preview -->
+    <div style="display:flex;flex-direction:column;gap:1.5rem">
+
+        <!-- Share Card Designer -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Branded Share Card</div>
+                    <div class="card-subtitle">Your personal ad card with QR code — download and share anywhere</div>
+                </div>
+            </div>
+
+            <!-- Style selector with swatches -->
+            <div class="style-tabs">
+                <button class="style-tab active" onclick="setStyle('dark')" id="tab-dark">
+                    <span class="style-tab-swatch swatch-dark"></span>Dark
+                </button>
+                <button class="style-tab" onclick="setStyle('light')" id="tab-light">
+                    <span class="style-tab-swatch swatch-light"></span>Light
+                </button>
+                <button class="style-tab" onclick="setStyle('blue')" id="tab-blue">
+                    <span class="style-tab-swatch swatch-blue"></span>Brand Blue
+                </button>
+                <button class="style-tab" onclick="setStyle('gradient')" id="tab-gradient">
+                    <span class="style-tab-swatch swatch-gradient"></span>Gradient
+                </button>
+                <button class="style-tab" onclick="setStyle('minimal')" id="tab-minimal">
+                    <span class="style-tab-swatch swatch-minimal"></span>Minimal
+                </button>
+            </div>
+
+            <!-- Controls row: orientation + front/back -->
+            <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1rem">
+                <!-- Orientation -->
+                <div class="orientation-toggle" style="margin-bottom:0">
+                    <span class="orientation-label">Format:</span>
+                    <button class="orientation-btn active" onclick="setOrientation('landscape')" id="orient-landscape">▬ Landscape</button>
+                    <button class="orientation-btn" onclick="setOrientation('portrait')" id="orient-portrait">▮ Portrait</button>
+                </div>
+                <!-- Front / Back side -->
+                <div class="card-side-toggle">
+                    <button class="side-btn active" onclick="setSide('front')" id="side-front">▶ Front</button>
+                    <button class="side-btn" onclick="setSide('back')" id="side-back">◀ Back</button>
+                </div>
+            </div>
+
+            <div class="preview-wrap">
+                <!-- Canvas presentation frame -->
+                <div class="canvas-frame">
+                    <canvas id="shareCardCanvas" width="900" height="560" title="Click to preview full size"></canvas>
+                    <div class="canvas-frame-label" id="canvasLabel">Front side · Click to preview full size</div>
+                </div>
+
+                <!-- Download section -->
+                <div style="width:100%;display:flex;flex-direction:column;gap:0.85rem">
+                    <!-- Current side downloads -->
+                    <div class="download-group">
+                        <div class="download-group-label" id="dlLabel">Download Front</div>
+                        <div class="download-group-row">
+                            <button class="btn btn-accent" onclick="downloadCard('current')">
+                                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                Download PNG
+                            </button>
+                            <button class="btn btn-secondary" onclick="copyCardToClipboard()">
+                                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                Copy to Clipboard
+                            </button>
+                            <a href="{% url 'referral:qr_code' %}?format=png" download="primebooks-qr-{{ partner.referral_code }}.png" class="btn btn-secondary">
+                                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="5" height="5"/><rect x="16" y="3" width="5" height="5"/><rect x="3" y="16" width="5" height="5"/></svg>
+                                QR Only
+                            </a>
+                        </div>
+                    </div>
+                    <!-- Combined front + back download -->
+                    <div class="download-group">
+                        <div class="download-group-label">Combined (Front + Back)</div>
+                        <div class="download-group-row">
+                            <button class="btn btn-secondary" onclick="downloadBothSides()">
+                                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                Download Front &amp; Back (2 PNGs)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- QR Code Standalone -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Your QR Code</div>
+                    <div class="card-subtitle">Scan to open your referral signup link directly</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap">
+                <div class="qr-preview-box">
+                    {% if partner.is_approved %}
+                    <img id="qrImg" src="{% url 'referral:qr_code' %}?format=png&utm=qrcode" width="160" height="160" alt="Your QR Code">
+                    <!-- Enhancement #5: Quick modal -->
+                    <button class="qr-modal-btn" onclick="openQRModal()" title="Quick share QR">⤢</button>
+                    {% else %}
+                    <div style="width:160px;height:160px;background:var(--bg-tertiary);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:0.8rem;text-align:center;padding:1rem">
+                        Available after approval
+                    </div>
+                    {% endif %}
+                    <div style="font-size:0.78rem;color:var(--text-tertiary)">Scan with any phone camera</div>
+                </div>
+                <div style="flex:1;min-width:200px">
+                    <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.6;margin-bottom:1rem">
+                        Print this QR code on business cards, flyers, banners, or WhatsApp statuses. Anyone who scans it lands directly on PrimeBooks signup with your code pre-filled.
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:0.5rem">
+                        <a href="{% url 'referral:qr_code' %}?format=png&utm=print" download="primebooks-qr-print-{{ partner.referral_code }}.png" class="btn btn-secondary btn-sm">
+                            📄 Download for Print (PNG)
+                        </a>
+                        <a href="{% url 'referral:qr_code' %}?format=svg&utm=digital" download="primebooks-qr-{{ partner.referral_code }}.svg" class="btn btn-secondary btn-sm">
+                            ⬡ Download Vector (SVG)
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- UTM campaign links -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Campaign Links</div>
+                    <div class="card-subtitle">Track where your signups come from with these pre-built links</div>
+                </div>
+            </div>
+            <div class="utm-grid">
+                {% for label, utm in utm_links %}
+                <div class="utm-card">
+                    {% if forloop.counter == 1 %}
+                    <div class="utm-channel-badge badge-mobile">📱 Best for Mobile</div>
+                    {% elif forloop.counter == 2 %}
+                    <div class="utm-channel-badge badge-social">📲 Social Media</div>
+                    {% elif forloop.counter == 3 %}
+                    <div class="utm-channel-badge badge-desktop">💻 Best for Desktop</div>
+                    {% elif forloop.counter == 4 %}
+                    <div class="utm-channel-badge badge-print">🖨 Print / Flyers</div>
+                    {% elif forloop.counter == 5 %}
+                    <div class="utm-channel-badge badge-email">✉️ Email</div>
+                    {% else %}
+                    <div class="utm-channel-badge badge-general">🔗 General</div>
+                    {% endif %}
+                    <div class="utm-label">{{ label }}</div>
+                    <div class="utm-link" id="utm-{{ forloop.counter }}">{{ utm }}</div>
+                    <button class="utm-copy-btn" onclick="copyUTM('utm-{{ forloop.counter }}', this)">Copy</button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+    </div>
+
+    <!-- RIGHT: Customise card text -->
+    <div style="display:flex;flex-direction:column;gap:1rem">
+
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Customise Your Card</div>
+                    <div class="card-subtitle">Edit the text shown on your branded share card</div>
+                </div>
+            </div>
+
+            <form method="post" novalidate>
+                {% csrf_token %}
+
+                <div class="form-group">
+                    <label>{{ branding_form.ad_tagline.label }}</label>
+                    {{ branding_form.ad_tagline }}
+                    <div class="form-hint">{{ branding_form.ad_tagline.help_text }}</div>
+                    {% if branding_form.ad_tagline.errors %}
+                        <div class="form-error">{{ branding_form.ad_tagline.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label>{{ branding_form.ad_promo_text.label }}</label>
+                    {{ branding_form.ad_promo_text }}
+                    <div class="form-hint">{{ branding_form.ad_promo_text.help_text }}</div>
+                </div>
+
+                <button type="submit" class="btn btn-accent" style="width:100%;justify-content:center">
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                        <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                    Save & Regenerate Card
+                </button>
+            </form>
+        </div>
+
+        <!-- Referral code card -->
+        <div class="card">
+            <div class="card-title" style="margin-bottom:1rem">Your Referral Link</div>
+            <div style="background:var(--bg-tertiary);border-radius:6px;border:1px solid var(--border-color);padding:0.9rem;margin-bottom:0.75rem">
+                <div style="font-size:0.7rem;color:var(--text-tertiary);margin-bottom:0.35rem;text-transform:uppercase;letter-spacing:0.6px">Base link</div>
+                <div style="font-family:monospace;font-size:0.82rem;color:#6b78ff;word-break:break-all" id="baseRefLink">{{ referral_link }}</div>
+            </div>
+            <button onclick="copyText('baseRefLink', this)" class="btn btn-secondary btn-sm" style="width:100%;justify-content:center">
+                Copy Base Link
+            </button>
+        </div>
+
+        <!-- Tips card — Enhancement #4: Accordion -->
+        <div class="card">
+            <div class="card-title" style="margin-bottom:0.75rem">💡 Sharing Tips</div>
+            <div class="tips-accordion">
+                <div class="tip-item open">
+                    <div class="tip-header" onclick="toggleTip(this)">
+                        <div class="tip-header-left">
+                            <span class="tip-dot" style="background:#6b78ff"></span>WhatsApp
+                        </div>
+                        <span class="tip-chevron">▾</span>
+                    </div>
+                    <div class="tip-body">Share the Dark card image in business groups. Add a short message above it.</div>
+                </div>
+                <div class="tip-item">
+                    <div class="tip-header" onclick="toggleTip(this)">
+                        <div class="tip-header-left">
+                            <span class="tip-dot" style="background:var(--success,#34d399)"></span>Print / Flyers
+                        </div>
+                        <span class="tip-chevron">▾</span>
+                    </div>
+                    <div class="tip-body">Download the QR-only PNG at high resolution. Works perfectly on A4 flyers.</div>
+                </div>
+                <div class="tip-item">
+                    <div class="tip-header" onclick="toggleTip(this)">
+                        <div class="tip-header-left">
+                            <span class="tip-dot" style="background:var(--warning,#fbbf24)"></span>Social Media
+                        </div>
+                        <span class="tip-chevron">▾</span>
+                    </div>
+                    <div class="tip-body">Use the Gradient card for Instagram/Facebook — the colours pop on feeds. Try Portrait mode for Stories.</div>
+                </div>
+                <div class="tip-item">
+                    <div class="tip-header" onclick="toggleTip(this)">
+                        <div class="tip-header-left">
+                            <span class="tip-dot" style="background:var(--danger,#f87171)"></span>Email Signature
+                        </div>
+                        <span class="tip-chevron">▾</span>
+                    </div>
+                    <div class="tip-body">Embed the Minimal or Light card, or just paste your referral link in your email footer.</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Enhancement #5: QR Quick-Share Modal -->
+<div class="qr-modal-overlay" id="qrModal" onclick="if(event.target===this)closeQRModal()">
+    <div class="qr-modal-box">
+        <button class="qr-modal-close" onclick="closeQRModal()">✕</button>
+        <div style="font-size:0.9rem;font-weight:700;color:var(--text-primary)">Your QR Code</div>
+        {% if partner.is_approved %}
+        <img src="{% url 'referral:qr_code' %}?format=png&utm=modal" width="220" height="220" alt="QR Code" style="border-radius:8px;background:#fff;padding:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15)">
+        {% endif %}
+        <div style="font-size:0.78rem;color:var(--text-tertiary);text-align:center">Anyone who scans this lands on your signup page with your code pre-filled.</div>
+        <div style="display:flex;gap:0.5rem;width:100%">
+            <a href="{% url 'referral:qr_code' %}?format=png&utm=modal" download="primebooks-qr-{{ partner.referral_code }}.png" class="btn btn-secondary btn-sm" style="flex:1;justify-content:center">Download PNG</a>
+            <a href="{% url 'referral:qr_code' %}?format=svg&utm=modal" download="primebooks-qr-{{ partner.referral_code }}.svg" class="btn btn-secondary btn-sm" style="flex:1;justify-content:center">Download SVG</a>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ─────────────────────────────────────────────
+// Partner data injected from Django
+// ─────────────────────────────────────────────
+const PARTNER = {
+    name:     "{{ partner.full_name|escapejs }}",
+    company:  "{{ partner.company_name|default:''|escapejs }}",
+    code:     "{{ partner.referral_code|escapejs }}",
+    link:     "{{ referral_link|escapejs }}",
+    tagline:  "{{ partner.ad_tagline|default:'Manage your business smarter with PrimeBooks'|escapejs }}",
+    promo:    "{{ partner.ad_promo_text|default:'Free trial available — no credit card needed'|escapejs }}",
+    qrUrl:    "{% url 'referral:qr_code' %}?format=png&utm=sharecard",
+    approved: {{ partner.is_approved|yesno:"true,false" }},
+    phone:    "{{ partner.phone|default:''|escapejs }}",
+    email:    "{{ partner.email|default:''|escapejs }}",
+};
+
+// ─────────────────────────────────────────────
+// LOGO — swap LOGO_URL to your real image path when ready
+// e.g.  const LOGO_URL = "{% static 'img/primebooks-logo.png' %}";
+// ─────────────────────────────────────────────
+const LOGO_URL = null;
+let logoImage  = null;
+
+let currentStyle       = 'dark';
+let currentOrientation = 'landscape';
+let currentSide        = 'front';
+let qrImage            = null;
+
+// ── Style palettes ──
+const STYLES = {
+    dark:     { bg:'#0d0d0d', bg2:'#1a1a2e', accent:'#0c19dd', accent2:'#4c54c4', text:'#ffffff', sub:'#aaaaaa', label:'#6b78ff' },
+    light:    { bg:'#ffffff', bg2:'#f0f2ff', accent:'#0c19dd', accent2:'#4c54c4', text:'#0d0d0d', sub:'#555555', label:'#0c19dd' },
+    blue:     { bg:'#0c19dd', bg2:'#0a13aa', accent:'#ffffff', accent2:'#c8ccff', text:'#ffffff', sub:'rgba(255,255,255,0.75)', label:'#c8ccff' },
+    gradient: { bg:'#0a0f2e', bg2:'#2d0a3a', accent:'#ffffff', accent2:'#c8ccff', text:'#ffffff', sub:'rgba(255,255,255,0.75)', label:'#a78bfa' },
+    minimal:  { bg:'#fafafa', bg2:'#f0f0f0', accent:'#111111', accent2:'#444444', text:'#111111', sub:'#666666', label:'#0c19dd' },
+};
+
+// ── Loaders ──
+function loadQR() {
+    if (!PARTNER.approved) return Promise.resolve(null);
+    return new Promise(resolve => {
+        const img = new Image(); img.crossOrigin = 'anonymous';
+        img.onload  = () => { qrImage = img; resolve(img); };
+        img.onerror = () => resolve(null);
+        img.src = PARTNER.qrUrl + '&t=' + Date.now();
+    });
+}
+function loadLogo() {
+    if (!LOGO_URL) return Promise.resolve(null);
+    return new Promise(resolve => {
+        const img = new Image(); img.crossOrigin = 'anonymous';
+        img.onload  = () => { logoImage = img; resolve(img); };
+        img.onerror = () => resolve(null);
+        img.src = LOGO_URL;
+    });
+}
+
+// ── UI setters ──
+function setOrientation(orient) {
+    currentOrientation = orient;
+    document.querySelectorAll('.orientation-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('orient-' + orient).classList.add('active');
+    redraw();
+}
+function setStyle(style) {
+    currentStyle = style;
+    document.querySelectorAll('.style-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + style).classList.add('active');
+    redraw();
+}
+function setSide(side) {
+    currentSide = side;
+    document.querySelectorAll('.side-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('side-' + side).classList.add('active');
+    const lbl  = document.getElementById('canvasLabel');
+    const dlbl = document.getElementById('dlLabel');
+    lbl.textContent  = side === 'back' ? 'Back side · Click to preview full size' : 'Front side · Click to preview full size';
+    dlbl.textContent = side === 'back' ? 'Download Back' : 'Download Front';
+    redraw();
+}
+function redraw() {
+    if (currentSide === 'back') drawCardBack(currentStyle, currentOrientation);
+    else if (currentOrientation === 'portrait') drawCardPortrait(currentStyle);
+    else drawCardLandscape(currentStyle);
+}
+
+// ── Logo / placeholder helper ──
+function drawLogo(ctx, x, y, w, h, style) {
+    if (logoImage) {
+        ctx.drawImage(logoImage, x, y, w, h);
+    } else {
+        const isDark = (style !== 'light' && style !== 'minimal');
+        const iconBg = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(12,25,221,0.1)';
+        const iconFg = isDark ? '#ffffff' : '#0c19dd';
+        const wordFg = isDark ? '#ffffff' : '#0d0d0d';
+        ctx.fillStyle = iconBg;
+        roundRect(ctx, x, y, h, h, 5); ctx.fill();
+        ctx.fillStyle = iconFg;
+        ctx.font = `800 ${Math.round(h * 0.62)}px -apple-system, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText('P', x + h / 2, y + h * 0.72);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = wordFg;
+        ctx.font = `700 ${Math.round(h * 0.52)}px -apple-system, sans-serif`;
+        ctx.letterSpacing = '0.3px';
+        ctx.fillText('PrimeBooks', x + h + 8, y + h * 0.68);
+        ctx.letterSpacing = '0';
+    }
+}
+
+// ─────────────────────────────────────────────
+// FRONT — LANDSCAPE
+// ─────────────────────────────────────────────
+function drawCardLandscape(style) {
+    const canvas = document.getElementById('shareCardCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 900; canvas.height = 560;
+    const W = 900, H = 560, s = STYLES[style];
+    ctx.clearRect(0, 0, W, H);
+
+    const FOOTER_H = 110, BODY_H = H - FOOTER_H;
+
+    // Background
+    if (style === 'gradient') {
+        const g = ctx.createLinearGradient(0, 0, W, BODY_H);
+        g.addColorStop(0,'#0a0f2e'); g.addColorStop(0.55,'#1a0a4a'); g.addColorStop(1,'#2d0a3a');
+        ctx.fillStyle = g;
+    } else if (style === 'minimal') {
+        ctx.fillStyle = s.bg;
+    } else {
+        const g = ctx.createLinearGradient(0, 0, W, BODY_H);
+        g.addColorStop(0, s.bg); g.addColorStop(1, s.bg2); ctx.fillStyle = g;
+    }
+    ctx.fillRect(0, 0, W, BODY_H);
+    if (style === 'minimal') { ctx.strokeStyle='#e0e0e0'; ctx.lineWidth=1; ctx.strokeRect(0,0,W,H); }
+
+    // Decorative circles
+    if (style !== 'minimal') {
+        ctx.save(); ctx.globalAlpha = 0.06;
+        ctx.beginPath(); ctx.arc(W*0.62,-40,220,0,Math.PI*2); ctx.fillStyle='#6b78ff'; ctx.fill();
+        ctx.beginPath(); ctx.arc(W*0.55,BODY_H+30,180,0,Math.PI*2); ctx.fillStyle=s.accent||'#0c19dd'; ctx.fill();
+        ctx.globalAlpha=1; ctx.restore();
+    }
+
+    const DIVIDER_X = W - 270;
+    ctx.fillStyle = (style==='light'||style==='minimal') ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)';
+    ctx.fillRect(DIVIDER_X, 28, 1, BODY_H - 56);
+
+    // LEFT CONTENT
+    const lx = 50; let y = 32;
+
+    // Logo (with spacing below)
+    drawLogo(ctx, lx, y, 120, 28, style);
+    y += 46; // gap before PRIMEBOOKS chip
+
+    // PRIMEBOOKS chip
+    const chipC = (style==='light'||style==='minimal') ? 'rgba(12,25,221,0.1)' : 'rgba(107,120,255,0.18)';
+    ctx.fillStyle = chipC; roundRect(ctx,lx,y,138,25,12); ctx.fill();
+    ctx.fillStyle = s.label; ctx.font='700 10.5px -apple-system, sans-serif';
+    ctx.letterSpacing='1.5px'; ctx.fillText('PRIMEBOOKS', lx+15, y+16.5); ctx.letterSpacing='0';
+    y += 36; // breathing room before tagline
+
+    // Tagline
+    ctx.fillStyle = s.text;
+    ctx.font = (style==='minimal') ? '400 27px Georgia, serif' : '300 29px -apple-system, BlinkMacSystemFont, sans-serif';
+    const lines = wrapText(ctx, PARTNER.tagline, DIVIDER_X - lx - 36);
+    lines.forEach((l,i) => ctx.fillText(l, lx, y + i*38));
+    y += lines.length * 38 + 12;
+
+    // Underline
+    if (style !== 'minimal') {
+        const ulg = ctx.createLinearGradient(lx,0,lx+160,0);
+        ulg.addColorStop(0,s.label); ulg.addColorStop(1,'transparent');
+        ctx.fillStyle=ulg; ctx.fillRect(lx,y,160,2);
+    } else { ctx.fillStyle='#0c19dd'; ctx.fillRect(lx,y,40,2); }
+    y += 16;
+
+    // Promo
+    ctx.fillStyle=s.sub; ctx.font='400 13.5px -apple-system, sans-serif';
+    const pls = wrapText(ctx, PARTNER.promo, DIVIDER_X - lx - 36);
+    pls.forEach((l,i) => ctx.fillText(l, lx, y + i*21));
+    y += pls.length * 21 + 18;
+
+    // Feature badges
+    const bBg=(style==='light'||style==='minimal')?'rgba(12,25,221,0.07)':'rgba(255,255,255,0.1)';
+    const bFg=(style==='light'||style==='minimal')?'#0c19dd':'rgba(255,255,255,0.85)';
+    ctx.font='500 10px -apple-system, sans-serif';
+    let bx=lx;
+    ['✓ Invoicing','✓ Stock','✓ Payroll'].forEach(b => {
+        const bw=ctx.measureText(b).width+22;
+        ctx.fillStyle=bBg; roundRect(ctx,bx,y,bw,22,4); ctx.fill();
+        ctx.fillStyle=bFg; ctx.fillText(b,bx+11,y+14.5);
+        bx+=bw+8;
+    });
+    y += 34;
+
+    // REFERRED BY + avatar
+    ctx.fillStyle=s.label; ctx.font='600 9.5px -apple-system, sans-serif';
+    ctx.letterSpacing='1.2px'; ctx.fillText('REFERRED BY',lx,y); ctx.letterSpacing='0'; y+=16;
+    const inits=PARTNER.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const aR=17,aX=lx+aR,aY=y+aR-2;
+    const aG=ctx.createLinearGradient(aX-aR,aY-aR,aX+aR,aY+aR);
+    aG.addColorStop(0,'#0c19dd'); aG.addColorStop(1,'#6b78ff');
+    ctx.fillStyle=aG; ctx.beginPath(); ctx.arc(aX,aY,aR,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='700 10px -apple-system, sans-serif';
+    ctx.textAlign='center'; ctx.fillText(inits,aX,aY+3.5); ctx.textAlign='left';
+    ctx.fillStyle=s.text; ctx.font='600 15px -apple-system, sans-serif';
+    ctx.fillText(PARTNER.name+(PARTNER.company?'  ·  '+PARTNER.company:''), lx+aR*2+10, y+aR-1);
+    y += aR*2+10;
+
+    // Referral code pill
+    const pW=225,pH=42;
+    ctx.fillStyle=(style==='light'||style==='minimal')?'rgba(12,25,221,0.08)':'rgba(107,120,255,0.14)';
+    roundRect(ctx,lx,y,pW,pH,8); ctx.fill();
+    const bg2=ctx.createLinearGradient(lx,y,lx,y+pH);
+    bg2.addColorStop(0,'#0c19dd'); bg2.addColorStop(1,'#6b78ff');
+    ctx.fillStyle=bg2; roundRect(ctx,lx,y,4,pH,2); ctx.fill();
+    ctx.fillStyle=s.label; ctx.font='600 9px -apple-system, sans-serif';
+    ctx.letterSpacing='1px'; ctx.fillText('REFERRAL CODE',lx+14,y+14); ctx.letterSpacing='0';
+    ctx.fillStyle=s.text; ctx.font='700 17px monospace';
+    ctx.letterSpacing='3px'; ctx.fillText(PARTNER.code,lx+14,y+32); ctx.letterSpacing='0';
+
+    // RIGHT QR PANEL
+    const qrPX=DIVIDER_X+18, qrPW=W-qrPX-22, qrPY=28, qrPH=BODY_H-56;
+    const qrSz=Math.min(180,qrPW-28);
+    ctx.fillStyle='rgba(255,255,255,0.97)'; roundRect(ctx,qrPX,qrPY,qrPW,qrPH,12); ctx.fill();
+    const qrAG=ctx.createLinearGradient(qrPX,0,qrPX+qrPW,0);
+    qrAG.addColorStop(0,'#0c19dd'); qrAG.addColorStop(1,'#6b78ff');
+    ctx.fillStyle=qrAG; roundRect(ctx,qrPX,qrPY,qrPW,4,2); ctx.fill();
+
+    const qrX=qrPX+(qrPW-qrSz)/2, qrY=qrPY+18;
+    if (qrImage) ctx.drawImage(qrImage,qrX,qrY,qrSz,qrSz);
+    else { ctx.fillStyle='#f4f4f4'; roundRect(ctx,qrX,qrY,qrSz,qrSz,6); ctx.fill(); ctx.fillStyle='#bbb'; ctx.font='12px sans-serif'; ctx.textAlign='center'; ctx.fillText('QR Code',qrX+qrSz/2,qrY+qrSz/2+4); ctx.textAlign='left'; }
+
+    const qrCx=qrPX+qrPW/2;
+    ctx.textAlign='center';
+    ctx.fillStyle='#111'; ctx.font='700 12px -apple-system, sans-serif'; ctx.fillText('Scan to register',qrCx,qrY+qrSz+18);
+    ctx.fillStyle='#777'; ctx.font='400 10px -apple-system, sans-serif'; ctx.fillText('Free trial · No card needed',qrCx,qrY+qrSz+33);
+    ctx.fillStyle='#e5e5e5'; ctx.fillRect(qrPX+14,qrY+qrSz+44,qrPW-28,1);
+
+    // Fill dead space: website + partner info
+    const iY=qrY+qrSz+58;
+    ctx.fillStyle='#0c19dd'; ctx.font='700 10.5px -apple-system, sans-serif'; ctx.fillText('primebooks.sale',qrCx,iY);
+    ctx.fillStyle='#555'; ctx.font='400 9.5px -apple-system, sans-serif'; ctx.fillText('via '+PARTNER.name,qrCx,iY+16);
+    ctx.fillStyle='#0c19dd'; ctx.font='600 9px monospace'; ctx.letterSpacing='1.5px'; ctx.fillText(PARTNER.code,qrCx,iY+30); ctx.letterSpacing='0';
+    ctx.textAlign='left';
+
+    // FOOTER
+    const FY=BODY_H;
+    if (style==='light') ctx.fillStyle='#0c19dd';
+    else if (style==='blue') ctx.fillStyle='rgba(0,0,0,0.3)';
+    else if (style==='minimal') ctx.fillStyle='#111111';
+    else ctx.fillStyle='rgba(10,10,30,0.95)';
+    ctx.fillRect(0,FY,W,FOOTER_H);
+    const flg=ctx.createLinearGradient(0,FY,W,FY);
+    flg.addColorStop(0,'#0c19dd'); flg.addColorStop(0.5,'#6b78ff'); flg.addColorStop(1,'#4c54c4');
+    ctx.fillStyle=flg; ctx.fillRect(0,FY,W,2);
+
+    const hasC=!!PARTNER.company;
+    const fLY=FY+24,fVY=FY+42;
+    const fLS='rgba(255,255,255,0.45)',fVS='rgba(255,255,255,0.88)',fAS='#6b78ff';
+    const cols=hasC?[lx,245,462,695]:[lx,268,520,null];
+
+    function fCol(label, rows, cx) {
+        ctx.fillStyle=fLS; ctx.font='600 8px -apple-system, sans-serif';
+        ctx.letterSpacing='1px'; ctx.fillText(label,cx,fLY); ctx.letterSpacing='0';
+        rows.forEach(([txt,col,sz],i) => {
+            ctx.fillStyle=col||fVS; ctx.font=`${sz||'400'} ${i===0?'11':'10'}px -apple-system, sans-serif`;
+            ctx.fillText(txt,cx,fVY+i*16);
+        });
+    }
+    fCol('ABOUT',[['PrimeBooks',fVS,'500'],['Business management software'],['for growing Ugandan businesses']],cols[0]);
+    fCol('WEBSITE',[['primebooks.sale',fAS,'500'],['Sign up using the QR code'],['or ref code: '+PARTNER.code]],cols[1]);
+    fCol('CONTACT',[['+256 785 230 670',fVS,'500'],['primefocusug@gmail.com'],['WhatsApp available']],cols[2]);
+    if (hasC && cols[3]) {
+        fCol('YOUR PARTNER',[[PARTNER.name,fVS,'600'],[PARTNER.company,fLS]],cols[3]);
+        ctx.fillStyle=fAS; ctx.font='700 11px monospace'; ctx.letterSpacing='2px'; ctx.fillText(PARTNER.code,cols[3],fVY+32); ctx.letterSpacing='0';
+    } else {
+        const px=W-155;
+        fCol('PARTNER',[[PARTNER.name,fVS,'600']],px);
+        ctx.fillStyle=fAS; ctx.font='700 11px monospace'; ctx.letterSpacing='2px'; ctx.fillText(PARTNER.code,px,fVY+18); ctx.letterSpacing='0';
+    }
+}
+
+// ─────────────────────────────────────────────
+// FRONT — PORTRAIT
+// ─────────────────────────────────────────────
+function drawCardPortrait(style) {
+    const canvas=document.getElementById('shareCardCanvas');
+    const ctx=canvas.getContext('2d');
+    canvas.width=560; canvas.height=900;
+    const W=560,H=900,s=STYLES[style];
+    ctx.clearRect(0,0,W,H);
+
+    if (style==='gradient') {
+        const g=ctx.createLinearGradient(0,0,W,H*0.6);
+        g.addColorStop(0,'#0a0f2e'); g.addColorStop(0.55,'#1a0a4a'); g.addColorStop(1,'#2d0a3a'); ctx.fillStyle=g;
+    } else if (style==='minimal') { ctx.fillStyle=s.bg; }
+    else { const g=ctx.createLinearGradient(0,0,W,H*0.6); g.addColorStop(0,s.bg); g.addColorStop(1,s.bg2); ctx.fillStyle=g; }
+    ctx.fillRect(0,0,W,H*0.65);
+    ctx.fillStyle=(style==='light'||style==='minimal')?'#0c19dd':'rgba(10,10,30,0.97)';
+    ctx.fillRect(0,H*0.65,W,H*0.35);
+    const tg=ctx.createLinearGradient(0,0,W,0);
+    tg.addColorStop(0,'#0c19dd'); tg.addColorStop(0.5,'#6b78ff'); tg.addColorStop(1,'#a78bfa');
+    ctx.fillStyle=tg; ctx.fillRect(0,0,W,4);
+
+    const lx=40; let y=26;
+    drawLogo(ctx,lx,y,110,24,style); y+=44;
+
+    const chipC=(style==='light'||style==='minimal')?'rgba(12,25,221,0.1)':'rgba(107,120,255,0.18)';
+    ctx.fillStyle=chipC; roundRect(ctx,lx,y,130,24,12); ctx.fill();
+    ctx.fillStyle=s.label; ctx.font='700 10px -apple-system, sans-serif';
+    ctx.letterSpacing='1.5px'; ctx.fillText('PRIMEBOOKS',lx+14,y+16); ctx.letterSpacing='0'; y+=34;
+
+    ctx.fillStyle=s.text; ctx.font=(style==='minimal')?'400 25px Georgia, serif':'300 25px -apple-system, sans-serif';
+    const ls=wrapText(ctx,PARTNER.tagline,W-lx*2);
+    ls.forEach((l,i)=>ctx.fillText(l,lx,y+i*34)); y+=ls.length*34+10;
+
+    const ulg=ctx.createLinearGradient(lx,0,lx+120,0); ulg.addColorStop(0,s.label); ulg.addColorStop(1,'transparent');
+    ctx.fillStyle=ulg; ctx.fillRect(lx,y,120,2); y+=12;
+
+    ctx.fillStyle=s.sub; ctx.font='400 13px -apple-system, sans-serif';
+    const pls=wrapText(ctx,PARTNER.promo,W-lx*2);
+    pls.forEach((l,i)=>ctx.fillText(l,lx,y+i*20)); y+=pls.length*20+16;
+
+    const bBg=(style==='light'||style==='minimal')?'rgba(12,25,221,0.07)':'rgba(255,255,255,0.1)';
+    const bFg=(style==='light'||style==='minimal')?'#0c19dd':'rgba(255,255,255,0.85)';
+    ctx.font='500 10px -apple-system, sans-serif'; let bx=lx;
+    ['✓ Invoicing','✓ Stock','✓ Payroll'].forEach(b=>{
+        const bw=ctx.measureText(b).width+20;
+        ctx.fillStyle=bBg; roundRect(ctx,bx,y,bw,22,4); ctx.fill();
+        ctx.fillStyle=bFg; ctx.fillText(b,bx+10,y+14.5); bx+=bw+8;
+    }); y+=36;
+
+    const qrSz=200,qrPP=20,qrPW=qrSz+qrPP*2,qrPX=(W-qrPW)/2;
+    ctx.fillStyle='rgba(255,255,255,0.97)'; roundRect(ctx,qrPX,y,qrPW,qrSz+qrPP*2+54,14); ctx.fill();
+    const qrAG=ctx.createLinearGradient(qrPX,y,qrPX+qrPW,y); qrAG.addColorStop(0,'#0c19dd'); qrAG.addColorStop(1,'#6b78ff');
+    ctx.fillStyle=qrAG; roundRect(ctx,qrPX,y,qrPW,4,2); ctx.fill();
+    if (qrImage) ctx.drawImage(qrImage,qrPX+qrPP,y+qrPP,qrSz,qrSz);
+    else { ctx.fillStyle='#f4f4f4'; roundRect(ctx,qrPX+qrPP,y+qrPP,qrSz,qrSz,6); ctx.fill(); }
+    const qrCx=W/2;
+    ctx.textAlign='center';
+    ctx.fillStyle='#111'; ctx.font='700 12px -apple-system, sans-serif'; ctx.fillText('Scan to register',qrCx,y+qrPP+qrSz+20);
+    ctx.fillStyle='#777'; ctx.font='400 10px -apple-system, sans-serif'; ctx.fillText('Free trial · No card needed',qrCx,y+qrPP+qrSz+35);
+    ctx.fillStyle='#e5e5e5'; ctx.fillRect(qrPX+14,y+qrPP+qrSz+46,qrPW-28,1);
+    ctx.fillStyle='#0c19dd'; ctx.font='600 9.5px -apple-system, sans-serif'; ctx.fillText('primebooks.sale',qrCx,y+qrPP+qrSz+62);
+    ctx.textAlign='left'; y+=qrSz+qrPP*2+74;
+
+    const avR=20,avX=lx+avR,avY=y+avR;
+    const avG=ctx.createLinearGradient(avX-avR,avY-avR,avX+avR,avY+avR); avG.addColorStop(0,'#0c19dd'); avG.addColorStop(1,'#6b78ff');
+    ctx.fillStyle=avG; ctx.beginPath(); ctx.arc(avX,avY,avR,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='700 11px -apple-system, sans-serif'; ctx.textAlign='center';
+    ctx.fillText(PARTNER.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),avX,avY+4); ctx.textAlign='left';
+    ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='500 10px -apple-system, sans-serif'; ctx.fillText('Referred by',lx+avR*2+10,y+avR-6);
+    ctx.fillStyle='#fff'; ctx.font='600 14px -apple-system, sans-serif'; ctx.fillText(PARTNER.name,lx+avR*2+10,y+avR+10);
+    y+=avR*2+18;
+
+    const ppW=W-lx*2,ppH=44;
+    ctx.fillStyle='rgba(255,255,255,0.08)'; roundRect(ctx,lx,y,ppW,ppH,8); ctx.fill();
+    const pbG=ctx.createLinearGradient(lx,y,lx,y+ppH); pbG.addColorStop(0,'#0c19dd'); pbG.addColorStop(1,'#6b78ff');
+    ctx.fillStyle=pbG; roundRect(ctx,lx,y,4,ppH,2); ctx.fill();
+    ctx.fillStyle='#a78bfa'; ctx.font='600 9px -apple-system, sans-serif'; ctx.letterSpacing='1px'; ctx.fillText('REFERRAL CODE',lx+14,y+15); ctx.letterSpacing='0';
+    ctx.fillStyle='#fff'; ctx.font='700 17px monospace'; ctx.letterSpacing='3px'; ctx.fillText(PARTNER.code,lx+14,y+34); ctx.letterSpacing='0';
+}
+
+// ─────────────────────────────────────────────
+// CARD BACK (landscape + portrait)
+// Contains: logo, features, contact, partner, social
+// ─────────────────────────────────────────────
+function drawCardBack(style, orientation) {
+    const canvas=document.getElementById('shareCardCanvas');
+    const ctx=canvas.getContext('2d');
+    const isPort=(orientation==='portrait');
+    const W=isPort?560:900, H=isPort?900:560;
+    canvas.width=W; canvas.height=H;
+    const s=STYLES[style];
+    ctx.clearRect(0,0,W,H);
+
+    // Background
+    if (style==='gradient') {
+        const g=ctx.createLinearGradient(0,0,W,H); g.addColorStop(0,'#0a0f2e'); g.addColorStop(0.5,'#1a0a4a'); g.addColorStop(1,'#2d0a3a'); ctx.fillStyle=g;
+    } else if (style==='minimal') { ctx.fillStyle='#fafafa'; }
+    else { const g=ctx.createLinearGradient(0,0,W,H); g.addColorStop(0,s.bg); g.addColorStop(1,s.bg2); ctx.fillStyle=g; }
+    ctx.fillRect(0,0,W,H);
+    if (style==='minimal') { ctx.strokeStyle='#e0e0e0'; ctx.lineWidth=1; ctx.strokeRect(0,0,W,H); }
+
+    // Top accent
+    const tg=ctx.createLinearGradient(0,0,W,0); tg.addColorStop(0,'#0c19dd'); tg.addColorStop(0.5,'#6b78ff'); tg.addColorStop(1,'#a78bfa');
+    ctx.fillStyle=tg; ctx.fillRect(0,0,W,4);
+
+    // Decorative circle
+    if (style!=='minimal') {
+        ctx.save(); ctx.globalAlpha=0.06;
+        ctx.beginPath(); ctx.arc(W-60,60,180,0,Math.PI*2); ctx.fillStyle='#6b78ff'; ctx.fill();
+        ctx.globalAlpha=1; ctx.restore();
+    }
+
+    const isDark=(style!=='light'&&style!=='minimal');
+    const textC=isDark?'#ffffff':'#0d0d0d';
+    const subC=isDark?'rgba(255,255,255,0.6)':'#555555';
+    const labelC=isDark?'#6b78ff':'#0c19dd';
+    const divC=isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.08)';
+    const cardBg=isDark?'rgba(255,255,255,0.06)':'rgba(12,25,221,0.05)';
+    const cardBd=isDark?'rgba(255,255,255,0.1)':'rgba(12,25,221,0.12)';
+
+    const lx=isPort?40:50;
+    let y=28;
+
+    // Logo
+    drawLogo(ctx,lx,y,isPort?110:130,isPort?24:28,style);
+    y+=isPort?44:50;
+
+    const features=[
+        {icon:'📊',title:'Smart Invoicing',  desc:'Create & send professional invoices in seconds'},
+        {icon:'📦',title:'Stock Management', desc:'Track inventory in real-time across all locations'},
+        {icon:'👥',title:'Payroll & HR',      desc:'Automate salary, deductions & staff records'},
+        {icon:'📈',title:'Business Reports',  desc:'Profit, loss, sales & cash flow dashboards'},
+        {icon:'🔐',title:'Secure Cloud',      desc:'Your data backed up & accessible anywhere'},
+    ];
+    const contacts=[
+        ['🌐','primebooks.sale'],
+        ['📞','+256 785 230 670'],
+        ['✉️','primefocusug@gmail.com'],
+        ['💬','WhatsApp: +256 785 230 670'],
+    ];
+    const socials=[
+        ['📘','Facebook: PrimeBooks Uganda'],
+        ['📸','Instagram: @primebooks.ug'],
+        ['🐦','Twitter / X: @primebooksug'],
+    ];
+
+    if (isPort) {
+        // ── PORTRAIT BACK: single column ──
+        ctx.fillStyle=textC; ctx.font='300 22px -apple-system, BlinkMacSystemFont, sans-serif';
+        const hl=wrapText(ctx,'Why businesses choose PrimeBooks',W-lx*2);
+        hl.forEach((l,i)=>ctx.fillText(l,lx,y+i*30)); y+=hl.length*30+6;
+        const ulg=ctx.createLinearGradient(lx,0,lx+120,0); ulg.addColorStop(0,labelC); ulg.addColorStop(1,'transparent');
+        ctx.fillStyle=ulg; ctx.fillRect(lx,y,120,2); y+=18;
+
+        features.forEach(f=>{
+            ctx.fillStyle=cardBg; roundRect(ctx,lx,y,W-lx*2,52,8); ctx.fill();
+            ctx.strokeStyle=cardBd; ctx.lineWidth=1; roundRect(ctx,lx,y,W-lx*2,52,8); ctx.stroke();
+            ctx.font='22px sans-serif'; ctx.fillText(f.icon,lx+14,y+34);
+            ctx.fillStyle=textC; ctx.font='600 13px -apple-system, sans-serif'; ctx.fillText(f.title,lx+46,y+20);
+            ctx.fillStyle=subC; ctx.font='400 11px -apple-system, sans-serif'; ctx.fillText(f.desc,lx+46,y+36);
+            y+=62;
+        });
+
+        y+=4; ctx.fillStyle=divC; ctx.fillRect(lx,y,W-lx*2,1); y+=16;
+        ctx.fillStyle=labelC; ctx.font='600 9px -apple-system, sans-serif'; ctx.letterSpacing='1.2px'; ctx.fillText('CONTACT PRIMEBOOKS',lx,y); ctx.letterSpacing='0'; y+=16;
+        contacts.forEach(([ic,val])=>{ ctx.fillStyle=subC; ctx.font='400 11.5px -apple-system, sans-serif'; ctx.fillText(ic+'  '+val,lx,y); y+=20; });
+
+        y+=4; ctx.fillStyle=divC; ctx.fillRect(lx,y,W-lx*2,1); y+=16;
+        ctx.fillStyle=labelC; ctx.font='600 9px -apple-system, sans-serif'; ctx.letterSpacing='1.2px'; ctx.fillText('FIND US ONLINE',lx,y); ctx.letterSpacing='0'; y+=16;
+        socials.forEach(([ic,val])=>{ ctx.fillStyle=subC; ctx.font='400 11px -apple-system, sans-serif'; ctx.fillText(ic+'  '+val,lx,y); y+=18; });
+
+        y+=8; ctx.fillStyle=divC; ctx.fillRect(lx,y,W-lx*2,1); y+=16;
+        ctx.fillStyle=labelC; ctx.font='600 9px -apple-system, sans-serif'; ctx.letterSpacing='1.2px'; ctx.fillText('YOUR PARTNER',lx,y); ctx.letterSpacing='0'; y+=16;
+
+        const avR=22,avX=lx+avR,avY=y+avR;
+        const avG=ctx.createLinearGradient(avX-avR,avY-avR,avX+avR,avY+avR); avG.addColorStop(0,'#0c19dd'); avG.addColorStop(1,'#6b78ff');
+        ctx.fillStyle=avG; ctx.beginPath(); ctx.arc(avX,avY,avR,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.font='700 12px -apple-system, sans-serif'; ctx.textAlign='center';
+        ctx.fillText(PARTNER.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),avX,avY+4); ctx.textAlign='left';
+        ctx.fillStyle=textC; ctx.font='600 14px -apple-system, sans-serif'; ctx.fillText(PARTNER.name,lx+avR*2+12,y+avR-4);
+        if (PARTNER.company) { ctx.fillStyle=subC; ctx.font='400 11px -apple-system, sans-serif'; ctx.fillText(PARTNER.company,lx+avR*2+12,y+avR+12); }
+        if (PARTNER.phone||PARTNER.email) { ctx.fillStyle=subC; ctx.font='400 10.5px -apple-system, sans-serif'; ctx.fillText([PARTNER.phone,PARTNER.email].filter(Boolean).join('  ·  '),lx+avR*2+12,y+avR+(PARTNER.company?28:14)); }
+        y+=avR*2+28;
+
+        const ppW=W-lx*2,ppH=44;
+        ctx.fillStyle=isDark?'rgba(107,120,255,0.14)':'rgba(12,25,221,0.08)'; roundRect(ctx,lx,y,ppW,ppH,8); ctx.fill();
+        const pbG=ctx.createLinearGradient(lx,y,lx,y+ppH); pbG.addColorStop(0,'#0c19dd'); pbG.addColorStop(1,'#6b78ff');
+        ctx.fillStyle=pbG; roundRect(ctx,lx,y,4,ppH,2); ctx.fill();
+        ctx.fillStyle=labelC; ctx.font='600 9px -apple-system, sans-serif'; ctx.letterSpacing='1px'; ctx.fillText('REFERRAL CODE',lx+14,y+15); ctx.letterSpacing='0';
+        ctx.fillStyle=textC; ctx.font='700 17px monospace'; ctx.letterSpacing='3px'; ctx.fillText(PARTNER.code,lx+14,y+34); ctx.letterSpacing='0';
+
+    } else {
+        // ── LANDSCAPE BACK: 2-column ──
+        const MID=Math.floor(W/2)-10, colW=MID-lx-20, colR=MID+30;
+
+        // Left column: features
+        ctx.fillStyle=labelC; ctx.font='600 9px -apple-system, sans-serif'; ctx.letterSpacing='1.2px'; ctx.fillText('WHY PRIMEBOOKS',lx,y); ctx.letterSpacing='0'; y+=18;
+        ctx.fillStyle=textC; ctx.font='300 20px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText('Built for growing',lx,y); y+=26; ctx.fillText('Ugandan businesses.',lx,y); y+=14;
+        const ulg=ctx.createLinearGradient(lx,0,lx+120,0); ulg.addColorStop(0,labelC); ulg.addColorStop(1,'transparent');
+        ctx.fillStyle=ulg; ctx.fillRect(lx,y,120,2); y+=16;
+
+        features.forEach(f=>{
+            ctx.fillStyle=cardBg; roundRect(ctx,lx,y,colW,42,7); ctx.fill();
+            ctx.strokeStyle=cardBd; ctx.lineWidth=1; roundRect(ctx,lx,y,colW,42,7); ctx.stroke();
+            ctx.font='18px sans-serif'; ctx.fillText(f.icon,lx+10,y+28);
+            ctx.fillStyle=textC; ctx.font='600 11.5px -apple-system, sans-serif'; ctx.fillText(f.title,lx+40,y+17);
+            ctx.fillStyle=subC; ctx.font='400 10px -apple-system, sans-serif'; ctx.fillText(f.desc,lx+40,y+31);
+            y+=50;
+        });
+
+        // Divider
+        ctx.fillStyle=divC; ctx.fillRect(MID,28,1,H-56);
+
+        // Right column
+        let ry=28;
+        ctx.fillStyle=labelC; ctx.font='600 9px -apple-system, sans-serif'; ctx.letterSpacing='1.2px'; ctx.fillText('CONTACT',colR,ry+18); ctx.letterSpacing='0'; ry+=36;
+        contacts.forEach(([ic,val])=>{ ctx.fillStyle=subC; ctx.font='400 11px -apple-system, sans-serif'; ctx.fillText(ic+'  '+val,colR,ry); ry+=20; });
+
+        ry+=6; ctx.fillStyle=divC; ctx.fillRect(colR,ry,W-colR-lx,1); ry+=14;
+        ctx.fillStyle=labelC; ctx.font='600 9px -apple-system, sans-serif'; ctx.letterSpacing='1.2px'; ctx.fillText('SOCIAL',colR,ry); ctx.letterSpacing='0'; ry+=16;
+        socials.forEach(([ic,val])=>{ ctx.fillStyle=subC; ctx.font='400 10.5px -apple-system, sans-serif'; ctx.fillText(ic+'  '+val,colR,ry); ry+=18; });
+
+        ry+=6; ctx.fillStyle=divC; ctx.fillRect(colR,ry,W-colR-lx,1); ry+=14;
+        ctx.fillStyle=labelC; ctx.font='600 9px -apple-system, sans-serif'; ctx.letterSpacing='1.2px'; ctx.fillText('YOUR PARTNER',colR,ry); ctx.letterSpacing='0'; ry+=18;
+
+        const avR=18,avX=colR+avR,avY=ry+avR-2;
+        const avG=ctx.createLinearGradient(avX-avR,avY-avR,avX+avR,avY+avR); avG.addColorStop(0,'#0c19dd'); avG.addColorStop(1,'#6b78ff');
+        ctx.fillStyle=avG; ctx.beginPath(); ctx.arc(avX,avY,avR,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#fff'; ctx.font='700 10px -apple-system, sans-serif'; ctx.textAlign='center';
+        ctx.fillText(PARTNER.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),avX,avY+3.5); ctx.textAlign='left';
+        ctx.fillStyle=textC; ctx.font='600 13px -apple-system, sans-serif'; ctx.fillText(PARTNER.name,colR+avR*2+10,ry+avR-3);
+        if (PARTNER.company) { ctx.fillStyle=subC; ctx.font='400 10.5px -apple-system, sans-serif'; ctx.fillText(PARTNER.company,colR+avR*2+10,ry+avR+12); }
+        if (PARTNER.phone||PARTNER.email) { ctx.fillStyle=subC; ctx.font='400 10px -apple-system, sans-serif'; ctx.fillText([PARTNER.phone,PARTNER.email].filter(Boolean).join('  ·  '),colR+avR*2+10,ry+avR+(PARTNER.company?26:12)); }
+        ry+=avR*2+20;
+
+        const rpW=W-colR-lx,rpH=42;
+        ctx.fillStyle=isDark?'rgba(107,120,255,0.14)':'rgba(12,25,221,0.08)'; roundRect(ctx,colR,ry,rpW,rpH,8); ctx.fill();
+        const rpG=ctx.createLinearGradient(colR,ry,colR,ry+rpH); rpG.addColorStop(0,'#0c19dd'); rpG.addColorStop(1,'#6b78ff');
+        ctx.fillStyle=rpG; roundRect(ctx,colR,ry,4,rpH,2); ctx.fill();
+        ctx.fillStyle=labelC; ctx.font='600 8.5px -apple-system, sans-serif'; ctx.letterSpacing='1px'; ctx.fillText('REFERRAL CODE',colR+12,ry+14); ctx.letterSpacing='0';
+        ctx.fillStyle=textC; ctx.font='700 16px monospace'; ctx.letterSpacing='3px'; ctx.fillText(PARTNER.code,colR+12,ry+31); ctx.letterSpacing='0';
+
+        // Bottom footer bar
+        const FY=H-36;
+        ctx.fillStyle=isDark?'rgba(10,10,30,0.9)':'#0c19dd'; ctx.fillRect(0,FY,W,36);
+        const flg=ctx.createLinearGradient(0,FY,W,FY); flg.addColorStop(0,'#0c19dd'); flg.addColorStop(0.5,'#6b78ff'); flg.addColorStop(1,'#4c54c4');
+        ctx.fillStyle=flg; ctx.fillRect(0,FY,W,2);
+        ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='400 10px -apple-system, sans-serif'; ctx.textAlign='center';
+        ctx.fillText('PrimeBooks · primebooks.sale · +256 785 230 670 · primefocusug@gmail.com',W/2,FY+22);
+        ctx.textAlign='left';
+    }
+}
+
+// ── Helpers ──
+function roundRect(ctx,x,y,w,h,r) {
+    ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+    ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+    ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+function wrapText(ctx,text,maxWidth) {
+    const words=text.split(' '),lines=[];let current='';
+    for (const w of words) { const test=current?current+' '+w:w; if (ctx.measureText(test).width>maxWidth&&current){lines.push(current);current=w;}else current=test; }
+    if (current) lines.push(current); return lines;
+}
+
+// ── Downloads ──
+function downloadCard(which) {
+    const canvas=document.getElementById('shareCardCanvas');
+    const side=(which==='current')?currentSide:which;
+    const a=document.createElement('a');
+    a.download=`primebooks-${side}-${PARTNER.code}-${currentStyle}-${currentOrientation}.png`;
+    a.href=canvas.toDataURL('image/png',1.0); a.click();
+}
+
+async function downloadBothSides() {
+    const origSide=currentSide;
+    showToast('⬇ Preparing front…');
+    if (currentOrientation==='portrait') drawCardPortrait(currentStyle); else drawCardLandscape(currentStyle);
+    await new Promise(r=>setTimeout(r,80));
+    const canvas=document.getElementById('shareCardCanvas');
+    const aF=document.createElement('a');
+    aF.download=`primebooks-front-${PARTNER.code}-${currentStyle}-${currentOrientation}.png`;
+    aF.href=canvas.toDataURL('image/png',1.0); aF.click();
+    await new Promise(r=>setTimeout(r,350));
+    showToast('⬇ Preparing back…');
+    drawCardBack(currentStyle,currentOrientation);
+    await new Promise(r=>setTimeout(r,80));
+    const aB=document.createElement('a');
+    aB.download=`primebooks-back-${PARTNER.code}-${currentStyle}-${currentOrientation}.png`;
+    aB.href=canvas.toDataURL('image/png',1.0); aB.click();
+    await new Promise(r=>setTimeout(r,350));
+    if (origSide==='back') drawCardBack(currentStyle,currentOrientation);
+    else if (currentOrientation==='portrait') drawCardPortrait(currentStyle); else drawCardLandscape(currentStyle);
+    showToast('✓ Front & Back downloaded!');
+}
+
+async function copyCardToClipboard() {
+    document.getElementById('shareCardCanvas').toBlob(async blob=>{
+        try { await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); showToast('✓ Card copied to clipboard!'); }
+        catch(e) { showToast('⚠ Copy not supported. Use Download instead.'); }
+    });
+}
+function copyText(id,btn) {
+    navigator.clipboard.writeText(document.getElementById(id).textContent.trim()).then(()=>{ const o=btn.textContent; btn.textContent='✓ Copied!'; setTimeout(()=>btn.textContent=o,2000); });
+}
+function copyUTM(id,btn) {
+    navigator.clipboard.writeText(document.getElementById(id).textContent.trim()).then(()=>{ btn.textContent='✓ Copied!'; btn.classList.add('copied'); setTimeout(()=>{ btn.textContent='Copy'; btn.classList.remove('copied'); },2000); });
+}
+function openQRModal()  { document.getElementById('qrModal').classList.add('open'); }
+function closeQRModal() { document.getElementById('qrModal').classList.remove('open'); }
+function toggleTip(header) { header.closest('.tip-item').classList.toggle('open'); }
+function showToast(msg) {
+    const t=document.createElement('div');
+    t.style.cssText='position:fixed;bottom:2rem;right:2rem;background:#1a1a1a;color:#fff;padding:0.75rem 1.25rem;border-radius:8px;font-size:0.88rem;z-index:9999;border:1px solid #333;box-shadow:0 4px 20px rgba(0,0,0,0.5)';
+    t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3000);
+}
+
+// ── Init ──
+Promise.all([loadQR(),loadLogo()]).then(()=>redraw());
+document.addEventListener('input',e=>{
+    if (e.target.name==='ad_tagline')   { PARTNER.tagline=e.target.value||'Manage your business smarter with PrimeBooks'; redraw(); }
+    if (e.target.name==='ad_promo_text'){ PARTNER.promo=e.target.value||'Free trial available — no credit card needed';    redraw(); }
+});
+</script>
+{% endblock %}

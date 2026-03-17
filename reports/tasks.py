@@ -978,7 +978,10 @@ def build_report_data(schema_name, period_days=30):
         since      = today - timedelta(days=period_days)
         prev_since = today - timedelta(days=period_days * 2)
 
-        company = Company.objects.filter(is_active=True).first()
+        # PIN to this tenant's schema — without schema_name= filter,
+        # .first() would return whichever company comes first in the
+        # public table, mixing names and data across all tenants.
+        company = Company.objects.filter(schema_name=schema_name, is_active=True).first()
         if not company:
             return None
 

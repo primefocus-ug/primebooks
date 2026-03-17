@@ -810,8 +810,15 @@ class CustomAuthenticationForm(AuthenticationForm):
         return cleaned_data
 
     def get_user(self):
-        """Return the authenticated user"""
-        return self.user_cache
+        """Return the authenticated user, always as a CustomUser instance"""
+        user = self.user_cache
+        if user is not None and not isinstance(user, CustomUser):
+            try:
+                user = CustomUser.objects.get(pk=user.pk)
+                self.user_cache = user  # update cache too
+            except CustomUser.DoesNotExist:
+                return None
+        return user
 
     def get_client_ip(self):
         """Get client IP from request"""

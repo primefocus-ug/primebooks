@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Call — Support</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --brand: #6366f1;
+    --danger: #ef4444;
+    --success: #10b981;
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --border: rgba(255,255,255,0.08);
+    --radius: 16px;
+  }
+
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+
+  .call-card {
+    background: var(--surface); border-radius: var(--radius);
+    padding: 40px 32px; width: 340px; text-align: center;
+    border: 1px solid var(--border);
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  }
+
+  .avatar {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--brand), #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem; margin: 0 auto 20px;
+    position: relative;
+  }
+
+  .avatar.ringing::after {
+    content: '';
+    position: absolute; inset: -8px; border-radius: 50%;
+    border: 3px solid var(--brand);
+    animation: ring 1.2s ease-out infinite;
+  }
+  @keyframes ring {
+    0%   { opacity:.8; transform:scale(1); }
+    100% { opacity:0;  transform:scale(1.5); }
+  }
+
+  .call-name { font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
+  .call-status {
+    font-size: .83rem; color: var(--muted); margin-bottom: 28px;
+    min-height: 20px;
+  }
+  #call-timer { font-family: monospace; font-size: .9rem; color: var(--success); }
+
+  .notice-box {
+    background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3);
+    border-radius: 10px; padding: 12px 14px;
+    font-size: .78rem; color: #fbbf24; line-height: 1.6; margin-bottom: 24px;
+    text-align: left;
+  }
+  .notice-box strong { display: block; margin-bottom: 4px; }
+
+  .controls { display: flex; gap: 16px; justify-content: center; }
+
+  .ctrl-btn {
+    width: 56px; height: 56px; border-radius: 50%; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem; transition: transform .15s, opacity .15s;
+  }
+  .ctrl-btn:hover { transform: scale(1.1); }
+  .ctrl-btn.mute   { background: var(--surface); border: 1px solid var(--border); }
+  .ctrl-btn.hangup { background: var(--danger); }
+  .ctrl-btn.accept { background: var(--success); }
+
+  .ctrl-btn svg { width: 22px; height: 22px; fill: #fff; }
+
+  #consent-section { margin-bottom: 24px; }
+  .accept-btn {
+    width: 100%; padding: 12px; border-radius: 10px;
+    background: var(--brand); color: #fff; border: none; cursor: pointer;
+    font-size: .9rem; font-weight: 700; margin-bottom: 8px;
+    transition: opacity .15s;
+  }
+  .accept-btn:hover { opacity: .88; }
+  .decline-link { font-size: .78rem; color: var(--muted); cursor: pointer; }
+  .decline-link:hover { color: var(--text); }
+
+  #error-msg { color: var(--danger); font-size: .82rem; margin-top: 16px; }
+
+  audio { display: none; }
+</style>
+</head>
+<body>
+<div class="call-card">
+  <div class="avatar" id="avatar">👤</div>
+  <div class="call-name" id="call-name">Support Call</div>
+  <div class="call-status" id="call-status">Connecting…</div>
+
+  <!-- Recording consent (shown first) -->
+  <div id="consent-section">
+    <div class="notice-box">
+      <strong>⚠️ Call Recording Notice</strong>
+      <span id="recording-notice">This call is recorded for quality and training purposes. By continuing you consent to the recording.</span>
+    </div>
+    <button class="accept-btn" id="consent-accept-btn">Accept &amp; Start Call</button>
+    <div class="decline-link" id="consent-decline-btn">Decline — go back</div>
+  </div>
+
+  <!-- Call controls (hidden until consent given) -->
+  <div id="call-controls" style="display:none;">
+    <div id="call-timer" style="margin-bottom:20px;"></div>
+    <div class="controls">
+      <button class="ctrl-btn mute" id="mute-btn" title="Mute">
+        <svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0014 0h-2z"/></svg>
+      </button>
+      <button class="ctrl-btn hangup" id="hangup-btn" title="End call">
+        <svg viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="error-msg"></div>
+</div>
+
+<!-- Remote audio -->
+<audio id="remote-audio" autoplay></audio>
+
+<script>
+(function () {
+  const CALL_ROOM_ID     = '{{ call_room_id }}';
+  const IS_AGENT         = {{ is_agent|yesno:"true,false" }};
+  const WS_PROTO         = location.protocol === 'https:' ? 'wss' : 'ws';
+  const WS_URL           = `${WS_PROTO}://${location.host}/ws/support/call/${CALL_ROOM_ID}/`;
+  const RECORDING_URL    = `/support/call/${CALL_ROOM_ID}/recording/`;
+
+  // STUN servers — add your TURN credentials here for production
+  const ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    // Add Coturn / Metered TURN server here:
+    // { urls: 'turn:your.turn.server:3478', username: 'user', credential: 'pass' }
+  ];
+
+  const statusEl   = document.getElementById('call-status');
+  const avatarEl   = document.getElementById('avatar');
+  const consentEl  = document.getElementById('consent-section');
+  const controlsEl = document.getElementById('call-controls');
+  const muteBtn    = document.getElementById('mute-btn');
+  const hangupBtn  = document.getElementById('hangup-btn');
+  const errorEl    = document.getElementById('error-msg');
+  const timerEl    = document.getElementById('call-timer');
+  const remoteAudio = document.getElementById('remote-audio');
+
+  let ws, pc, localStream;
+  let isMuted       = false;
+  let callStartTime = null;
+  let timerInterval = null;
+  let mediaRecorder = null;
+  let recordedChunks = [];
+
+  // ── Consent ──────────────────────────────────────────────────────────────
+  document.getElementById('consent-accept-btn').onclick = startCall;
+  document.getElementById('consent-decline-btn').onclick = () => window.close();
+
+  // Load recording notice from URL query params or leave as default
+  const params = new URLSearchParams(location.search);
+  if (params.get('notice')) {
+    document.getElementById('recording-notice').textContent = decodeURIComponent(params.get('notice'));
+  }
+
+  // ── Start Call ────────────────────────────────────────────────────────────
+  async function startCall() {
+    consentEl.style.display = 'none';
+    controlsEl.style.display = 'block';
+    avatarEl.classList.add('ringing');
+    setStatus('Getting microphone…');
+
+    // Consent given
+    sendSignal({ type: 'consent_given' });
+
+    // Get microphone
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (err) {
+      showError('Microphone access denied. Please allow microphone access and retry.');
+      return;
+    }
+
+    startRecording(localStream);
+
+    // Build peer connection
+    pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+    pc.onicecandidate = evt => {
+      if (evt.candidate) sendSignal({ type: 'ice', candidate: evt.candidate });
+    };
+
+    pc.ontrack = evt => {
+      remoteAudio.srcObject = evt.streams[0];
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') {
+        avatarEl.classList.remove('ringing');
+        callStartTime = Date.now();
+        setStatus('Connected');
+        startTimer();
+      } else if (['disconnected','failed','closed'].includes(pc.connectionState)) {
+        endCall();
+      }
+    };
+
+    // Connect signaling WebSocket
+    ws = new WebSocket(WS_URL);
+    ws.onopen = async () => {
+      if (!IS_AGENT) {
+        // Visitor creates the offer
+        setStatus('Calling agent…');
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignal({ type: 'offer', sdp: pc.localDescription });
+      } else {
+        setStatus('Waiting for visitor…');
+      }
+    };
+    ws.onmessage = handleSignal;
+    ws.onerror   = () => showError('WebSocket connection failed.');
+  }
+
+  function sendSignal(payload) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload));
+    }
+  }
+
+  async function handleSignal(evt) {
+    let data; try { data = JSON.parse(evt.data); } catch (_) { return; }
+
+    if (data.type === 'offer') {
+      await pc.setRemoteDescription(new RTCSessionDescription(data));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sendSignal({ type: 'answer', sdp: pc.localDescription });
+      setStatus('Connecting…');
+
+    } else if (data.type === 'answer') {
+      await pc.setRemoteDescription(new RTCSessionDescription(data));
+
+    } else if (data.type === 'ice') {
+      try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch (_) {}
+
+    } else if (data.type === 'call_ended') {
+      endCall(false);
+    }
+  }
+
+  // ── Controls ──────────────────────────────────────────────────────────────
+  muteBtn.onclick = () => {
+    isMuted = !isMuted;
+    localStream.getAudioTracks().forEach(t => { t.enabled = !isMuted; });
+    muteBtn.style.opacity = isMuted ? '.5' : '1';
+    muteBtn.title = isMuted ? 'Unmute' : 'Mute';
+  };
+
+  hangupBtn.onclick = () => endCall(true);
+
+  window.onbeforeunload = () => endCall(true);
+
+  function endCall(notify = true) {
+    if (notify) sendSignal({ type: 'call_ended' });
+    stopRecording();
+    if (pc) { pc.close(); pc = null; }
+    if (localStream) localStream.getTracks().forEach(t => t.stop());
+    clearInterval(timerInterval);
+    setStatus('Call ended');
+    controlsEl.innerHTML = '<p style="color:var(--muted);font-size:.85rem;">You may close this window.</p>';
+    setTimeout(() => window.close(), 2000);
+  }
+
+  // ── Timer ──────────────────────────────────────────────────────────────────
+  function startTimer() {
+    timerInterval = setInterval(() => {
+      const secs = Math.floor((Date.now() - callStartTime) / 1000);
+      const m = String(Math.floor(secs / 60)).padStart(2, '0');
+      const s = String(secs % 60).padStart(2, '0');
+      timerEl.textContent = `${m}:${s}`;
+    }, 1000);
+  }
+
+  // ── Recording (client-side) ────────────────────────────────────────────────
+  function startRecording(stream) {
+    try {
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorder.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); };
+      mediaRecorder.start(1000);
+    } catch (e) {
+      console.warn('MediaRecorder not supported:', e);
+    }
+  }
+
+  function stopRecording() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+    mediaRecorder.onstop = async () => {
+      const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+      const form = new FormData();
+      form.append('file', blob, `call_${CALL_ROOM_ID}.webm`);
+      try {
+        await fetch(RECORDING_URL, { method: 'POST', body: form });
+      } catch (_) {}
+    };
+    mediaRecorder.stop();
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function setStatus(text) { statusEl.textContent = text; }
+  function showError(text) {
+    errorEl.textContent = text;
+    setStatus('Error');
+    avatarEl.classList.remove('ringing');
+  }
+
+})();
+</script>
+</body>
+</html>

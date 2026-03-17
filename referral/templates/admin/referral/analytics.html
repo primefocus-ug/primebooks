@@ -1,0 +1,397 @@
+{% extends "public_admin/base.html" %}
+{% load i18n %}
+
+{% block title %}Referral Analytics — Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+.ra-wrap { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: var(--text-primary); }
+
+/* Topbar */
+.ra-topbar { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.75rem; }
+.ra-topbar h1 { font-size: 1.4rem; font-weight: 300; color: var(--text-primary); margin: 0; }
+.ra-breadcrumb { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Buttons */
+.ra-btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 1rem; border-radius: 6px; font-size: 0.83rem; font-weight: 500; text-decoration: none; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); transition: all 0.2s; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.ra-btn:hover { background: var(--bg-secondary); color: var(--text-primary); border-color: var(--text-muted); }
+.ra-btn-accent { background: linear-gradient(135deg, #0c19dd, #4c54c4); color: var(--text-primary) !important; border-color: transparent; }
+.ra-btn-accent:hover { opacity: 0.9; }
+.ra-btn-active { background: var(--bg-secondary); color: var(--text-primary); border-color: var(--text-muted); cursor: default; }
+
+/* Summary strip */
+.ra-summary-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+.ra-summary-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    transition: border-color 0.2s;
+}
+.ra-summary-card:hover { border-color: var(--border-color); }
+.ra-summary-val { font-size: 1.6rem; font-weight: 200; line-height: 1; }
+.ra-summary-lbl { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 5px; }
+
+/* Cards */
+.ra-card { background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.25rem; }
+.ra-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.1rem; flex-wrap: wrap; gap: 0.5rem; }
+.ra-card-title { font-size: 0.92rem; font-weight: 600; color: var(--text-primary); }
+.ra-card-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 3px; }
+
+.ra-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem; }
+.ra-chart-wrap { position: relative; height: 220px; }
+.ra-chart-wrap-tall { position: relative; height: 280px; }
+
+/* Performance table */
+.ra-perf-table { width: 100%; border-collapse: collapse; }
+.ra-perf-table thead th {
+    text-align: left; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.7px; color: var(--text-muted); padding: 0.6rem 0.75rem;
+    background: var(--bg-primary); border-bottom: 1px solid var(--border-light);
+}
+.ra-perf-table thead th:first-child { border-radius: 6px 0 0 0; }
+.ra-perf-table thead th:last-child { border-radius: 0 6px 0 0; }
+.ra-perf-table tbody td {
+    padding: 0.7rem 0.75rem; font-size: 0.84rem; color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-light); transition: background 0.15s;
+}
+.ra-perf-table tbody tr:hover td { background: var(--bg-tertiary); color: var(--text-primary); }
+.ra-perf-table tbody tr:last-child td { border-bottom: none; }
+
+.conv-bar-wrap { width: 100%; background: var(--bg-secondary); border-radius: 4px; height: 5px; overflow: hidden; margin-top: 5px; }
+.conv-bar { height: 5px; border-radius: 4px; background: linear-gradient(90deg, #22c55e, #16a34a); }
+
+/* Rank badge */
+.ra-rank {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.68rem; font-weight: 700; color: var(--text-primary);
+    background: var(--bg-secondary);
+}
+.ra-rank.gold { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.ra-rank.silver { background: linear-gradient(135deg, #9ca3af, #6b7280); }
+.ra-rank.bronze { background: linear-gradient(135deg, #b45309, #92400e); }
+
+@media (max-width: 900px) { .ra-cols { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .ra-summary-strip { grid-template-columns: 1fr 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ra-wrap">
+
+    <!-- Top bar -->
+    <div class="ra-topbar">
+        <div>
+            <div class="ra-breadcrumb">Referral Programme / Analytics</div>
+            <h1>📈 Referral Analytics</h1>
+            <div style="font-size:0.82rem;color:var(--text-muted);margin-top:4px">Last 12 months of performance data</div>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+            <a href="{% url 'public_admin:referral_dashboard' %}" class="ra-btn">← Dashboard</a>
+            <a href="{% url 'public_admin:public_admin_referral_partner_list' %}" class="ra-btn">Partners</a>
+            <a href="{% url 'public_admin:public_admin_referral_referralsignup_list' %}" class="ra-btn">All Referrals</a>
+            <span class="ra-btn ra-btn-active" style="pointer-events:none">📊 Analytics</span>
+        </div>
+    </div>
+
+    <!-- Summary strip (populated by JS after charts render) -->
+    <div class="ra-summary-strip">
+        <div class="ra-summary-card" style="border-top:2px solid #6b78ff">
+            <div class="ra-summary-val" style="color:#6b78ff" id="statPartners">{{ partner_perf|length }}</div>
+            <div class="ra-summary-lbl">Active Partners</div>
+        </div>
+        <div class="ra-summary-card" style="border-top:2px solid #22c55e">
+            <div class="ra-summary-val" style="color:#22c55e" id="statCompleted">—</div>
+            <div class="ra-summary-lbl">Total Completed</div>
+        </div>
+        <div class="ra-summary-card" style="border-top:2px solid #f59e0b">
+            <div class="ra-summary-val" style="color:#f59e0b" id="statPending">—</div>
+            <div class="ra-summary-lbl">Total Pending</div>
+        </div>
+        <div class="ra-summary-card" style="border-top:2px solid #ef4444">
+            <div class="ra-summary-val" style="color:#ef4444" id="statCancelled">—</div>
+            <div class="ra-summary-lbl">Total Cancelled</div>
+        </div>
+        <div class="ra-summary-card" style="border-top:2px solid #6b78ff">
+            <div class="ra-summary-val" style="color:#6b78ff;font-size:1.1rem" id="statCommission">—</div>
+            <div class="ra-summary-lbl">UGX Earned</div>
+        </div>
+    </div>
+
+    <!-- Monthly referrals + Commission charts -->
+    <div class="ra-cols">
+        <div class="ra-card">
+            <div class="ra-card-header">
+                <div>
+                    <div class="ra-card-title">Monthly Referral Volume</div>
+                    <div class="ra-card-sub">Completed vs pending vs cancelled</div>
+                </div>
+            </div>
+            <div class="ra-chart-wrap-tall">
+                <canvas id="monthlyChart"></canvas>
+            </div>
+        </div>
+
+        <div class="ra-card">
+            <div class="ra-card-header">
+                <div>
+                    <div class="ra-card-title">Monthly Commission Earned</div>
+                    <div class="ra-card-sub">Total UGX commissions per month</div>
+                </div>
+            </div>
+            <div class="ra-chart-wrap-tall">
+                <canvas id="commissionChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- UTM Source + Status breakdown -->
+    <div class="ra-cols">
+        <div class="ra-card">
+            <div class="ra-card-header">
+                <div>
+                    <div class="ra-card-title">Signups by Source</div>
+                    <div class="ra-card-sub">Where your referral traffic comes from</div>
+                </div>
+            </div>
+            <div class="ra-chart-wrap">
+                <canvas id="utmChart"></canvas>
+            </div>
+        </div>
+
+        <div class="ra-card">
+            <div class="ra-card-header">
+                <div>
+                    <div class="ra-card-title">Status Breakdown</div>
+                    <div class="ra-card-sub">All-time distribution</div>
+                </div>
+            </div>
+            <div class="ra-chart-wrap">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Partner performance table -->
+    <div class="ra-card">
+        <div class="ra-card-header">
+            <div>
+                <div class="ra-card-title">Partner Performance Table</div>
+                <div class="ra-card-sub">All approved partners ranked by completed referrals</div>
+            </div>
+            <a href="{% url 'public_admin:public_admin_referral_partner_list' %}" class="ra-btn ra-btn-accent" style="font-size:0.78rem">Manage All →</a>
+        </div>
+
+        {% if partner_perf %}
+        <div style="overflow-x:auto">
+            <table class="ra-perf-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Partner</th>
+                        <th>Total</th>
+                        <th>Completed</th>
+                        <th>Conversion</th>
+                        <th>Earned (UGX)</th>
+                        <th>Rate</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in partner_perf %}
+                    <tr>
+                        <td>
+                            <span class="ra-rank {% if forloop.counter == 1 %}gold{% elif forloop.counter == 2 %}silver{% elif forloop.counter == 3 %}bronze{% endif %}">
+                                {{ forloop.counter }}
+                            </span>
+                        </td>
+                        <td>
+                            <div style="color:var(--text-primary);font-weight:500">{{ p.full_name }}</div>
+                            <div style="font-size:0.73rem;color:var(--text-muted)">{{ p.email }}</div>
+                        </td>
+                        <td style="color:var(--text-secondary)">{{ p.total_refs }}</td>
+                        <td style="color:#22c55e;font-weight:600">{{ p.completed }}</td>
+                        <td>
+                            {% if p.total_refs %}
+                                {% widthratio p.completed p.total_refs 100 as conv %}
+                                <div style="font-size:0.8rem;color:var(--text-secondary)">{{ conv }}%</div>
+                                <div class="conv-bar-wrap">
+                                    <div class="conv-bar" style="width:{{ conv }}%"></div>
+                                </div>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td style="color:#6b78ff;font-weight:600">
+                            {% if p.earned %}{{ p.earned|floatformat:0 }}{% else %}—{% endif %}
+                        </td>
+                        <td>
+                            <span style="background:rgba(107,120,255,0.12);color:#6b78ff;border:1px solid rgba(107,120,255,0.25);padding:2px 8px;border-radius:20px;font-size:0.75rem">
+                                {{ p.commission_rate }}%
+                            </span>
+                        </td>
+                        <td>
+                            <a href="{% url 'public_admin:referral_partner_detail' p.pk %}"
+                               class="ra-btn" style="padding:3px 10px;font-size:0.76rem;color:#6b78ff;border-color:var(--text-disabled)">
+                                Detail →
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="text-align:center;padding:3rem;color:var(--text-muted)">
+            <div style="font-size:2rem;margin-bottom:0.5rem">👥</div>
+            No approved partners yet
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const labels     = {{ chart_labels|safe }};
+const completed  = {{ chart_completed|safe }};
+const pending    = {{ chart_pending|safe }};
+const cancelled  = {{ chart_cancelled|safe }};
+const commission = {{ chart_commission|safe }};
+const utmLabels  = {{ utm_labels|safe }};
+const utmCounts  = {{ utm_counts|safe }};
+
+// Populate summary strip
+const sumCompleted  = completed.reduce((a,b)=>a+b,0);
+const sumPending    = pending.reduce((a,b)=>a+b,0);
+const sumCancelled  = cancelled.reduce((a,b)=>a+b,0);
+const sumCommission = commission.reduce((a,b)=>a+b,0);
+
+document.getElementById('statCompleted').textContent  = sumCompleted;
+document.getElementById('statPending').textContent    = sumPending;
+document.getElementById('statCancelled').textContent  = sumCancelled;
+document.getElementById('statCommission').textContent = sumCommission.toLocaleString(undefined, {maximumFractionDigits:0});
+
+const gridColor    = document.documentElement.getAttribute('data-theme') === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
+const labelColor   = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
+const tooltipDefs  = {
+    backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim() || getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim(), titleColor: getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || '#1a1a1a', bodyColor: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || '#666',
+    borderColor: getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim() || 'var(--border-color)', borderWidth: 1, padding: 10,
+};
+
+// Monthly referrals — stacked bar
+new Chart(document.getElementById('monthlyChart'), {
+    type: 'bar',
+    data: {
+        labels,
+        datasets: [
+            { label: 'Completed', data: completed, backgroundColor: 'rgba(34,197,94,0.75)',  borderColor: '#22c55e', borderWidth: 1, borderRadius: 3 },
+            { label: 'Pending',   data: pending,   backgroundColor: 'rgba(245,158,11,0.55)', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 3 },
+            { label: 'Cancelled', data: cancelled, backgroundColor: 'rgba(239,68,68,0.45)',  borderColor: '#ef4444', borderWidth: 1, borderRadius: 3 },
+        ]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+            legend: { labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim(), font: { size: 11 }, boxWidth: 10, padding: 12 } },
+            tooltip: tooltipDefs,
+        },
+        scales: {
+            x: { stacked: true, ticks: { color: labelColor, font: { size: 10 } }, grid: { color: gridColor } },
+            y: { stacked: true, ticks: { color: labelColor, font: { size: 11 }, precision: 0 }, grid: { color: gridColor }, beginAtZero: true }
+        }
+    }
+});
+
+// Commission line chart
+new Chart(document.getElementById('commissionChart'), {
+    type: 'line',
+    data: {
+        labels,
+        datasets: [{
+            label: 'Commission (UGX)',
+            data: commission,
+            borderColor: '#6b78ff', backgroundColor: 'rgba(107,120,255,0.08)',
+            borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#6b78ff', fill: true, tension: 0.4,
+        }]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim(), font: { size: 11 } } }, tooltip: tooltipDefs },
+        scales: {
+            x: { ticks: { color: labelColor, font: { size: 10 } }, grid: { color: gridColor } },
+            y: { ticks: { color: labelColor, font: { size: 11 } }, grid: { color: gridColor }, beginAtZero: true }
+        }
+    }
+});
+
+// UTM doughnut
+new Chart(document.getElementById('utmChart'), {
+    type: 'doughnut',
+    data: {
+        labels: utmLabels.map(l => l || 'direct'),
+        datasets: [{
+            data: utmCounts,
+            backgroundColor: ['#6b78ff','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16'],
+            borderColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-elevated').trim(), borderWidth: 2,
+        }]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim(), font: { size: 11 }, padding: 10, boxWidth: 10 } },
+            tooltip: tooltipDefs,
+        }
+    }
+});
+
+// Status doughnut
+new Chart(document.getElementById('statusChart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['Completed', 'Pending', 'Cancelled'],
+        datasets: [{
+            data: [sumCompleted, sumPending, sumCancelled],
+            backgroundColor: ['rgba(34,197,94,0.8)', 'rgba(245,158,11,0.7)', 'rgba(239,68,68,0.7)'],
+            borderColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-elevated').trim(), borderWidth: 2,
+        }]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim(), font: { size: 11 }, padding: 10, boxWidth: 10 } },
+            tooltip: tooltipDefs,
+        }
+    }
+});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js">
+// Re-render charts when theme changes (light ↔ dark)
+(function() {
+    const observer = new MutationObserver(() => {
+        Chart.instances && Object.values(Chart.instances).forEach(chart => {
+            const theme = document.documentElement.getAttribute('data-theme');
+            const isDark = theme === 'dark';
+            const muted  = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
+            const border = getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim();
+            const grid   = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)';
+            chart.options.scales && Object.values(chart.options.scales).forEach(scale => {
+                if (scale.ticks) scale.ticks.color = muted;
+                if (scale.grid)  scale.grid.color  = grid;
+            });
+            if (chart.options.plugins?.legend?.labels) {
+                chart.options.plugins.legend.labels.color = muted;
+            }
+            chart.update('none');
+        });
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+})();
+</script>
+{% endblock %}
