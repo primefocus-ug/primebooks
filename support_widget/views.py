@@ -248,22 +248,36 @@ def upload_recording(request, call_room_id):
 @login_required
 @require_GET
 def agent_sessions(request):
-    """GET /support/agent/sessions/ — open/escalated/in_call sessions for the agent."""
+    """
+    GET /support/agent/sessions/
+    Returns ALL non-resolved sessions so agents can see visitors
+    who are browsing FAQs or typing — not just those who clicked "Talk to Agent".
+    """
+    from django.utils import timezone as tz
+    from datetime import timedelta
+
+    # Show sessions active in the last 2 hours that are not resolved
+    cutoff = tz.now() - timedelta(hours=2)
     sessions = VisitorSession.objects.filter(
-        status__in=['escalated', 'chatting', 'in_call']
-    ).prefetch_related('messages').select_related('assigned_agent').order_by('-created_at')[:50]
+        status__in=['onboarding', 'faq', 'chatting', 'escalated', 'in_call'],
+        updated_at__gte=cutoff,
+    ).prefetch_related('messages').select_related('assigned_agent').order_by('-updated_at')[:100]
 
     result = []
     for s in sessions:
         unread = s.messages.filter(sender='visitor', is_read=False).count()
+        last_msg = s.messages.order_by('-created_at').first()
         result.append({
-            'token':        str(s.session_token),
-            'name':         s.visitor_name or 'Anonymous',
-            'email':        s.visitor_email,
-            'status':       s.status,
-            'created':      s.created_at.isoformat(),
-            'agent':        s.assigned_agent.get_full_name() if s.assigned_agent else None,
-            'unread_count': unread,
+            'token':         str(s.session_token),
+            'name':          s.visitor_name or 'Anonymous',
+            'email':         s.visitor_email,
+            'status':        s.status,
+            'created':       s.created_at.isoformat(),
+            'updated':       s.updated_at.isoformat(),
+            'agent':         s.assigned_agent.get_full_name() if s.assigned_agent else None,
+            'unread_count':  unread,
+            'last_message':  last_msg.body[:80] if last_msg else None,
+            'last_sender':   last_msg.sender if last_msg else None,
         })
 
     return JsonResponse({'sessions': result})
@@ -362,7 +376,7 @@ class CallRoomView(TemplateView):
         ctx = super().get_context_data(**kwargs)
         ctx['call_room_id'] = self.kwargs['call_room_id']
         # Determine role: visitor (has session_token) or agent (is authenticated)
-        ctx['is_agent']     = self.request.user.is_authenticated
+        ctx['is_agent']     = self.request.GET.get('role', 'agent') != 'visitor'
         return ctx
 
 

@@ -1,552 +1,942 @@
 /**
  * support_widget/static/support_widget/js/widget.js
  *
- * Self-contained support chat widget.
- * Loaded via {% include 'support_widget/widget_embed.html' %} in base.html.
+ * Self-contained support chat + voice call widget.
+ * Embedded via {% include 'support_widget/widget_embed.html' %}
  *
  * State machine:
- *   idle → onboarding (name) → onboarding (email) → faq → chatting → [call_consent → call]
+ *   idle → name → email → faq → chat → [consent → call]
  *
- * All API calls use relative paths so they work on any tenant subdomain.
+ * Key design decisions:
+ *   - All WebRTC inline (no popup — popups get blocked by browsers)
+ *   - Visitor can initiate call OR chat
+ *   - Agent-initiated calls ring the visitor continuously
+ *   - Audio-only recording (no video)
+ *   - Messages persisted across panel open/close via sessionStorage
  */
 
 (function () {
   'use strict';
 
-  // ── Config (injected by widget_embed.html via data attributes) ──────────
-  const ROOT   = document.getElementById('sw-widget-root');
+  const ROOT = document.getElementById('sw-widget-root');
   if (!ROOT) return;
 
+  // ── Config from data attributes ───────────────────────────────────────────
   const API_BASE    = ROOT.dataset.apiBase    || '/support';
-  const WS_BASE     = ROOT.dataset.wsBase     || `ws${location.protocol === 'https:' ? 's' : ''}://${location.host}`;
   const BRAND_COLOR = ROOT.dataset.brandColor || '#6366f1';
-  const GREETING    = ROOT.dataset.greeting   || "👋 Hi! How can we help?";
-  const TITLE       = ROOT.dataset.title      || "Support";
+  const GREETING    = ROOT.dataset.greeting   || '👋 Hi! How can we help?';
+  const TITLE       = ROOT.dataset.title      || 'Support';
+  const WS_PROTO    = location.protocol === 'https:' ? 'wss' : 'ws';
+  const WS_HOST     = location.host;
 
-  // ── Persistent state ─────────────────────────────────────────────────────
-  const STORAGE_KEY = 'sw_session';
+  // ── ICE servers for WebRTC ────────────────────────────────────────────────
+  const ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    // Add TURN server here for production:
+    // { urls: 'turn:your.server:3478', username: 'u', credential: 'p' }
+  ];
+
+  // ── Persistent state (sessionStorage so it survives page reload) ──────────
+  const STORE_KEY = 'sw_v2';
   let state = {
-    open:          false,
-    step:          'idle',       // idle | name | email | faq | chat | consent | call
+    step:          'idle',   // idle|name|email|faq|chat|consent|call
     session_token: null,
     visitor_name:  '',
     visitor_email: '',
     call_room_id:  null,
-    recording_notice: '',
+    open:          false,
   };
 
-  function loadState() {
+  // Message history — kept in memory, re-rendered on panel open
+  let _messages = [];   // [{sender, body, timestamp}]
+
+  function _loadState() {
     try {
-      const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}');
-      Object.assign(state, saved);
+      const s = JSON.parse(sessionStorage.getItem(STORE_KEY) || '{}');
+      Object.assign(state, s.state || {});
+      _messages = s.messages || [];
     } catch (_) {}
   }
 
-  function saveState() {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-      session_token:    state.session_token,
-      visitor_name:     state.visitor_name,
-      visitor_email:    state.visitor_email,
-      call_room_id:     state.call_room_id,
-      step:             state.step,
-    }));
+  function _saveState() {
+    try {
+      sessionStorage.setItem(STORE_KEY, JSON.stringify({
+        state:    { ...state, open: false },
+        messages: _messages.slice(-100),   // keep last 100 messages
+      }));
+    } catch (_) {}
   }
 
-  loadState();
+  _loadState();
 
-  // ── WebSocket ─────────────────────────────────────────────────────────────
-  let ws = null;
+  // ── WebSocket (chat) ──────────────────────────────────────────────────────
+  let _ws = null;
 
-  function connectWS(token) {
-    if (ws && ws.readyState < 2) return; // already open / connecting
-    ws = new WebSocket(`${WS_BASE}/ws/support/${token}/`);
-    ws.onopen    = () => { /* connected */ };
-    ws.onmessage = onWSMessage;
-    ws.onerror   = () => { /* will trigger onclose */ };
-    ws.onclose   = () => {
-      // Auto-reconnect as long as the session is active and panel is open
-      if (state.session_token && state.step !== 'idle' && state.step !== 'resolved') {
-        setTimeout(() => connectWS(state.session_token), 3000);
+  function _connectWS(token) {
+    if (_ws && _ws.readyState < 2) return;
+    _ws = new WebSocket(`${WS_PROTO}://${WS_HOST}/ws/support/${token}/`);
+    _ws.onmessage = _onWSMessage;
+    _ws.onclose   = () => {
+      if (state.session_token && !['idle', 'resolved'].includes(state.step)) {
+        setTimeout(() => _connectWS(state.session_token), 3000);
       }
     };
   }
 
-  function onWSMessage(evt) {
-    let data;
-    try { data = JSON.parse(evt.data); } catch (_) { return; }
+  function _sendWS(payload) {
+    if (_ws && _ws.readyState === WebSocket.OPEN)
+      _ws.send(JSON.stringify(payload));
+  }
 
-    switch (data.type) {
+  function _onWSMessage(evt) {
+    let d; try { d = JSON.parse(evt.data); } catch (_) { return; }
+    switch (d.type) {
       case 'chat_message':
-        appendMessage(data.sender, data.body, data.timestamp);
+        _addMessage(d.sender, d.body, d.timestamp);
         break;
       case 'typing':
-        showTyping(data.sender);
+        _showTyping(d.sender);
         break;
       case 'session_updated':
-        state.step = 'faq';
-        renderFAQ();
+        state.step = 'faq'; _saveState();
+        _renderFAQ();
         break;
       case 'no_agent_available':
-        appendMessage('system', data.message);
-        // Re-enable the agent button so visitor can try again later
-        if (agentBtn) { agentBtn.disabled = false; agentBtn.textContent = '💬 Talk to a human agent'; }
+        _addMessage('system', d.message || "All agents busy. We'll email you shortly.");
+        _resetAgentBtn();
         break;
       case 'start_call':
-        // Agent initiated a call — show consent banner in the widget
-        renderCallConsent(data.call_room_id, data.recording_notice);
+        // Agent-initiated call — open panel and ring
+        if (!state.open) _togglePanel(true);
+        _showIncomingCall(d.call_room_id, d.recording_notice);
+        _ringContinuous();
         break;
     }
   }
 
-  function sendWS(payload) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(payload));
-    }
+  // ── REST API ──────────────────────────────────────────────────────────────
+  async function _api(path, method = 'GET', body = null) {
+    try {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const r = await fetch(`${API_BASE}${path}`, opts);
+      return r.json();
+    } catch (_) { return {}; }
   }
 
-  // ── API helpers ───────────────────────────────────────────────────────────
-  async function api(path, method = 'GET', body = null) {
-    const opts = {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-    };
-    if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(`${API_BASE}${path}`, opts);
-    return res.json();
-  }
-
-  // ── DOM Build ─────────────────────────────────────────────────────────────
+  // ── Build DOM ─────────────────────────────────────────────────────────────
   ROOT.innerHTML = `
-    <style>
-      #sw-bubble {
-        position: fixed; bottom: 24px; right: 24px; z-index: 9900;
-        width: 56px; height: 56px; border-radius: 50%;
-        background: ${BRAND_COLOR};
-        box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-        cursor: pointer; border: none; outline: none;
-        display: flex; align-items: center; justify-content: center;
-        transition: transform .2s, box-shadow .2s;
-        animation: sw-pulse 2.5s infinite;
-      }
-      #sw-bubble:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(0,0,0,0.3); }
-      @keyframes sw-pulse {
-        0%,100% { box-shadow: 0 4px 20px rgba(0,0,0,.25), 0 0 0 0 ${BRAND_COLOR}55; }
-        50%      { box-shadow: 0 4px 20px rgba(0,0,0,.25), 0 0 0 10px ${BRAND_COLOR}00; }
-      }
-      #sw-bubble svg { width: 26px; height: 26px; fill: #fff; }
+  <style>
+    #sw-bubble {
+      position:fixed; bottom:24px; right:24px; z-index:9900;
+      width:58px; height:58px; border-radius:50%;
+      background:${BRAND_COLOR};
+      box-shadow:0 4px 20px rgba(0,0,0,.28);
+      cursor:pointer; border:none; outline:none;
+      display:flex; align-items:center; justify-content:center;
+      animation:sw-pulse 2.8s infinite;
+      transition:transform .2s;
+    }
+    #sw-bubble:hover { transform:scale(1.1); }
+    #sw-bubble.ringing { animation:sw-ring 0.6s infinite; }
+    @keyframes sw-pulse {
+      0%,100%{ box-shadow:0 4px 20px rgba(0,0,0,.28),0 0 0 0 ${BRAND_COLOR}55; }
+      50%    { box-shadow:0 4px 20px rgba(0,0,0,.28),0 0 0 12px ${BRAND_COLOR}00; }
+    }
+    @keyframes sw-ring {
+      0%  { transform:scale(1)   rotate(0deg);   }
+      20% { transform:scale(1.1) rotate(-8deg);  }
+      40% { transform:scale(1.1) rotate(8deg);   }
+      60% { transform:scale(1.1) rotate(-8deg);  }
+      80% { transform:scale(1.1) rotate(8deg);   }
+      100%{ transform:scale(1)   rotate(0deg);   }
+    }
+    #sw-bubble svg { width:26px; height:26px; fill:#fff; }
+    #sw-badge {
+      position:absolute; top:-4px; right:-4px;
+      min-width:18px; height:18px; border-radius:9px; padding:0 4px;
+      background:#ef4444; color:#fff; font-size:10px; font-weight:700;
+      display:none; align-items:center; justify-content:center;
+      font-family:sans-serif;
+    }
+    #sw-panel {
+      position:fixed; bottom:92px; right:24px; z-index:9899;
+      width:360px; max-height:580px;
+      background:#fff; border-radius:18px;
+      box-shadow:0 24px 60px rgba(0,0,0,.18);
+      display:none; flex-direction:column; overflow:hidden;
+      font-family:'Plus Jakarta Sans',system-ui,sans-serif;
+    }
+    #sw-panel.open { display:flex; animation:sw-up .25s cubic-bezier(.16,1,.3,1); }
+    @keyframes sw-up { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
 
-      #sw-unread-badge {
-        position: absolute; top: -4px; right: -4px;
-        width: 18px; height: 18px; border-radius: 50%;
-        background: #ef4444; color: #fff;
-        font-size: 10px; font-weight: 700;
-        display: none; align-items: center; justify-content: center;
-        font-family: sans-serif;
-      }
+    #sw-hdr {
+      background:${BRAND_COLOR}; color:#fff;
+      padding:13px 16px; display:flex; align-items:center; gap:10px; flex-shrink:0;
+    }
+    #sw-hdr-title { font-weight:700; font-size:.95rem; flex:1; }
+    #sw-hdr-close {
+      background:none; border:none; cursor:pointer;
+      color:rgba(255,255,255,.8); font-size:1.15rem; line-height:1; padding:0 4px;
+    }
+    #sw-hdr-close:hover { color:#fff; }
 
-      #sw-panel {
-        position: fixed; bottom: 92px; right: 24px; z-index: 9899;
-        width: 360px; max-height: 560px;
-        background: #fff; border-radius: 16px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.18);
-        display: none; flex-direction: column; overflow: hidden;
-        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-        transition: opacity .2s, transform .2s;
-      }
-      #sw-panel.open { display: flex; animation: sw-slide-in .25s ease; }
-      @keyframes sw-slide-in {
-        from { opacity:0; transform: translateY(16px); }
-        to   { opacity:1; transform: translateY(0); }
-      }
+    #sw-body {
+      flex:1; overflow-y:auto; padding:14px;
+      display:flex; flex-direction:column; gap:9px;
+      background:#f8fafc; min-height:120px;
+    }
 
-      #sw-header {
-        background: ${BRAND_COLOR}; color: #fff;
-        padding: 14px 16px 12px; display: flex; align-items: center; gap: 10px;
-        flex-shrink: 0;
-      }
-      #sw-header-title { font-weight: 700; font-size: .95rem; flex:1; }
-      #sw-close-btn {
-        background: none; border: none; cursor: pointer;
-        color: rgba(255,255,255,.8); font-size: 1.2rem; line-height: 1;
-        padding: 0 4px;
-      }
-      #sw-close-btn:hover { color: #fff; }
+    /* Messages */
+    .sw-msg {
+      max-width:84%; padding:9px 13px; border-radius:13px;
+      font-size:.84rem; line-height:1.5; word-break:break-word;
+    }
+    .sw-msg.visitor { background:${BRAND_COLOR}; color:#fff; align-self:flex-end; border-bottom-right-radius:4px; }
+    .sw-msg.agent   { background:#fff; color:#111; align-self:flex-start; border:1px solid #e5e7eb; border-bottom-left-radius:4px; }
+    .sw-msg.bot     { background:#fff; color:#111; align-self:flex-start; border:1px solid #e5e7eb; border-bottom-left-radius:4px; }
+    .sw-msg.system  { background:#fef3c7; color:#92400e; align-self:center; font-size:.76rem; border-radius:8px; text-align:center; max-width:100%; padding:6px 12px; }
+    .sw-msg-time    { font-size:.65rem; opacity:.55; margin-top:3px; }
 
-      #sw-body {
-        flex: 1; overflow-y: auto; padding: 16px;
-        display: flex; flex-direction: column; gap: 10px;
-        background: #f8fafc; min-height: 0;
-      }
+    /* FAQ */
+    .sw-faq {
+      background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+      padding:10px 12px; cursor:pointer; font-size:.82rem; color:#374151;
+      transition:border-color .15s;
+    }
+    .sw-faq:hover { border-color:${BRAND_COLOR}; }
+    .sw-faq-q { font-weight:700; }
+    .sw-faq-a { color:#6b7280; display:none; margin-top:5px; line-height:1.5; }
+    .sw-faq.open .sw-faq-a { display:block; }
 
-      .sw-msg {
-        max-width: 85%; padding: 9px 13px; border-radius: 12px;
-        font-size: .85rem; line-height: 1.5; word-break: break-word;
-      }
-      .sw-msg.visitor  { background: ${BRAND_COLOR}; color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
-      .sw-msg.agent    { background: #fff; color: #111; align-self: flex-start; border: 1px solid #e5e7eb; border-bottom-left-radius: 4px; }
-      .sw-msg.bot      { background: #fff; color: #111; align-self: flex-start; border: 1px solid #e5e7eb; border-bottom-left-radius: 4px; }
-      .sw-msg.system   { background: #fef3c7; color: #92400e; align-self: center; font-size: .78rem; border-radius: 8px; text-align:center; max-width:100%; }
+    /* Forms */
+    .sw-form { display:flex; flex-direction:column; gap:6px; }
+    .sw-form label { font-size:.77rem; font-weight:700; color:#374151; }
+    .sw-form input {
+      border:1px solid #d1d5db; border-radius:8px;
+      padding:8px 11px; font-size:.86rem; outline:none;
+    }
+    .sw-form input:focus { border-color:${BRAND_COLOR}; }
 
-      .sw-faq-item {
-        background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
-        padding: 10px 12px; cursor: pointer; font-size: .83rem;
-        color: #374151; transition: border-color .15s, background .15s;
-      }
-      .sw-faq-item:hover { border-color: ${BRAND_COLOR}; background: #f5f3ff; }
-      .sw-faq-question { font-weight: 600; margin-bottom: 4px; }
-      .sw-faq-answer   { color: #6b7280; display: none; margin-top: 6px; line-height: 1.5; }
-      .sw-faq-item.expanded .sw-faq-answer { display: block; }
+    /* Buttons */
+    .sw-btn {
+      padding:9px 15px; border-radius:9px; border:none; cursor:pointer;
+      font-size:.84rem; font-weight:700; font-family:inherit;
+      transition:opacity .15s, transform .1s; display:inline-flex; align-items:center; gap:6px;
+    }
+    .sw-btn:hover { opacity:.87; transform:translateY(-1px); }
+    .sw-btn-primary { background:${BRAND_COLOR}; color:#fff; }
+    .sw-btn-outline { background:transparent; border:1.5px solid ${BRAND_COLOR}; color:${BRAND_COLOR}; }
+    .sw-btn-danger  { background:#ef4444; color:#fff; }
+    .sw-btn-success { background:#10b981; color:#fff; }
+    .sw-btn-full    { width:100%; justify-content:center; }
 
-      .sw-form-group { display: flex; flex-direction: column; gap: 6px; }
-      .sw-form-group label { font-size: .78rem; font-weight: 600; color: #374151; }
-      .sw-form-group input {
-        border: 1px solid #d1d5db; border-radius: 8px;
-        padding: 8px 12px; font-size: .87rem; outline: none;
-        transition: border-color .15s;
-      }
-      .sw-form-group input:focus { border-color: ${BRAND_COLOR}; }
+    /* Action bar (Talk to agent / Call buttons) */
+    #sw-actions {
+      padding:8px 12px; border-top:1px solid #e5e7eb;
+      background:#fff; display:none; flex-direction:column; gap:6px; flex-shrink:0;
+    }
+    #sw-actions .sw-action-row { display:flex; gap:6px; }
 
-      .sw-btn {
-        padding: 9px 16px; border-radius: 8px; border: none; cursor: pointer;
-        font-size: .85rem; font-weight: 700; transition: opacity .15s, transform .1s;
-        font-family: inherit;
-      }
-      .sw-btn:hover { opacity: .88; transform: translateY(-1px); }
-      .sw-btn-primary { background: ${BRAND_COLOR}; color: #fff; }
-      .sw-btn-outline { background: transparent; border: 1px solid ${BRAND_COLOR}; color: ${BRAND_COLOR}; }
-      .sw-btn-danger  { background: #ef4444; color: #fff; }
-      .sw-btn-sm      { padding: 6px 12px; font-size: .78rem; }
+    /* Chat footer */
+    #sw-footer {
+      display:none; gap:8px; padding:10px 12px;
+      border-top:1px solid #e5e7eb; background:#fff; flex-shrink:0;
+    }
+    #sw-input {
+      flex:1; border:1px solid #d1d5db; border-radius:9px;
+      padding:8px 12px; font-size:.86rem; outline:none; resize:none;
+      font-family:inherit; max-height:80px;
+    }
+    #sw-input:focus { border-color:${BRAND_COLOR}; }
+    #sw-send {
+      width:38px; height:38px; border-radius:9px;
+      background:${BRAND_COLOR}; border:none; cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+    }
+    #sw-send svg { width:15px; height:15px; fill:#fff; }
+    #sw-send:hover { opacity:.85; }
 
-      #sw-footer {
-        display: flex; gap: 8px; padding: 10px 12px;
-        border-top: 1px solid #e5e7eb; background: #fff; flex-shrink: 0;
-      }
-      #sw-input {
-        flex: 1; border: 1px solid #d1d5db; border-radius: 8px;
-        padding: 8px 12px; font-size: .87rem; outline: none; resize: none;
-        font-family: inherit; max-height: 80px;
-        transition: border-color .15s;
-      }
-      #sw-input:focus { border-color: ${BRAND_COLOR}; }
-      #sw-send-btn {
-        width: 38px; height: 38px; border-radius: 8px;
-        background: ${BRAND_COLOR}; border: none; cursor: pointer;
-        display: flex; align-items: center; justify-content: center;
-        transition: opacity .15s;
-      }
-      #sw-send-btn svg { width: 16px; height: 16px; fill: #fff; }
-      #sw-send-btn:hover { opacity: .85; }
+    /* Typing indicator */
+    #sw-typing { font-size:.73rem; color:#9ca3af; min-height:17px; padding:2px 14px; flex-shrink:0; }
 
-      #sw-agent-btn-wrap { padding: 8px 12px; border-top: 1px solid #e5e7eb; background: #fff; }
+    /* Call card */
+    #sw-call-card {
+      background:#fff; border:1.5px solid #e5e7eb; border-radius:14px;
+      overflow:hidden; flex-shrink:0;
+    }
+    .sw-call-hdr {
+      background:linear-gradient(135deg,${BRAND_COLOR},#8b5cf6);
+      padding:18px 16px; text-align:center; position:relative;
+    }
+    .sw-call-avatar {
+      width:56px; height:56px; border-radius:50%;
+      background:rgba(255,255,255,.2);
+      margin:0 auto 10px; display:flex; align-items:center;
+      justify-content:center; font-size:1.6rem; position:relative;
+    }
+    .sw-call-avatar.ringing::after {
+      content:''; position:absolute; inset:-6px; border-radius:50%;
+      border:3px solid rgba(255,255,255,.5);
+      animation:sw-ring-out 1s ease-out infinite;
+    }
+    @keyframes sw-ring-out {
+      0%   { opacity:.8; transform:scale(1); }
+      100% { opacity:0;  transform:scale(1.6); }
+    }
+    .sw-call-name   { color:#fff; font-weight:800; font-size:.95rem; }
+    .sw-call-status { color:rgba(255,255,255,.8); font-size:.76rem; margin-top:3px; }
+    .sw-call-timer  { text-align:center; font-family:monospace; font-size:.92rem; color:#10b981; padding:8px 0 2px; min-height:30px; }
+    .sw-call-notice {
+      background:#fffbeb; border:1px solid #fbbf24; border-radius:8px;
+      margin:10px 12px 0; padding:9px 11px; font-size:.74rem; color:#92400e; line-height:1.6;
+    }
+    .sw-call-btns   { display:flex; gap:8px; padding:10px 12px 14px; }
+    .sw-call-ctrl   { display:flex; gap:12px; justify-content:center; padding:10px 12px 14px; }
+    .sw-ctrl-btn {
+      width:48px; height:48px; border-radius:50%; border:none; cursor:pointer;
+      font-size:1.15rem; transition:transform .15s; display:flex; align-items:center; justify-content:center;
+    }
+    .sw-ctrl-btn:hover { transform:scale(1.1); }
+    .sw-ctrl-mute   { background:#f3f4f6; border:1px solid #e5e7eb; }
+    .sw-ctrl-hangup { background:#ef4444; }
 
-      #sw-typing { font-size: .75rem; color: #9ca3af; min-height: 18px; padding: 0 4px; }
+    @media(max-width:420px) {
+      #sw-panel { width:calc(100vw - 20px); right:10px; bottom:82px; }
+    }
+  </style>
 
-      .sw-consent-box {
-        background: #fffbeb; border: 1px solid #fbbf24; border-radius: 10px;
-        padding: 12px; font-size: .83rem; color: #78350f; line-height: 1.6;
-      }
-      .sw-consent-box strong { display: block; margin-bottom: 4px; }
-      .sw-call-link {
-        display: flex; align-items: center; gap: 8px;
-        background: #f0fdf4; border: 1px solid #86efac;
-        border-radius: 10px; padding: 12px; text-decoration: none;
-        color: #166534; font-weight: 600; font-size: .87rem;
-        transition: background .15s;
-      }
-      .sw-call-link:hover { background: #dcfce7; }
-      .sw-call-link svg { width: 20px; height: 20px; fill: #16a34a; flex-shrink:0; }
+  <button id="sw-bubble" title="Chat with support" aria-label="Open support">
+    <svg viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/></svg>
+    <span id="sw-badge"></span>
+  </button>
 
-      @media (max-width: 420px) {
-        #sw-panel { width: calc(100vw - 24px); right: 12px; bottom: 80px; }
-      }
-    </style>
-
-    <!-- Bubble -->
-    <button id="sw-bubble" title="Chat with support" aria-label="Open support chat">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <div id="sw-panel" role="dialog" aria-label="Support">
+    <div id="sw-hdr">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="rgba(255,255,255,.9)">
         <path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/>
       </svg>
-      <span id="sw-unread-badge"></span>
-    </button>
+      <span id="sw-hdr-title">${TITLE}</span>
+      <button id="sw-hdr-close" aria-label="Close">✕</button>
+    </div>
 
-    <!-- Panel -->
-    <div id="sw-panel" role="dialog" aria-label="Support chat">
-      <div id="sw-header">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="rgba(255,255,255,.9)">
-          <path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/>
-        </svg>
-        <span id="sw-header-title">${TITLE}</span>
-        <button id="sw-close-btn" aria-label="Close chat">✕</button>
-      </div>
+    <div id="sw-body"></div>
+    <div id="sw-typing"></div>
 
-      <div id="sw-body"></div>
-      <div id="sw-typing"></div>
-
-      <!-- Agent escalation button -->
-      <div id="sw-agent-btn-wrap" style="display:none;">
-        <button class="sw-btn sw-btn-outline" style="width:100%" id="sw-agent-btn">
-          💬 Talk to a human agent
+    <!-- Action bar: chat with agent + voice call -->
+    <div id="sw-actions">
+      <div class="sw-action-row">
+        <button class="sw-btn sw-btn-outline sw-btn-full" id="sw-btn-chat" style="flex:1">
+          💬 Chat with agent
         </button>
-      </div>
-
-      <!-- Chat input footer (hidden until chat stage) -->
-      <div id="sw-footer" style="display:none;">
-        <textarea id="sw-input" placeholder="Type a message…" rows="1"></textarea>
-        <button id="sw-send-btn" aria-label="Send">
-          <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        <button class="sw-btn sw-btn-success" id="sw-btn-call" style="flex:0 0 auto" title="Voice call">
+          📞
         </button>
       </div>
     </div>
+
+    <!-- Text input -->
+    <div id="sw-footer">
+      <textarea id="sw-input" placeholder="Type a message…" rows="1"></textarea>
+      <button id="sw-send" aria-label="Send">
+        <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <audio id="sw-remote-audio" autoplay style="display:none"></audio>
   `;
 
-  // ── Element refs ──────────────────────────────────────────────────────────
-  const bubble    = document.getElementById('sw-bubble');
-  const panel     = document.getElementById('sw-panel');
-  const body      = document.getElementById('sw-body');
-  const footer    = document.getElementById('sw-footer');
-  const input     = document.getElementById('sw-input');
-  const sendBtn   = document.getElementById('sw-send-btn');
-  const closeBtn  = document.getElementById('sw-close-btn');
-  const agentWrap = document.getElementById('sw-agent-btn-wrap');
-  const agentBtn  = document.getElementById('sw-agent-btn');
-  const typingEl  = document.getElementById('sw-typing');
-  const badge     = document.getElementById('sw-unread-badge');
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  const $bubble   = document.getElementById('sw-bubble');
+  const $panel    = document.getElementById('sw-panel');
+  const $body     = document.getElementById('sw-body');
+  const $footer   = document.getElementById('sw-footer');
+  const $input    = document.getElementById('sw-input');
+  const $send     = document.getElementById('sw-send');
+  const $close    = document.getElementById('sw-hdr-close');
+  const $actions  = document.getElementById('sw-actions');
+  const $btnChat  = document.getElementById('sw-btn-chat');
+  const $btnCall  = document.getElementById('sw-btn-call');
+  const $typing   = document.getElementById('sw-typing');
+  const $badge    = document.getElementById('sw-badge');
 
-  let unreadCount = 0;
-  let typingTimer = null;
+  let _unread = 0;
+  let _typingTimer = null;
+  let _ringInterval = null;   // continuous ring interval
 
-  // ── Open / close ──────────────────────────────────────────────────────────
-  bubble.addEventListener('click', togglePanel);
-  closeBtn.addEventListener('click', () => togglePanel(false));
+  // ── Panel open/close ──────────────────────────────────────────────────────
+  $bubble.addEventListener('click', () => _togglePanel());
+  $close.addEventListener('click', () => _togglePanel(false));
 
-  function togglePanel(forceOpen) {
-    state.open = (forceOpen === true || forceOpen === false) ? forceOpen : !state.open;
-    panel.classList.toggle('open', state.open);
+  function _togglePanel(force) {
+    state.open = (force !== undefined) ? !!force : !state.open;
+    $panel.classList.toggle('open', state.open);
     if (state.open) {
-      unreadCount = 0;
-      badge.style.display = 'none';
-      if (state.step === 'idle') startWidget();
+      _unread = 0;
+      $badge.style.display = 'none';
+      _stopRing();
+      if (state.step === 'idle') {
+        _startWidget();
+      } else {
+        _restorePanel();
+      }
     }
+    _saveState();
   }
 
-  // ── Initialise ────────────────────────────────────────────────────────────
-  async function startWidget() {
-    if (state.session_token) {
-      // Restore existing session
-      connectWS(state.session_token);
-      if (state.step === 'faq')   { renderFAQ(); return; }
-      if (state.step === 'chat')  { renderChat(); return; }
-      if (state.step === 'consent' || state.step === 'call') { renderChat(); return; }
+  // ── Restore panel after re-open ───────────────────────────────────────────
+  function _restorePanel() {
+    // Re-render all saved messages
+    $body.innerHTML = '';
+    _messages.forEach(m => _renderMessage(m.sender, m.body, m.timestamp));
+
+    // Restore UI state
+    if (['faq','chat','consent','call'].includes(state.step)) {
+      $footer.style.display  = 'flex';
+      $actions.style.display = 'flex';
+    }
+    if (state.step === 'consent' && state.call_room_id) {
+      _showIncomingCall(state.call_room_id, state.recording_notice || '');
     }
 
-    // New session
-    appendMessage('bot', GREETING);
-    const res = await api('/session/', 'POST', {
+    // Reconnect WS
+    if (state.session_token) _connectWS(state.session_token);
+
+    _scrollBottom();
+  }
+
+  // ── Start fresh ───────────────────────────────────────────────────────────
+  async function _startWidget() {
+    if (state.session_token) {
+      _connectWS(state.session_token);
+      _restorePanel();
+      return;
+    }
+    // Brand new session
+    _addMessage('bot', GREETING);
+    const res = await _api('/session/', 'POST', {
       referrer_url: location.href,
       user_agent:   navigator.userAgent,
     });
-    if (res.ok) {
+    if (res.session_token) {
       state.session_token = res.session_token;
-      saveState();
-      connectWS(res.session_token);
-      askName();
+      _saveState();
+      _connectWS(res.session_token);
+      _askName();
     }
   }
 
-  // ── Onboarding steps ──────────────────────────────────────────────────────
-  function askName() {
-    state.step = 'name';
-    appendForm('name', "What's your name?", 'Your name', (val) => {
+  // ── Onboarding ────────────────────────────────────────────────────────────
+  function _askName() {
+    state.step = 'name'; _saveState();
+    _appendForm("What's your name?", 'Your name', 'text', val => {
       state.visitor_name = val;
-      state.step = 'email';
-      saveState();
-      askEmail();
+      _askEmail();
     });
   }
 
-  function askEmail() {
-    appendMessage('bot', `Nice to meet you, ${state.visitor_name}! 😊 What's your email so we can follow up if needed?`);
-    appendForm('email', null, 'your@email.com', (val) => {
+  function _askEmail() {
+    state.step = 'email'; _saveState();
+    _addMessage('bot', `Nice to meet you, ${state.visitor_name}! 😊 What's your email so we can follow up?`);
+    _appendForm(null, 'your@email.com', 'email', val => {
       state.visitor_email = val;
-      saveState();
-      sendWS({ type: 'session_update', name: state.visitor_name, email: state.visitor_email });
-      // Also persist via REST in case WS drops
-      api(`/session/${state.session_token}/`, 'POST', {
-        name: state.visitor_name, email: state.visitor_email,
-      });
-      state.step = 'faq';
-      renderFAQ();
-    }, 'email');
+      _sendWS({ type: 'session_update', name: state.visitor_name, email: state.visitor_email });
+      _api(`/session/${state.session_token}/`, 'POST', { name: state.visitor_name, email: state.visitor_email });
+      _renderFAQ();
+    });
   }
 
-  async function renderFAQ() {
-    state.step = 'faq';
-    saveState();
-    appendMessage('bot', `Thanks ${state.visitor_name}! Here are some common topics — or just ask me anything below.`);
-    agentWrap.style.display = 'block';
-    footer.style.display    = 'flex';
+  async function _renderFAQ() {
+    state.step = 'faq'; _saveState();
+    _addMessage('bot', `Thanks ${state.visitor_name}! Here are some common topics — or type your question, or contact an agent below.`);
+    $footer.style.display  = 'flex';
+    $actions.style.display = 'flex';
+    const res = await _api('/faq/');
+    if (res.results) res.results.forEach(_appendFAQ);
+  }
 
-    // Fetch default FAQs
-    const res = await api('/faq/');
-    if (res.results && res.results.length) {
-      res.results.forEach(faq => appendFAQ(faq));
+  // ── Message helpers ───────────────────────────────────────────────────────
+  function _addMessage(sender, body, timestamp) {
+    const ts = timestamp || new Date().toISOString();
+    _messages.push({ sender, body, timestamp: ts });
+    _renderMessage(sender, body, ts);
+    _saveState();
+    if (!state.open && sender !== 'visitor') {
+      _unread++;
+      $badge.textContent = _unread > 9 ? '9+' : _unread;
+      $badge.style.display = 'flex';
     }
   }
 
-  function renderChat() {
-    agentWrap.style.display = 'block';
-    footer.style.display    = 'flex';
-  }
-
-  // ── DOM helpers ───────────────────────────────────────────────────────────
-  function appendMessage(sender, text, timestamp) {
-    const div = document.createElement('div');
-    div.className = `sw-msg ${sender}`;
-    div.textContent = text;
-    body.appendChild(div);
-    scrollBottom();
-    if (!state.open) {
-      unreadCount++;
-      badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
-      badge.style.display = 'flex';
+  function _renderMessage(sender, body, timestamp) {
+    const d = document.createElement('div');
+    d.className = `sw-msg ${sender}`;
+    const p = document.createElement('div');
+    p.textContent = body;
+    d.appendChild(p);
+    if (timestamp) {
+      const t = document.createElement('div');
+      t.className = 'sw-msg-time';
+      t.textContent = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      d.appendChild(t);
     }
+    $body.appendChild(d);
+    _scrollBottom();
   }
 
-  function appendForm(fieldType, labelText, placeholder, onSubmit, inputType = 'text') {
+  function _appendForm(label, placeholder, type, onSubmit) {
     const wrap = document.createElement('div');
-    wrap.className = 'sw-form-group';
+    wrap.className = 'sw-form';
     wrap.innerHTML = `
-      ${labelText ? `<label>${labelText}</label>` : ''}
-      <input type="${inputType}" placeholder="${placeholder}" />
+      ${label ? `<label>${label}</label>` : ''}
+      <input type="${type}" placeholder="${placeholder}"/>
       <button class="sw-btn sw-btn-primary">Continue →</button>
     `;
     const inp = wrap.querySelector('input');
     const btn = wrap.querySelector('button');
-    btn.addEventListener('click', () => {
-      const val = inp.value.trim();
-      if (!val) { inp.focus(); return; }
+    const submit = () => {
+      const v = inp.value.trim();
+      if (!v) { inp.focus(); return; }
       wrap.remove();
-      onSubmit(val);
-    });
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
-    body.appendChild(wrap);
-    scrollBottom();
-    setTimeout(() => inp.focus(), 100);
+      onSubmit(v);
+    };
+    btn.addEventListener('click', submit);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    $body.appendChild(wrap);
+    _scrollBottom();
+    setTimeout(() => inp.focus(), 80);
   }
 
-  function appendFAQ(faq) {
-    const div = document.createElement('div');
-    div.className = 'sw-faq-item';
-    div.innerHTML = `
-      <div class="sw-faq-question">${faq.question}</div>
-      <div class="sw-faq-answer">${faq.answer}</div>
-    `;
-    div.addEventListener('click', () => div.classList.toggle('expanded'));
-    body.appendChild(div);
-    scrollBottom();
+  function _appendFAQ(faq) {
+    const d = document.createElement('div');
+    d.className = 'sw-faq';
+    d.innerHTML = `<div class="sw-faq-q">${faq.question}</div><div class="sw-faq-a">${faq.answer}</div>`;
+    d.addEventListener('click', () => d.classList.toggle('open'));
+    $body.appendChild(d);
+    _scrollBottom();
   }
 
-  function scrollBottom() {
-    body.scrollTop = body.scrollHeight;
-  }
+  function _scrollBottom() { $body.scrollTop = $body.scrollHeight; }
 
-  function showTyping(sender) {
-    if (sender === 'visitor') return; // don't show visitor's own typing
-    typingEl.textContent = 'Agent is typing…';
-    clearTimeout(typingTimer);
-    typingTimer = setTimeout(() => { typingEl.textContent = ''; }, 2500);
+  function _showTyping(sender) {
+    if (sender === 'visitor') return;
+    $typing.textContent = 'Agent is typing…';
+    clearTimeout(_typingTimer);
+    _typingTimer = setTimeout(() => { $typing.textContent = ''; }, 2500);
   }
 
   // ── Chat input ────────────────────────────────────────────────────────────
-  sendBtn.addEventListener('click', sendMessage);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    else sendWS({ type: 'typing', sender: 'visitor' });
+  $send.addEventListener('click', _sendMessage);
+  $input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); _sendMessage(); }
+    else _sendWS({ type: 'typing', sender: 'visitor' });
   });
 
-  async function sendMessage() {
-    const text = input.value.trim();
+  async function _sendMessage() {
+    const text = $input.value.trim();
     if (!text) return;
-    input.value = '';
+    $input.value = '';
 
-    appendMessage('visitor', text);
-    sendWS({ type: 'chat_message', sender: 'visitor', body: text });
+    _addMessage('visitor', text);
+    _sendWS({ type: 'chat_message', sender: 'visitor', body: text });
 
-    // If still in FAQ stage, also search FAQs
     if (state.step === 'faq') {
-      const res = await api(`/faq/?q=${encodeURIComponent(text)}`);
+      const res = await _api(`/faq/?q=${encodeURIComponent(text)}`);
       if (res.results && res.results.length) {
-        appendMessage('bot', "Here are some articles that might help:");
-        res.results.forEach(f => appendFAQ(f));
+        _addMessage('bot', 'Here are some articles that might help:');
+        res.results.forEach(_appendFAQ);
       }
+      state.step = 'chat'; _saveState();
     }
-    if (state.step === 'faq') { state.step = 'chat'; saveState(); }
   }
 
-  // ── Agent escalation ──────────────────────────────────────────────────────
-  agentBtn.addEventListener('click', () => {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      // WS not ready — reconnect first then retry
+  // ── Action bar: Chat with agent ───────────────────────────────────────────
+  $btnChat.addEventListener('click', _requestAgent);
+
+  function _requestAgent() {
+    if (!_ws || _ws.readyState !== WebSocket.OPEN) {
       if (state.session_token) {
-        connectWS(state.session_token);
-        setTimeout(() => agentBtn.click(), 1500);
+        _connectWS(state.session_token);
+        setTimeout(_requestAgent, 1200);
       }
       return;
     }
-    agentBtn.disabled = true;
-    agentBtn.textContent = '⏳ Connecting to an agent…';
-    sendWS({ type: 'request_agent' });
-    state.step = 'chat';
-    saveState();
-    // Safety timeout: re-enable button if no response in 10s
-    setTimeout(() => {
-      if (agentBtn.disabled) {
-        agentBtn.disabled = false;
-        agentBtn.textContent = '💬 Talk to a human agent';
-      }
-    }, 10000);
-  });
-
-  // ── WebRTC call initiation ────────────────────────────────────────────────
-  // Exposed so the agent dashboard can trigger the call link being sent to the visitor.
-  // The visitor widget listens for a 'chat_message' of type system with a call link.
-  // When a call_room_id arrives via WS, render the consent + call button.
-  function renderCallConsent(callRoomId, notice) {
-    state.call_room_id    = callRoomId;
-    state.recording_notice = notice;
-    state.step = 'consent';
-    saveState();
-
-    const box = document.createElement('div');
-    box.className = 'sw-consent-box';
-    box.innerHTML = `<strong>📞 Voice Call</strong>${notice}`;
-    body.appendChild(box);
-
-    const btnWrap = document.createElement('div');
-    btnWrap.style.cssText = 'display:flex;gap:8px;';
-    btnWrap.innerHTML = `
-      <button class="sw-btn sw-btn-primary" id="sw-accept-call">Accept &amp; Join Call</button>
-      <button class="sw-btn sw-btn-outline" id="sw-decline-call">Decline</button>
-    `;
-    body.appendChild(btnWrap);
-    scrollBottom();
-
-    document.getElementById('sw-accept-call').onclick = () => {
-      btnWrap.remove(); box.remove();
-      state.step = 'call'; saveState();
-      window.open(`/support/call/${callRoomId}/?role=visitor`, '_blank',
-        'width=520,height=400,toolbar=no,menubar=no');
-    };
-    document.getElementById('sw-decline-call').onclick = () => {
-      btnWrap.remove(); box.remove();
-      state.step = 'chat'; saveState();
-    };
+    $btnChat.disabled = true;
+    $btnChat.textContent = '⏳ Connecting…';
+    _sendWS({ type: 'request_agent' });
+    state.step = 'chat'; _saveState();
+    setTimeout(() => { if ($btnChat.disabled) _resetAgentBtn(); }, 10000);
   }
 
-  // Expose for external use (e.g. auto-open from notification)
+  function _resetAgentBtn() {
+    $btnChat.disabled = false;
+    $btnChat.textContent = '💬 Chat with agent';
+  }
+
+  // ── Action bar: Visitor initiates voice call ──────────────────────────────
+  $btnCall.addEventListener('click', _visitorInitiateCall);
+
+  async function _visitorInitiateCall() {
+    if (!state.session_token) return;
+
+    $btnCall.disabled = true;
+    $btnCall.textContent = '⏳';
+
+    const res = await _api('/call/create/', 'POST', { session_token: state.session_token });
+
+    $btnCall.disabled = false;
+    $btnCall.textContent = '📞';
+
+    if (!res.call_room_id) {
+      _addMessage('system', '❌ Could not start call. Please try again.');
+      return;
+    }
+
+    // Show the call card immediately as the "caller" — visitor is the offerer
+    state.call_room_id = res.call_room_id;
+    state.step = 'consent'; _saveState();
+    _showOutgoingCall(res.call_room_id, res.recording_notice || '');
+  }
+
+  // ── Outgoing call (visitor initiated) ────────────────────────────────────
+  function _showOutgoingCall(callRoomId, notice) {
+    _removeCallCard();
+
+    const card = document.createElement('div');
+    card.id = 'sw-call-card';
+    card.innerHTML = `
+      <div class="sw-call-hdr">
+        <div class="sw-call-avatar ringing" id="sw-call-avatar">📞</div>
+        <div class="sw-call-name">Calling Support…</div>
+        <div class="sw-call-status" id="sw-call-status">Waiting for an agent to answer</div>
+      </div>
+      <div class="sw-call-timer" id="sw-call-timer"></div>
+      <div class="sw-call-notice">${notice || '⚠️ This call is recorded for quality purposes.'}</div>
+      <div class="sw-call-btns" style="justify-content:center;">
+        <button class="sw-btn sw-btn-danger" id="sw-hangup-pre">📵 Cancel Call</button>
+      </div>
+      <div id="sw-active-phase" style="display:none;">
+        <div class="sw-call-ctrl">
+          <button class="sw-ctrl-btn sw-ctrl-mute" id="sw-mute-btn">🎙️</button>
+          <button class="sw-ctrl-btn sw-ctrl-hangup" id="sw-hangup-btn">📵</button>
+        </div>
+      </div>
+    `;
+    $body.appendChild(card);
+    _scrollBottom();
+
+    document.getElementById('sw-hangup-pre').onclick = () => _endCall(true);
+
+    // Get mic and connect immediately — visitor sends the offer
+    _startCallAsOfferer(callRoomId);
+  }
+
+  // ── Incoming call (agent initiated) ──────────────────────────────────────
+  function _showIncomingCall(callRoomId, notice) {
+    _removeCallCard();
+
+    const card = document.createElement('div');
+    card.id = 'sw-call-card';
+    card.innerHTML = `
+      <div class="sw-call-hdr">
+        <div class="sw-call-avatar ringing" id="sw-call-avatar">📞</div>
+        <div class="sw-call-name">Incoming Voice Call</div>
+        <div class="sw-call-status" id="sw-call-status">Support agent is calling…</div>
+      </div>
+      <div class="sw-call-timer" id="sw-call-timer"></div>
+      <div class="sw-call-notice">${notice || '⚠️ This call is recorded for quality purposes.'}</div>
+      <div class="sw-call-btns" id="sw-consent-btns">
+        <button class="sw-btn sw-btn-success sw-btn-full" id="sw-accept-btn">🎙️ Accept Call</button>
+        <button class="sw-btn sw-btn-outline sw-btn-full" id="sw-decline-btn">Decline</button>
+      </div>
+      <div id="sw-active-phase" style="display:none;">
+        <div class="sw-call-ctrl">
+          <button class="sw-ctrl-btn sw-ctrl-mute" id="sw-mute-btn">🎙️</button>
+          <button class="sw-ctrl-btn sw-ctrl-hangup" id="sw-hangup-btn">📵</button>
+        </div>
+      </div>
+    `;
+    $body.appendChild(card);
+    _scrollBottom();
+
+    document.getElementById('sw-accept-btn').onclick  = () => _acceptIncomingCall(callRoomId);
+    document.getElementById('sw-decline-btn').onclick = () => _declineCall(callRoomId);
+  }
+
+  async function _acceptIncomingCall(callRoomId) {
+    const consentBtns = document.getElementById('sw-consent-btns');
+    if (consentBtns) consentBtns.style.display = 'none';
+    _stopRing();
+    // Visitor accepts and becomes the offerer
+    await _startCallAsOfferer(callRoomId);
+  }
+
+  function _declineCall(callRoomId) {
+    _stopRing();
+    _removeCallCard();
+    state.step = 'chat'; _saveState();
+    // Decline signal handled via WebSocket — no extra HTTP call needed.
+    _addMessage('system', 'You declined the voice call. Feel free to send us a message instead.');
+    // Ensure chat input is visible
+    $footer.style.display  = 'flex';
+    $actions.style.display = 'flex';
+    _resetAgentBtn();
+    // Request an agent via chat instead
+    _sendWS({ type: 'request_agent' });
+  }
+
+  // ── WebRTC core ───────────────────────────────────────────────────────────
+  let _pc = null, _stream = null, _callWS = null;
+  let _callMuted = false, _callTimerInterval = null, _callStart = null;
+  let _mediaRecorder = null, _recordChunks = [];
+
+  async function _startCallAsOfferer(callRoomId) {
+    const statusEl = document.getElementById('sw-call-status');
+    if (statusEl) statusEl.textContent = 'Getting microphone…';
+
+    // Get audio-only stream
+    try {
+      _stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (e) {
+      _addMessage('system', '❌ Microphone access denied. Please allow microphone and try again.');
+      _cleanupCall(); return;
+    }
+
+    _startRecording(_stream);
+
+    _pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    _stream.getTracks().forEach(t => _pc.addTrack(t, _stream));
+
+    _pc.onicecandidate = evt => {
+      if (evt.candidate) _callSignal({ type: 'ice', candidate: evt.candidate });
+    };
+
+    _pc.ontrack = evt => {
+      const a = document.getElementById('sw-remote-audio');
+      if (a) a.srcObject = evt.streams[0];
+    };
+
+    _pc.onconnectionstatechange = () => {
+      const s = _pc && _pc.connectionState;
+      if (s === 'connected') {
+        _onCallConnected();
+      } else if (['disconnected','failed','closed'].includes(s)) {
+        _endCall(false);
+      }
+    };
+
+    // Connect signaling
+    _callWS = new WebSocket(`${WS_PROTO}://${WS_HOST}/ws/support/call/${callRoomId}/`);
+
+    _callWS.onopen = async () => {
+      // Tell the room this peer joined — agent will receive 'peer_joined'
+      // and send back 'ready_for_offer' when they are set up
+      _callSignal({ type: 'consent_given' });
+      _callSignal({ type: 'visitor_joined' });
+      if (statusEl) statusEl.textContent = 'Waiting for agent to answer…';
+    };
+
+    _callWS.onmessage = async evt => {
+      let d; try { d = JSON.parse(evt.data); } catch (_) { return; }
+
+      if (d.type === 'ready_for_offer') {
+        // Agent is ready — NOW send the offer
+        if (statusEl) statusEl.textContent = 'Connecting…';
+        try {
+          const offer = await _pc.createOffer();
+          await _pc.setLocalDescription(offer);
+          _callSignal({ type: 'offer', sdp: { type: _pc.localDescription.type, sdp: _pc.localDescription.sdp } });
+        } catch(e) {
+          _addMessage('system', '❌ Failed to create call offer. Please try again.');
+          _cleanupCall();
+        }
+      } else if (d.type === 'answer') {
+        await _pc.setRemoteDescription(new RTCSessionDescription({ type: d.sdp.type, sdp: d.sdp.sdp }));
+      } else if (d.type === 'ice') {
+        try { await _pc.addIceCandidate(new RTCIceCandidate(d.candidate)); } catch (_) {}
+      } else if (d.type === 'call_ended') {
+        _endCall(false);
+      }
+    };
+
+    _callWS.onerror = () => {
+      _addMessage('system', '❌ Call connection failed. Please try again.');
+      _cleanupCall();
+    };
+
+    state.step = 'call'; _saveState();
+  }
+
+  function _callSignal(payload) {
+    if (_callWS && _callWS.readyState === WebSocket.OPEN)
+      _callWS.send(JSON.stringify(payload));
+  }
+
+  function _onCallConnected() {
+    _stopRing();
+    const avatarEl  = document.getElementById('sw-call-avatar');
+    const statusEl  = document.getElementById('sw-call-status');
+    const activeEl  = document.getElementById('sw-active-phase');
+    const preBtns   = document.getElementById('sw-consent-btns');
+    const preHangup = document.getElementById('sw-hangup-pre');
+
+    if (avatarEl)  { avatarEl.classList.remove('ringing'); avatarEl.textContent = '🔊'; }
+    if (statusEl)  statusEl.textContent = 'Connected';
+    if (activeEl)  activeEl.style.display = 'block';
+    if (preBtns)   preBtns.style.display = 'none';
+    if (preHangup) preHangup.style.display = 'none';
+
+    // Wire active controls
+    const muteBtn   = document.getElementById('sw-mute-btn');
+    const hangupBtn = document.getElementById('sw-hangup-btn');
+    if (muteBtn)   muteBtn.onclick   = _toggleMute;
+    if (hangupBtn) hangupBtn.onclick = () => _endCall(true);
+
+    // Start timer
+    _callStart = Date.now();
+    _callTimerInterval = setInterval(() => {
+      const el = document.getElementById('sw-call-timer');
+      if (!el) { clearInterval(_callTimerInterval); return; }
+      const secs = Math.floor((Date.now() - _callStart) / 1000);
+      el.textContent = `${String(Math.floor(secs/60)).padStart(2,'0')}:${String(secs%60).padStart(2,'0')}`;
+    }, 1000);
+  }
+
+  function _toggleMute() {
+    _callMuted = !_callMuted;
+    _stream && _stream.getAudioTracks().forEach(t => { t.enabled = !_callMuted; });
+    const btn = document.getElementById('sw-mute-btn');
+    if (btn) { btn.textContent = _callMuted ? '🔇' : '🎙️'; btn.style.opacity = _callMuted ? '.45' : '1'; }
+  }
+
+  function _endCall(notify = true) {
+    if (notify) _callSignal({ type: 'call_ended' });
+    _stopRing();
+    _stopRecording(state.call_room_id);
+    clearInterval(_callTimerInterval);
+
+    // Server notified via call_ended WebSocket signal above — no extra HTTP call needed.
+
+    _cleanupCall();
+    _addMessage('system', '📵 Call ended. You can continue chatting below.');
+    state.step = 'chat'; _saveState();
+    $footer.style.display  = 'flex';
+    $actions.style.display = 'flex';
+    _resetAgentBtn();
+  }
+
+  function _cleanupCall() {
+    if (_pc)     { try { _pc.close(); } catch (_) {} _pc = null; }
+    if (_stream) { _stream.getTracks().forEach(t => t.stop()); _stream = null; }
+    if (_callWS) { try { _callWS.close(); } catch (_) {} _callWS = null; }
+    clearInterval(_callTimerInterval);
+    _callMuted = false;
+    _removeCallCard();
+  }
+
+  function _removeCallCard() {
+    const c = document.getElementById('sw-call-card');
+    if (c) c.remove();
+  }
+
+  // ── Audio-only recording ──────────────────────────────────────────────────
+  function _startRecording(stream) {
+    _recordChunks = [];
+    // Prefer audio/ogg;codecs=opus for better compatibility, fallback to webm audio
+    const mimeTypes = [
+      'audio/ogg;codecs=opus',
+      'audio/webm;codecs=opus',
+      'audio/webm',
+    ];
+    let mimeType = '';
+    for (const mt of mimeTypes) {
+      if (MediaRecorder.isTypeSupported(mt)) { mimeType = mt; break; }
+    }
+    try {
+      _mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      _mediaRecorder.ondataavailable = e => { if (e.data.size) _recordChunks.push(e.data); };
+      _mediaRecorder.start(1000);
+    } catch (e) { console.warn('Recording not supported:', e); }
+  }
+
+  function _stopRecording(callRoomId) {
+    if (!_mediaRecorder || _mediaRecorder.state === 'inactive') {
+      _mediaRecorder = null;
+      return;
+    }
+    const recorder = _mediaRecorder;  // capture ref before nulling
+    _mediaRecorder = null;
+    recorder.onstop = async () => {
+      if (!callRoomId || !_recordChunks.length) return;
+      const mimeType = recorder.mimeType || 'audio/webm';
+      const ext      = mimeType.includes('ogg') ? 'ogg' : 'webm';
+      const blob = new Blob(_recordChunks, { type: mimeType });
+      const form = new FormData();
+      form.append('file', blob, `call_${callRoomId}.${ext}`);
+      try { await fetch(`/support/call/${callRoomId}/recording/`, { method: 'POST', body: form }); }
+      catch (_) {}
+      _recordChunks = [];
+    };
+    try { recorder.stop(); } catch (_) {}
+  }
+
+  // ── Ringing ───────────────────────────────────────────────────────────────
+  function _ringContinuous() {
+    _stopRing();
+    $bubble.classList.add('ringing');
+    // Ring immediately then repeat every 3 seconds
+    _playRingTone();
+    _ringInterval = setInterval(_playRingTone, 3000);
+  }
+
+  function _stopRing() {
+    clearInterval(_ringInterval);
+    _ringInterval = null;
+    $bubble.classList.remove('ringing');
+  }
+
+  function _playRingTone() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const t   = ctx.currentTime;
+      // Two-tone ring: high-low-high
+      [[880, 0], [660, 0.18], [880, 0.36]].forEach(([freq, when]) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = 'sine';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.35, t + when);
+        g.gain.exponentialRampToValueAtTime(0.001, t + when + 0.15);
+        o.start(t + when);
+        o.stop(t + when + 0.15);
+      });
+    } catch (_) {}
+  }
+
+  // ── Browser notification ──────────────────────────────────────────────────
+  function _notify(title, body) {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body, icon: '/static/favicon.ico' });
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(p => {
+        if (p === 'granted') new Notification(title, { body });
+      });
+    }
+  }
+
+  // Request notification permission early
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+
+  // ── Public API ────────────────────────────────────────────────────────────
   window.SupportWidget = {
-    open:  () => togglePanel(true),
-    close: () => togglePanel(false),
+    open:  () => _togglePanel(true),
+    close: () => _togglePanel(false),
   };
 
 })();

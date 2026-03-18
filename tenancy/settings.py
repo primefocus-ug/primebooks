@@ -609,6 +609,7 @@ SHARED_APPS = [
     "crispy_bootstrap5",
     'corsheaders',
     'changelog',
+    'public_calls',
 ]
 LOCAL_DEV_PORT = 8000
 # Add web-specific apps only for web mode

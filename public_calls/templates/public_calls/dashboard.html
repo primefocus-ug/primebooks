@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Support Dashboard — PrimeBooks SaaS</title>
+{% load static %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --brand:#6366f1;--brand2:#4f46e5;--success:#10b981;--warn:#f59e0b;--danger:#ef4444;
+  --bg:#0f172a;--surface:#1e293b;--surface2:#273548;--border:rgba(255,255,255,.08);
+  --text:#f1f5f9;--muted:#94a3b8;--radius:12px;
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+/* ── Top bar ── */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:16px;flex-shrink:0;}
+.topbar-logo{font-weight:800;font-size:1rem;color:var(--text);}
+.topbar-logo span{color:var(--brand);}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:12px;}
+.tb-badge{background:var(--danger);color:#fff;font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:20px;display:none;}
+select.tb-tenant{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:.82rem;outline:none;cursor:pointer;}
+.conn-dot{width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;transition:background .3s;}
+.conn-dot.on{background:var(--success);}
+.conn-dot.off{background:var(--danger);}
+
+/* ── Main layout ── */
+.main{display:grid;grid-template-columns:320px 1fr;flex:1;overflow:hidden;}
+
+/* ── Session sidebar ── */
+.sidebar{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+.sidebar-hdr{padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.sidebar-hdr h3{font-size:.85rem;font-weight:700;color:var(--text);margin-bottom:8px;}
+.sw-search{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:.82rem;color:var(--text);outline:none;}
+.sw-search:focus{border-color:var(--brand);}
+.sw-search::placeholder{color:var(--muted);}
+.session-list{flex:1;overflow-y:auto;}
+.sess-item{padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;position:relative;}
+.sess-item:hover{background:var(--surface2);}
+.sess-item.active{background:rgba(99,102,241,.15);border-left:3px solid var(--brand);}
+.sess-item.has-unread::after{content:'';position:absolute;right:10px;top:50%;transform:translateY(-50%);width:8px;height:8px;background:var(--brand);border-radius:50%;}
+.sess-name{font-weight:700;font-size:.85rem;color:var(--text);display:flex;align-items:center;gap:6px;}
+.sess-email{font-size:.73rem;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sess-preview{font-size:.73rem;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:italic;}
+.sess-meta{display:flex;align-items:center;gap:6px;margin-top:5px;}
+.badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:.62rem;font-weight:700;text-transform:uppercase;}
+.badge.faq,.badge.onboarding{background:rgba(148,163,184,.15);color:var(--muted);}
+.badge.chatting{background:rgba(16,185,129,.15);color:var(--success);}
+.badge.escalated{background:rgba(245,158,11,.15);color:var(--warn);}
+.badge.in_call{background:rgba(99,102,241,.15);color:var(--brand);}
+.badge.resolved{background:rgba(107,114,128,.15);color:#6b7280;}
+.tenant-tag{font-size:.62rem;color:var(--brand);font-weight:600;background:rgba(99,102,241,.1);padding:2px 6px;border-radius:4px;}
+.sess-time{font-size:.65rem;color:var(--muted);margin-left:auto;}
+.unread-num{background:var(--danger);color:#fff;font-size:.6rem;font-weight:700;padding:1px 5px;border-radius:10px;}
+.sess-empty{padding:40px 16px;text-align:center;color:var(--muted);}
+.sess-empty i{font-size:2rem;display:block;margin-bottom:10px;opacity:.3;}
+
+/* ── Chat pane ── */
+.chat-pane{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);}
+.chat-hdr{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0;background:var(--surface);}
+.chat-hdr-info{flex:1;min-width:0;}
+.chat-hdr-name{font-weight:800;font-size:.95rem;color:var(--text);}
+.chat-hdr-sub{font-size:.75rem;color:var(--muted);}
+.hdr-btns{display:flex;gap:8px;}
+.hbtn{padding:7px 13px;border-radius:8px;border:none;cursor:pointer;font-size:.78rem;font-weight:700;font-family:inherit;transition:opacity .15s;display:inline-flex;align-items:center;gap:5px;}
+.hbtn:hover{opacity:.82;}
+.hbtn-call{background:var(--success);color:#fff;}
+.hbtn-resolve{background:var(--warn);color:#fff;}
+
+.messages{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:8px;}
+.msg{max-width:76%;padding:9px 13px;border-radius:12px;font-size:.85rem;line-height:1.55;word-break:break-word;}
+.msg.visitor{background:var(--brand);color:#fff;align-self:flex-start;border-bottom-left-radius:4px;}
+.msg.agent{background:var(--surface);color:var(--text);align-self:flex-end;border:1px solid var(--border);border-bottom-right-radius:4px;}
+.msg.bot{background:var(--surface2);color:var(--text);align-self:flex-start;border:1px dashed var(--border);}
+.msg.system{background:rgba(245,158,11,.1);color:var(--warn);align-self:center;font-size:.76rem;border-radius:8px;max-width:100%;text-align:center;padding:6px 14px;}
+.msg-meta{font-size:.67rem;margin-top:3px;opacity:.65;}
+
+.typing-bar{font-size:.74rem;color:var(--muted);padding:4px 20px;min-height:20px;flex-shrink:0;}
+
+.chat-footer{padding:10px 14px;border-top:1px solid var(--border);background:var(--surface);display:flex;gap:8px;align-items:flex-end;flex-shrink:0;}
+.chat-footer textarea{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:.87rem;resize:none;max-height:120px;font-family:inherit;outline:none;color:var(--text);line-height:1.5;}
+.chat-footer textarea:focus{border-color:var(--brand);}
+.send-btn{width:40px;height:40px;background:var(--brand);border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;}
+.send-btn:hover{background:var(--brand2);}
+.send-btn i{color:#fff;font-size:1rem;}
+
+.placeholder{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:12px;}
+.placeholder i{font-size:3rem;opacity:.2;}
+.placeholder p{font-size:.88rem;}
+
+/* ── Toast ── */
+#toasts{position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+.toast{background:var(--surface);color:var(--text);padding:11px 16px;border-radius:10px;font-size:.83rem;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.4);animation:ti .3s ease;cursor:pointer;pointer-events:all;max-width:300px;border-left:4px solid var(--brand);}
+.toast.warn{border-left-color:var(--warn);}
+@keyframes ti{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+
+/* ── Call modal overlay ── */
+#call-modal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);align-items:center;justify-content:center;}
+#call-modal.open{display:flex;}
+.call-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:340px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.6);animation:ci .3s ease;}
+@keyframes ci{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.call-card-hdr{background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:20px;text-align:center;}
+.call-avatar{width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.15);margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:1.6rem;position:relative;}
+.call-avatar.ringing::after{content:'';position:absolute;inset:-8px;border-radius:50%;border:3px solid rgba(255,255,255,.5);animation:ring 1.2s ease-out infinite;}
+@keyframes ring{0%{opacity:.8;transform:scale(1)}100%{opacity:0;transform:scale(1.5)}}
+.call-name{color:#fff;font-weight:800;font-size:1rem;}
+.call-status{color:rgba(255,255,255,.75);font-size:.8rem;margin-top:4px;min-height:18px;}
+.call-timer{font-family:monospace;font-size:.9rem;color:#10b981;text-align:center;padding:8px 0;min-height:32px;}
+.call-notice{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;margin:12px 16px;padding:10px 12px;font-size:.76rem;color:var(--warn);line-height:1.6;}
+.call-controls{display:flex;gap:14px;justify-content:center;padding:16px;}
+.ctrl-btn{width:52px;height:52px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.1rem;transition:transform .15s,opacity .15s;}
+.ctrl-btn:hover{transform:scale(1.1);}
+.ctrl-btn.mute{background:var(--surface2);border:1px solid var(--border);}
+.ctrl-btn.hangup{background:var(--danger);}
+.call-consent-btns{display:flex;flex-direction:column;gap:8px;padding:0 16px 16px;}
+.consent-accept{background:var(--success);color:#fff;border:none;border-radius:8px;padding:11px;font-size:.87rem;font-weight:700;cursor:pointer;font-family:inherit;transition:opacity .15s;}
+.consent-accept:hover{opacity:.85;}
+.consent-decline{background:none;border:none;color:var(--muted);font-size:.78rem;cursor:pointer;font-family:inherit;padding:4px;}
+.consent-decline:hover{color:var(--text);}
+
+/* ── Incoming call / session alert banners ── */
+.sw-alert-banner {
+  position:fixed; top:70px; left:50%; transform:translateX(-50%);
+  z-index:10000; background:var(--surface); border:2px solid #10b981;
+  border-radius:14px; padding:14px 18px; min-width:340px; max-width:420px;
+  box-shadow:0 20px 50px rgba(0,0,0,.55);
+  display:flex; align-items:center; gap:12px;
+  animation:sw-drop .3s cubic-bezier(.16,1,.3,1);
+  font-family:inherit;
+}
+@keyframes sw-drop{from{opacity:0;transform:translateX(-50%) translateY(-20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.sw-alert-icon {
+  width:48px; height:48px; border-radius:50%;
+  background:linear-gradient(135deg,#6366f1,#8b5cf6);
+  display:flex; align-items:center; justify-content:center;
+  font-size:1.3rem; flex-shrink:0;
+  animation:sw-ring-pulse .8s ease-in-out infinite alternate;
+}
+.call-alert .sw-alert-icon { background:linear-gradient(135deg,#10b981,#059669); }
+@keyframes sw-ring-pulse{from{box-shadow:0 0 0 0 rgba(16,185,129,.6)}to{box-shadow:0 0 0 10px rgba(16,185,129,0)}}
+.sw-alert-body { flex:1; min-width:0; }
+.sw-alert-title { font-weight:800; font-size:.88rem; color:var(--text); }
+.sw-alert-sub   { font-size:.75rem; color:var(--muted); margin-top:2px; }
+.sw-alert-btn {
+  padding:8px 14px; border-radius:8px; border:none; cursor:pointer;
+  font-size:.78rem; font-weight:700; font-family:inherit; white-space:nowrap; transition:opacity .15s;
+}
+.sw-alert-btn:hover { opacity:.82; }
+.sw-alert-btn.answer { background:#10b981; color:#fff; }
+.sw-alert-btn.reject { background:#ef4444; color:#fff; margin-left:4px; }
+</style>
+</head>
+<body>
+<div id="toasts"></div>
+
+<!-- Call modal -->
+<div id="call-modal">
+  <div class="call-card">
+    <div class="call-card-hdr">
+      <div class="call-avatar" id="call-avatar">👤</div>
+      <div class="call-name" id="call-visitor-name">Visitor</div>
+      <div class="call-status" id="call-status-txt">Waiting for consent…</div>
+    </div>
+    <div class="call-timer" id="call-timer"></div>
+    <!-- Consent phase -->
+    <div id="call-consent-phase">
+      <div class="call-notice" id="call-notice-txt">⚠️ This call is recorded for quality and training purposes.</div>
+      <div class="call-consent-btns">
+        <button class="consent-accept" id="consent-accept-btn">🎙️ Accept &amp; Start Call</button>
+        <button class="consent-decline" id="consent-decline-btn">Decline</button>
+      </div>
+    </div>
+    <!-- Active call controls (shown once connected) -->
+    <div id="call-active-phase" style="display:none;">
+      <div class="call-controls">
+        <button class="ctrl-btn mute" id="mute-btn" title="Toggle mute">🎙️</button>
+        <button class="ctrl-btn hangup" id="hangup-btn" title="End call">📵</button>
+      </div>
+    </div>
+    <!-- Always-visible cancel button (shown in ALL phases) -->
+    <div style="text-align:center;padding:0 16px 16px;">
+      <button id="cancel-call-btn" style="background:none;border:none;color:var(--muted);font-size:.78rem;cursor:pointer;font-family:inherit;padding:4px;">
+        Cancel / End Call
+      </button>
+    </div>
+  </div>
+</div>
+
+<audio id="remote-audio" autoplay></audio>
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-logo">PrimeBooks <span>Support</span></div>
+  <span class="conn-dot" id="conn-dot" title="WebSocket status"></span>
+  <span id="conn-label" style="font-size:.75rem;color:var(--muted)">Connecting…</span>
+  <div class="topbar-right">
+    <span style="font-size:.78rem;color:var(--muted)">Tenant:</span>
+    <select class="tb-tenant" id="tenant-select">
+      <option value="">All tenants</option>
+      {% for t in tenants %}
+      <option value="{{ t.schema_name }}">{{ t.name }}</option>
+      {% endfor %}
+    </select>
+    <span class="tb-badge" id="unread-pill">0</span>
+    <span style="font-size:.8rem;color:var(--muted)">{{ user.get_full_name|default:user.username }}</span>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-hdr">
+      <h3><i class="bi bi-headset"></i> Active Sessions</h3>
+      <input type="text" class="sw-search" id="search" placeholder="Search name, email…">
+    </div>
+    <div class="session-list" id="session-list">
+      <div class="sess-empty"><i class="bi bi-chat-dots"></i>Loading sessions…</div>
+    </div>
+  </div>
+
+  <!-- Chat -->
+  <div class="chat-pane" id="chat-pane">
+    <div class="placeholder">
+      <i class="bi bi-chat-left-text"></i>
+      <p>Select a session to start chatting</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+const WS   = location.protocol==='https:'?'wss':'ws';
+const CSRF = '{{ csrf_token }}';
+
+let curSchema=null, curToken=null, chatWS=null;
+let allSessions=[], unread=new Set();
+let typingTmr=null;
+
+const dot     = document.getElementById('conn-dot');
+const connLbl = document.getElementById('conn-label');
+const pill    = document.getElementById('unread-pill');
+const sList   = document.getElementById('session-list');
+const pane    = document.getElementById('chat-pane');
+const srch    = document.getElementById('search');
+const tSelect = document.getElementById('tenant-select');
+
+// ── Tenant filter ─────────────────────────────────────────────────────
+tSelect.addEventListener('change', loadSessions);
+srch.addEventListener('input', ()=>renderList(allSessions));
+
+// ── Session polling ───────────────────────────────────────────────────
+loadSessions();
+setInterval(loadSessions, 5000);
+
+async function loadSessions(){
+  const schema = tSelect.value;
+  const url    = schema ? `/saas-support/api/sessions/?schema=${schema}` : '/saas-support/api/sessions/';
+  const r = await api(url);
+  if(!r||!r.sessions) return;
+  allSessions = r.sessions;
+  renderList(allSessions);
+  updatePill();
+}
+
+function renderList(sessions){
+  const q=(srch.value||'').toLowerCase();
+  const f=q?sessions.filter(s=>
+    s.name.toLowerCase().includes(q)||(s.email||'').toLowerCase().includes(q)||
+    s.tenant_name.toLowerCase().includes(q)
+  ):sessions;
+
+  if(!f.length){
+    sList.innerHTML='<div class="sess-empty"><i class="bi bi-chat-dots"></i>No active sessions</div>';
+    return;
+  }
+  sList.innerHTML=f.map(s=>`
+    <div class="sess-item${(curToken===s.token&&curSchema===s.schema)?' active':''}${(unread.has(s.token)||s.unread_count>0)?' has-unread':''}"
+         data-t="${s.token}" data-s="${s.schema}">
+      <div class="sess-name">
+        ${esc(s.name)}
+        ${s.unread_count>0?`<span class="unread-num">${s.unread_count}</span>`:''}
+      </div>
+      <div class="sess-email">${esc(s.email||'No email')}</div>
+      ${s.last_message?`<div class="sess-preview">${esc(s.last_message)}</div>`:''}
+      <div class="sess-meta">
+        <span class="badge ${s.status}">${s.status}</span>
+        <span class="tenant-tag">${esc(s.tenant_name)}</span>
+        <span class="sess-time">${ago(s.updated)}</span>
+      </div>
+    </div>`).join('');
+
+  sList.querySelectorAll('.sess-item').forEach(el=>{
+    el.addEventListener('click',()=>openSession(el.dataset.s, el.dataset.t));
+  });
+}
+
+function updatePill(){
+  const n=allSessions.reduce((a,s)=>a+(s.unread_count||0),0);
+  pill.textContent=n>99?'99+':n;
+  pill.style.display=n?'inline':'none';
+  document.title=n?`(${n}) Support Dashboard — PrimeBooks`:'Support Dashboard — PrimeBooks';
+}
+
+// ── Open session ──────────────────────────────────────────────────────
+async function openSession(schema, token){
+  curSchema=schema; curToken=token;
+  unread.delete(token);
+  if(chatWS){chatWS.close();chatWS=null;}
+
+  const r=await api(`/saas-support/api/session/${schema}/${token}/messages/`);
+  if(!r||r.error){toast('Failed to load session: '+(r&&r.error||'Unknown error'));return;}
+
+  buildChatPane(r.session);
+  r.messages.forEach(m=>addMsg(m.sender,m.body,m.timestamp,m.agent_name,true));
+  const msgs=document.getElementById('msgs');
+  if(msgs)msgs.scrollTop=msgs.scrollHeight;
+
+  connectChatWS(token);
+  renderList(allSessions);
+}
+
+function buildChatPane(session){
+  pane.innerHTML=`
+    <div class="chat-hdr">
+      <div class="chat-hdr-info">
+        <div class="chat-hdr-name">${esc(session.name)}</div>
+        <div class="chat-hdr-sub">${esc(session.email||'No email')} · <span class="tenant-tag" style="font-size:.72rem">${esc(session.schema||'')}</span> · <span class="badge ${session.status}">${session.status}</span></div>
+      </div>
+      <div class="hdr-btns">
+        <button class="hbtn hbtn-call"    id="call-btn">📞 Voice Call</button>
+        <button class="hbtn hbtn-resolve" id="resolve-btn">✅ Resolve</button>
+      </div>
+    </div>
+    <div class="messages" id="msgs"></div>
+    <div class="typing-bar" id="typing"></div>
+    <div class="chat-footer">
+      <textarea id="agent-inp" placeholder="Reply as support agent… (Enter to send)" rows="1"></textarea>
+      <button class="send-btn" id="send-btn"><i class="bi bi-send-fill"></i></button>
+    </div>`;
+
+  document.getElementById('send-btn').onclick=sendMsg;
+  document.getElementById('resolve-btn').onclick=()=>resolveSession(curSchema,curToken);
+  document.getElementById('call-btn').onclick=()=>initiateCall(curSchema,curToken);
+  const inp=document.getElementById('agent-inp');
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
+    else if(chatWS&&chatWS.readyState===1){
+      chatWS.send(JSON.stringify({type:'typing',sender:'agent'}));
+    }
+  });
+  inp.addEventListener('input',()=>{
+    inp.style.height='auto';
+    inp.style.height=Math.min(inp.scrollHeight,120)+'px';
+  });
+}
+
+// ── Chat WebSocket ─────────────────────────────────────────────────────
+function connectChatWS(token){
+  chatWS=new WebSocket(`${WS}://${location.host}/ws/support/${token}/`);
+  chatWS.onopen=()=>{setDot(true);};
+  chatWS.onclose=()=>{setDot(false);};
+  chatWS.onmessage=evt=>{
+    let d;try{d=JSON.parse(evt.data);}catch(_){return;}
+    if(d.type==='chat_message'){
+      addMsg(d.sender,d.body,d.timestamp);
+      if(d.sender==='visitor'){
+        loadSessions();
+        ping();
+        notify(`New message from ${curToken}`);
+        document.title='💬 New message — Support Dashboard';
+        setTimeout(()=>document.title='Support Dashboard — PrimeBooks',3000);
+      }
+    } else if(d.type==='typing'&&d.sender==='visitor'){
+      showTyping('Visitor is typing…');
+    }
+  };
+}
+
+// ── Send message ───────────────────────────────────────────────────────
+async function sendMsg(){
+  const inp=document.getElementById('agent-inp');
+  if(!inp)return;
+  const txt=inp.value.trim();
+  if(!txt)return;
+  inp.value='';inp.style.height='auto';
+
+  // Send via REST (more reliable than WS for agent replies)
+  const r=await api(`/saas-support/api/session/${curSchema}/${curToken}/message/`,'POST',{body:txt});
+  if(!r||r.error){toast('Failed to send: '+(r&&r.error||'Error'));return;}
+  // Message will come back via WS broadcast — no need to append manually
+}
+
+function addMsg(sender,body,ts,agentName,isHist){
+  const a=document.getElementById('msgs');if(!a)return;
+  const d=document.createElement('div');d.className='msg '+sender;
+  const b=document.createElement('div');b.textContent=body;d.appendChild(b);
+  if(ts){
+    const m=document.createElement('div');m.className='msg-meta';
+    m.textContent=(agentName?agentName+' · ':'')+new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    d.appendChild(m);
+  }
+  a.appendChild(d);
+  if(!isHist)a.scrollTop=a.scrollHeight;
+}
+function showTyping(t){
+  const e=document.getElementById('typing');if(e)e.textContent=t;
+  clearTimeout(typingTmr);typingTmr=setTimeout(()=>{const e=document.getElementById('typing');if(e)e.textContent='';},2500);
+}
+
+// ── Resolve ────────────────────────────────────────────────────────────
+async function resolveSession(schema,token){
+  if(!confirm('Resolve this session?'))return;
+  const r=await api(`/saas-support/api/session/${schema}/${token}/resolve/`,'POST');
+  if(r&&r.ok){
+    toast('✅ Session resolved');
+    pane.innerHTML='<div class="placeholder"><i class="bi bi-check-circle"></i><p>Session resolved</p></div>';
+    curToken=null;curSchema=null;
+    if(chatWS){chatWS.close();chatWS=null;}
+    loadSessions();
+  }
+}
+
+// ── Utils ──────────────────────────────────────────────────────────────
+async function api(url,method='GET',body=null){
+  try{
+    const o={method,headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}};
+    if(body)o.body=JSON.stringify(body);
+    return(await fetch(url,o)).json();
+  }catch(e){console.error(e);return null;}
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function ago(iso){
+  if(!iso)return'';
+  const d=Math.floor((Date.now()-new Date(iso))/1000);
+  if(d<60)return d+'s ago';if(d<3600)return Math.floor(d/60)+'m ago';
+  if(d<86400)return Math.floor(d/3600)+'h ago';return new Date(iso).toLocaleDateString();
+}
+function setDot(on){dot.className='conn-dot'+(on?' on':' off');connLbl.textContent=on?'Connected':'Disconnected';}
+function toast(msg,type){
+  const a=document.getElementById('toasts');
+  const t=document.createElement('div');t.className='toast'+(type?' '+type:'');t.textContent=msg;
+  a.appendChild(t);setTimeout(()=>t.remove(),5000);
+}
+function ping(){
+  try{const c=new(window.AudioContext||window.webkitAudioContext)();
+    const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);
+    o.type='sine';o.frequency.setValueAtTime(880,c.currentTime);o.frequency.exponentialRampToValueAtTime(440,c.currentTime+0.15);
+    g.gain.setValueAtTime(0.2,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.35);
+    o.start(c.currentTime);o.stop(c.currentTime+0.35);}catch(_){}
+}
+function notify(txt){
+  if(!('Notification'in window))return;
+  if(Notification.permission==='granted')new Notification('PrimeBooks Support',{body:txt});
+  else if(Notification.permission!=='denied')Notification.requestPermission();
+}
+if('Notification'in window&&Notification.permission==='default')Notification.requestPermission();
+setDot(false);
+
+// ── WebRTC Call ────────────────────────────────────────────────────────
+const ICE_SERVERS=[
+  {urls:'stun:stun.l.google.com:19302'},
+  {urls:'stun:stun1.l.google.com:19302'},
+  // Add your TURN server here for production:
+  // {urls:'turn:your.server:3478',username:'user',credential:'pass'}
+];
+
+let callWS=null, pc=null, localStream=null, mediaRecorder=null;
+let recordedChunks=[], callStartTime=null, callTimerInterval=null;
+let isMuted=false, curCallRoomId=null, curCallSchema=null, curCallToken=null;
+
+const callModal    = document.getElementById('call-modal');
+const callAvatar   = document.getElementById('call-avatar');
+const callName     = document.getElementById('call-visitor-name');
+const callStatusTx = document.getElementById('call-status-txt');
+const callTimerEl  = document.getElementById('call-timer');
+const callNotice   = document.getElementById('call-notice-txt');
+const consentPhase = document.getElementById('call-consent-phase');
+const activePhase  = document.getElementById('call-active-phase');
+const remoteAudio  = document.getElementById('remote-audio');
+
+document.getElementById('consent-accept-btn').onclick = startWebRTC;
+document.getElementById('consent-decline-btn').onclick = closeCallModal;
+document.getElementById('mute-btn').onclick = toggleMute;
+document.getElementById('hangup-btn').onclick = () => endCall(true);
+document.getElementById('cancel-call-btn').onclick = () => endCall(true);
+
+async function initiateCall(schema, token){
+  const btn = document.getElementById('call-btn');
+  if(btn){btn.disabled=true; btn.textContent='⏳ Calling…';}
+
+  const r = await api(`/saas-support/api/session/${schema}/${token}/call/`, 'POST');
+
+  if(btn){btn.disabled=false; btn.textContent='📞 Voice Call';}
+
+  if(!r || !r.ok){
+    toast('❌ Could not start call: '+(r&&r.error||'Error'), 'warn');
+    return;
+  }
+
+  // Store call context
+  curCallRoomId  = r.call_room_id;
+  curCallSchema  = schema;
+  curCallToken   = token;
+
+  // Find visitor name from current session
+  const sess = allSessions.find(s=>s.token===token);
+  callName.textContent = sess ? sess.name : 'Visitor';
+
+  // Show recording notice
+  callNotice.textContent = r.recording_notice || '⚠️ This call is recorded for quality and training purposes.';
+
+  // Reset to consent/waiting state
+  consentPhase.style.display = 'block';
+  activePhase.style.display  = 'none';
+  callTimerEl.textContent    = '';
+  callAvatar.classList.add('ringing');
+  callAvatar.textContent     = '📞';
+  callStatusTx.textContent   = 'Calling visitor — waiting for them to accept…';
+
+  // Show the cancel button text clearly
+  const cancelBtn = document.getElementById('cancel-call-btn');
+  if(cancelBtn) cancelBtn.textContent = 'Cancel Call';
+
+  // Hide consent buttons — agent already accepted, waiting for visitor
+  const acceptBtn = document.getElementById('consent-accept-btn');
+  const declineBtn = document.getElementById('consent-decline-btn');
+  if(acceptBtn)  acceptBtn.style.display  = 'none';
+  if(declineBtn) declineBtn.style.display = 'none';
+
+  // Open modal
+  callModal.classList.add('open');
+}
+
+async function startWebRTC(){
+  consentPhase.style.display = 'none';
+  callStatusTx.textContent   = 'Getting microphone…';
+
+  // Signal consent to server
+  await api(`/saas-support/api/session/${curCallSchema}/${curCallToken}/call/`, 'POST');
+
+  // Get mic
+  try{
+    localStream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+  }catch(e){
+    toast('Microphone access denied — please allow and retry.', 'warn');
+    closeCallModal();
+    return;
+  }
+
+  startRecording(localStream);
+
+  // Build peer connection
+  pc = new RTCPeerConnection({iceServers: ICE_SERVERS});
+  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+  pc.onicecandidate = evt => {
+    if(evt.candidate) sendSignal({type:'ice', candidate: evt.candidate});
+  };
+
+  pc.ontrack = evt => {
+    remoteAudio.srcObject = evt.streams[0];
+  };
+
+  pc.onconnectionstatechange = () => {
+    if(pc.connectionState === 'connected'){
+      callAvatar.classList.remove('ringing');
+      callAvatar.textContent   = '🔊';
+      callStatusTx.textContent = 'Connected';
+      consentPhase.style.display = 'none';
+      activePhase.style.display  = 'block';
+      const cancelBtn = document.getElementById('cancel-call-btn');
+      if(cancelBtn) cancelBtn.textContent = 'End Call';
+      callStartTime = Date.now();
+      startCallTimer();
+    } else if(['disconnected','failed','closed'].includes(pc.connectionState)){
+      endCall(false);
+    }
+  };
+
+  // Connect signaling WS — agent is always the ANSWERER
+  // Visitor sends the SDP offer once they accept the call in their widget
+  callWS = new WebSocket(`${WS}://${location.host}/ws/support/call/${curCallRoomId}/`);
+
+  callWS.onopen = async () => {
+    callWS.send(JSON.stringify({type:'consent_given'}));
+    callWS.send(JSON.stringify({type:'agent_ready'}));
+    callStatusTx.textContent = 'Waiting for visitor to accept the call…';
+    const cancelBtn = document.getElementById('cancel-call-btn');
+    if(cancelBtn) cancelBtn.textContent = 'End Call';
+  };
+
+  callWS.onmessage = handleSignal;
+
+  callWS.onerror = () => {
+    toast('Signaling connection error — check network.', 'warn');
+    endCall(false);
+  };
+
+  callWS.onclose = (evt) => {
+    if(curCallRoomId && evt.code !== 1000) {
+      // Unexpected close — show error
+      toast('Signaling disconnected.', 'warn');
+      endCall(false);
+    }
+  };
+}
+
+async function handleSignal(evt){
+  let d; try{d=JSON.parse(evt.data);}catch(_){return;}
+
+  if(d.type==='visitor_joined'){
+    // Visitor connected to signaling room — send agent_ready again in case they missed it
+    callWS && callWS.readyState===1 && callWS.send(JSON.stringify({type:'agent_ready'}));
+    callStatusTx && (callStatusTx.textContent='Visitor connected — establishing call…');
+    return;
+  }
+
+  if(d.type==='offer'){
+    // Visitor sent offer — agent answers
+    await pc.setRemoteDescription(new RTCSessionDescription(d));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    sendSignal({type:'answer', sdp: pc.localDescription});
+    callStatusTx.textContent = 'Connecting…';
+
+  } else if(d.type==='answer'){
+    await pc.setRemoteDescription(new RTCSessionDescription(d));
+
+  } else if(d.type==='ice'){
+    try{ await pc.addIceCandidate(new RTCIceCandidate(d.candidate)); }catch(_){}
+
+  } else if(d.type==='call_ended'){
+    endCall(false);
+  }
+}
+
+function sendSignal(payload){
+  if(callWS && callWS.readyState===WebSocket.OPEN)
+    callWS.send(JSON.stringify(payload));
+}
+
+function toggleMute(){
+  isMuted = !isMuted;
+  if(localStream) localStream.getAudioTracks().forEach(t=>{t.enabled=!isMuted;});
+  document.getElementById('mute-btn').textContent = isMuted ? '🔇' : '🎙️';
+  document.getElementById('mute-btn').style.opacity = isMuted ? '.5' : '1';
+}
+
+function endCall(notify=true){
+  // Notify the other peer via signaling WS
+  if(notify) sendSignal({type:'call_ended'});
+
+  // Clean up media
+  stopRecording();
+  clearInterval(callTimerInterval);
+  callTimerEl.textContent = '';
+
+  if(pc){
+    try{ pc.close(); }catch(_){}
+    pc = null;
+  }
+  if(localStream){
+    localStream.getTracks().forEach(t=>t.stop());
+    localStream = null;
+  }
+  if(callWS){
+    try{ callWS.close(); }catch(_){}
+    callWS = null;
+  }
+
+  // Tell the server the call ended so CallSession is updated
+  if(curCallRoomId){
+    fetch(`/support/call/${curCallRoomId}/end/`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+    }).catch(()=>{});
+  }
+
+  // Reset modal state
+  consentPhase.style.display = 'block';
+  activePhase.style.display  = 'none';
+  isMuted = false;
+
+  closeCallModal();
+  toast('📵 Call ended');
+  loadSessions();
+}
+
+function closeCallModal(){
+  callModal.classList.remove('open');
+  callAvatar.classList.remove('ringing');
+  callAvatar.textContent   = '👤';
+  callStatusTx.textContent = 'Waiting for visitor to accept…';
+  callTimerEl.textContent  = '';
+  isMuted = false;
+  curCallRoomId = null;
+  curCallSchema = null;
+  curCallToken  = null;
+  // Reset mute button
+  const muteBtn = document.getElementById('mute-btn');
+  if(muteBtn){ muteBtn.textContent = '🎙️'; muteBtn.style.opacity = '1'; }
+  // Restore consent buttons for next call
+  const acceptBtn  = document.getElementById('consent-accept-btn');
+  const declineBtn = document.getElementById('consent-decline-btn');
+  if(acceptBtn)  acceptBtn.style.display  = '';
+  if(declineBtn) declineBtn.style.display = '';
+  // Reset cancel label
+  const cancelBtn = document.getElementById('cancel-call-btn');
+  if(cancelBtn) cancelBtn.textContent = 'Cancel / End Call';
+}
+
+function startCallTimer(){
+  clearInterval(callTimerInterval);
+  callTimerInterval = setInterval(()=>{
+    const s = Math.floor((Date.now()-callStartTime)/1000);
+    const m = String(Math.floor(s/60)).padStart(2,'0');
+    const sec = String(s%60).padStart(2,'0');
+    callTimerEl.textContent = m+':'+sec;
+  }, 1000);
+}
+
+function startRecording(stream){
+  try{
+    mediaRecorder = new MediaRecorder(stream, {mimeType:'audio/webm'});
+    mediaRecorder.ondataavailable = e=>{if(e.data.size)recordedChunks.push(e.data);};
+    mediaRecorder.start(1000);
+  }catch(e){console.warn('MediaRecorder not supported:',e);}
+}
+
+function stopRecording(){
+  if(!mediaRecorder || mediaRecorder.state==='inactive') return;
+  mediaRecorder.onstop = async () => {
+    if(!curCallRoomId || !recordedChunks.length) return;
+    const blob = new Blob(recordedChunks, {type:'audio/webm'});
+    const form = new FormData();
+    form.append('file', blob, `call_${curCallRoomId}.webm`);
+    try{
+      await fetch(`/support/call/${curCallRoomId}/recording/`, {method:'POST', body:form});
+    }catch(_){}
+    recordedChunks=[];
+  };
+  mediaRecorder.stop();
+}
+
+// Listen for visitor accepting a call via the chat WS
+// (when visitor clicks accept in widget, it sends consent_given signal
+//  and opens the call WS — we need to wait for their offer)
+// The chatWS already handles 'start_call' — visitor gets the modal
+// Agent's callWS above handles the signaling exchange
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// AGENT QUEUE — subscribe to every tenant's incoming call/session alerts
+// ═══════════════════════════════════════════════════════════════════════
+const _qSockets = {};
+let   _callAlertTimer = null;
+let   _ringTimer = null;
+
+async function initQueues() {
+  try {
+    const r = await api('/saas-support/api/queue-config/');
+    (r && r.schemas ? r.schemas : []).forEach(connectQueue);
+  } catch(e) { console.warn('Queue init failed:', e); }
+}
+
+function connectQueue(schema) {
+  if (_qSockets[schema] && _qSockets[schema].readyState < 2) return;
+  // Use the dedicated saas-agent WS that subscribes to a specific tenant schema
+  // This avoids the public-schema DB crash from the regular AgentQueueConsumer
+  const qs = new WebSocket(`${WS}://${location.host}/ws/support/saas-agent/${schema}/{{ request.user.pk }}/`);
+  _qSockets[schema] = qs;
+
+  qs.onopen  = () => { setDot(true); qs.send(JSON.stringify({type:'heartbeat'})); };
+  qs.onclose = () => { delete _qSockets[schema]; setTimeout(()=>connectQueue(schema),4000); setDot(Object.keys(_qSockets).length>0); };
+  qs.onerror = () => {};
+  qs.onmessage = evt => {
+    let d; try{d=JSON.parse(evt.data);}catch(_){return;}
+    if (d.type === 'new_session') {
+      loadSessions();
+      showAlertBanner('💬 New Chat', d.visitor_name+' started a support chat', 'chat', ()=>openSession(schema, d.session_token));
+      playRing(1);
+      browserNotify('💬 New support chat', d.visitor_name+' needs help');
+    } else if (d.type === 'incoming_call') {
+      loadSessions();
+      showCallAlert(schema, d.call_room_id, d.visitor_name);
+      startRinging();
+      browserNotify('📞 Incoming call', d.visitor_name+' is calling — click to answer');
+    } else if (d.type === 'session_resolved') {
+      if (curToken===d.session_token) {
+        chatPane.innerHTML='<div class="placeholder"><i class="bi bi-check-circle"></i><p>Session resolved</p></div>';
+        curToken=null; curSchema=null;
+        if(chatWS){chatWS.close();chatWS=null;}
+      }
+      loadSessions();
+    }
+  };
+}
+
+// Heartbeat every 25s
+setInterval(()=>{
+  Object.values(_qSockets).forEach(ws=>{
+    if(ws.readyState===1) ws.send(JSON.stringify({type:'heartbeat'}));
+  });
+}, 25000);
+
+// ── Incoming call alert ──────────────────────────────────────────────────────
+function showCallAlert(schema, callRoomId, visitorName) {
+  clearTimeout(_callAlertTimer);
+  removeAlerts();
+
+  const el = document.createElement('div');
+  el.className = 'sw-alert-banner call-alert';
+  el.innerHTML = `
+    <div class="sw-alert-icon" id="sw-ring-icon">📞</div>
+    <div class="sw-alert-body">
+      <div class="sw-alert-title">Incoming Voice Call</div>
+      <div class="sw-alert-sub">${esc(visitorName)} is calling</div>
+    </div>
+    <button class="sw-alert-btn answer" id="sw-answer-btn">Answer</button>
+    <button class="sw-alert-btn reject" id="sw-reject-btn">Decline</button>
+  `;
+  document.body.appendChild(el);
+
+  // Auto-dismiss as missed after 30s
+  _callAlertTimer = setTimeout(()=>{
+    el.remove(); stopRinging();
+    toast('📵 Missed call from '+visitorName, 'warn');
+  }, 30000);
+
+  document.getElementById('sw-answer-btn').onclick = () => {
+    clearTimeout(_callAlertTimer); el.remove(); stopRinging();
+    answerCall(schema, callRoomId);
+  };
+  document.getElementById('sw-reject-btn').onclick = () => {
+    clearTimeout(_callAlertTimer); el.remove(); stopRinging();
+    fetch(`/support/call/${callRoomId}/end/`, {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}
+    }).catch(()=>{});
+    toast('Call declined', 'warn');
+    loadSessions();
+  };
+}
+
+function showAlertBanner(title, sub, type, onClick) {
+  const el = document.createElement('div');
+  el.className = 'sw-alert-banner';
+  el.innerHTML = `
+    <div class="sw-alert-icon">${type==='chat'?'💬':'📢'}</div>
+    <div class="sw-alert-body" style="cursor:pointer">
+      <div class="sw-alert-title">${title}</div>
+      <div class="sw-alert-sub">${sub}</div>
+    </div>
+    <button class="sw-alert-btn answer">View</button>
+  `;
+  document.body.appendChild(el);
+  el.querySelector('.sw-alert-btn').onclick = () => { el.remove(); if(onClick) onClick(); };
+  setTimeout(()=>el.remove(), 8000);
+}
+
+function removeAlerts() {
+  document.querySelectorAll('.sw-alert-banner').forEach(e=>e.remove());
+}
+
+function answerCall(schema, callRoomId) {
+  // Use the public-schema call room URL — accessible from localhost:8000
+  const popup = window.open(
+    `/saas-support/call/${callRoomId}/`,
+    'sw_call_'+callRoomId,
+    'width=540,height=440,toolbar=no,menubar=no,resizable=no,scrollbars=no'
+  );
+  if (popup) popup.focus();
+  loadSessions();
+}
+
+function browserNotify(title, body) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') {
+    const n = new Notification(title, { body, icon:'/static/favicon.ico', requireInteraction:true, tag:'primebooks-support' });
+    n.onclick = () => { window.focus(); n.close(); };
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then(p=>{
+      if(p==='granted') new Notification(title,{body,requireInteraction:true,tag:'primebooks-support'});
+    });
+  }
+}
+
+function startRinging() {
+  stopRinging();
+  playRing(3);
+  _ringTimer = setInterval(()=>playRing(3), 3500);
+}
+function stopRinging() { clearInterval(_ringTimer); _ringTimer=null; }
+
+function playRing(count) {
+  try {
+    const ctx = new(window.AudioContext||window.webkitAudioContext)();
+    const t = ctx.currentTime;
+    for(let i=0;i<count;i++){
+      [[880,0],[660,.12],[880,.25]].forEach(([freq,when])=>{
+        const o=ctx.createOscillator(), g=ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type='sine'; o.frequency.value=freq;
+        g.gain.setValueAtTime(0.35,t+i*0.6+when);
+        g.gain.exponentialRampToValueAtTime(0.001,t+i*0.6+when+0.12);
+        o.start(t+i*0.6+when); o.stop(t+i*0.6+when+0.12);
+      });
+    }
+  } catch(_){}
+}
+
+// Request permission early, then start queue connections
+if('Notification'in window && Notification.permission==='default') {
+  Notification.requestPermission();
+}
+initQueues();
+
+})();
+</script>
+</body>
+</html>

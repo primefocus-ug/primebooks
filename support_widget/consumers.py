@@ -32,9 +32,14 @@ logger = logging.getLogger(__name__)
 def _get_schema_from_scope(scope):
     """
     Extract the active tenant schema name from the ASGI scope.
-    django_tenants sets scope['tenant'] via TenantMainMiddleware.
-    Falls back to 'public' so the consumer never crashes on missing key.
+    Checks scope['tenant_schema'] first (set by the improved asgi.py),
+    then falls back to scope['tenant'].schema_name, then 'public'.
     """
+    # New asgi.py sets this directly
+    schema = scope.get('tenant_schema')
+    if schema:
+        return schema
+    # Old asgi.py fallback
     tenant = scope.get('tenant')
     if tenant:
         return tenant.schema_name
@@ -318,6 +323,22 @@ class SignalingConsumer(AsyncWebsocketConsumer):
         elif msg_type == 'consent_given':
             await self._record_consent()
 
+        elif msg_type == 'visitor_joined':
+            # Visitor has connected and is ready — notify agent(s) in the room
+            await self.channel_layer.group_send(self.room_group, {
+                'type':    'signal.relay',
+                'payload': {'type': 'visitor_joined'},
+                'origin':  self.channel_name,
+            })
+
+        elif msg_type == 'agent_ready':
+            # Agent is set up and ready — tell visitor to send the offer NOW
+            await self.channel_layer.group_send(self.room_group, {
+                'type':    'signal.relay',
+                'payload': {'type': 'ready_for_offer'},
+                'origin':  self.channel_name,
+            })
+
     async def signal_relay(self, event):
         # Don't echo back to sender
         if event.get('origin') == self.channel_name:
@@ -326,24 +347,52 @@ class SignalingConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _mark_call_ended(self):
-        from .models import CallSession
-        with schema_context(self.schema_name):
-            CallSession.objects.filter(
-                call_room_id=self.call_room_id,
-                status='active',
-            ).first()
-            # end_call() handles duration calculation
-            call = CallSession.objects.filter(call_room_id=self.call_room_id).first()
-            if call:
-                call.end_call()
+        self._call_action('end_call')
 
     @database_sync_to_async
     def _record_consent(self):
+        self._call_action('consent')
+
+    def _call_action(self, action):
+        # The schema from scope may be wrong when the SaaS agent connects
+        # from localhost/saas-support. Search all tenant schemas to find the
+        # one that owns this call_room_id.
+        from django_tenants.utils import get_tenant_model
         from .models import CallSession
-        with schema_context(self.schema_name):
-            CallSession.objects.filter(
-                call_room_id=self.call_room_id
-            ).update(recording_consent_given=True)
+
+        schemas = []
+        if self.schema_name and self.schema_name != 'public':
+            schemas.append(self.schema_name)
+        try:
+            TenantModel = get_tenant_model()
+            others = list(
+                TenantModel.objects
+                .exclude(schema_name='public')
+                .exclude(schema_name=self.schema_name)
+                .values_list('schema_name', flat=True)
+            )
+            schemas.extend(others)
+        except Exception:
+            pass
+
+        for schema in schemas:
+            try:
+                with schema_context(schema):
+                    call = CallSession.objects.filter(
+                        call_room_id=self.call_room_id
+                    ).first()
+                    if not call:
+                        continue
+                    if action == 'end_call':
+                        if call.status not in ('ended', 'missed', 'rejected'):
+                            call.end_call()
+                    elif action == 'consent':
+                        CallSession.objects.filter(
+                            call_room_id=self.call_room_id
+                        ).update(recording_consent_given=True)
+                    return
+            except Exception as e:
+                logger.debug("Schema %s: call action failed: %s", schema, e)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -369,17 +418,21 @@ class AgentQueueConsumer(AsyncWebsocketConsumer):
         self.schema_name = _get_schema_from_scope(self.scope)
 
         # Private group for this specific agent
-        self.private_group  = f"agent_{self.user_id}"
-        # Broadcast group for ALL agents on this tenant
+        self.private_group   = f"agent_{self.user_id}"
+        # Broadcast group for ALL agents on this tenant schema
+        # For public schema (SaaS admin), we still subscribe to ALL tenant queues
+        # by using schema_name — SaaS dashboard passes the tenant schema via URL
+        # or we fall back to 'public' which is fine (SaaS admin group)
         self.broadcast_group = f"agent_queue_{self.schema_name}"
 
         await self.channel_layer.group_add(self.private_group,   self.channel_name)
         await self.channel_layer.group_add(self.broadcast_group, self.channel_name)
 
-        # Mark agent as having an active dashboard connection
-        await self._set_last_seen()
+        # Accept FIRST — WS established before any DB work
         await self.accept()
         logger.info("AgentQueue connected: user=%s schema=%s", self.user_id, self.schema_name)
+        # Update last_seen non-fatally (skips on public schema)
+        await self._set_last_seen()
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.private_group,   self.channel_name)
@@ -397,7 +450,7 @@ class AgentQueueConsumer(AsyncWebsocketConsumer):
         except json.JSONDecodeError:
             return
         if data.get('type') == 'heartbeat':
-            await self._set_last_seen()
+            await self._set_last_seen()  # safe — catches all exceptions internally
             await self.send(text_data=json.dumps({'type': 'heartbeat_ack'}))
 
     # ── Channel layer event handlers ──────────────────────────────────────────
@@ -431,8 +484,95 @@ class AgentQueueConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _set_last_seen(self):
-        from .models import AgentProfile
-        with schema_context(self.schema_name):
-            AgentProfile.objects.filter(
-                user_id=self.user_id
-            ).update(last_seen=timezone.now())
+        """
+        Update AgentProfile.last_seen safely.
+        Skips silently when:
+          - schema is 'public' (SaaS admin dashboard — no AgentProfile there)
+          - table doesn't exist yet (before first migration)
+          - user has no AgentProfile row
+        """
+        if self.schema_name == 'public':
+            return  # SaaS admin — no tenant AgentProfile
+        try:
+            from .models import AgentProfile
+            with schema_context(self.schema_name):
+                AgentProfile.objects.filter(
+                    user_id=self.user_id
+                ).update(last_seen=timezone.now())
+        except Exception:
+            pass  # Table missing or no profile — not fatal
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. SaaS Agent Queue Consumer
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SaaSAgentQueueConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket consumer for the SaaS admin support dashboard.
+    URL: ws/support/saas-agent/<schema_name>/<user_id>/
+
+    Subscribes to agent_queue_{schema_name} and agent_{user_id}
+    so the SaaS admin receives incoming call and new session alerts
+    for a specific tenant — without being logged into that tenant.
+
+    No DB writes on connect — safe to run from the public schema.
+    """
+
+    async def connect(self):
+        self.schema_name   = self.scope['url_route']['kwargs']['schema_name']
+        self.user_id       = self.scope['url_route']['kwargs']['user_id']
+        self.private_group = f"agent_{self.user_id}"
+        self.queue_group   = f"agent_queue_{self.schema_name}"
+
+        await self.channel_layer.group_add(self.private_group, self.channel_name)
+        await self.channel_layer.group_add(self.queue_group,   self.channel_name)
+        await self.accept()
+        logger.info("SaaSAgentQueue connected: user=%s schema=%s", self.user_id, self.schema_name)
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.private_group, self.channel_name)
+        await self.channel_layer.group_discard(self.queue_group,   self.channel_name)
+        logger.info("SaaSAgentQueue disconnected: user=%s schema=%s", self.user_id, self.schema_name)
+
+    async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+        except json.JSONDecodeError:
+            return
+        if data.get('type') == 'heartbeat':
+            await self.send(text_data=json.dumps({'type': 'heartbeat_ack'}))
+
+    # ── Forward all agent queue events to the browser ─────────────────────────
+
+    async def agent_new_session(self, event):
+        await self.send(text_data=json.dumps({
+            'type':          'new_session',
+            'session_token': event.get('session_token', ''),
+            'visitor_name':  event.get('visitor_name', 'Anonymous'),
+            'visitor_email': event.get('visitor_email', ''),
+            'schema':        self.schema_name,
+        }))
+
+    async def agent_incoming_call(self, event):
+        await self.send(text_data=json.dumps({
+            'type':          'incoming_call',
+            'call_room_id':  event.get('call_room_id', ''),
+            'session_token': event.get('session_token', ''),
+            'visitor_name':  event.get('visitor_name', 'Anonymous'),
+            'schema':        self.schema_name,
+        }))
+
+    async def agent_session_resolved(self, event):
+        await self.send(text_data=json.dumps({
+            'type':          'session_resolved',
+            'session_token': event.get('session_token', ''),
+            'schema':        self.schema_name,
+        }))
+
+    async def chat_start_call(self, event):
+        await self.send(text_data=json.dumps({
+            'type':             'start_call',
+            'call_room_id':     event.get('call_room_id', ''),
+            'recording_notice': event.get('recording_notice', ''),
+        }))

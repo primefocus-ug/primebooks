@@ -12,9 +12,15 @@ websocket_urlpatterns = [
         r'ws/support/call/(?P<call_room_id>[0-9a-f-]+)/$',
         consumers.SignalingConsumer.as_asgi(),
     ),
-    # Agent notification queue — new sessions, incoming calls
+    # Agent notification queue — new sessions, incoming calls (tenant dashboard)
     re_path(
         r'ws/support/agent/(?P<user_id>\d+)/$',
         consumers.AgentQueueConsumer.as_asgi(),
+    ),
+    # SaaS admin queue — subscribes to a specific tenant schema's queue
+    # Used by the SaaS support dashboard at localhost:8000/saas-support/
+    re_path(
+        r'ws/support/saas-agent/(?P<schema_name>[\w-]+)/(?P<user_id>\d+)/$',
+        consumers.SaaSAgentQueueConsumer.as_asgi(),
     ),
 ]

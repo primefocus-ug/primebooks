@@ -137,7 +137,7 @@ async function setStatus(s){
 function connectQ(){
   if(queueWS&&queueWS.readyState<2)return;
   queueWS=new WebSocket(`${WS}://${location.host}/ws/support/agent/${UID}/`);
-  queueWS.onopen=()=>{setDot(true);startHB();};
+  queueWS.onopen=()=>{setDot(true);startHB();loadSessions();};
   queueWS.onclose=()=>{setDot(false);clearInterval(hbTmr);if(status==='online')setTimeout(connectQ,3000);};
   queueWS.onerror=()=>setDot(false);
   queueWS.onmessage=evt=>{
@@ -147,8 +147,9 @@ function connectQ(){
       toast(`💬 New chat — ${d.visitor_name}`,()=>openSession(d.session_token));
       ping();notify(`New chat from ${d.visitor_name}`);
     } else if(d.type==='incoming_call'){
-      toast(`📞 Incoming call — ${d.visitor_name}`,()=>joinCall(d.call_room_id),'call');
-      ping();notify(`Incoming call from ${d.visitor_name}`);
+      showCallAlert(d.call_room_id, d.visitor_name);
+      startRinging();
+      notify(`📞 Incoming call from ${d.visitor_name}`);
     } else if(d.type==='session_resolved'){
       unread.delete(d.session_token);
       if(curToken===d.session_token)renderPlaceholder();
@@ -160,7 +161,7 @@ function startHB(){clearInterval(hbTmr);hbTmr=setInterval(()=>{if(queueWS&&queue
 function setDot(on){dot.className=on?'on':'off';}
 
 // ── Sessions ──────────────────────────────────────────────────────────
-loadSessions();setInterval(loadSessions,20000);
+loadSessions();setInterval(loadSessions,5000);
 async function loadSessions(){
   const r=await api('/support/agent/sessions/');
   if(!r||!r.sessions)return;
@@ -170,10 +171,10 @@ function renderList(sess){
   const q=(srch.value||'').toLowerCase();
   const f=q?sess.filter(s=>s.name.toLowerCase().includes(q)||(s.email||'').toLowerCase().includes(q)):sess;
   if(!f.length){sList.innerHTML=`<div class="sw-empty"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2z"/></svg>${q?'No matching sessions':'No active sessions'}</div>`;return;}
-  sList.innerHTML=f.map(s=>`<div class="sw-session-item${curToken===s.token?' active':''}${unread.has(s.token)?' has-unread':''}" data-t="${s.token}">
-    <div class="sw-sess-name">${esc(s.name)}</div>
-    <div class="sw-sess-email">${esc(s.email||'No email')}</div>
-    <div class="sw-sess-meta"><span class="sw-badge ${s.status}">${s.status}</span><span class="sw-sess-time">${ago(s.created)}</span></div>
+  sList.innerHTML=f.map(s=>`<div class="sw-session-item${curToken===s.token?' active':''}${(unread.has(s.token)||s.unread_count>0)?' has-unread':''}" data-t="${s.token}">
+    <div class="sw-sess-name">${esc(s.name)}${s.unread_count>0?` <span style="background:#ef4444;color:#fff;font-size:.6rem;padding:1px 5px;border-radius:10px;font-weight:700">${s.unread_count}</span>`:''}</div>
+    <div class="sw-sess-email">${s.last_message?'<i style="color:#6b7280">'+esc(s.last_message)+'</i>':esc(s.email||'No email')}</div>
+    <div class="sw-sess-meta"><span class="sw-badge ${s.status}">${s.status}</span><span class="sw-sess-time">${ago(s.updated||s.created)}</span></div>
   </div>`).join('');
   sList.querySelectorAll('.sw-session-item').forEach(el=>el.addEventListener('click',()=>openSession(el.dataset.t)));
 }
@@ -292,7 +293,48 @@ async function initiateCall(token){
 }
 function joinCall(roomId,notice){
   const n=notice?encodeURIComponent(notice):'';
-  window.open(`/support/call/${roomId}/?role=agent&notice=${n}`,'sw_call','width=520,height=420,toolbar=no,menubar=no');
+  const popup=window.open(`/support/call/${roomId}/?role=agent&notice=${n}`,'sw_call_'+roomId,'width=540,height=440,toolbar=no,menubar=no,resizable=no');
+  if(popup)popup.focus();
+}
+
+// ── Incoming call alert banner ───────────────────────────────────────────────
+let _ringTimer=null, _alertTimer=null;
+function showCallAlert(callRoomId, visitorName) {
+  document.querySelectorAll('.sw-call-alert').forEach(e=>e.remove());
+  const el=document.createElement('div');
+  el.className='sw-call-alert';
+  el.style.cssText=`position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:9999;
+    background:#1e293b;border:2px solid #10b981;border-radius:14px;padding:14px 18px;
+    min-width:320px;display:flex;align-items:center;gap:12px;
+    box-shadow:0 20px 50px rgba(0,0,0,.6);animation:sw-drop .3s ease;font-family:inherit;`;
+  el.innerHTML=`<style>@keyframes sw-drop{from{opacity:0;transform:translateX(-50%) translateY(-16px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+    @keyframes sw-rp{from{box-shadow:0 0 0 0 rgba(16,185,129,.7)}to{box-shadow:0 0 0 12px rgba(16,185,129,0)}}</style>
+    <div style="width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);
+      display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0;
+      animation:sw-rp .8s ease-in-out infinite alternate;">📞</div>
+    <div style="flex:1">
+      <div style="font-weight:800;font-size:.88rem;color:#f1f5f9">Incoming Voice Call</div>
+      <div style="font-size:.75rem;color:#94a3b8;margin-top:2px">${esc(visitorName)} is calling</div>
+    </div>
+    <button id="sw-ans" style="background:#10b981;color:#fff;border:none;border-radius:8px;padding:9px 15px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit;">Answer</button>
+    <button id="sw-dec" style="background:#ef4444;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit;margin-left:4px;">Decline</button>`;
+  document.body.appendChild(el);
+  _alertTimer=setTimeout(()=>{el.remove();stopRinging();toast(`📵 Missed call from ${visitorName}`,'warn');},30000);
+  document.getElementById('sw-ans').onclick=()=>{clearTimeout(_alertTimer);el.remove();stopRinging();joinCall(callRoomId);};
+  document.getElementById('sw-dec').onclick=()=>{
+    clearTimeout(_alertTimer);el.remove();stopRinging();
+    fetch(`/support/call/${callRoomId}/end/`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}}).catch(()=>{});
+    toast('Call declined','warn');loadSessions();
+  };
+}
+function startRinging(){stopRinging();playRingTone();_ringTimer=setInterval(playRingTone,3500);}
+function stopRinging(){clearInterval(_ringTimer);_ringTimer=null;}
+function playRingTone(){
+  try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const t=ctx.currentTime;
+    [[880,0],[660,.13],[880,.26]].forEach(([f,w])=>{const o=ctx.createOscillator(),g=ctx.createGain();
+      o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=f;
+      g.gain.setValueAtTime(0.35,t+w);g.gain.exponentialRampToValueAtTime(0.001,t+w+0.12);
+      o.start(t+w);o.stop(t+w+0.12);});}catch(_){}
 }
 
 // ── Browser notify + sound ────────────────────────────────────────────

@@ -18,6 +18,7 @@ urlpatterns = [
     path('partners/', include('referral.urls', )),
     # Tenant signup
     path('prime-books/', include('public_router.urls')),
+    path('saas-support/', include('public_calls.urls')),
 
     # Blog
     path('blog/', include('public_blog.urls')),
