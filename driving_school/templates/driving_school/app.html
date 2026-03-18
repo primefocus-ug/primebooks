@@ -1,0 +1,2166 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Driving School{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ═══════════════════════ DS DESIGN SYSTEM v3 ═══════════════════════ */
+:root {
+  --ds-bg:#f0f4ff;--ds-surface:#fff;--ds-surface-2:#f4f7ff;
+  --ds-border:#e0e7ff;--ds-text:#1e2140;--ds-muted:#64748b;
+  --ds-accent:#3b5bdb;--ds-accent-s:#dbe4ff;--ds-accent-h:#2f4cc7;
+  --ds-green:#2f9e44;--ds-green-s:#d3f9d8;
+  --ds-red:#e03131;--ds-red-s:#ffe3e3;
+  --ds-amber:#e67700;--ds-amber-s:#fff3bf;
+  --ds-purple:#7048e8;--ds-purple-s:#e5dbff;
+  --ds-teal:#0c8599;--ds-teal-s:#e3fafc;
+  --ds-sh:0 1px 4px rgba(59,91,219,.08);
+  --ds-sh-md:0 4px 24px rgba(59,91,219,.13);
+  --ds-r:10px;--ds-r-sm:6px;
+}
+[data-theme=dark]{
+  --ds-bg:#0d1021;--ds-surface:#161929;--ds-surface-2:#1e2238;
+  --ds-border:#2a2f4a;--ds-text:#e2e8ff;--ds-muted:#7b88b8;
+  --ds-accent:#5c7cfa;--ds-accent-s:#1a2650;--ds-accent-h:#748ffc;
+  --ds-green:#40c057;--ds-green-s:#0f2117;
+  --ds-red:#ff6b6b;--ds-red-s:#2d0f0f;
+  --ds-amber:#fcc419;--ds-amber-s:#2a1f00;
+  --ds-purple:#9775fa;--ds-purple-s:#1e1438;
+  --ds-teal:#22b8cf;--ds-teal-s:#0a2426;
+  --ds-sh:0 1px 4px rgba(0,0,0,.4);
+  --ds-sh-md:0 4px 24px rgba(0,0,0,.55);
+}
+
+/* ── Reset / base ── */
+*{box-sizing:border-box;margin:0;padding:0}
+.ds-wrap{background:var(--ds-bg);min-height:100vh;color:var(--ds-text);font-family:inherit}
+
+/* ── Loading bar ── */
+#ds-loader{position:fixed;top:0;left:0;height:2px;width:0;background:var(--ds-accent);z-index:9999;transition:width .25s ease,opacity .3s}
+#ds-loader.done{width:100%;opacity:0}
+
+/* ── Topbar ── */
+.ds-bar{background:var(--ds-surface);border-bottom:1px solid var(--ds-border);
+  padding:0 1.1rem;display:flex;align-items:center;height:50px;
+  position:sticky;top:0;z-index:400;box-shadow:var(--ds-sh);gap:.5rem}
+.ds-brand{font-weight:900;font-size:.95rem;color:var(--ds-accent);
+  display:flex;align-items:center;gap:.35rem;text-decoration:none;white-space:nowrap;flex-shrink:0}
+.ds-nav{display:flex;align-items:center;gap:.05rem;flex:1;overflow-x:auto;scrollbar-width:none}
+.ds-nav::-webkit-scrollbar{display:none}
+.ds-nl{display:flex;align-items:center;gap:.28rem;padding:.28rem .6rem;border-radius:var(--ds-r-sm);
+  color:var(--ds-muted);text-decoration:none;font-size:.78rem;font-weight:600;white-space:nowrap;
+  border:none;background:none;cursor:pointer;transition:background .12s,color .12s}
+.ds-nl:hover{background:var(--ds-surface-2);color:var(--ds-text)}
+.ds-nl.on{background:var(--ds-accent-s);color:var(--ds-accent)}
+.ds-nl i{font-size:.8rem}
+
+/* ── Global search ── */
+.ds-gsearch{position:relative;flex-shrink:0}
+.ds-gsearch-input{background:var(--ds-surface-2);border:1px solid var(--ds-border);border-radius:var(--ds-r-sm);
+  color:var(--ds-text);padding:.3rem .7rem .3rem 1.8rem;font-size:.8rem;outline:none;width:180px;
+  transition:width .2s,border-color .12s;font-family:inherit}
+.ds-gsearch-input:focus{width:240px;border-color:var(--ds-accent)}
+.ds-gsearch-icon{position:absolute;left:.5rem;top:50%;transform:translateY(-50%);
+  color:var(--ds-muted);font-size:.8rem;pointer-events:none}
+.ds-gsearch-results{position:absolute;top:calc(100% + 4px);right:0;width:280px;
+  background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:var(--ds-r);
+  box-shadow:var(--ds-sh-md);overflow:hidden;display:none;z-index:500}
+.ds-gsearch-results.show{display:block}
+.ds-gsearch-result{display:flex;align-items:center;gap:.6rem;padding:.6rem .85rem;
+  cursor:pointer;text-decoration:none;color:var(--ds-text);font-size:.82rem}
+.ds-gsearch-result:hover{background:var(--ds-surface-2)}
+.ds-gsr-type{font-size:.67rem;font-weight:800;text-transform:uppercase;
+  padding:.1rem .35rem;border-radius:20px;background:var(--ds-accent-s);color:var(--ds-accent);white-space:nowrap}
+
+/* ── Main content ── */
+.ds-body{padding:1.1rem}
+
+/* ── Toast notifications ── */
+#ds-toast{position:fixed;bottom:1.2rem;right:1.2rem;z-index:9000;display:flex;flex-direction:column;gap:.4rem;pointer-events:none}
+.ds-toast-item{background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:var(--ds-r-sm);
+  box-shadow:var(--ds-sh-md);padding:.6rem .9rem;font-size:.83rem;font-weight:600;
+  display:flex;align-items:center;gap:.5rem;pointer-events:all;
+  animation:toastIn .2s ease;min-width:240px;max-width:360px}
+.ds-toast-item.success{border-left:3px solid var(--ds-green);color:var(--ds-green)}
+.ds-toast-item.error{border-left:3px solid var(--ds-red);color:var(--ds-red)}
+.ds-toast-item.warning{border-left:3px solid var(--ds-amber);color:var(--ds-amber)}
+@keyframes toastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Cards ── */
+.ds-card{background:var(--ds-surface);border:1px solid var(--ds-border);
+  border-radius:var(--ds-r);box-shadow:var(--ds-sh);overflow:hidden}
+.ds-ch{padding:.8rem 1rem;border-bottom:1px solid var(--ds-border);
+  display:flex;align-items:center;justify-content:space-between;gap:.6rem}
+.ds-ct{font-weight:700;font-size:.86rem;color:var(--ds-text);display:flex;align-items:center;gap:.35rem}
+.ds-ct i{color:var(--ds-accent)}
+.ds-cb{padding:1rem}
+
+/* ── Stats ── */
+.ds-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.85rem;margin-bottom:1.1rem}
+.ds-stat{background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:var(--ds-r);
+  padding:.9rem 1rem;box-shadow:var(--ds-sh);position:relative;overflow:hidden}
+.ds-stat::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--ds-accent);opacity:.4}
+.ds-stat-icon{width:32px;height:32px;border-radius:var(--ds-r-sm);display:flex;align-items:center;
+  justify-content:center;font-size:.9rem;margin-bottom:.4rem}
+.ds-stat-lbl{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ds-muted)}
+.ds-stat-val{font-size:1.55rem;font-weight:900;color:var(--ds-text);line-height:1.1}
+.ds-stat-sub{font-size:.7rem;color:var(--ds-muted);margin-top:.1rem}
+
+/* ── Grid layouts ── */
+.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem}
+.g3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem}
+
+/* ── Table ── */
+.ds-tw{overflow-x:auto}
+.ds-t{width:100%;border-collapse:collapse;font-size:.82rem}
+.ds-t th{padding:.5rem .85rem;text-align:left;font-size:.68rem;font-weight:700;
+  text-transform:uppercase;letter-spacing:.05em;color:var(--ds-muted);
+  border-bottom:1px solid var(--ds-border);white-space:nowrap}
+.ds-t td{padding:.65rem .85rem;border-bottom:1px solid var(--ds-border);color:var(--ds-text);vertical-align:middle}
+.ds-t tr:last-child td{border-bottom:none}
+.ds-t tr:hover td{background:var(--ds-surface-2)}
+.ds-t .m{color:var(--ds-muted)}
+
+/* ── Badges ── */
+.b{display:inline-flex;align-items:center;gap:.12rem;padding:.16rem .45rem;border-radius:20px;font-size:.68rem;font-weight:700}
+.b-g{background:var(--ds-green-s);color:var(--ds-green)}
+.b-r{background:var(--ds-red-s);color:var(--ds-red)}
+.b-a{background:var(--ds-amber-s);color:var(--ds-amber)}
+.b-b{background:var(--ds-accent-s);color:var(--ds-accent)}
+.b-p{background:var(--ds-purple-s);color:var(--ds-purple)}
+.b-n{background:var(--ds-surface-2);color:var(--ds-muted)}
+.b-t{background:var(--ds-teal-s);color:var(--ds-teal)}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:.28rem;padding:.36rem .8rem;border-radius:var(--ds-r-sm);
+  font-size:.8rem;font-weight:600;cursor:pointer;border:1px solid transparent;
+  transition:all .13s;text-decoration:none;white-space:nowrap;font-family:inherit}
+.btn-p{background:var(--ds-accent);color:#fff;border-color:var(--ds-accent)}
+.btn-p:hover{background:var(--ds-accent-h);color:#fff}
+.btn-gh{background:transparent;color:var(--ds-muted);border-color:var(--ds-border)}
+.btn-gh:hover{background:var(--ds-surface-2);color:var(--ds-text)}
+.btn-d{background:var(--ds-red-s);color:var(--ds-red)}
+.btn-d:hover{background:var(--ds-red);color:#fff}
+.btn-s{background:var(--ds-green-s);color:var(--ds-green)}
+.btn-s:hover{background:var(--ds-green);color:#fff}
+.btn-sm{padding:.22rem .55rem;font-size:.75rem}
+.btn-ic{padding:.3rem .38rem}
+
+/* ── Forms ── */
+.fr{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.75rem;margin-bottom:.75rem}
+.fg{display:flex;flex-direction:column;gap:.25rem}
+.fg label{font-size:.73rem;font-weight:700;color:var(--ds-muted)}
+.fg label.req::after{content:' *';color:var(--ds-red)}
+.inp,.sel,.tea{background:var(--ds-surface-2);border:1px solid var(--ds-border);
+  border-radius:var(--ds-r-sm);color:var(--ds-text);padding:.42rem .65rem;font-size:.82rem;
+  outline:none;width:100%;font-family:inherit;transition:border-color .12s}
+.inp:focus,.sel:focus,.tea:focus{border-color:var(--ds-accent);box-shadow:0 0 0 3px rgba(91,123,255,.1)}
+.tea{resize:vertical;min-height:68px}
+.sel option{background:var(--ds-surface);color:var(--ds-text)}
+.fa{display:flex;gap:.5rem;padding-top:.7rem;border-top:1px solid var(--ds-border);margin-top:.85rem}
+.sdiv{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--ds-muted);margin:.75rem 0 .5rem;border-bottom:1px solid var(--ds-border);padding-bottom:.3rem}
+
+/* ── Section header ── */
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem}
+.st{font-size:1rem;font-weight:800;color:var(--ds-text);display:flex;align-items:center;gap:.4rem}
+.st i{color:var(--ds-accent)}
+
+/* ── Search bar ── */
+.ss{display:flex;align-items:center;background:var(--ds-surface-2);border:1px solid var(--ds-border);
+  border-radius:var(--ds-r-sm);padding:.28rem .65rem;gap:.35rem;min-width:200px}
+.ss i{color:var(--ds-muted);font-size:.82rem}
+.ss input{border:none;background:transparent;color:var(--ds-text);font-size:.82rem;outline:none;width:100%;font-family:inherit}
+
+/* ── Progress bar ── */
+.pr{height:5px;background:var(--ds-border);border-radius:99px;overflow:hidden}
+.prb{height:100%;border-radius:99px;background:var(--ds-accent);transition:width .3s}
+
+/* ── Modal ── */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;
+  display:flex;align-items:center;justify-content:center;padding:1rem;
+  opacity:0;pointer-events:none;transition:opacity .18s}
+.ov.open{opacity:1;pointer-events:all}
+.mo{background:var(--ds-surface);border-radius:var(--ds-r);border:1px solid var(--ds-border);
+  box-shadow:var(--ds-sh-md);width:100%;max-width:560px;max-height:92vh;overflow-y:auto;
+  transform:translateY(10px);transition:transform .18s}
+.mo-lg{max-width:700px}
+.ov.open .mo{transform:translateY(0)}
+.mh{padding:.85rem 1rem;border-bottom:1px solid var(--ds-border);
+  display:flex;align-items:center;justify-content:space-between}
+.mt{font-weight:700;font-size:.88rem}
+.mx{background:none;border:none;color:var(--ds-muted);cursor:pointer;font-size:1.1rem;padding:.15rem .3rem;border-radius:4px}
+.mx:hover{background:var(--ds-surface-2);color:var(--ds-text)}
+.mb{padding:1rem}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:.05rem;border-bottom:1px solid var(--ds-border);margin-bottom:1rem}
+.tab{padding:.5rem .85rem;font-size:.78rem;font-weight:700;color:var(--ds-muted);
+  border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .12s}
+.tab.on{color:var(--ds-accent);border-bottom-color:var(--ds-accent)}
+.tp{display:none}
+.tp.on{display:block}
+
+/* ── Info rows ── */
+.ir{display:flex;justify-content:space-between;align-items:flex-start;
+  padding:.45rem 0;border-bottom:1px solid var(--ds-border);gap:.75rem}
+.ir:last-child{border-bottom:none}
+.il{font-size:.73rem;color:var(--ds-muted);font-weight:600;white-space:nowrap}
+.iv{font-size:.82rem;color:var(--ds-text);text-align:right}
+
+/* ── Avatar ── */
+.av{width:32px;height:32px;border-radius:50%;background:var(--ds-accent-s);color:var(--ds-accent);
+  display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:.75rem;flex-shrink:0}
+
+/* ── Session row ── */
+.sr{background:var(--ds-surface-2);border:1px solid var(--ds-border);
+  border-left:3px solid var(--ds-accent);border-radius:var(--ds-r-sm);
+  padding:.55rem .85rem;display:flex;align-items:center;gap:.65rem;margin-bottom:.35rem}
+.sr.completed{border-left-color:var(--ds-green)}
+.sr.missed{border-left-color:var(--ds-red)}
+.sr.cancelled{border-left-color:var(--ds-muted);opacity:.65}
+.sr-time{font-weight:800;font-size:.8rem;min-width:44px;white-space:nowrap}
+
+/* ── Calendar ── */
+.cal-g{width:100%;border-collapse:collapse}
+.cal-g th{text-align:center;padding:.35rem;font-size:.68rem;font-weight:700;color:var(--ds-muted);text-transform:uppercase}
+.cal-c{vertical-align:top;padding:.2rem;border:1px solid var(--ds-border);min-width:62px;cursor:pointer;transition:background .1s}
+.cal-c:hover{background:var(--ds-surface-2)}
+.cal-c.om{opacity:.3}
+.cal-c.tod .cal-d{background:var(--ds-accent);color:#fff;border-radius:50%}
+.cal-c.sel{background:var(--ds-accent-s)}
+.cal-d{font-size:.78rem;font-weight:700;width:22px;height:22px;display:flex;align-items:center;justify-content:center;margin:0 auto .18rem}
+.cal-dots{display:flex;gap:2px;flex-wrap:wrap;justify-content:center;min-height:7px}
+.cal-dot{width:5px;height:5px;border-radius:50%;background:var(--ds-accent);flex-shrink:0}
+.cal-dot.completed{background:var(--ds-green)}
+.cal-dot.missed{background:var(--ds-red)}
+.cal-dot.cancelled{background:var(--ds-muted)}
+
+/* Week view */
+.wk-g{display:grid;grid-template-columns:repeat(7,1fr);gap:.4rem}
+.wk-col{background:var(--ds-surface-2);border:1px solid var(--ds-border);border-radius:var(--ds-r-sm);overflow:hidden}
+.wk-h{padding:.35rem .4rem;text-align:center;font-size:.68rem;font-weight:700;color:var(--ds-muted);border-bottom:1px solid var(--ds-border)}
+.wk-h.tod{background:var(--ds-accent-s);color:var(--ds-accent)}
+.wk-b{padding:.3rem;min-height:90px}
+.wk-ev{background:var(--ds-accent-s);color:var(--ds-accent);border-radius:4px;padding:.18rem .3rem;
+  margin-bottom:.18rem;font-size:.67rem;font-weight:600;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wk-ev.completed{background:var(--ds-green-s);color:var(--ds-green)}
+.wk-ev.missed{background:var(--ds-red-s);color:var(--ds-red)}
+.wk-ev.cancelled{background:var(--ds-surface-2);color:var(--ds-muted)}
+
+/* Conflict warning */
+.cfl{background:var(--ds-red-s);border:1px solid var(--ds-red);border-radius:var(--ds-r-sm);
+  padding:.55rem .85rem;font-size:.78rem;color:var(--ds-red);margin-bottom:.65rem;display:none}
+.cfl.show{display:block}
+
+/* ── Chart containers ── */
+.ch-wrap{position:relative}
+.ch-wrap canvas{display:block}
+
+/* ── Gauge (SVG-based) ── */
+.gauge-wrap{display:flex;flex-direction:column;align-items:center;gap:.3rem}
+.gauge-label{font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--ds-muted);letter-spacing:.05em}
+.gauge-val{font-size:1.6rem;font-weight:900;color:var(--ds-text)}
+.gauge-sub{font-size:.7rem;color:var(--ds-muted)}
+
+/* ── Heatmap ── */
+.hm-grid{display:grid;gap:2px}
+.hm-cell{border-radius:2px;aspect-ratio:1;min-width:12px;cursor:default;transition:opacity .1s}
+.hm-cell:hover{opacity:.7}
+.hm-row-label{font-size:.65rem;color:var(--ds-muted);font-weight:600;white-space:nowrap;padding-right:4px;display:flex;align-items:center}
+.hm-hour-labels{display:flex;gap:2px;font-size:.6rem;color:var(--ds-muted);margin-left:28px}
+
+/* ── Timeline (day view) ── */
+.tl-wrap{position:relative;overflow-x:auto;padding:.5rem 0}
+.tl-axis{display:flex;height:24px;font-size:.63rem;color:var(--ds-muted);margin-bottom:.25rem;margin-left:28px}
+.tl-hour{flex:1;border-left:1px solid var(--ds-border);padding-left:2px;white-space:nowrap}
+.tl-row{position:relative;height:32px;margin-left:28px;margin-bottom:.3rem;background:var(--ds-surface-2);border-radius:var(--ds-r-sm)}
+.tl-label{position:absolute;left:-28px;top:50%;transform:translateY(-50%);font-size:.65rem;color:var(--ds-muted);font-weight:600;width:24px;text-align:right;white-space:nowrap}
+.tl-block{position:absolute;top:2px;bottom:2px;border-radius:4px;display:flex;align-items:center;
+  padding:0 .4rem;font-size:.68rem;font-weight:700;overflow:hidden;cursor:pointer;transition:filter .12s}
+.tl-block:hover{filter:brightness(1.1)}
+
+/* ── Lesson progress grid ── */
+.ls-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:.4rem}
+.ls-b{border:1px solid var(--ds-border);border-radius:var(--ds-r-sm);padding:.45rem .35rem;
+  text-align:center;font-size:.7rem;cursor:default}
+.ls-b.done{background:var(--ds-green-s);border-color:var(--ds-green);color:var(--ds-green)}
+.ls-b.missed{background:var(--ds-red-s);border-color:var(--ds-red);color:var(--ds-red)}
+.ls-b.cancelled{background:var(--ds-surface-2);color:var(--ds-muted)}
+.ls-b.pending{background:var(--ds-surface-2);color:var(--ds-muted)}
+.ls-n{font-weight:900;font-size:.82rem;display:block}
+
+/* ── Receipt ── */
+.rcpt{background:var(--ds-surface);border:2px solid var(--ds-border);border-radius:var(--ds-r);
+  padding:1.75rem;max-width:500px;margin:0 auto}
+.rcpt-hd{text-align:center;border-bottom:2px dashed var(--ds-border);padding-bottom:.85rem;margin-bottom:.85rem}
+.rcpt-title{font-size:1.2rem;font-weight:900;color:var(--ds-accent)}
+.rcpt-row{display:flex;justify-content:space-between;padding:.38rem 0;border-bottom:1px solid var(--ds-border);font-size:.83rem}
+.rcpt-total{font-size:1.05rem;font-weight:800;color:var(--ds-green)}
+
+/* ── Keyboard shortcut overlay ── */
+#ks-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;
+  display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+#ks-overlay.open{opacity:1;pointer-events:all}
+.ks-box{background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:var(--ds-r);
+  padding:1.5rem;width:540px;max-width:95vw;max-height:80vh;overflow-y:auto;box-shadow:var(--ds-sh-md)}
+.ks-title{font-size:1rem;font-weight:800;margin-bottom:1rem;color:var(--ds-text);display:flex;align-items:center;gap:.5rem}
+.ks-grid{display:grid;grid-template-columns:1fr 1fr;gap:.35rem .75rem}
+.ks-row{display:flex;align-items:center;gap:.55rem;font-size:.8rem;color:var(--ds-muted)}
+.ks-key{background:var(--ds-surface-2);border:1px solid var(--ds-border);border-radius:4px;
+  padding:.1rem .4rem;font-size:.72rem;font-weight:700;color:var(--ds-text);font-family:monospace;min-width:24px;text-align:center}
+
+/* ── Empty state ── */
+.empty{text-align:center;padding:2.2rem 1rem;color:var(--ds-muted)}
+.empty i{font-size:1.8rem;display:block;margin-bottom:.5rem;opacity:.3}
+.empty p{font-size:.82rem}
+
+/* ── Print ── */
+@media print{
+  .ds-bar,.sh .btn,.btn,.ds-nav,.ds-gsearch,#ds-toast,#ks-overlay{display:none!important}
+  .rcpt{border:2px solid #000}
+}
+
+/* ── Responsive ── */
+@media(max-width:640px){
+  .ds-body{padding:.65rem}
+  .ds-stats{grid-template-columns:repeat(2,1fr)}
+  .fr{grid-template-columns:1fr}
+  .g2,.g3{grid-template-columns:1fr}
+  .wk-g{grid-template-columns:repeat(4,1fr)}
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ds-wrap">
+
+<!-- Loading bar -->
+<div id="ds-loader"></div>
+
+<!-- Toast container -->
+<div id="ds-toast"></div>
+
+<!-- ── TOPBAR ─────────────────────────────────────────────── -->
+<div class="ds-bar">
+  <a href="{% url 'driving_school:dashboard' %}" class="ds-brand" data-nav>
+    <i class="bi bi-car-front-fill"></i> DriveSM
+  </a>
+  <nav class="ds-nav">
+    {% with s=section %}
+    <a href="{% url 'driving_school:dashboard' %}"   class="ds-nl {% if s == 'dashboard' %}on{% endif %}" data-nav><i class="bi bi-speedometer2"></i> <span>Dashboard</span></a>
+    <a href="{% url 'driving_school:students' %}"    class="ds-nl {% if 'student' in s %}on{% endif %}" data-nav><i class="bi bi-people"></i> <span>Students</span></a>
+    <a href="{% url 'driving_school:enrollments' %}" class="ds-nl {% if 'enrollment' in s %}on{% endif %}" data-nav><i class="bi bi-journal-check"></i> <span>Enrollments</span></a>
+    <a href="{% url 'driving_school:schedule' %}"    class="ds-nl {% if s == 'schedule' or s == 'session_edit' %}on{% endif %}" data-nav><i class="bi bi-calendar3"></i> <span>Schedule</span></a>
+    <a href="{% url 'driving_school:instructors' %}" class="ds-nl {% if 'instructor' in s %}on{% endif %}" data-nav><i class="bi bi-person-badge"></i> <span>Instructors</span></a>
+    <a href="{% url 'driving_school:fleet' %}"       class="ds-nl {% if 'fleet' in s or 'vehicle' in s %}on{% endif %}" data-nav><i class="bi bi-truck"></i> <span>Fleet</span></a>
+    <a href="{% url 'driving_school:courses' %}"     class="ds-nl {% if 'course' in s %}on{% endif %}" data-nav><i class="bi bi-book"></i> <span>Courses</span></a>
+    <a href="{% url 'driving_school:tests' %}"       class="ds-nl {% if 'test' in s %}on{% endif %}" data-nav><i class="bi bi-patch-check"></i> <span>Tests</span></a>
+    <a href="{% url 'driving_school:reports' %}"     class="ds-nl {% if s == 'reports' %}on{% endif %}" data-nav><i class="bi bi-bar-chart-line"></i> <span>Reports</span></a>
+    {% endwith %}
+  </nav>
+  <!-- Global search -->
+  <div class="ds-gsearch" id="gsWrap">
+    <i class="bi bi-search ds-gsearch-icon"></i>
+    <input type="text" class="ds-gsearch-input" id="gsInput" placeholder="Search… (/)" autocomplete="off">
+    <div class="ds-gsearch-results" id="gsResults"></div>
+  </div>
+  <!-- Shortcut hint -->
+  <button class="btn btn-gh btn-sm btn-ic" onclick="ksOpen()" title="Keyboard shortcuts (?)">
+    <i class="bi bi-keyboard"></i>
+  </button>
+</div>
+
+<!-- ── KEYBOARD SHORTCUTS OVERLAY ─────────────────────────── -->
+<div id="ks-overlay" onclick="ksClose()">
+  <div class="ks-box" onclick="event.stopPropagation()">
+    <div class="ks-title"><i class="bi bi-keyboard" style="color:var(--ds-accent)"></i> Keyboard Shortcuts</div>
+    <div class="ks-grid">
+      <div class="ks-row"><kbd class="ks-key">G</kbd><kbd class="ks-key">D</kbd><span>Go to Dashboard</span></div>
+      <div class="ks-row"><kbd class="ks-key">G</kbd><kbd class="ks-key">S</kbd><span>Go to Students</span></div>
+      <div class="ks-row"><kbd class="ks-key">G</kbd><kbd class="ks-key">E</kbd><span>Go to Enrollments</span></div>
+      <div class="ks-row"><kbd class="ks-key">G</kbd><kbd class="ks-key">C</kbd><span>Go to Schedule/Calendar</span></div>
+      <div class="ks-row"><kbd class="ks-key">G</kbd><kbd class="ks-key">I</kbd><span>Go to Instructors</span></div>
+      <div class="ks-row"><kbd class="ks-key">G</kbd><kbd class="ks-key">F</kbd><span>Go to Fleet</span></div>
+      <div class="ks-row"><kbd class="ks-key">G</kbd><kbd class="ks-key">T</kbd><span>Go to Tests</span></div>
+      <div class="ks-row"><kbd class="ks-key">G</kbd><kbd class="ks-key">R</kbd><span>Go to Reports</span></div>
+      <div class="ks-row"><kbd class="ks-key">N</kbd><span></span><span>New (context-aware)</span></div>
+      <div class="ks-row"><kbd class="ks-key">/</kbd><span></span><span>Focus global search</span></div>
+      <div class="ks-row"><kbd class="ks-key">?</kbd><span></span><span>Show shortcuts</span></div>
+      <div class="ks-row"><kbd class="ks-key">Esc</kbd><span></span><span>Close modal / search</span></div>
+      <div class="ks-row"><kbd class="ks-key">Alt</kbd><kbd class="ks-key">←</kbd><span>Navigate back</span></div>
+      <div class="ks-row"><kbd class="ks-key">Alt</kbd><kbd class="ks-key">→</kbd><span>Navigate forward</span></div>
+    </div>
+    <div style="margin-top:1rem;text-align:center">
+      <button class="btn btn-gh btn-sm" onclick="ksClose()">Close (Esc)</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MAIN CONTENT ────────────────────────────────────────── -->
+<div class="ds-body" id="ds-main">
+
+{% if messages %}
+<div id="ds-msgs" style="margin-bottom:.85rem">
+{% for message in messages %}
+<div class="ds-toast-item {{ message.tags }}" style="position:static;animation:none;margin-bottom:.3rem;pointer-events:all">
+  <i class="bi bi-{% if message.tags == 'error' %}x-circle{% elif message.tags == 'warning' %}exclamation-triangle{% else %}check-circle{% endif %}"></i>
+  {{ message }}
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+
+<!-- ═══════════════════════ DASHBOARD ═══════════════════════ -->
+{% if section == 'dashboard' %}
+<div class="sh">
+  <div class="st"><i class="bi bi-speedometer2"></i> Dashboard</div>
+  <div style="display:flex;gap:.4rem">
+    <a href="{% url 'driving_school:enrollment_create' %}" class="btn btn-p" data-nav><i class="bi bi-plus-lg"></i> New Enrollment</a>
+  </div>
+</div>
+
+<div class="ds-stats">
+  <div class="ds-stat" style="--c:var(--ds-accent)">
+    <div class="ds-stat-icon" style="background:var(--ds-accent-s);color:var(--ds-accent)"><i class="bi bi-people-fill"></i></div>
+    <div class="ds-stat-lbl">Active Students</div>
+    <div class="ds-stat-val">{{ total_students }}</div>
+    <canvas id="spk-students" height="28" style="margin-top:.3rem;opacity:.6"></canvas>
+  </div>
+  <div class="ds-stat">
+    <div class="ds-stat-icon" style="background:var(--ds-purple-s);color:var(--ds-purple)"><i class="bi bi-journal-check"></i></div>
+    <div class="ds-stat-lbl">Active Enrollments</div>
+    <div class="ds-stat-val">{{ active_enrollments }}</div>
+  </div>
+  <div class="ds-stat">
+    <div class="ds-stat-icon" style="background:var(--ds-amber-s);color:var(--ds-amber)"><i class="bi bi-calendar-day"></i></div>
+    <div class="ds-stat-lbl">Today's Sessions</div>
+    <div class="ds-stat-val">{{ today_sessions }}</div>
+  </div>
+  <div class="ds-stat">
+    <div class="ds-stat-icon" style="background:var(--ds-green-s);color:var(--ds-green)"><i class="bi bi-cash-stack"></i></div>
+    <div class="ds-stat-lbl">Monthly Revenue</div>
+    <div class="ds-stat-val" style="font-size:1.05rem">{{ monthly_revenue|floatformat:0 }}</div>
+    <div class="ds-stat-sub">UGX</div>
+  </div>
+  <div class="ds-stat">
+    <div class="ds-stat-icon" style="background:var(--ds-teal-s);color:var(--ds-teal)"><i class="bi bi-graph-up-arrow"></i></div>
+    <div class="ds-stat-lbl">Weekly Revenue</div>
+    <div class="ds-stat-val" style="font-size:1.05rem">{{ weekly_revenue|floatformat:0 }}</div>
+    <div class="ds-stat-sub">UGX</div>
+  </div>
+  <div class="ds-stat">
+    <div class="ds-stat-icon" style="background:var(--ds-green-s);color:var(--ds-green)"><i class="bi bi-award"></i></div>
+    <div class="ds-stat-lbl">Pass Rate</div>
+    <div class="ds-stat-val">{{ pass_rate }}%</div>
+    <div class="ds-stat-sub">Practical</div>
+  </div>
+</div>
+
+<!-- Row 1: Revenue area + Enrollment doughnut + Session status doughnut -->
+<div class="g3" style="margin-bottom:1rem">
+  <div class="ds-card" style="grid-column:span 2">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-graph-up"></i> Revenue Trend (12 months)</div></div>
+    <div class="ds-cb"><div class="ch-wrap" style="height:170px"><canvas id="ch-revenue"></canvas></div></div>
+  </div>
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-pie-chart"></i> Enrollment Status</div></div>
+    <div class="ds-cb"><div class="ch-wrap" style="height:170px"><canvas id="ch-donut-enroll"></canvas></div></div>
+  </div>
+</div>
+
+<!-- Row 2: Session heatmap + Instructor workload + Pass rate gauges -->
+<div class="g2" style="margin-bottom:1rem">
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-grid-3x3-gap"></i> Session Density Heatmap (90 days)</div></div>
+    <div class="ds-cb" id="heatmap-container">
+      <div style="color:var(--ds-muted);font-size:.8rem">Loading…</div>
+    </div>
+  </div>
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-person-badge"></i> Instructor Activity (30 days)</div></div>
+    <div class="ds-cb"><div class="ch-wrap" style="height:180px"><canvas id="ch-instructors"></canvas></div></div>
+  </div>
+</div>
+
+<!-- Row 3: Gauges + Revenue by course -->
+<div class="g2" style="margin-bottom:1rem">
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-award"></i> Test Pass Rates</div></div>
+    <div class="ds-cb" style="display:flex;justify-content:space-around;flex-wrap:wrap;gap:1rem;padding:1.25rem">
+      <div class="gauge-wrap">
+        <svg id="gauge-theory" width="110" height="70" viewBox="0 0 110 70"></svg>
+        <div class="gauge-val" id="gv-theory">—%</div>
+        <div class="gauge-label">Theory</div>
+        <div class="gauge-sub" id="gs-theory">0/0</div>
+      </div>
+      <div class="gauge-wrap">
+        <svg id="gauge-practical" width="110" height="70" viewBox="0 0 110 70"></svg>
+        <div class="gauge-val" id="gv-practical">—%</div>
+        <div class="gauge-label">Practical</div>
+        <div class="gauge-sub" id="gs-practical">0/0</div>
+      </div>
+    </div>
+  </div>
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-bar-chart"></i> Revenue by Course</div></div>
+    <div class="ds-cb"><div class="ch-wrap" style="height:180px"><canvas id="ch-course-rev"></canvas></div></div>
+  </div>
+</div>
+
+<!-- Row 4: Today's schedule + Recent enrollments -->
+<div class="g2">
+  <div class="ds-card">
+    <div class="ds-ch">
+      <div class="ds-ct"><i class="bi bi-calendar-day"></i> Today's Schedule</div>
+      <a href="{% url 'driving_school:schedule' %}" class="btn btn-gh btn-sm" data-nav>Full Calendar</a>
+    </div>
+    <div class="ds-cb" style="padding:.5rem">
+      {% for s in todays_sessions %}
+      <div class="sr {{ s.status }}">
+        <div class="sr-time">{{ s.start_time|time:"H:i" }}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:.8rem">{{ s.enrollment.student.full_name }}</div>
+          <div style="font-size:.68rem;color:var(--ds-muted)">{{ s.instructor.full_name|default:"No instructor" }} · {{ s.vehicle.plate_number|default:"No vehicle" }}</div>
+        </div>
+        <span class="b {% if s.status == 'completed' %}b-g{% elif s.status == 'missed' %}b-r{% elif s.status == 'cancelled' %}b-n{% else %}b-b{% endif %}">{{ s.get_status_display }}</span>
+      </div>
+      {% empty %}<div class="empty"><i class="bi bi-calendar-x"></i><p>No sessions today</p></div>{% endfor %}
+    </div>
+  </div>
+  <div class="ds-card">
+    <div class="ds-ch">
+      <div class="ds-ct"><i class="bi bi-journal-plus"></i> Recent Enrollments</div>
+      <a href="{% url 'driving_school:enrollments' %}" class="btn btn-gh btn-sm" data-nav>View All</a>
+    </div>
+    <table class="ds-t">
+      <thead><tr><th>Student</th><th>Course</th><th>Balance</th></tr></thead>
+      <tbody>
+        {% for e in recent_enrollments %}
+        <tr>
+          <td><a href="{% url 'driving_school:enrollment_detail' e.pk %}" style="color:var(--ds-accent);text-decoration:none;font-weight:700" data-nav>{{ e.student.full_name }}</a></td>
+          <td style="font-size:.75rem" class="m">{{ e.course.name }}</td>
+          <td style="color:{% if e.balance > 0 %}var(--ds-red){% else %}var(--ds-green){% endif %};font-weight:700">{{ e.balance|floatformat:0 }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="3"><div class="empty"><i class="bi bi-inbox"></i><p>No enrollments</p></div></td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function(){
+  const API = '{{ api_dashboard_url }}';
+  const HM  = '{{ api_heatmap_url }}';
+
+  // Chart.js defaults
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  const gridC  = isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.05)';
+  const textC  = isDark ? '#7b88b8' : '#64748b';
+  const def = { responsive:true, maintainAspectRatio:false,
+                plugins:{legend:{display:false}},
+                scales:{x:{grid:{color:gridC},ticks:{color:textC,font:{size:10}}},
+                        y:{grid:{color:gridC},ticks:{color:textC,font:{size:10}}}} };
+
+  fetch(API).then(r=>r.json()).then(d => {
+    // ── Area chart: revenue
+    new Chart(document.getElementById('ch-revenue'), {
+      type:'line',
+      data:{ labels: d.labels,
+             datasets:[{data: d.revenue_series, borderColor:'#3b5bdb', borderWidth:2.5,
+               fill:true, backgroundColor:'rgba(59,91,219,.1)', tension:.4,
+               pointBackgroundColor:'#3b5bdb', pointRadius:3}] },
+      options:{...def, scales:{x:{...def.scales.x}, y:{...def.scales.y,
+                 ticks:{...def.scales.y.ticks, callback:v=>'UGX '+v.toLocaleString()}}}}
+    });
+
+    // ── Doughnut: enrollment status
+    const sKeys = Object.keys(d.status_data);
+    const sVals = sKeys.map(k=>d.status_data[k]);
+    const sPal  = ['#3b5bdb','#2f9e44','#e67700','#e03131','#7048e8'];
+    new Chart(document.getElementById('ch-donut-enroll'), {
+      type:'doughnut',
+      data:{ labels: sKeys, datasets:[{data:sVals, backgroundColor:sPal, borderWidth:0}] },
+      options:{ responsive:true, maintainAspectRatio:false, cutout:'65%',
+                plugins:{ legend:{ position:'bottom', labels:{color:textC, font:{size:10}, boxWidth:10} } } }
+    });
+
+    // ── Horizontal bar: instructor workload
+    new Chart(document.getElementById('ch-instructors'), {
+      type:'bar',
+      data:{ labels: d.instructor_workload.map(i=>i.name),
+             datasets:[{label:'Sessions (30d)', data:d.instructor_workload.map(i=>i.recent_sessions),
+               backgroundColor:'#5c7cfa99', borderColor:'#5c7cfa', borderWidth:1.5, borderRadius:4}] },
+      options:{...def, indexAxis:'y',
+               plugins:{legend:{display:false}},
+               scales:{x:{grid:{color:gridC},ticks:{color:textC,font:{size:10}}},
+                       y:{grid:{display:false},ticks:{color:textC,font:{size:10}}}}}
+    });
+
+    // ── Bar: revenue by course
+    new Chart(document.getElementById('ch-course-rev'), {
+      type:'bar',
+      data:{ labels: d.course_revenue.map(c=>c.name),
+             datasets:[{data:d.course_revenue.map(c=>c.revenue),
+               backgroundColor:'#7048e866', borderColor:'#7048e8', borderWidth:2, borderRadius:4}] },
+      options:{...def, scales:{...def.scales,
+               y:{...def.scales.y, ticks:{...def.scales.y.ticks, callback:v=>'UGX '+v.toLocaleString()}}}}
+    });
+
+    // ── Gauges (SVG half-circle)
+    function drawGauge(svgId, pct, color) {
+      const svg = document.getElementById(svgId);
+      const r = 48, cx = 55, cy = 62, sw = 10;
+      const startAngle = Math.PI, endAngle = 2*Math.PI;
+      const pAngle = startAngle + (pct/100)*(Math.PI);
+      const bgPath = `M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`;
+      const fg_x = cx + r*Math.cos(pAngle), fg_y = cy + r*Math.sin(pAngle);
+      const largeArc = pct > 50 ? 1 : 0;
+      const fgPath = `M ${cx-r} ${cy} A ${r} ${r} 0 ${largeArc} 1 ${fg_x} ${fg_y}`;
+      svg.innerHTML = `
+        <path d="${bgPath}" fill="none" stroke="${isDark?'#2a2f4a':'#e0e7ff'}" stroke-width="${sw}" stroke-linecap="round"/>
+        <path d="${fgPath}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"/>`;
+    }
+    drawGauge('gauge-theory',   d.theory_pass_rate,   '#2f9e44');
+    drawGauge('gauge-practical', d.practical_pass_rate, '#3b5bdb');
+    document.getElementById('gv-theory').textContent    = d.theory_pass_rate+'%';
+    document.getElementById('gv-practical').textContent = d.practical_pass_rate+'%';
+    document.getElementById('gs-theory').textContent    = `${d.theory_pass}/${d.theory_total} passed`;
+    document.getElementById('gs-practical').textContent = `${d.practical_pass}/${d.practical_total} passed`;
+  });
+
+  // ── Session heatmap
+  fetch(HM).then(r=>r.json()).then(d => {
+    const container = document.getElementById('heatmap-container');
+    const maxVal = Math.max(...d.grid.flat(), 1);
+    const hours = Array.from({length:24},(_,i)=>i);
+    // Hour labels
+    let html = `<div class="hm-hour-labels">`;
+    hours.forEach(h=>{ if(h%3===0) html+=`<span style="flex:3;text-align:left">${h}:00</span>`; });
+    html += `</div><div style="display:flex;flex-direction:column;gap:2px;margin-top:4px">`;
+    d.days.forEach((day,di)=>{
+      html += `<div style="display:flex;align-items:center;gap:2px">`;
+      html += `<span class="hm-row-label" style="width:24px">${day}</span>`;
+      hours.forEach(h=>{
+        const v = d.grid[di][h];
+        const intensity = v ? Math.max(0.12, v/maxVal) : 0;
+        const bg = v ? `rgba(59,91,219,${intensity})` : (isDark?'#1e2238':'#f0f4ff');
+        html += `<div class="hm-cell" style="flex:1;background:${bg}" title="${day} ${h}:00 — ${v} session${v!==1?'s':''}"></div>`;
+      });
+      html += `</div>`;
+    });
+    html += `</div>`;
+    container.innerHTML = html;
+  });
+
+  // Sparklines (simple)
+  function sparkline(id, data, color){
+    const c = document.getElementById(id);
+    if(!c) return;
+    const ctx = c.getContext('2d');
+    new Chart(ctx, {type:'line', data:{labels:data.map((_,i)=>i),datasets:[{data,borderColor:color,borderWidth:1.5,fill:false,tension:.4,pointRadius:0}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}});
+  }
+})();
+</script>
+{% endif %}
+
+
+<!-- ═══════════════════════ STUDENTS LIST ═══════════════════ -->
+{% if section == 'students' %}
+<div class="sh">
+  <div class="st"><i class="bi bi-people"></i> Students</div>
+  <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+    <div class="ss"><i class="bi bi-search"></i><input type="text" id="stSearch" placeholder="Search…" value="{{ q }}" oninput="filterStudents(this.value)"></div>
+    <a href="{% url 'driving_school:student_create' %}" class="btn btn-p" data-nav><i class="bi bi-person-plus"></i> Add Student</a>
+  </div>
+</div>
+<div class="ds-card">
+  <div class="ds-tw">
+    <table class="ds-t" id="stTable">
+      <thead><tr><th>No.</th><th>Student</th><th>Phone</th><th>Email</th><th>Enrollments</th><th>Joined</th><th></th></tr></thead>
+      <tbody>
+        {% for s in students %}
+        <tr data-name="{{ s.full_name|lower }}" data-phone="{{ s.phone }}" data-num="{{ s.student_number|lower }}">
+          <td><span class="b b-n">{{ s.student_number }}</span></td>
+          <td><div style="display:flex;align-items:center;gap:.45rem"><div class="av">{{ s.first_name.0 }}{{ s.last_name.0 }}</div><div><div style="font-weight:700">{{ s.full_name }}</div>{% if s.national_id %}<div class="m" style="font-size:.68rem">{{ s.national_id }}</div>{% endif %}</div></div></td>
+          <td>{{ s.phone }}</td>
+          <td class="m">{{ s.email|default:"—" }}</td>
+          <td>{{ s.enrollments.count }}</td>
+          <td class="m">{{ s.created_at|date:"d M Y" }}</td>
+          <td><div style="display:flex;gap:.25rem">
+            <a href="{% url 'driving_school:student_detail' s.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-eye"></i></a>
+            <a href="{% url 'driving_school:student_edit' s.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-pencil"></i></a>
+          </div></td>
+        </tr>
+        {% empty %}<tr><td colspan="7"><div class="empty"><i class="bi bi-people"></i><p>No students found</p></div></td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<script>
+function filterStudents(q){
+  q = q.toLowerCase();
+  document.querySelectorAll('#stTable tbody tr[data-name]').forEach(r=>{
+    const match = r.dataset.name.includes(q)||r.dataset.phone.includes(q)||r.dataset.num.includes(q);
+    r.style.display = match ? '' : 'none';
+  });
+}
+</script>
+{% endif %}
+
+
+<!-- ═══════════════════════ STUDENT CREATE/EDIT ═══════════ -->
+{% if section == 'student_create' or section == 'student_edit' %}
+<div class="sh">
+  <div class="st"><i class="bi bi-person-{% if section == 'student_create' %}plus{% else %}gear{% endif %}"></i>
+    {% if section == 'student_create' %}New Student{% else %}Edit: {{ student.full_name }}{% endif %}
+  </div>
+  <a href="{% url 'driving_school:students' %}" class="btn btn-gh" data-nav><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+<div class="ds-card"><div class="ds-cb">
+<form method="post" enctype="multipart/form-data" class="ds-ajax-form">{% csrf_token %}
+  <div class="fr">
+    <div class="fg"><label class="req">First Name</label><input type="text" name="first_name" class="inp" required value="{{ student.first_name|default:'' }}"></div>
+    <div class="fg"><label class="req">Last Name</label><input type="text" name="last_name" class="inp" required value="{{ student.last_name|default:'' }}"></div>
+    <div class="fg"><label>Gender</label><select name="gender" class="sel"><option value="">—</option><option value="M" {% if student.gender == 'M' %}selected{% endif %}>Male</option><option value="F" {% if student.gender == 'F' %}selected{% endif %}>Female</option><option value="O" {% if student.gender == 'O' %}selected{% endif %}>Other</option></select></div>
+    <div class="fg"><label>Date of Birth</label><input type="date" name="date_of_birth" class="inp" value="{{ student.date_of_birth|date:'Y-m-d'|default:'' }}"></div>
+  </div>
+  <div class="fr">
+    <div class="fg"><label class="req">Phone</label><input type="text" name="phone" class="inp" required value="{{ student.phone|default:'' }}"></div>
+    <div class="fg"><label>Email</label><input type="email" name="email" class="inp" value="{{ student.email|default:'' }}"></div>
+    <div class="fg"><label>National ID</label><input type="text" name="national_id" class="inp" value="{{ student.national_id|default:'' }}"></div>
+    <div class="fg"><label>Photo</label><input type="file" name="photo" class="inp" accept="image/*"></div>
+  </div>
+  <div class="fr"><div class="fg" style="grid-column:1/-1"><label>Address</label><textarea name="address" class="tea">{{ student.address|default:'' }}</textarea></div></div>
+  <div class="sdiv">Emergency Contact</div>
+  <div class="fr">
+    <div class="fg"><label>Name</label><input type="text" name="emergency_contact_name" class="inp" value="{{ student.emergency_contact_name|default:'' }}"></div>
+    <div class="fg"><label>Phone</label><input type="text" name="emergency_contact_phone" class="inp" value="{{ student.emergency_contact_phone|default:'' }}"></div>
+    <div class="fg"><label>Relation</label><input type="text" name="emergency_contact_relation" class="inp" placeholder="e.g. Parent" value="{{ student.emergency_contact_relation|default:'' }}"></div>
+  </div>
+  <div class="fr"><div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea name="notes" class="tea">{{ student.notes|default:'' }}</textarea></div></div>
+  <div class="fa">
+    <button type="submit" class="btn btn-p"><i class="bi bi-check-lg"></i> {% if section == 'student_create' %}Create{% else %}Save{% endif %}</button>
+    <a href="{% url 'driving_school:students' %}" class="btn btn-gh" data-nav>Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endif %}
+
+
+<!-- ═══════════════════════ STUDENT DETAIL ═══════════════════ -->
+{% if section == 'student_detail' %}
+<div class="sh">
+  <div style="display:flex;align-items:center;gap:.65rem">
+    <div class="av" style="width:40px;height:40px;font-size:.9rem">{{ student.first_name.0 }}{{ student.last_name.0 }}</div>
+    <div>
+      <div class="st" style="margin:0">{{ student.full_name }}</div>
+      <div style="font-size:.75rem;color:var(--ds-muted)">{{ student.student_number }}</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:.35rem">
+    <a href="{% url 'driving_school:student_edit' student.pk %}" class="btn btn-gh" data-nav><i class="bi bi-pencil"></i> Edit</a>
+    <a href="{% url 'driving_school:enrollment_create' %}?student={{ student.pk }}" class="btn btn-p" data-nav><i class="bi bi-journal-plus"></i> Enroll</a>
+  </div>
+</div>
+<div class="g2" style="margin-bottom:1rem">
+  <div class="ds-card"><div class="ds-ch"><div class="ds-ct"><i class="bi bi-person"></i> Personal Info</div></div><div class="ds-cb">
+    <div class="ir"><span class="il">Phone</span><span class="iv">{{ student.phone }}</span></div>
+    <div class="ir"><span class="il">Email</span><span class="iv">{{ student.email|default:"—" }}</span></div>
+    <div class="ir"><span class="il">Gender</span><span class="iv">{{ student.get_gender_display|default:"—" }}</span></div>
+    <div class="ir"><span class="il">DOB</span><span class="iv">{{ student.date_of_birth|default:"—" }}</span></div>
+    <div class="ir"><span class="il">National ID</span><span class="iv">{{ student.national_id|default:"—" }}</span></div>
+    <div class="ir"><span class="il">Address</span><span class="iv">{{ student.address|default:"—" }}</span></div>
+  </div></div>
+  <div class="ds-card"><div class="ds-ch"><div class="ds-ct"><i class="bi bi-telephone"></i> Emergency Contact</div></div><div class="ds-cb">
+    <div class="ir"><span class="il">Name</span><span class="iv">{{ student.emergency_contact_name|default:"—" }}</span></div>
+    <div class="ir"><span class="il">Phone</span><span class="iv">{{ student.emergency_contact_phone|default:"—" }}</span></div>
+    <div class="ir"><span class="il">Relation</span><span class="iv">{{ student.emergency_contact_relation|default:"—" }}</span></div>
+    {% if student.notes %}<div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--ds-border)"><div style="font-size:.73rem;color:var(--ds-muted);font-weight:700;margin-bottom:.3rem">NOTES</div><p style="font-size:.82rem">{{ student.notes }}</p></div>{% endif %}
+  </div></div>
+</div>
+
+<!-- Progress visualization -->
+<div class="ds-card" style="margin-bottom:1rem" id="student-progress-card">
+  <div class="ds-ch"><div class="ds-ct"><i class="bi bi-bar-chart-line"></i> Progress by Enrollment</div></div>
+  <div class="ds-cb" id="progress-charts">
+    <div style="color:var(--ds-muted);font-size:.8rem">Loading…</div>
+  </div>
+</div>
+
+<div class="ds-card">
+  <div class="ds-ch">
+    <div class="ds-ct"><i class="bi bi-journal-check"></i> Enrollments</div>
+    <a href="{% url 'driving_school:enrollment_create' %}?student={{ student.pk }}" class="btn btn-p btn-sm" data-nav><i class="bi bi-plus-lg"></i> Enroll</a>
+  </div>
+  <div class="ds-tw">
+    <table class="ds-t">
+      <thead><tr><th>Ref</th><th>Course</th><th>Status</th><th>Fee</th><th>Balance</th><th>Progress</th><th></th></tr></thead>
+      <tbody>
+        {% for e in enrollments %}
+        <tr>
+          <td><span class="b b-n">{{ e.enrollment_number }}</span></td>
+          <td style="font-size:.78rem">{{ e.course.name }}</td>
+          <td><span class="b {% if e.status == 'active' %}b-g{% elif e.status == 'completed' %}b-b{% elif e.status == 'cancelled' %}b-r{% else %}b-a{% endif %}">{{ e.get_status_display }}</span></td>
+          <td>{{ e.total_fee|floatformat:0 }}</td>
+          <td style="color:{% if e.balance > 0 %}var(--ds-red){% else %}var(--ds-green){% endif %};font-weight:700">{{ e.balance|floatformat:0 }}</td>
+          <td style="min-width:90px">
+            <div style="font-size:.68rem;color:var(--ds-muted);margin-bottom:2px">{{ e.lessons_completed }}/{{ e.course.duration_lessons }}</div>
+            <div class="pr"><div class="prb" style="width:{% widthratio e.lessons_completed e.course.duration_lessons 100 %}%"></div></div>
+          </td>
+          <td><a href="{% url 'driving_school:enrollment_detail' e.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-eye"></i></a></td>
+        </tr>
+        {% empty %}<tr><td colspan="7"><div class="empty"><i class="bi bi-inbox"></i><p>No enrollments</p></div></td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+fetch('{{ api_progress_url }}').then(r=>r.json()).then(d=>{
+  const el = document.getElementById('progress-charts');
+  if(!d.enrollments.length){ el.innerHTML='<div class="empty"><i class="bi bi-inbox"></i><p>No enrollments</p></div>'; return; }
+  const isDark = document.documentElement.dataset.theme==='dark';
+  const gridC = isDark ? 'rgba(255,255,255,.05)':'rgba(0,0,0,.04)';
+  const textC = isDark ? '#7b88b8':'#64748b';
+  el.innerHTML = d.enrollments.map((e,idx)=>`
+    <div style="margin-bottom:1rem">
+      <div style="font-size:.78rem;font-weight:700;margin-bottom:.4rem">${e.enrollment_number} — ${e.course}</div>
+      <div class="ls-g" id="ls-grid-${idx}"></div>
+    </div>`).join('');
+  d.enrollments.forEach((e,idx)=>{
+    const grid = document.getElementById('ls-grid-'+idx);
+    for(let n=1;n<=e.total_lessons;n++){
+      const s = e.sessions.find(x=>x.n===n);
+      const cls = s ? s.status : 'pending';
+      const icon = s ? (s.status==='completed'?'✓':s.status==='missed'?'✗':'·') : '·';
+      const date = s ? `<div style="font-size:.6rem;margin-top:.1rem">${s.date.slice(5)}</div>` : '';
+      grid.innerHTML += `<div class="ls-b ${cls}" title="Lesson ${n}"><span class="ls-n">${n}</span><span style="font-size:.82rem">${icon}</span>${date}</div>`;
+    }
+  });
+});
+</script>
+{% endif %}
+
+
+<!-- ═══════════════════════ COURSES ═══════════════════════ -->
+{% if section == 'courses' %}
+<div class="sh"><div class="st"><i class="bi bi-book"></i> Courses</div><a href="{% url 'driving_school:course_create' %}" class="btn btn-p" data-nav><i class="bi bi-plus-lg"></i> Add Course</a></div>
+<div class="ds-card"><div class="ds-tw"><table class="ds-t">
+  <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Lessons</th><th>Days</th><th>Price</th><th>Enrollments</th><th></th></tr></thead>
+  <tbody>
+    {% for c in courses %}
+    <tr><td><span class="b b-b">{{ c.code }}</span></td><td style="font-weight:700">{{ c.name }}</td><td class="m">{{ c.get_category_display }}</td><td>{{ c.duration_lessons }}</td><td>{{ c.duration_days }}</td><td style="font-weight:700">{{ c.price|floatformat:0 }}</td><td>{{ c.enrollments.count }}</td>
+    <td><a href="{% url 'driving_school:course_edit' c.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-pencil"></i></a></td></tr>
+    {% empty %}<tr><td colspan="8"><div class="empty"><i class="bi bi-book"></i><p>No courses</p></div></td></tr>{% endfor %}
+  </tbody>
+</table></div></div>
+{% endif %}
+
+{% if section == 'course_create' or section == 'course_edit' %}
+<div class="sh"><div class="st"><i class="bi bi-book"></i> {% if section == 'course_create' %}New Course{% else %}Edit: {{ course.name }}{% endif %}</div><a href="{% url 'driving_school:courses' %}" class="btn btn-gh" data-nav><i class="bi bi-arrow-left"></i> Back</a></div>
+<div class="ds-card"><div class="ds-cb"><form method="post" class="ds-ajax-form">{% csrf_token %}
+  <div class="fr">
+    <div class="fg"><label class="req">Name</label><input type="text" name="name" class="inp" required value="{{ course.name|default:'' }}"></div>
+    <div class="fg"><label class="req">Code</label><input type="text" name="code" class="inp" required placeholder="e.g. CB001" value="{{ course.code|default:'' }}"></div>
+    <div class="fg"><label>Category</label><select name="category" class="sel">{% for val,label in categories %}<option value="{{ val }}" {% if course.category == val %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  </div>
+  <div class="fr">
+    <div class="fg"><label class="req">Price (UGX)</label><input type="number" name="price" class="inp" required min="0" value="{{ course.price|default:0 }}"></div>
+    <div class="fg"><label>Lessons</label><input type="number" name="duration_lessons" class="inp" min="1" value="{{ course.duration_lessons|default:10 }}"></div>
+    <div class="fg"><label>Duration (days)</label><input type="number" name="duration_days" class="inp" min="1" value="{{ course.duration_days|default:30 }}"></div>
+  </div>
+  <div class="fr"><div class="fg" style="grid-column:1/-1"><label>Description</label><textarea name="description" class="tea">{{ course.description|default:'' }}</textarea></div></div>
+  {% if section == 'course_edit' %}<div class="fr"><div class="fg"><label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" name="is_active" {% if course.is_active %}checked{% endif %}> Active</label></div></div>{% endif %}
+  <div class="fa"><button type="submit" class="btn btn-p"><i class="bi bi-check-lg"></i> {% if section == 'course_create' %}Create{% else %}Save{% endif %}</button><a href="{% url 'driving_school:courses' %}" class="btn btn-gh" data-nav>Cancel</a></div>
+</form></div></div>
+{% endif %}
+
+
+<!-- ═══════════════════════ ENROLLMENTS LIST ═══════════════ -->
+{% if section == 'enrollments' %}
+<div class="sh">
+  <div class="st"><i class="bi bi-journal-check"></i> Enrollments</div>
+  <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+    <select class="sel" style="min-width:130px" onchange="dsNav(this.value?'?status='+this.value:'{% url "driving_school:enrollments" %}')">
+      <option value="">All Statuses</option>
+      {% for val,label in status_choices %}<option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <a href="{% url 'driving_school:enrollment_create' %}" class="btn btn-p" data-nav><i class="bi bi-plus-lg"></i> New Enrollment</a>
+  </div>
+</div>
+<div class="ds-card"><div class="ds-tw"><table class="ds-t">
+  <thead><tr><th>Ref</th><th>Student</th><th>Course</th><th>Status</th><th>Fee</th><th>Balance</th><th>Progress</th><th>Enrolled</th><th></th></tr></thead>
+  <tbody>
+    {% for e in enrollments %}
+    <tr>
+      <td><span class="b b-n">{{ e.enrollment_number }}</span></td>
+      <td><a href="{% url 'driving_school:student_detail' e.student.pk %}" style="color:var(--ds-accent);text-decoration:none;font-weight:700" data-nav>{{ e.student.full_name }}</a></td>
+      <td style="font-size:.76rem" class="m">{{ e.course.name }}</td>
+      <td><span class="b {% if e.status == 'active' %}b-g{% elif e.status == 'completed' %}b-b{% elif e.status == 'cancelled' %}b-r{% else %}b-a{% endif %}">{{ e.get_status_display }}</span></td>
+      <td>{{ e.total_fee|floatformat:0 }}</td>
+      <td style="color:{% if e.balance > 0 %}var(--ds-red){% else %}var(--ds-green){% endif %};font-weight:700">{{ e.balance|floatformat:0 }}</td>
+      <td style="min-width:80px">
+        <div style="font-size:.67rem;color:var(--ds-muted);margin-bottom:2px">{{ e.lessons_completed }}/{{ e.course.duration_lessons }}</div>
+        <div class="pr"><div class="prb" style="width:{% widthratio e.lessons_completed e.course.duration_lessons 100 %}%"></div></div>
+      </td>
+      <td class="m">{{ e.date_enrolled|date:"d M Y" }}</td>
+      <td><a href="{% url 'driving_school:enrollment_detail' e.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-eye"></i></a></td>
+    </tr>
+    {% empty %}<tr><td colspan="9"><div class="empty"><i class="bi bi-inbox"></i><p>No enrollments</p></div></td></tr>{% endfor %}
+  </tbody>
+</table></div></div>
+{% endif %}
+
+
+<!-- ═══════════════════════ ENROLLMENT CREATE ═══════════════ -->
+{% if section == 'enrollment_create' %}
+<div class="sh"><div class="st"><i class="bi bi-journal-plus"></i> New Enrollment</div><a href="{% url 'driving_school:enrollments' %}" class="btn btn-gh" data-nav><i class="bi bi-arrow-left"></i> Back</a></div>
+<div class="ds-card"><div class="ds-cb"><form method="post" class="ds-ajax-form">{% csrf_token %}
+  <div class="fr">
+    <div class="fg"><label class="req">Student</label><select name="student" class="sel" required><option value="">— Select —</option>{% for s in students %}<option value="{{ s.pk }}" {% if request.GET.student == s.pk|stringformat:"s" %}selected{% endif %}>{{ s.full_name }} ({{ s.student_number }})</option>{% endfor %}</select></div>
+    <div class="fg"><label class="req">Course</label><select name="course" class="sel" required id="courseSelect"><option value="">— Select —</option>{% for c in courses %}<option value="{{ c.pk }}" data-price="{{ c.price }}" data-lessons="{{ c.duration_lessons }}">{{ c.code }} — {{ c.name }}</option>{% endfor %}</select></div>
+  </div>
+  <div class="fr">
+    <div class="fg"><label class="req">Agreed Fee (UGX)</label><input type="number" name="agreed_fee" class="inp" required min="0" id="agreedFee"></div>
+    <div class="fg"><label>Discount (UGX)</label><input type="number" name="discount" class="inp" min="0" value="0"></div>
+    <div class="fg"><label>Expected Completion</label><input type="date" name="expected_completion" class="inp"></div>
+  </div>
+  <div class="fr"><div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea name="notes" class="tea"></textarea></div></div>
+  <div class="fa"><button type="submit" class="btn btn-p"><i class="bi bi-check-lg"></i> Create</button><a href="{% url 'driving_school:enrollments' %}" class="btn btn-gh" data-nav>Cancel</a></div>
+</form></div></div>
+<script>
+document.getElementById('courseSelect').addEventListener('change',function(){
+  const o=this.options[this.selectedIndex];
+  if(o.dataset.price) document.getElementById('agreedFee').value=o.dataset.price;
+});
+</script>
+{% endif %}
+
+
+<!-- ═══════════════════════ ENROLLMENT DETAIL ═══════════════ -->
+{% if section == 'enrollment_detail' %}
+<div class="sh">
+  <div>
+    <div class="st"><i class="bi bi-journal-check"></i> {{ enrollment.enrollment_number }}</div>
+    <div style="font-size:.75rem;color:var(--ds-muted)">{{ enrollment.student.full_name }} · {{ enrollment.course.name }}</div>
+  </div>
+  <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
+    <span class="b {% if enrollment.status == 'active' %}b-g{% elif enrollment.status == 'completed' %}b-b{% elif enrollment.status == 'cancelled' %}b-r{% else %}b-a{% endif %}" style="font-size:.78rem;padding:.28rem .6rem" id="enr-status-badge">{{ enrollment.get_status_display }}</span>
+    <button class="btn btn-gh btn-sm" onclick="dsOpen('statusModal')"><i class="bi bi-arrow-repeat"></i> Status</button>
+    <a href="{% url 'driving_school:student_detail' enrollment.student.pk %}" class="btn btn-gh btn-sm" data-nav><i class="bi bi-person"></i></a>
+  </div>
+</div>
+
+<!-- Status modal (AJAX) -->
+<div class="ov" id="statusModal">
+  <div class="mo" style="max-width:360px">
+    <div class="mh"><div class="mt">Change Enrollment Status</div><button class="mx" onclick="dsClose('statusModal')">&times;</button></div>
+    <div class="mb">
+      <form id="statusForm">{% csrf_token %}
+        <div class="fg" style="margin-bottom:.7rem"><label>New Status</label>
+          <select name="status" class="sel" id="statusSelect">{% for val,label in status_choices %}<option value="{{ val }}" {% if enrollment.status == val %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        </div>
+        <div class="fa">
+          <button type="button" class="btn btn-p" onclick="updateStatus()"><i class="bi bi-check-lg"></i> Update</button>
+          <button type="button" class="btn btn-gh" onclick="dsClose('statusModal')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="ds-stats" style="margin-bottom:.9rem">
+  <div class="ds-stat"><div class="ds-stat-lbl">Total Fee</div><div class="ds-stat-val" style="font-size:1rem">{{ enrollment.total_fee|floatformat:0 }}</div><div class="ds-stat-sub">UGX</div></div>
+  <div class="ds-stat"><div class="ds-stat-lbl">Paid</div><div class="ds-stat-val" style="font-size:1rem;color:var(--ds-green)" id="paid-val">{{ enrollment.amount_paid|floatformat:0 }}</div><div class="ds-stat-sub">UGX</div></div>
+  <div class="ds-stat"><div class="ds-stat-lbl">Balance</div><div class="ds-stat-val" style="font-size:1rem;color:{% if enrollment.balance > 0 %}var(--ds-red){% else %}var(--ds-green){% endif %}" id="bal-val">{{ enrollment.balance|floatformat:0 }}</div><div class="ds-stat-sub">UGX</div></div>
+  <div class="ds-stat"><div class="ds-stat-lbl">Lessons</div><div class="ds-stat-val">{{ enrollment.lessons_completed }}/{{ enrollment.course.duration_lessons }}</div><div class="ds-stat-sub">{{ enrollment.lessons_remaining }} remaining</div></div>
+</div>
+
+<div class="tabs">
+  <button class="tab on" onclick="dsTab(this,'tp-progress')"><i class="bi bi-list-check"></i> Progress</button>
+  <button class="tab" onclick="dsTab(this,'tp-payments')"><i class="bi bi-cash"></i> Payments ({{ payments|length }})</button>
+  <button class="tab" onclick="dsTab(this,'tp-sessions')"><i class="bi bi-calendar3"></i> Sessions ({{ sessions|length }})</button>
+  <button class="tab" onclick="dsTab(this,'tp-tests')"><i class="bi bi-patch-check"></i> Tests ({{ tests|length }})</button>
+</div>
+
+<!-- PROGRESS TAB -->
+<div id="tp-progress" class="tp on">
+  <div class="ds-card">
+    <div class="ds-ch">
+      <div class="ds-ct"><i class="bi bi-list-check"></i> Lesson Progress</div>
+      <span class="b b-b">{{ enrollment.lessons_completed }}/{{ enrollment.course.duration_lessons }}</span>
+    </div>
+    <div class="ds-cb">
+      <div style="margin-bottom:.75rem">
+        <div class="pr" style="height:8px"><div class="prb" style="width:{% widthratio enrollment.lessons_completed enrollment.course.duration_lessons 100 %}%"></div></div>
+      </div>
+      <!-- Mini timeline chart for completed sessions -->
+      {% if sessions %}<div class="ch-wrap" style="height:80px;margin-bottom:.85rem"><canvas id="ch-session-timeline"></canvas></div>{% endif %}
+      <div class="ls-g">
+        {% for slot in lesson_slots %}
+        <div class="ls-b {% if slot.session %}{% if slot.session.status == 'completed' %}done{% elif slot.session.status == 'missed' %}missed{% elif slot.session.status == 'cancelled' %}cancelled{% else %}pending{% endif %}{% else %}pending{% endif %}" title="Lesson {{ slot.number }}{% if slot.session %}: {{ slot.session.date|date:'d M Y' }}{% endif %}">
+          <span class="ls-n">{{ slot.number }}</span>
+          {% if slot.session %}
+            <i class="bi bi-{% if slot.session.status == 'completed' %}check-circle-fill{% elif slot.session.status == 'missed' %}x-circle-fill{% elif slot.session.status == 'cancelled' %}dash-circle{% else %}clock{% endif %}" style="font-size:.82rem"></i>
+            <div style="font-size:.62rem;margin-top:.1rem">{{ slot.session.date|date:"d M" }}</div>
+          {% else %}<i class="bi bi-circle" style="font-size:.82rem;opacity:.35"></i>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div style="display:flex;gap:1rem;margin-top:.65rem;font-size:.7rem;color:var(--ds-muted)">
+        <span style="color:var(--ds-green)">■ Done</span>
+        <span style="color:var(--ds-red)">■ Missed</span>
+        <span style="color:var(--ds-muted)">■ Pending</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAYMENTS TAB -->
+<div id="tp-payments" class="tp">
+  <div class="ds-card" style="margin-bottom:.75rem">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-plus-circle"></i> Record Payment</div></div>
+    <div class="ds-cb">
+      <form id="payForm">{% csrf_token %}
+        <input type="hidden" name="enrollment_pk" value="{{ enrollment.pk }}">
+        <div class="fr">
+          <div class="fg"><label class="req">Amount (UGX)</label><input type="number" name="amount" class="inp" required min="1" id="payAmount"></div>
+          <div class="fg"><label>Method</label><select name="method" class="sel">{% for val,label in payment_methods %}<option value="{{ val }}">{{ label }}</option>{% endfor %}</select></div>
+          <div class="fg"><label>Reference</label><input type="text" name="reference" class="inp" placeholder="Optional"></div>
+          <div class="fg" style="justify-content:flex-end"><label>&nbsp;</label><button type="button" class="btn btn-s" onclick="submitPayment()"><i class="bi bi-check-lg"></i> Record</button></div>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="ds-card">
+    <!-- Payment summary chart -->
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-pie-chart"></i> Payment Breakdown</div></div>
+    <div class="ds-cb" style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
+      <div style="width:120px;height:120px;flex-shrink:0"><canvas id="ch-pay-donut"></canvas></div>
+      <div id="pay-list-container">
+        <table class="ds-t" id="payTable">
+          <thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Ref</th><th></th></tr></thead>
+          <tbody id="payTbody">
+            {% for p in payments %}
+            <tr id="pay-row-{{ p.pk }}">
+              <td>{{ p.date_paid|date:"d M Y" }}</td>
+              <td style="font-weight:700;color:var(--ds-green)">{{ p.amount|floatformat:0 }}</td>
+              <td>{{ p.get_method_display }}</td>
+              <td class="m">{{ p.reference|default:"—" }}</td>
+              <td>
+                <div style="display:flex;gap:.25rem">
+                  <a href="{% url 'driving_school:payment_receipt' p.pk %}" class="btn btn-gh btn-sm btn-ic" target="_blank"><i class="bi bi-printer"></i></a>
+                  <button class="btn btn-d btn-sm btn-ic" onclick="voidPayment({{ p.pk }},this)"><i class="bi bi-x-lg"></i></button>
+                </div>
+              </td>
+            </tr>
+            {% empty %}<tr id="pay-empty"><td colspan="5"><div class="empty"><i class="bi bi-cash"></i><p>No payments</p></div></td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SESSIONS TAB -->
+<div id="tp-sessions" class="tp">
+  <div class="ds-card" style="margin-bottom:.75rem">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-calendar-plus"></i> Schedule Lesson</div></div>
+    <div class="ds-cb">
+      <div class="cfl" id="sesConflicts"></div>
+      <form id="sesForm">{% csrf_token %}
+        <input type="hidden" name="enrollment" value="{{ enrollment.pk }}">
+        <div class="fr">
+          <div class="fg"><label class="req">Date</label><input type="date" name="date" id="sDate" class="inp" required></div>
+          <div class="fg"><label class="req">Start Time</label><input type="time" name="start_time" id="sTime" class="inp" required></div>
+          <div class="fg"><label>Duration (mins)</label><input type="number" name="duration_minutes" id="sDur" class="inp" value="60" min="30"></div>
+        </div>
+        <div class="fr">
+          <div class="fg"><label>Instructor</label><select name="instructor" id="sInst" class="sel"><option value="">— None —</option>{% for i in instructors %}<option value="{{ i.pk }}">{{ i.full_name }}</option>{% endfor %}</select></div>
+          <div class="fg"><label>Vehicle</label><select name="vehicle" id="sVeh" class="sel"><option value="">— None —</option>{% for v in vehicles %}<option value="{{ v.pk }}">{{ v.plate_number }} ({{ v.get_transmission_display }})</option>{% endfor %}</select></div>
+          <div class="fg" style="justify-content:flex-end"><label>&nbsp;</label><button type="button" class="btn btn-p" onclick="submitSession()"><i class="bi bi-calendar-check"></i> Schedule</button></div>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="ds-card">
+    <div class="ds-tw"><table class="ds-t">
+      <thead><tr><th>#</th><th>Date</th><th>Time</th><th>Instructor</th><th>Vehicle</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for s in sessions %}
+        <tr>
+          <td class="m">{{ s.lesson_number|default:"—" }}</td>
+          <td>{{ s.date|date:"d M Y" }}</td>
+          <td>{{ s.start_time|time:"H:i" }}</td>
+          <td>{{ s.instructor.full_name|default:"—" }}</td>
+          <td class="m">{{ s.vehicle.plate_number|default:"—" }}</td>
+          <td><span class="b {% if s.status == 'completed' %}b-g{% elif s.status == 'missed' %}b-r{% elif s.status == 'cancelled' %}b-n{% else %}b-b{% endif %}">{{ s.get_status_display }}</span></td>
+          <td><div style="display:flex;gap:.25rem">
+            <a href="{% url 'driving_school:session_edit' s.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-pencil"></i></a>
+            <button class="btn btn-d btn-sm btn-ic" onclick="delSession({{ s.pk }},this)"><i class="bi bi-trash"></i></button>
+          </div></td>
+        </tr>
+        {% empty %}<tr><td colspan="7"><div class="empty"><i class="bi bi-calendar-x"></i><p>No sessions</p></div></td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- TESTS TAB -->
+<div id="tp-tests" class="tp">
+  <div class="ds-card" style="margin-bottom:.75rem">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-patch-plus"></i> Add Test</div></div>
+    <div class="ds-cb"><form method="post" action="{% url 'driving_school:test_create' %}" class="ds-ajax-form">{% csrf_token %}
+      <input type="hidden" name="enrollment" value="{{ enrollment.pk }}">
+      <div class="fr">
+        <div class="fg"><label class="req">Type</label><select name="test_type" class="sel" required><option value="theory">Theory</option><option value="practical">Practical</option></select></div>
+        <div class="fg"><label class="req">Date</label><input type="date" name="test_date" class="inp" required></div>
+        <div class="fg"><label>Result</label><select name="result" class="sel"><option value="pending">Pending</option><option value="pass">Pass</option><option value="fail">Fail</option></select></div>
+        <div class="fg"><label>Score</label><input type="number" name="score" class="inp" step="0.01" min="0"></div>
+        <div class="fg"><label>Max Score</label><input type="number" name="max_score" class="inp" step="0.01" min="0"></div>
+        <div class="fg" style="justify-content:flex-end"><label>&nbsp;</label><button type="submit" class="btn btn-p"><i class="bi bi-plus-lg"></i> Save</button></div>
+      </div>
+    </form></div>
+  </div>
+  <div class="ds-card"><div class="ds-tw"><table class="ds-t">
+    <thead><tr><th>Type</th><th>Date</th><th>Result</th><th>Score</th><th>Center</th><th></th></tr></thead>
+    <tbody>
+      {% for t in tests %}
+      <tr><td>{{ t.get_test_type_display }}</td><td>{{ t.test_date|date:"d M Y" }}</td>
+        <td><span class="b {% if t.result == 'pass' %}b-g{% elif t.result == 'fail' %}b-r{% else %}b-a{% endif %}">{{ t.get_result_display }}</span></td>
+        <td>{% if t.score %}{{ t.score }}/{{ t.max_score|default:"?" }}{% else %}—{% endif %}</td>
+        <td class="m">{{ t.test_center|default:"—" }}</td>
+        <td><a href="{% url 'driving_school:test_edit' t.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-pencil"></i></a></td>
+      </tr>
+      {% empty %}<tr><td colspan="6"><div class="empty"><i class="bi bi-patch-question"></i><p>No tests</p></div></td></tr>{% endfor %}
+    </tbody>
+  </table></div></div>
+</div>
+
+<script>
+(function(){
+  // Payment donut
+  const isDark = document.documentElement.dataset.theme==='dark';
+  const total = {{ enrollment.total_fee|floatformat:0 }};
+  const paid  = {{ enrollment.amount_paid|floatformat:0 }};
+  const bal   = Math.max(0, total - paid);
+  new Chart(document.getElementById('ch-pay-donut'),{
+    type:'doughnut',
+    data:{labels:['Paid','Balance'],datasets:[{data:[paid,bal],backgroundColor:['#2f9e44','#e03131'],borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'70%',
+             plugins:{legend:{position:'bottom',labels:{color:isDark?'#7b88b8':'#64748b',font:{size:10},boxWidth:10}}}}
+  });
+
+  // Session timeline sparkline
+  const sesCanvas = document.getElementById('ch-session-timeline');
+  if(sesCanvas){
+    const labels = [{% for s in sessions %}'{{ s.date|date:"d M" }}'{% if not forloop.last %},{% endif %}{% endfor %}];
+    const vals   = [{% for s in sessions %}{% if s.status == 'completed' %}1{% elif s.status == 'missed' %}0{% else %}0.5{% endif %}{% if not forloop.last %},{% endif %}{% endfor %}];
+    new Chart(sesCanvas,{type:'bar',
+      data:{labels,datasets:[{data:vals,
+        backgroundColor:vals.map(v=>v===1?'#2f9e4466':v===0?'#e0313166':'#3b5bdb44'),
+        borderColor:vals.map(v=>v===1?'#2f9e44':v===0?'#e03131':'#3b5bdb'),
+        borderWidth:1.5,borderRadius:3}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{grid:{display:false},ticks:{color:isDark?'#7b88b8':'#64748b',font:{size:9}}},
+                y:{display:false,min:0,max:1.2}}}});
+  }
+
+  // Conflict check
+  const CAPI = '{% url "driving_school:api_check_conflicts" %}';
+  function checkConflicts(box,dateId,timeId,durId,instId,vehId,excludePk=''){
+    const date=document.getElementById(dateId)?.value;
+    const time=document.getElementById(timeId)?.value;
+    const dur=document.getElementById(durId)?.value||60;
+    const inst=document.getElementById(instId)?.value||'';
+    const veh=document.getElementById(vehId)?.value||'';
+    if(!date||!time) return;
+    fetch(`${CAPI}?date=${date}&start_time=${time}&duration=${dur}&instructor=${inst}&vehicle=${veh}&exclude=${excludePk}`)
+      .then(r=>r.json()).then(d=>{
+        const el=document.getElementById(box);
+        if(d.conflicts?.length){el.innerHTML=d.conflicts.map(c=>`<div>⚠ ${c}</div>`).join('');el.classList.add('show');}
+        else{el.classList.remove('show');}
+      });
+  }
+  ['sDate','sTime','sDur','sInst','sVeh'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('change',()=>checkConflicts('sesConflicts','sDate','sTime','sDur','sInst','sVeh'));
+  });
+
+  // Submit session (AJAX)
+  window.submitSession = function(){
+    const form = document.getElementById('sesForm');
+    const data = new FormData(form);
+    fetch('{% url "driving_school:session_create" %}',{
+      method:'POST', body:data,
+      headers:{'X-Requested-With':'XMLHttpRequest'}
+    }).then(r=>r.json()).then(d=>{
+      if(d.ok){ showToast(d.message,'success'); location.reload(); }
+      else if(d.conflicts){ document.getElementById('sesConflicts').innerHTML=d.conflicts.map(c=>`<div>⚠ ${c}</div>`).join(''); document.getElementById('sesConflicts').classList.add('show'); }
+      else { showToast(d.message||'Error','error'); }
+    });
+  };
+
+  // Submit payment (AJAX)
+  window.submitPayment = function(){
+    const form = document.getElementById('payForm');
+    const data = new FormData(form);
+    const enrPk = data.get('enrollment_pk');
+    data.delete('enrollment_pk');
+    fetch(`/driving-school/enrollments/${enrPk}/pay/`,{
+      method:'POST', body:data,
+      headers:{'X-Requested-With':'XMLHttpRequest'}
+    }).then(r=>r.json()).then(d=>{
+      if(d.ok){
+        showToast(d.message,'success');
+        document.getElementById('paid-val').textContent = d.amount_paid.toLocaleString();
+        document.getElementById('bal-val').textContent  = d.balance.toLocaleString();
+        const tbody = document.getElementById('payTbody');
+        const empty = document.getElementById('pay-empty');
+        if(empty) empty.remove();
+        const p = d.payment;
+        tbody.insertAdjacentHTML('afterbegin',`
+          <tr id="pay-row-${p.id}">
+            <td>${p.date}</td>
+            <td style="font-weight:700;color:var(--ds-green)">${p.amount.toLocaleString()}</td>
+            <td>${p.method_display}</td>
+            <td class="m">${p.reference}</td>
+            <td><div style="display:flex;gap:.25rem">
+              <a href="${p.receipt_url}" class="btn btn-gh btn-sm btn-ic" target="_blank"><i class="bi bi-printer"></i></a>
+              <button class="btn btn-d btn-sm btn-ic" onclick="voidPayment(${p.id},this)"><i class="bi bi-x-lg"></i></button>
+            </div></td>
+          </tr>`);
+        document.getElementById('payAmount').value = '';
+      } else { showToast(d.message||'Error','error'); }
+    });
+  };
+
+  // Void payment (AJAX)
+  window.voidPayment = function(pk, btn){
+    if(!confirm('Void this payment?')) return;
+    const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    fetch(`/driving-school/payments/${pk}/void/`,{
+      method:'POST', body:new URLSearchParams({csrfmiddlewaretoken:csrf}),
+      headers:{'X-Requested-With':'XMLHttpRequest','Content-Type':'application/x-www-form-urlencoded'}
+    }).then(r=>r.json()).then(d=>{
+      if(d.ok){
+        showToast(d.message,'warning');
+        document.getElementById(`pay-row-${pk}`)?.remove();
+        document.getElementById('paid-val').textContent = d.amount_paid.toLocaleString();
+        document.getElementById('bal-val').textContent  = d.balance.toLocaleString();
+      }
+    });
+  };
+
+  // Delete session (AJAX)
+  window.delSession = function(pk, btn){
+    if(!confirm('Delete this session?')) return;
+    const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    fetch(`/driving-school/sessions/${pk}/delete/`,{
+      method:'POST', body:new URLSearchParams({csrfmiddlewaretoken:csrf}),
+      headers:{'X-Requested-With':'XMLHttpRequest','Content-Type':'application/x-www-form-urlencoded'}
+    }).then(r=>r.json()).then(d=>{
+      if(d.ok){ showToast(d.message,'success'); btn.closest('tr').remove(); }
+    });
+  };
+
+  // Update enrollment status (AJAX)
+  window.updateStatus = function(){
+    const sel = document.getElementById('statusSelect').value;
+    const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    fetch('{% url "driving_school:enrollment_update_status" enrollment.pk %}',{
+      method:'POST', body:new URLSearchParams({csrfmiddlewaretoken:csrf, status:sel}),
+      headers:{'X-Requested-With':'XMLHttpRequest','Content-Type':'application/x-www-form-urlencoded'}
+    }).then(r=>r.json()).then(d=>{
+      if(d.ok){
+        showToast(d.message,'success');
+        const badge = document.getElementById('enr-status-badge');
+        badge.textContent = d.status_display;
+        const cls = {active:'b-g',completed:'b-b',cancelled:'b-r'}[d.status]||'b-a';
+        badge.className = `b ${cls}`;
+        dsClose('statusModal');
+      }
+    });
+  };
+})();
+</script>
+{% endif %}
+
+
+<!-- ═══════════════════════ SCHEDULE ═══════════════════════ -->
+{% if section == 'schedule' %}
+<div class="sh">
+  <div class="st"><i class="bi bi-calendar3"></i> Schedule</div>
+  <div style="display:flex;gap:.35rem;align-items:center">
+    <div style="display:flex;gap:.2rem">
+      <button class="btn btn-gh btn-sm" id="btnMonth" onclick="calView('month')"><i class="bi bi-grid-3x3-gap"></i> Month</button>
+      <button class="btn btn-gh btn-sm" id="btnWeek" onclick="calView('week')"><i class="bi bi-view-list"></i> Week</button>
+      <button class="btn btn-gh btn-sm" id="btnHeat" onclick="calView('heat')"><i class="bi bi-grid-1x2"></i> Heatmap</button>
+    </div>
+    <button class="btn btn-p" onclick="dsOpen('bookModal')"><i class="bi bi-plus-lg"></i> Book Lesson</button>
+  </div>
+</div>
+
+<div class="g2" style="align-items:start">
+  <!-- Left: calendar views -->
+  <div>
+    <!-- Month view -->
+    <div id="calMonth">
+      <div class="ds-card" style="margin-bottom:.75rem">
+        <div class="ds-ch">
+          <a href="?year={{ prev_year }}&month={{ prev_month }}&date={{ selected_date }}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-chevron-left"></i></a>
+          <div class="ds-ct" style="justify-content:center;flex:1">{{ month_name }}</div>
+          <a href="?year={{ next_year }}&month={{ next_month }}&date={{ selected_date }}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-chevron-right"></i></a>
+        </div>
+        <div style="padding:.4rem">
+          <table class="cal-g">
+            <thead><tr>{% for d in weekday_names %}<th>{{ d }}</th>{% endfor %}</tr></thead>
+            <tbody>{% for week in weeks %}<tr>{% for day in week %}
+              {% with dk=day|date:"Y-m-d" %}
+              <td class="cal-c {% if day.month != month %}om{% endif %} {% if dk == today|date:'Y-m-d' %}tod{% endif %} {% if dk == selected_date|date:'Y-m-d' %}sel{% endif %}"
+                  onclick="selDate('{{ dk }}')">
+                <div class="cal-d">{{ day.day }}</div>
+                <div class="cal-dots" id="dots-{{ dk }}"></div>
+              </td>
+              {% endwith %}
+            {% endfor %}</tr>{% endfor %}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <!-- Week view -->
+    <div id="calWeek" style="display:none">
+      <div class="ds-card" style="margin-bottom:.75rem">
+        <div class="ds-ch"><div class="ds-ct">Week of {{ week_days.0|date:"d M Y" }}</div></div>
+        <div class="ds-cb">
+          <div class="wk-g">
+            {% for wd in week_days %}{% with wdk=wd|date:"Y-m-d" %}
+            <div class="wk-col" onclick="selDate('{{ wdk }}')">
+              <div class="wk-h {% if wdk == today|date:'Y-m-d' %}tod{% endif %}">
+                <div style="font-size:.67rem">{{ wd|date:"D" }}</div>
+                <div style="font-size:.82rem;font-weight:800">{{ wd.day }}</div>
+              </div>
+              <div class="wk-b" id="wk-{{ wdk }}"></div>
+            </div>
+            {% endwith %}{% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Heatmap view -->
+    <div id="calHeat" style="display:none">
+      <div class="ds-card" style="margin-bottom:.75rem">
+        <div class="ds-ch"><div class="ds-ct"><i class="bi bi-grid-1x2"></i> Booking Heatmap (90 days)</div></div>
+        <div class="ds-cb" id="sched-heatmap"><div style="color:var(--ds-muted);font-size:.8rem">Loading…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: day detail panel -->
+  <div>
+    <div class="ds-card" id="dayPanel">
+      <div class="ds-ch">
+        <div class="ds-ct"><i class="bi bi-calendar-day"></i> <span id="dayTitle">{{ selected_date|date:"D, d M Y" }}</span></div>
+        <span class="b b-b" id="dayCount">{{ day_sessions|length }}</span>
+      </div>
+      <!-- 24h timeline for the selected day -->
+      <div class="ds-cb" style="padding:.5rem">
+        <div id="dayTimeline"></div>
+        <div id="dayList">
+          {% for s in day_sessions %}
+          <div class="sr {{ s.status }}" style="margin:.3rem 0">
+            <div class="sr-time">{{ s.start_time|time:"H:i" }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:.8rem">{{ s.enrollment.student.full_name }}</div>
+              <div style="font-size:.68rem;color:var(--ds-muted)">{{ s.enrollment.course.name }}</div>
+              <div style="font-size:.68rem;color:var(--ds-muted)">{{ s.instructor.full_name|default:"—" }} · {{ s.vehicle.plate_number|default:"—" }}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.25rem">
+              <span class="b {% if s.status == 'completed' %}b-g{% elif s.status == 'missed' %}b-r{% elif s.status == 'cancelled' %}b-n{% else %}b-b{% endif %}">{{ s.get_status_display }}</span>
+              <a href="{% url 'driving_school:session_edit' s.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-pencil"></i></a>
+            </div>
+          </div>
+          {% empty %}<div class="empty"><i class="bi bi-calendar-x"></i><p>No sessions</p></div>{% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Book Modal -->
+<div class="ov" id="bookModal">
+  <div class="mo">
+    <div class="mh"><div class="mt"><i class="bi bi-calendar-plus"></i> Book a Lesson</div><button class="mx" onclick="dsClose('bookModal')">&times;</button></div>
+    <div class="mb">
+      <div class="cfl" id="bookConflicts"></div>
+      <form id="bookForm">{% csrf_token %}
+        <div class="fg" style="margin-bottom:.65rem"><label class="req">Enrollment</label>
+          <select name="enrollment" class="sel" required><option value="">— Select —</option>{% for e in enrollments %}<option value="{{ e.pk }}">{{ e.student.full_name }} — {{ e.course.name }}</option>{% endfor %}</select>
+        </div>
+        <div class="fr">
+          <div class="fg"><label class="req">Date</label><input type="date" name="date" id="bDate" class="inp" required value="{{ selected_date|date:'Y-m-d' }}"></div>
+          <div class="fg"><label class="req">Start Time</label><input type="time" name="start_time" id="bTime" class="inp" required></div>
+          <div class="fg"><label>Duration (mins)</label><input type="number" name="duration_minutes" id="bDur" class="inp" value="60" min="30"></div>
+        </div>
+        <div class="fr">
+          <div class="fg"><label>Instructor</label><select name="instructor" id="bInst" class="sel"><option value="">— None —</option>{% for i in instructors %}<option value="{{ i.pk }}">{{ i.full_name }}</option>{% endfor %}</select></div>
+          <div class="fg"><label>Vehicle</label><select name="vehicle" id="bVeh" class="sel"><option value="">— None —</option>{% for v in vehicles %}<option value="{{ v.pk }}">{{ v.plate_number }}</option>{% endfor %}</select></div>
+        </div>
+        <div class="fa">
+          <button type="button" class="btn btn-p" onclick="submitBook()"><i class="bi bi-calendar-check"></i> Book</button>
+          <button type="button" class="btn btn-gh" onclick="dsClose('bookModal')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+const SESS_JSON   = {{ sessions_json|safe }};
+const SESS_API    = '{{ api_sessions_url }}';
+const CFLCT_API   = '{{ api_conflicts_url }}';
+const HM_API      = '{{ api_heatmap_url }}';
+const TODAY_STR   = '{{ today|date:"Y-m-d" }}';
+
+// Populate calendar dots
+function renderDots(){
+  Object.entries(SESS_JSON).forEach(([dk,list])=>{
+    const box = document.getElementById('dots-'+dk);
+    if(box) box.innerHTML = list.slice(0,5).map(s=>`<div class="cal-dot ${s.status}"></div>`).join('');
+  });
+}
+
+// Populate week view
+function renderWeek(){
+  const wdates = [{% for wd in week_days %}'{{ wd|date:"Y-m-d" }}'{% if not forloop.last %},{% endif %}{% endfor %}];
+  wdates.forEach(dk=>{
+    const col = document.getElementById('wk-'+dk);
+    if(!col) return;
+    col.innerHTML = (SESS_JSON[dk]||[]).map(s=>`
+      <div class="wk-ev ${s.status}" onclick="event.stopPropagation();selDate('${dk}')"
+           title="${s.student} · ${s.course}\n${s.instructor||'—'} · ${s.vehicle||'—'}">
+        ${s.time} ${s.student.split(' ')[0]}
+      </div>`).join('');
+  });
+}
+
+// Render day timeline (24h axis)
+function renderTimeline(sessions){
+  const wrap = document.getElementById('dayTimeline');
+  if(!sessions.length){wrap.innerHTML=''; return;}
+  const minH=7, maxH=20, total=maxH-minH;
+  let html=`<div class="tl-axis">`;
+  for(let h=minH;h<=maxH;h+=2) html+=`<div class="tl-hour" style="flex:2">${h}:00</div>`;
+  html+=`</div>`;
+  sessions.forEach((s,i)=>{
+    const sh = parseInt(s.time.split(':')[0]), sm = parseInt(s.time.split(':')[1]);
+    const leftPct = Math.max(0,((sh+sm/60)-minH)/total*100);
+    const widPct  = Math.min(100-leftPct, s.duration/60/total*100);
+    const colors  = {completed:['#2f9e44','#d3f9d8'],missed:['#e03131','#ffe3e3'],cancelled:['#64748b','#f0f4ff'],scheduled:['#3b5bdb','#dbe4ff']};
+    const [border,bg] = colors[s.status]||colors.scheduled;
+    html+=`<div class="tl-row">
+      <div class="tl-label">${s.time}</div>
+      <div class="tl-block" style="left:${leftPct}%;width:max(${widPct}%,60px);background:${bg};border:1px solid ${border};color:${border}"
+           onclick="window.location='${s.edit_url}'" title="${s.student}">
+        ${s.student.split(' ')[0]}
+      </div>
+    </div>`;
+  });
+  wrap.innerHTML = html;
+}
+
+// Select a date
+function selDate(dk){
+  document.querySelectorAll('.cal-c.sel').forEach(c=>c.classList.remove('sel'));
+  document.querySelectorAll('.cal-c').forEach(c=>{
+    if(c.getAttribute('onclick')?.includes(`'${dk}'`)) c.classList.add('sel');
+  });
+  const bDate = document.getElementById('bDate');
+  if(bDate) bDate.value = dk;
+  const url = new URL(window.location);
+  url.searchParams.set('date', dk);
+  window.history.pushState({}, '', url);
+  document.getElementById('dayTitle').textContent = new Date(dk+'T12:00').toLocaleDateString('en-UG',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  fetch(`${SESS_API}?date=${dk}`,{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(r=>r.json()).then(data=>{
+    document.getElementById('dayCount').textContent = data.sessions.length;
+    renderTimeline(data.sessions);
+    const list = document.getElementById('dayList');
+    if(!data.sessions.length){list.innerHTML='<div class="empty"><i class="bi bi-calendar-x"></i><p>No sessions</p></div>';return;}
+    list.innerHTML = data.sessions.map(s=>`
+      <div class="sr ${s.status}" style="margin:.3rem 0">
+        <div class="sr-time">${s.time}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:.8rem">${s.student}</div>
+          <div style="font-size:.68rem;color:var(--ds-muted)">${s.course}</div>
+          <div style="font-size:.68rem;color:var(--ds-muted)">${s.instructor} · ${s.vehicle}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:.25rem">
+          <span class="b ${s.status==='completed'?'b-g':s.status==='missed'?'b-r':s.status==='cancelled'?'b-n':'b-b'}">${s.status_display}</span>
+          <a href="${s.edit_url}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-pencil"></i></a>
+        </div>
+      </div>`).join('');
+    dsBindNav();
+  });
+}
+
+// Calendar view toggle
+function calView(v){
+  document.getElementById('calMonth').style.display = v==='month'?'':'none';
+  document.getElementById('calWeek').style.display  = v==='week'?'':'none';
+  document.getElementById('calHeat').style.display  = v==='heat'?'':'none';
+  ['Month','Week','Heat'].forEach(n=>document.getElementById('btn'+n).classList.remove('on'));
+  document.getElementById('btn'+v.charAt(0).toUpperCase()+v.slice(1)).classList.add('on');
+  if(v==='week') renderWeek();
+  if(v==='heat'){
+    fetch(HM_API).then(r=>r.json()).then(d=>{
+      const isDark = document.documentElement.dataset.theme==='dark';
+      const maxV = Math.max(...d.grid.flat(),1);
+      const cont = document.getElementById('sched-heatmap');
+      const hrs = Array.from({length:24},(_,i)=>i);
+      let html=`<div class="hm-hour-labels">`;
+      hrs.forEach(h=>{if(h%3===0)html+=`<span style="flex:3;font-size:.6rem;color:var(--ds-muted)">${h}</span>`;});
+      html+=`</div><div style="display:flex;flex-direction:column;gap:2px;margin-top:4px">`;
+      d.days.forEach((day,di)=>{
+        html+=`<div style="display:flex;align-items:center;gap:2px">`;
+        html+=`<span style="width:24px;font-size:.65rem;color:var(--ds-muted);font-weight:600;text-align:right;padding-right:4px">${day}</span>`;
+        hrs.forEach(h=>{
+          const v=d.grid[di][h];
+          const alpha=v?Math.max(.12,v/maxV):0;
+          const bg=v?`rgba(59,91,219,${alpha})`:(isDark?'#1e2238':'#f0f4ff');
+          html+=`<div style="flex:1;aspect-ratio:1;border-radius:2px;background:${bg};min-width:10px" title="${day} ${h}:00 — ${v||0} sessions"></div>`;
+        });
+        html+=`</div>`;
+      });
+      html+=`</div>`;
+      cont.innerHTML=html;
+    });
+  }
+}
+
+// Conflict check for book modal
+function checkBook(){
+  const date=document.getElementById('bDate').value;
+  const time=document.getElementById('bTime').value;
+  const dur=document.getElementById('bDur').value;
+  const inst=document.getElementById('bInst').value;
+  const veh=document.getElementById('bVeh').value;
+  if(!date||!time) return;
+  fetch(`${CFLCT_API}?date=${date}&start_time=${time}&duration=${dur}&instructor=${inst}&vehicle=${veh}`)
+    .then(r=>r.json()).then(d=>{
+      const box=document.getElementById('bookConflicts');
+      if(d.conflicts?.length){box.innerHTML=d.conflicts.map(c=>`<div>⚠ ${c}</div>`).join('');box.classList.add('show');}
+      else{box.classList.remove('show');}
+    });
+}
+['bDate','bTime','bDur','bInst','bVeh'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',checkBook);});
+
+// Book session (AJAX)
+window.submitBook = function(){
+  const form = document.getElementById('bookForm');
+  const data = new FormData(form);
+  fetch('{% url "driving_school:session_create" %}',{
+    method:'POST',body:data,headers:{'X-Requested-With':'XMLHttpRequest'}
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok){
+      showToast(d.message,'success');
+      dsClose('bookModal');
+      SESS_JSON[d.session.date] = SESS_JSON[d.session.date]||[];
+      SESS_JSON[d.session.date].push({...d.session,time:d.session.time,status:d.session.status,student:d.session.student});
+      renderDots();
+      selDate(d.session.date);
+    } else if(d.conflicts){
+      document.getElementById('bookConflicts').innerHTML=d.conflicts.map(c=>`<div>⚠ ${c}</div>`).join('');
+      document.getElementById('bookConflicts').classList.add('show');
+    }
+  });
+};
+
+renderDots();
+selDate('{{ selected_date|date:"Y-m-d" }}');
+</script>
+{% endif %}
+
+
+<!-- ═══════════════════════ SESSION EDIT ═══════════════════ -->
+{% if section == 'session_edit' %}
+<div class="sh">
+  <div class="st"><i class="bi bi-pencil-square"></i> Edit Session — {{ session.enrollment.student.full_name }}</div>
+  <a href="{% url 'driving_school:schedule' %}?date={{ session.date|date:'Y-m-d' }}" class="btn btn-gh" data-nav><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+<div class="ds-card"><div class="ds-cb">
+  <div class="cfl" id="editCfl"></div>
+  <form method="post" class="ds-ajax-form">{% csrf_token %}
+    <div class="fr">
+      <div class="fg"><label class="req">Date</label><input type="date" name="date" id="eDate" class="inp" required value="{{ session.date|date:'Y-m-d' }}"></div>
+      <div class="fg"><label class="req">Start Time</label><input type="time" name="start_time" id="eTime" class="inp" required value="{{ session.start_time|time:'H:i' }}"></div>
+      <div class="fg"><label>Duration (mins)</label><input type="number" name="duration_minutes" id="eDur" class="inp" value="{{ session.duration_minutes }}" min="30"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Instructor</label><select name="instructor" id="eInst" class="sel"><option value="">— None —</option>{% for i in instructors %}<option value="{{ i.pk }}" {% if session.instructor_id == i.pk %}selected{% endif %}>{{ i.full_name }}</option>{% endfor %}</select></div>
+      <div class="fg"><label>Vehicle</label><select name="vehicle" id="eVeh" class="sel"><option value="">— None —</option>{% for v in vehicles %}<option value="{{ v.pk }}" {% if session.vehicle_id == v.pk %}selected{% endif %}>{{ v.plate_number }}</option>{% endfor %}</select></div>
+      <div class="fg"><label>Status</label><select name="status" class="sel">{% for val,label in status_choices %}<option value="{{ val }}" {% if session.status == val %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Route Notes</label><textarea name="route_notes" class="tea">{{ session.route_notes }}</textarea></div>
+      <div class="fg"><label>Instructor Notes</label><textarea name="instructor_notes" class="tea">{{ session.instructor_notes }}</textarea></div>
+      <div class="fg"><label>Student Performance</label><textarea name="student_performance" class="tea">{{ session.student_performance }}</textarea></div>
+    </div>
+    <div class="fa">
+      <button type="submit" class="btn btn-p"><i class="bi bi-check-lg"></i> Save</button>
+      <form method="post" action="{% url 'driving_school:session_delete' session.pk %}" style="display:inline" onsubmit="return confirm('Delete?')">{% csrf_token %}<button type="submit" class="btn btn-d"><i class="bi bi-trash"></i> Delete</button></form>
+      <a href="{% url 'driving_school:schedule' %}?date={{ session.date|date:'Y-m-d' }}" class="btn btn-gh" data-nav>Cancel</a>
+    </div>
+  </form>
+</div></div>
+<script>
+const CEDIT='{{ api_conflicts_url }}';
+function chkEdit(){
+  const date=document.getElementById('eDate').value,time=document.getElementById('eTime').value;
+  const dur=document.getElementById('eDur').value,inst=document.getElementById('eInst').value,veh=document.getElementById('eVeh').value;
+  if(!date||!time)return;
+  fetch(`${CEDIT}?date=${date}&start_time=${time}&duration=${dur}&instructor=${inst}&vehicle=${veh}&exclude={{ session.pk }}`)
+    .then(r=>r.json()).then(d=>{const b=document.getElementById('editCfl');if(d.conflicts?.length){b.innerHTML=d.conflicts.map(c=>`<div>⚠ ${c}</div>`).join('');b.classList.add('show');}else{b.classList.remove('show');}});
+}
+['eDate','eTime','eDur','eInst','eVeh'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',chkEdit);});
+</script>
+{% endif %}
+
+
+<!-- ═══════════════════════ INSTRUCTORS ═══════════════════ -->
+{% if section == 'instructors' %}
+<div class="sh"><div class="st"><i class="bi bi-person-badge"></i> Instructors</div><a href="{% url 'driving_school:instructor_create' %}" class="btn btn-p" data-nav><i class="bi bi-person-plus"></i> Add</a></div>
+<div class="ds-card"><div class="ds-tw"><table class="ds-t">
+  <thead><tr><th>Name</th><th>Phone</th><th>License</th><th>Expiry</th><th>Specializations</th><th>This Month</th><th></th></tr></thead>
+  <tbody>{% for i in instructors %}
+  <tr><td><div style="display:flex;align-items:center;gap:.4rem"><div class="av">{{ i.first_name.0 }}{{ i.last_name.0 }}</div><div style="font-weight:700">{{ i.full_name }}</div></div></td>
+  <td>{{ i.phone }}</td><td class="m">{{ i.license_number|default:"—" }}</td>
+  <td>{% if i.license_expiry %}<span class="b {% if i.license_expiry < today %}b-r{% else %}b-g{% endif %}">{{ i.license_expiry|date:"d M Y" }}</span>{% else %}—{% endif %}</td>
+  <td class="m" style="font-size:.75rem">{{ i.specializations|default:"—"|truncatechars:32 }}</td>
+  <td>{{ i.sessions_this_month }}</td>
+  <td><a href="{% url 'driving_school:instructor_edit' i.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-pencil"></i></a></td>
+  </tr>{% empty %}<tr><td colspan="7"><div class="empty"><i class="bi bi-person-badge"></i><p>No instructors</p></div></td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endif %}
+
+{% if section == 'instructor_create' or section == 'instructor_edit' %}
+<div class="sh"><div class="st"><i class="bi bi-person-badge"></i> {% if section == 'instructor_create' %}New Instructor{% else %}Edit: {{ instructor.full_name }}{% endif %}</div><a href="{% url 'driving_school:instructors' %}" class="btn btn-gh" data-nav><i class="bi bi-arrow-left"></i> Back</a></div>
+<div class="ds-card"><div class="ds-cb"><form method="post" enctype="multipart/form-data" class="ds-ajax-form">{% csrf_token %}
+  <div class="fr">
+    <div class="fg"><label class="req">First Name</label><input type="text" name="first_name" class="inp" required value="{{ instructor.first_name|default:'' }}"></div>
+    <div class="fg"><label class="req">Last Name</label><input type="text" name="last_name" class="inp" required value="{{ instructor.last_name|default:'' }}"></div>
+    <div class="fg"><label class="req">Phone</label><input type="text" name="phone" class="inp" required value="{{ instructor.phone|default:'' }}"></div>
+    <div class="fg"><label>Email</label><input type="email" name="email" class="inp" value="{{ instructor.email|default:'' }}"></div>
+  </div>
+  <div class="fr">
+    <div class="fg"><label>License Number</label><input type="text" name="license_number" class="inp" value="{{ instructor.license_number|default:'' }}"></div>
+    <div class="fg"><label>License Expiry</label><input type="date" name="license_expiry" class="inp" value="{{ instructor.license_expiry|date:'Y-m-d'|default:'' }}"></div>
+    <div class="fg"><label>Specializations</label><input type="text" name="specializations" class="inp" value="{{ instructor.specializations|default:'' }}"></div>
+  </div>
+  <div class="fr"><div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea name="notes" class="tea">{{ instructor.notes|default:'' }}</textarea></div></div>
+  <div class="fa"><button type="submit" class="btn btn-p"><i class="bi bi-check-lg"></i> {% if section == 'instructor_create' %}Add{% else %}Save{% endif %}</button><a href="{% url 'driving_school:instructors' %}" class="btn btn-gh" data-nav>Cancel</a></div>
+</form></div></div>
+{% endif %}
+
+
+<!-- ═══════════════════════ FLEET ═══════════════════════ -->
+{% if section == 'fleet' %}
+<div class="sh"><div class="st"><i class="bi bi-truck"></i> Fleet</div><a href="{% url 'driving_school:vehicle_create' %}" class="btn btn-p" data-nav><i class="bi bi-plus-lg"></i> Add</a></div>
+<div class="ds-card"><div class="ds-tw"><table class="ds-t">
+  <thead><tr><th>Plate</th><th>Vehicle</th><th>Year</th><th>Transmission</th><th>Status</th><th>Insurance</th><th>Service Due</th><th></th></tr></thead>
+  <tbody>{% for v in vehicles %}
+  <tr><td><span class="b b-b">{{ v.plate_number }}</span></td>
+  <td style="font-weight:700">{{ v.make }} {{ v.model }} {% if v.color %}<span class="m">({{ v.color }})</span>{% endif %}</td>
+  <td class="m">{{ v.year|default:"—" }}</td>
+  <td><span class="b {% if v.transmission == 'manual' %}b-a{% else %}b-p{% endif %}">{{ v.get_transmission_display }}</span></td>
+  <td><span class="b {% if v.status == 'available' %}b-g{% elif v.status == 'in_use' %}b-b{% elif v.status == 'maintenance' %}b-a{% else %}b-n{% endif %}">{{ v.get_status_display }}</span></td>
+  <td>{% if v.insurance_expiry %}<span class="b {% if v.insurance_expiry < today %}b-r{% else %}b-g{% endif %}">{{ v.insurance_expiry|date:"d M Y" }}</span>{% else %}—{% endif %}</td>
+  <td>{% if v.service_due_date %}<span class="b {% if v.service_due_date < today %}b-r{% else %}b-n{% endif %}">{{ v.service_due_date|date:"d M Y" }}</span>{% else %}—{% endif %}</td>
+  <td><a href="{% url 'driving_school:vehicle_edit' v.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-pencil"></i></a></td>
+  </tr>{% empty %}<tr><td colspan="8"><div class="empty"><i class="bi bi-truck"></i><p>No vehicles</p></div></td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endif %}
+
+{% if section == 'vehicle_create' or section == 'vehicle_edit' %}
+<div class="sh"><div class="st"><i class="bi bi-truck"></i> {% if section == 'vehicle_create' %}Add Vehicle{% else %}Edit: {{ vehicle.plate_number }}{% endif %}</div><a href="{% url 'driving_school:fleet' %}" class="btn btn-gh" data-nav><i class="bi bi-arrow-left"></i> Back</a></div>
+<div class="ds-card"><div class="ds-cb"><form method="post" class="ds-ajax-form">{% csrf_token %}
+  <div class="fr">
+    <div class="fg"><label class="req">Plate</label><input type="text" name="plate_number" class="inp" required value="{{ vehicle.plate_number|default:'' }}"></div>
+    <div class="fg"><label class="req">Make</label><input type="text" name="make" class="inp" required value="{{ vehicle.make|default:'' }}"></div>
+    <div class="fg"><label class="req">Model</label><input type="text" name="model" class="inp" required value="{{ vehicle.model|default:'' }}"></div>
+    <div class="fg"><label>Color</label><input type="text" name="color" class="inp" value="{{ vehicle.color|default:'' }}"></div>
+  </div>
+  <div class="fr">
+    <div class="fg"><label>Year</label><input type="number" name="year" class="inp" min="1990" max="2030" value="{{ vehicle.year|default:'' }}"></div>
+    <div class="fg"><label>Transmission</label><select name="transmission" class="sel">{% for val,label in transmission_choices %}<option value="{{ val }}" {% if vehicle.transmission == val %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    {% if section == 'vehicle_edit' %}<div class="fg"><label>Status</label><select name="status" class="sel">{% for val,label in status_choices %}<option value="{{ val }}" {% if vehicle.status == val %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>{% endif %}
+    <div class="fg"><label>Insurance Expiry</label><input type="date" name="insurance_expiry" class="inp" value="{{ vehicle.insurance_expiry|date:'Y-m-d'|default:'' }}"></div>
+    <div class="fg"><label>Service Due</label><input type="date" name="service_due_date" class="inp" value="{{ vehicle.service_due_date|date:'Y-m-d'|default:'' }}"></div>
+  </div>
+  <div class="fa"><button type="submit" class="btn btn-p"><i class="bi bi-check-lg"></i> {% if section == 'vehicle_create' %}Add{% else %}Save{% endif %}</button><a href="{% url 'driving_school:fleet' %}" class="btn btn-gh" data-nav>Cancel</a></div>
+</form></div></div>
+{% endif %}
+
+
+<!-- ═══════════════════════ TESTS ═══════════════════════ -->
+{% if section == 'tests' %}
+<div class="sh"><div class="st"><i class="bi bi-patch-check"></i> Test Records</div><button class="btn btn-p" onclick="dsOpen('addTestMod')"><i class="bi bi-plus-lg"></i> Add Test</button></div>
+<div class="ds-card"><div class="ds-tw"><table class="ds-t">
+  <thead><tr><th>Student</th><th>Course</th><th>Type</th><th>Date</th><th>Result</th><th>Score</th><th>Center</th><th></th></tr></thead>
+  <tbody>{% for t in tests %}
+  <tr><td><a href="{% url 'driving_school:student_detail' t.enrollment.student.pk %}" style="color:var(--ds-accent);text-decoration:none;font-weight:700" data-nav>{{ t.enrollment.student.full_name }}</a></td>
+  <td style="font-size:.76rem" class="m">{{ t.enrollment.course.name }}</td>
+  <td>{{ t.get_test_type_display }}</td>
+  <td>{{ t.test_date|date:"d M Y" }}</td>
+  <td><span class="b {% if t.result == 'pass' %}b-g{% elif t.result == 'fail' %}b-r{% else %}b-a{% endif %}">{{ t.get_result_display }}</span></td>
+  <td>{% if t.score %}{{ t.score }}/{{ t.max_score|default:"?" }}{% else %}—{% endif %}</td>
+  <td class="m">{{ t.test_center|default:"—" }}</td>
+  <td><a href="{% url 'driving_school:test_edit' t.pk %}" class="btn btn-gh btn-sm btn-ic" data-nav><i class="bi bi-pencil"></i></a></td>
+  </tr>{% empty %}<tr><td colspan="8"><div class="empty"><i class="bi bi-patch-question"></i><p>No tests</p></div></td></tr>{% endfor %}</tbody>
+</table></div></div>
+<div class="ov" id="addTestMod">
+  <div class="mo"><div class="mh"><div class="mt"><i class="bi bi-patch-check"></i> Add Test Record</div><button class="mx" onclick="dsClose('addTestMod')">&times;</button></div>
+  <div class="mb"><form method="post" action="{% url 'driving_school:test_create' %}" class="ds-ajax-form">{% csrf_token %}
+    <div class="fg" style="margin-bottom:.65rem"><label class="req">Enrollment</label><select name="enrollment" class="sel" required><option value="">— Select —</option>{% for e in enrollments %}<option value="{{ e.pk }}">{{ e.student.full_name }} — {{ e.course.name }}</option>{% endfor %}</select></div>
+    <div class="fr">
+      <div class="fg"><label class="req">Type</label><select name="test_type" class="sel" required><option value="theory">Theory</option><option value="practical">Practical</option></select></div>
+      <div class="fg"><label class="req">Date</label><input type="date" name="test_date" class="inp" required></div>
+      <div class="fg"><label>Result</label><select name="result" class="sel"><option value="pending">Pending</option><option value="pass">Pass</option><option value="fail">Fail</option></select></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Score</label><input type="number" name="score" class="inp" step="0.01" min="0"></div>
+      <div class="fg"><label>Max Score</label><input type="number" name="max_score" class="inp" step="0.01" min="0"></div>
+      <div class="fg"><label>Center</label><input type="text" name="test_center" class="inp"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Examiner</label><input type="text" name="examiner_name" class="inp"></div>
+      <div class="fg"><label>Certificate No.</label><input type="text" name="certificate_number" class="inp"></div>
+    </div>
+    <div class="fa"><button type="submit" class="btn btn-p"><i class="bi bi-check-lg"></i> Save</button><button type="button" class="btn btn-gh" onclick="dsClose('addTestMod')">Cancel</button></div>
+  </form></div></div>
+</div>
+{% endif %}
+
+{% if section == 'test_edit' %}
+<div class="sh"><div class="st"><i class="bi bi-pencil-square"></i> Edit Test — {{ test.enrollment.student.full_name }}</div><a href="{% url 'driving_school:tests' %}" class="btn btn-gh" data-nav><i class="bi bi-arrow-left"></i> Back</a></div>
+<div class="ds-card"><div class="ds-cb"><form method="post" class="ds-ajax-form">{% csrf_token %}
+  <div class="fr">
+    <div class="fg"><label>Type</label><select name="test_type" class="sel"><option value="theory" {% if test.test_type == 'theory' %}selected{% endif %}>Theory</option><option value="practical" {% if test.test_type == 'practical' %}selected{% endif %}>Practical</option></select></div>
+    <div class="fg"><label class="req">Date</label><input type="date" name="test_date" class="inp" required value="{{ test.test_date|date:'Y-m-d' }}"></div>
+    <div class="fg"><label>Result</label><select name="result" class="sel"><option value="pending" {% if test.result == 'pending' %}selected{% endif %}>Pending</option><option value="pass" {% if test.result == 'pass' %}selected{% endif %}>Pass</option><option value="fail" {% if test.result == 'fail' %}selected{% endif %}>Fail</option></select></div>
+  </div>
+  <div class="fr">
+    <div class="fg"><label>Score</label><input type="number" name="score" class="inp" step="0.01" value="{{ test.score|default:'' }}"></div>
+    <div class="fg"><label>Max Score</label><input type="number" name="max_score" class="inp" step="0.01" value="{{ test.max_score|default:'' }}"></div>
+    <div class="fg"><label>Test Center</label><input type="text" name="test_center" class="inp" value="{{ test.test_center|default:'' }}"></div>
+  </div>
+  <div class="fr">
+    <div class="fg"><label>Examiner</label><input type="text" name="examiner_name" class="inp" value="{{ test.examiner_name|default:'' }}"></div>
+    <div class="fg"><label>Certificate No.</label><input type="text" name="certificate_number" class="inp" value="{{ test.certificate_number|default:'' }}"></div>
+  </div>
+  <div class="fr"><div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea name="notes" class="tea">{{ test.notes|default:'' }}</textarea></div></div>
+  <div class="fa"><button type="submit" class="btn btn-p"><i class="bi bi-check-lg"></i> Save</button><a href="{% url 'driving_school:tests' %}" class="btn btn-gh" data-nav>Cancel</a></div>
+</form></div></div>
+{% endif %}
+
+
+<!-- ═══════════════════════ PAYMENT RECEIPT ═══════════════ -->
+{% if section == 'payment_receipt' %}
+<div class="sh"><div class="st"><i class="bi bi-printer"></i> Receipt</div>
+  <div style="display:flex;gap:.4rem"><button onclick="window.print()" class="btn btn-p"><i class="bi bi-printer"></i> Print</button><a href="{% url 'driving_school:enrollment_detail' payment.enrollment.pk %}" class="btn btn-gh" data-nav><i class="bi bi-arrow-left"></i> Back</a></div>
+</div>
+<div class="rcpt">
+  <div class="rcpt-hd"><div class="rcpt-title"><i class="bi bi-car-front-fill"></i> Driving School</div><div style="font-size:.78rem;color:var(--ds-muted);margin-top:.2rem">Official Payment Receipt</div></div>
+  <div class="rcpt-row"><span style="color:var(--ds-muted)">Receipt No.</span><span style="font-weight:700">{{ payment.pk|stringformat:"06d" }}</span></div>
+  <div class="rcpt-row"><span style="color:var(--ds-muted)">Date</span><span>{{ payment.date_paid|date:"d F Y" }}</span></div>
+  <div class="rcpt-row"><span style="color:var(--ds-muted)">Student</span><span style="font-weight:700">{{ payment.enrollment.student.full_name }}</span></div>
+  <div class="rcpt-row"><span style="color:var(--ds-muted)">Student No.</span><span>{{ payment.enrollment.student.student_number }}</span></div>
+  <div class="rcpt-row"><span style="color:var(--ds-muted)">Course</span><span>{{ payment.enrollment.course.name }}</span></div>
+  <div class="rcpt-row"><span style="color:var(--ds-muted)">Enrollment Ref</span><span>{{ payment.enrollment.enrollment_number }}</span></div>
+  <div class="rcpt-row"><span style="color:var(--ds-muted)">Method</span><span>{{ payment.get_method_display }}</span></div>
+  {% if payment.reference %}<div class="rcpt-row"><span style="color:var(--ds-muted)">Reference</span><span>{{ payment.reference }}</span></div>{% endif %}
+  <div class="rcpt-row rcpt-total"><span>Amount Paid</span><span>UGX {{ payment.amount|floatformat:0 }}</span></div>
+  <div style="margin-top:.85rem;padding-top:.85rem;border-top:1px dashed var(--ds-border)">
+    <div class="rcpt-row"><span style="color:var(--ds-muted)">Total Fee</span><span>UGX {{ payment.enrollment.total_fee|floatformat:0 }}</span></div>
+    <div class="rcpt-row"><span style="color:var(--ds-muted)">Total Paid</span><span style="color:var(--ds-green);font-weight:700">UGX {{ payment.enrollment.amount_paid|floatformat:0 }}</span></div>
+    <div class="rcpt-row"><span style="color:var(--ds-muted)">Balance</span><span style="color:{% if payment.enrollment.balance > 0 %}var(--ds-red){% else %}var(--ds-green){% endif %};font-weight:700">UGX {{ payment.enrollment.balance|floatformat:0 }}</span></div>
+  </div>
+  <div style="text-align:center;margin-top:1.25rem;font-size:.73rem;color:var(--ds-muted);border-top:1px dashed var(--ds-border);padding-top:.65rem">Thank you for choosing our Driving School.<br>Computer-generated receipt — no signature required.</div>
+</div>
+{% endif %}
+
+
+<!-- ═══════════════════════ REPORTS ═══════════════════════ -->
+{% if section == 'reports' %}
+<div class="sh"><div class="st"><i class="bi bi-bar-chart-line"></i> Reports & Analytics</div></div>
+
+<div class="ds-stats" style="margin-bottom:1rem">
+  <div class="ds-stat"><div class="ds-stat-lbl">Total Revenue</div><div class="ds-stat-val" style="font-size:1rem">{{ total_revenue|floatformat:0 }}</div><div class="ds-stat-sub">UGX all-time</div></div>
+  <div class="ds-stat"><div class="ds-stat-lbl">This Month</div><div class="ds-stat-val" style="font-size:1rem">{{ monthly_revenue|floatformat:0 }}</div><div class="ds-stat-sub">UGX</div></div>
+  <div class="ds-stat"><div class="ds-stat-lbl">Outstanding</div><div class="ds-stat-val" style="font-size:1rem;color:var(--ds-red)">{{ total_outstanding|floatformat:0 }}</div><div class="ds-stat-sub">UGX across active</div></div>
+  <div class="ds-stat"><div class="ds-stat-lbl">Theory Pass</div><div class="ds-stat-val">{{ theory_pass_rate }}%</div></div>
+  <div class="ds-stat"><div class="ds-stat-lbl">Practical Pass</div><div class="ds-stat-val">{{ practical_pass_rate }}%</div></div>
+</div>
+
+<!-- Row 1: Stacked revenue + Outstanding -->
+<div class="g2" style="margin-bottom:1rem">
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-bar-chart-line"></i> Revenue by Course (12 months)</div></div>
+    <div class="ds-cb"><div class="ch-wrap" style="height:200px"><canvas id="rpt-stacked"></canvas></div></div>
+  </div>
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-hourglass-split"></i> Top Outstanding Balances</div></div>
+    <div class="ds-cb"><div class="ch-wrap" style="height:200px"><canvas id="rpt-outstanding"></canvas></div></div>
+  </div>
+</div>
+
+<!-- Row 2: Instructor completion + Test scatter -->
+<div class="g2" style="margin-bottom:1rem">
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-person-badge"></i> Instructor Completion Rates</div></div>
+    <div class="ds-cb"><div class="ch-wrap" style="height:200px"><canvas id="rpt-inst-comp"></canvas></div></div>
+  </div>
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-scatter-chart"></i> Test Score Distribution</div></div>
+    <div class="ds-cb"><div class="ch-wrap" style="height:200px"><canvas id="rpt-scatter"></canvas></div></div>
+  </div>
+</div>
+
+<!-- Row 3: Course popularity + Instructor table -->
+<div class="g2">
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-bar-chart"></i> Course Popularity</div></div>
+    <div style="padding:0">
+      <table class="ds-t">
+        <thead><tr><th>Course</th><th>Enrollments</th><th></th></tr></thead>
+        <tbody>{% for c in course_stats %}
+        <tr><td style="font-weight:700">{{ c.name }}</td><td>{{ c.total_enrollments }}</td>
+        <td style="min-width:80px"><div class="pr"><div class="prb" style="width:{% if course_stats.0.total_enrollments %}{% widthratio c.total_enrollments course_stats.0.total_enrollments 100 %}{% else %}0{% endif %}%"></div></div></td>
+        </tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </div>
+  <div class="ds-card">
+    <div class="ds-ch"><div class="ds-ct"><i class="bi bi-person-badge"></i> Instructor Workload</div></div>
+    <div style="padding:0">
+      <table class="ds-t">
+        <thead><tr><th>Instructor</th><th>Total</th><th>Completed</th><th>Rate</th></tr></thead>
+        <tbody>{% for i in instructor_stats %}
+        <tr><td style="font-weight:700">{{ i.full_name }}</td><td>{{ i.total_sessions }}</td>
+        <td><span class="b b-g">{{ i.completed_sessions }}</span></td>
+        <td>{% if i.total_sessions %}{{ i.completed_sessions|floatformat:0 }}/{{ i.total_sessions }}{% else %}—{% endif %}</td>
+        </tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const RAPI = '{{ api_reports_url }}';
+  const DAPI = '{{ api_dashboard_url }}';
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  const gc = isDark?'rgba(255,255,255,.05)':'rgba(0,0,0,.04)';
+  const tc = isDark?'#7b88b8':'#64748b';
+
+  const palettes = ['#3b5bdb','#7048e8','#2f9e44','#e67700','#e03131','#0c8599'];
+
+  Promise.all([fetch(RAPI).then(r=>r.json()), fetch(DAPI).then(r=>r.json())]).then(([rd,dd])=>{
+    // Stacked bar: revenue by course per month
+    if(rd.course_names.length && rd.revenue_by_month.length){
+      new Chart(document.getElementById('rpt-stacked'),{
+        type:'bar',
+        data:{
+          labels: rd.revenue_by_month.map(r=>r.month),
+          datasets: rd.course_names.map((cn,i)=>({
+            label: cn, data: rd.revenue_by_month.map(r=>r[cn]||0),
+            backgroundColor: palettes[i%palettes.length]+'99',
+            borderColor: palettes[i%palettes.length], borderWidth:1.5, borderRadius:2
+          }))
+        },
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:tc,font:{size:9},boxWidth:10}}},
+          scales:{x:{stacked:true,grid:{color:gc},ticks:{color:tc,font:{size:10}}},
+                  y:{stacked:true,grid:{color:gc},ticks:{color:tc,font:{size:10},callback:v=>'UGX '+v.toLocaleString()}}}}
+      });
+    }
+
+    // Horizontal bar: outstanding
+    if(rd.top_outstanding.length){
+      new Chart(document.getElementById('rpt-outstanding'),{
+        type:'bar',
+        data:{
+          labels: rd.top_outstanding.map(o=>o.student),
+          datasets:[{label:'Balance',data:rd.top_outstanding.map(o=>o.balance),
+            backgroundColor:'#e0313166',borderColor:'#e03131',borderWidth:1.5,borderRadius:3}]
+        },
+        options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+          plugins:{legend:{display:false}},
+          scales:{x:{grid:{color:gc},ticks:{color:tc,font:{size:9},callback:v=>v.toLocaleString()}},
+                  y:{grid:{display:false},ticks:{color:tc,font:{size:9}}}}}
+      });
+    }
+
+    // Grouped bar: instructor completed vs missed
+    if(rd.instructor_completion.length){
+      new Chart(document.getElementById('rpt-inst-comp'),{
+        type:'bar',
+        data:{
+          labels: rd.instructor_completion.map(i=>i.name),
+          datasets:[
+            {label:'Completed',data:rd.instructor_completion.map(i=>i.completed),backgroundColor:'#2f9e4499',borderColor:'#2f9e44',borderWidth:1.5,borderRadius:3},
+            {label:'Missed',data:rd.instructor_completion.map(i=>i.missed),backgroundColor:'#e0313166',borderColor:'#e03131',borderWidth:1.5,borderRadius:3}
+          ]
+        },
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{position:'bottom',labels:{color:tc,font:{size:9},boxWidth:10}}},
+          scales:{x:{grid:{color:gc},ticks:{color:tc,font:{size:9}}},
+                  y:{grid:{color:gc},ticks:{color:tc,font:{size:10}}}}}
+      });
+    }
+
+    // Scatter: test scores
+    if(rd.test_scatter.length){
+      const theory    = rd.test_scatter.filter(t=>t.test_type==='theory');
+      const practical = rd.test_scatter.filter(t=>t.test_type==='practical');
+      new Chart(document.getElementById('rpt-scatter'),{
+        type:'scatter',
+        data:{datasets:[
+          {label:'Theory',   data:theory.map((_,i)=>({x:i,y:theory[i].pct})),   pointBackgroundColor:'#3b5bdb99',pointRadius:4,showLine:false},
+          {label:'Practical',data:practical.map((_,i)=>({x:i,y:practical[i].pct})),pointBackgroundColor:'#7048e899',pointRadius:4,showLine:false}
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{position:'bottom',labels:{color:tc,font:{size:9},boxWidth:10}}},
+          scales:{x:{display:false},y:{min:0,max:100,grid:{color:gc},ticks:{color:tc,font:{size:10},callback:v=>v+'%'}}}}
+      });
+    }
+  });
+})();
+</script>
+{% endif %}
+
+</div><!-- /ds-body -->
+</div><!-- /ds-wrap -->
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   DS APP ENGINE v3 — AJAX navigation + keyboard shortcuts + toast
+═══════════════════════════════════════════════════════════════════ */
+
+// ── Loader bar ─────────────────────────────────────────────────────
+function loaderStart(){ const l=document.getElementById('ds-loader'); l.style.width='60%'; l.style.opacity='1'; }
+function loaderDone(){  const l=document.getElementById('ds-loader'); l.style.width='100%'; setTimeout(()=>l.classList.add('done'),150); setTimeout(()=>{l.style.width='0';l.classList.remove('done');},600); }
+
+// ── Toast notifications ─────────────────────────────────────────────
+function showToast(msg, type='success', duration=3800){
+  const c = document.getElementById('ds-toast');
+  const d = document.createElement('div');
+  d.className = `ds-toast-item ${type}`;
+  const icon = type==='success'?'check-circle':type==='error'?'x-circle':'exclamation-triangle';
+  d.innerHTML = `<i class="bi bi-${icon}"></i> ${msg}`;
+  c.appendChild(d);
+  setTimeout(()=>{ d.style.transition='opacity .3s'; d.style.opacity='0'; setTimeout(()=>d.remove(),300); }, duration);
+}
+
+// ── AJAX navigation ─────────────────────────────────────────────────
+function dsNav(url, push=true){
+  loaderStart();
+  fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} })
+    .then(r=>r.text()).then(html=>{
+      // Parse returned HTML and extract #ds-main content
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const newMain = doc.getElementById('ds-main');
+      const curMain = document.getElementById('ds-main');
+      if(newMain && curMain){
+        curMain.innerHTML = newMain.innerHTML;
+        // Update active nav
+        const newNav = doc.querySelectorAll('.ds-nl');
+        document.querySelectorAll('.ds-nl').forEach((el,i)=>{
+          if(newNav[i]) el.className = newNav[i].className;
+        });
+        if(push) window.history.pushState({url}, '', url);
+        // Re-bind nav links and re-run inline scripts
+        dsBindNav();
+        runNewScripts(curMain);
+        window.scrollTo(0,0);
+      }
+      loaderDone();
+    }).catch(()=>{ window.location.href = url; loaderDone(); });
+}
+
+// Re-bind all data-nav links after AJAX load
+function dsBindNav(){
+  document.querySelectorAll('[data-nav]').forEach(el=>{
+    if(el._navBound) return;
+    el._navBound = true;
+    el.addEventListener('click', e=>{
+      if(e.metaKey||e.ctrlKey||e.shiftKey) return; // allow open-in-new-tab
+      const href = el.getAttribute('href');
+      if(!href||href==='#') return;
+      e.preventDefault();
+      dsNav(href);
+    });
+  });
+}
+
+// Execute scripts in newly loaded content
+function runNewScripts(container){
+  container.querySelectorAll('script').forEach(old=>{
+    const s = document.createElement('script');
+    if(old.src) s.src = old.src;
+    else s.textContent = old.textContent;
+    old.parentNode.replaceChild(s, old);
+  });
+}
+
+// AJAX form submission
+document.addEventListener('submit', function(e){
+  const form = e.target;
+  if(!form.classList.contains('ds-ajax-form')) return;
+  e.preventDefault();
+  const data = new FormData(form);
+  const action = form.getAttribute('action') || window.location.pathname;
+  loaderStart();
+  fetch(action, { method:'POST', body:data, headers:{'X-Requested-With':'XMLHttpRequest'} })
+    .then(r=>r.json()).then(d=>{
+      loaderDone();
+      if(d.ok){
+        showToast(d.message,'success');
+        if(d.redirect) setTimeout(()=>dsNav(d.redirect),300);
+      } else {
+        showToast(d.message||'Something went wrong','error');
+      }
+    }).catch(()=>{ loaderDone(); form.submit(); });
+});
+
+// Popstate (back/forward)
+window.addEventListener('popstate', e=>{
+  if(e.state?.url) dsNav(e.state.url, false);
+});
+
+// ── Modal helpers ───────────────────────────────────────────────────
+function dsOpen(id){ document.getElementById(id)?.classList.add('open'); }
+function dsClose(id){ document.getElementById(id)?.classList.remove('open'); }
+document.addEventListener('click', e=>{
+  if(e.target.classList.contains('ov')) e.target.classList.remove('open');
+});
+
+// ── Tab helper ──────────────────────────────────────────────────────
+function dsTab(btn, paneId){
+  btn.closest('.tabs').querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  btn.closest('.ds-body, .ds-card, #ds-main').querySelectorAll('.tp').forEach(p=>p.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById(paneId)?.classList.add('on');
+}
+
+// ── Global search ───────────────────────────────────────────────────
+let searchTimer;
+const gsInput = document.getElementById('gsInput');
+const gsResults = document.getElementById('gsResults');
+gsInput.addEventListener('input', function(){
+  clearTimeout(searchTimer);
+  const q = this.value.trim();
+  if(q.length < 2){ gsResults.classList.remove('show'); return; }
+  searchTimer = setTimeout(()=>{
+    fetch(`{% url 'driving_school:api_global_search' %}?q=${encodeURIComponent(q)}`)
+      .then(r=>r.json()).then(d=>{
+        if(!d.results.length){ gsResults.innerHTML='<div style="padding:.6rem .85rem;font-size:.8rem;color:var(--ds-muted)">No results</div>'; }
+        else{ gsResults.innerHTML = d.results.map(r=>`
+          <a class="ds-gsearch-result" href="${r.url}" data-nav>
+            <span class="ds-gsr-type">${r.type}</span>
+            <div><div style="font-weight:700">${r.label}</div><div style="font-size:.72rem;color:var(--ds-muted)">${r.sub}</div></div>
+          </a>`).join(''); dsBindNav(); }
+        gsResults.classList.add('show');
+      });
+  }, 220);
+});
+document.addEventListener('click', e=>{ if(!e.target.closest('#gsWrap')) gsResults.classList.remove('show'); });
+
+// ── Keyboard shortcuts ──────────────────────────────────────────────
+function ksOpen(){  document.getElementById('ks-overlay').classList.add('open'); }
+function ksClose(){ document.getElementById('ks-overlay').classList.remove('open'); }
+
+const ROUTES = {
+  d: '{% url "driving_school:dashboard" %}',
+  s: '{% url "driving_school:students" %}',
+  e: '{% url "driving_school:enrollments" %}',
+  c: '{% url "driving_school:schedule" %}',
+  i: '{% url "driving_school:instructors" %}',
+  f: '{% url "driving_school:fleet" %}',
+  k: '{% url "driving_school:courses" %}',
+  t: '{% url "driving_school:tests" %}',
+  r: '{% url "driving_school:reports" %}',
+};
+const NEW_ROUTES = {
+  '{% url "driving_school:dashboard" %}':    '{% url "driving_school:enrollment_create" %}',
+  '{% url "driving_school:students" %}':     '{% url "driving_school:student_create" %}',
+  '{% url "driving_school:enrollments" %}':  '{% url "driving_school:enrollment_create" %}',
+  '{% url "driving_school:instructors" %}':  '{% url "driving_school:instructor_create" %}',
+  '{% url "driving_school:fleet" %}':        '{% url "driving_school:vehicle_create" %}',
+  '{% url "driving_school:courses" %}':      '{% url "driving_school:course_create" %}',
+};
+
+let gMode = false;
+document.addEventListener('keydown', function(e){
+  const tag = e.target.tagName;
+  const inInput = tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||e.target.isContentEditable;
+
+  // Esc
+  if(e.key==='Escape'){
+    document.querySelectorAll('.ov.open').forEach(o=>o.classList.remove('open'));
+    gsResults.classList.remove('show');
+    gsInput.blur();
+    gMode = false;
+    return;
+  }
+  // Alt+Left/Right — browser history
+  if(e.altKey && e.key==='ArrowLeft'){ e.preventDefault(); history.back(); return; }
+  if(e.altKey && e.key==='ArrowRight'){ e.preventDefault(); history.forward(); return; }
+
+  if(inInput) return;
+
+  // ? — shortcuts overlay
+  if(e.key==='?'){ ksOpen(); return; }
+
+  // / — global search focus
+  if(e.key==='/'){ e.preventDefault(); gsInput.focus(); gsInput.select(); return; }
+
+  // G sequence
+  if(e.key.toLowerCase()==='g' && !e.ctrlKey && !e.metaKey){ gMode=true; setTimeout(()=>{gMode=false;},1500); return; }
+  if(gMode){
+    gMode=false;
+    const key = e.key.toLowerCase();
+    const url = ROUTES[key] || (key==='o' ? ROUTES.k : null);
+    if(url){ e.preventDefault(); dsNav(url); }
+    return;
+  }
+
+  // N — new (context-aware)
+  if(e.key.toLowerCase()==='n' && !e.ctrlKey && !e.metaKey){
+    const cur = window.location.pathname;
+    const newUrl = NEW_ROUTES[cur] || '{% url "driving_school:enrollment_create" %}';
+    dsNav(newUrl);
+    return;
+  }
+});
+
+// ── Init ────────────────────────────────────────────────────────────
+dsBindNav();
+// Push initial state
+if(!window.history.state) window.history.replaceState({url: window.location.href}, '', window.location.href);
+
+// Auto-dismiss any server-rendered messages
+setTimeout(()=>{
+  document.querySelectorAll('#ds-msgs > div').forEach(el=>{
+    el.style.transition='opacity .4s'; el.style.opacity='0';
+    setTimeout(()=>el.remove(), 400);
+  });
+}, 4000);
+</script>
+{% endblock %}

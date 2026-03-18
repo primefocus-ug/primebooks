@@ -152,6 +152,7 @@ urlpatterns = [
     path('suggestions/', include('suggestions.urls')),
     path('onboarding/', include('onboarding.urls')),
     path('search/palette/', palette_search, name='palette_search'),
+    path('driving-school/', include('driving_school.urls', namespace='driving_school')),
     path('support/',include('support_widget.urls')),
     path('api/support/', include('support_widget.api_urls')),
     path('nav-preferences/', include('core.urls', namespace='nav_preferences')),

@@ -48,6 +48,7 @@
     backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
 }
 @keyframes clSlideDown { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
+
 .cl-ann-info        { background:rgba(59,130,246,0.12);  border-color:rgba(59,130,246,0.25);  color:#93c5fd; }
 .cl-ann-warning     { background:rgba(245,158,11,0.12);  border-color:rgba(245,158,11,0.25);  color:#fcd34d; }
 .cl-ann-maintenance { background:rgba(16,185,129,0.1);   border-color:rgba(16,185,129,0.25);  color:#6ee7b7; }
@@ -59,8 +60,9 @@
 [data-theme="light"] .cl-ann-maintenance { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
 [data-theme="light"] .cl-ann-billing     { background:#f5f3ff; border-color:#ddd6fe; color:#5b21b6; }
 [data-theme="light"] .cl-ann-critical    { background:#fef2f2; border-color:#fecaca; color:#991b1b; }
+
 .cl-ann-icon  { font-size:1rem; flex-shrink:0; margin-top:1px; }
-.cl-ann-body  { flex:1; }
+.cl-ann-body  { flex:1; min-width: 0; }
 .cl-ann-title { font-weight:700; margin-bottom:0.2rem; }
 .cl-ann-msg   { opacity:0.85; line-height:1.5; }
 .cl-ann-cta {
@@ -69,23 +71,37 @@
     background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2);
     border-radius:6px; font-size:0.75rem; font-weight:600;
     text-decoration:none; color:inherit; transition:background 0.15s;
+    touch-action: manipulation;
 }
 .cl-ann-cta:hover { background:rgba(255,255,255,0.2); color:inherit; }
 [data-theme="light"] .cl-ann-cta { background:rgba(0,0,0,0.06); border-color:rgba(0,0,0,0.12); }
 .cl-ann-dismiss {
     background:none; border:none; cursor:pointer;
     color:inherit; opacity:0.5; font-size:1rem;
-    padding:0; line-height:1; flex-shrink:0; transition:opacity 0.15s;
+    padding:0.25rem; line-height:1; flex-shrink:0;
+    transition:opacity 0.15s;
+    /* Larger tap target */
+    min-width: 32px; min-height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    touch-action: manipulation;
 }
 .cl-ann-dismiss:hover { opacity:1; }
 
 /* ════════════════ BACKDROP ════════════════ */
 #clModal {
     display: none; position: fixed; inset: 0; z-index: 9999;
-    align-items: center; justify-content: center; padding: 1rem;
+    align-items: flex-end; justify-content: center;
     font-family: 'Sora', sans-serif;
     background: var(--cl-bg);
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    padding: 0;
+}
+/* Center on desktop */
+@media (min-width: 601px) {
+    #clModal {
+        align-items: center;
+        padding: 1rem;
+    }
 }
 #clModal.open { display: flex; animation: clFadeIn 0.25s ease; }
 @keyframes clFadeIn  { from{opacity:0} to{opacity:1} }
@@ -106,15 +122,40 @@
     from { opacity:0; transform:translateY(28px) scale(0.97); }
     to   { opacity:1; transform:translateY(0) scale(1); }
 }
+
+/* Bottom-sheet on mobile */
+@media (max-width: 600px) {
+    .cl-dialog {
+        border-radius: 20px 20px 0 0;
+        max-height: 92vh;
+        animation: clSlideUpSheet 0.32s cubic-bezier(0.16,1,0.3,1);
+    }
+    @keyframes clSlideUpSheet {
+        from { opacity:0; transform:translateY(100%); }
+        to   { opacity:1; transform:translateY(0); }
+    }
+}
 [data-theme="light"] .cl-dialog {
     box-shadow: 0 24px 60px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.06);
 }
 
+/* Drag handle (mobile) */
+.cl-drag-handle {
+    display: none;
+    width: 36px; height: 4px;
+    background: var(--cl-border);
+    border-radius: 2px;
+    margin: 0.6rem auto 0;
+    flex-shrink: 0;
+}
+@media (max-width: 600px) { .cl-drag-handle { display: block; } }
+
 /* ── Header ── */
 .cl-header {
     display: flex; align-items: center; gap: 0.75rem;
-    padding: 1rem 1.25rem 0.875rem;
+    padding: 0.875rem 1.125rem;
     border-bottom: 1px solid var(--cl-border); flex-shrink: 0;
+    min-width: 0;
 }
 .cl-badge {
     font-family: 'JetBrains Mono', monospace; font-size: 0.63rem;
@@ -122,25 +163,35 @@
     background: linear-gradient(135deg, var(--cl-accent), var(--cl-accent2));
     color: #fff; border-radius: 20px; padding: 0.2rem 0.65rem;
     text-transform: uppercase; flex-shrink: 0;
+    white-space: nowrap;
 }
 .cl-version-tag {
     font-family: 'JetBrains Mono', monospace; font-size: 0.63rem;
     color: var(--cl-muted); background: var(--cl-surface2);
     border: 1px solid var(--cl-border); border-radius: 6px;
-    padding: 0.15rem 0.5rem;
+    padding: 0.15rem 0.5rem; flex-shrink: 0; white-space: nowrap;
 }
-.cl-header-info { flex: 1; }
-.cl-header-title { font-size: 0.82rem; font-weight: 700; color: var(--cl-text); line-height: 1.3; }
+/* Hide version tag on very small screens */
+@media (max-width: 380px) { .cl-version-tag { display: none; } }
+
+.cl-header-info { flex: 1; min-width: 0; }
+.cl-header-title {
+    font-size: 0.82rem; font-weight: 700; color: var(--cl-text);
+    line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .cl-header-sub   { font-size: 0.72rem; color: var(--cl-muted); margin-top: 0.1rem; }
 .cl-close {
     background: var(--cl-surface2); border: 1px solid var(--cl-border);
     color: var(--cl-muted); border-radius: 8px;
-    width: 30px; height: 30px;
+    width: 34px; height: 34px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; font-size: 1.05rem;
-    transition: color 0.15s, background 0.15s; flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+    touch-action: manipulation;
 }
 .cl-close:hover { color: var(--cl-text); background: rgba(255,255,255,0.08); }
+.cl-close:focus-visible { outline: 2px solid var(--cl-accent); outline-offset: 2px; }
 [data-theme="light"] .cl-close:hover { background: rgba(0,0,0,0.06); }
 
 /* ── Carousel ── */
@@ -153,7 +204,7 @@
 .cl-slide {
     flex: 0 0 100%; width: 100%;
     display: flex; flex-direction: column;
-    overflow-y: auto;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
     scrollbar-color: rgba(255,255,255,0.1) transparent;
 }
@@ -191,6 +242,7 @@
     position: relative; width: 100%; height: var(--cl-slide-h);
     flex-shrink: 0; overflow: hidden;
     user-select: none; cursor: col-resize; background: var(--cl-surface2);
+    touch-action: none; /* allow touchmove handling */
 }
 .cl-comparison img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 .cl-comparison-after { clip-path: inset(0 50% 0 0); }
@@ -202,7 +254,7 @@
 .cl-comparison-handle {
     position: absolute; top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    width: 36px; height: 36px; background: #fff; border-radius: 50%;
+    width: 40px; height: 40px; background: #fff; border-radius: 50%;
     box-shadow: 0 2px 12px rgba(0,0,0,0.3);
     display: flex; align-items: center; justify-content: center;
     z-index: 6; pointer-events: none; font-size: 0.75rem; color: #333; gap: 2px;
@@ -218,7 +270,7 @@
 .cl-comparison-label.after  { right: 12px; }
 
 /* ── Body text ── */
-.cl-body { padding: 1.1rem 1.25rem 0.875rem; flex: 1; }
+.cl-body { padding: 1rem 1.125rem 0.875rem; flex: 1; }
 .cl-slide-tag {
     display: inline-flex; align-items: center; gap: 0.3rem;
     font-size: 0.67rem; font-weight: 700;
@@ -242,42 +294,62 @@
 .cl-chip i { font-size: 0.73rem; }
 .cl-show-me {
     display: inline-flex; align-items: center; gap: 0.4rem;
-    margin-top: 0.75rem; padding: 0.45rem 0.9rem;
+    margin-top: 0.75rem; padding: 0.5rem 1rem;
     background: transparent; border: 1px solid var(--cl-accent);
     color: var(--cl-accent); border-radius: 8px;
     font-size: 0.78rem; font-weight: 600; font-family: 'Sora', sans-serif;
     cursor: pointer; transition: background 0.15s, color 0.15s;
+    touch-action: manipulation;
+    min-height: 40px;
 }
 .cl-show-me:hover { background: rgba(59,130,246,0.1); }
 
 /* ── Footer ── */
 .cl-footer {
     display: flex; align-items: center; gap: 0.65rem;
-    padding: 0.8rem 1.25rem;
+    padding: 0.75rem 1.125rem;
     border-top: 1px solid var(--cl-border); flex-shrink: 0;
     background: var(--cl-surface);
+    flex-wrap: nowrap;
+    /* Safe area on iPhone */
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0.75rem));
 }
-.cl-dots { display: flex; gap: 0.3rem; flex: 1; align-items: center; }
+.cl-dots { display: flex; gap: 0.3rem; flex: 1; align-items: center; overflow: hidden; }
 .cl-dot {
     width: 6px; height: 6px; border-radius: 50%;
     background: var(--cl-border); cursor: pointer;
     transition: background 0.2s, width 0.22s, border-radius 0.22s;
     border: none; padding: 0; flex-shrink: 0;
+    touch-action: manipulation;
+    /* Larger tap target */
+    min-width: 18px; min-height: 18px;
+    display: flex; align-items: center; justify-content: center;
 }
-.cl-dot.active { background: var(--cl-accent); width: 18px; border-radius: 3px; }
+/* Inner dot visual */
+.cl-dot::after {
+    content: ''; display: block;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--cl-border);
+    transition: background 0.2s, width 0.22s, border-radius 0.22s;
+}
+.cl-dot.active::after { background: var(--cl-accent); width: 18px; border-radius: 3px; }
+
 .cl-counter { font-family: 'JetBrains Mono', monospace; font-size: 0.67rem; color: var(--cl-muted); flex-shrink: 0; }
 .cl-opt-out { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
-.cl-opt-out input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; accent-color: var(--cl-accent); }
+.cl-opt-out input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--cl-accent); }
 .cl-opt-out label { font-size: 0.71rem; color: var(--cl-muted); cursor: pointer; white-space: nowrap; }
+
 .cl-btn {
     display: inline-flex; align-items: center; gap: 0.4rem;
     padding: 0.52rem 1rem; border-radius: 8px;
     font-size: 0.79rem; font-weight: 600; font-family: 'Sora', sans-serif;
     cursor: pointer; border: 1px solid transparent;
     transition: all 0.15s; text-decoration: none; white-space: nowrap;
+    touch-action: manipulation; min-height: 36px;
 }
 .cl-btn-ghost { background: transparent; color: var(--cl-muted); border-color: var(--cl-border); }
 .cl-btn-ghost:hover { color: var(--cl-text); border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.04); }
+.cl-btn-ghost:focus-visible { outline: 2px solid var(--cl-accent); outline-offset: 2px; }
 [data-theme="light"] .cl-btn-ghost:hover { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.15); }
 .cl-btn-primary {
     background: linear-gradient(135deg, var(--cl-accent), #1d4ed8);
@@ -285,6 +357,7 @@
 }
 .cl-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(59,130,246,0.42); }
 .cl-btn-primary:active { transform: none; }
+.cl-btn-primary:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 /* ── Feature Highlight Overlay ── */
 #clHighlightOverlay { display: none; position: fixed; inset: 0; z-index: 10000; pointer-events: none; }
@@ -304,15 +377,28 @@
     position: absolute; background: var(--cl-surface);
     border: 1px solid var(--cl-border); border-radius: 10px;
     padding: 0.65rem 0.9rem; font-family: 'Sora', sans-serif;
-    font-size: 0.78rem; color: var(--cl-text); max-width: 220px; line-height: 1.5;
+    font-size: 0.78rem; color: var(--cl-text);
+    max-width: min(220px, calc(100vw - 24px));
+    line-height: 1.5;
     box-shadow: 0 8px 30px rgba(0,0,0,0.4); pointer-events: auto;
+}
+/* Mobile: pin tooltip to bottom */
+@media (max-width: 600px) {
+    .cl-highlight-tooltip {
+        position: fixed !important;
+        top: auto !important;
+        bottom: 1.5rem !important;
+        left: 12px !important; right: 12px !important;
+        max-width: none !important;
+    }
 }
 .cl-highlight-dismiss {
     display: block; margin-top: 0.5rem;
     background: var(--cl-accent); color: #fff; border: none; border-radius: 6px;
-    padding: 0.35rem 0.75rem; font-size: 0.73rem; font-weight: 600;
+    padding: 0.4rem 0.75rem; font-size: 0.73rem; font-weight: 600;
     font-family: 'Sora', sans-serif; cursor: pointer; width: 100%;
-    transition: opacity 0.15s;
+    transition: opacity 0.15s; touch-action: manipulation;
+    min-height: 36px;
 }
 .cl-highlight-dismiss:hover { opacity: 0.9; }
 
@@ -327,6 +413,7 @@
     cursor: pointer; width: calc(100% - 1rem); text-align: left;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
     font-family: 'Sora', sans-serif; position: relative;
+    touch-action: manipulation;
 }
 .cl-whats-new-btn:hover { background: rgba(59,130,246,0.06); color: #3b82f6; border-color: rgba(59,130,246,0.3); }
 .cl-whats-new-btn .cl-new-dot {
@@ -340,13 +427,21 @@
     50%      { box-shadow: 0 0 0 5px rgba(59,130,246,0); }
 }
 
+/* ════════════════ RESPONSIVE ════════════════ */
 @media (max-width: 480px) {
-    :root { --cl-slide-h: 210px; }
-    .cl-dialog { border-radius: 12px; max-height: 96vh; }
+    :root { --cl-slide-h: 200px; }
+    .cl-body { padding: 0.875rem 1rem 0.75rem; }
     .cl-slide-title { font-size: 0.95rem; }
-    .cl-btn { padding: 0.48rem 0.8rem; font-size: 0.75rem; }
+    .cl-slide-desc  { font-size: 0.8rem; }
+    .cl-btn { padding: 0.48rem 0.75rem; font-size: 0.75rem; }
     .cl-opt-out label { display: none; }
     #clAnnouncements { top: 60px; padding: 0.5rem; }
+    .cl-footer { gap: 0.45rem; padding: 0.65rem 0.875rem; }
+}
+@media (max-width: 360px) {
+    :root { --cl-slide-h: 170px; }
+    .cl-counter { display: none; }
+    .cl-btn-ghost { display: none; } /* hide Prev text btn; swipe does the job */
 }
 </style>
 
@@ -376,6 +471,9 @@
 <!-- ══════════ CHANGELOG MODAL ══════════ -->
 <div id="clModal" role="dialog" aria-modal="true" aria-labelledby="clModalHeading">
     <div class="cl-dialog">
+
+        <!-- Drag handle (mobile) -->
+        <div class="cl-drag-handle" aria-hidden="true"></div>
 
         <!-- Header -->
         <div class="cl-header">
@@ -457,7 +555,7 @@
                 <input type="checkbox" id="clOptOut" name="clOptOut">
                 <label for="clOptOut">Don't show again</label>
             </div>
-            <button class="cl-btn cl-btn-ghost" id="clPrev" aria-label="Previous"><i class="bi bi-arrow-left"></i></button>
+            <button class="cl-btn cl-btn-ghost" id="clPrev" aria-label="Previous slide"><i class="bi bi-arrow-left"></i></button>
             <button class="cl-btn cl-btn-primary" id="clNext">Next <i class="bi bi-arrow-right"></i></button>
         </div>
     </div>
@@ -492,11 +590,12 @@ const btnPrev  = document.getElementById('clPrev');
 const btnNext  = document.getElementById('clNext');
 const btnClose = document.getElementById('clClose');
 const chkOptOut= document.getElementById('clOptOut');
+const dialog   = modal.querySelector('.cl-dialog');
 
 let current = 0;
 let maxSeen  = 0;
 
-// Build dots
+// Build dots (using ::after pseudo-element trick for larger tap areas)
 for (let i = 0; i < TOTAL; i++) {
     const d = document.createElement('button');
     d.className = 'cl-dot' + (i === 0 ? ' active' : '');
@@ -538,47 +637,93 @@ function dismiss() {
 
 btnClose.addEventListener('click', dismiss);
 modal.addEventListener('click', e => { if (e.target === modal) dismiss(); });
+
 document.addEventListener('keydown', e => {
     if (!modal.classList.contains('open')) return;
-    if (e.key === 'Escape') dismiss();
+    if (e.key === 'Escape')     dismiss();
     if (e.key === 'ArrowRight') goTo(current + 1);
     if (e.key === 'ArrowLeft')  goTo(current - 1);
 });
 
-// Touch swipe
-let touchX = 0;
-track.addEventListener('touchstart', e => { touchX = e.changedTouches[0].clientX; }, { passive: true });
-track.addEventListener('touchend',   e => { const dx = e.changedTouches[0].clientX - touchX; if (Math.abs(dx) > 44) goTo(current + (dx < 0 ? 1 : -1)); }, { passive: true });
+// ── Touch swipe on track ──────────────────────────────────────
+let touchStartX = 0;
+let touchStartY = 0;
+let isSwiping   = false;
 
-// Before/After comparison
+track.addEventListener('touchstart', e => {
+    touchStartX = e.changedTouches[0].clientX;
+    touchStartY = e.changedTouches[0].clientY;
+    isSwiping = false;
+}, { passive: true });
+
+track.addEventListener('touchmove', e => {
+    const dx = Math.abs(e.changedTouches[0].clientX - touchStartX);
+    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY);
+    if (dx > dy && dx > 8) isSwiping = true;
+}, { passive: true });
+
+track.addEventListener('touchend', e => {
+    if (!isSwiping) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 44) goTo(current + (dx < 0 ? 1 : -1));
+    isSwiping = false;
+}, { passive: true });
+
+// ── Swipe down on dialog handle to dismiss ────────────────────
+let _dlgTouchStartY = 0;
+dialog.addEventListener('touchstart', e => {
+    _dlgTouchStartY = e.changedTouches[0].clientY;
+}, { passive: true });
+dialog.addEventListener('touchend', e => {
+    const dy = e.changedTouches[0].clientY - _dlgTouchStartY;
+    const onHandle = e.target.closest('.cl-drag-handle, .cl-header');
+    if (dy > 80 && onHandle) dismiss();
+}, { passive: true });
+
+// ── Before/After comparison ───────────────────────────────────
 function initComparisonsOnSlide(si) {
     const slide = track.querySelectorAll('.cl-slide')[si];
     if (!slide) return;
     const comp = slide.querySelector('[data-comparison]');
     if (!comp || comp._init) return;
     comp._init = true;
-    const after    = comp.querySelector('.cl-comparison-after');
-    const divider  = comp.querySelector('.cl-comparison-divider');
-    const handle   = comp.querySelector('.cl-comparison-handle');
+    const after   = comp.querySelector('.cl-comparison-after');
+    const divider = comp.querySelector('.cl-comparison-divider');
+    const handle  = comp.querySelector('.cl-comparison-handle');
+
     function setPos(cx) {
         const r = comp.getBoundingClientRect();
         let p = Math.max(2, Math.min(98, ((cx - r.left) / r.width) * 100));
         after.style.clipPath = `inset(0 ${100 - p}% 0 0)`;
         divider.style.left = handle.style.left = p + '%';
     }
+
+    // Mouse
     let drag = false;
     comp.addEventListener('mousedown', () => drag = true);
     window.addEventListener('mouseup',   () => drag = false);
     window.addEventListener('mousemove', e => { if (drag) setPos(e.clientX); });
     comp.addEventListener('click', e => setPos(e.clientX));
-    comp.addEventListener('touchmove', e => { e.preventDefault(); setPos(e.touches[0].clientX); }, { passive: false });
+
+    // Touch — use touchmove with preventDefault to avoid scroll conflict
+    let compTouchActive = false;
+    comp.addEventListener('touchstart', e => {
+        compTouchActive = true;
+    }, { passive: true });
+    comp.addEventListener('touchmove', e => {
+        if (!compTouchActive) return;
+        e.preventDefault(); // prevent page scroll while dragging comparison
+        e.stopPropagation(); // prevent carousel swipe
+        setPos(e.touches[0].clientX);
+    }, { passive: false });
+    comp.addEventListener('touchend', () => { compTouchActive = false; }, { passive: true });
 }
 
-// Feature highlight
-const overlay  = document.getElementById('clHighlightOverlay');
-const cutout   = document.getElementById('clHighlightCutout');
-const tooltip  = document.getElementById('clHighlightTooltip');
-const ttLabel  = document.getElementById('clHighlightLabel');
+// ── Feature highlight ─────────────────────────────────────────
+const overlay = document.getElementById('clHighlightOverlay');
+const cutout  = document.getElementById('clHighlightCutout');
+const tooltip = document.getElementById('clHighlightTooltip');
+const ttLabel = document.getElementById('clHighlightLabel');
 
 document.querySelectorAll('.cl-show-me').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -590,7 +735,10 @@ document.querySelectorAll('.cl-show-me').forEach(btn => {
             const pad  = 8;
             cutout.style.cssText  = `top:${rect.top - pad + window.scrollY}px;left:${rect.left - pad}px;width:${rect.width + pad*2}px;height:${rect.height + pad*2}px;`;
             ttLabel.textContent   = btn.dataset.label;
-            tooltip.style.cssText = `top:${rect.bottom + pad + 12 + window.scrollY}px;left:${Math.max(8, rect.left - 8)}px;`;
+            // On mobile, tooltip position is handled by CSS (pinned to bottom)
+            if (window.innerWidth > 600) {
+                tooltip.style.cssText = `top:${rect.bottom + pad + 12 + window.scrollY}px;left:${Math.max(8, rect.left - 8)}px;`;
+            }
             overlay.classList.add('active');
             overlay.style.pointerEvents = 'auto';
             el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -604,7 +752,7 @@ window.clHideHighlight = function() {
 };
 overlay.addEventListener('click', e => { if (e.target === overlay) clHideHighlight(); });
 
-// What's New reopen button
+// ── What's New reopen button ──────────────────────────────────
 function showReopenButton() {
     const footer = document.querySelector('.nav-footer');
     if (!footer || document.getElementById('clReopenBtn')) return;
@@ -626,14 +774,19 @@ function reopen() {
 
 window.clOpenChangelog = reopen;
 
-// Announcement dismiss
+// ── Announcement dismiss ──────────────────────────────────────
 window.clDismissAnnouncement = function(id, triggerEl) {
     const card = triggerEl.closest('.cl-announcement');
-    if (card) { card.style.transition = 'opacity 0.2s,transform 0.2s'; card.style.opacity = '0'; card.style.transform = 'translateY(-6px)'; setTimeout(() => card.remove(), 200); }
+    if (card) {
+        card.style.transition = 'opacity 0.2s,transform 0.2s';
+        card.style.opacity = '0';
+        card.style.transform = 'translateY(-6px)';
+        setTimeout(() => card.remove(), 200);
+    }
     fetch(`/announcements/${id}/dismiss/`, { method: 'POST', headers: { 'X-CSRFToken': CSRF }, keepalive: true }).catch(() => {});
 };
 
-// Init
+// ── Init ─────────────────────────────────────────────────────
 function init() {
     try { if (localStorage.getItem(OPT_OUT_KEY)) { showReopenButton(); return; } } catch(e) {}
     let start = {{ changelog_resume_slide|default:0 }};

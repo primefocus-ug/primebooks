@@ -12,13 +12,11 @@
 {% block page_header %}{% endblock %}
 
 {% block extra_css %}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 /* ═══ TOKENS ═══════════════════════════════════════════════ */
 :root {
-  --font: 'DM Sans', system-ui, sans-serif;
-  --mono: 'Geist Mono', 'Fira Code', monospace;
+  --font: var(--bs-font-sans-serif);
+  --mono: var(--bs-font-monospace);
 
   --bg:   #f5f4f0;
   --s0:   #ffffff;
@@ -298,6 +296,10 @@ canvas{display:block}
 .plan-price{font-size:12px;color:var(--t2);margin-bottom:10px}
 .plan-hr{border:none;border-top:1px solid var(--b0);margin:12px 0}
 
+/* ═══ CHART PANEL GRIDS (replaces inline styles for responsive control) ═══ */
+.ct-pay-grid{display:grid;grid-template-columns:200px 1fr;gap:20px;align-items:center}
+.ct-inv-grid{display:grid;grid-template-columns:170px 1fr;gap:20px;align-items:center}
+
 /* ═══ MODAL ══════════════════════════════════════════════════ */
 .mo-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;
   display:none;align-items:center;justify-content:center;
@@ -329,11 +331,159 @@ canvas{display:block}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
 /* ═══ RESPONSIVE ═════════════════════════════════════════════ */
-@media(max-width:1280px){.cd-kpis{grid-template-columns:repeat(3,1fr)};.cd-layout{grid-template-columns:1fr 288px}}
-@media(max-width:1024px){.cd-layout{grid-template-columns:1fr};.cd-side{position:static}}
-@media(max-width:768px){.cd-hero{grid-template-columns:auto 1fr;padding:18px 16px};.cd-hero-actions{grid-column:1/-1}}
-@media(max-width:640px){.cd{padding:0 12px 60px};.cd-kpis{grid-template-columns:repeat(2,1fr)};.ct-tabs{overflow-x:auto;flex-wrap:nowrap};.cd-sumbar{margin:0 -12px;padding:0 12px}}
-@media(max-width:400px){.cd-kpis{grid-template-columns:1fr}}
+
+/* ── 1280px: tighter sidebar, 3-col KPIs ── */
+@media(max-width:1280px){
+  .cd-kpis{grid-template-columns:repeat(3,1fr)}
+  .cd-layout{grid-template-columns:1fr 288px}
+}
+
+/* ── 1024px: single column, sidebar flows below ── */
+@media(max-width:1024px){
+  .cd-layout{grid-template-columns:1fr}
+  .cd-side{position:static}
+}
+
+/* ── 768px: hero stacks, hide low-priority sumbar items ── */
+@media(max-width:768px){
+  .cd-hero{
+    grid-template-columns:auto 1fr;
+    padding:16px;
+    gap:14px;
+  }
+  .cd-hero-actions{
+    grid-column:1/-1;
+    border-top:1px solid var(--b0);
+    padding-top:12px;
+    margin-top:4px;
+  }
+  /* Sumbar: hide revenue/sales items, keep essentials */
+  .cd-sbp-item:nth-child(n+3){display:none}
+  /* Chart tabs: allow scrolling */
+  .ct-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;scrollbar-width:none}
+  .ct-tabs::-webkit-scrollbar{display:none}
+  /* Payments tab: stack chart + legend vertically */
+  .ct-pay-grid{grid-template-columns:1fr}
+  .ct-pay-grid canvas{height:180px!important;margin:0 auto;max-width:200px}
+  /* Inventory tab: stack donut + bars vertically */
+  .ct-inv-grid{grid-template-columns:1fr}
+  .ct-inv-grid canvas{height:170px!important}
+  /* Branch modal inner grid: 2 cols on tablet */
+  .mo-body [style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,1fr)!important}
+}
+
+/* ── 640px: small phones ── */
+@media(max-width:640px){
+  .cd{padding:0 12px 60px}
+  .cd-sumbar{margin:0 -12px;padding:0 12px}
+
+  /* KPIs: 2-up */
+  .cd-kpis{grid-template-columns:repeat(2,1fr);gap:8px}
+  .kpi{padding:14px 14px 12px}
+  .kpi-val{font-size:20px}
+
+  /* Hero: logo + name row, description below, actions full-width */
+  .cd-hero{
+    grid-template-columns:auto 1fr;
+    grid-template-rows:auto auto;
+    padding:14px;
+    gap:12px;
+  }
+  .cd-hero-logo{width:54px;height:54px}
+  .cd-hero-name{font-size:17px}
+  .cd-hero-actions{
+    grid-column:1/-1;
+    justify-content:flex-start;
+    flex-wrap:wrap;
+    gap:6px;
+  }
+
+  /* Card headers: allow wrapping */
+  .card-head{flex-wrap:wrap;gap:8px}
+
+  /* Table cells: reduce padding */
+  .xt th,.xt td{padding:8px 10px}
+
+  /* Hide lower-priority table columns */
+  /* Branches table: hide Avg Sale + Performance cols */
+  .xt table thead tr th:nth-child(3),
+  .xt table thead tr th:nth-child(4),
+  .xt table tbody tr td:nth-child(3),
+  .xt table tbody tr td:nth-child(4){display:none}
+
+  /* Employees table: hide Last Active col */
+  .xt table thead tr th:nth-child(4),
+  .xt table tbody tr td:nth-child(4){display:none}
+
+  /* Chart height: shorter on mobile */
+  canvas[id="chRevenue"],
+  canvas[id="chProducts"],
+  canvas[id="chBranches"],
+  canvas[id="chInvBars"]{height:190px!important}
+
+  /* Payments: ensure canvas not too tall */
+  .ct-pay-grid canvas{height:160px!important;max-width:200px}
+
+  /* Sumbar: show only company name + first 2 stats */
+  .cd-sbp-item:nth-child(n+3){display:none}
+
+  /* Modal: full-width on small screens */
+  .mo-bg{padding:0;align-items:flex-end}
+  .mo{
+    max-width:100%;
+    border-radius:var(--r-lg) var(--r-lg) 0 0;
+    max-height:92vh;
+  }
+  /* Modal branch grid: 2 cols */
+  .mo-body [style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,1fr)!important}
+
+  /* Sidebar gauge: full row */
+  .gauge-wrap{flex-wrap:wrap}
+  .gauge{flex-shrink:0}
+}
+
+/* ── 480px: very narrow ── */
+@media(max-width:480px){
+  .cd-kpis{grid-template-columns:repeat(2,1fr);gap:7px}
+  .kpi{padding:12px 12px 10px}
+  .kpi-val{font-size:18px}
+  .kpi-lbl{font-size:10px}
+
+  /* Hero: tighter */
+  .cd-hero{padding:12px;gap:10px}
+  .cd-hero-logo{width:46px;height:46px}
+  .cd-hero-logo-ph{font-size:20px}
+  .cd-hero-name{font-size:15px;letter-spacing:-.01em}
+  .cd-hero-desc{font-size:12px}
+
+  /* Sumbar: even more compact */
+  .cd-sb-name{font-size:12px}
+  .cd-sbp-item{padding:0 8px;font-size:10px}
+  .cd-sbp-item strong{font-size:11px}
+
+  /* Buttons: slightly smaller */
+  .btn{font-size:12px;padding:7px 12px}
+  .btn-sm{padding:5px 9px;font-size:11px}
+
+  /* Table: reduce font */
+  .xt table{font-size:11.5px}
+  .xt th{font-size:9px}
+
+  /* Info grid: single column */
+  .ig{grid-template-columns:1fr 1fr}
+
+  /* Card body padding */
+  .card-body{padding:14px}
+}
+
+/* ── 400px: single-column KPIs ── */
+@media(max-width:400px){
+  .cd-kpis{grid-template-columns:1fr}
+  .ig{grid-template-columns:1fr}
+  .cd-hero{grid-template-columns:1fr}
+  .cd-hero-logo{display:none} /* hide logo, save space */
+  .cd-hero-actions{border-top:1px solid var(--b0);padding-top:10px}
+}
 </style>
 {% endblock %}
 
@@ -474,7 +624,7 @@ canvas{display:block}
         <canvas id="chRevenue" height="230"></canvas>
       </div>
       <div class="ct-panel" id="tab-payments">
-        <div style="display:grid;grid-template-columns:200px 1fr;gap:20px;align-items:center">
+        <div class="ct-pay-grid">
           <canvas id="chPayDoughnut" height="200"></canvas>
           <div id="chPayLegend" style="font-size:12px;line-height:2"></div>
         </div>
@@ -483,7 +633,7 @@ canvas{display:block}
         <canvas id="chProducts" height="230"></canvas>
       </div>
       <div class="ct-panel" id="tab-inventory">
-        <div style="display:grid;grid-template-columns:170px 1fr;gap:20px;align-items:center">
+        <div class="ct-inv-grid">
           <canvas id="chInvDonut" height="170"></canvas>
           <canvas id="chInvBars" height="230"></canvas>
         </div>
@@ -834,7 +984,7 @@ if (!cjL.length && legacyTrend.length) {
 var P = ['#2563eb','#16a34a','#d97706','#7c3aed','#dc2626','#0891b2','#f97316','#0d9488'];
 var Pα = P.map(function(c){ return c + 'bb'; });
 
-Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif';
 Chart.defaults.font.size = 11;
 Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--t2').trim() || '#6b6b74';
 

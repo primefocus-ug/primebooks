@@ -25,42 +25,73 @@
     --rp-shadow:   0 24px 60px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.3);
 }
 
-/* ════════════════ FAB BUTTON ════════════════ */
-#rpFab {
+/* ════════════════ MERGED FAB LAUNCHER ════════════════ */
+/* Single launcher at bottom-right, above mobile navbar.
+   On hover/click, two sub-buttons fan upward:
+     • Red  → Report/Suggest (opens rpPanel)
+     • Brand → Chat Support  (opens support widget)       */
+
+#fab-launcher {
     position: fixed;
-    bottom: 1.75rem;
-    right: 1.75rem;
+    bottom: 80px;           /* above mobile bottom navbar */
+    right: 24px;
     z-index: 8000;
-    width: 52px; height: 52px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #ef4444, #dc2626);
-    border: none; cursor: pointer;
-    box-shadow: 0 4px 20px rgba(239,68,68,0.45);
-    display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 1.25rem;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    outline: none;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
 }
-#rpFab:hover {
-    transform: scale(1.1);
-    box-shadow: 0 6px 28px rgba(239,68,68,0.55);
-}
-#rpFab:active { transform: scale(0.96); }
-#rpFab .rp-fab-tooltip {
-    position: absolute;
-    right: calc(100% + 10px); top: 50%;
-    transform: translateY(-50%);
-    background: var(--rp-text);
-    color: var(--rp-surface);
-    font-family: 'Sora', sans-serif;
-    font-size: 0.72rem; font-weight: 600;
-    white-space: nowrap;
-    padding: 0.25rem 0.65rem;
-    border-radius: 6px;
+
+/* Sub-buttons — hidden by default, fan up on open */
+.fab-child {
+    display: flex; align-items: center; gap: 10px;
     opacity: 0; pointer-events: none;
-    transition: opacity 0.15s;
+    transform: translateY(12px) scale(0.85);
+    transition: opacity 0.2s ease, transform 0.2s ease;
 }
-#rpFab:hover .rp-fab-tooltip { opacity: 1; }
+#fab-launcher.open .fab-child {
+    opacity: 1; pointer-events: all;
+    transform: translateY(0) scale(1);
+}
+#fab-launcher.open .fab-child:nth-child(1) { transition-delay: 0.05s; }
+#fab-launcher.open .fab-child:nth-child(2) { transition-delay: 0s; }
+
+.fab-child-label {
+    background: #1e293b; color: #f1f5f9;
+    font-size: 0.72rem; font-weight: 600;
+    padding: 4px 10px; border-radius: 6px;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.fab-child-btn {
+    width: 46px; height: 46px; border-radius: 50%;
+    border: none; cursor: pointer; outline: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; color: #fff;
+    transition: transform 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+}
+.fab-child-btn:hover  { transform: scale(1.1); }
+.fab-child-btn:active { transform: scale(0.95); }
+
+#rpFabChild { background: linear-gradient(135deg, #ef4444, #dc2626);
+              box-shadow: 0 4px 16px rgba(239,68,68,0.45); }
+#swFabChild { box-shadow: 0 4px 16px rgba(99,102,241,0.45); }
+
+/* Main launcher toggle button */
+#rpFab {
+    width: 54px; height: 54px; border-radius: 50%;
+    background: #1e293b;
+    border: 2px solid rgba(255,255,255,0.12); cursor: pointer; outline: none;
+    display: flex; align-items: center; justify-content: center;
+    color: #f1f5f9; font-size: 1.35rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    transition: transform 0.25s ease, background 0.2s;
+    flex-shrink: 0;
+}
+#rpFab:hover { transform: scale(1.08); }
+#fab-launcher.open #rpFab { transform: rotate(45deg); background: #374151; }
 
 /* ════════════════ BACKDROP ════════════════ */
 #rpBackdrop {
@@ -341,11 +372,27 @@
 .rp-rate-limit-warning i { flex-shrink: 0; margin-top: 2px; }
 </style>
 
-<!-- ══════════ FAB ══════════ -->
-<button id="rpFab" aria-label="Report an issue" title="Report an issue">
-    <i class="bi bi-flag-fill"></i>
-    <span class="rp-fab-tooltip">Report an Issue or Suggest an Improvement</span>
-</button>
+<!-- ══════════ MERGED FAB LAUNCHER ══════════ -->
+<div id="fab-launcher">
+  <!-- Sub-button 1: Report/Suggest (red) -->
+  <div class="fab-child">
+    <span class="fab-child-label">Report / Suggest</span>
+    <button id="rpFabChild" class="fab-child-btn" aria-label="Report an issue">
+      <i class="bi bi-flag-fill"></i>
+    </button>
+  </div>
+  <!-- Sub-button 2: Support chat (brand color, set by widget.js) -->
+  <div class="fab-child">
+    <span class="fab-child-label">Chat with Support</span>
+    <button id="swFabChild" class="fab-child-btn" aria-label="Chat with support" style="background:#6366f1;">
+      <i class="bi bi-chat-dots-fill"></i>
+    </button>
+  </div>
+  <!-- Main toggle -->
+  <button id="rpFab" aria-label="Help & Support" title="Help & Support">
+    <i class="bi bi-plus-lg"></i>
+  </button>
+</div>
 
 <!-- ══════════ BACKDROP ══════════ -->
 <div id="rpBackdrop"></div>
@@ -532,7 +579,47 @@ function closePanel() {
     }, 220);
 }
 
-fab.addEventListener('click', openPanel);
+// ── Merged launcher logic ─────────────────────────────────────
+const launcher = document.getElementById('fab-launcher');
+
+fab.addEventListener('click', (e) => {
+    e.stopPropagation();
+    launcher.classList.toggle('open');
+});
+
+// Close launcher when clicking outside
+document.addEventListener('click', (e) => {
+    if (!launcher.contains(e.target)) launcher.classList.remove('open');
+});
+
+// Report sub-button → open panel, close launcher
+document.getElementById('rpFabChild').addEventListener('click', (e) => {
+    e.stopPropagation();
+    launcher.classList.remove('open');
+    openPanel();
+});
+
+// Support sub-button → toggle support widget panel
+document.getElementById('swFabChild').addEventListener('click', (e) => {
+    e.stopPropagation();
+    launcher.classList.remove('open');
+    if (window.SupportWidget) {
+        window.SupportWidget.open();
+    } else {
+        // Fallback: find and click the hidden sw-bubble
+        const bubble = document.getElementById('sw-bubble');
+        if (bubble) bubble.click();
+    }
+});
+
+// Sync swFabChild color with brand color once widget loads
+window.addEventListener('load', () => {
+    const root = document.getElementById('sw-widget-root');
+    if (root && root.dataset.brandColor) {
+        document.getElementById('swFabChild').style.background = root.dataset.brandColor;
+    }
+});
+
 btnClose.addEventListener('click', closePanel);
 backdrop.addEventListener('click', closePanel);
 document.addEventListener('keydown', e => {

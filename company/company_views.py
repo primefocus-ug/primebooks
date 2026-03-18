@@ -1231,13 +1231,15 @@ class CompanyDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
         branches_data = self._get_paginated_branches_with_analytics(company)
         context.update(branches_data)
 
-        # Employees
-        employees_data = self._get_paginated_employees(company)
-        context.update(employees_data)
-
-        # Company statistics with analytics
+        # Company statistics with analytics — must come BEFORE employees so it
+        # doesn't overwrite total_employees / active_employees with its own counts
         statistics = self._get_company_statistics_with_analytics(company)
         context.update(statistics)
+
+        # ✅ FIX: Employees applied AFTER statistics so the paginator's
+        # total_employees / active_employees values win (they are accurate).
+        employees_data = self._get_paginated_employees(company)
+        context.update(employees_data)
 
         # Branch performance overview
         branch_performance = self._get_branch_performance_overview(company)
@@ -1267,6 +1269,7 @@ class CompanyDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
             'export_data': company.can_perform_action('export_data')[0],
         }
         context.update(self._get_chart_json(company))
+
         # EFRIS status
         context['efris_status'] = {
             'enabled': company.efris_enabled,

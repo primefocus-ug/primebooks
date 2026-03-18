@@ -1741,19 +1741,414 @@ body {
 .note-area:focus { border-color: var(--accent); }
 .note-area::placeholder { color: var(--muted); }
 
-/* ── RESPONSIVE ── */
+/* ══════════════════════════════════════════════════
+   MOBILE-FIRST RESPONSIVE SYSTEM
+   Breakpoints: xs<480 | sm<640 | md<768 | lg<1024
+   ══════════════════════════════════════════════════ */
+
+/* ── MOBILE CART TOGGLE FAB ──
+   Floating button to switch between products & cart on mobile */
+.mobile-cart-fab {
+  display: none;
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 500;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 20px rgba(59,130,246,.45);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  transition: transform .2s cubic-bezier(.34,1.56,.64,1), box-shadow .2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-cart-fab:active { transform: scale(.92); }
+.mobile-cart-fab .fab-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--green);
+  color: #fff;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: .65rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--ink);
+  transition: transform .2s cubic-bezier(.34,1.56,.64,1);
+}
+
+.mobile-cart-fab .fab-badge.has-items { transform: scale(1); }
+
+/* ── MOBILE PANEL SLIDE STATES ── */
 @media (max-width: 768px) {
+
+  /* ─ Base layout: single column, full height ─ */
   .pos-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
-    height: auto;
-    min-height: calc(100vh - 49px);
+    display: block;
+    position: relative;
+    height: calc(100vh - var(--topbar-h, 49px) - var(--settingsbar-h, 41px));
+    overflow: hidden;
   }
 
-  .left-panel { min-height: 60vh; }
-  .right-panel { min-height: 50vh; }
+  .left-panel {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    min-height: unset;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: transform .3s cubic-bezier(.4,0,.2,1), opacity .3s ease;
+    will-change: transform;
+    z-index: 1;
+  }
+
+  .right-panel {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    min-height: unset;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: transform .3s cubic-bezier(.4,0,.2,1), opacity .3s ease;
+    will-change: transform;
+    z-index: 2;
+    transform: translateX(100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Cart open state  */
+  .pos-layout.cart-open .left-panel {
+    transform: translateX(-30%);
+    opacity: .4;
+    pointer-events: none;
+  }
+
+  .pos-layout.cart-open .right-panel {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  /* FAB visible on mobile */
+  .mobile-cart-fab { display: flex; }
+
+  /* ─ Topbar: compact ─ */
+  .topbar {
+    padding: .5rem .75rem;
+    gap: .5rem;
+  }
+
+  .topbar-brand {
+    font-size: .8rem;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   .topbar-center { display: none; }
+
+  .topbar-actions { gap: .35rem; }
+
+  .kbd-btn {
+    padding: .3rem .5rem;
+    font-size: .68rem;
+  }
+
+  /* Hide keyboard hints on mobile */
+  .kbd-btn kbd { display: none; }
+
+  /* ─ Settings bar: horizontal scroll ─ */
+  .settings-bar {
+    padding: 0 .5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 0;
+    top: 45px;
+  }
+
+  .settings-bar::-webkit-scrollbar { display: none; }
+
+  .settings-group {
+    padding: .4rem .5rem;
+    flex-shrink: 0;
+  }
+
+  .settings-label { font-size: .6rem; }
+
+  .settings-seg-btn {
+    padding: .25rem .5rem;
+    font-size: .68rem;
+  }
+
+  /* ─ Section toolbar ─ */
+  .section-toolbar {
+    padding: .5rem .625rem;
+    gap: .5rem;
+    flex-wrap: wrap;
+  }
+
+  .type-tabs { flex-shrink: 0; }
+
+  .type-tab {
+    padding: .28rem .55rem;
+    font-size: .7rem;
+  }
+
+  .search-box input {
+    font-size: .85rem; /* bigger for mobile typing */
+    padding: .45rem .75rem .45rem 2rem;
+  }
+
+  /* ─ Stats bar: condensed ─ */
+  .stats-bar {
+    padding: .3rem .625rem;
+    gap: .75rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+  }
+
+  .stats-bar::-webkit-scrollbar { display: none; }
+  .stat-pill { font-size: .68rem; flex-shrink: 0; }
+
+  /* ─ Products grid: 2 cols on mobile ─ */
+  .products-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: .5rem;
+  }
+
+  .products-scroll {
+    padding: .625rem;
+    /* Leave space above FAB */
+    padding-bottom: 5rem;
+  }
+
+  /* ─ Product cards: touch-optimised ─ */
+  .product-card {
+    padding: .625rem;
+    gap: .35rem;
+  }
+
+  .product-icon {
+    width: 32px;
+    height: 32px;
+    font-size: .95rem;
+  }
+
+  .product-name { font-size: .75rem; }
+  .product-price { font-size: .78rem; }
+
+  .product-add-btn {
+    padding: .5rem; /* bigger tap target */
+    font-size: .72rem;
+    min-height: 36px;
+  }
+
+  /* ─ Pagination: tighter ─ */
+  .pagination-bar {
+    padding: .4rem .625rem;
+  }
+
+  /* ─ Right panel (cart): full width ─ */
+  .panel-tabs { border-bottom: 1px solid var(--line); }
+
+  .panel-tab {
+    padding: .65rem .5rem;
+    font-size: .72rem;
+  }
+
+  .panel-body {
+    padding: .625rem;
+    /* space for FAB */
+    padding-bottom: 5rem;
+  }
+
+  /* ─ Cart rows: slightly larger for touch ─ */
+  .cart-row { padding: .6rem .7rem; }
+
+  .qty-grp button {
+    width: 30px;
+    height: 30px;
+    font-size: 1rem;
+  }
+
+  .qty-grp input { width: 38px; font-size: .85rem; }
+
+  .price-input { width: 90px; font-size: .8rem; }
+
+  /* ─ Cart footer ─ */
+  .cart-footer { padding: .625rem; }
+
+  /* ─ Discount row ─ */
+  .discount-row { gap: .35rem; }
+
+  /* ─ Action buttons: full width stacked ─ */
+  .btn-complete {
+    padding: .875rem;
+    font-size: .88rem;
+    min-height: 48px; /* WCAG touch target */
+  }
+
+  .btn-row { gap: .35rem; }
+
+  .btn-secondary {
+    padding: .55rem .35rem;
+    font-size: .7rem;
+    min-height: 40px;
+  }
+
+  /* ─ OOS panel ─ */
+  .oos-panel { width: 100%; right: -100%; }
+  .oos-panel.open { right: 0; }
+
+  /* ─ Payment modal grid ─ */
+  .pm-grid { grid-template-columns: repeat(2, 1fr); }
+
+  .pm-option {
+    padding: .875rem .5rem;
+    font-size: .75rem;
+  }
+
+  /* ─ Toast: full width at bottom on mobile ─ */
+  .toast-shelf {
+    top: auto;
+    bottom: 5rem;
+    right: .75rem;
+    left: .75rem;
+  }
+
+  .toast {
+    min-width: unset;
+    max-width: unset;
+    width: 100%;
+  }
+
+  /* ─ Modals: full-screen on mobile ─ */
+  .modal-dialog {
+    margin: 0;
+    max-width: 100%;
+    min-height: 100vh;
+    align-items: flex-end;
+  }
+
+  .modal-content {
+    border-radius: var(--radius) var(--radius) 0 0;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  /* ─ Product form wizard ─ */
+  .pf-wizard-steps { gap: .25rem; }
+  .pf-step-label { display: none; } /* show only number on mobile */
+  .pf-step.active .pf-step-label { display: block; font-size: .7rem; }
+}
+
+/* ── SMALL PHONES (< 480px) ── */
+@media (max-width: 480px) {
+
+  html { font-size: 16px; }
+
+  /* Single column product grid on very small screens */
+  .products-grid { grid-template-columns: repeat(2, 1fr); gap: .4rem; }
+
+  .topbar-brand { max-width: 90px; font-size: .75rem; }
+
+  /* Hide secondary topbar buttons, keep only core ones */
+  .kbd-btn:not([onclick*="completeSale"]):not([onclick*="Drafts"]):not([onclick*="Cancel"]) {
+    display: none;
+  }
+
+  /* Smaller product cards */
+  .product-card { padding: .5rem; }
+  .product-name { font-size: .7rem; }
+
+  /* Payment grid: 2 cols */
+  .pm-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Success overlay */
+  .ss-panel { border-radius: 16px 16px 0 0; width: 100%; max-height: 92vh; }
+  #saleSuccessOverlay { align-items: flex-end; }
+  .ss-total-amount { font-size: 1.5rem; }
+  .ss-summary-grid { margin: 12px 16px; }
+  .ss-total-row { margin: 0 16px 16px; }
+  .ss-actions { margin: 0 16px 12px; }
+}
+
+/* ── TABLET (768–1023px) ── */
+@media (min-width: 768px) and (max-width: 1023px) {
+
+  .pos-layout {
+    grid-template-columns: 1fr 300px;
+  }
+
+  .products-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+
+  .kbd-btn kbd { display: none; }
+
+  .settings-bar { overflow-x: auto; flex-wrap: nowrap; }
+  .settings-bar::-webkit-scrollbar { display: none; }
+}
+
+/* ── LARGE DESKTOP (1280px+) ── */
+@media (min-width: 1280px) {
+  .pos-layout { grid-template-columns: 1fr 380px; }
+
+  .products-grid {
+    grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  }
+}
+
+/* ── TOUCH DEVICES: better tap targets ── */
+@media (hover: none) and (pointer: coarse) {
+
+  .product-add-btn,
+  .btn-complete,
+  .page-btn,
+  .panel-tab,
+  .type-tab,
+  .seg-btn,
+  .settings-seg-btn {
+    min-height: 40px;
+  }
+
+  /* Prevent hover lingering on touch */
+  .product-card:hover {
+    transform: none;
+    box-shadow: none;
+    border-color: var(--line);
+  }
+
+  .product-card:active {
+    border-color: var(--accent);
+    transform: scale(.97);
+    box-shadow: 0 2px 12px rgba(59,130,246,.2);
+  }
+
+  /* Bigger qty controls */
+  .qty-grp button { width: 32px; height: 32px; }
+
+  /* Remove text selection on double tap */
+  .product-card, .cart-row, .panel-tab { user-select: none; -webkit-user-select: none; }
 }
 
 /* ── EFRIS ERROR ── */
@@ -2216,12 +2611,8 @@ body {
 .pm-cust-change { background: none; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 2px 7px; font-size: .68rem; color: var(--muted); cursor: pointer; font-family: var(--sans); }
 .pm-cust-change:hover { border-color: var(--accent); color: var(--accent); }
 
-@media (max-width: 768px) {
-  .settings-bar { padding: 0 .5rem; }
-  .settings-group { padding: .5rem .5rem; }
-  .pm-grid { grid-template-columns: repeat(2, 1fr); }
-  .pos-layout { height: auto; }
-}
+/* (tablet + mobile overrides for settings-bar and pm-grid are handled in the
+   consolidated responsive block above) */
 </style>
 {% endblock %}
 
@@ -2319,7 +2710,11 @@ body {
   </div>
 </header>
 
-<!-- ═══════════════ SETTINGS BAR ═══════════════ -->
+<!-- ═══════════════ MOBILE CART FAB ═══════════════ -->
+<button class="mobile-cart-fab" id="mobileCartFab" onclick="toggleMobilePanel()" aria-label="Toggle cart">
+  <i class="bi bi-cart3" id="fabIcon"></i>
+  <span class="fab-badge" id="fabBadge">0</span>
+</button>
 <div class="settings-bar" id="settingsBar"
   data-ple-region="settings-bar"
   data-ple-label="Settings bar"
@@ -10699,6 +11094,72 @@ function refreshProductStockBadges() {
 }
 
 console.log('✅ Wizard & Stock Validation loaded');
+
+// ══════════════════════════════════════════════════
+//  MOBILE PANEL TOGGLE
+//  Switches between products (left) and cart (right)
+//  on screens < 768px using the floating action button
+// ══════════════════════════════════════════════════
+
+let _mobileCartOpen = false;
+
+function toggleMobilePanel(forceOpen) {
+  const layout  = document.querySelector('.pos-layout');
+  const fab     = document.getElementById('mobileCartFab');
+  const fabIcon = document.getElementById('fabIcon');
+  if (!layout || !fab) return;
+
+  _mobileCartOpen = forceOpen !== undefined ? forceOpen : !_mobileCartOpen;
+
+  layout.classList.toggle('cart-open', _mobileCartOpen);
+
+  // Swap icon: cart when on products side, arrow-back when on cart side
+  fabIcon.className = _mobileCartOpen ? 'bi bi-arrow-left' : 'bi bi-cart3';
+  fab.style.background = _mobileCartOpen ? 'var(--ink-3)' : 'var(--accent)';
+  fab.style.color       = _mobileCartOpen ? 'var(--text)'  : '#fff';
+  fab.style.boxShadow   = _mobileCartOpen
+    ? '0 4px 16px rgba(0,0,0,.35)'
+    : '0 4px 20px rgba(59,130,246,.45)';
+}
+
+// Keep FAB badge in sync with cart count
+function syncMobileFabBadge() {
+  const badge = document.getElementById('fabBadge');
+  if (!badge) return;
+  const count = SaleState?.cart?.length ?? 0;
+  badge.textContent = count;
+  badge.style.display = count > 0 ? 'flex' : 'none';
+  // Bounce animation on add
+  if (count > 0) {
+    badge.classList.remove('has-items');
+    void badge.offsetWidth; // reflow
+    badge.classList.add('has-items');
+  }
+}
+
+// Patch renderCart to also sync the FAB badge
+const _origRenderCart = typeof renderCart === 'function' ? renderCart : null;
+if (_origRenderCart) {
+  renderCart = function(...args) {
+    const result = _origRenderCart.apply(this, args);
+    syncMobileFabBadge();
+    return result;
+  };
+}
+
+// When completing a sale on mobile, auto-return to products view
+document.addEventListener('sale:completed', () => {
+  if (window.innerWidth < 768) toggleMobilePanel(false);
+});
+
+// Keyboard: Escape closes cart panel on mobile
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _mobileCartOpen && window.innerWidth < 768) {
+    toggleMobilePanel(false);
+  }
+});
+
+console.log('✅ Mobile Panel Toggle loaded');
 
 
 </script>

@@ -1,18 +1,19 @@
 {% load static %}
 
 
-{% comment %}
-Only render for non-staff users on tenant schemas.
-If you want agents to also see the widget, remove the `not user.is_staff` check.
-{% endcomment %}
 
-{% if not user.is_staff %}
+{% if user.is_authenticated %}
 <div id="sw-widget-root"
      data-api-base="/support"
+     data-bubble-bottom="80px"
+     data-bubble-right="24px"
      data-ws-base=""
      data-brand-color="{{ sw_config.brand_color|default:'#6366f1' }}"
      data-greeting="{{ sw_config.greeting_message|default:'👋 Hi there! How can we help you today?' }}"
-     data-title="{{ sw_config.widget_title|default:'Support' }}">
+     data-title="{{ sw_config.widget_title|default:'Support' }}"
+     data-user-name="{{ user.get_full_name|default:user.username }}"
+     data-user-email="{{ user.email }}"
+     data-is-staff="{{ user.is_staff|yesno:'true,false' }}">
 </div>
 
 {% comment %}
@@ -25,4 +26,8 @@ Remove if your base template already loads Plus Jakarta Sans.
 
 <audio id="sw-remote-audio" autoplay style="display:none;"></audio>
 <script src="{% static 'support_widget/js/widget.js' %}" defer></script>
+<style>
+  /* Hide native support bubble — replaced by merged fab-launcher in report_widget.html */
+  #sw-bubble { display: none !important; }
+</style>
 {% endif %}

@@ -3,51 +3,689 @@
 
 {% block title %}{% trans "Bulk Invite Users" %} - {{ company.display_name }}{% endblock %}
 
+{% block extra_css %}
+<style>
+/* ── Tokens (same as invite_user.html for visual consistency) ── */
+:root {
+  --bi-font:    var(--bs-font-sans-serif);
+  --bi-serif:   var(--bs-font-sans-serif);
+  --bi-mono:    var(--bs-font-monospace);
+
+  --bi-bg:      #f7f6f2;
+  --bi-s0:      #ffffff;
+  --bi-s1:      #faf9f6;
+  --bi-s2:      #f2f0ea;
+  --bi-border:  #e4e1d6;
+  --bi-border2: #d0ccbf;
+
+  --bi-t0:      #16151a;
+  --bi-t1:      #38373f;
+  --bi-t2:      #6b6a74;
+  --bi-t3:      #a09fa8;
+
+  --bi-accent:  #e07a2f;
+  --bi-accent2: #c45f18;
+  --bi-acl:     #fff8f2;
+  --bi-acm:     #fdd9b5;
+
+  --bi-blue:    #2563eb;
+  --bi-bl-l:    #eff6ff;
+  --bi-bl-m:    #bfdbfe;
+  --bi-green:   #16a34a;
+  --bi-gl:      #f0fdf4;
+  --bi-gm:      #bbf7d0;
+
+  --bi-r:       12px;
+  --bi-r-lg:    18px;
+  --bi-sh:      0 1px 3px rgba(0,0,0,.06), 0 1px 6px rgba(0,0,0,.04);
+  --bi-sh-md:   0 4px 20px rgba(0,0,0,.09);
+  --bi-tr:      180ms ease;
+}
+[data-bs-theme="dark"], [data-theme="dark"] {
+  --bi-bg:      #0e0d12;
+  --bi-s0:      #15141a;
+  --bi-s1:      #1c1b22;
+  --bi-s2:      #22212a;
+  --bi-border:  #2a2930;
+  --bi-border2: #36343f;
+  --bi-t0:      #f2f0f7;
+  --bi-t1:      #cccad4;
+  --bi-t2:      #7e7c89;
+  --bi-t3:      #4e4c58;
+  --bi-acl:     #2a1a0a;
+  --bi-acm:     #5a3010;
+  --bi-bl-l:    #172554;
+  --bi-bl-m:    #1e3a8a;
+  --bi-gl:      #052e16;
+  --bi-gm:      #14532d;
+  --bi-sh-md:   0 4px 20px rgba(0,0,0,.4);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+.bi-page {
+  font-family: var(--bi-font);
+  background: var(--bi-bg);
+  min-height: 100vh;
+  color: var(--bi-t0);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Top bar ── */
+.bi-topbar {
+  background: var(--bi-s0);
+  border-bottom: 1px solid var(--bi-border);
+  padding: 0 clamp(16px, 4vw, 48px);
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  box-shadow: var(--bi-sh);
+}
+.bi-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--bi-t2);
+}
+.bi-breadcrumb a { color: var(--bi-t2); text-decoration: none; transition: color var(--bi-tr); }
+.bi-breadcrumb a:hover { color: var(--bi-accent); }
+.bi-breadcrumb .sep { color: var(--bi-t3); }
+.bi-breadcrumb .cur { color: var(--bi-t0); font-weight: 600; }
+
+/* ── Buttons ── */
+.bbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--bi-r);
+  font-family: var(--bi-font);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  transition: var(--bi-tr);
+  white-space: nowrap;
+  min-height: 36px;
+  touch-action: manipulation;
+}
+.bbtn-ghost {
+  background: transparent;
+  color: var(--bi-t1);
+  border: 1px solid var(--bi-border);
+}
+.bbtn-ghost:hover { background: var(--bi-s2); border-color: var(--bi-border2); color: var(--bi-t0); }
+.bbtn-primary {
+  background: var(--bi-accent);
+  color: #fff;
+  border: 1px solid var(--bi-accent);
+  box-shadow: 0 2px 8px rgba(224,122,47,.28);
+}
+.bbtn-primary:hover {
+  background: var(--bi-accent2);
+  border-color: var(--bi-accent2);
+  box-shadow: 0 4px 16px rgba(224,122,47,.36);
+  transform: translateY(-1px);
+}
+.bbtn-primary:active { transform: none; }
+.bbtn-primary:disabled { opacity: .65; transform: none; cursor: not-allowed; }
+.bbtn-sm { padding: 6px 12px; font-size: 12px; min-height: 30px; }
+
+/* ── Body shell ── */
+.bi-wrap {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 48px) 64px;
+}
+
+/* ── Hero ── */
+.bi-hero {
+  padding: clamp(28px, 5vw, 52px) 0 0;
+  margin-bottom: 28px;
+}
+.bi-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--bi-accent);
+  background: var(--bi-acl);
+  border: 1px solid var(--bi-acm);
+  border-radius: 20px;
+  padding: 4px 12px;
+  margin-bottom: 16px;
+}
+.bi-title {
+  font-family: var(--bi-font);
+  font-size: clamp(22px, 4vw, 32px);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--bi-t0);
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+.bi-title em { font-style: normal; color: var(--bi-accent); }
+.bi-subtitle {
+  font-size: 14px;
+  color: var(--bi-t2);
+  line-height: 1.6;
+}
+
+/* ── Card ── */
+.bi-card {
+  background: var(--bi-s0);
+  border: 1px solid var(--bi-border);
+  border-radius: var(--bi-r-lg);
+  box-shadow: var(--bi-sh-md);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.bi-card-body { padding: clamp(20px, 4vw, 36px); }
+
+/* ── Info panel ── */
+.bi-info {
+  background: var(--bi-bl-l);
+  border: 1.5px solid var(--bi-bl-m);
+  border-radius: var(--bi-r);
+  padding: 16px 18px;
+  margin-bottom: 24px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+[data-bs-theme="dark"] .bi-info,
+[data-theme="dark"] .bi-info { background: #172554; border-color: #1e3a8a; }
+.bi-info i { color: var(--bi-blue); font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.bi-info-body { flex: 1; }
+.bi-info-text { font-size: 13px; color: var(--bi-t1); line-height: 1.6; margin-bottom: 10px; }
+.bi-info-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+}
+@media (max-width: 400px) { .bi-info-cols { grid-template-columns: 1fr; } }
+.bi-col-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--bi-t2);
+}
+.bi-col-item code {
+  font-family: var(--bi-mono);
+  font-size: 11px;
+  background: var(--bi-bl-m);
+  color: var(--bi-blue);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+[data-bs-theme="dark"] .bi-col-item code,
+[data-theme="dark"] .bi-col-item code { background: rgba(59,130,246,.2); }
+.bi-col-req {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--bi-accent);
+  background: var(--bi-acl);
+  border: 1px solid var(--bi-acm);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+/* ── Drop zone ── */
+.bi-dropzone {
+  border: 2px dashed var(--bi-border2);
+  border-radius: var(--bi-r-lg);
+  background: var(--bi-s1);
+  padding: 40px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s, transform .15s;
+  position: relative;
+  outline: none;
+}
+.bi-dropzone:hover,
+.bi-dropzone.drag-over {
+  border-color: var(--bi-accent);
+  background: var(--bi-acl);
+  transform: translateY(-1px);
+}
+.bi-dropzone.has-file {
+  border-style: solid;
+  border-color: var(--bi-green);
+  background: var(--bi-gl);
+}
+[data-bs-theme="dark"] .bi-dropzone.has-file,
+[data-theme="dark"] .bi-dropzone.has-file { background: #052e16; }
+.bi-dropzone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+.bi-dz-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--bi-s2);
+  border: 1px solid var(--bi-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: var(--bi-t3);
+  margin: 0 auto 14px;
+  transition: background .2s, color .2s, border-color .2s;
+}
+.bi-dropzone:hover .bi-dz-icon,
+.bi-dropzone.drag-over .bi-dz-icon {
+  background: var(--bi-acm);
+  color: var(--bi-accent);
+  border-color: var(--bi-accent);
+}
+.bi-dropzone.has-file .bi-dz-icon {
+  background: var(--bi-gm);
+  color: var(--bi-green);
+  border-color: var(--bi-green);
+}
+.bi-dz-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--bi-t0);
+  margin-bottom: 5px;
+}
+.bi-dz-sub {
+  font-size: 12.5px;
+  color: var(--bi-t2);
+  margin-bottom: 12px;
+}
+.bi-dz-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--bi-mono);
+  background: var(--bi-s2);
+  color: var(--bi-t2);
+  border: 1px solid var(--bi-border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  transition: background .2s, color .2s, border-color .2s;
+}
+.bi-dropzone:hover .bi-dz-pill,
+.bi-dropzone.drag-over .bi-dz-pill {
+  background: var(--bi-acm);
+  color: var(--bi-accent2);
+  border-color: var(--bi-accent);
+}
+.bi-dropzone.has-file .bi-dz-pill {
+  background: var(--bi-gm);
+  color: var(--bi-green);
+  border-color: var(--bi-green);
+}
+#biFileStatus {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--bi-gl);
+  border: 1px solid var(--bi-gm);
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--bi-green);
+  justify-content: center;
+  position: relative;
+  z-index: 3; /* above file input */
+  pointer-events: none;
+}
+[data-bs-theme="dark"] #biFileStatus,
+[data-theme="dark"] #biFileStatus { background: #052e16; border-color: #14532d; }
+
+/* ── Section divider ── */
+.bi-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 28px 0;
+  color: var(--bi-t3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.bi-divider::before, .bi-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--bi-border);
+}
+
+/* ── Template download ── */
+.bi-template-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  background: var(--bi-s1);
+  border: 1.5px solid var(--bi-border);
+  border-radius: var(--bi-r);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.bi-template-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--bi-gl);
+  border: 1px solid var(--bi-gm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--bi-green);
+  flex-shrink: 0;
+}
+[data-bs-theme="dark"] .bi-template-icon,
+[data-theme="dark"] .bi-template-icon { background: #052e16; border-color: #14532d; }
+.bi-template-body { flex: 1; min-width: 0; }
+.bi-template-body strong { display: block; font-size: 13px; font-weight: 700; color: var(--bi-t0); margin-bottom: 2px; }
+.bi-template-body span { font-size: 11.5px; color: var(--bi-t2); }
+
+/* ── Form nav ── */
+.bi-form-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--bi-border);
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Progress bar (upload) ── */
+.bi-progress-wrap { display: none; margin-top: 16px; }
+.bi-progress-bar {
+  height: 4px;
+  background: var(--bi-border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.bi-progress-fill {
+  height: 100%;
+  background: var(--bi-accent);
+  border-radius: 2px;
+  width: 0;
+  transition: width .3s ease;
+  animation: biPulse 1.4s ease infinite;
+}
+@keyframes biPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.bi-progress-label { font-size: 11.5px; color: var(--bi-t2); text-align: center; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container mt-4">
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h4 class="mb-0">
-                        <i class="fas fa-users me-2"></i>
-                        {% trans "Bulk Invite Users" %}
-                    </h4>
-                </div>
-                <div class="card-body">
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>
-                        {% trans "Upload a CSV file with user information. The file should include the following columns:" %}
-                        <ul class="mt-2 mb-0">
-                            <li><strong>email</strong> ({% trans "required" %})</li>
-                            <li>first_name ({% trans "optional" %})</li>
-                            <li>last_name ({% trans "optional" %})</li>
-                            <li>phone_number ({% trans "optional" %})</li>
-                            <li>role_id ({% trans "optional" %})</li>
-                        </ul>
-                    </div>
+<div class="bi-page">
 
-                    <form method="post" enctype="multipart/form-data">
-                        {% csrf_token %}
-                        <div class="mb-3">
-                            <label for="csv_file" class="form-label">{% trans "CSV File" %}</label>
-                            <input type="file" class="form-control" id="csv_file" name="csv_file" accept=".csv" required>
-                        </div>
-
-                        <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-upload me-1"></i> {% trans "Upload and Process" %}
-                            </button>
-                            {% if perms.accounts.view_customuser %}
-                            <a href="{% url 'company_user_list' %}" class="btn btn-outline-secondary">
-                                {% trans "Cancel" %}
-                            </a>
-                            {% endif %}
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
+  <!-- Top bar -->
+  <div class="bi-topbar">
+    <div class="bi-breadcrumb">
+      {% if perms.accounts.view_customuser %}
+      <a href="{% url 'company_user_list' %}">{% trans "Users" %}</a>
+      <span class="sep">/</span>
+      <a href="{% url 'bulk_invite_users' company_id=company.company_id %}">{% trans "Invite" %}</a>
+      <span class="sep">/</span>
+      {% endif %}
+      <span class="cur">{% trans "Bulk Import" %}</span>
     </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      {% if perms.accounts.view_customuser %}
+      <a href="{% url 'company_user_list' %}" class="bbtn bbtn-ghost bbtn-sm">
+        <i class="fas fa-arrow-left"></i>
+        <span class="d-none d-sm-inline">{% trans "Back to Users" %}</span>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="bi-wrap">
+
+    <!-- Hero -->
+    <div class="bi-hero">
+      <div class="bi-eyebrow">
+        <i class="fas fa-users"></i>
+        {{ company.display_name }}
+      </div>
+      <h1 class="bi-title">Bulk <em>invite</em> users</h1>
+      <p class="bi-subtitle">
+        {% trans "Upload a CSV file to send invitations to multiple team members at once." %}
+      </p>
+    </div>
+
+    <!-- Main card -->
+    <div class="bi-card">
+      <div class="bi-card-body">
+
+        <!-- Column guide -->
+        <div class="bi-info">
+          <i class="fas fa-table"></i>
+          <div class="bi-info-body">
+            <p class="bi-info-text">
+              {% trans "Your CSV file must include headers in the first row. The following columns are supported:" %}
+            </p>
+            <div class="bi-info-cols">
+              <div class="bi-col-item">
+                <code>email</code>
+                <span class="bi-col-req">{% trans "required" %}</span>
+              </div>
+              <div class="bi-col-item"><code>first_name</code></div>
+              <div class="bi-col-item"><code>last_name</code></div>
+              <div class="bi-col-item"><code>phone_number</code></div>
+              <div class="bi-col-item"><code>role_id</code></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Upload form -->
+        <form method="post" enctype="multipart/form-data" id="bulkForm">
+          {% csrf_token %}
+
+          <!-- Drop zone -->
+          <div class="bi-dropzone" id="biDropzone" tabindex="0" role="button"
+               aria-label="{% trans 'Select or drop a CSV file' %}">
+            <input type="file" id="csv_file" name="csv_file" accept=".csv" required
+                   aria-label="{% trans 'CSV file upload' %}">
+
+            <div class="bi-dz-icon">
+              <i class="fas fa-file-csv" id="dzIcon"></i>
+            </div>
+            <div class="bi-dz-title" id="dzTitle">{% trans "Drop your CSV file here" %}</div>
+            <div class="bi-dz-sub" id="dzSub">{% trans "or click to browse your computer" %}</div>
+            <span class="bi-dz-pill">
+              <i class="fas fa-paperclip"></i>
+              .csv
+            </span>
+
+            <!-- File selected state -->
+            <div id="biFileStatus">
+              <i class="fas fa-check-circle"></i>
+              <span id="biFileName"></span>
+              <span id="biFileSize" style="opacity:.6;font-weight:400"></span>
+            </div>
+          </div>
+
+          <!-- Upload progress (shown on submit) -->
+          <div class="bi-progress-wrap" id="biProgressWrap">
+            <div class="bi-progress-bar">
+              <div class="bi-progress-fill" id="biProgressFill"></div>
+            </div>
+            <div class="bi-progress-label">{% trans "Processing your file…" %}</div>
+          </div>
+
+          <div class="bi-divider">{% trans "or" %}</div>
+
+          <!-- Template download -->
+          <div class="bi-template-row">
+            <div class="bi-template-icon"><i class="fas fa-download"></i></div>
+            <div class="bi-template-body">
+              <strong>{% trans "Download CSV Template" %}</strong>
+              <span>{% trans "Start with our pre-formatted template to avoid errors." %}</span>
+            </div>
+            <a href="data:text/csv;charset=utf-8,email%2Cfirst_name%2Clast_name%2Cphone_number%2Crole_id%0Auser%40example.com%2CJohn%2CDoe%2C%2B256700000000%2C"
+               download="invite_template.csv"
+               class="bbtn bbtn-ghost bbtn-sm" style="flex-shrink:0">
+              <i class="fas fa-file-csv"></i>
+              {% trans "Template" %}
+            </a>
+          </div>
+
+          <!-- Form footer -->
+          <div class="bi-form-footer">
+            {% if perms.accounts.view_customuser %}
+            <a href="{% url 'company_user_list' %}" class="bbtn bbtn-ghost">
+              {% trans "Cancel" %}
+            </a>
+            {% else %}
+            <span></span>
+            {% endif %}
+            <button type="submit" class="bbtn bbtn-primary" id="biSubmit">
+              <i class="fas fa-upload"></i>
+              {% trans "Upload and Process" %}
+            </button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+
+    <!-- Single invite callout -->
+    <div style="display:flex;align-items:center;gap:16px;padding:18px 22px;
+                background:var(--bi-s0);border:1.5px dashed var(--bi-border2);
+                border-radius:var(--bi-r-lg);margin-bottom:32px;flex-wrap:wrap;gap:12px">
+      <div style="width:40px;height:40px;border-radius:10px;background:var(--bi-acl);
+                  border:1px solid var(--bi-acm);display:flex;align-items:center;
+                  justify-content:center;font-size:16px;color:var(--bi-accent);flex-shrink:0">
+        <i class="fas fa-envelope"></i>
+      </div>
+      <div style="flex:1;min-width:0">
+        <strong style="display:block;font-size:13px;font-weight:700;color:var(--bi-t0);margin-bottom:2px">
+          {% trans "Inviting just one person?" %}
+        </strong>
+        <p style="font-size:12px;color:var(--bi-t2);margin:0">
+          {% trans "Use the single invite form for a quicker experience with role selection and preview." %}
+        </p>
+      </div>
+      <a href="{% url 'invite_user' company_id=company.company_id %}"
+         class="bbtn bbtn-ghost bbtn-sm" style="flex-shrink:0">
+        <i class="fas fa-user-plus"></i>
+        {% trans "Single Invite" %}
+      </a>
+    </div>
+
+  </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  'use strict';
+
+  const dropzone     = document.getElementById('biDropzone');
+  const fileInput    = document.getElementById('csv_file');
+  const fileStatus   = document.getElementById('biFileStatus');
+  const fileName     = document.getElementById('biFileName');
+  const fileSize     = document.getElementById('biFileSize');
+  const submitBtn    = document.getElementById('biSubmit');
+  const progressWrap = document.getElementById('biProgressWrap');
+  const progressFill = document.getElementById('biProgressFill');
+  const dzTitle      = document.getElementById('dzTitle');
+  const dzSub        = document.getElementById('dzSub');
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function updateDropzone(file) {
+    if (!file) return;
+    dropzone.classList.add('has-file');
+    fileName.textContent = file.name;
+    fileSize.textContent = '(' + formatBytes(file.size) + ')';
+    fileStatus.style.display = 'flex';
+    dzTitle.textContent = '{% trans "File selected" %}';
+    dzSub.textContent   = '{% trans "Click to choose a different file" %}';
+  }
+
+  fileInput.addEventListener('change', function () {
+    if (this.files[0]) updateDropzone(this.files[0]);
+  });
+
+  /* Drag & drop */
+  ['dragenter', 'dragover'].forEach(evt => {
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add('drag-over');
+    });
+  });
+  ['dragleave', 'dragend', 'drop'].forEach(evt => {
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove('drag-over');
+    });
+  });
+  dropzone.addEventListener('drop', function (e) {
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.csv')) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+      updateDropzone(file);
+    }
+  });
+
+  /* Keyboard activate */
+  dropzone.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+  });
+
+  /* Submit */
+  document.getElementById('bulkForm').addEventListener('submit', function () {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> {% trans "Uploading…" %}';
+    progressWrap.style.display = 'block';
+    /* Animate bar to 80% then hold */
+    let w = 0;
+    const iv = setInterval(() => {
+      w = Math.min(w + (Math.random() * 6 + 2), 80);
+      progressFill.style.width = w + '%';
+      if (w >= 80) clearInterval(iv);
+    }, 120);
+  });
+})();
+</script>
 {% endblock %}

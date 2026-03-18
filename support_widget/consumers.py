@@ -110,13 +110,14 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
         # Persist message
         msg = await self._save_message(sender, body, agent_id)
 
-        # Broadcast to everyone in the room
+        # Broadcast to everyone in the room except the sender (they already see it locally)
         await self.channel_layer.group_send(self.room_group, {
             'type':       'chat.message',
             'message_id': msg.pk,
             'sender':     sender,
             'body':       body,
             'timestamp':  msg.created_at.isoformat(),
+            'origin':     self.channel_name,   # used by chat_message() to skip echo
         })
 
     async def _handle_session_update(self, data):
@@ -180,6 +181,10 @@ class SupportChatConsumer(AsyncWebsocketConsumer):
     # ── Channel layer event handlers (sent BY group_send, received HERE) ──────
 
     async def chat_message(self, event):
+        # Don't echo back to the connection that sent this message —
+        # the sender already displayed it locally for instant feedback.
+        if event.get('origin') == self.channel_name:
+            return
         await self.send(text_data=json.dumps({
             'type':       'chat_message',
             'message_id': event.get('message_id'),

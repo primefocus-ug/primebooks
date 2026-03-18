@@ -7,10 +7,18 @@
 /* ── Shortcuts overlay ── */
 #pbShortcutsOverlay {
     display: none; position: fixed; inset: 0; z-index: 9600;
-    align-items: center; justify-content: center; padding: 1rem;
+    align-items: flex-end; justify-content: center;
+    padding: 0;
     background: rgba(15,23,42,0.75);
     backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     font-family: 'Plus Jakarta Sans', sans-serif;
+}
+/* Center dialog on desktop, bottom-sheet on mobile */
+@media (min-width: 601px) {
+    #pbShortcutsOverlay {
+        align-items: center;
+        padding: 1rem;
+    }
 }
 #pbShortcutsOverlay.open { display: flex; animation: scFade 0.2s ease; }
 @keyframes scFade { from{opacity:0}to{opacity:1} }
@@ -19,40 +27,150 @@
     background: var(--bg-primary, #fff);
     border: 1px solid var(--border-color, #e5e7eb);
     border-radius: 16px;
-    width: 100%; max-width: 640px; max-height: 88vh;
+    width: 100%; max-width: 640px;
+    max-height: 88vh;
     overflow: hidden; display: flex; flex-direction: column;
     box-shadow: 0 32px 80px rgba(0,0,0,0.3);
     animation: scSlide 0.28s cubic-bezier(0.16,1,0.3,1);
 }
+/* Bottom-sheet shape on mobile */
+@media (max-width: 600px) {
+    .sc-dialog {
+        border-radius: 20px 20px 0 0;
+        max-height: 85vh;
+        animation: scSlideUp 0.3s cubic-bezier(0.16,1,0.3,1);
+    }
+    @keyframes scSlideUp {
+        from { transform: translateY(100%); opacity: 0; }
+        to   { transform: translateY(0);   opacity: 1; }
+    }
+}
 @keyframes scSlide { from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1} }
-[data-theme="dark"] .sc-dialog { background:#0f172a; border-color:rgba(255,255,255,0.08); box-shadow:0 32px 80px rgba(0,0,0,0.6); }
 
-.sc-header {
-    display: flex; align-items: center; padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+[data-theme="dark"] .sc-dialog {
+    background: #0f172a;
+    border-color: rgba(255,255,255,0.08);
+    box-shadow: 0 32px 80px rgba(0,0,0,0.6);
+}
+
+/* Drag handle on mobile */
+.sc-drag-handle {
+    display: none;
+    width: 36px; height: 4px;
+    background: var(--border-color, #e5e7eb);
+    border-radius: 2px;
+    margin: 0.6rem auto 0;
     flex-shrink: 0;
 }
+@media (max-width: 600px) {
+    .sc-drag-handle { display: block; }
+}
+[data-theme="dark"] .sc-drag-handle { background: rgba(255,255,255,0.12); }
+
+.sc-header {
+    display: flex; align-items: center; padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    flex-shrink: 0; gap: 0.5rem;
+}
 [data-theme="dark"] .sc-header { border-color: rgba(255,255,255,0.08); }
-.sc-header-title { font-size: 0.9rem; font-weight: 700; color: var(--text-primary, #0f172a); flex: 1; display: flex; align-items: center; gap: 0.5rem; }
+
+.sc-header-title {
+    font-size: 0.9rem; font-weight: 700;
+    color: var(--text-primary, #0f172a);
+    flex: 1; display: flex; align-items: center; gap: 0.5rem;
+    min-width: 0;
+}
 [data-theme="dark"] .sc-header-title { color: #f1f5f9; }
+
 .sc-header-badge {
     font-family: 'JetBrains Mono', monospace; font-size: 0.62rem;
     background: rgba(99,102,241,0.1); color: #6366f1;
     border: 1px solid rgba(99,102,241,0.2);
     border-radius: 6px; padding: 0.15rem 0.5rem;
+    white-space: nowrap; flex-shrink: 0;
 }
+/* Hide badge on very small screens */
+@media (max-width: 380px) { .sc-header-badge { display: none; } }
+
 .sc-close {
-    background: var(--bg-secondary, #f9fafb); border: 1px solid var(--border-color, #e5e7eb);
+    background: var(--bg-secondary, #f9fafb);
+    border: 1px solid var(--border-color, #e5e7eb);
     color: var(--text-muted, #6b7280); border-radius: 8px;
-    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
     cursor: pointer; font-size: 1rem; transition: all 0.15s;
+    touch-action: manipulation;
 }
 .sc-close:hover { color: var(--text-primary, #0f172a); }
+.sc-close:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
 [data-theme="dark"] .sc-close { background:#1e293b; border-color:rgba(255,255,255,0.08); color:#94a3b8; }
 [data-theme="dark"] .sc-close:hover { color:#f1f5f9; }
 
-.sc-body { overflow-y: auto; padding: 1rem 1.5rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
-@media (max-width: 520px) { .sc-body { grid-template-columns: 1fr; } }
+/* ── Search input (optional, nice on mobile) ── */
+.sc-search-wrap {
+    padding: 0.625rem 1.25rem;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    flex-shrink: 0;
+}
+[data-theme="dark"] .sc-search-wrap { border-color: rgba(255,255,255,0.08); }
+.sc-search {
+    width: 100%; background: var(--bg-secondary, #f9fafb);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 8px; padding: 0.45rem 0.75rem;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 0.82rem; color: var(--text-primary, #0f172a);
+    outline: none; box-sizing: border-box;
+}
+.sc-search:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+[data-theme="dark"] .sc-search { background:#1e293b; border-color:rgba(255,255,255,0.08); color:#f1f5f9; }
+[data-theme="dark"] .sc-search::placeholder { color: #64748b; }
+
+/* ── Tab bar (mobile sections) ── */
+.sc-tabs {
+    display: none;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    padding: 0.5rem 1.25rem;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    gap: 0.5rem; flex-shrink: 0;
+    scrollbar-width: none;
+}
+.sc-tabs::-webkit-scrollbar { display: none; }
+@media (max-width: 600px) { .sc-tabs { display: flex; } }
+[data-theme="dark"] .sc-tabs { border-color: rgba(255,255,255,0.08); }
+
+.sc-tab {
+    font-size: 0.72rem; font-weight: 600;
+    padding: 0.3rem 0.75rem; border-radius: 20px;
+    white-space: nowrap; cursor: pointer; transition: all 0.15s;
+    border: 1px solid var(--border-color, #e5e7eb);
+    color: var(--text-muted, #6b7280);
+    background: transparent;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    touch-action: manipulation;
+}
+.sc-tab.active {
+    background: #6366f1; color: #fff; border-color: #6366f1;
+}
+[data-theme="dark"] .sc-tab { border-color: rgba(255,255,255,0.1); color: #94a3b8; }
+
+/* ── Body ── */
+.sc-body {
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 1rem 1.25rem 1.5rem;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;
+}
+/* Single column on mobile */
+@media (max-width: 520px) {
+    .sc-body { grid-template-columns: 1fr; gap: 1rem; }
+}
+
+.sc-group {
+    transition: opacity 0.15s;
+}
+/* Mobile tab filtering */
+@media (max-width: 600px) {
+    .sc-group.hidden { display: none; }
+}
 
 .sc-group-title {
     font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
@@ -64,10 +182,23 @@
 
 .sc-row {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 0.3rem 0; gap: 0.5rem;
+    padding: 0.35rem 0; gap: 0.5rem;
+    /* Hide filtered rows */
+    transition: opacity 0.1s;
 }
-.sc-row-label { font-size: 0.8rem; color: var(--text-secondary, #374151); }
+.sc-row.filtered { display: none; }
+
+.sc-row-label {
+    font-size: 0.8rem; color: var(--text-secondary, #374151);
+    min-width: 0; flex: 1;
+}
 [data-theme="dark"] .sc-row-label { color: #cbd5e1; }
+/* Highlight search match */
+.sc-row-label mark {
+    background: rgba(99,102,241,0.2); color: inherit;
+    border-radius: 2px; padding: 0 2px;
+}
+
 .sc-keys { display: flex; align-items: center; gap: 0.25rem; flex-shrink: 0; }
 .sc-key {
     font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; font-weight: 600;
@@ -77,6 +208,7 @@
     border-radius: 5px; padding: 0.18rem 0.5rem;
     color: var(--text-primary, #0f172a);
     box-shadow: 0 1px 0 rgba(0,0,0,0.05);
+    white-space: nowrap;
 }
 [data-theme="dark"] .sc-key { background:#1e293b; border-color:rgba(255,255,255,0.12); color:#e2e8f0; }
 .sc-then {
@@ -84,7 +216,31 @@
     font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
-/* ── Sequence indicator (G, then...) ── */
+/* Mobile notice: keyboard shortcuts not available */
+.sc-mobile-notice {
+    display: none;
+    padding: 0.75rem 1rem;
+    background: rgba(99,102,241,0.08);
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 8px;
+    font-size: 0.78rem; color: var(--text-secondary, #374151);
+    line-height: 1.5; margin-bottom: 0.5rem;
+    gap: 0.5rem; align-items: flex-start;
+}
+[data-theme="dark"] .sc-mobile-notice { color: #94a3b8; }
+@media (max-width: 600px) {
+    .sc-mobile-notice { display: flex; }
+}
+
+/* No-results state */
+.sc-no-results {
+    display: none; grid-column: 1 / -1;
+    text-align: center; padding: 2rem 1rem;
+    color: var(--text-muted, #9ca3af); font-size: 0.82rem;
+}
+.sc-no-results.show { display: block; }
+
+/* ── Sequence indicator ── */
 #pbSeqIndicator {
     position: fixed; bottom: 5.5rem; right: 2rem; z-index: 9900;
     background: rgba(15,23,42,0.9); color: #f1f5f9;
@@ -94,64 +250,114 @@
     box-shadow: 0 4px 16px rgba(0,0,0,0.3);
     display: none; align-items: center; gap: 0.5rem;
     animation: scFade 0.15s ease;
+    /* Mobile: move above nav bar area */
 }
 #pbSeqIndicator.show { display: flex; }
+
+@media (max-width: 600px) {
+    #pbSeqIndicator {
+        bottom: 1.5rem; right: 1rem;
+        font-size: 0.72rem; padding: 0.35rem 0.7rem;
+    }
+}
 [data-theme="light"] #pbSeqIndicator { background: rgba(15,23,42,0.85); }
 </style>
 
 <!-- Shortcuts overlay -->
 <div id="pbShortcutsOverlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
     <div class="sc-dialog">
+        <!-- Drag handle (mobile) -->
+        <div class="sc-drag-handle" aria-hidden="true"></div>
+
         <div class="sc-header">
             <div class="sc-header-title">
-                <i class="bi bi-keyboard"></i> Keyboard Shortcuts
+                <i class="bi bi-keyboard"></i>
+                <span>Keyboard Shortcuts</span>
                 <span class="sc-header-badge">Press ? anytime</span>
             </div>
-            <button class="sc-close" id="scClose" aria-label="Close"><i class="bi bi-x"></i></button>
+            <button class="sc-close" id="scClose" aria-label="Close shortcuts"><i class="bi bi-x"></i></button>
         </div>
-        <div class="sc-body">
-            <!-- Navigation -->
-            <div>
+
+        <!-- Search -->
+        <div class="sc-search-wrap">
+            <input
+                type="search"
+                class="sc-search"
+                id="scSearch"
+                placeholder="Search shortcuts…"
+                autocomplete="off"
+                autocorrect="off"
+                spellcheck="false"
+                aria-label="Search shortcuts"
+            >
+        </div>
+
+        <!-- Mobile tabs -->
+        <div class="sc-tabs" id="scTabs" role="tablist" aria-label="Shortcut categories">
+            <button class="sc-tab active" data-group="all" role="tab" aria-selected="true">All</button>
+            <button class="sc-tab" data-group="navigate" role="tab" aria-selected="false">Navigate</button>
+            <button class="sc-tab" data-group="create" role="tab" aria-selected="false">Create</button>
+            <button class="sc-tab" data-group="interface" role="tab" aria-selected="false">Interface</button>
+            <button class="sc-tab" data-group="table" role="tab" aria-selected="false">Table</button>
+        </div>
+
+        <div class="sc-body" id="scBody">
+            <!-- Mobile notice -->
+            <div class="sc-mobile-notice" aria-live="polite">
+                <i class="bi bi-info-circle-fill" style="color:#818cf8;flex-shrink:0;margin-top:1px"></i>
+                Keyboard shortcuts work on physical keyboards. Some may not be available on touch devices.
+            </div>
+
+            <!-- Navigate -->
+            <div class="sc-group" data-group="navigate">
                 <div class="sc-group-title">Navigate (G then…)</div>
-                <div class="sc-row"><span class="sc-row-label">Dashboard</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">D</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Invoices</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">I</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Products</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">P</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Reports</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">R</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Users</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">U</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Settings</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">S</span></div></div>
+                <div class="sc-row" data-label="Dashboard"><span class="sc-row-label">Dashboard</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">D</span></div></div>
+                <div class="sc-row" data-label="Invoices"><span class="sc-row-label">Invoices</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">I</span></div></div>
+                <div class="sc-row" data-label="Products"><span class="sc-row-label">Products</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">P</span></div></div>
+                <div class="sc-row" data-label="Reports"><span class="sc-row-label">Reports</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">R</span></div></div>
+                <div class="sc-row" data-label="Users"><span class="sc-row-label">Users</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">U</span></div></div>
+                <div class="sc-row" data-label="Settings"><span class="sc-row-label">Settings</span><div class="sc-keys"><span class="sc-key">G</span><span class="sc-then">then</span><span class="sc-key">S</span></div></div>
             </div>
+
             <!-- Quick create -->
-            <div>
+            <div class="sc-group" data-group="create">
                 <div class="sc-group-title">Quick Create (C then…)</div>
-                <div class="sc-row"><span class="sc-row-label">New Invoice</span><div class="sc-keys"><span class="sc-key">C</span><span class="sc-then">then</span><span class="sc-key">I</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">New Product</span><div class="sc-keys"><span class="sc-key">C</span><span class="sc-then">then</span><span class="sc-key">P</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">New User</span><div class="sc-keys"><span class="sc-key">C</span><span class="sc-then">then</span><span class="sc-key">U</span></div></div>
+                <div class="sc-row" data-label="New Invoice"><span class="sc-row-label">New Invoice</span><div class="sc-keys"><span class="sc-key">C</span><span class="sc-then">then</span><span class="sc-key">I</span></div></div>
+                <div class="sc-row" data-label="New Product"><span class="sc-row-label">New Product</span><div class="sc-keys"><span class="sc-key">C</span><span class="sc-then">then</span><span class="sc-key">P</span></div></div>
+                <div class="sc-row" data-label="New User"><span class="sc-row-label">New User</span><div class="sc-keys"><span class="sc-key">C</span><span class="sc-then">then</span><span class="sc-key">U</span></div></div>
             </div>
-            <!-- UI -->
-            <div>
+
+            <!-- Interface -->
+            <div class="sc-group" data-group="interface">
                 <div class="sc-group-title">Interface</div>
-                <div class="sc-row"><span class="sc-row-label">Command palette</span><div class="sc-keys"><span class="sc-key">⌘</span><span class="sc-key">K</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Focus search</span><div class="sc-keys"><span class="sc-key">/</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Toggle sidebar</span><div class="sc-keys"><span class="sc-key">[</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Toggle theme</span><div class="sc-keys"><span class="sc-key">⌘</span><span class="sc-key">⇧</span><span class="sc-key">L</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">This overlay</span><div class="sc-keys"><span class="sc-key">?</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Close / Cancel</span><div class="sc-keys"><span class="sc-key">ESC</span></div></div>
+                <div class="sc-row" data-label="Command palette"><span class="sc-row-label">Command palette</span><div class="sc-keys"><span class="sc-key">⌘</span><span class="sc-key">K</span></div></div>
+                <div class="sc-row" data-label="Focus search"><span class="sc-row-label">Focus search</span><div class="sc-keys"><span class="sc-key">/</span></div></div>
+                <div class="sc-row" data-label="Toggle sidebar"><span class="sc-row-label">Toggle sidebar</span><div class="sc-keys"><span class="sc-key">[</span></div></div>
+                <div class="sc-row" data-label="Toggle theme"><span class="sc-row-label">Toggle theme</span><div class="sc-keys"><span class="sc-key">⌘</span><span class="sc-key">⇧</span><span class="sc-key">L</span></div></div>
+                <div class="sc-row" data-label="This overlay Shortcuts"><span class="sc-row-label">This overlay</span><div class="sc-keys"><span class="sc-key">?</span></div></div>
+                <div class="sc-row" data-label="Close Cancel"><span class="sc-row-label">Close / Cancel</span><div class="sc-keys"><span class="sc-key">ESC</span></div></div>
             </div>
+
             <!-- Table -->
-            <div>
+            <div class="sc-group" data-group="table">
                 <div class="sc-group-title">Table Rows (when row focused)</div>
-                <div class="sc-row"><span class="sc-row-label">Open / View</span><div class="sc-keys"><span class="sc-key">↵ Enter</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Edit row</span><div class="sc-keys"><span class="sc-key">E</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Delete row</span><div class="sc-keys"><span class="sc-key">Del</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Next row</span><div class="sc-keys"><span class="sc-key">↓</span></div></div>
-                <div class="sc-row"><span class="sc-row-label">Prev row</span><div class="sc-keys"><span class="sc-key">↑</span></div></div>
+                <div class="sc-row" data-label="Open View"><span class="sc-row-label">Open / View</span><div class="sc-keys"><span class="sc-key">↵ Enter</span></div></div>
+                <div class="sc-row" data-label="Edit row"><span class="sc-row-label">Edit row</span><div class="sc-keys"><span class="sc-key">E</span></div></div>
+                <div class="sc-row" data-label="Delete row"><span class="sc-row-label">Delete row</span><div class="sc-keys"><span class="sc-key">Del</span></div></div>
+                <div class="sc-row" data-label="Next row"><span class="sc-row-label">Next row</span><div class="sc-keys"><span class="sc-key">↓</span></div></div>
+                <div class="sc-row" data-label="Prev Previous row"><span class="sc-row-label">Prev row</span><div class="sc-keys"><span class="sc-key">↑</span></div></div>
+            </div>
+
+            <!-- No results -->
+            <div class="sc-no-results" id="scNoResults" aria-live="polite">
+                No shortcuts match "<span id="scNoResultsQuery"></span>"
             </div>
         </div>
     </div>
 </div>
 
-<!-- Sequence indicator (shows G→ waiting for next key) -->
-<div id="pbSeqIndicator">
+<!-- Sequence indicator -->
+<div id="pbSeqIndicator" aria-live="assertive">
     <i class="bi bi-keyboard"></i>
     <span id="pbSeqText">G</span>
     <span style="opacity:0.5;font-size:0.65rem">→ then…</span>
@@ -161,20 +367,24 @@
 (function(){
 'use strict';
 
-const overlay    = document.getElementById('pbShortcutsOverlay');
+const overlay      = document.getElementById('pbShortcutsOverlay');
 const seqIndicator = document.getElementById('pbSeqIndicator');
-const seqText    = document.getElementById('pbSeqText');
+const seqText      = document.getElementById('pbSeqText');
+const scSearch     = document.getElementById('scSearch');
+const scNoResults  = document.getElementById('scNoResults');
+const scNoResultsQ = document.getElementById('scNoResultsQuery');
+const scBody       = document.getElementById('scBody');
+const scTabsEl     = document.getElementById('scTabs');
 
-// Sequence state
-let seqKey = null;
+let seqKey   = null;
 let seqTimer = null;
 
+// ── Sequence helpers ──────────────────────────────────────────
 function clearSeq() {
     seqKey = null;
     clearTimeout(seqTimer);
     seqIndicator.classList.remove('show');
 }
-
 function startSeq(key) {
     seqKey = key;
     seqText.textContent = key.toUpperCase();
@@ -189,7 +399,7 @@ const GO_MAP = {
     p: '{% url "inventory:product_list" %}',
     r: '{% url "suggestions:report_my_reports" %}',
     u: '{% url "user_list" %}',
-    s: '/settings/',  {# no settings url name available — update when known #}
+    s: '/settings/',
 };
 const CREATE_MAP = {
     i: '{% url "sales:create_sale" %}',
@@ -198,34 +408,25 @@ const CREATE_MAP = {
 };
 
 document.addEventListener('keydown', e => {
-    const tag  = document.activeElement?.tagName;
+    const tag = document.activeElement?.tagName;
     const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
-
-    // Never trigger shortcuts inside inputs (except ESC)
     if (isInput && e.key !== 'Escape') return;
 
-    // ESC — close any open overlay
     if (e.key === 'Escape') {
-        if (overlay.classList.contains('open')) { showOverlay(false); clearSeq(); }
+        if (overlay.classList.contains('open')) { showOverlay(false); }
         clearSeq();
         return;
     }
-
-    // ? — toggle shortcuts overlay
     if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         overlay.classList.contains('open') ? showOverlay(false) : showOverlay(true);
         return;
     }
-
-    // [ — toggle sidebar
     if (e.key === '[' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         document.getElementById('sidebarToggle')?.click();
         return;
     }
-
-    // ⌘⇧L — toggle theme
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
         e.preventDefault();
         document.getElementById('themeToggle')?.click();
@@ -233,34 +434,86 @@ document.addEventListener('keydown', e => {
     }
 
     const key = e.key.toLowerCase();
-
-    // Sequence: G then letter
     if (seqKey === 'g') {
         clearSeq();
-        if (GO_MAP[key]) {
-            e.preventDefault();
-            window.location.href = GO_MAP[key];
-        }
+        if (GO_MAP[key]) { e.preventDefault(); window.location.href = GO_MAP[key]; }
         return;
     }
-
-    // Sequence: C then letter
     if (seqKey === 'c') {
         clearSeq();
-        if (CREATE_MAP[key]) {
-            e.preventDefault();
-            window.location.href = CREATE_MAP[key];
-        }
+        if (CREATE_MAP[key]) { e.preventDefault(); window.location.href = CREATE_MAP[key]; }
         return;
     }
-
-    // Start sequences
     if (key === 'g' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); startSeq('g'); return; }
     if (key === 'c' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); startSeq('c'); return; }
 });
 
-// ── Table row shortcuts ────────────────────────────────────────
-// Works on any <tr> with data-shortcut-edit, data-shortcut-delete, data-shortcut-url attributes
+// ── Search ────────────────────────────────────────────────────
+scSearch.addEventListener('input', () => {
+    const q = scSearch.value.trim().toLowerCase();
+    const rows = scBody.querySelectorAll('.sc-row');
+    let anyVisible = false;
+
+    rows.forEach(row => {
+        const label = (row.dataset.label || '').toLowerCase();
+        const match = !q || label.includes(q);
+        row.classList.toggle('filtered', !match);
+        if (match) anyVisible = true;
+
+        // Highlight match
+        const labelEl = row.querySelector('.sc-row-label');
+        if (labelEl && q) {
+            const orig = row.dataset.label || labelEl.textContent;
+            const idx  = orig.toLowerCase().indexOf(q);
+            if (idx > -1) {
+                labelEl.innerHTML = orig.slice(0, idx)
+                    + `<mark>${orig.slice(idx, idx + q.length)}</mark>`
+                    + orig.slice(idx + q.length);
+            } else {
+                labelEl.textContent = orig;
+            }
+        } else if (labelEl) {
+            labelEl.textContent = row.dataset.label || labelEl.textContent;
+        }
+    });
+
+    // Groups: hide if all rows filtered
+    scBody.querySelectorAll('.sc-group').forEach(g => {
+        const visRows = g.querySelectorAll('.sc-row:not(.filtered)');
+        g.style.display = visRows.length ? '' : 'none';
+    });
+
+    scNoResults.classList.toggle('show', !anyVisible && q.length > 0);
+    scNoResultsQ.textContent = q;
+});
+
+// ── Mobile tabs ───────────────────────────────────────────────
+scTabsEl.querySelectorAll('.sc-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        scTabsEl.querySelectorAll('.sc-tab').forEach(t => {
+            t.classList.remove('active');
+            t.setAttribute('aria-selected', 'false');
+        });
+        tab.classList.add('active');
+        tab.setAttribute('aria-selected', 'true');
+
+        const group = tab.dataset.group;
+        scBody.querySelectorAll('.sc-group').forEach(g => {
+            if (group === 'all') {
+                g.classList.remove('hidden');
+            } else {
+                g.classList.toggle('hidden', g.dataset.group !== group);
+            }
+        });
+        // Clear search when switching tabs
+        scSearch.value = '';
+        scBody.querySelectorAll('.sc-row').forEach(r => r.classList.remove('filtered'));
+        scBody.querySelectorAll('.sc-group').forEach(g => g.style.display = '');
+        scNoResults.classList.remove('show');
+    });
+});
+
+// ── Table row shortcuts ───────────────────────────────────────
 function initTableShortcuts() {
     document.querySelectorAll('table tbody tr[data-shortcut-url], table tbody tr[data-shortcut-edit]').forEach(row => {
         row.setAttribute('tabindex', '0');
@@ -302,11 +555,29 @@ function initTableShortcuts() {
 // ── Overlay helpers ───────────────────────────────────────────
 function showOverlay(show) {
     overlay.classList.toggle('open', show);
-    if (show) document.getElementById('scClose').focus();
+    if (show) {
+        // Focus search on open for quick filtering
+        requestAnimationFrame(() => scSearch.focus());
+    }
 }
 
 document.getElementById('scClose').addEventListener('click', () => showOverlay(false));
-overlay.addEventListener('click', e => { if (e.target === overlay) showOverlay(false); });
+overlay.addEventListener('click', e => {
+    if (e.target === overlay) showOverlay(false);
+});
+
+// Swipe down on mobile to close
+let touchStartY = 0;
+const dialog = overlay.querySelector('.sc-dialog');
+dialog.addEventListener('touchstart', e => {
+    touchStartY = e.changedTouches[0].clientY;
+}, { passive: true });
+dialog.addEventListener('touchend', e => {
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    // Swipe down by 80px+ on dialog header closes it
+    const onHandle = e.target.closest('.sc-drag-handle, .sc-header');
+    if (dy > 80 && onHandle) showOverlay(false);
+}, { passive: true });
 
 // ── Public API ────────────────────────────────────────────────
 window.PBShortcuts = {
@@ -314,14 +585,12 @@ window.PBShortcuts = {
     initTableShortcuts,
 };
 
-// Auto-init tables
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initTableShortcuts);
 } else {
     initTableShortcuts();
 }
 
-// Re-init on HTMX/AJAX swaps if applicable
 document.addEventListener('htmx:afterSwap', initTableShortcuts);
 
 })();

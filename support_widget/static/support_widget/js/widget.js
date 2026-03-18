@@ -23,7 +23,14 @@
 
   // ── Config from data attributes ───────────────────────────────────────────
   const API_BASE    = ROOT.dataset.apiBase    || '/support';
-  const BRAND_COLOR = ROOT.dataset.brandColor || '#6366f1';
+  const BRAND_COLOR   = ROOT.dataset.brandColor   || '#6366f1';
+  const BUBBLE_BOTTOM = ROOT.dataset.bubbleBottom || '24px';
+  const BUBBLE_LEFT   = ROOT.dataset.bubbleLeft   || '';
+  const BUBBLE_RIGHT  = ROOT.dataset.bubbleRight  || (ROOT.dataset.bubbleLeft ? '' : '24px');
+  const _hPos = BUBBLE_LEFT ? `left:${BUBBLE_LEFT};right:auto;` : `right:${BUBBLE_RIGHT};left:auto;`;
+  const PRE_NAME    = ROOT.dataset.userName   || '';
+  const PRE_EMAIL   = ROOT.dataset.userEmail  || '';
+  const IS_STAFF    = ROOT.dataset.isStaff    === 'true';
   const GREETING    = ROOT.dataset.greeting   || '👋 Hi! How can we help?';
   const TITLE       = ROOT.dataset.title      || 'Support';
   const WS_PROTO    = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -93,7 +100,11 @@
     let d; try { d = JSON.parse(evt.data); } catch (_) { return; }
     switch (d.type) {
       case 'chat_message':
-        _addMessage(d.sender, d.body, d.timestamp);
+        if (d.sender !== 'visitor') {
+          _addMessage(d.sender, d.body, d.timestamp);
+          _playNotificationSound();
+          _showBrowserNotification('New message from support', d.body);
+        }
         break;
       case 'typing':
         _showTyping(d.sender);
@@ -111,6 +122,7 @@
         if (!state.open) _togglePanel(true);
         _showIncomingCall(d.call_room_id, d.recording_notice);
         _ringContinuous();
+        _showBrowserNotification('📞 Incoming Support Call', 'An agent wants to talk with you');
         break;
     }
   }
@@ -128,8 +140,30 @@
   // ── Build DOM ─────────────────────────────────────────────────────────────
   ROOT.innerHTML = `
   <style>
+    #sw-panel, #sw-bubble {
+      --sw-bg:#fff; --sw-body-bg:#f8fafc; --sw-border:#e5e7eb;
+      --sw-text:#111; --sw-muted:#6b7280; --sw-label:#374151;
+      --sw-faq-bg:#fff; --sw-input-bg:#fff;
+      --sw-msg-agent-bg:#fff; --sw-msg-agent-color:#111;
+      --sw-action-bg:#fff; --sw-footer-bg:#fff;
+      --sw-card-bg:#fff; --sw-card-border:#e5e7eb;
+      --sw-mute-bg:#f3f4f6;
+      --sw-system-bg:#fef3c7; --sw-system-color:#92400e;
+      --sw-notice-bg:#fffbeb; --sw-notice-border:#fbbf24; --sw-notice-color:#92400e;
+    }
+    [data-theme="dark"] #sw-panel, [data-theme="dark"] #sw-bubble {
+      --sw-bg:#1e293b; --sw-body-bg:#0f172a; --sw-border:rgba(255,255,255,.08);
+      --sw-text:#f1f5f9; --sw-muted:#94a3b8; --sw-label:#cbd5e1;
+      --sw-faq-bg:#1e293b; --sw-input-bg:#0f172a;
+      --sw-msg-agent-bg:#1e293b; --sw-msg-agent-color:#f1f5f9;
+      --sw-action-bg:#1e293b; --sw-footer-bg:#1e293b;
+      --sw-card-bg:#1e293b; --sw-card-border:rgba(255,255,255,.08);
+      --sw-mute-bg:#273548;
+      --sw-system-bg:rgba(251,191,36,.12); --sw-system-color:#fbbf24;
+      --sw-notice-bg:rgba(251,191,36,.08); --sw-notice-border:rgba(251,191,36,.3); --sw-notice-color:#fbbf24;
+    }
     #sw-bubble {
-      position:fixed; bottom:24px; right:24px; z-index:9900;
+      position:fixed; bottom:${BUBBLE_BOTTOM}; ${_hPos} z-index:9900;
       width:58px; height:58px; border-radius:50%;
       background:${BRAND_COLOR};
       box-shadow:0 4px 20px rgba(0,0,0,.28);
@@ -161,9 +195,9 @@
       font-family:sans-serif;
     }
     #sw-panel {
-      position:fixed; bottom:92px; right:24px; z-index:9899;
-      width:360px; max-height:580px;
-      background:#fff; border-radius:18px;
+      position:fixed; bottom:calc(${BUBBLE_BOTTOM} + 68px); ${_hPos} z-index:9899;
+      width:360px; max-height:min(580px, calc(100vh - var(--sw-bottom-gap, 100px)));
+      background:var(--sw-bg); border-radius:18px;
       box-shadow:0 24px 60px rgba(0,0,0,.18);
       display:none; flex-direction:column; overflow:hidden;
       font-family:'Plus Jakarta Sans',system-ui,sans-serif;
@@ -185,7 +219,7 @@
     #sw-body {
       flex:1; overflow-y:auto; padding:14px;
       display:flex; flex-direction:column; gap:9px;
-      background:#f8fafc; min-height:120px;
+      background:var(--sw-body-bg); min-height:120px;
     }
 
     /* Messages */
@@ -194,28 +228,28 @@
       font-size:.84rem; line-height:1.5; word-break:break-word;
     }
     .sw-msg.visitor { background:${BRAND_COLOR}; color:#fff; align-self:flex-end; border-bottom-right-radius:4px; }
-    .sw-msg.agent   { background:#fff; color:#111; align-self:flex-start; border:1px solid #e5e7eb; border-bottom-left-radius:4px; }
-    .sw-msg.bot     { background:#fff; color:#111; align-self:flex-start; border:1px solid #e5e7eb; border-bottom-left-radius:4px; }
-    .sw-msg.system  { background:#fef3c7; color:#92400e; align-self:center; font-size:.76rem; border-radius:8px; text-align:center; max-width:100%; padding:6px 12px; }
+    .sw-msg.agent   { background:var(--sw-msg-agent-bg); color:var(--sw-msg-agent-color); align-self:flex-start; border:1px solid var(--sw-border); border-bottom-left-radius:4px; }
+    .sw-msg.bot     { background:var(--sw-msg-agent-bg); color:var(--sw-msg-agent-color); align-self:flex-start; border:1px solid var(--sw-border); border-bottom-left-radius:4px; }
+    .sw-msg.system  { background:var(--sw-system-bg); color:var(--sw-system-color); align-self:center; font-size:.76rem; border-radius:8px; text-align:center; max-width:100%; padding:6px 12px; }
     .sw-msg-time    { font-size:.65rem; opacity:.55; margin-top:3px; }
 
     /* FAQ */
     .sw-faq {
-      background:#fff; border:1px solid #e5e7eb; border-radius:10px;
-      padding:10px 12px; cursor:pointer; font-size:.82rem; color:#374151;
+      background:var(--sw-faq-bg); border:1px solid var(--sw-border); border-radius:10px;
+      padding:10px 12px; cursor:pointer; font-size:.82rem; color:var(--sw-text);
       transition:border-color .15s;
     }
     .sw-faq:hover { border-color:${BRAND_COLOR}; }
     .sw-faq-q { font-weight:700; }
-    .sw-faq-a { color:#6b7280; display:none; margin-top:5px; line-height:1.5; }
+    .sw-faq-a { color:var(--sw-muted); display:none; margin-top:5px; line-height:1.5; }
     .sw-faq.open .sw-faq-a { display:block; }
 
     /* Forms */
     .sw-form { display:flex; flex-direction:column; gap:6px; }
-    .sw-form label { font-size:.77rem; font-weight:700; color:#374151; }
+    .sw-form label { font-size:.77rem; font-weight:700; color:var(--sw-label); }
     .sw-form input {
-      border:1px solid #d1d5db; border-radius:8px;
-      padding:8px 11px; font-size:.86rem; outline:none;
+      border:1px solid var(--sw-border); border-radius:8px;
+      padding:8px 11px; font-size:.86rem; outline:none; background:var(--sw-input-bg); color:var(--sw-text);
     }
     .sw-form input:focus { border-color:${BRAND_COLOR}; }
 
@@ -234,20 +268,20 @@
 
     /* Action bar (Talk to agent / Call buttons) */
     #sw-actions {
-      padding:8px 12px; border-top:1px solid #e5e7eb;
-      background:#fff; display:none; flex-direction:column; gap:6px; flex-shrink:0;
+      padding:8px 12px; border-top:1px solid var(--sw-border);
+      background:var(--sw-action-bg); display:none; flex-direction:column; gap:6px; flex-shrink:0;
     }
     #sw-actions .sw-action-row { display:flex; gap:6px; }
 
     /* Chat footer */
     #sw-footer {
       display:none; gap:8px; padding:10px 12px;
-      border-top:1px solid #e5e7eb; background:#fff; flex-shrink:0;
+      border-top:1px solid var(--sw-border); background:var(--sw-footer-bg); flex-shrink:0;
     }
     #sw-input {
-      flex:1; border:1px solid #d1d5db; border-radius:9px;
+      flex:1; border:1px solid var(--sw-border); border-radius:9px;
       padding:8px 12px; font-size:.86rem; outline:none; resize:none;
-      font-family:inherit; max-height:80px;
+      font-family:inherit; max-height:80px; background:var(--sw-input-bg); color:var(--sw-text);
     }
     #sw-input:focus { border-color:${BRAND_COLOR}; }
     #sw-send {
@@ -259,11 +293,11 @@
     #sw-send:hover { opacity:.85; }
 
     /* Typing indicator */
-    #sw-typing { font-size:.73rem; color:#9ca3af; min-height:17px; padding:2px 14px; flex-shrink:0; }
+    #sw-typing { font-size:.73rem; color:var(--sw-muted); min-height:17px; padding:2px 14px; flex-shrink:0; }
 
     /* Call card */
     #sw-call-card {
-      background:#fff; border:1.5px solid #e5e7eb; border-radius:14px;
+      background:var(--sw-card-bg); border:1.5px solid var(--sw-card-border); border-radius:14px;
       overflow:hidden; flex-shrink:0;
     }
     .sw-call-hdr {
@@ -289,8 +323,8 @@
     .sw-call-status { color:rgba(255,255,255,.8); font-size:.76rem; margin-top:3px; }
     .sw-call-timer  { text-align:center; font-family:monospace; font-size:.92rem; color:#10b981; padding:8px 0 2px; min-height:30px; }
     .sw-call-notice {
-      background:#fffbeb; border:1px solid #fbbf24; border-radius:8px;
-      margin:10px 12px 0; padding:9px 11px; font-size:.74rem; color:#92400e; line-height:1.6;
+      background:var(--sw-notice-bg); border:1px solid var(--sw-notice-border); border-radius:8px;
+      margin:10px 12px 0; padding:9px 11px; font-size:.74rem; color:var(--sw-notice-color); line-height:1.6;
     }
     .sw-call-btns   { display:flex; gap:8px; padding:10px 12px 14px; }
     .sw-call-ctrl   { display:flex; gap:12px; justify-content:center; padding:10px 12px 14px; }
@@ -299,11 +333,11 @@
       font-size:1.15rem; transition:transform .15s; display:flex; align-items:center; justify-content:center;
     }
     .sw-ctrl-btn:hover { transform:scale(1.1); }
-    .sw-ctrl-mute   { background:#f3f4f6; border:1px solid #e5e7eb; }
+    .sw-ctrl-mute   { background:var(--sw-mute-bg); border:1px solid var(--sw-border); }
     .sw-ctrl-hangup { background:#ef4444; }
 
     @media(max-width:420px) {
-      #sw-panel { width:calc(100vw - 20px); right:10px; bottom:82px; }
+      #sw-panel { width:calc(100vw - 20px); ${BUBBLE_LEFT ? 'left:10px;right:auto;' : 'right:10px;left:auto;'} bottom:82px; }
     }
   </style>
 
@@ -424,7 +458,23 @@
       state.session_token = res.session_token;
       _saveState();
       _connectWS(res.session_token);
-      _askName();
+
+      // Skip name/email onboarding if user data is already known (staff/logged-in users)
+      if (PRE_NAME && PRE_EMAIL) {
+        state.visitor_name  = PRE_NAME;
+        state.visitor_email = PRE_EMAIL;
+        _saveState();
+        // Send session info to server silently
+        _sendWS({ type: 'session_update', name: PRE_NAME, email: PRE_EMAIL });
+        _api(`/session/${state.session_token}/`, 'POST', { name: PRE_NAME, email: PRE_EMAIL });
+        // Go straight to chat — skip name/email forms
+        _addMessage('bot', `Hi ${PRE_NAME}! How can we help you today? Type a message or click "Chat with agent".`);
+        $footer.style.display  = 'flex';
+        $actions.style.display = 'flex';
+        state.step = 'chat'; _saveState();
+      } else {
+        _askName();
+      }
     }
   }
 
@@ -677,7 +727,10 @@
     _stopRing();
     _removeCallCard();
     state.step = 'chat'; _saveState();
-    // Decline signal handled via WebSocket — no extra HTTP call needed.
+    // Tell server
+    fetch(`${API_BASE.replace('/support','/support')}/call/${callRoomId}/end/`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    }).catch(() => {});
     _addMessage('system', 'You declined the voice call. Feel free to send us a message instead.');
     // Ensure chat input is visible
     $footer.style.display  = 'flex';
@@ -817,7 +870,12 @@
     _stopRecording(state.call_room_id);
     clearInterval(_callTimerInterval);
 
-    // Server notified via call_ended WebSocket signal above — no extra HTTP call needed.
+    // Notify server
+    if (state.call_room_id) {
+      fetch(`/support/call/${state.call_room_id}/end/`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      }).catch(() => {});
+    }
 
     _cleanupCall();
     _addMessage('system', '📵 Call ended. You can continue chatting below.');
@@ -862,12 +920,8 @@
   }
 
   function _stopRecording(callRoomId) {
-    if (!_mediaRecorder || _mediaRecorder.state === 'inactive') {
-      _mediaRecorder = null;
-      return;
-    }
-    const recorder = _mediaRecorder;  // capture ref before nulling
-    _mediaRecorder = null;
+    if (!_mediaRecorder || _mediaRecorder.state === 'inactive') { _mediaRecorder = null; return; }
+    const recorder = _mediaRecorder; _mediaRecorder = null;
     recorder.onstop = async () => {
       if (!callRoomId || !_recordChunks.length) return;
       const mimeType = recorder.mimeType || 'audio/webm';
@@ -932,6 +986,30 @@
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
   }
+
+  function _playNotificationSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type='sine'; o.frequency.setValueAtTime(1046,ctx.currentTime);
+      o.frequency.exponentialRampToValueAtTime(784,ctx.currentTime+0.12);
+      g.gain.setValueAtTime(0.18,ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.3);
+      o.start(ctx.currentTime); o.stop(ctx.currentTime+0.3);
+    } catch(_){}
+  }
+  function _showBrowserNotification(title, body) {
+    if(!('Notification'in window)) return;
+    if(Notification.permission==='granted'){
+      const n=new Notification(title,{body:(body||'').substring(0,80),tag:'support-msg'});
+      n.onclick=()=>{window.focus();_togglePanel(true);n.close();};
+    } else if(Notification.permission!=='denied') Notification.requestPermission();
+  }
+  document.addEventListener('click',function _rn(){
+    if(typeof Notification!=='undefined'&&Notification.permission==='default')
+      Notification.requestPermission();
+  },{once:true});
 
   // ── Public API ────────────────────────────────────────────────────────────
   window.SupportWidget = {
