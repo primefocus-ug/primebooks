@@ -1751,9 +1751,9 @@ body {
 .mobile-cart-fab {
   display: none;
   position: fixed;
-  bottom: 1.25rem;
+  bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 1rem);
   right: 1.25rem;
-  z-index: 500;
+  z-index: 1136; /* one above #pbBottomNav (1035) */
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -1790,6 +1790,36 @@ body {
 
 .mobile-cart-fab .fab-badge.has-items { transform: scale(1); }
 
+/* ── MOBILE BACK BAR ── */
+.mobile-back-bar { display: none; }
+
+@media (max-width: 768px) {
+  .mobile-back-bar {
+    display: flex;
+    align-items: center;
+    padding: .4rem .75rem;
+    background: var(--ink-2);
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .mobile-back-btn {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-family: var(--sans);
+    font-size: .82rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: .25rem 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-back-btn i { font-size: .9rem; }
+  .mobile-back-btn:active { opacity: .7; }
+}
+
 /* ── MOBILE PANEL SLIDE STATES ── */
 @media (max-width: 768px) {
 
@@ -1797,7 +1827,9 @@ body {
   .pos-layout {
     display: block;
     position: relative;
-    height: calc(100vh - var(--topbar-h, 49px) - var(--settingsbar-h, 41px));
+    /* Subtract topbar + settings bar + 58px bottom nav so content
+       never disappears behind the navigation bar */
+    height: calc(100vh - var(--topbar-h, 49px) - var(--settingsbar-h, 41px) - 58px - env(safe-area-inset-bottom, 0px));
     overflow: hidden;
   }
 
@@ -2029,8 +2061,8 @@ body {
 
   /* ─ Toast: full width at bottom on mobile ─ */
   .toast-shelf {
-    top: auto;
-    bottom: 5rem;
+    top: 4rem;
+    bottom: auto;
     right: .75rem;
     left: .75rem;
   }
@@ -2090,6 +2122,9 @@ body {
   .ss-summary-grid { margin: 12px 16px; }
   .ss-total-row { margin: 0 16px 16px; }
   .ss-actions { margin: 0 16px 12px; }
+
+  /* Lock body height to viewport so it doesn't extend behind bottom nav */
+  body { min-height: unset; height: 100vh; overflow: visible; }
 }
 
 /* ── TABLET (768–1023px) ── */
@@ -2850,6 +2885,13 @@ body {
 
   <!-- ─── RIGHT: CART + CONFIG ─── -->
   <aside class="right-panel">
+
+    <!-- Mobile: back to products bar -->
+    <div class="mobile-back-bar">
+      <button class="mobile-back-btn" onclick="toggleMobilePanel(false)" aria-label="Back to products">
+        <i class="bi bi-arrow-left"></i> Back to Products
+      </button>
+    </div>
 
     <!-- Tabs -->
     <div class="panel-tabs"
@@ -11113,13 +11155,17 @@ function toggleMobilePanel(forceOpen) {
 
   layout.classList.toggle('cart-open', _mobileCartOpen);
 
-  // Swap icon: cart when on products side, arrow-back when on cart side
-  fabIcon.className = _mobileCartOpen ? 'bi bi-arrow-left' : 'bi bi-cart3';
-  fab.style.background = _mobileCartOpen ? 'var(--ink-3)' : 'var(--accent)';
-  fab.style.color       = _mobileCartOpen ? 'var(--text)'  : '#fff';
-  fab.style.boxShadow   = _mobileCartOpen
-    ? '0 4px 16px rgba(0,0,0,.35)'
-    : '0 4px 20px rgba(59,130,246,.45)';
+  if (_mobileCartOpen) {
+    // Cart is open — hide FAB so it never overlaps Complete Sale button
+    fab.style.display = 'none';
+  } else {
+    // Back to products — restore FAB as blue cart button
+    fab.style.display = 'flex';
+    fabIcon.className = 'bi bi-cart3';
+    fab.style.background = 'var(--accent)';
+    fab.style.color      = '#fff';
+    fab.style.boxShadow  = '0 4px 20px rgba(59,130,246,.45)';
+  }
 }
 
 // Keep FAB badge in sync with cart count
@@ -11137,15 +11183,17 @@ function syncMobileFabBadge() {
   }
 }
 
-// Patch renderCart to also sync the FAB badge
-const _origRenderCart = typeof renderCart === 'function' ? renderCart : null;
+// Patch updateCartDisplay (the real cart render function) to also sync FAB badge
+const _origRenderCart = typeof updateCartDisplay === 'function' ? updateCartDisplay : null;
 if (_origRenderCart) {
-  renderCart = function(...args) {
+  updateCartDisplay = function(...args) {
     const result = _origRenderCart.apply(this, args);
     syncMobileFabBadge();
     return result;
   };
 }
+// Sync on load in case cart has items already
+syncMobileFabBadge();
 
 // When completing a sale on mobile, auto-return to products view
 document.addEventListener('sale:completed', () => {

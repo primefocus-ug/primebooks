@@ -8,11 +8,8 @@
 #pbBottomNav {
     display: none;
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 1035;
-    /* Anchor to viewport, not document — prevents overflow on pages with
-       horizontal scroll (e.g. wide tables). right:0 alone follows document
-       width if body is wider than the viewport. */
-    width: 100vw;
-    max-width: 100vw;
+    /* left:0 + right:0 is sufficient — explicit width:100vw can exceed the
+       visual viewport on pages with a scrollbar, pushing items off-screen. */
     background: var(--bg-primary, #fff);
     border-top: 1px solid var(--border-color, #e5e7eb);
     box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
@@ -264,7 +261,7 @@
     </a>
 
     <a class="pb-bn-item {% if 'create' in request.path and 'sale' in request.path or 'invoice' in request.path and 'create' in request.path %}active{% endif %}"
-       href="{% url 'sales:create_sale' %}">
+       href="{% url 'sales:create_sale' %}" data-nav-exact="1">
         <i class="bi bi-plus-circle-fill"></i>
         <span>New Sale</span>
     </a>
@@ -313,9 +310,12 @@ const path = window.location.pathname;
 document.querySelectorAll('.pb-bn-item[href]').forEach(item => {
     if (!item.href) return;
     const itemPath = new URL(item.href, location.origin).pathname;
+    const exact = item.dataset.navExact === '1';
     const match = itemPath === '/'
         ? path === '/'
-        : path === itemPath || path.startsWith(itemPath + '/');
+        : exact
+            ? path === itemPath
+            : path === itemPath || path.startsWith(itemPath + '/');
     if (match) item.classList.add('active');
 });
 
