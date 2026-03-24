@@ -13,6 +13,7 @@ from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
 import json
 import logging
+from django.views.decorators.http import require_POST
 from django_tenants.utils import tenant_context
 import csv
 from django.core.exceptions import ValidationError
@@ -22,6 +23,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from efris.models import FiscalizationAudit
 from sales.models import Sale
+from django.db import connection as _connection
 from .models import Invoice, InvoiceTemplate, InvoicePayment
 from .forms import (
     InvoiceForm, InvoiceSearchForm, InvoicePaymentForm,
@@ -1209,7 +1211,31 @@ class InvoiceDetailView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequire
             ),
             'credit_terms': credit_terms,  # Use the calculated credit_terms variable
         })
+        pesapal_payment_url = None
+        can_send_payment_link = (
+                invoice.amount_outstanding > 0
+                and invoice.sale.customer
+                and (
+                        getattr(invoice.sale.customer, 'email', '') or
+                        getattr(invoice.sale.customer, 'phone', '')
+                )
+        )
 
+        if can_send_payment_link:
+            try:
+                from pesapal_integration.invoice_payment_views import generate_invoice_payment_url
+                company_for_url = get_current_tenant(self.request)
+                if company_for_url:
+                    pesapal_payment_url = generate_invoice_payment_url(
+                        self.request,
+                        tenant_slug=company_for_url.schema_name,
+                        invoice_pk=invoice.pk,
+                    )
+            except Exception as _e:
+                logger.warning('Could not generate Pesapal payment URL: %s', _e)
+
+        context['pesapal_payment_url'] = pesapal_payment_url
+        context['can_send_payment_link'] = can_send_payment_link
         return context
 
 @login_required
@@ -1908,9 +1934,12 @@ def export_invoice_pdf(request, pk):
 
 
 @login_required
-@permission_required('invoices.change_invoice')
+@permission_required('invoices.view_invoice')
 def send_payment_reminder(request, pk):
-    """Send payment reminder to customer"""
+    """
+    Send a payment reminder to the customer.
+    Now embeds a Pesapal payment link in the email and SMS.
+    """
     company = get_current_tenant(request)
     if not company:
         return JsonResponse({'success': False, 'error': 'No company context'})
@@ -1921,27 +1950,30 @@ def send_payment_reminder(request, pk):
             pk=pk
         )
 
-        # Check if invoice is eligible for reminder
         if invoice.sale.payment_status not in ['PENDING', 'PARTIALLY_PAID', 'OVERDUE']:
-            return JsonResponse({
-                'success': False,
-                'error': 'Invoice is already paid'
-            })
+            return JsonResponse({'success': False, 'error': 'Invoice is already paid'})
 
-        if not invoice.sale.customer or not invoice.sale.customer.email:
+        customer = invoice.sale.customer
+        if not customer:
+            return JsonResponse({'success': False, 'error': 'No customer on this invoice'})
+
+        email = getattr(customer, 'email', '') or ''
+        phone = getattr(customer, 'phone', '') or ''
+
+        if not email and not phone:
             return JsonResponse({
                 'success': False,
-                'error': 'Customer has no email address'
+                'error': 'Customer has no email or phone number on record.',
             })
 
         try:
-            # Create reminder record
             from invoices.models import PaymentReminder
 
-            # Determine reminder type based on due date
-            today = timezone.now().date()
-            if invoice.due_date:
-                days_diff = (invoice.due_date - today).days
+            today    = timezone.now().date()
+            due_date = invoice.due_date
+
+            if due_date:
+                days_diff = (due_date - today).days
                 if days_diff > 3:
                     reminder_type = 'UPCOMING'
                 elif days_diff >= 0:
@@ -1953,70 +1985,222 @@ def send_payment_reminder(request, pk):
             else:
                 reminder_type = 'DUE'
 
-            reminder = PaymentReminder.objects.create(
-                invoice=invoice,
-                reminder_type=reminder_type,
-                reminder_method='EMAIL',
-                sent_by=request.user,
-                recipient_email=invoice.sale.customer.email,
-                subject=f'Payment Reminder: Invoice {invoice.invoice_number}',
-                message=f'''
-Dear {invoice.sale.customer.name},
+            # ── Generate Pesapal payment link ─────────────────────────────────
+            payment_url = None
+            try:
+                from pesapal_integration.invoice_payment_views import generate_invoice_payment_url
+                payment_url = generate_invoice_payment_url(
+                    request,
+                    tenant_slug = company.schema_name,
+                    invoice_pk  = invoice.pk,
+                )
+            except Exception as _e:
+                logger.warning('Could not generate payment URL for reminder: %s', _e)
 
-This is a reminder regarding invoice {invoice.invoice_number}.
+            # ── Build message body ────────────────────────────────────────────
+            amount_str    = f'{invoice.total_amount:,.0f} {invoice.currency_code}'
+            outstanding_str = f'{invoice.amount_outstanding:,.0f} {invoice.currency_code}'
 
-Invoice Amount: {invoice.total_amount:,.2f} {invoice.currency_code}
-Amount Outstanding: {invoice.amount_outstanding:,.2f} {invoice.currency_code}
-Due Date: {invoice.due_date}
+            if payment_url:
+                pay_line = f'\nPay securely online: {payment_url}\n'
+            else:
+                pay_line = ''
 
-Please arrange payment at your earliest convenience.
-
-Thank you,
-{company.name}
-                '''.strip()
+            email_subject = (
+                f'Payment {"Reminder" if reminder_type != "UPCOMING" else "Notice"}: '
+                f'Invoice {invoice.invoice_number}'
+            )
+            email_body = (
+                f'Dear {customer.name},\n\n'
+                f'This is a {"reminder" if reminder_type != "UPCOMING" else "notice"} '
+                f'regarding invoice {invoice.invoice_number}.\n\n'
+                f'Invoice Amount:    {amount_str}\n'
+                f'Amount Outstanding: {outstanding_str}\n'
+                f'Due Date:          {due_date or "N/A"}\n'
+                f'{pay_line}\n'
+                f'If you have already made this payment, please disregard this message.\n\n'
+                f'Thank you,\n'
+                f'{company.name}'
             )
 
-            # Send email (implement your email logic here)
-            from django.core.mail import send_mail
+            sms_body = (
+                f'Hi {customer.name}, your invoice {invoice.invoice_number} '
+                f'of {outstanding_str} is {"overdue" if reminder_type in ("OVERDUE","FINAL_NOTICE") else "due"}. '
+            )
+            if payment_url:
+                sms_body += f'Pay now: {payment_url}'
 
-            try:
-                send_mail(
-                    reminder.subject,
-                    reminder.message,
-                    company.email,
-                    [reminder.recipient_email],
-                    fail_silently=False,
-                )
+            # ── Create reminder record ────────────────────────────────────────
+            reminder = PaymentReminder.objects.create(
+                invoice         = invoice,
+                reminder_type   = reminder_type,
+                reminder_method = 'EMAIL' if email else 'SMS',
+                sent_by         = request.user,
+                recipient_email = email or None,
+                recipient_phone = phone or None,
+                subject         = email_subject,
+                message         = email_body,
+            )
 
-                reminder.is_successful = True
-                reminder.save(update_fields=['is_successful'])
+            sent_channels = []
 
-                # Schedule next reminder if appropriate
-                if reminder_type != 'FINAL_NOTICE':
-                    reminder.next_reminder_date = today + timedelta(days=7)
-                    reminder.save(update_fields=['next_reminder_date'])
+            # ── Send email ────────────────────────────────────────────────────
+            if email:
+                try:
+                    # Try HTML template first
+                    html_body = None
+                    try:
+                        from django.template.loader import render_to_string
+                        html_body = render_to_string(
+                            'invoices/emails/payment_reminder.html',
+                            {
+                                'invoice':     invoice,
+                                'customer':    customer,
+                                'company':     company,
+                                'payment_url': payment_url,
+                                'amount':      outstanding_str,
+                                'reminder_type': reminder_type,
+                            }
+                        )
+                    except Exception:
+                        pass  # Fall through to plain text
 
-                return JsonResponse({
-                    'success': True,
-                    'message': f'Payment reminder sent to {invoice.sale.customer.email}'
-                })
+                    from django.core.mail import send_mail
+                    send_mail(
+                        subject       = email_subject,
+                        message       = email_body,
+                        from_email    = getattr(company, 'email', None) or settings.DEFAULT_FROM_EMAIL,
+                        recipient_list = [email],
+                        html_message  = html_body,
+                        fail_silently = False,
+                    )
+                    sent_channels.append('email')
+                    reminder.is_successful = True
+                    reminder.save(update_fields=['is_successful'])
 
-            except Exception as e:
-                reminder.is_successful = False
-                reminder.error_message = str(e)
-                reminder.save(update_fields=['is_successful', 'error_message'])
+                    if reminder_type != 'FINAL_NOTICE':
+                        reminder.next_reminder_date = today + timedelta(days=7)
+                        reminder.save(update_fields=['next_reminder_date'])
 
+                except Exception as _e:
+                    logger.error('Email send failed for invoice %s: %s', invoice.pk, _e)
+                    reminder.is_successful   = False
+                    reminder.error_message   = str(_e)
+                    reminder.save(update_fields=['is_successful', 'error_message'])
+
+            # ── Send SMS ──────────────────────────────────────────────────────
+            if phone:
+                try:
+                    from sales.pesapal_views import _send_payment_link_sms
+                    _send_payment_link_sms(invoice.sale, customer, payment_url or '', phone)
+                    sent_channels.append('SMS')
+                except Exception as _e:
+                    logger.warning('SMS send failed for invoice %s: %s', invoice.pk, _e)
+
+            if not sent_channels:
                 return JsonResponse({
                     'success': False,
-                    'error': f'Failed to send email: {str(e)}'
+                    'error': 'Could not send reminder — check email/SMS configuration.',
                 })
 
-        except Exception as e:
-            logger.error(f"Error sending payment reminder: {e}", exc_info=True)
+            return JsonResponse({
+                'success':     True,
+                'message':     f'Reminder sent via {" & ".join(sent_channels)} to {customer.name}',
+                'payment_url': payment_url,
+                'sent_to':     ', '.join(sent_channels),
+            })
+
+        except Exception as exc:
+            logger.error('Error sending payment reminder for invoice %s: %s', pk, exc, exc_info=True)
+            return JsonResponse({'success': False, 'error': str(exc)})
+
+
+@login_required
+@permission_required('invoices.view_invoice')
+@require_POST          # import from django.views.decorators.http
+def initiate_invoice_pesapal_payment(request, pk):
+    """
+    AJAX endpoint: generates a Pesapal payment link for an invoice and
+    optionally sends it to the customer.
+
+    Used by the "Send Payment Link" button on the invoice detail page.
+
+    POST body (JSON):
+      { "send_now": true }   → send immediately AND return URL
+      { "send_now": false }  → just return URL (copy/paste)
+
+    Returns JSON:
+      { success: true,  payment_url: '...',  sent_to: '...' }
+    """
+    from django.views.decorators.http import require_POST as _rp
+
+    company = get_current_tenant(request)
+    if not company:
+        return JsonResponse({'success': False, 'error': 'No company context'})
+
+    with tenant_context(company):
+        invoice = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company),
+            pk=pk
+        )
+
+        if invoice.amount_outstanding <= 0:
+            return JsonResponse({'success': False, 'error': 'Invoice is already fully paid'})
+
+        customer = invoice.sale.customer
+        if not customer:
+            return JsonResponse({'success': False, 'error': 'No customer on this invoice'})
+
+        try:
+            body     = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            body = {}
+
+        send_now = body.get('send_now', False)
+
+        # Generate payment link
+        try:
+            from pesapal_integration.invoice_payment_views import generate_invoice_payment_url
+            payment_url = generate_invoice_payment_url(
+                request,
+                tenant_slug = company.schema_name,
+                invoice_pk  = invoice.pk,
+            )
+        except Exception as exc:
+            logger.error('Could not generate payment URL for invoice %s: %s', pk, exc)
             return JsonResponse({
                 'success': False,
-                'error': str(e)
+                'error':   'Could not generate payment link. Please try again.',
             })
+
+        sent_channels = []
+
+        if send_now:
+            email = getattr(customer, 'email', '') or ''
+            phone = getattr(customer, 'phone', '') or ''
+
+            if email:
+                try:
+                    from sales.pesapal_views import _send_payment_link_email
+                    _send_payment_link_email(invoice.sale, customer, payment_url, company)
+                    sent_channels.append('email')
+                except Exception as _e:
+                    logger.error('Email failed for invoice %s: %s', pk, _e)
+
+            if phone:
+                try:
+                    from sales.pesapal_views import _send_payment_link_sms
+                    _send_payment_link_sms(invoice.sale, customer, payment_url, phone)
+                    sent_channels.append('SMS')
+                except Exception as _e:
+                    logger.warning('SMS failed for invoice %s: %s', pk, _e)
+
+        return JsonResponse({
+            'success':     True,
+            'payment_url': payment_url,
+            'sent_to':     ', '.join(sent_channels) if sent_channels else None,
+            'customer':    customer.name,
+        })
 
 
 @login_required

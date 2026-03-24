@@ -5,7 +5,8 @@ class InventoryConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'inventory'
     verbose_name = 'Inventory Management'
-    
+    module_key = 'inventory'
+
     def ready(self):
         """Import signals when the app is ready"""
         try:

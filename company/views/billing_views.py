@@ -1,113 +1,245 @@
 import csv
 import logging
+from decimal import Decimal
+
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import JsonResponse, Http404, HttpResponse
-from django.shortcuts import render, get_object_or_404
-from django.urls import reverse_lazy
+from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import ListView, DetailView, TemplateView
 from datetime import timedelta
 
 from ..models import Company
+from pesapal_integration.models import PlatformInvoice
+from pesapal_integration.service import PesapalService
 
 logger = logging.getLogger(__name__)
 
 
+def _get_platform_ipn_id() -> str:
+    """
+    Get or register the platform IPN ID.
+    Cached in Django cache after first run.
+    """
+    from django.conf import settings
+    from django.core.cache import cache
+
+    cached = cache.get('platform_pesapal_ipn_id')
+    if cached:
+        return cached
+
+    svc     = PesapalService()
+    ipn_url = settings.PESAPAL_PLATFORM_IPN_URL
+    result  = svc.get_or_register_ipn(ipn_url)
+    if result['success']:
+        cache.set('platform_pesapal_ipn_id', result['ipn_id'], timeout=None)
+        return result['ipn_id']
+
+    raise RuntimeError(f"Could not register platform IPN: {result.get('error')}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Initiate payment — tenant clicks "Pay Now" for their subscription
+# ─────────────────────────────────────────────────────────────────────────────
+
+class InitiateSubscriptionPaymentView(LoginRequiredMixin, View):
+    """
+    Creates a PlatformInvoice and redirects the tenant admin to Pesapal.
+    Called from the subscription upgrade / renew / dashboard pages.
+
+    POST params:
+      plan_id        - SubscriptionPlan pk
+      billing_cycle  - MONTHLY / QUARTERLY / YEARLY
+    """
+
+    def post(self, request, *args, **kwargs):
+        company = getattr(request.user, 'company', None)
+        if not company:
+            return JsonResponse({'success': False, 'message': 'No company found'}, status=404)
+
+        plan_id       = request.POST.get('plan_id') or kwargs.get('plan_id')
+        billing_cycle = request.POST.get('billing_cycle', 'MONTHLY').upper()
+
+        try:
+            from .models import SubscriptionPlan
+            plan = SubscriptionPlan.objects.get(id=plan_id, is_active=True)
+        except Exception:
+            return JsonResponse({'success': False, 'message': 'Plan not found'}, status=404)
+
+        amount      = plan.price
+        currency    = getattr(plan, 'currency', 'UGX')
+        description = f'{plan.display_name} Subscription ({billing_cycle.title()})'
+
+        # Create the platform invoice first
+        platform_invoice = PlatformInvoice.objects.create(
+            company     = company,
+            plan        = plan,
+            amount      = amount,
+            currency    = currency,
+            description = description,
+        )
+
+        # Build billing address from company / user
+        billing_address = {
+            'email_address': company.billing_email or request.user.email or '',
+            'phone_number':  getattr(company, 'phone', '') or '',
+            'first_name':    request.user.first_name or company.name[:50],
+            'last_name':     request.user.last_name or '',
+            'country_code':  getattr(company, 'country_code', 'UG') or 'UG',
+            'line_1':        getattr(company, 'physical_address', '') or '',
+        }
+
+        svc = PesapalService()
+
+        callback_url     = request.build_absolute_uri(
+            reverse('companies:platform_payment_callback')
+        )
+        cancellation_url = request.build_absolute_uri(
+            reverse('companies:subscription_dashboard')
+        )
+
+        try:
+            ipn_id = _get_platform_ipn_id()
+        except Exception as exc:
+            logger.error('Could not get platform IPN ID: %s', exc)
+            messages.error(request, 'Payment setup failed. Please try again.')
+            return redirect('companies:subscription_plans')
+
+        order_result = svc.submit_order(
+            merchant_reference = platform_invoice.merchant_reference,
+            amount             = float(amount),
+            currency           = currency,
+            description        = description,
+            notification_id    = ipn_id,
+            billing_address    = billing_address,
+            callback_url       = callback_url,
+            cancellation_url   = cancellation_url,
+            branch             = company.name[:50] if hasattr(company, 'name') else '',
+        )
+
+        if not order_result['success']:
+            platform_invoice.status = 'FAILED'
+            platform_invoice.save(update_fields=['status'])
+            logger.error('Pesapal order failed for company %s: %s',
+                         company.schema_name, order_result.get('error'))
+            messages.error(request, 'Could not initiate payment. Please try again.')
+            return redirect('companies:subscription_plans')
+
+        platform_invoice.pesapal_tracking_id = order_result['order_tracking_id']
+        platform_invoice.redirect_url        = order_result['redirect_url']
+        platform_invoice.save(update_fields=['pesapal_tracking_id', 'redirect_url'])
+
+        logger.info('Platform payment initiated for %s | invoice=%s | tracking=%s',
+                    company.schema_name,
+                    platform_invoice.invoice_number,
+                    order_result['order_tracking_id'])
+
+        return redirect(order_result['redirect_url'])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Callback — customer browser lands here after Pesapal payment
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PlatformPaymentCallbackView(LoginRequiredMixin, View):
+    """
+    Pesapal redirects the tenant admin here after payment.
+    Verifies status via GetTransactionStatus then shows result.
+    """
+
+    def get(self, request, *args, **kwargs):
+        tracking_id        = request.GET.get('OrderTrackingId', '')
+        merchant_reference = request.GET.get('OrderMerchantReference', '')
+
+        context = {
+            'tracking_id':        tracking_id,
+            'merchant_reference': merchant_reference,
+            'status_result':      None,
+            'platform_invoice':   None,
+        }
+
+        if tracking_id:
+            svc           = PesapalService()
+            status_result = svc.get_transaction_status(tracking_id)
+            context['status_result'] = status_result
+
+            if status_result['success']:
+                STATUS_MAP = {1: 'PAID', 2: 'FAILED', 3: 'REFUNDED', 0: 'FAILED'}
+                new_status = STATUS_MAP.get(status_result.get('status_code'), 'FAILED')
+
+                try:
+                    inv = PlatformInvoice.objects.filter(
+                        pesapal_tracking_id=tracking_id
+                    ).first() or PlatformInvoice.objects.filter(
+                        merchant_reference=merchant_reference
+                    ).first()
+
+                    if inv:
+                        inv.status               = new_status
+                        inv.pesapal_confirmation = status_result.get('confirmation_code', '') or inv.pesapal_confirmation
+                        inv.payment_method       = status_result.get('payment_method', '') or inv.payment_method
+                        if new_status == 'PAID' and not inv.paid_at:
+                            inv.paid_at = timezone.now()
+                        inv.save()
+                        context['platform_invoice'] = inv
+
+                        if new_status == 'PAID':
+                            from pesapal_integration.ipn import _activate_subscription
+                            _activate_subscription(inv)
+
+                except Exception as exc:
+                    logger.error('Callback update error: %s', exc)
+
+        return render(request, 'pesapal_billing/platform_callback.html', context)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Billing History
+# ─────────────────────────────────────────────────────────────────────────────
+
 class BillingHistoryView(LoginRequiredMixin, ListView):
-    """
-    View billing history and invoices
-    """
-    template_name = 'company/billing/history.html'
+    template_name       = 'company/billing/history.html'
     context_object_name = 'invoices'
-    # TODO: restore paginate_by = 20 once get_queryset returns a real QuerySet.
-    # ListView pagination requires a QuerySet; returning a plain list disables it safely.
-    paginate_by = None
+    paginate_by         = 20
 
     def get_queryset(self):
         company = getattr(self.request.user, 'company', None)
         if not company:
-            return []
-
-        # TODO: Replace with actual Invoice model when created
-        # For now, return placeholder data
-        return self._get_placeholder_invoices(company)
+            return PlatformInvoice.objects.none()
+        return PlatformInvoice.objects.filter(company=company).order_by('-created_at')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         company = getattr(self.request.user, 'company', None)
-
         if company:
-            context['company'] = company
-            context['total_paid'] = self._calculate_total_paid(company)
+            from django.db.models import Sum
+            context['company']           = company
+            context['current_plan']      = company.plan
             context['next_billing_date'] = company.next_billing_date
-            context['current_plan'] = company.plan
-
+            context['total_paid'] = (
+                PlatformInvoice.objects
+                .filter(company=company, status='PAID')
+                .aggregate(t=Sum('amount'))['t'] or 0
+            )
         return context
 
-    def _get_placeholder_invoices(self, company):
-        """
-        Placeholder invoice data
-        TODO: Replace with actual Invoice.objects.filter(company=company)
-        """
-        invoices = []
 
-        # Last payment
-        if company.last_payment_date:
-            invoices.append({
-                'id': f'INV-{company.company_id}-001',
-                'date': company.last_payment_date,
-                'amount': company.plan.price if company.plan else 0,
-                'status': 'PAID',
-                'description': f'{company.plan.display_name} Subscription' if company.plan else 'Payment',
-            })
-
-        return invoices
-
-    def _calculate_total_paid(self, company):
-        """Calculate total amount paid"""
-        # TODO: Sum actual invoices
-        if company.last_payment_date and company.plan:
-            return company.plan.price
-        return 0
-
-
-class InvoiceDetailView(LoginRequiredMixin, DetailView):
-    """
-    View detailed invoice information
-    """
-    template_name = 'company/billing/invoice_detail.html'
+class PlatformInvoiceDetailView(LoginRequiredMixin, DetailView):
+    template_name       = 'pesapal_billing/platform_invoice_detail.html'
     context_object_name = 'invoice'
 
     def get_object(self, queryset=None):
         company = getattr(self.request.user, 'company', None)
         if not company:
-            raise Http404("No company found")
-
-        invoice_id = self.kwargs.get('invoice_id')
-
-        # TODO: Get actual invoice
-        # invoice = Invoice.objects.get(id=invoice_id, company=company)
-
-        # Placeholder
-        return {
-            'id': invoice_id,
-            'company': company,
-            'date': company.last_payment_date or timezone.now().date(),
-            'amount': company.plan.price if company.plan else 0,
-            'status': 'PAID',
-            'items': [
-                {
-                    'description': f'{company.plan.display_name} Subscription' if company.plan else 'Service',
-                    'amount': company.plan.price if company.plan else 0,
-                }
-            ]
-        }
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['company'] = getattr(self.request.user, 'company', None)
-        return context
+            raise Http404
+        return get_object_or_404(
+            PlatformInvoice,
+            pk=self.kwargs['pk'],
+            company=company,
+        )
 
 
 class DownloadInvoiceView(LoginRequiredMixin, View):
@@ -120,21 +252,15 @@ class DownloadInvoiceView(LoginRequiredMixin, View):
         if not company:
             raise Http404("No company found")
 
-        invoice_id = kwargs.get('invoice_id')
+        invoice_id = kwargs.get('invoice_id') or kwargs.get('pk')
+        invoice = get_object_or_404(PlatformInvoice, pk=invoice_id, company=company)
 
         # TODO: Generate actual PDF using reportlab or weasyprint
-        # from django.template.loader import render_to_string
-        # from weasyprint import HTML
-
-        # invoice = Invoice.objects.get(id=invoice_id, company=company)
-        # html_string = render_to_string('company/billing/invoice_pdf.html', {'invoice': invoice})
-        # pdf = HTML(string=html_string).write_pdf()
-
-        # For now, return placeholder response
         response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="invoice_{invoice_id}.pdf"'
+        response['Content-Disposition'] = (
+            f'attachment; filename="invoice_{invoice.invoice_number}.pdf"'
+        )
         response.write(b'%PDF-1.4 Placeholder Invoice PDF')
-
         return response
 
 
@@ -236,7 +362,8 @@ class RemovePaymentMethodView(LoginRequiredMixin, View):
 
 class ProcessPaymentView(LoginRequiredMixin, View):
     """
-    Process a payment
+    Process a payment — delegates to InitiateSubscriptionPaymentView (Pesapal).
+    Kept for backwards-compatibility with any existing URL references.
     """
 
     def post(self, request, *args, **kwargs):
@@ -247,56 +374,16 @@ class ProcessPaymentView(LoginRequiredMixin, View):
                 'message': 'No company found'
             }, status=404)
 
-        raw_amount = request.POST.get('amount', '').strip()
-        payment_method = request.POST.get('payment_method', '').strip()
-        description = request.POST.get('description', 'Subscription payment')
-
-        # Validate amount before touching any gateway
-        try:
-            from decimal import Decimal, InvalidOperation
-            amount = Decimal(raw_amount)
-            if amount <= 0:
-                raise ValueError('Amount must be positive')
-        except (InvalidOperation, ValueError, TypeError):
+        plan_id = request.POST.get('plan_id') or kwargs.get('plan_id')
+        if not plan_id:
             return JsonResponse({
                 'success': False,
-                'message': f'Invalid amount: {raw_amount!r}'
+                'message': 'plan_id is required'
             }, status=400)
 
-        try:
-            # TODO: Process payment through gateway
-            # Example for Stripe:
-            # charge = stripe.Charge.create(
-            #     amount=int(float(amount) * 100),  # Convert to cents
-            #     currency=company.preferred_currency.lower(),
-            #     customer=company.stripe_customer_id,
-            #     description=description,
-            # )
-
-            # Create invoice record
-            # invoice = Invoice.objects.create(
-            #     company=company,
-            #     amount=amount,
-            #     payment_method=payment_method,
-            #     description=description,
-            #     status='PAID',
-            #     transaction_id=charge.id,
-            # )
-
-            logger.info(f"Payment processed for company {company.company_id}: ${amount}")
-
-            return JsonResponse({
-                'success': True,
-                'message': 'Payment processed successfully',
-                'transaction_id': 'TXN_PLACEHOLDER',
-            })
-
-        except Exception as e:
-            logger.error(f"Payment processing error: {e}", exc_info=True)
-            return JsonResponse({
-                'success': False,
-                'message': f'Payment failed: {str(e)}'
-            }, status=400)
+        view = InitiateSubscriptionPaymentView()
+        view.request = request
+        return view.post(request, plan_id=plan_id)
 
 
 class BillingSettingsView(LoginRequiredMixin, TemplateView):
@@ -347,124 +434,27 @@ class ExportInvoicesView(LoginRequiredMixin, View):
     """
 
     def get(self, request, *args, **kwargs):
-        import csv
-
         company = getattr(request.user, 'company', None)
         if not company:
             raise Http404("No company found")
 
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="invoices_{company.company_id}.csv"'
+        response['Content-Disposition'] = (
+            f'attachment; filename="invoices_{company.company_id}.csv"'
+        )
 
         writer = csv.writer(response)
-        writer.writerow(['Invoice ID', 'Date', 'Amount', 'Status', 'Description'])
+        writer.writerow(['Invoice Number', 'Date', 'Amount', 'Currency', 'Status', 'Description'])
 
-        # TODO: Export actual invoices
-        # invoices = Invoice.objects.filter(company=company).order_by('-date')
-        # for invoice in invoices:
-        #     writer.writerow([
-        #         invoice.invoice_number,
-        #         invoice.date.strftime('%Y-%m-%d'),
-        #         invoice.amount,
-        #         invoice.status,
-        #         invoice.description,
-        #     ])
-
-        # Placeholder
-        if company.last_payment_date and company.plan:
+        invoices = PlatformInvoice.objects.filter(company=company).order_by('-created_at')
+        for invoice in invoices:
             writer.writerow([
-                f'INV-{company.company_id}-001',
-                company.last_payment_date.strftime('%Y-%m-%d'),
-                company.plan.price,
-                'PAID',
-                f'{company.plan.display_name} Subscription',
+                invoice.invoice_number,
+                invoice.created_at.strftime('%Y-%m-%d'),
+                invoice.amount,
+                invoice.currency,
+                invoice.status,
+                invoice.description,
             ])
 
         return response
-
-
-# =============================================================================
-# Invoice Model (Create this in models.py)
-# =============================================================================
-"""
-class Invoice(models.Model):
-    '''Invoice model for billing history'''
-
-    STATUS_CHOICES = [
-        ('PENDING', 'Pending'),
-        ('PAID', 'Paid'),
-        ('FAILED', 'Failed'),
-        ('REFUNDED', 'Refunded'),
-    ]
-
-    company = models.ForeignKey(
-        'Company',
-        on_delete=models.CASCADE,
-        related_name='invoices'
-    )
-    invoice_number = models.CharField(max_length=50, unique=True)
-    date = models.DateField(default=timezone.now)
-    due_date = models.DateField()
-
-    # Amounts
-    subtotal = models.DecimalField(max_digits=10, decimal_places=2)
-    tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    total = models.DecimalField(max_digits=10, decimal_places=2)
-
-    # Payment info
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
-    payment_method = models.CharField(max_length=50, blank=True)
-    transaction_id = models.CharField(max_length=100, blank=True)
-    paid_at = models.DateTimeField(null=True, blank=True)
-
-    # Details
-    description = models.TextField()
-    notes = models.TextField(blank=True)
-
-    # Metadata
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-date']
-        indexes = [
-            models.Index(fields=['company', 'status']),
-            models.Index(fields=['invoice_number']),
-        ]
-
-    def __str__(self):
-        return f"{self.invoice_number} - {self.company.name}"
-
-    def save(self, *args, **kwargs):
-        if not self.invoice_number:
-            self.invoice_number = self.generate_invoice_number()
-        super().save(*args, **kwargs)
-
-    def generate_invoice_number(self):
-        '''Generate unique invoice number'''
-        import uuid
-        year = timezone.now().year
-        short_uuid = str(uuid.uuid4())[:8].upper()
-        return f"INV-{year}-{short_uuid}"
-
-
-class InvoiceItem(models.Model):
-    '''Line items for invoices'''
-
-    invoice = models.ForeignKey(
-        Invoice,
-        on_delete=models.CASCADE,
-        related_name='items'
-    )
-    description = models.CharField(max_length=200)
-    quantity = models.PositiveIntegerField(default=1)
-    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-    total = models.DecimalField(max_digits=10, decimal_places=2)
-
-    def __str__(self):
-        return f"{self.description} - {self.invoice.invoice_number}"
-
-    def save(self, *args, **kwargs):
-        self.total = self.quantity * self.unit_price
-        super().save(*args, **kwargs)
-"""

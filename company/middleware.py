@@ -21,6 +21,73 @@ from django.db import connection
 
 logger = logging.getLogger(__name__)
 
+class ActiveModulesMiddleware:
+    """
+    Reads which modules this tenant has switched ON,
+    and attaches them to the request as a Python set.
+
+    After this runs, anywhere in your code you can write:
+        request.active_modules          → {'salon', 'inventory'}
+        'salon' in request.active_modules  → True or False
+
+    Uses Redis cache (your system already has Redis set up)
+    so it only hits the DB when the cache is cold or after
+    a module is toggled.
+
+    Add this to MIDDLEWARE in settings.py right after
+    'company.middleware.PlanLimitsMiddleware'
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Only run inside a real tenant schema, not public
+        if not hasattr(request, 'tenant') or not request.tenant:
+            request.active_modules = set()
+            return self.get_response(request)
+
+        # Skip in desktop mode (no module switching needed)
+        if getattr(settings, 'IS_DESKTOP', False):
+            # Desktop mode: all modules active by default
+            request.active_modules = self._get_all_module_keys()
+            return self.get_response(request)
+
+        schema = request.tenant.schema_name
+        cache_key = f"active_modules:{schema}"
+
+        active_modules = cache.get(cache_key)
+
+        if active_modules is None:
+            # Cache miss — hit the database
+            try:
+                from company.models import CompanyModule
+                active_keys = CompanyModule.objects.filter(
+                    company=request.tenant,
+                    is_active=True
+                ).values_list('module__key', flat=True)
+                active_modules = set(active_keys)
+            except Exception as e:
+                logger.error(f"ActiveModulesMiddleware error: {e}")
+                active_modules = set()
+
+            # Cache for 5 minutes (300 seconds)
+            # This key is deleted when a module is toggled ON or OFF
+            # so the change takes effect on the very next request
+            cache.set(cache_key, active_modules, 300)
+
+        request.active_modules = active_modules
+        return self.get_response(request)
+
+    def _get_all_module_keys(self):
+        """In desktop mode, return all available module keys."""
+        try:
+            from company.models import AvailableModule
+            return set(
+                AvailableModule.objects.values_list('key', flat=True)
+            )
+        except Exception:
+            return set()
 
 class CompanyAccessMiddleware:
     """

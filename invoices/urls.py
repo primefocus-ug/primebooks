@@ -18,6 +18,8 @@ urlpatterns = [
     path('unified-credit-pdf/', views.unified_credit_invoice_pdf, name='unified_credit_pdf'),
     # Invoice CRUD operations
     path('create/', views.InvoiceCreateView.as_view(), name='create'),
+    path('<int:pk>/pay/initiate/',
+           views.initiate_invoice_pesapal_payment, name='initiate_pesapal_payment'),
     path('<int:pk>/', views.InvoiceDetailView.as_view(), name='detail'),
     path('<int:pk>/payments/<int:payment_id>/receipt/', views.payment_receipt_view, name='payment_receipt'),
     path('<int:pk>/cancel/', views.cancel_invoice, name='cancel'),

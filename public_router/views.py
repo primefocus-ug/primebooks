@@ -403,6 +403,18 @@ def create_tenant_admin_user(company, signup, password):
         return user
 
 
+def download_center(request):
+    """
+    Public Download Center page.
+
+    Renders download.html which fetches release data from
+    /api/v1/releases/ at runtime via JavaScript.
+
+    No auth required — this is a public marketing page.
+    The page handles its own loading/error/retry states in JS.
+    """
+    return render(request, "public_router/download.html")
+
 def send_approval_email(signup, password, company):
     """Send approval and login credentials to client"""
     from django.core.mail import send_mail

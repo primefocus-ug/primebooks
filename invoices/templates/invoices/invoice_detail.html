@@ -9,7 +9,6 @@
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 
 <style>
 /* ═══════════════════════════════════════════════════
@@ -697,6 +696,50 @@ body::before {
             <span>This invoice is fully paid.</span>
           </div>
           {% endif %}
+
+          <!-- ── Pesapal Online Payment ───────────────────────────────── -->
+          {% if pesapal_payment_url and invoice.amount_outstanding > 0 %}
+          <div style="background:rgba(15,158,98,0.07);border:1px solid rgba(15,158,98,0.2);border-radius:var(--r-md);padding:1rem;margin-top:0.75rem;">
+            <div style="font-size:0.82rem;font-weight:600;color:var(--emerald);margin-bottom:0.3rem;">
+              <i class="bi bi-phone me-1"></i> Mobile Money Payment Link
+            </div>
+            <div style="font-size:0.78rem;color:var(--text-2);margin-bottom:0.75rem;">
+              Send to <strong>{{ invoice.sale.customer.name|default:"customer" }}</strong> to pay
+              <strong>{{ invoice.sale.currency }} {{ invoice.amount_outstanding|floatformat:0|intcomma }}</strong> via Pesapal.
+            </div>
+
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem;">
+              <button type="button"
+                      onclick="copyPesapalLink('{{ pesapal_payment_url }}')"
+                      class="btn-hero"
+                      style="flex:1;justify-content:center;font-size:0.78rem;padding:0.4rem 0.7rem;color:var(--emerald);border-color:rgba(15,158,98,0.3);">
+                <i class="bi bi-link-45deg"></i> Copy Link
+              </button>
+              {% if can_send_payment_link %}
+              <button type="button"
+                      onclick="sendInvoicePaymentLink({{ invoice.pk }}, true)"
+                      id="sendLinkBtn{{ invoice.pk }}"
+                      data-initiate-url="{% url 'invoices:initiate_pesapal_payment' invoice.pk %}"
+                      class="btn-hero success"
+                      style="flex:1;justify-content:center;font-size:0.78rem;padding:0.4rem 0.7rem;">
+                <i class="bi bi-send"></i> Send
+              </button>
+              {% endif %}
+            </div>
+
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+              <input type="text"
+                     id="pesapalLinkInput{{ invoice.pk }}"
+                     value="{{ pesapal_payment_url }}"
+                     readonly
+                     style="flex:1;font-size:0.7rem;font-family:var(--font-mono);padding:0.35rem 0.6rem;border:1px solid rgba(15,158,98,0.25);border-radius:var(--r-sm);background:var(--ink);color:var(--text-2);outline:none;">
+              <span id="pesapalLinkCopied{{ invoice.pk }}"
+                    style="display:none;font-size:0.72rem;color:var(--emerald);font-weight:600;white-space:nowrap;">✓ Copied!</span>
+            </div>
+          </div>
+          {% endif %}
+          <!-- ── END Pesapal Online Payment ──────────────────────────── -->
+
         </div>
       </div>
 
@@ -758,8 +801,10 @@ body::before {
           {% endif %}
           {% endif %}
 
-          <button type="button" class="btn-hero w-100 justify-content-center" id="sendReminderBtn" style="color:var(--amber); border-color:rgba(196,125,14,0.25);">
-            <i class="bi bi-envelope"></i> Send Payment Reminder
+          <button type="button" class="btn-hero w-100 justify-content-center" id="sendReminderBtn"
+                  onclick="sendReminderWithLink({{ invoice.pk }})"
+                  style="color:var(--amber); border-color:rgba(196,125,14,0.25);">
+            <i class="bi bi-bell"></i> Send Payment Reminder
           </button>
         </div>
       </div>
@@ -1046,24 +1091,109 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // Send reminder
-  const remBtn = document.getElementById('sendReminderBtn');
-  if (remBtn) {
-    remBtn.addEventListener('click', function() {
-      if (!confirm('Send payment reminder to customer?')) return;
-      const orig = remBtn.innerHTML;
-      remBtn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Sending…';
-      remBtn.disabled = true;
-      fetch('{% url "invoices:send_reminder" invoice.pk %}', {
-        method: 'POST',
-        headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/json' }
-      }).then(r => r.json()).then(d => {
-        alert(d.success ? d.message : (d.error || 'Failed to send reminder'));
-      }).catch(() => alert('Error occurred')).finally(() => {
-        remBtn.innerHTML = orig; remBtn.disabled = false;
-      });
-    });
-  }
+  // Send reminder — handled by sendReminderWithLink() below
 });
+</script>
+
+<script>
+/* ── Pesapal payment link helpers ───────────────────────────────────── */
+function copyPesapalLink(url) {
+  navigator.clipboard.writeText(url).then(() => {
+    document.querySelectorAll('[id^="pesapalLinkCopied"]').forEach(el => {
+      el.style.display = 'inline';
+      setTimeout(() => { el.style.display = 'none'; }, 2000);
+    });
+  }).catch(() => {
+    const el = document.querySelector('[id^="pesapalLinkInput"]');
+    if (el) { el.select(); document.execCommand('copy'); }
+  });
+}
+
+async function sendInvoicePaymentLink(invoicePk, sendNow) {
+  const btn = document.getElementById(`sendLinkBtn${invoicePk}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sending…';
+  }
+  try {
+    const btn_url = document.getElementById(`sendLinkBtn${invoicePk}`)?.dataset?.initiateUrl
+                  || `/en/invoices/${invoicePk}/pay/initiate/`;
+    const resp = await fetch(btn_url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrfToken(),
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({ send_now: sendNow }),
+    });
+    const data = await resp.json();
+    if (data.success) {
+      const msg = data.sent_to
+        ? `Payment link sent to ${data.customer} via ${data.sent_to}`
+        : `Payment link generated for ${data.customer}`;
+      showPesapalToast(msg, 'success');
+      if (btn) {
+        btn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Sent!';
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-send me-1"></i> Send Again';
+        }, 3000);
+      }
+    } else {
+      showPesapalToast(data.error || 'Could not send payment link', 'danger');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-send me-1"></i> Send'; }
+    }
+  } catch (err) {
+    showPesapalToast('Network error — please try again', 'danger');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-send me-1"></i> Send'; }
+  }
+}
+
+async function sendReminderWithLink(pk) {
+  const btn = document.getElementById('sendReminderBtn');
+  if (!confirm('Send payment reminder to customer?')) return;
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Sending…'; }
+  try {
+    const resp = await fetch(`{% url "invoices:send_reminder" invoice.pk %}`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    const data = await resp.json();
+    if (data.success) {
+      const msg = data.message + (data.payment_url ? ' (payment link included)' : '');
+      showPesapalToast(msg, 'success');
+    } else {
+      showPesapalToast(data.error || 'Failed to send reminder', 'danger');
+    }
+  } catch (err) {
+    showPesapalToast('Network error — please try again', 'danger');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+
+function getCsrfToken() {
+  return document.querySelector('[name=csrfmiddlewaretoken]')?.value
+    || document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='))?.split('=')[1] || '';
+}
+
+function showPesapalToast(message, type) {
+  const existing = document.getElementById('pesapalToastEl');
+  if (existing) existing.remove();
+  const el = document.createElement('div');
+  el.id = 'pesapalToastEl';
+  el.style.cssText = `
+    position:fixed;bottom:20px;right:20px;z-index:9999;
+    background:${type === 'success' ? 'var(--emerald)' : 'var(--rose)'};
+    color:#fff;padding:12px 20px;border-radius:var(--r-md);
+    font-size:14px;font-weight:600;
+    box-shadow:var(--shadow-2);max-width:360px;
+  `;
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
 </script>
 {% endblock %}

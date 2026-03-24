@@ -11,7 +11,7 @@ from .services import (
     InventoryNotifications,
     CompanyNotifications,
     SecurityNotifications,
-    MessagingNotifications
+    #MessagingNotifications
 )
 
 logger = logging.getLogger(__name__)
@@ -445,59 +445,59 @@ def notify_security_alerts(sender, instance, created, **kwargs):
 
 # ============= MESSAGING NOTIFICATIONS =============
 
-@receiver(post_save, sender='messaging.Message')
-@with_tenant_safety
-def notify_new_messages(sender, instance, created, **kwargs):
-    """Notify on new messages"""
-    try:
-        if not created:
-            return
-
-        if hasattr(instance, 'is_deleted') and instance.is_deleted:
-            return
-
-        schema_name = None
-        if hasattr(instance, 'conversation') and instance.conversation:
-            if hasattr(instance.conversation, 'company'):
-                schema_name = instance.conversation.company.schema_name
-
-        if not schema_name:
-            schema_name = NotificationService.get_tenant_schema(user=instance.sender)
-
-        if not schema_name:
-            logger.warning("Cannot determine schema for message notification")
-            return
-
-        with schema_context(schema_name):
-            # Notify all conversation participants except sender
-            if hasattr(instance, 'conversation') and instance.conversation:
-                participants = instance.conversation.participants.filter(
-                    is_active=True
-                ).exclude(user=instance.sender).select_related('user')
-
-                for participant in participants:
-                    # Skip if user has muted conversation
-                    if hasattr(participant, 'is_muted') and participant.is_muted:
-                        continue
-
-                    MessagingNotifications.notify_new_message(
-                        recipient=participant.user,
-                        message=instance,
-                        conversation=instance.conversation
-                    )
-
-            # Notify mentioned users
-            if hasattr(instance, 'mentioned_users'):
-                for mentioned_user in instance.mentioned_users.all():
-                    if mentioned_user != instance.sender:
-                        MessagingNotifications.notify_mention(
-                            recipient=mentioned_user,
-                            message=instance,
-                            conversation=instance.conversation
-                        )
-
-    except Exception as e:
-        logger.error(f"Error in notify_new_messages: {e}", exc_info=True)
+# @receiver(post_save, sender='messaging.Message')
+# @with_tenant_safety
+# def notify_new_messages(sender, instance, created, **kwargs):
+#     """Notify on new messages"""
+#     try:
+#         if not created:
+#             return
+#
+#         if hasattr(instance, 'is_deleted') and instance.is_deleted:
+#             return
+#
+#         schema_name = None
+#         if hasattr(instance, 'conversation') and instance.conversation:
+#             if hasattr(instance.conversation, 'company'):
+#                 schema_name = instance.conversation.company.schema_name
+#
+#         if not schema_name:
+#             schema_name = NotificationService.get_tenant_schema(user=instance.sender)
+#
+#         if not schema_name:
+#             logger.warning("Cannot determine schema for message notification")
+#             return
+#
+#         with schema_context(schema_name):
+#             # Notify all conversation participants except sender
+#             if hasattr(instance, 'conversation') and instance.conversation:
+#                 participants = instance.conversation.participants.filter(
+#                     is_active=True
+#                 ).exclude(user=instance.sender).select_related('user')
+#
+#                 for participant in participants:
+#                     # Skip if user has muted conversation
+#                     if hasattr(participant, 'is_muted') and participant.is_muted:
+#                         continue
+#
+#                     MessagingNotifications.notify_new_message(
+#                         recipient=participant.user,
+#                         message=instance,
+#                         conversation=instance.conversation
+#                     )
+#
+#             # Notify mentioned users
+#             if hasattr(instance, 'mentioned_users'):
+#                 for mentioned_user in instance.mentioned_users.all():
+#                     if mentioned_user != instance.sender:
+#                         MessagingNotifications.notify_mention(
+#                             recipient=mentioned_user,
+#                             message=instance,
+#                             conversation=instance.conversation
+#                         )
+#
+#     except Exception as e:
+#         logger.error(f"Error in notify_new_messages: {e}", exc_info=True)
 
 
 # ============= PAYMENT NOTIFICATIONS =============

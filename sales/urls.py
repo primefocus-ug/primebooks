@@ -3,7 +3,24 @@ from . import views
 from . import view
 from . import pos
 from sales.sales_hub import SalesHubView
+from sales.pesapal_views import (
+    initiate_pesapal_payment,
+    pesapal_sale_callback,
+    send_payment_link,
+)
 
+# Add these 3 paths inside urlpatterns = [...]
+path('pesapal/initiate/<int:sale_id>/',
+     initiate_pesapal_payment,
+     name='initiate_pesapal_payment'),
+
+path('pesapal/callback/<int:sale_id>/',
+     pesapal_sale_callback,
+     name='pesapal_sale_callback'),
+
+path('pesapal/send-link/<int:sale_id>/',
+     send_payment_link,
+     name='send_payment_link'),
 
 from .view import drafts_list
 
@@ -24,7 +41,17 @@ urlpatterns = [
     path('fiscalize/<int:sale_id>/', views.fiscalize_sale, name='fiscalize_sale'),
     path('efris-status/', views.sales_efris_status, name='efris_status'),
     path('quick/', pos.quick_sale_view, name='quick_sale'),
+    path('pesapal/initiate/<int:sale_id>/',
+         initiate_pesapal_payment,
+         name='initiate_pesapal_payment'),
 
+    path('pesapal/callback/<int:sale_id>/',
+         pesapal_sale_callback,
+         name='pesapal_sale_callback'),
+
+    path('pesapal/send-link/<int:sale_id>/',
+         send_payment_link,
+         name='send_payment_link'),
     # API endpoints for Quick POS
     path('api/search-items/', pos.search_items_api, name='search_items_api'),
     path('api/customer-search/', pos.customer_search_api, name='customer_search_api'),

@@ -58,7 +58,7 @@ import time
 import logging
 import functools
 from datetime import datetime, timezone as tz
-
+from .e2e_middleware import e2e_sync_view
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -84,6 +84,7 @@ ALL_TABLES = [
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@e2e_sync_view
 def sync_pull(request):
     """
     Main pull endpoint. Returns all changes since last_pulled_at.

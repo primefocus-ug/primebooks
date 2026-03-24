@@ -1,0 +1,1168 @@
+{% extends 'public_router/base.html' %}
+
+{% block title %}Download PrimeBooks Desktop — Windows, macOS & Linux{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ── Page shell — full bleed, ignore main's max-width padding ── */
+    main { max-width: 100% !important; padding: 0 !important; }
+
+    :root {
+        --dl-accent: #0c19dd;
+        --dl-accent-light: rgba(12,25,221,0.12);
+        --dl-accent-border: rgba(12,25,221,0.25);
+        --win-color: #0078d4;
+        --mac-color: #555;
+        --linux-color: #e95420;
+    }
+
+    /* ── Hero ── */
+    .dl-hero {
+        background: radial-gradient(ellipse 70% 55% at 50% -10%,
+            rgba(12,25,221,0.15) 0%, transparent 65%),
+            var(--bg-primary);
+        border-bottom: 1px solid var(--border-color);
+        padding: 4rem 2rem 3.5rem;
+        text-align: center;
+    }
+
+    .dl-hero-inner { max-width: 760px; margin: 0 auto; }
+
+    .dl-hero-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        background: var(--dl-accent-light);
+        border: 1px solid var(--dl-accent-border);
+        color: #6b78ff;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        padding: 4px 13px;
+        border-radius: 20px;
+        margin-bottom: 1.5rem;
+    }
+
+    .dl-hero h1 {
+        font-size: clamp(2rem, 4vw, 3rem);
+        font-weight: 300;
+        line-height: 1.2;
+        margin-bottom: 1rem;
+        color: var(--text-primary);
+    }
+
+    .dl-hero h1 strong {
+        font-weight: 500;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .dl-hero p {
+        font-size: 1.05rem;
+        color: var(--text-secondary);
+        line-height: 1.65;
+        max-width: 580px;
+        margin: 0 auto 2.5rem;
+    }
+
+    /* Platform tabs */
+    .platform-tabs {
+        display: inline-flex;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 10px;
+        padding: 4px;
+        gap: 2px;
+    }
+
+    .platform-tab {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.55rem 1.25rem;
+        border-radius: 7px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        transition: all 0.2s;
+        font-family: inherit;
+    }
+
+    .platform-tab:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+    .platform-tab.active { background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+    .platform-tab.active.win { color: var(--win-color); }
+    .platform-tab.active.mac { color: var(--mac-color); }
+    .platform-tab.active.linux { color: var(--linux-color); }
+
+    /* ── Main download content ── */
+    .dl-main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 3rem 2rem 5rem;
+    }
+
+    /* Latest release card */
+    .latest-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 16px;
+        padding: 2.5rem;
+        margin-bottom: 3rem;
+        position: relative;
+        overflow: hidden;
+        display: none;
+    }
+    .latest-card.active { display: block; }
+
+    .latest-card::before {
+        content: '';
+        position: absolute;
+        top: 0; right: 0;
+        width: 300px; height: 300px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(12,25,221,0.07) 0%, transparent 65%);
+        transform: translate(80px, -120px);
+        pointer-events: none;
+    }
+
+    .latest-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        background: rgba(34,197,94,0.1);
+        border: 1px solid rgba(34,197,94,0.25);
+        color: #22c55e;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        padding: 3px 10px;
+        border-radius: 20px;
+        margin-bottom: 1.25rem;
+    }
+
+    .latest-card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 2rem;
+        flex-wrap: wrap;
+        margin-bottom: 2rem;
+    }
+
+    .latest-version-info h2 {
+        font-size: 1.6rem;
+        font-weight: 300;
+        color: var(--text-primary);
+        margin-bottom: 0.4rem;
+    }
+
+    .latest-meta {
+        display: flex;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+    }
+
+    .latest-meta-item {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.82rem;
+        color: var(--text-tertiary);
+    }
+
+    .latest-meta-item svg { opacity: 0.6; flex-shrink: 0; }
+
+    .latest-dl-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.9rem 2rem;
+        background: var(--accent-gradient);
+        color: #fff;
+        border-radius: 10px;
+        text-decoration: none;
+        font-size: 1rem;
+        font-weight: 500;
+        transition: opacity 0.2s, transform 0.15s;
+        flex-shrink: 0;
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+    }
+    .latest-dl-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .latest-dl-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .latest-dl-btn svg { flex-shrink: 0; }
+
+    /* Mini download options (other builds for same platform) */
+    .alt-builds {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-top: 1.25rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .alt-build-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.5rem 1rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color-light);
+        color: var(--text-secondary);
+        border-radius: 7px;
+        text-decoration: none;
+        font-size: 0.82rem;
+        transition: all 0.2s;
+        cursor: pointer;
+        font-family: inherit;
+    }
+    .alt-build-btn:hover { color: var(--text-primary); border-color: var(--border-color-lighter); }
+
+    /* Changelog in latest card */
+    .latest-changelog {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1.25rem 1.5rem;
+        margin-top: 1.5rem;
+    }
+
+    .latest-changelog h4 {
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.7px;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+        margin-bottom: 0.75rem;
+    }
+
+    .changelog-items { list-style: none; }
+    .changelog-items li {
+        font-size: 0.88rem;
+        color: var(--text-secondary);
+        padding: 0.3rem 0;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        line-height: 1.45;
+    }
+    .changelog-items li::before { content: '•'; color: #6b78ff; flex-shrink: 0; margin-top: 1px; }
+
+    /* Checksum row */
+    .checksum-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-top: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .checksum-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+        flex-shrink: 0;
+    }
+
+    .checksum-value {
+        font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+        font-size: 0.75rem;
+        color: var(--text-tertiary);
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        padding: 3px 8px;
+        border-radius: 4px;
+        word-break: break-all;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .copy-btn {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color-light);
+        color: var(--text-secondary);
+        padding: 4px 10px;
+        border-radius: 5px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        font-family: inherit;
+        transition: all 0.2s;
+        flex-shrink: 0;
+    }
+    .copy-btn:hover { color: var(--text-primary); }
+    .copy-btn.copied { color: #22c55e; border-color: rgba(34,197,94,0.3); }
+
+    /* ── Version History ── */
+    .history-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .history-header h3 {
+        font-size: 1.1rem;
+        font-weight: 400;
+        color: var(--text-primary);
+    }
+
+    .history-filter {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .filter-chip {
+        padding: 0.3rem 0.85rem;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        border: 1px solid var(--border-color-light);
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-family: inherit;
+        transition: all 0.2s;
+    }
+    .filter-chip.active {
+        background: var(--dl-accent-light);
+        border-color: var(--dl-accent-border);
+        color: #6b78ff;
+    }
+    .filter-chip:hover { color: var(--text-primary); }
+
+    /* Version table */
+    .version-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .version-row {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        overflow: hidden;
+        transition: border-color 0.2s;
+    }
+    .version-row:hover { border-color: var(--border-color-lighter); }
+
+    .version-row-header {
+        display: grid;
+        grid-template-columns: 1fr auto auto auto;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .version-tag {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+
+    .version-num {
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    }
+
+    .version-label-latest {
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        background: rgba(34,197,94,0.1);
+        border: 1px solid rgba(34,197,94,0.25);
+        color: #22c55e;
+        padding: 2px 7px;
+        border-radius: 10px;
+    }
+
+    .version-label-critical {
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        background: rgba(239,68,68,0.1);
+        border: 1px solid rgba(239,68,68,0.2);
+        color: #ef4444;
+        padding: 2px 7px;
+        border-radius: 10px;
+    }
+
+    .version-date {
+        font-size: 0.82rem;
+        color: var(--text-tertiary);
+        white-space: nowrap;
+    }
+
+    .version-size {
+        font-size: 0.82rem;
+        color: var(--text-tertiary);
+        white-space: nowrap;
+    }
+
+    .version-expand-btn {
+        background: none;
+        border: none;
+        color: var(--text-tertiary);
+        cursor: pointer;
+        padding: 4px;
+        border-radius: 4px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+    }
+    .version-expand-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+    .version-expand-btn svg { transition: transform 0.25s; }
+    .version-row.expanded .version-expand-btn svg { transform: rotate(180deg); }
+
+    .version-details {
+        display: none;
+        padding: 0 1.25rem 1.25rem;
+        border-top: 1px solid var(--border-color);
+    }
+    .version-row.expanded .version-details { display: block; }
+
+    .version-details-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        padding-top: 1.25rem;
+    }
+
+    .vd-section h5 {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.7px;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+        margin-bottom: 0.6rem;
+    }
+
+    .vd-changelog { list-style: none; }
+    .vd-changelog li {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        padding: 0.25rem 0;
+        display: flex;
+        gap: 0.5rem;
+        line-height: 1.4;
+    }
+    .vd-changelog li::before { content: '•'; color: #6b78ff; flex-shrink: 0; }
+
+    .vd-meta-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.4rem 0;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.82rem;
+    }
+    .vd-meta-row:last-child { border-bottom: none; }
+    .vd-meta-label { color: var(--text-tertiary); }
+    .vd-meta-value { color: var(--text-secondary); font-family: 'SF Mono', 'Monaco', 'Consolas', monospace; font-size: 0.78rem; }
+
+    .version-dl-row {
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .version-dl-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.5rem 1rem;
+        background: var(--dl-accent-light);
+        border: 1px solid var(--dl-accent-border);
+        color: #6b78ff;
+        border-radius: 7px;
+        text-decoration: none;
+        font-size: 0.82rem;
+        font-weight: 500;
+        transition: all 0.2s;
+        cursor: pointer;
+        font-family: inherit;
+    }
+    .version-dl-btn:hover { background: rgba(12,25,221,0.2); }
+
+    /* ── Loading & Error states ── */
+    .dl-state {
+        text-align: center;
+        padding: 4rem 1rem;
+        color: var(--text-tertiary);
+    }
+
+    .dl-spinner {
+        width: 36px; height: 36px;
+        border: 2px solid var(--border-color-light);
+        border-top-color: #6b78ff;
+        border-radius: 50%;
+        margin: 0 auto 1rem;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .dl-error-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    .dl-state p { font-size: 0.9rem; }
+    .dl-retry-btn {
+        margin-top: 1rem;
+        padding: 0.55rem 1.25rem;
+        background: var(--dl-accent-light);
+        border: 1px solid var(--dl-accent-border);
+        color: #6b78ff;
+        border-radius: 7px;
+        font-size: 0.88rem;
+        cursor: pointer;
+        font-family: inherit;
+        transition: all 0.2s;
+    }
+    .dl-retry-btn:hover { background: rgba(12,25,221,0.2); }
+
+    /* ── System requirements sidebar ── */
+    .dl-layout {
+        display: grid;
+        grid-template-columns: 1fr 280px;
+        gap: 2.5rem;
+        align-items: start;
+    }
+
+    .sys-req-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 12px;
+        padding: 1.5rem;
+        position: sticky;
+        top: 80px;
+    }
+
+    .sys-req-card h4 {
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.7px;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+        margin-bottom: 1.25rem;
+    }
+
+    .sys-platform-section { margin-bottom: 1.25rem; }
+
+    .sys-platform-label {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .sys-req-list { list-style: none; }
+    .sys-req-list li {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        padding: 0.25rem 0;
+        display: flex;
+        gap: 0.4rem;
+    }
+    .sys-req-list li::before { content: '·'; color: var(--text-tertiary); flex-shrink: 0; }
+
+    .sys-req-divider { height: 1px; background: var(--border-color); margin: 1rem 0; }
+
+    .sys-help-link {
+        font-size: 0.8rem;
+        color: #6b78ff;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        margin-top: 0.5rem;
+    }
+    .sys-help-link:hover { text-decoration: underline; }
+
+    /* ── Responsive ── */
+    @media (max-width: 900px) {
+        .dl-layout { grid-template-columns: 1fr; }
+        .sys-req-card { position: static; }
+        .version-row-header { grid-template-columns: 1fr auto auto; }
+        .version-size { display: none; }
+        .version-details-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 640px) {
+        .dl-hero { padding: 3rem 1rem 2.5rem; }
+        .dl-main { padding: 2rem 1rem 3rem; }
+        .latest-card-top { flex-direction: column; }
+        .platform-tab { padding: 0.45rem 0.85rem; font-size: 0.82rem; }
+        .version-row-header { grid-template-columns: 1fr auto; }
+        .version-date { display: none; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="dl-hero">
+    <div class="dl-hero-inner">
+        <div class="dl-hero-eyebrow">
+            <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            PrimeBooks Desktop
+        </div>
+        <h1>Download <strong>PrimeBooks</strong><br>for Your Platform</h1>
+        <p>
+            The native desktop experience — offline support, auto-updates, and full
+            EFRIS integration. Available for Windows, macOS, and Linux.
+        </p>
+
+        <!-- Platform tabs -->
+        <div class="platform-tabs" role="tablist" aria-label="Select platform">
+            <button class="platform-tab win active" data-platform="windows" role="tab" aria-selected="true">
+                🪟 Windows
+            </button>
+            <button class="platform-tab mac" data-platform="macos" role="tab" aria-selected="false">
+                🍎 macOS
+            </button>
+            <button class="platform-tab linux" data-platform="linux" role="tab" aria-selected="false">
+                🐧 Linux
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Main content -->
+<div class="dl-main">
+    <!-- Loading state -->
+    <div id="dlLoading" class="dl-state">
+        <div class="dl-spinner"></div>
+        <p>Loading release information…</p>
+    </div>
+
+    <!-- Error state -->
+    <div id="dlError" class="dl-state" style="display:none">
+        <div class="dl-error-icon">⚠️</div>
+        <p>Could not load release data. Please check your connection.</p>
+        <button class="dl-retry-btn" id="dlRetryBtn">Try Again</button>
+    </div>
+
+    <!-- Content (shown after load) -->
+    <div id="dlContent" class="dl-layout" style="display:none">
+        <div>
+            <!-- Latest release cards (one per platform, shown/hidden by tabs) -->
+            <div id="latestWindows" class="latest-card active">
+                <div class="latest-badge">✓ Latest Stable</div>
+                <div class="latest-card-top">
+                    <div class="latest-version-info">
+                        <h2 id="latestWinTitle">Loading…</h2>
+                        <div class="latest-meta">
+                            <span class="latest-meta-item">
+                                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                                <span id="latestWinDate">—</span>
+                            </span>
+                            <span class="latest-meta-item">
+                                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                <span id="latestWinSize">—</span>
+                            </span>
+                            <span class="latest-meta-item">
+                                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/></svg>
+                                <span id="latestWinReq">—</span>
+                            </span>
+                        </div>
+                    </div>
+                    <a id="latestWinBtn" href="#" class="latest-dl-btn">
+                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download .exe
+                    </a>
+                </div>
+                <div id="latestWinChangelog" class="latest-changelog">
+                    <h4>What's New</h4>
+                    <ul class="changelog-items" id="latestWinChangelogList"></ul>
+                </div>
+                <div class="checksum-row">
+                    <span class="checksum-label">SHA256</span>
+                    <span class="checksum-value" id="latestWinChecksum">—</span>
+                    <button class="copy-btn" data-copy="latestWinChecksum">Copy</button>
+                </div>
+                <div class="alt-builds" id="latestWinAltBuilds"></div>
+            </div>
+
+            <div id="latestMacos" class="latest-card" style="display:none">
+                <div class="latest-badge">✓ Latest Stable</div>
+                <div class="latest-card-top">
+                    <div class="latest-version-info">
+                        <h2 id="latestMacTitle">Loading…</h2>
+                        <div class="latest-meta">
+                            <span class="latest-meta-item">
+                                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                                <span id="latestMacDate">—</span>
+                            </span>
+                            <span class="latest-meta-item">
+                                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                <span id="latestMacSize">—</span>
+                            </span>
+                            <span class="latest-meta-item">
+                                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/></svg>
+                                <span id="latestMacReq">—</span>
+                            </span>
+                        </div>
+                    </div>
+                    <a id="latestMacBtn" href="#" class="latest-dl-btn">
+                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download .dmg
+                    </a>
+                </div>
+                <div id="latestMacChangelog" class="latest-changelog">
+                    <h4>What's New</h4>
+                    <ul class="changelog-items" id="latestMacChangelogList"></ul>
+                </div>
+                <div class="checksum-row">
+                    <span class="checksum-label">SHA256</span>
+                    <span class="checksum-value" id="latestMacChecksum">—</span>
+                    <button class="copy-btn" data-copy="latestMacChecksum">Copy</button>
+                </div>
+                <div class="alt-builds" id="latestMacAltBuilds"></div>
+            </div>
+
+            <div id="latestLinux" class="latest-card" style="display:none">
+                <div class="latest-badge">✓ Latest Stable</div>
+                <div class="latest-card-top">
+                    <div class="latest-version-info">
+                        <h2 id="latestLinuxTitle">Loading…</h2>
+                        <div class="latest-meta">
+                            <span class="latest-meta-item">
+                                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                                <span id="latestLinuxDate">—</span>
+                            </span>
+                            <span class="latest-meta-item">
+                                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                <span id="latestLinuxSize">—</span>
+                            </span>
+                            <span class="latest-meta-item">
+                                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/></svg>
+                                <span id="latestLinuxReq">—</span>
+                            </span>
+                        </div>
+                    </div>
+                    <a id="latestLinuxBtn" href="#" class="latest-dl-btn">
+                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download .AppImage
+                    </a>
+                </div>
+                <div id="latestLinuxChangelog" class="latest-changelog">
+                    <h4>What's New</h4>
+                    <ul class="changelog-items" id="latestLinuxChangelogList"></ul>
+                </div>
+                <div class="checksum-row">
+                    <span class="checksum-label">SHA256</span>
+                    <span class="checksum-value" id="latestLinuxChecksum">—</span>
+                    <button class="copy-btn" data-copy="latestLinuxChecksum">Copy</button>
+                </div>
+                <div class="alt-builds" id="latestLinuxAltBuilds"></div>
+            </div>
+
+            <!-- Version history -->
+            <div class="history-header">
+                <h3>Version History</h3>
+                <div class="history-filter">
+                    <button class="filter-chip active" data-filter="all">All</button>
+                    <button class="filter-chip" data-filter="stable">Stable</button>
+                    <button class="filter-chip" data-filter="critical">Critical</button>
+                </div>
+            </div>
+
+            <div id="versionList" class="version-list">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- System requirements sidebar -->
+        <aside class="sys-req-card">
+            <h4>System Requirements</h4>
+
+            <div class="sys-platform-section" id="sysWindows">
+                <div class="sys-platform-label">🪟 Windows</div>
+                <ul class="sys-req-list">
+                    <li>Windows 10 or later (64-bit)</li>
+                    <li>4 GB RAM minimum</li>
+                    <li>500 MB free disk space</li>
+                    <li>Internet connection for EFRIS sync</li>
+                </ul>
+            </div>
+
+            <div class="sys-req-divider"></div>
+
+            <div class="sys-platform-section" id="sysMacos">
+                <div class="sys-platform-label">🍎 macOS</div>
+                <ul class="sys-req-list">
+                    <li>macOS 11 (Big Sur) or later</li>
+                    <li>Intel or Apple Silicon (M1/M2/M3)</li>
+                    <li>4 GB RAM minimum</li>
+                    <li>500 MB free disk space</li>
+                </ul>
+            </div>
+
+            <div class="sys-req-divider"></div>
+
+            <div class="sys-platform-section" id="sysLinux">
+                <div class="sys-platform-label">🐧 Linux</div>
+                <ul class="sys-req-list">
+                    <li>Ubuntu 20.04+ / Debian 11+ / Fedora 36+</li>
+                    <li>x86_64 architecture</li>
+                    <li>4 GB RAM minimum</li>
+                    <li>FUSE 2 for AppImage</li>
+                </ul>
+            </div>
+
+            <div class="sys-req-divider"></div>
+
+            <a href="{% url 'public_support:faq_list' %}" class="sys-help-link">
+                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                Installation help & FAQ
+            </a>
+            <a href="{% url 'public_support:create_ticket' %}" class="sys-help-link" style="margin-top:0.35rem">
+                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                Report a problem
+            </a>
+        </aside>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    // ── Config ─────────────────────────────────────────────────────────────
+    const API_URL = '/api/v1/releases/';   // Your Django endpoint
+
+    // ── State ──────────────────────────────────────────────────────────────
+    let allReleases = [];
+    let currentPlatform = 'windows';
+    let currentFilter = 'all';
+
+    // ── DOM refs ───────────────────────────────────────────────────────────
+    const $loading  = document.getElementById('dlLoading');
+    const $error    = document.getElementById('dlError');
+    const $content  = document.getElementById('dlContent');
+    const $retryBtn = document.getElementById('dlRetryBtn');
+    const $verList  = document.getElementById('versionList');
+
+    const platformIds = {
+        windows: { card: 'latestWindows', title: 'latestWinTitle', date: 'latestWinDate',
+                   size: 'latestWinSize', req: 'latestWinReq', btn: 'latestWinBtn',
+                   clList: 'latestWinChangelogList', checksum: 'latestWinChecksum',
+                   altBuilds: 'latestWinAltBuilds', ext: '.exe' },
+        macos:   { card: 'latestMacos',   title: 'latestMacTitle', date: 'latestMacDate',
+                   size: 'latestMacSize',  req: 'latestMacReq',  btn: 'latestMacBtn',
+                   clList: 'latestMacChangelogList', checksum: 'latestMacChecksum',
+                   altBuilds: 'latestMacAltBuilds', ext: '.dmg' },
+        linux:   { card: 'latestLinux',   title: 'latestLinuxTitle', date: 'latestLinuxDate',
+                   size: 'latestLinuxSize', req: 'latestLinuxReq', btn: 'latestLinuxBtn',
+                   clList: 'latestLinuxChangelogList', checksum: 'latestLinuxChecksum',
+                   altBuilds: 'latestLinuxAltBuilds', ext: '.AppImage' },
+    };
+
+    // ── Fetch ──────────────────────────────────────────────────────────────
+    async function fetchReleases() {
+        showState('loading');
+        try {
+            const resp = await fetch(API_URL, { headers: { 'Accept': 'application/json' } });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            allReleases = Array.isArray(data) ? data : (data.results || []);
+            renderAll();
+            showState('content');
+        } catch (e) {
+            console.error('Download center: fetch failed', e);
+            showState('error');
+        }
+    }
+
+    function showState(state) {
+        $loading.style.display = state === 'loading' ? 'block' : 'none';
+        $error.style.display   = state === 'error'   ? 'block' : 'none';
+        $content.style.display = state === 'content' ? 'grid'  : 'none';
+    }
+
+    // ── Render ─────────────────────────────────────────────────────────────
+    function renderAll() {
+        ['windows', 'macos', 'linux'].forEach(platform => {
+            const latest = getLatestForPlatform(platform);
+            if (latest) populateLatestCard(platform, latest);
+        });
+        renderVersionList();
+    }
+
+    function getLatestForPlatform(platform) {
+        return allReleases
+            .filter(r => r.platforms && r.platforms.includes(platform))
+            .sort((a, b) => compareVersions(b.version, a.version))[0] || null;
+    }
+
+    function populateLatestCard(platform, release) {
+        const ids = platformIds[platform];
+        setText(ids.title, `PrimeBooks ${release.version}`);
+        setText(ids.date, formatDate(release.release_date));
+        setText(ids.size, release.platforms_info?.[platform]?.file_size || release.file_size || '—');
+        setText(ids.req, release.platforms_info?.[platform]?.min_os || release.min_os || '—');
+
+        const btn = document.getElementById(ids.btn);
+        const dl_url = release.platforms_info?.[platform]?.download_url || release.download_url || '#';
+        btn.href = dl_url;
+
+        // Changelog
+        const clList = document.getElementById(ids.clList);
+        clList.innerHTML = '';
+        const items = parseChangelog(release.changelog);
+        items.forEach(item => {
+            const li = document.createElement('li');
+            li.textContent = item;
+            clList.appendChild(li);
+        });
+
+        // Checksum
+        const cs = release.platforms_info?.[platform]?.sha256 || release.sha256 || '—';
+        setText(ids.checksum, cs);
+
+        // Alt builds (e.g. zip alongside exe)
+        const altContainer = document.getElementById(ids.altBuilds);
+        altContainer.innerHTML = '';
+        const alts = release.platforms_info?.[platform]?.alt_builds || [];
+        alts.forEach(alt => {
+            const a = document.createElement('a');
+            a.className = 'alt-build-btn';
+            a.href = alt.url;
+            a.textContent = alt.label;
+            altContainer.appendChild(a);
+        });
+        if (altContainer.children.length === 0) altContainer.style.display = 'none';
+    }
+
+    function renderVersionList() {
+        $verList.innerHTML = '';
+        const filtered = allReleases
+            .filter(r => {
+                if (currentFilter === 'stable')   return !r.is_critical;
+                if (currentFilter === 'critical')  return r.is_critical;
+                return true;
+            })
+            .filter(r => r.platforms && r.platforms.includes(currentPlatform))
+            .sort((a, b) => compareVersions(b.version, a.version));
+
+        if (filtered.length === 0) {
+            $verList.innerHTML = '<div class="dl-state" style="padding:2rem"><p>No releases found for this filter.</p></div>';
+            return;
+        }
+
+        filtered.forEach((release, idx) => {
+            const isLatest = idx === 0;
+            const row = buildVersionRow(release, isLatest);
+            $verList.appendChild(row);
+        });
+    }
+
+    function buildVersionRow(release, isLatest) {
+        const div = document.createElement('div');
+        div.className = 'version-row';
+        div.dataset.version = release.version;
+
+        const platformKey = currentPlatform;
+        const dlUrl = release.platforms_info?.[platformKey]?.download_url || release.download_url || '#';
+        const fileSize = release.platforms_info?.[platformKey]?.file_size || release.file_size || '—';
+        const sha256 = release.platforms_info?.[platformKey]?.sha256 || release.sha256 || '—';
+        const minOs = release.platforms_info?.[platformKey]?.min_os || release.min_os || '—';
+        const clItems = parseChangelog(release.changelog);
+        const clHtml = clItems.map(i => `<li>${escapeHtml(i)}</li>`).join('');
+
+        div.innerHTML = `
+            <div class="version-row-header">
+                <div class="version-tag">
+                    <span class="version-num">v${escapeHtml(release.version)}</span>
+                    ${isLatest ? '<span class="version-label-latest">Latest</span>' : ''}
+                    ${release.is_critical ? '<span class="version-label-critical">Critical Update</span>' : ''}
+                </div>
+                <span class="version-date">${formatDate(release.release_date)}</span>
+                <span class="version-size">${escapeHtml(fileSize)}</span>
+                <button class="version-expand-btn" aria-label="Toggle details">
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="version-details">
+                <div class="version-details-grid">
+                    <div class="vd-section">
+                        <h5>What's New</h5>
+                        <ul class="vd-changelog">${clHtml || '<li>No changelog provided.</li>'}</ul>
+                    </div>
+                    <div class="vd-section">
+                        <h5>Release Details</h5>
+                        <div class="vd-meta-row">
+                            <span class="vd-meta-label">Version</span>
+                            <span class="vd-meta-value">${escapeHtml(release.version)}</span>
+                        </div>
+                        <div class="vd-meta-row">
+                            <span class="vd-meta-label">Released</span>
+                            <span class="vd-meta-value">${formatDate(release.release_date)}</span>
+                        </div>
+                        <div class="vd-meta-row">
+                            <span class="vd-meta-label">File Size</span>
+                            <span class="vd-meta-value">${escapeHtml(fileSize)}</span>
+                        </div>
+                        <div class="vd-meta-row">
+                            <span class="vd-meta-label">Min OS</span>
+                            <span class="vd-meta-value">${escapeHtml(minOs)}</span>
+                        </div>
+                        <div class="vd-meta-row">
+                            <span class="vd-meta-label">SHA256</span>
+                            <span class="vd-meta-value" style="font-size:0.7rem;word-break:break-all">${escapeHtml(sha256)}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="version-dl-row">
+                    <a href="${escapeHtml(dlUrl)}" class="version-dl-btn">
+                        <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download v${escapeHtml(release.version)}
+                    </a>
+                </div>
+            </div>
+        `;
+
+        div.querySelector('.version-row-header').addEventListener('click', () => {
+            div.classList.toggle('expanded');
+        });
+
+        return div;
+    }
+
+    // ── Platform tabs ──────────────────────────────────────────────────────
+    document.querySelectorAll('.platform-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.platform-tab').forEach(t => {
+                t.classList.remove('active');
+                t.setAttribute('aria-selected', 'false');
+            });
+            tab.classList.add('active');
+            tab.setAttribute('aria-selected', 'true');
+
+            currentPlatform = tab.dataset.platform;
+            updateLatestCards();
+            renderVersionList();
+        });
+    });
+
+    function updateLatestCards() {
+        const map = { windows: 'latestWindows', macos: 'latestMacos', linux: 'latestLinux' };
+        Object.values(map).forEach(id => {
+            const el = document.getElementById(id);
+            el.style.display = 'none';
+            el.classList.remove('active');
+        });
+        const target = document.getElementById(map[currentPlatform]);
+        target.style.display = 'block';
+        target.classList.add('active');
+    }
+
+    // ── Filter chips ───────────────────────────────────────────────────────
+    document.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            currentFilter = chip.dataset.filter;
+            renderVersionList();
+        });
+    });
+
+    // ── Copy checksum ──────────────────────────────────────────────────────
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('.copy-btn');
+        if (!btn) return;
+        const srcId = btn.dataset.copy;
+        const text = document.getElementById(srcId)?.textContent || '';
+        if (text && text !== '—') {
+            navigator.clipboard.writeText(text).then(() => {
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+            }).catch(() => {});
+        }
+    });
+
+    // ── Retry ──────────────────────────────────────────────────────────────
+    $retryBtn.addEventListener('click', fetchReleases);
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function setText(id, val) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    }
+
+    function formatDate(str) {
+        if (!str) return '—';
+        try {
+            return new Date(str).toLocaleDateString('en-UG', { year: 'numeric', month: 'long', day: 'numeric' });
+        } catch { return str; }
+    }
+
+    function parseChangelog(changelog) {
+        if (!changelog) return [];
+        return changelog
+            .split('\n')
+            .map(l => l.replace(/^[•\-\*]\s*/, '').trim())
+            .filter(Boolean);
+    }
+
+    function compareVersions(a, b) {
+        const pa = a.split('.').map(Number);
+        const pb = b.split('.').map(Number);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+            const diff = (pa[i] || 0) - (pb[i] || 0);
+            if (diff !== 0) return diff;
+        }
+        return 0;
+    }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────
+    fetchReleases();
+})();
+</script>
+{% endblock %}

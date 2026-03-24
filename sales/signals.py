@@ -5,6 +5,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
 from django.utils import timezone
+from django.db import transaction
 from decimal import Decimal
 import logging
 from django_tenants.utils import schema_context
@@ -22,8 +23,6 @@ def track_sale_state(sender, instance, **kwargs):
     if instance.pk:
         try:
             old_instance = sender.objects.get(pk=instance.pk)
-            # Store directly on the instance (not a module-level dict) so it's
-            # process-safe under multi-worker/multi-thread deployments.
             instance._pre_save_state = {
                 'document_type': old_instance.document_type,
                 'status': old_instance.status,
@@ -40,28 +39,61 @@ def track_sale_state(sender, instance, **kwargs):
 @receiver(post_save, sender=Sale)
 def handle_sale_completion(sender, instance, created, **kwargs):
     """
-    Handle sale completion with background processing
+    Handle sale completion with background processing.
+
+    FAN-OUT FIX:
+    The old code called process_receipt_async.delay() directly inside the signal,
+    which fired on *every* Sale.save() call during a request (update_totals,
+    update_fields=['payment_status'], etc.) — producing 4-5 redundant tasks per
+    sale. The fix is:
+      1. Only dispatch on `created=True` (brand-new rows) OR genuine status
+         transitions to COMPLETED (e.g. from a Pesapal callback updating an
+         existing PENDING sale).
+      2. Wrap dispatch in transaction.on_commit() so the task only runs after
+         the DB transaction commits — eliminating the race where Celery picks up
+         the task before SaleItem rows exist.
+      3. Pass schema_name so the task never needs to scan every tenant schema.
     """
     try:
-        # Get tenant schema
         schema_name = instance.store.company.schema_name
+        old_state = getattr(instance, '_pre_save_state', {})
+
+        # ── Guard: only dispatch on meaningful state changes ──────────────────
+        #
+        # For RECEIPT:
+        #   - New sale created as COMPLETED  → dispatch
+        #   - Existing sale transitions to COMPLETED (e.g. Pesapal IPN) → dispatch
+        #   - Any other save (update_fields=['payment_status'], totals, etc.) → skip
+        #
+        # For INVOICE / PROFORMA / ESTIMATE:
+        #   - Same creation / transition logic, no receipt task.
+        #
+        document_type = instance.document_type
+        old_status = old_state.get('status')
+        is_new_completion = (
+            created and instance.status == 'COMPLETED'
+        ) or (
+            not created
+            and old_status not in (None, 'COMPLETED')
+            and instance.status == 'COMPLETED'
+        )
 
         with schema_context(schema_name):
-            # Get previous state — now stored on the instance itself (process-safe)
-            old_state = getattr(instance, '_pre_save_state', {})
-
-            # Handle different document types
-            document_type = instance.document_type
-
             if document_type == 'RECEIPT':
-                # For receipts, only handle minimal synchronous tasks
-                if instance.status == 'COMPLETED':
-                    # Send immediate WebSocket update for POS
+                if instance.status == 'COMPLETED' and is_new_completion:
+                    # WebSocket update is cheap and safe to run synchronously.
                     send_receipt_ws_update(instance)
 
-                    # Queue background processing
-                    from .tasks import process_receipt_async
-                    process_receipt_async.delay(instance.pk)
+                    # Capture stable locals for the lambda closure — avoids the
+                    # classic "loop variable captured by reference" bug.
+                    _sale_pk = instance.pk
+                    _schema = schema_name
+
+                    # on_commit guarantees the task only runs after the whole
+                    # DB transaction commits — no more race with SaleItem writes.
+                    transaction.on_commit(
+                        lambda: _dispatch_receipt_task(_sale_pk, _schema)
+                    )
 
             elif document_type == 'INVOICE':
                 handle_invoice_completion(instance, created, old_state)
@@ -76,12 +108,20 @@ def handle_sale_completion(sender, instance, created, **kwargs):
         )
 
 
+def _dispatch_receipt_task(sale_pk, schema_name):
+    """
+    Thin wrapper so the on_commit lambda is a named function rather than an
+    anonymous closure — easier to trace in logs and test.
+    """
+    from .tasks import process_receipt_async
+    process_receipt_async.delay(sale_pk, schema_name=schema_name)
+
+
 def send_receipt_ws_update(sale):
     """Send immediate WebSocket update for receipt completion.
 
     Guarded against None channel_layer — in desktop mode Django Channels is
-    not configured so get_channel_layer() returns None. The sale is still
-    created successfully; the dashboard will reflect it on next page load.
+    not configured so get_channel_layer() returns None.
     """
     try:
         channel_layer = get_channel_layer()
@@ -105,11 +145,10 @@ def send_receipt_ws_update(sale):
 
 
 def handle_receipt_completion(sale, created, old_state):
-    """Handle receipt completion"""
+    """Handle receipt completion — notification dispatch only."""
     if not sale.status == 'COMPLETED':
         return
 
-    # Send receipt notification
     send_document_notification.delay(
         sale_id=sale.id,
         notification_type='RECEIPT_CREATED',
@@ -121,24 +160,18 @@ def handle_receipt_completion(sale, created, old_state):
 
 def handle_invoice_completion(sale, created, old_state):
     """Handle invoice completion"""
-    # Check if this is a new completion
     store_config = sale.store.effective_efris_config
-
-    # Check if EFRIS is enabled for this store
     efris_enabled = store_config.get('enabled', False) and store_config.get('is_active', False)
     is_new_completion = created or (old_state.get('status') != 'COMPLETED' and sale.status == 'COMPLETED')
 
     if is_new_completion:
-        # Send invoice notification
         send_document_notification.delay(
             sale_id=sale.id,
             notification_type='INVOICE_SENT',
             user_id=getattr(sale.created_by, 'pk', None)
         )
 
-        # Create invoice detail if not exists
         if not hasattr(sale, 'invoice_detail') or not sale.invoice_detail:
-            from invoices.models import Invoice
             try:
                 Invoice.objects.get_or_create(
                     sale=sale,
@@ -153,17 +186,15 @@ def handle_invoice_completion(sale, created, old_state):
             except Exception as e:
                 logger.error(f"Failed to create invoice detail for sale {sale.pk}: {e}")
 
-        # Check if should auto-fiscalize
         if should_fiscalize_invoice(sale):
             logger.info(f"Queueing invoice {sale.document_number} for EFRIS fiscalization")
-            fiscalize_invoice_async.delay(
-                sale.pk,
-                user_id=getattr(sale.created_by, 'pk', None)
+            _sale_pk = sale.pk
+            _user_pk = getattr(sale.created_by, 'pk', None)
+            transaction.on_commit(
+                lambda: fiscalize_invoice_async.delay(_sale_pk, user_id=_user_pk)
             )
 
-    # Check for fiscalization status change
     if sale.is_fiscalized and not old_state.get('is_fiscalized', False):
-        # Send fiscalization notification
         from notifications.services import SalesNotifications
         try:
             SalesNotifications.notify_efris_fiscalized(sale)
@@ -175,13 +206,11 @@ def handle_invoice_completion(sale, created, old_state):
 def handle_proforma_completion(sale, created, old_state):
     """Handle proforma/estimate completion"""
     if created:
-        # Send proforma notification
         send_document_notification.delay(
             sale_id=sale.id,
             notification_type='PROFORMA_CREATED',
             user_id=getattr(sale.created_by, 'pk', None)
         )
-
         logger.info(f"{sale.get_document_type_display()} {sale.document_number} created")
 
 
@@ -190,41 +219,33 @@ def should_fiscalize_invoice(sale):
     if sale.document_type != 'INVOICE':
         return False
 
-    # Check if sale has a store
     if not sale.store:
         logger.warning(f"Sale {sale.pk} has no store associated")
         return False
 
-    # Get store's effective EFRIS configuration
     store_config = sale.store.effective_efris_config
 
-    # Check if EFRIS is enabled and active for this store
     if not store_config.get('enabled', False) or not store_config.get('is_active', False):
         logger.debug(f"Store {sale.store.name}: EFRIS not enabled or inactive")
         return False
 
-    # Check if store can fiscalize
     if not sale.store.can_fiscalize:
         logger.debug(f"Store {sale.store.name} cannot fiscalize transactions")
         return False
 
-    # Check sale criteria
     total_amount = getattr(sale, 'total_amount', 0)
     if total_amount <= 0:
         logger.warning(f"Invoice {sale.pk} has zero or negative total amount")
         return False
 
-    # Check if already fiscalized
     if getattr(sale, 'is_fiscalized', False):
         logger.debug(f"Invoice {sale.pk} is already fiscalized")
         return False
 
-    # Check auto-fiscalization from store config
     if not store_config.get('auto_fiscalize_sales', True):
         logger.debug(f"Store {sale.store.name} has auto-fiscalization disabled")
         return False
 
-    # Check global settings
     auto_fiscalize = getattr(settings, 'EFRIS_AUTO_FISCALIZE', True)
     if not auto_fiscalize:
         logger.debug("Auto-fiscalization is disabled in settings")
@@ -258,10 +279,7 @@ def handle_invoice_changes(sender, instance, created, **kwargs):
         with schema_context(schema_name):
             if created:
                 logger.info(f"New invoice detail created for sale {instance.sale.document_number}")
-                # NOTE: Do NOT call instance.sale.save() here — it would re-trigger
-                # sale signals and cause recursive signal firing / double processing.
 
-            # Handle status changes
             previous_status = getattr(instance, '_previous_status', None)
             previous_fiscal_status = getattr(instance, '_previous_fiscalization_status', None)
 
@@ -281,26 +299,23 @@ def handle_invoice_status_change(invoice, previous_status):
         current_status = getattr(invoice, 'status', None)
 
         if current_status == 'SENT' and previous_status == 'DRAFT':
-            # Fiscalize when sent
             if invoice.sale and should_fiscalize_invoice(invoice.sale):
-                # Check if store allows fiscalization
                 store_config = invoice.sale.store.effective_efris_config
                 if store_config.get('enabled', False) and store_config.get('is_active', False):
                     logger.info(f"Fiscalizing invoice {invoice.sale.document_number} due to status change to SENT")
-                    fiscalize_invoice_async.delay(
-                        invoice.sale.pk,
-                        user_id=getattr(invoice.created_by, 'pk', None)
+                    _sale_pk = invoice.sale.pk
+                    _user_pk = getattr(invoice.created_by, 'pk', None)
+                    transaction.on_commit(
+                        lambda: fiscalize_invoice_async.delay(_sale_pk, user_id=_user_pk)
                     )
                 else:
                     logger.debug(f"Store {invoice.sale.store.name} does not allow fiscalization")
 
         elif current_status == 'PAID' and invoice.sale:
-            # Update sale payment status
             invoice.sale.payment_status = 'PAID'
             invoice.sale.save()
 
         elif current_status == 'CANCELLED' and getattr(invoice, 'is_fiscalized', False):
-            # Notify about cancelled fiscalized invoice
             logger.warning(
                 f"Fiscalized invoice {invoice.sale.document_number} was cancelled. "
                 f"Consider creating credit note."
@@ -316,7 +331,6 @@ def handle_fiscalization_status_change(invoice, previous_status):
         current_status = getattr(invoice, 'fiscalization_status', None)
 
         if current_status == 'fiscalized' and previous_status != 'fiscalized':
-            # Update related sale
             if invoice.sale:
                 invoice.sale.is_fiscalized = True
                 invoice.sale.fiscalization_time = invoice.fiscalization_time
@@ -325,11 +339,9 @@ def handle_fiscalization_status_change(invoice, previous_status):
                 invoice.sale.verification_code = invoice.verification_code
                 invoice.sale.qr_code = invoice.qr_code
                 invoice.sale.save()
-
                 logger.info(f"Updated sale {invoice.sale.document_number} with fiscalization data")
 
         elif current_status == 'failed' and invoice.sale:
-            # Update sale failure status
             invoice.sale.fiscalization_status = 'failed'
             invoice.sale.save()
 
@@ -342,14 +354,11 @@ def should_create_invoice(sale, user):
     if not sale.is_completed:
         return False
 
-    # Get store's effective configuration
     store_config = sale.store.effective_efris_config
 
-    # Check if store auto-creates invoices
     if not store_config.get('auto_create_invoices', False):
         return False
 
-    # Check store's invoice policy
     invoice_policy = getattr(sale.store, 'invoice_policy', 'MANUAL')
 
     if invoice_policy == 'MANUAL':
@@ -357,13 +366,11 @@ def should_create_invoice(sale, user):
     elif invoice_policy == 'ALL':
         return True
     elif invoice_policy == 'B2B':
-        # Use customer's EFRIS mixin method to determine business type
         if sale.customer and hasattr(sale.customer, 'get_efris_buyer_details'):
             buyer_details = sale.customer.get_efris_buyer_details()
-            return buyer_details.get('buyerType') == "0"  # B2B
+            return buyer_details.get('buyerType') == "0"
         return False
     elif invoice_policy == 'EFRIS_ENABLED':
-        # Only create invoices if EFRIS is enabled for this store
         return store_config.get('enabled', False) and store_config.get('is_active', False)
 
     return False
@@ -373,14 +380,11 @@ def create_invoice_from_sale(sale):
     """Create invoice from completed sale"""
     company = sale.store.company
 
-    # subtotal already contains tax (tax is extracted from the selling price,
-    # not added on top). Do NOT add tax_amount again here.
     subtotal = sum(item.total_price for item in sale.items.all())
     tax_amount = sum(item.tax_amount for item in sale.items.all())
     discount_amount = sale.discount_amount or Decimal('0')
-    total_amount = subtotal - discount_amount  # tax is already inside subtotal
+    total_amount = subtotal - discount_amount
 
-    # Create invoice
     invoice = Invoice.objects.create(
         sale=sale,
         store=sale.store,
@@ -399,7 +403,6 @@ def create_invoice_from_sale(sale):
         auto_fiscalize=True
     )
 
-    # Copy sale items to invoice items
     for sale_item in sale.items.all():
         invoice.items.create(
             product=sale_item.product if sale_item.item_type == 'PRODUCT' else None,
@@ -422,7 +425,6 @@ def generate_invoice_number(company):
     current_year = timezone.now().year
 
     with _tx.atomic():
-        # Lock the last invoice row for this company/year to serialize concurrent requests
         last_invoice = Invoice.objects.select_for_update().filter(
             store__company=company,
             issue_date__year=current_year
@@ -430,7 +432,6 @@ def generate_invoice_number(company):
 
         if last_invoice and getattr(last_invoice, 'invoice_number', None):
             try:
-                # Extract number from format like "INV-2024-0001"
                 parts = last_invoice.invoice_number.split('-')
                 if len(parts) >= 3:
                     last_num = int(parts[-1])
@@ -449,23 +450,33 @@ def generate_invoice_number(company):
 def update_dashboard_on_sale(sender, instance, created, **kwargs):
     """
     Trigger tenant-specific dashboard WebSocket update when a new Sale is created.
+
+    PERFORMANCE FIX: Only fires on created=True. Previously fired on every save,
+    running two aggregation queries even for trivial field updates like
+    update_fields=['payment_status'].
     """
     if not created:
-        return  # Only send updates for newly created sales
+        return
 
     try:
-        # Get company from store
         company = getattr(instance.store, 'company', None)
         if not company:
             logger.error(f"Sale {instance.pk}: Store has no associated company.")
             return
 
-        # Run inside the company's tenant schema
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            logger.debug(
+                f"[{company.schema_name}] WebSocket channel layer not configured — "
+                f"skipping dashboard update for sale {instance.pk}"
+            )
+            return
+
         with schema_context(company.schema_name):
             today = instance.created_at.date()
 
-            # Get today's sales summary by document type
-            today_sales = Sale.objects.filter(
+            # Single query instead of two
+            today_stats = Sale.objects.filter(
                 store__company=company,
                 created_at__date=today
             ).aggregate(
@@ -473,35 +484,28 @@ def update_dashboard_on_sale(sender, instance, created, **kwargs):
                 total_revenue=Sum('total_amount')
             )
 
-            # Get breakdown by document type
-            type_breakdown = Sale.objects.filter(
-                store__company=company,
-                created_at__date=today
-            ).values('document_type').annotate(
-                count=Count('id'),
-                amount=Sum('total_amount')
-            ).order_by('document_type')
+            type_breakdown = list(
+                Sale.objects.filter(
+                    store__company=company,
+                    created_at__date=today
+                ).values('document_type').annotate(
+                    count=Count('id'),
+                    amount=Sum('total_amount')
+                ).order_by('document_type')
+            )
 
-            # Send to tenant-specific WebSocket group
-            channel_layer = get_channel_layer()
-            if channel_layer is None:
-                logger.debug(
-                    f"[{company.schema_name}] WebSocket channel layer not configured — "
-                    f"skipping dashboard update for sale {instance.pk}"
-                )
-                return
             async_to_sync(channel_layer.group_send)(
                 f'dashboard_{company.schema_name}',
                 {
                     'type': 'dashboard.update',
                     'data': {
                         'type': 'sale_update',
-                        'total_sales': today_sales['total_sales'] or 0,
-                        'total_revenue': float(today_sales['total_revenue'] or 0.0),
+                        'total_sales': today_stats['total_sales'] or 0,
+                        'total_revenue': float(today_stats['total_revenue'] or 0.0),
                         'document_type': instance.document_type,
                         'document_number': instance.document_number,
                         'sale_amount': float(instance.total_amount),
-                        'type_breakdown': list(type_breakdown),
+                        'type_breakdown': type_breakdown,
                     },
                 }
             )

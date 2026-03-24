@@ -1676,3 +1676,137 @@ class EFRISHsCode(models.Model):
 
     def __str__(self):
         return f"{self.hs_code} - {self.description}"
+
+class AvailableModule(models.Model):
+    """
+    The platform's master catalog of all pluggable modules.
+    Lives in the PUBLIC schema (company app is a SHARED_APP).
+    You manage this table — tenants never write to it.
+    One row per module that exists in the platform.
+    """
+
+    key = models.SlugField(unique=True)
+    # ^ This MUST match the module_key you put in each app's apps.py
+    # Examples: 'salon', 'restaurant', 'supermarket', 'pharmacy'
+
+    label = models.CharField(max_length=100)
+    # ^ Human-readable name shown in the App Store UI
+    # Examples: "Salon Management", "Restaurant"
+
+    description = models.TextField()
+    # ^ Short explanation shown on the module card
+
+    icon = models.CharField(max_length=50, default='bi bi-puzzle')
+    # ^ Bootstrap Icons class. Your nav already uses bi bi-* classes
+    # so keep it consistent with your existing navigation.py
+
+    monthly_price = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    # ^ 0 = included in plan. >0 = paid add-on.
+
+    dependencies = models.ManyToManyField(
+        'self',
+        symmetrical=False,
+        blank=True,
+        related_name='required_by'
+    )
+    # ^ Some modules need others first.
+    # E.g. Restaurant might need Inventory to already be ON.
+    # If dep is not active → activation is blocked with an error.
+
+    is_publicly_available = models.BooleanField(default=True)
+    # ^ False = hidden from App Store (beta, enterprise-only, etc.)
+
+    display_order = models.PositiveIntegerField(default=0)
+    # ^ Controls sort order on the App Store page
+
+    class Meta:
+        ordering = ['display_order', 'label']
+        verbose_name = 'Available Module'
+        verbose_name_plural = 'Available Modules'
+
+    def __str__(self):
+        return self.label
+
+
+class CompanyModule(models.Model):
+    company = models.ForeignKey(
+        'company.Company',
+        on_delete=models.CASCADE,
+        related_name='modules',
+    )
+    module = models.ForeignKey(
+        'company.AvailableModule',
+        on_delete=models.CASCADE,
+        related_name='company_subscriptions',
+    )
+
+    # ── Activation state ─────────────────────────────────────────────
+    is_active = models.BooleanField(default=False)
+    activated_at = models.DateTimeField(null=True, blank=True)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
+
+    # ── Billing window ───────────────────────────────────────────────
+    paid_through = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Last date of paid access"
+    )
+
+    class Meta:
+        unique_together = ('company', 'module')
+        verbose_name = 'Company Module'
+        verbose_name_plural = 'Company Modules'
+
+    def __str__(self):
+        state = 'ON' if self.is_active else 'OFF'
+        return f"{self.company} → {self.module.key} [{state}]"
+
+    # ────────────────────────────────────────────────────────────────
+    # PROPERTIES
+    # ────────────────────────────────────────────────────────────────
+
+    @property
+    def is_paid_module(self):
+        return self.module.monthly_price > 0
+
+    @property
+    def within_paid_period(self):
+        if not self.paid_through:
+            return False
+        return timezone.now().date() <= self.paid_through
+
+    @property
+    def is_expired(self):
+        if not self.paid_through:
+            return False
+        return timezone.now().date() > self.paid_through
+
+    @property
+    def can_be_used(self):
+        """
+        Middleware-safe check:
+        Allows access if active OR still within paid window.
+        """
+        return self.is_active or self.within_paid_period
+
+    # ────────────────────────────────────────────────────────────────
+    # ACTIONS
+    # ────────────────────────────────────────────────────────────────
+
+    def activate(self, paid_through=None):
+        self.is_active = True
+        self.activated_at = timezone.now()
+        self.deactivated_at = None
+
+        if paid_through is not None:
+            self.paid_through = paid_through
+
+        self.save()
+
+    def deactivate(self):
+        self.is_active = False
+        self.deactivated_at = timezone.now()
+        self.save()
+

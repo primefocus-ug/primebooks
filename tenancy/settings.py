@@ -610,6 +610,7 @@ SHARED_APPS = [
     'corsheaders',
     'changelog',
     'public_calls',
+    'pesapal_integration',
 ]
 LOCAL_DEV_PORT = 8000
 # Add web-specific apps only for web mode
@@ -712,6 +713,7 @@ MIDDLEWARE += [
     # Company-level guards (schema-aware)
     'company.middleware.CompanyAccessMiddleware',
     'company.middleware.PlanLimitsMiddleware',
+    'company.middleware.ActiveModulesMiddleware',
     'company.middleware.EFRISStatusMiddleware',
 
     # Messaging (schema-aware)
@@ -793,6 +795,8 @@ EXPENSE_ATTACHMENT_ALLOWED_TYPES = [
     'application/vnd.ms-excel',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 ]
+SYNC_E2E_PRIVATE_KEY = "EMYCIrjFnydFnHiW7iflWuZ3gV7lk35G1n4M2bGYXkE="
+SYNC_E2E_REQUIRED    = True
 
 EXPENSE_ATTACHMENT_MAX_SIZE = 5 * 1024 * 1024
 
@@ -1150,5 +1154,48 @@ LOGGING = {
             'handlers': ['console'],
             'propagate': False,
         },
+    },
+}
+
+# =============================================================================
+# PESAPAL PAYMENT INTEGRATION
+# =============================================================================
+
+PESAPAL_ENV             = os.getenv('PESAPAL_ENV', 'sandbox')
+PESAPAL_CONSUMER_KEY    = os.getenv('PESAPAL_CONSUMER_KEY', '')
+PESAPAL_CONSUMER_SECRET = os.getenv('PESAPAL_CONSUMER_SECRET', '')
+
+# Base URL of your platform (no trailing slash) — mirrors FRONTEND_URL
+PESAPAL_BASE_URL = os.getenv('PESAPAL_BASE_URL', FRONTEND_URL)
+SITE_URL         = PESAPAL_BASE_URL
+
+# Platform IPN URL (SaaS billing — tenant pays you)
+PESAPAL_PLATFORM_IPN_URL = f'{PESAPAL_BASE_URL}/pesapal/ipn/platform/'
+CSRF_TRUSTED_ORIGINS = [
+    'https://meager-mayra-deteriorative.ngrok-free.dev',
+    'http://localhost:8000',
+    'http://rem.localhost:8000',
+    'http://*.localhost:8000',
+]
+# Tenant IPN base — /pesapal/ipn/tenant/{slug}/ is built dynamically
+
+PESAPAL_URLS = {
+    'sandbox': {
+        'auth':         'https://cybqa.pesapal.com/pesapalv3/api/Auth/RequestToken',
+        'register_ipn': 'https://cybqa.pesapal.com/pesapalv3/api/URLSetup/RegisterIPN',
+        'get_ipn_list': 'https://cybqa.pesapal.com/pesapalv3/api/URLSetup/GetIpnList',
+        'submit_order': 'https://cybqa.pesapal.com/pesapalv3/api/Transactions/SubmitOrderRequest',
+        'get_status':   'https://cybqa.pesapal.com/pesapalv3/api/Transactions/GetTransactionStatus',
+        'refund':       'https://cybqa.pesapal.com/pesapalv3/api/Transactions/RefundRequest',
+        'cancel_order': 'https://cybqa.pesapal.com/pesapalv3/api/Transactions/CancelOrder',
+    },
+    'production': {
+        'auth':         'https://pay.pesapal.com/v3/api/Auth/RequestToken',
+        'register_ipn': 'https://pay.pesapal.com/v3/api/URLSetup/RegisterIPN',
+        'get_ipn_list': 'https://pay.pesapal.com/v3/api/URLSetup/GetIpnList',
+        'submit_order': 'https://pay.pesapal.com/v3/api/Transactions/SubmitOrderRequest',
+        'get_status':   'https://pay.pesapal.com/v3/api/Transactions/GetTransactionStatus',
+        'refund':       'https://pay.pesapal.com/v3/api/Transactions/RefundRequest',
+        'cancel_order': 'https://pay.pesapal.com/v3/api/Transactions/CancelOrder',
     },
 }
