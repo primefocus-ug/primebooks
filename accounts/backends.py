@@ -85,9 +85,30 @@ class RoleBasedAuthBackend(ModelBackend):
     def get_user(self, user_id):
         """
         Get user by ID - only in tenant schemas.
+
+        Also acts as a last-resort guard against cross-schema session bleed:
+        if a PublicUser UUID somehow reaches this point (StalePublicSession
+        middleware should have scrubbed it earlier), the PK coercion below will
+        raise before we touch the database, and we return None cleanly.
         """
-        # Skip if in public schema
+        # Skip if in public schema — PublicIdentifierBackend handles that
         if connection.schema_name == 'public':
+            return None
+
+        # Guard: coerce PK type early so we never hit the DB with a UUID
+        # when CustomUser expects an integer.  This mirrors what Django's
+        # _get_user_session_key does, but here we catch the exception ourselves.
+        try:
+            User._meta.pk.to_python(user_id)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                "RoleBasedAuthBackend.get_user(%r): PK type mismatch on schema "
+                "'%s' — stale public-schema session reached the backend. "
+                "Returning None (anonymous).",
+                user_id,
+                connection.schema_name,
+            )
             return None
 
         try:
@@ -96,5 +117,7 @@ class RoleBasedAuthBackend(ModelBackend):
             return None
         except Exception as e:
             import logging
-            logging.getLogger(__name__).error(f"Unexpected error in get_user({user_id}): {e}")
+            logging.getLogger(__name__).error(
+                "Unexpected error in get_user(%r): %s", user_id, e
+            )
             return None

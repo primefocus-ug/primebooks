@@ -54,6 +54,86 @@ def clear_session_registry(user_id: int) -> None:
 
 
 # =============================================================================
+# StalePublicSessionMiddleware
+# =============================================================================
+
+class StalePublicSessionMiddleware:
+    """
+    Intercepts cross-schema session bleed BEFORE AuthenticationMiddleware runs.
+
+    Root cause
+    ----------
+    When a browser that has a public-schema session (PublicUser, UUID PK)
+    navigates to a tenant URL, Django's AuthenticationMiddleware tries to
+    resolve request.user.  This forces the SimpleLazyObject wrapper to call
+    _get_user_session_key(), which does:
+
+        get_user_model()._meta.pk.to_python(session['_auth_user_id'])
+
+    On a tenant schema get_user_model() returns CustomUser (integer PK), so
+    passing a UUID string raises ValidationError and produces a 500.
+
+    This middleware must be placed AFTER SessionMiddleware (session is loaded)
+    but BEFORE AuthenticationMiddleware (user not yet resolved).  It reads the
+    raw session dict, detects a PK that cannot satisfy the current schema's
+    user model, and scrubs only the auth keys — leaving CSRF, messages, etc.
+    intact — so AuthenticationMiddleware sees an anonymous session.
+
+    Required MIDDLEWARE position (settings.py):
+        'django.contrib.sessions.middleware.SessionMiddleware',
+        'accounts.middleware.StalePublicSessionMiddleware',   ← HERE
+        'django.contrib.auth.middleware.AuthenticationMiddleware',
+        'django_otp.middleware.OTPMiddleware',
+        ...
+    """
+
+    _AUTH_KEY = '_auth_user_id'
+    _BACKEND_KEY = '_auth_user_backend'
+    _HASH_KEY = '_auth_user_hash'
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        self._scrub_if_stale(request)
+        return self.get_response(request)
+
+    def _scrub_if_stale(self, request):
+        # Only relevant on tenant schemas
+        schema_name = getattr(connection, 'schema_name', 'public')
+        if schema_name == get_public_schema_name():
+            return
+
+        user_id = request.session.get(self._AUTH_KEY)
+        if user_id is None:
+            return  # Already anonymous
+
+        try:
+            # Mirror exactly what Django's _get_user_session_key does.
+            # If this raises, the session was written by a different user model
+            # (e.g. PublicUser with UUID PK on the public schema).
+            from django.contrib.auth import get_user_model as _gum
+            _gum()._meta.pk.to_python(user_id)
+        except Exception:
+            backend = request.session.get(self._BACKEND_KEY, '<unknown>')
+            logger.warning(
+                "[StalePublicSession] Scrubbing session on tenant schema '%s': "
+                "user_id=%r from backend %r cannot be coerced to %s PK. "
+                "Request will proceed as anonymous.",
+                schema_name,
+                user_id,
+                backend,
+                'CustomUser',
+            )
+            # Remove only the three auth keys — preserve everything else
+            # (CSRF token, messages, language preference, etc.)
+            request.session.pop(self._AUTH_KEY, None)
+            request.session.pop(self._BACKEND_KEY, None)
+            request.session.pop(self._HASH_KEY, None)
+            request.session.modified = True
+
+
+# =============================================================================
 # StrictSingleSessionMiddleware
 # =============================================================================
 
@@ -78,7 +158,6 @@ class StrictSingleSessionMiddleware:
     # Paths that bypass enforcement entirely
     EXEMPT_PATHS = {
         '/accounts/login/',
-        '/accounts/login/complete/',   # bridge completion — login() is called here
         '/accounts/logout/',
         '/api/auth/login/',
         '/api/auth/register/',

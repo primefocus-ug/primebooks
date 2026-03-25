@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Payment Result</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f3f4f6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .card{background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.08);max-width:480px;width:100%;padding:36px;text-align:center}
+    .icon{font-size:64px;margin-bottom:16px}
+    h1{font-size:22px;font-weight:700;margin-bottom:8px}
+    p{font-size:14px;color:#6b7280;margin-bottom:4px}
+    .detail-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13px;text-align:left}
+    .detail-box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin:16px 0;text-align:left}
+    code{font-family:monospace;font-size:12px;background:#f3f4f6;padding:2px 5px;border-radius:4px}
+  </style>
+</head>
+<body>
+<div class="card">
+
+{% if status_result and status_result.success %}
+  {% with code=status_result.status_code %}
+
+    {% if code == 1 %}
+      <div class="icon">✅</div>
+      <h1 style="color:#1a6b4a;">Payment Successful!</h1>
+      <p>Your payment has been received and confirmed.</p>
+
+      {% if invoice_data %}
+      <div class="detail-box">
+        <div class="detail-row"><span style="color:#6b7280;">Invoice</span><span style="font-family:monospace;">{{ invoice_data.number }}</span></div>
+        <div class="detail-row" style="border:none;"><span style="color:#6b7280;">Amount</span><strong>{{ invoice_data.currency }} {{ invoice_data.amount }}</strong></div>
+      </div>
+      {% endif %}
+
+      {% if status_result.confirmation_code %}
+      <p style="margin-top:8px;">Confirmation: <code>{{ status_result.confirmation_code }}</code></p>
+      {% endif %}
+      <p style="margin-top:8px;font-size:12px;color:#9ca3af;">A receipt has been sent to your email if provided.</p>
+
+    {% elif code == 2 %}
+      <div class="icon">❌</div>
+      <h1 style="color:#dc2626;">Payment Failed</h1>
+      <p>{{ status_result.description|default:"Your payment could not be processed." }}</p>
+      <p style="margin-top:16px;">Please try again or contact <strong>{{ company.name }}</strong> for assistance.</p>
+      <a href="/pay/invoice/{{ token }}/"
+         style="display:inline-block;margin-top:20px;padding:12px 24px;background:#1a6b4a;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
+        Try Again
+      </a>
+
+    {% else %}
+      <div class="icon">⏳</div>
+      <h1>Payment Pending</h1>
+      <p>Your payment is being verified. You will receive a confirmation once it's complete.</p>
+      {% if tracking_id %}<p style="margin-top:8px;font-size:12px;color:#9ca3af;">Tracking: <code>{{ tracking_id }}</code></p>{% endif %}
+    {% endif %}
+
+  {% endwith %}
+
+{% else %}
+  <div class="icon">⚠️</div>
+  <h1>Could Not Verify</h1>
+  <p>We could not verify your payment status. Please contact {{ company.name }} with your reference number.</p>
+  {% if tracking_id %}<p style="margin-top:8px;font-size:12px;color:#9ca3af;">Reference: <code>{{ tracking_id }}</code></p>{% endif %}
+{% endif %}
+
+</div>
+</body>
+</html>

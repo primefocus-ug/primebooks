@@ -1,0 +1,582 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+  /* ── Page-level variables ───────────────────────────────────────────── */
+  :root {
+    --accent:          #0c19dd;
+    --accent-light:    #4c54c4;
+    --accent-glow:     rgba(12, 25, 221, 0.18);
+    --accent-gradient: linear-gradient(135deg, #0c19dd 0%, #4c54c4 100%);
+    --radius-card:     14px;
+    --radius-badge:    20px;
+  }
+
+  /* ── Store page wrapper ─────────────────────────────────────────────── */
+  .store-page {
+    min-height: calc(100vh - 80px);
+    padding: 40px 20px 80px;
+    background-color: var(--bg-primary);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* subtle grid pattern (same as signup) */
+  .store-page::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border-color) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border-color) 1px, transparent 1px);
+    background-size: 48px 48px;
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .store-page > * { position: relative; z-index: 1; }
+
+  /* ── Page header ────────────────────────────────────────────────────── */
+  .store-header {
+    max-width: 1200px;
+    margin: 0 auto 36px;
+  }
+
+  .store-header h2 {
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+
+  .store-header h2 i {
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-right: 6px;
+  }
+
+  .store-header p {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    margin: 0;
+  }
+
+  /* ── Alert messages ─────────────────────────────────────────────────── */
+  .store-alerts {
+    max-width: 1200px;
+    margin: 0 auto 24px;
+  }
+
+  .store-alerts .alert {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+  }
+
+  .store-alerts .alert-success {
+    border-color: color-mix(in srgb, #22c55e 40%, transparent);
+    background: color-mix(in srgb, #22c55e 8%, var(--bg-secondary));
+    color: var(--text-primary);
+  }
+
+  .store-alerts .alert-danger {
+    border-color: color-mix(in srgb, #e05252 40%, transparent);
+    background: color-mix(in srgb, #e05252 8%, var(--bg-secondary));
+    color: var(--text-primary);
+  }
+
+  /* ── Module grid ────────────────────────────────────────────────────── */
+  .module-grid {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 20px;
+  }
+
+  /* ── Module card ────────────────────────────────────────────────────── */
+  .module-card {
+    background: var(--bg-secondary);
+    border: 1.5px solid var(--border-color-light);
+    border-radius: var(--radius-card);
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+    overflow: hidden;
+  }
+
+  .module-card:hover {
+    border-color: var(--accent-light);
+    box-shadow: 0 8px 32px var(--accent-glow);
+    transform: translateY(-2px);
+  }
+
+  .module-card.is-active {
+    border-color: #22c55e;
+    border-width: 2px;
+    box-shadow: 0 4px 20px rgba(34, 197, 94, 0.12);
+  }
+
+  /* coloured top stripe for active cards */
+  .module-card.is-active::before {
+    content: '';
+    display: block;
+    height: 3px;
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+  }
+
+  /* pending payment — amber stripe */
+  .module-card.has-pending::before {
+    content: '';
+    display: block;
+    height: 3px;
+    background: linear-gradient(90deg, #f59e0b, #d97706);
+  }
+
+  .module-card.has-pending {
+    border-color: color-mix(in srgb, #f59e0b 50%, transparent);
+    border-width: 2px;
+  }
+
+  /* ── Card body ──────────────────────────────────────────────────────── */
+  .module-card-body {
+    padding: 22px 22px 16px;
+    flex: 1;
+  }
+
+  .module-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 14px;
+  }
+
+  /* icon bubble */
+  .module-icon-wrap {
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
+    border: 1px solid var(--border-color-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  .module-card.is-active .module-icon-wrap {
+    background: color-mix(in srgb, #22c55e 12%, var(--bg-primary));
+    border-color: color-mix(in srgb, #22c55e 30%, transparent);
+    color: #16a34a;
+  }
+
+  /* status badge */
+  .module-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 4px 10px;
+    border-radius: var(--radius-badge);
+  }
+
+  .module-badge.active {
+    background: color-mix(in srgb, #22c55e 15%, var(--bg-primary));
+    color: #16a34a;
+    border: 1px solid color-mix(in srgb, #22c55e 35%, transparent);
+  }
+
+  .module-badge.inactive {
+    background: var(--bg-primary);
+    color: var(--text-tertiary);
+    border: 1px solid var(--border-color-light);
+  }
+
+  .module-badge.pending-payment {
+    background: color-mix(in srgb, #f59e0b 15%, var(--bg-primary));
+    color: #d97706;
+    border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+  }
+
+  /* text */
+  .module-card h5 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+
+  .module-card p.desc {
+    font-size: 0.83rem;
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin: 0 0 14px;
+  }
+
+  /* pricing */
+  .module-price {
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .module-price.paid  { color: var(--accent-light); }
+  .module-price.free  { color: #16a34a; }
+
+  .module-since {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+  }
+
+  /* dependency warning */
+  .dep-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: color-mix(in srgb, #f59e0b 10%, var(--bg-primary));
+    border: 1px solid color-mix(in srgb, #f59e0b 30%, transparent);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-top: 12px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .dep-warning i { color: #f59e0b; flex-shrink: 0; margin-top: 1px; }
+
+  /* pending payment notice */
+  .pending-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: color-mix(in srgb, #f59e0b 8%, var(--bg-primary));
+    border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-top: 12px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .pending-notice i { color: #f59e0b; flex-shrink: 0; margin-top: 1px; }
+
+  /* ── Card footer / action button ────────────────────────────────────── */
+  .module-card-footer {
+    padding: 0 22px 20px;
+  }
+
+  .btn-module {
+    width: 100%;
+    padding: 10px 16px;
+    border-radius: 9px;
+    font-size: 0.87rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    cursor: pointer;
+    border: 1.5px solid transparent;
+    transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+    letter-spacing: 0.01em;
+  }
+
+  .btn-module:hover:not(:disabled) {
+    opacity: 0.88;
+    transform: translateY(-1px);
+  }
+
+  .btn-module:active:not(:disabled) { transform: translateY(0); }
+
+  /* Free activation — solid accent */
+  .btn-module.activate {
+    background: var(--accent-gradient);
+    color: #fff;
+    box-shadow: 0 3px 12px var(--accent-glow);
+  }
+
+  /* Paid activation — amber / payment styled */
+  .btn-module.pay-to-activate {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #fff;
+    box-shadow: 0 3px 12px rgba(245, 158, 11, 0.25);
+    border-color: transparent;
+  }
+
+  .btn-module.pay-to-activate:hover:not(:disabled) {
+    box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35);
+  }
+
+  /* Deactivate — ghost red */
+  .btn-module.deactivate {
+    background: transparent;
+    color: #e05252;
+    border-color: color-mix(in srgb, #e05252 40%, transparent);
+  }
+
+  .btn-module.deactivate:hover:not(:disabled) {
+    background: color-mix(in srgb, #e05252 8%, var(--bg-primary));
+    border-color: #e05252;
+    box-shadow: 0 3px 12px rgba(224, 82, 82, 0.15);
+  }
+
+  /* Pending — disabled amber outline */
+  .btn-module.pending {
+    background: transparent;
+    color: #d97706;
+    border-color: color-mix(in srgb, #f59e0b 40%, transparent);
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .btn-module:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ── Empty state ────────────────────────────────────────────────────── */
+  .store-empty {
+    max-width: 1200px;
+    margin: 0 auto;
+    text-align: center;
+    padding: 64px 20px;
+    color: var(--text-secondary);
+  }
+
+  .store-empty i {
+    font-size: 2.5rem;
+    color: var(--text-tertiary);
+    display: block;
+    margin-bottom: 16px;
+  }
+
+  /* ── Free-reactivation note ─────────────────────────────────────────── */
+  .reactivate-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .reactivate-note {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .reactivate-note i { color: #22c55e; }
+
+  /* ── Responsive ─────────────────────────────────────────────────────── */
+  @media (max-width: 640px) {
+    .module-grid { grid-template-columns: 1fr; }
+    .store-header h2 { font-size: 1.4rem; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="store-page">
+
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <div class="store-header">
+    <h2><i class="bi bi-shop"></i>PrimeBooks App Store</h2>
+    <p>Turn features on and off for your business. Changes take effect immediately.</p>
+  </div>
+
+  <!-- ── Flash messages ──────────────────────────────────────────────── -->
+  {% if messages %}
+  <div class="store-alerts">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ── Module cards ────────────────────────────────────────────────── -->
+  {% if modules_with_status %}
+  <div class="module-grid">
+    {% for item in modules_with_status %}
+
+    <div class="module-card {% if item.is_active %}is-active{% elif item.has_pending_payment %}has-pending{% endif %}">
+
+      <div class="module-card-body">
+
+        <div class="module-card-top">
+          <div class="module-icon-wrap">
+            <i class="{{ item.module.icon }}"></i>
+          </div>
+
+          {# Status badge #}
+          {% if item.is_active %}
+            <span class="module-badge active">
+              <i class="bi bi-check-circle-fill"></i> Active
+            </span>
+          {% elif item.has_pending_payment %}
+            <span class="module-badge pending-payment">
+              <i class="bi bi-hourglass-split"></i> Payment Pending
+            </span>
+          {% else %}
+            <span class="module-badge inactive">
+              <i class="bi bi-circle"></i> Inactive
+            </span>
+          {% endif %}
+        </div>
+
+        <h5>{{ item.module.label }}</h5>
+        <p class="desc">{{ item.module.description }}</p>
+
+        {# Pricing #}
+        {% if item.module.monthly_price > 0 %}
+          <p class="module-price paid">
+            <i class="bi bi-tag-fill"></i>
+            {{ item.module.monthly_price|floatformat:0|intcomma }} UGX / month
+          </p>
+        {% else %}
+          <p class="module-price free">
+            <i class="bi bi-check2-circle"></i> Included in plan
+          </p>
+        {% endif %}
+
+        {# Activated since #}
+        {% if item.is_active and item.activated_at %}
+          <span class="module-since">
+            Active since {{ item.activated_at|date:"d M Y" }}
+          </span>
+        {% endif %}
+
+        {# Dependency warning — only shown when inactive and deps not met #}
+        {% if not item.dependencies_met and not item.is_active %}
+          <div class="dep-warning">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span>
+              Requires:
+              {% for dep in item.module.dependencies.all %}
+                <strong>{{ dep.label }}</strong>{% if not forloop.last %}, {% endif %}
+              {% endfor %}
+            </span>
+          </div>
+        {% endif %}
+
+        {# Pending payment notice #}
+        {% if item.has_pending_payment and not item.is_active %}
+          <div class="pending-notice">
+            <i class="bi bi-hourglass-split"></i>
+            <span>
+              A payment is being processed. If you've already paid,
+              the module will activate automatically within a few minutes.
+            </span>
+          </div>
+        {% endif %}
+
+      </div><!-- /card-body -->
+
+      <div class="module-card-footer">
+
+        {% if item.is_active %}
+          {# ── Active → Deactivate ─────────────────────────── #}
+          <form method="POST"
+                action="{% url 'companies:deactivate_module' item.module.key %}">
+            {% csrf_token %}
+            <button type="submit" class="btn-module deactivate"
+                    onclick="return confirm(
+                      '{% if item.is_paid and item.paid_through %}Deactivate {{ item.module.label }}?\n\nYou can reactivate for free any time before {{ item.paid_through }}.\nYour data is preserved.{% else %}Deactivate {{ item.module.label }}?\n\nYour data will be preserved.{% endif %}'
+                    )">
+              <i class="bi bi-toggle-off"></i> Deactivate
+            </button>
+          </form>
+
+        {% elif item.has_pending_payment %}
+          {# ── Payment in flight ───────────────────────────── #}
+          <button class="btn-module pending" disabled>
+            <i class="bi bi-hourglass-split"></i> Processing Payment…
+          </button>
+
+        {% elif item.within_paid_period %}
+          {# ── Paid, deactivated, but still in billing window → free reactivation #}
+          <div class="reactivate-wrap">
+            <form method="POST"
+                  action="{% url 'companies:reactivate_module' item.module.key %}">
+              {% csrf_token %}
+              <button type="submit" class="btn-module activate"
+                      {% if not item.dependencies_met %}
+                        disabled
+                        title="Activate required modules first"
+                      {% endif %}>
+                <i class="bi bi-toggle-on"></i> Reactivate (free)
+              </button>
+            </form>
+            <p class="reactivate-note">
+              <i class="bi bi-calendar-check"></i>
+              Paid until {{ item.paid_through }}
+            </p>
+          </div>
+
+        {% elif item.is_paid %}
+          {# ── Paid module, billing window expired → new payment ─────────── #}
+          <form method="POST"
+                action="{% url 'companies:initiate_module_payment' item.module.key %}">
+            {% csrf_token %}
+            <button type="submit" class="btn-module pay-to-activate"
+                    {% if not item.dependencies_met %}
+                      disabled
+                      title="Activate required modules first"
+                    {% endif %}
+                    {% if item.dependencies_met %}
+                    onclick="return confirm(
+                      'Activate {{ item.module.label }} for {{ item.module.monthly_price|floatformat:0|intcomma }} UGX/month?\n\nYou will be redirected to our secure payment page.'
+                    )"
+                    {% endif %}>
+              <i class="bi bi-credit-card-fill"></i>
+              Pay &amp; Activate — {{ item.module.monthly_price|floatformat:0|intcomma }} UGX
+            </button>
+          </form>
+
+        {% else %}
+          {# ── Free module — direct activation ─────────────── #}
+          <form method="POST"
+                action="{% url 'companies:activate_module' item.module.key %}">
+            {% csrf_token %}
+            <button type="submit" class="btn-module activate"
+                    {% if not item.dependencies_met %}
+                      disabled
+                      title="Activate required modules first"
+                    {% endif %}>
+              <i class="bi bi-toggle-on"></i> Activate
+            </button>
+          </form>
+        {% endif %}
+
+      </div><!-- /card-footer -->
+
+    </div><!-- /module-card -->
+    {% endfor %}
+  </div><!-- /module-grid -->
+
+  {% else %}
+  <div class="store-empty">
+    <i class="bi bi-boxes"></i>
+    <p>No modules available yet. Contact support.</p>
+  </div>
+  {% endif %}
+
+</div><!-- /store-page -->
+{% endblock %}

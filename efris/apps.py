@@ -8,6 +8,7 @@ class EfrisConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'efris'
     verbose_name = 'EFRIS Integration'
+    module_key = 'efris'
 
     def ready(self):
         """Initialize EFRIS app"""

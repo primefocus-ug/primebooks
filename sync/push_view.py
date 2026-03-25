@@ -66,7 +66,7 @@ import time
 import logging
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone as tz
-
+from .e2e_middleware import e2e_sync_view
 from django.db import transaction, IntegrityError
 from django.utils import timezone as dj_timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -87,6 +87,7 @@ MAX_RECORDS_PER_TABLE = 5_000
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@e2e_sync_view
 def sync_push(request):
     """
     Accept dirty records from desktop, apply to server DB.

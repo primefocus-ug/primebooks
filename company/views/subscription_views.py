@@ -303,29 +303,12 @@ class SubscriptionUpgradeView(LoginRequiredMixin, View):
                     'message': 'Selected plan is not an upgrade. Use downgrade instead.'
                 }, status=400)
 
-            # Process through service
-            service = SubscriptionService()
-            result = service.upgrade_subscription(
-                company=company,
-                new_plan=new_plan,
-                billing_cycle=billing_cycle,
-                payment_method=payment_method,
-                upgraded_by=request.user
-            )
-
-            if result['success']:
-                messages.success(request, f"Successfully upgraded to {new_plan.display_name}!")
-
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return JsonResponse(result)
-
-                return redirect('companies:subscription_dashboard')
-            else:
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return JsonResponse(result, status=400)
-
-                messages.error(request, result.get('message', 'Upgrade failed'))
-                return redirect('companies:subscription_plans')
+            # Delegate to Pesapal payment flow — subscription is activated
+            # automatically by the IPN callback once payment is confirmed.
+            from .billing_views import InitiateSubscriptionPaymentView
+            view = InitiateSubscriptionPaymentView()
+            view.request = request
+            return view.post(request, plan_id=plan_id)
 
         except SubscriptionPlan.DoesNotExist:
             return JsonResponse({
@@ -521,28 +504,12 @@ class SubscriptionRenewView(LoginRequiredMixin, View):
             }, status=400)
 
         try:
-            # Process through service
-            service = SubscriptionService()
-            result = service.renew_subscription(
-                company=company,
-                billing_cycle=billing_cycle,
-                payment_method=payment_method,
-                renewed_by=request.user
-            )
-
-            if result['success']:
-                messages.success(request, 'Subscription renewed successfully!')
-
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return JsonResponse(result)
-
-                return redirect('companies:subscription_dashboard')
-            else:
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return JsonResponse(result, status=400)
-
-                messages.error(request, result.get('message', 'Renewal failed'))
-                return redirect('companies:subscription_dashboard')
+            # Delegate to Pesapal payment flow — subscription is activated
+            # automatically by the IPN callback once payment is confirmed.
+            from .billing_views import InitiateSubscriptionPaymentView
+            view = InitiateSubscriptionPaymentView()
+            view.request = request
+            return view.post(request, plan_id=company.plan_id)
 
         except Exception as e:
             logger.error(f"Error renewing subscription: {e}", exc_info=True)

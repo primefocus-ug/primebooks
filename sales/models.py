@@ -2143,6 +2143,13 @@ class Payment(OfflineIDMixin, models.Model):
         editable=False,
         null=True,
     )
+    receipt_number = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        db_index=True,
+        verbose_name="Receipt Number"
+    )
     store = models.ForeignKey('stores.Store', on_delete=models.PROTECT, null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0.01)])
     payment_method = models.CharField(max_length=20, choices=Sale.PAYMENT_METHODS)
@@ -2220,15 +2227,6 @@ class Payment(OfflineIDMixin, models.Model):
         # Auto-populate store from sale
         if not self.store_id and self.sale:
             self.store = self.sale.store
-
-        # Auto-populate payment summary
-        if not self.payment_summary and self.sale:
-            self.payment_summary = {
-                'payment_method': self.sale.payment_method,
-                'amount': str(self.sale.total_amount),
-                'currency': self.sale.currency,
-                'items_count': self.sale.item_count,
-            }
 
         super().save(*args, **kwargs)
 

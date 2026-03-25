@@ -1751,9 +1751,9 @@ body {
 .mobile-cart-fab {
   display: none;
   position: fixed;
-  bottom: 1.25rem;
+  bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 1rem);
   right: 1.25rem;
-  z-index: 500;
+  z-index: 1136; /* one above #pbBottomNav (1035) */
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -1790,6 +1790,36 @@ body {
 
 .mobile-cart-fab .fab-badge.has-items { transform: scale(1); }
 
+/* ── MOBILE BACK BAR ── */
+.mobile-back-bar { display: none; }
+
+@media (max-width: 768px) {
+  .mobile-back-bar {
+    display: flex;
+    align-items: center;
+    padding: .4rem .75rem;
+    background: var(--ink-2);
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .mobile-back-btn {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-family: var(--sans);
+    font-size: .82rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: .25rem 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-back-btn i { font-size: .9rem; }
+  .mobile-back-btn:active { opacity: .7; }
+}
+
 /* ── MOBILE PANEL SLIDE STATES ── */
 @media (max-width: 768px) {
 
@@ -1797,7 +1827,9 @@ body {
   .pos-layout {
     display: block;
     position: relative;
-    height: calc(100vh - var(--topbar-h, 49px) - var(--settingsbar-h, 41px));
+    /* Subtract topbar + settings bar + 58px bottom nav so content
+       never disappears behind the navigation bar */
+    height: calc(100vh - var(--topbar-h, 49px) - var(--settingsbar-h, 41px) - 58px - env(safe-area-inset-bottom, 0px));
     overflow: hidden;
   }
 
@@ -2029,8 +2061,8 @@ body {
 
   /* ─ Toast: full width at bottom on mobile ─ */
   .toast-shelf {
-    top: auto;
-    bottom: 5rem;
+    top: 4rem;
+    bottom: auto;
     right: .75rem;
     left: .75rem;
   }
@@ -2090,6 +2122,9 @@ body {
   .ss-summary-grid { margin: 12px 16px; }
   .ss-total-row { margin: 0 16px 16px; }
   .ss-actions { margin: 0 16px 12px; }
+
+  /* Lock body height to viewport so it doesn't extend behind bottom nav */
+  body { min-height: unset; height: 100vh; overflow: visible; }
 }
 
 /* ── TABLET (768–1023px) ── */
@@ -2641,6 +2676,8 @@ body {
   <input type="hidden" name="invoice_industry_code" id="invoiceIndustryCode" value="101">
   <input type="hidden" name="delivery_terms_code" id="deliveryTermsCode">
   <input type="hidden" name="is_export_invoice" id="isExportInvoiceField">
+  <input type="hidden" name="pesapal_mode" id="pesapalModeField" value="">
+  <!-- Values: "" = no Pesapal, "redirect" = Option A, "send_link" = Option B -->
 </form>
 
 <!-- LOADING OVERLAY -->
@@ -2850,6 +2887,13 @@ body {
 
   <!-- ─── RIGHT: CART + CONFIG ─── -->
   <aside class="right-panel">
+
+    <!-- Mobile: back to products bar -->
+    <div class="mobile-back-bar">
+      <button class="mobile-back-btn" onclick="toggleMobilePanel(false)" aria-label="Back to products">
+        <i class="bi bi-arrow-left"></i> Back to Products
+      </button>
+    </div>
 
     <!-- Tabs -->
     <div class="panel-tabs"
@@ -3135,39 +3179,93 @@ body {
 
         <!-- CARD extras -->
         <div class="pm-extra" id="pmExtra-CARD">
-          <div class="pm-extra-title"><i class="bi bi-credit-card me-1"></i>Card Details</div>
-          <div class="form-field">
-            <label class="label-sm">Card Reference / Approval Code</label>
-            <input type="text" class="pm-input" id="pmCardRef" placeholder="e.g. AUTH-789456">
-          </div>
-          <div class="form-field" style="margin-top:.5rem">
-            <label class="label-sm">Card Type</label>
-            <div style="display:flex; gap:.5rem">
-              <button class="settings-seg-btn active" data-cardtype="VISA" onclick="selectCardType('VISA')" style="flex:1; border:1px solid var(--line); border-radius:var(--radius-sm)">Visa</button>
-              <button class="settings-seg-btn" data-cardtype="MASTERCARD" onclick="selectCardType('MASTERCARD')" style="flex:1; border:1px solid var(--line); border-radius:var(--radius-sm)">Mastercard</button>
-              <button class="settings-seg-btn" data-cardtype="OTHER" onclick="selectCardType('OTHER')" style="flex:1; border:1px solid var(--line); border-radius:var(--radius-sm)">Other</button>
+          <div class="pm-extra-title"><i class="bi bi-credit-card me-1"></i>Card Payment</div>
+          <!-- Pesapal mode selector -->
+          <div class="form-field" style="margin-bottom:.75rem">
+            <label class="label-sm" style="margin-bottom:.4rem;display:block">Payment method</label>
+            <div style="display:flex;flex-direction:column;gap:.4rem">
+              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.5rem .625rem;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--lift);font-size:.78rem">
+                <input type="radio" name="cardMethod" value="manual" checked onchange="onCardMethodChange('manual')" style="accent-color:var(--accent)">
+                <span><strong>Manual</strong> — staff enters the card reference</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.5rem .625rem;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--lift);font-size:.78rem">
+                <input type="radio" name="cardMethod" value="redirect" onchange="onCardMethodChange('redirect')" style="accent-color:var(--accent)">
+                <span><strong>Pay via Pesapal</strong> — customer enters card on Pesapal</span>
+              </label>
             </div>
+          </div>
+          <!-- Manual fields -->
+          <div id="cardManualFields">
+            <div class="form-field">
+              <label class="label-sm">Card Reference</label>
+              <input type="text" class="pm-input" id="pmCardRef" placeholder="e.g. TXN-20241201-001">
+            </div>
+            <div class="form-field" style="margin-top:.5rem">
+              <label class="label-sm">Card Type</label>
+              <div style="display:flex;gap:.5rem">
+                <button class="settings-seg-btn active" data-cardtype="VISA" onclick="selectCardType('VISA')" style="flex:1;border:1px solid var(--line);border-radius:var(--radius-sm)">Visa</button>
+                <button class="settings-seg-btn" data-cardtype="MASTERCARD" onclick="selectCardType('MASTERCARD')" style="flex:1;border:1px solid var(--line);border-radius:var(--radius-sm)">Mastercard</button>
+                <button class="settings-seg-btn" data-cardtype="OTHER" onclick="selectCardType('OTHER')" style="flex:1;border:1px solid var(--line);border-radius:var(--radius-sm)">Other</button>
+              </div>
+            </div>
+          </div>
+          <!-- Pesapal info -->
+          <div id="cardPesapalInfo" style="display:none;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:var(--radius-sm);padding:.625rem .75rem;font-size:.75rem;color:var(--text-2);margin-top:.25rem">
+            💳 After confirming, the Pesapal payment page will open in a new tab. The customer enters their card details there securely.
           </div>
         </div>
 
         <!-- MOBILE_MONEY extras -->
         <div class="pm-extra" id="pmExtra-MOBILE_MONEY">
-          <div class="pm-extra-title"><i class="bi bi-phone me-1"></i>Mobile Money Details</div>
-          <div class="form-field">
-            <label class="label-sm">Transaction ID / Reference</label>
-            <input type="text" class="pm-input" id="pmMomoRef" placeholder="e.g. MTN-1234567890">
-          </div>
-          <div class="form-field" style="margin-top:.5rem">
-            <label class="label-sm">Network</label>
-            <div style="display:flex; gap:.5rem">
-              <button class="settings-seg-btn mtn active" data-momonet="MTN" onclick="selectMomoNetwork('MTN')" style="flex:1; border:1px solid var(--line); border-radius:var(--radius-sm)">MTN</button>
-              <button class="settings-seg-btn airtel" data-momonet="AIRTEL" onclick="selectMomoNetwork('AIRTEL')" style="flex:1; border:1px solid var(--line); border-radius:var(--radius-sm)">Airtel</button>
+          <div class="pm-extra-title"><i class="bi bi-phone me-1"></i>Mobile Money</div>
+
+          <!-- ── Pesapal mode selector ── -->
+          <div class="form-field" style="margin-bottom:.75rem">
+            <label class="label-sm" style="margin-bottom:.4rem;display:block">Payment method</label>
+            <div style="display:flex;flex-direction:column;gap:.4rem">
+
+              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.5rem .625rem;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--lift);font-size:.78rem" id="momoOptManual">
+                <input type="radio" name="momoMethod" value="manual" checked onchange="onMomoMethodChange('manual')" style="accent-color:var(--accent)">
+                <span><strong>Manual</strong> — staff enters the transaction reference</span>
+              </label>
+
+              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.5rem .625rem;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--lift);font-size:.78rem" id="momoOptRedirect">
+                <input type="radio" name="momoMethod" value="redirect" onchange="onMomoMethodChange('redirect')" style="accent-color:var(--accent)">
+                <span><strong>Pay now via Pesapal</strong> — customer pays at counter</span>
+              </label>
+
+              <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.5rem .625rem;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--lift);font-size:.78rem" id="momoOptLink">
+                <input type="radio" name="momoMethod" value="send_link" onchange="onMomoMethodChange('send_link')" style="accent-color:var(--accent)">
+                <span><strong>Send payment link</strong> — customer pays remotely</span>
+              </label>
+
             </div>
           </div>
-          <div class="form-field" style="margin-top:.5rem">
-            <label class="label-sm">Phone Number</label>
-            <input type="tel" class="pm-input" id="pmMomoPhone" placeholder="e.g. 0771234567">
+
+          <!-- Manual fields (shown when manual is selected) -->
+          <div id="momoManualFields">
+            <div class="form-field">
+              <label class="label-sm">Transaction ID / Reference</label>
+              <input type="text" class="pm-input" id="pmMomoRef" placeholder="e.g. MTN-1234567890">
+            </div>
+            <div class="form-field" style="margin-top:.5rem">
+              <label class="label-sm">Network</label>
+              <div style="display:flex;gap:.5rem">
+                <button class="settings-seg-btn mtn active" data-momonet="MTN" onclick="selectMomoNetwork('MTN')" style="flex:1;border:1px solid var(--line);border-radius:var(--radius-sm)">MTN</button>
+                <button class="settings-seg-btn airtel" data-momonet="AIRTEL" onclick="selectMomoNetwork('AIRTEL')" style="flex:1;border:1px solid var(--line);border-radius:var(--radius-sm)">Airtel</button>
+              </div>
+            </div>
+            <div class="form-field" style="margin-top:.5rem">
+              <label class="label-sm">Phone Number</label>
+              <input type="tel" class="pm-input" id="pmMomoPhone" placeholder="e.g. 0771234567">
+            </div>
           </div>
+
+          <!-- Pesapal info (shown when redirect or send_link selected) -->
+          <div id="momoMomoInfo" style="display:none;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:var(--radius-sm);padding:.625rem .75rem;font-size:.75rem;color:var(--text-2);margin-top:.25rem">
+            <div id="momoMomoInfoText"></div>
+          </div>
+
         </div>
 
         <!-- BANK_TRANSFER extras -->
@@ -7133,6 +7231,8 @@ console.log('✅ Inventory Panel Loaded');
 {% block extra_js %}
 <script>
 const CREATE_CUSTOMER_URL = "{% url 'sales:create_customer_ajax' %}";
+const PESAPAL_INITIATE_URL = "{% url 'sales:initiate_pesapal_payment' sale_id=0 %}".replace('/0/', '/');
+const PESAPAL_SEND_LINK_URL = "{% url 'sales:send_payment_link' sale_id=0 %}".replace('/0/', '/');
 const DEFAULT_STORE = {
   name: "{{ default_store.name|escapejs }}",
   phone: "{{ default_store.phone|default:''|escapejs }}",
@@ -9424,17 +9524,64 @@ function onBarDueDateChange() {
 // ═══════════════════════════════════════════════
 // COMPLETE SALE
 // ═══════════════════════════════════════════════
+// ── Momo method state ────────────────────────────────────────────────────────
+let currentMomoMethod = 'manual'; // 'manual' | 'redirect' | 'send_link'
+
+function onMomoMethodChange(method) {
+  currentMomoMethod = method;
+  const manualFields = document.getElementById('momoManualFields');
+  const infoBox      = document.getElementById('momoMomoInfo');
+  const infoText     = document.getElementById('momoMomoInfoText');
+  const confirmBtn   = document.getElementById('confirmSaleBtn');
+
+  if (method === 'manual') {
+    manualFields.style.display = 'block';
+    infoBox.style.display      = 'none';
+    confirmBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Confirm Sale';
+
+  } else if (method === 'redirect') {
+    manualFields.style.display = 'none';
+    infoBox.style.display      = 'block';
+    infoText.innerHTML = '📱 After confirming, the Pesapal payment page will open in a new tab. The customer pays there, then you\'ll be taken to the sale detail page.';
+    confirmBtn.innerHTML = '<i class="bi bi-box-arrow-up-right"></i> Confirm & Open Pesapal';
+
+  } else if (method === 'send_link') {
+    manualFields.style.display = 'none';
+    infoBox.style.display      = 'block';
+    infoText.innerHTML = '🔗 After confirming, the sale will be saved as <strong>Pending Payment</strong> and a payment link will be sent to the customer\'s phone/email.';
+    confirmBtn.innerHTML = '<i class="bi bi-send"></i> Confirm & Send Link';
+  }
+}
+
+// ── Card method state ─────────────────────────────────────────────────────────
+let currentCardMethod = 'manual';
+
+function onCardMethodChange(method) {
+  currentCardMethod = method;
+  const manualFields  = document.getElementById('cardManualFields');
+  const pesapalInfo   = document.getElementById('cardPesapalInfo');
+  const confirmBtn    = document.getElementById('confirmSaleBtn');
+  if (method === 'manual') {
+    manualFields.style.display = 'block';
+    pesapalInfo.style.display  = 'none';
+    confirmBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Confirm Sale';
+  } else {
+    manualFields.style.display = 'none';
+    pesapalInfo.style.display  = 'block';
+    confirmBtn.innerHTML = '<i class="bi bi-box-arrow-up-right"></i> Confirm & Open Pesapal';
+  }
+}
+
 async function confirmSaleFromModal() {
-  // Close modal and finalize
   const modalEl = document.getElementById('paymentModal');
-  const modal = bootstrap.Modal.getInstance(modalEl);
+  const modal   = bootstrap.Modal.getInstance(modalEl);
   if (modal) modal.hide();
 
-  // Apply selected payment
+  // Apply selected payment method
   SaleState.paymentMethod = pmModalSelectedMethod;
   document.getElementById('paymentMethodField').value = pmModalSelectedMethod;
 
-  // Apply credit due date if credit method
+  // Apply credit due date
   if (pmModalSelectedMethod === 'CREDIT') {
     const cdVal = document.getElementById('pmCreditDueDate')?.value;
     if (cdVal) {
@@ -9444,7 +9591,315 @@ async function confirmSaleFromModal() {
     }
   }
 
+  // Set Pesapal mode on the hidden field
+  const pesapalMode = (pmModalSelectedMethod === 'MOBILE_MONEY') ? currentMomoMethod : '';
+  document.getElementById('pesapalModeField').value =
+    (pesapalMode === 'manual') ? '' : pesapalMode;
+
+  // ── Mobile Money: Pesapal redirect ───────────────────────────────────────
+  if (pmModalSelectedMethod === 'MOBILE_MONEY' && currentMomoMethod === 'redirect') {
+    await completeSaleWithPesapalRedirect();
+    return;
+  }
+
+  // ── Mobile Money: Send link ──────────────────────────────────────────────
+  if (pmModalSelectedMethod === 'MOBILE_MONEY' && currentMomoMethod === 'send_link') {
+    await completeSaleWithPaymentLink();
+    return;
+  }
+
+  // ── Card: Pesapal redirect ───────────────────────────────────────────────
+  if (pmModalSelectedMethod === 'CARD' && currentCardMethod === 'redirect') {
+    await completeSaleWithPesapalRedirect();
+    return;
+  }
+
+  // ── Standard flow (manual, cash, card, etc.) ─────────────────────────────
   await completeSale();
+}
+
+// ── Option A: Create sale then open Pesapal ──────────────────────────────────
+
+async function completeSaleWithPesapalRedirect() {
+  const completeBtn = document.getElementById('completeSaleBtn');
+  const origHTML    = completeBtn?.innerHTML || '';
+
+  // ── Open the tab NOW while we're still in the user-gesture call stack ──
+  // Browsers block window.open() called inside async/await after a fetch.
+  // Opening a blank tab immediately (synchronously) and navigating it later
+  // is the standard workaround for this restriction.
+  const pesapalTab = window.open('', '_blank', 'noopener');
+  if (pesapalTab) {
+    pesapalTab.document.write(
+      '<html><body style="font-family:sans-serif;padding:2rem;color:#555">' +
+      '<p>⏳ Creating sale, please wait…</p></body></html>'
+    );
+  }
+
+  if (completeBtn) {
+    completeBtn.disabled = true;
+    completeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creating sale…';
+  }
+
+  try {
+    // Step 1: Create the sale normally (AJAX)
+    const form     = document.getElementById('createSaleForm');
+    const formData = new FormData(form);
+
+    const response = await fetch(form.action || window.location.href, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!data.success && !data.sale_created) {
+      if (pesapalTab && !pesapalTab.closed) pesapalTab.close();
+      showPosError({
+        title: 'Sale Failed',
+        errors: parseSaleErrors(data, response.status),
+        rawData: data,
+        httpStatus: response.status,
+        onRetry: () => completeSaleWithPesapalRedirect(),
+      });
+      return;
+    }
+
+    const saleId = data.sale?.id;
+    if (!saleId) {
+      if (pesapalTab && !pesapalTab.closed) pesapalTab.close();
+      showPosError({
+        title: 'Sale Error',
+        errors: [{ message: 'Sale created but no ID returned. Please check the sale list.', severity: 'warning' }],
+      });
+      return;
+    }
+
+    // Step 2: Initiate Pesapal payment for this sale
+    if (completeBtn) {
+      completeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Opening Pesapal…';
+    }
+    if (pesapalTab && !pesapalTab.closed) {
+      pesapalTab.document.body.innerHTML =
+        '<p style="font-family:sans-serif;padding:2rem;color:#555">⏳ Connecting to Pesapal…</p>';
+    }
+
+    const pesapalResp = await fetch(`${PESAPAL_INITIATE_URL}${saleId}/`, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+
+    const pesapalData = await pesapalResp.json();
+
+    if (!pesapalData.success) {
+      // Sale was created but Pesapal failed — close blank tab, go to sale detail
+      if (pesapalTab && !pesapalTab.closed) pesapalTab.close();
+      showPosError({
+        title: 'Sale Saved — Payment Setup Failed',
+        errors: [{ message: pesapalData.error || 'Could not initiate Pesapal payment.', severity: 'warning' }],
+      });
+      setTimeout(() => { window.location.href = data.sale.detail_url; }, 2500);
+      return;
+    }
+
+    // Step 3: Navigate the pre-opened tab to the Pesapal URL
+    if (pesapalTab && !pesapalTab.closed) {
+      pesapalTab.location.href = pesapalData.pesapal_url;
+    } else {
+      // Tab was closed by user in the meantime — fall back to same-tab navigation
+      window.location.href = pesapalData.pesapal_url;
+      return;
+    }
+
+    // Brief toast then redirect this tab to sale detail
+    _showPesapalToast(
+      '✅ Sale saved! Pesapal payment page opened in a new tab.',
+      () => { window.location.href = pesapalData.sale_detail_url; },
+    );
+
+  } catch (err) {
+    if (pesapalTab && !pesapalTab.closed) pesapalTab.close();
+    showPosError({
+      title: 'Network Error',
+      errors: [{ message: err.message, severity: 'error' }],
+    });
+  } finally {
+    if (completeBtn) {
+      completeBtn.disabled  = false;
+      completeBtn.innerHTML = origHTML;
+    }
+  }
+}
+
+
+// ── Option B: Create sale then send payment link ─────────────────────────────
+
+async function completeSaleWithPaymentLink() {
+  const completeBtn = document.getElementById('completeSaleBtn');
+  const origHTML    = completeBtn?.innerHTML || '';
+
+  if (completeBtn) {
+    completeBtn.disabled = true;
+    completeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving sale…';
+  }
+
+  try {
+    // Step 1: Create the sale (AJAX — same as normal)
+    const form     = document.getElementById('createSaleForm');
+    const formData = new FormData(form);
+
+    const response = await fetch(form.action || window.location.href, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!data.success && !data.sale_created) {
+      showPosError({
+        title: 'Sale Failed',
+        errors: parseSaleErrors(data, response.status),
+        rawData: data,
+        httpStatus: response.status,
+        onRetry: () => completeSaleWithPaymentLink(),
+      });
+      return;
+    }
+
+    const saleId = data.sale?.id;
+    if (!saleId) {
+      showPosError({
+        title: 'Sale Error',
+        errors: [{ message: 'Sale created but no ID returned.', severity: 'warning' }],
+      });
+      return;
+    }
+
+    // Step 2: Send the payment link
+    if (completeBtn) {
+      completeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sending link…';
+    }
+
+    const linkResp = await fetch(`${PESAPAL_SEND_LINK_URL}${saleId}/`, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRFToken': getCookie('csrftoken'),
+      },
+    });
+
+    const linkData = await linkResp.json();
+
+    if (linkData.success) {
+      // Show success overlay with send confirmation
+      data.sale.payment_link_sent = true;
+      data.sale.payment_link_sent_to = linkData.sent_to;
+      data.sale.payment_link_customer = linkData.customer;
+      showSaleSuccessOverlay(data.sale);
+    } else {
+      // Sale saved but link failed — show success with warning
+      data.sale.payment_link_warning = linkData.error || 'Could not send payment link.';
+      showSaleSuccessOverlay(data.sale);
+    }
+
+  } catch (err) {
+    showPosError({
+      title: 'Network Error',
+      errors: [{ message: err.message, severity: 'error' }],
+    });
+  } finally {
+    if (completeBtn) {
+      completeBtn.disabled  = false;
+      completeBtn.innerHTML = origHTML;
+    }
+  }
+}
+
+
+// ── Toast for Pesapal redirect ────────────────────────────────────────────────
+
+function _showPesapalToast(message, onDone) {
+  const existing = document.getElementById('pesapalToast');
+  if (existing) existing.remove();
+
+  const el = document.createElement('div');
+  el.id = 'pesapalToast';
+  el.innerHTML = `
+    <div style="
+      position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+      background:#10b981;color:#fff;border-radius:10px;
+      padding:14px 24px;font-size:.875rem;font-weight:600;
+      box-shadow:0 8px 32px rgba(16,185,129,.4);z-index:99999;
+      display:flex;align-items:center;gap:10px;min-width:320px;
+    ">
+      <span>${message}</span>
+      <span style="font-size:.75rem;opacity:.8" id="pesapalCountdown">Redirecting in 3s…</span>
+    </div>`;
+  document.body.appendChild(el);
+
+  let seconds = 3;
+  const interval = setInterval(() => {
+    seconds--;
+    const cd = document.getElementById('pesapalCountdown');
+    if (cd) cd.textContent = `Redirecting in ${seconds}s…`;
+    if (seconds <= 0) {
+      clearInterval(interval);
+      el.remove();
+      if (onDone) onDone();
+    }
+  }, 1000);
+}
+
+
+// ── Patch showSaleSuccessOverlay to show payment link info ───────────────────
+
+const _originalShowSaleSuccessOverlay = showSaleSuccessOverlay;
+function showSaleSuccessOverlay(sale) {
+  _originalShowSaleSuccessOverlay(sale);
+
+  // Inject payment link sent badge if applicable
+  if (sale.payment_link_sent || sale.payment_link_warning) {
+    setTimeout(() => {
+      const overlay = document.getElementById('saleSuccessOverlay');
+      if (!overlay) return;
+
+      const badge = document.createElement('div');
+      badge.style.cssText = `
+        background:${sale.payment_link_sent ? 'rgba(16,185,129,.15)' : 'rgba(245,158,11,.15)'};
+        border:1px solid ${sale.payment_link_sent ? 'rgba(16,185,129,.3)' : 'rgba(245,158,11,.3)'};
+        border-radius:8px;padding:10px 14px;margin:12px 20px 0;
+        font-size:.78rem;color:${sale.payment_link_sent ? '#10b981' : '#f59e0b'};
+        display:flex;align-items:center;gap:8px;
+      `;
+
+      if (sale.payment_link_sent) {
+        badge.innerHTML = `
+          <i class="bi bi-send-check-fill"></i>
+          <span>Payment link sent to <strong>${sale.payment_link_customer}</strong> via ${sale.payment_link_sent_to}</span>
+        `;
+      } else {
+        badge.innerHTML = `
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          <span>${sale.payment_link_warning}</span>
+        `;
+      }
+
+      // Insert before the action buttons
+      const footer = overlay.querySelector('.ss-footer') || overlay.lastElementChild;
+      if (footer) footer.parentNode.insertBefore(badge, footer);
+    }, 250);
+  }
 }
 (function injectErrorStyles() {
   if (document.getElementById('posErrorStyles')) return;
@@ -11113,13 +11568,17 @@ function toggleMobilePanel(forceOpen) {
 
   layout.classList.toggle('cart-open', _mobileCartOpen);
 
-  // Swap icon: cart when on products side, arrow-back when on cart side
-  fabIcon.className = _mobileCartOpen ? 'bi bi-arrow-left' : 'bi bi-cart3';
-  fab.style.background = _mobileCartOpen ? 'var(--ink-3)' : 'var(--accent)';
-  fab.style.color       = _mobileCartOpen ? 'var(--text)'  : '#fff';
-  fab.style.boxShadow   = _mobileCartOpen
-    ? '0 4px 16px rgba(0,0,0,.35)'
-    : '0 4px 20px rgba(59,130,246,.45)';
+  if (_mobileCartOpen) {
+    // Cart is open — hide FAB so it never overlaps Complete Sale button
+    fab.style.display = 'none';
+  } else {
+    // Back to products — restore FAB as blue cart button
+    fab.style.display = 'flex';
+    fabIcon.className = 'bi bi-cart3';
+    fab.style.background = 'var(--accent)';
+    fab.style.color      = '#fff';
+    fab.style.boxShadow  = '0 4px 20px rgba(59,130,246,.45)';
+  }
 }
 
 // Keep FAB badge in sync with cart count
@@ -11137,15 +11596,17 @@ function syncMobileFabBadge() {
   }
 }
 
-// Patch renderCart to also sync the FAB badge
-const _origRenderCart = typeof renderCart === 'function' ? renderCart : null;
+// Patch updateCartDisplay (the real cart render function) to also sync FAB badge
+const _origRenderCart = typeof updateCartDisplay === 'function' ? updateCartDisplay : null;
 if (_origRenderCart) {
-  renderCart = function(...args) {
+  updateCartDisplay = function(...args) {
     const result = _origRenderCart.apply(this, args);
     syncMobileFabBadge();
     return result;
   };
 }
+// Sync on load in case cart has items already
+syncMobileFabBadge();
 
 // When completing a sale on mobile, auto-return to products view
 document.addEventListener('sale:completed', () => {

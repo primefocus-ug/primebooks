@@ -3,6 +3,44 @@ from django.shortcuts import redirect
 from company.models import Company
 
 
+class RequireModuleMixin:
+    """
+    Mixin for class-based views.
+    Blocks access if the tenant has not activated the required module.
+
+    Usage:
+        class AppointmentListView(RequireModuleMixin, LoginRequiredMixin, ListView):
+            required_module = 'salon'
+            model = Appointment
+            template_name = 'salon/appointments.html'
+
+    Notice the pattern:
+    - RequireModuleMixin comes FIRST in the class parents
+    - This ensures dispatch() is checked before Django tries
+      to load any data for the view
+    """
+    required_module = None  # Set this on every CBV that uses this mixin
+
+    def dispatch(self, request, *args, **kwargs):
+        if not self.required_module:
+            raise ValueError(
+                f"{self.__class__.__name__} must define required_module. "
+                f"Example: required_module = 'salon'"
+            )
+
+        active = getattr(request, 'active_modules', set())
+
+        if self.required_module not in active:
+            messages.warning(
+                request,
+                f"'{self.required_module.replace('_', ' ').title()}' module is not enabled. "
+                f"Enable it from your App Store."
+            )
+            return redirect('company:module_store')
+
+        return super().dispatch(request, *args, **kwargs)
+
+
 class CompanyRestrictedFormMixin:
     company_field_name = 'company'
 

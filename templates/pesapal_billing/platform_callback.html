@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Payment Result — {{ request.user.company.name }}{% endblock %}
+
+{% block content %}
+<div style="max-width:580px;margin:0 auto;">
+
+  {% if status_result and status_result.success %}
+    {% with code=status_result.status_code %}
+
+      {% if code == 1 %}
+        <div style="text-align:center;padding:40px 0 24px;">
+          <div style="font-size:60px;margin-bottom:12px;">✅</div>
+          <h1 style="font-size:24px;font-weight:700;color:#1a6b4a;margin-bottom:8px;">
+            Payment Successful!
+          </h1>
+          <p style="color:#4b5563;">Your subscription has been activated.</p>
+        </div>
+
+        {% if platform_invoice %}
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-bottom:20px;">
+          <div style="font-size:13px;font-weight:600;color:#9ca3af;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;">Payment Details</div>
+          <table style="width:100%;font-size:14px;border-collapse:collapse;">
+            <tr><td style="padding:6px 0;color:#6b7280;">Invoice</td><td style="font-family:monospace;">{{ platform_invoice.invoice_number }}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280;">Plan</td><td>{{ platform_invoice.plan.display_name }}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280;">Amount</td><td><strong>{{ platform_invoice.currency }} {{ platform_invoice.amount }}</strong></td></tr>
+            {% if status_result.payment_method %}<tr><td style="padding:6px 0;color:#6b7280;">Method</td><td>{{ status_result.payment_method }}</td></tr>{% endif %}
+            {% if status_result.confirmation_code %}<tr><td style="padding:6px 0;color:#6b7280;">Confirmation</td><td style="font-family:monospace;font-size:12px;">{{ status_result.confirmation_code }}</td></tr>{% endif %}
+          </table>
+        </div>
+        {% endif %}
+
+        <div style="text-align:center;">
+          <a href="{% url 'companies:subscription_dashboard' %}"
+             style="display:inline-block;padding:12px 28px;background:#1a6b4a;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
+            Go to Dashboard
+          </a>
+        </div>
+
+      {% elif code == 2 %}
+        <div style="text-align:center;padding:40px 0 24px;">
+          <div style="font-size:60px;margin-bottom:12px;">❌</div>
+          <h1 style="font-size:22px;font-weight:700;color:#dc2626;margin-bottom:8px;">Payment Failed</h1>
+          <p style="color:#4b5563;">{{ status_result.description|default:"Your payment could not be processed." }}</p>
+        </div>
+        <div style="text-align:center;">
+          <a href="{% url 'companies:subscription_plans' %}"
+             style="display:inline-block;padding:12px 28px;background:#1a6b4a;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">
+            Try Again
+          </a>
+        </div>
+
+      {% else %}
+        <div style="text-align:center;padding:40px 0 24px;">
+          <div style="font-size:60px;margin-bottom:12px;">⏳</div>
+          <h1 style="font-size:22px;font-weight:700;margin-bottom:8px;">Verifying Payment…</h1>
+          <p style="color:#4b5563;">Your payment is being processed. Check your email for confirmation.</p>
+        </div>
+      {% endif %}
+
+    {% endwith %}
+  {% else %}
+    <div style="text-align:center;padding:40px 0 24px;">
+      <div style="font-size:60px;margin-bottom:12px;">⚠️</div>
+      <h1 style="font-size:22px;font-weight:700;margin-bottom:8px;">Could Not Verify Payment</h1>
+      <p style="color:#4b5563;">Please contact support if you were charged.</p>
+      {% if tracking_id %}<p style="margin-top:8px;font-size:12px;color:#9ca3af;">Reference: <code>{{ tracking_id }}</code></p>{% endif %}
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

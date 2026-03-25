@@ -1977,6 +1977,29 @@ def process_sale_creation(request, company):
     """
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
+    # ── Broken-transaction guard ─────────────────────────────────────────────
+    # A Celery worker running on the same process/connection pool can leave a
+    # transaction in a broken state (e.g. after a UniqueViolation in a stock
+    # movement).  If we enter this view with a dirty connection we must close
+    # it before touching the DB — otherwise every query raises
+    # TransactionManagementError and the sale fails with a 500.
+    try:
+        if connection.in_atomic_block:
+            logger.error(
+                "process_sale_creation entered with an open atomic block — "
+                "forcing connection close to recover clean state"
+            )
+            connection.close()
+        elif connection.needs_rollback:
+            logger.error(
+                "process_sale_creation entered with needs_rollback=True — "
+                "forcing connection close to recover clean state"
+            )
+            connection.close()
+    except Exception as conn_check_err:
+        logger.warning(f"Connection pre-check failed (non-fatal): {conn_check_err}")
+    # ── End guard ────────────────────────────────────────────────────────────
+
     try:
         sale = _process_sale_atomic(request, company)
 
@@ -2091,7 +2114,12 @@ def _process_sale_atomic(request, company):
     # sees total_paid=0 and incorrectly shows "Pending Payment".
     # We prefer an explicit `payment_amount` from the form; otherwise we
     # fall back to the sale's total_amount (the whole amount was collected).
-    if sale.payment_method != 'CREDIT':
+    # Skip entirely when pesapal_mode=redirect/send_link — payment hasn't
+    # happened yet; Pesapal's IPN/callback will confirm it later.
+    _pesapal_mode = request.POST.get('pesapal_mode', '').strip()
+    _is_pesapal_pending = _pesapal_mode in ('redirect', 'send_link')
+
+    if sale.payment_method != 'CREDIT' and not _is_pesapal_pending:
         explicit_amount = request.POST.get('payment_amount', '').strip()
         try:
             pay_amount = Decimal(explicit_amount) if explicit_amount else Decimal(str(sale.total_amount))
@@ -2119,7 +2147,17 @@ def _process_sale_atomic(request, company):
                 # Log but never let a Payment creation failure roll back the sale.
                 logger.error(f"Failed to auto-create Payment for sale {sale.id}: {e}", exc_info=True)
 
-    if getattr(sale, '_defer_auto_fiscalize', False):
+    # For Pesapal flows the payment hasn't happened yet — mark PENDING and
+    # skip auto-fiscalization (fiscalize after Pesapal confirms via IPN/callback).
+    if _is_pesapal_pending:
+        sale.payment_status = 'PENDING'
+        sale.save(update_fields=['payment_status'])
+        logger.info(
+            f"Sale {sale.document_number} set to PENDING — awaiting Pesapal payment "
+            f"(mode={_pesapal_mode})"
+        )
+
+    if getattr(sale, '_defer_auto_fiscalize', False) and not _is_pesapal_pending:
         try:
             store_config = sale.store.effective_efris_config
             if (store_config.get('enabled', False) and
@@ -2139,12 +2177,11 @@ def _process_sale_atomic(request, company):
             # roll back a successfully created sale.
             logger.error(f"Deferred auto-fiscalization scheduling failed for sale {sale.id}: {e}")
 
-    if sale.document_type == 'RECEIPT':
-        try:
-            from .tasks import process_receipt_async
-            transaction.on_commit(lambda: process_receipt_async.delay(sale.id))
-        except Exception as e:
-            logger.warning(f"Background receipt processing failed for sale {sale.id}: {e}")
+    # NOTE: process_receipt_async is dispatched by the post_save signal in
+    # signals.py via transaction.on_commit(). Do NOT dispatch it here as well —
+    # doing so was the source of the Celery task fan-out (4-5 tasks per sale).
+    # The signal fires once (on created=True) and passes schema_name to avoid
+    # the expensive full-tenant-scan fallback.
 
     return sale
 

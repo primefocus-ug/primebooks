@@ -337,7 +337,7 @@
     .sw-ctrl-hangup { background:#ef4444; }
 
     @media(max-width:420px) {
-      #sw-panel { width:calc(100vw - 20px); ${BUBBLE_LEFT ? 'left:10px;right:auto;' : 'right:10px;left:auto;'} bottom:82px; }
+      #sw-panel { width:calc(100vw - 20px); ${BUBBLE_LEFT ? 'left:10px;right:auto;' : 'right:10px;left:auto;'} bottom:152px; }
     }
   </style>
 

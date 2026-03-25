@@ -2,8 +2,15 @@ from django.urls import path, include
 from . import company_views as views
 from .views.subscription_views import get_subscription_limits, SubscriptionDashboardView,SubscriptionPlansView, SubscriptionRenewView,SubscriptionCancelView,SubscriptionUpgradeView,SubscriptionDowngradeView
 from . import view
+from . import plug
 from . import create_tenantt
-from .views.billing_views import BillingHistoryView,BillingSettingsView,InvoiceDetailView,DownloadInvoiceView,PaymentMethodsView,AddPaymentMethodView,RemovePaymentMethodView,ProcessPaymentView,ExportInvoicesView
+from .views.billing_views import (
+    BillingHistoryView, BillingSettingsView, DownloadInvoiceView,
+    PaymentMethodsView, AddPaymentMethodView, RemovePaymentMethodView,
+    ProcessPaymentView, ExportInvoicesView,
+    InitiateSubscriptionPaymentView, PlatformPaymentCallbackView,
+    PlatformInvoiceDetailView,
+)
 from .views.analytics_views import DashboardView
 from branches.views import (BranchCreateView,BranchDeleteView,BranchDetailView,BranchListView,BranchUpdateView, GetBranchesAjaxView,branch_staff_overview, branch_revenue_data, export_branch_data,branch_analytics,
     generate_branch_report,branch_store_stats,branch_performance,GetCompanyBranchesView,ExportBranchesView)
@@ -22,17 +29,53 @@ company_patterns = [
     path('deactivated/', views.company_deactivated_view, name='company_deactivated'),
     path('dashboard/detail/', views.dashboard_detail_api, name='dashboard_detail'),
 
+    # ── App Store ─────────────────────────────────────────────────────────────
+    path(
+        'app-store/',
+        plug.module_store,
+        name='module_store'
+    ),
+    # Free-module toggle
+    path(
+        'app-store/activate/<slug:module_key>/',
+        plug.activate_module,
+        name='activate_module'
+    ),
+    path(
+        'app-store/deactivate/<slug:module_key>/',
+        plug.deactivate_module,
+        name='deactivate_module'
+    ),
+    # Paid-module payment flow
+    path(
+        'app-store/pay/<slug:module_key>/',
+        plug.initiate_module_payment,
+        name='initiate_module_payment'
+    ),
+    path(
+        'app-store/pay/<slug:module_key>/callback/',
+        plug.module_payment_callback,
+        name='module_payment_callback'
+    ),
+    path(
+        'app-store/pay/<slug:module_key>/cancelled/',
+        plug.module_payment_cancelled,
+        name='module_payment_cancelled'
+    ),
+    path('app-store/reactivate/<slug:module_key>/', plug.reactivate_module, name='reactivate_module'),
+    # ── Subscription ──────────────────────────────────────────────────────────
     path('subscription/upgrade/<int:plan_id>/', SubscriptionUpgradeView.as_view(), name='subscription_upgrade'),
     path('subscription/upgrade/<int:plan_id>/cost/', SubscriptionUpgradeView.as_view(), name='upgrade_cost'),
     path('subscription/downgrade/<int:plan_id>/', SubscriptionDowngradeView.as_view(), name='subscription_downgrade'),
-    path('subscription/downgrade/<int:plan_id>/validate/', SubscriptionDowngradeView.as_view(),
-         name='downgrade_validate'),
+    path('subscription/downgrade/<int:plan_id>/validate/', SubscriptionDowngradeView.as_view(), name='downgrade_validate'),
     path('subscription/renew/', SubscriptionRenewView.as_view(), name='subscription_renew'),
     path('subscription/cancel/', SubscriptionCancelView.as_view(), name='subscription_cancel'),
 
-    # Billing & Invoices
+    # ── Billing & Invoices ────────────────────────────────────────────────────
     path('billing/history/', BillingHistoryView.as_view(), name='billing_history'),
-    path('billing/invoice/<str:invoice_id>/', InvoiceDetailView.as_view(), name='invoice_detail'),
+    path('billing/pay/<int:plan_id>/', InitiateSubscriptionPaymentView.as_view(), name='initiate_subscription_payment'),
+    path('billing/callback/', PlatformPaymentCallbackView.as_view(), name='platform_payment_callback'),
+    path('billing/invoice/<int:pk>/', PlatformInvoiceDetailView.as_view(), name='platform_invoice_detail'),
     path('billing/invoice/<str:invoice_id>/download/', DownloadInvoiceView.as_view(), name='invoice_download'),
     path('billing/payment-methods/', PaymentMethodsView.as_view(), name='payment_methods'),
     path('billing/payment-methods/add/', AddPaymentMethodView.as_view(), name='add_payment_method'),
@@ -41,10 +84,10 @@ company_patterns = [
     path('billing/settings/', BillingSettingsView.as_view(), name='billing_settings'),
     path('billing/export/', ExportInvoicesView.as_view(), name='export_invoices'),
 
-    path('plans/', SubscriptionPlansView.as_view(),name='subscription_plans'),
+    path('plans/', SubscriptionPlansView.as_view(), name='subscription_plans'),
     path('create/', views.CompanyCreateView.as_view(), name='company_create'),
     path('create-tenant/', create_tenantt.create_tenant_view, name='create_tenant'),
-    path('primebooks-creator/',view.create_company,name='create_company'),
+    path('primebooks-creator/', view.create_company, name='create_company'),
     path('export/', views.ExportCompaniesView.as_view(), name='company_export'),
     path('admin/suspend/<str:company_id>/', views.admin_suspend_company, name='admin_suspend_company'),
     path('admin/reactivate/<str:company_id>/', views.admin_reactivate_company, name='admin_reactivate_company'),
@@ -59,7 +102,6 @@ company_patterns = [
     path('<slug:company_id>/update/', views.CompanyUpdateView.as_view(), name='company_update'),
     path('<slug:company_id>/delete/', views.CompanyDeleteView.as_view(), name='company_delete'),
     path("<slug:company_id>/action/", views.company_action, name="company_action"),
-
 ]
 
 branch_patterns = [
@@ -83,8 +125,8 @@ branch_patterns = [
     # Export and reporting endpoints
     path('<int:store_id>/export/', export_branch_data, name='export_branch_data'),
     path('<int:store_id>/generate-report/', generate_branch_report, name='generate_branch_report'),
-
 ]
+
 employee_patterns = [
     path('export/', views.ExportEmployeesView.as_view(), name='employee_export'),
     path('<str:company_id>/', views.EmployeeListView.as_view(), name='employee_list'),
@@ -110,8 +152,7 @@ urlpatterns = [
     path('companies/', include(company_patterns)),
     path('domains/', include(domain_patterns)),
     path('branches/', include(branch_patterns)),
-    path('employees/',include(employee_patterns)),
-
+    path('employees/', include(employee_patterns)),
 
     # Advanced search
     path('search/', views.AdvancedSearchView.as_view(), name='advanced_search'),

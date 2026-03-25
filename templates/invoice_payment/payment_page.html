@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Pay Invoice {% if invoice %}{{ invoice.invoice_number }}{% endif %}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f3f4f6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .card{background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.08);max-width:520px;width:100%;padding:36px}
+    .logo{text-align:center;margin-bottom:24px}
+    .company-name{font-size:18px;font-weight:700;color:#111}
+    .company-sub{font-size:13px;color:#6b7280;margin-top:2px}
+    h1{font-size:20px;font-weight:700;margin-bottom:4px;color:#111}
+    .subhead{font-size:14px;color:#6b7280;margin-bottom:24px}
+    .invoice-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f3f4f6;font-size:14px}
+    .invoice-row:last-child{border-bottom:none}
+    .label{color:#6b7280}
+    .value{font-weight:500;color:#111}
+    .amount-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 20px;margin:20px 0;display:flex;justify-content:space-between;align-items:center}
+    .amount-label{font-size:13px;color:#15803d;font-weight:500}
+    .amount-value{font-size:26px;font-weight:800;color:#15803d}
+    .btn{display:block;width:100%;padding:14px;background:#1a6b4a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;text-align:center;margin-top:8px}
+    .btn:hover{background:#0f4c35}
+    .btn:disabled{background:#9ca3af;cursor:not-allowed}
+    .security-note{text-align:center;font-size:12px;color:#9ca3af;margin-top:14px}
+    .paid-badge{background:#dcfce7;color:#14532d;padding:8px 16px;border-radius:8px;font-size:14px;font-weight:600;text-align:center;margin-bottom:20px}
+    .overdue-badge{background:#fee2e2;color:#991b1b;padding:8px 16px;border-radius:8px;font-size:13px;text-align:center;margin-bottom:16px}
+  </style>
+</head>
+<body>
+
+<div class="card">
+
+  <div class="logo">
+    <div class="company-name">{{ company.name }}</div>
+    <div class="company-sub">Secure Invoice Payment</div>
+  </div>
+
+  {% if already_paid %}
+    <div class="paid-badge">✓ This invoice has already been paid</div>
+    <div style="text-align:center;color:#6b7280;font-size:14px;">No further action is required.</div>
+
+  {% else %}
+
+    <h1>Invoice Payment</h1>
+    <p class="subhead">Review the details below and click Pay to proceed.</p>
+
+    {% if invoice.is_overdue %}
+      <div class="overdue-badge">⚠ This invoice is {{ invoice.days_overdue }} day{{ invoice.days_overdue|pluralize }} overdue</div>
+    {% endif %}
+
+    <div style="margin-bottom:16px;">
+      <div class="invoice-row">
+        <span class="label">Invoice number</span>
+        <span class="value" style="font-family:monospace;">{{ invoice.invoice_number }}</span>
+      </div>
+      {% if invoice.customer %}
+      <div class="invoice-row">
+        <span class="label">Customer</span>
+        <span class="value">{{ invoice.customer.name }}</span>
+      </div>
+      {% endif %}
+      <div class="invoice-row">
+        <span class="label">Invoice date</span>
+        <span class="value">{{ invoice.issue_date|date:"d M Y" }}</span>
+      </div>
+      {% if invoice.due_date %}
+      <div class="invoice-row">
+        <span class="label">Due date</span>
+        <span class="value">{{ invoice.due_date|date:"d M Y" }}</span>
+      </div>
+      {% endif %}
+      {% if invoice.description %}
+      <div class="invoice-row">
+        <span class="label">Description</span>
+        <span class="value">{{ invoice.sale.notes|default:invoice.description|truncatechars:60 }}</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="amount-box">
+      <div>
+        <div class="amount-label">Amount Due</div>
+        {% if invoice.total_amount != invoice.amount_outstanding %}
+          <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+            ({{ invoice.currency_code }} {{ invoice.amount_paid }} already paid)
+          </div>
+        {% endif %}
+      </div>
+      <div class="amount-value">{{ invoice.currency_code }} {{ amount|floatformat:0 }}</div>
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn" id="payBtn">
+        Pay {{ invoice.currency_code }} {{ amount|floatformat:0 }} →
+      </button>
+    </form>
+
+    <div class="security-note">
+      🔒 Secured by Pesapal · PCI DSS Compliant
+    </div>
+
+  {% endif %}
+</div>
+
+<script>
+  document.querySelector('form')?.addEventListener('submit', function(){
+    var btn = document.getElementById('payBtn');
+    btn.disabled = true;
+    btn.textContent = 'Redirecting to payment…';
+  });
+</script>
+
+</body>
+</html>
