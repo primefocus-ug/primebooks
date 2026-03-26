@@ -39,6 +39,7 @@ urlpatterns = [
 
     # ── Blog ──────────────────────────────────────────────────────────────
     path('blog/', include('public_blog.urls')),
+    path('api/v1/', include('public_support.api_urls')),
 
     # ── Support ───────────────────────────────────────────────────────────
     path('support/', include('public_support.urls')),
@@ -64,6 +65,7 @@ urlpatterns = [
          InvoicePaymentCallbackView.as_view(), name='pay_invoice_callback'),
     path('pay/invoice/<str:token>/cancelled/',
          InvoicePaymentCancelledView.as_view(), name='pay_invoice_cancelled'),
+    path('changelog/', include('changelog.urls')),
 
     # ── API v1 (desktop updater + download center data) ───────────────────
     # Endpoints under here:

@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import legal_views
 from .views import TenantSignupView, SignupSuccessView, CheckSubdomainView,download_center
 
 
@@ -21,5 +22,9 @@ urlpatterns = [
     path('tenant-signups/', views.admin_tenant_signups_list, name='tenant_signups_list'),
     path('tenant-signups/<uuid:request_id>/', views.admin_tenant_signup_detail, name='tenant_signup_detail'),
     path('tenant-signups/<uuid:request_id>/approve/', views.admin_approve_signup, name='approve_signup'),
+    path('terms-of-service/',    legal_views.terms_view,       name='terms'),
+    path('privacy-policy/',      legal_views.privacy_view,     name='privacy'),
+    path('terms-of-service/pdf/', legal_views.terms_pdf_view,  name='terms_pdf'),
+    path('privacy-policy/pdf/',  legal_views.privacy_pdf_view, name='privacy_pdf'),
 ]
 

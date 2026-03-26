@@ -2824,7 +2824,7 @@ body {
   <section class="left-panel">
 
     <!-- Toolbar -->
-    <div class="section-toolbar"
+    <div class="section-toolbar" style="position:relative;"
     data-ple-region="section-toolbar"
     data-ple-label="Search &amp; filter toolbar"
     data-ple-icon="bi bi-search"
@@ -2838,6 +2838,20 @@ body {
     <i class="bi bi-search icon"></i>
     <input type="text" id="productSearchBar" placeholder="Search items… (F1)" autocomplete="off">
     <button class="clear-btn" onclick="clearProductSearch()" title="Clear"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <!-- Barcode/scanner button -->
+  <button id="scanToggleBtn" title="Toggle barcode scanner (F5)"
+    onclick="togglePOSScanner()"
+    style="padding:.45rem .65rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--lift);color:var(--text-2);cursor:pointer;font-size:.85rem;display:inline-flex;align-items:center;gap:.35rem;transition:var(--transition);">
+    <i class="bi bi-upc-scan"></i>
+    <span style="font-size:.75rem;">Scan</span>
+  </button>
+  <!-- Hidden camera reader -->
+  <div id="posCameraReader" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);">
+    <div id="posCameraInner" style="width:100%;min-height:200px;"></div>
+    <div style="padding:.5rem;text-align:center;">
+      <button onclick="togglePOSScanner()" style="font-size:.75rem;color:var(--muted);background:none;border:none;cursor:pointer;">✕ Close camera</button>
+    </div>
   </div>
   <!-- Out-of-Stock button -->
   <button id="oosToggleBtn" class="oos-toggle-btn" onclick="openOOSPanel()" style="display:none">
@@ -7361,9 +7375,16 @@ document.addEventListener('DOMContentLoaded', () => {
     psb.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        SaleState.currentPage = 1;
-        SaleState.searchCache.clear();
-        loadItems();
+        const val = psb.value.trim();
+        // If it looks like a barcode (no spaces, ≥6 chars), try exact match first
+        if (val.length >= 6 && !/\s/.test(val)) {
+          handlePOSBarcodeScan(val);
+        } else {
+          SaleState.currentPage = 1;
+          SaleState.searchCache.clear();
+          loadItems();
+        }
+        psb.value = '';
       }
     });
   }
@@ -7487,6 +7508,13 @@ function setupKeyboardShortcuts() {
         return;
       }
 
+      // ── F5: Toggle barcode scanner ──
+      if (e.key === 'F5') {
+        e.preventDefault();
+        togglePOSScanner();
+        showKbdHint('📷 Scanner ' + (posScannerActive ? 'ON' : 'OFF'));
+        return;
+      }
       // ── F4: Clear cart ──
       if (e.key === 'F4') {
         e.preventDefault();
@@ -11623,7 +11651,84 @@ document.addEventListener('keydown', e => {
 console.log('✅ Mobile Panel Toggle loaded');
 
 
+// ═══════════════════════════════════════════════
+// POS BARCODE SCANNER
+// ═══════════════════════════════════════════════
+let posScannerActive = false;
+let posCameraScanner = null;
+
+function togglePOSScanner() {
+  const reader  = document.getElementById('posCameraReader');
+  const btn     = document.getElementById('scanToggleBtn');
+  if (!reader) return;
+
+  if (posScannerActive) {
+    if (posCameraScanner) { posCameraScanner.stop().catch(()=>{}); posCameraScanner = null; }
+    reader.style.display = 'none';
+    btn.style.color = '';
+    posScannerActive = false;
+    return;
+  }
+
+  reader.style.display = 'block';
+  btn.style.color = 'var(--accent)';
+  posScannerActive = true;
+
+  if (typeof Html5Qrcode !== 'undefined') {
+    posCameraScanner = new Html5Qrcode('posCameraInner');
+    posCameraScanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 260, height: 120 } },
+      (decoded) => { handlePOSBarcodeScan(decoded); },
+      () => {}
+    ).catch(err => {
+      console.warn('Camera start failed:', err);
+      reader.style.display = 'none';
+      posScannerActive = false;
+      alert('Camera not available. Use USB scanner instead.');
+    });
+  }
+}
+
+async function handlePOSBarcodeScan(barcodeValue) {
+  const storeId = document.getElementById('storeSelect')?.value
+                || document.getElementById('id_store')?.value || '';
+
+  try {
+    const resp = await fetch(
+      `/sales/sales/scan/barcode/?barcode=${encodeURIComponent(barcodeValue)}&store_id=${storeId}`
+    );
+    const data = await resp.json();
+
+    if (data.products && data.products.length > 0) {
+      const p = data.products[0];
+      // Map to cart item shape and add immediately
+      const cartItem = {
+        id:                 p.id,
+        item_type:          'PRODUCT',
+        name:               p.name,
+        sku:                p.sku,
+        barcode:            p.barcode,
+        unit_price:         p.final_price,
+        original_price:     p.final_price,
+        tax_rate:           p.tax_rate,
+        unit_of_measure:    p.unit_of_measure,
+        stock:              p.stock,
+        discount_percentage: p.discount_percentage || 0,
+      };
+      addToCart(cartItem);
+      showKbdHint(`✓ ${p.name} added`);
+    } else {
+      showKbdHint(`✗ Not found: ${barcodeValue}`, 'warning');
+    }
+  } catch(e) {
+    console.error('Barcode scan error:', e);
+    showKbdHint('✗ Scan error', 'warning');
+  }
+}
+
 </script>
 <script src="{% static 'sales/js/draft_preview.js' %}"></script>
 <script src="{% static 'print_preview.js' %}"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 {% endblock %}

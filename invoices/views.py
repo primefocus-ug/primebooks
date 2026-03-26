@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.views.generic import ListView, DetailView, CreateView, UpdateView
 from django.urls import reverse_lazy, reverse
-from django.db.models import Q, Sum, Count, F, Avg, ExpressionWrapper, DurationField
+from django.db.models import Q, Sum, Count, F, Avg, ExpressionWrapper, DurationField,Value
 from django.utils import timezone
 from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
@@ -642,12 +642,18 @@ def unified_credit_invoice_pdf(request):
         response.write(pdf_bytes)
         return response
 
-class InvoiceListView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class InvoiceListView(StoreQuerysetMixin, LoginRequiredMixin, PermissionRequiredMixin, ListView):
     model = Invoice
     template_name = 'invoices/invoice_list.html'
     context_object_name = 'invoices'
     paginate_by = 20
     permission_required = 'invoices.view_invoice'
+
+    def get_search_form(self):
+        """Cache the search form on the instance to avoid re-instantiation."""
+        if not hasattr(self, '_search_form'):
+            self._search_form = InvoiceSearchForm(self.request.GET)
+        return self._search_form
 
     def get_queryset(self):
         company = get_current_tenant(self.request)
@@ -657,14 +663,13 @@ class InvoiceListView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredM
         with tenant_context(company):
             queryset = Invoice.objects.filter(
                 sale__store__company=company,
-                sale__document_type='INVOICE'  # Only show invoices
+                sale__document_type='INVOICE'
             ).select_related(
                 'sale', 'sale__customer', 'sale__store',
                 'created_by', 'fiscalized_by'
             ).prefetch_related('payments')
 
-            # Apply search filters
-            form = InvoiceSearchForm(self.request.GET)
+            form = self.get_search_form()
             if form.is_valid():
                 search = form.cleaned_data.get('search')
                 if search:
@@ -674,12 +679,20 @@ class InvoiceListView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredM
                         Q(sale__customer__name__icontains=search)
                     )
 
-                # ✅ FIX: Correct status filtering
-                status = form.cleaned_data.get('status')
-                if status:
-                    queryset = queryset.filter(
-                        Q(sale__status=status) | Q(sale__payment_status=status)
-                    )
+                customer_id = self.request.GET.get('customer_id')
+                if customer_id:
+                    queryset = queryset.filter(sale__customer_id=customer_id)
+
+                # Separate status fields to avoid cross-field false positives
+                sale_status = form.cleaned_data.get('status')
+                if sale_status:
+                    # Check if the value belongs to sale status or payment status choices
+                    sale_status_values = [c[0] for c in Sale.STATUS_CHOICES]
+                    payment_status_values = [c[0] for c in Sale.PAYMENT_STATUS_CHOICES]
+                    if sale_status in sale_status_values:
+                        queryset = queryset.filter(sale__status=sale_status)
+                    elif sale_status in payment_status_values:
+                        queryset = queryset.filter(sale__payment_status=sale_status)
 
                 document_type = form.cleaned_data.get('document_type')
                 if document_type:
@@ -710,123 +723,143 @@ class InvoiceListView(StoreQuerysetMixin,LoginRequiredMixin, PermissionRequiredM
                 if form.cleaned_data.get('is_fiscalized'):
                     queryset = queryset.filter(is_fiscalized=True)
 
-                # ✅ FIX: Filter by payment method through sale
                 payment_method = form.cleaned_data.get('payment_method')
                 if payment_method:
                     queryset = queryset.filter(sale__payment_method=payment_method)
 
-                # ✅ FIX: Filter by credit status through sale
                 credit_status = form.cleaned_data.get('credit_status')
                 if credit_status:
-                    if credit_status == 'CREDIT_ONLY':
-                        queryset = queryset.filter(sale__payment_method='CREDIT')
-                    elif credit_status == 'OVERDUE_CREDIT':
-                        queryset = queryset.filter(
-                            sale__payment_method='CREDIT',
-                            sale__payment_status='OVERDUE'
-                        )
-                    elif credit_status == 'OUTSTANDING_CREDIT':
-                        queryset = queryset.filter(
+                    credit_filters = {
+                        'CREDIT_ONLY': Q(sale__payment_method='CREDIT'),
+                        'OVERDUE_CREDIT': Q(sale__payment_method='CREDIT', sale__payment_status='OVERDUE'),
+                        'OUTSTANDING_CREDIT': Q(
                             sale__payment_method='CREDIT',
                             sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
-                        )
-                    elif credit_status == 'PAID_CREDIT':
-                        queryset = queryset.filter(
-                            sale__payment_method='CREDIT',
-                            sale__payment_status='PAID'
-                        )
+                        ),
+                        'PAID_CREDIT': Q(sale__payment_method='CREDIT', sale__payment_status='PAID'),
+                    }
+                    q = credit_filters.get(credit_status)
+                    if q:
+                        queryset = queryset.filter(q)
 
             return queryset.order_by('-sale__created_at')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['search_form'] = InvoiceSearchForm(self.request.GET)
 
-        # Get the filtered queryset
-        queryset = self.get_queryset()
+        # ✅ Reuse the already-evaluated queryset — no second DB call
+        queryset = self.object_list
 
-        # ✅ FIX: Access payment_method through sale
-        credit_invoices = queryset.filter(sale__payment_method='CREDIT')
-        cash_invoices = queryset.filter(sale__payment_method__in=['CASH', 'CARD', 'BANK_TRANSFER'])
+        context['search_form'] = self.get_search_form()
+        context['search_query'] = self.request.GET.get('search', '')
+        context['status_filter'] = self.request.GET.get('status', '')
+        context['payment_status'] = self.request.GET.get('payment_status', '')
+        context['date_from'] = self.request.GET.get('date_from', '')
+        context['date_to'] = self.request.GET.get('date_to', '')
 
-        # Calculate overdue days for overdue credit invoices
-        overdue_credit_invoices = credit_invoices.filter(
-            sale__payment_status='OVERDUE'
-        ).select_related('sale')
+        company = get_current_tenant(self.request)
+        if not company:
+            context['credit_stats'] = {}
+            context['top_credit_customers'] = []
+            context['credit_payment_stats'] = []
+            return context
 
-        overdue_details = []
-        for invoice in overdue_credit_invoices:
-            if invoice.sale.due_date:
-                overdue_days = (timezone.now().date() - invoice.sale.due_date).days
-                overdue_details.append({
-                    'invoice_no': invoice.sale.document_number,
-                    'customer': invoice.sale.customer.name if invoice.sale.customer else 'N/A',
-                    'amount': invoice.sale.total_amount,
-                    'due_date': invoice.sale.due_date,
-                    'overdue_days': overdue_days,
-                    'contact': invoice.sale.customer.phone if invoice.sale.customer else ''
-                })
+        # ✅ Wrap all stats queries inside tenant_context
+        with tenant_context(company):
+            credit_invoices = queryset.filter(sale__payment_method='CREDIT')
+            cash_invoices = queryset.filter(
+                sale__payment_method__in=['CASH', 'CARD', 'BANK_TRANSFER']
+            )
 
-        context['credit_stats'] = {
-            'total_credit_invoices': credit_invoices.count(),
-            'total_credit_amount': credit_invoices.aggregate(
-                Sum('sale__total_amount')
-            )['sale__total_amount__sum'] or 0,
-            'overdue_credit': credit_invoices.filter(
-                sale__payment_status='OVERDUE'
-            ).count(),
-            'overdue_credit_amount': credit_invoices.filter(
-                sale__payment_status='OVERDUE'
-            ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0,
-            'pending_credit': credit_invoices.filter(
-                sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
-            ).count(),
-            'paid_credit': credit_invoices.filter(
-                sale__payment_status='PAID'
-            ).count(),
-            'overdue_details': overdue_details[:5],
-            'cash_invoices_count': cash_invoices.count(),
-            'cash_invoices_amount': cash_invoices.aggregate(
-                Sum('sale__total_amount')
-            )['sale__total_amount__sum'] or 0,
-            'credit_vs_cash_ratio': (
-                (credit_invoices.count() / max(queryset.count(), 1) * 100)
-                if queryset.count() > 0 else 0
-            ),
-        }
+            # ✅ Build overdue details in the DB using values() — no Python loop over full queryset
+            overdue_details = (
+                credit_invoices
+                .filter(sale__payment_status='OVERDUE', sale__due_date__isnull=False)
+                .annotate(
+                    overdue_days=ExpressionWrapper(
+                        Value(timezone.now().date()) - F('sale__due_date'),
+                        output_field=DurationField()
+                    )
+                )
+                .values(
+                    invoice_no=F('sale__document_number'),
+                    customer=F('sale__customer__name'),
+                    amount=F('sale__total_amount'),
+                    due_date=F('sale__due_date'),
+                    contact=F('sale__customer__phone'),
+                )
+                .annotate(
+                    overdue_days_int=ExpressionWrapper(
+                        Value(timezone.now().date()) - F('sale__due_date'),
+                        output_field=DurationField()
+                    )
+                )
+                .order_by('sale__due_date')[:5]
+            )
 
-        # ✅ FIX: Access customer through sale
-        top_credit_customers = credit_invoices.values(
-            'sale__customer__id', 'sale__customer__name', 'sale__customer__phone'
-        ).annotate(
-            invoice_count=Count('id'),
-            total_credit=Sum('sale__total_amount'),
-            overdue_count=Count('id', filter=Q(sale__payment_status='OVERDUE'))
-        ).order_by('-total_credit')[:5]
+            total_count = queryset.count()
+            credit_count = credit_invoices.count()
 
-        context['top_credit_customers'] = top_credit_customers
+            credit_amount_agg = credit_invoices.aggregate(
+                total=Sum('sale__total_amount')
+            )
+            overdue_qs = credit_invoices.filter(sale__payment_status='OVERDUE')
+            overdue_amount_agg = overdue_qs.aggregate(total=Sum('sale__total_amount'))
+            cash_amount_agg = cash_invoices.aggregate(total=Sum('sale__total_amount'))
 
-        # ✅ FIX: Payment status breakdown through sale
-        credit_payment_stats = credit_invoices.values(
-            'sale__payment_status'
-        ).annotate(
-            count=Count('id'),
-            total=Sum('sale__total_amount')
-        ).order_by('sale__payment_status')
-
-        context['credit_payment_stats'] = [
-            {
-                'status': stat['sale__payment_status'],
-                'status_display': dict(Sale.PAYMENT_STATUS_CHOICES).get(
-                    stat['sale__payment_status'],
-                    stat['sale__payment_status']
+            context['credit_stats'] = {
+                'total_credit_invoices': credit_count,
+                'total_credit_amount': credit_amount_agg['total'] or 0,
+                'overdue_credit': overdue_qs.count(),
+                'overdue_credit_amount': overdue_amount_agg['total'] or 0,
+                'pending_credit': credit_invoices.filter(
+                    sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
+                ).count(),
+                'paid_credit': credit_invoices.filter(
+                    sale__payment_status='PAID'
+                ).count(),
+                'overdue_details': list(overdue_details),
+                'cash_invoices_count': cash_invoices.count(),
+                'cash_invoices_amount': cash_amount_agg['total'] or 0,
+                'credit_vs_cash_ratio': (
+                    round(credit_count / total_count * 100, 1) if total_count > 0 else 0
                 ),
-                'count': stat['count'],
-                'total': stat['total'] or 0,
-                'percentage': (stat['count'] / max(credit_invoices.count(), 1) * 100)
             }
-            for stat in credit_payment_stats
-        ]
+
+            context['top_credit_customers'] = (
+                credit_invoices
+                .values('sale__customer__id', 'sale__customer__name', 'sale__customer__phone')
+                .annotate(
+                    invoice_count=Count('id'),
+                    total_credit=Sum('sale__total_amount'),
+                    overdue_count=Count('id', filter=Q(sale__payment_status='OVERDUE'))
+                )
+                .order_by('-total_credit')[:5]
+            )
+
+            credit_payment_stats = (
+                credit_invoices
+                .values('sale__payment_status')
+                .annotate(
+                    count=Count('id'),
+                    total=Sum('sale__total_amount')
+                )
+                .order_by('sale__payment_status')
+            )
+
+            context['credit_payment_stats'] = [
+                {
+                    'status': stat['sale__payment_status'],
+                    'status_display': dict(Sale.PAYMENT_STATUS_CHOICES).get(
+                        stat['sale__payment_status'],
+                        stat['sale__payment_status']
+                    ),
+                    'count': stat['count'],
+                    'total': stat['total'] or 0,
+                    'percentage': round(stat['count'] / max(credit_count, 1) * 100, 1),
+                }
+                for stat in credit_payment_stats
+            ]
 
         return context
 
@@ -3553,6 +3586,70 @@ def ajax_invoice_status(request):
             'error': str(e)
         })
 
+
+
+@login_required
+@permission_required('invoices.view_invoice')
+def invoice_search_autocomplete(request):
+    """
+    AJAX autocomplete endpoint for the invoice list search box.
+
+    GET params:
+        q   – the partial text typed by the user (min 2 chars)
+
+    Returns JSON with two sections:
+        customers  – matching customer names  (for "search by customer" quick-filter)
+        invoices   – matching document numbers
+    """
+    from customers.models import Customer
+
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse({'customers': [], 'invoices': []})
+
+    company = get_current_tenant(request)
+    if not company:
+        return JsonResponse({'customers': [], 'invoices': []})
+
+    with tenant_context(company):
+        # ── Customer matches ──────────────────────────────────────────────────
+        customer_qs = Customer.objects.filter(
+            Q(name__icontains=q) |
+            Q(phone__icontains=q) |
+            Q(email__icontains=q),
+            is_active=True,
+        ).values('id', 'name', 'phone', 'email').order_by('name')[:8]
+
+        customers = [
+            {
+                'id':    c['id'],
+                'label': c['name'],
+                'sub':   c['phone'] or c['email'] or '',
+                'type':  'customer',
+            }
+            for c in customer_qs
+        ]
+
+        # ── Invoice / document-number matches ─────────────────────────────────
+        invoice_qs = Invoice.objects.filter(
+            sale__store__company=company,
+            sale__document_type='INVOICE',
+        ).filter(
+            Q(sale__document_number__icontains=q) |
+            Q(fiscal_document_number__icontains=q)
+        ).select_related('sale', 'sale__customer').order_by('-sale__created_at')[:8]
+
+        invoices = [
+            {
+                'id':       inv.pk,
+                'label':    inv.sale.document_number,
+                'sub':      inv.sale.customer.name if inv.sale.customer else 'Walk-in',
+                'type':     'invoice',
+            }
+            for inv in invoice_qs
+        ]
+
+    return JsonResponse({'customers': customers, 'invoices': invoices})
 
 @login_required
 @permission_required('invoices.view_invoice')

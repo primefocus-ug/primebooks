@@ -1,0 +1,800 @@
+{% extends 'public_router/base.html' %}
+{% load static %}
+
+{% block title %}Terms of Service — Primebooks{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Legal page shared styles ──────────────────────────────────────────────── */
+.legal-page {
+    min-height: calc(100vh - 80px);
+    padding: 56px 20px 80px;
+    background-color: var(--bg-primary);
+    position: relative;
+    overflow: hidden;
+}
+
+/* subtle grid */
+.legal-page::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+        linear-gradient(var(--border-color) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border-color) 1px, transparent 1px);
+    background-size: 48px 48px;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+}
+.legal-page > * { position: relative; z-index: 1; }
+
+.legal-layout {
+    max-width: 860px;
+    margin: 0 auto;
+}
+
+/* ── Header card ────────────────────────────────────────────────────────────── */
+.legal-header {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 16px;
+    padding: 40px 48px 32px;
+    margin-bottom: 32px;
+    background: linear-gradient(135deg,
+        color-mix(in srgb, #0c19dd 10%, var(--bg-secondary)) 0%,
+        var(--bg-secondary) 60%);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 24px;
+}
+
+.legal-header-text h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.legal-header-text h1 span {
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.legal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.legal-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 20px;
+    padding: 4px 12px;
+}
+
+.legal-meta-item i { color: #0c19dd; font-size: 11px; }
+
+.btn-download {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 22px;
+    background: var(--accent-gradient);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.btn-download:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(12,25,221,0.3);
+}
+
+/* ── TOC sidebar layout ──────────────────────────────────────────────────────── */
+.legal-body {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 28px;
+    align-items: start;
+}
+
+@media (max-width: 720px) {
+    .legal-body { grid-template-columns: 1fr; }
+    .legal-toc  { display: none; }
+    .legal-header { padding: 28px 24px; }
+    .legal-header-text h1 { font-size: 1.5rem; }
+}
+
+/* ── TOC ─────────────────────────────────────────────────────────────────────── */
+.legal-toc {
+    position: sticky;
+    top: 100px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.legal-toc h4 {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 14px;
+}
+
+.legal-toc ol {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    counter-reset: toc;
+}
+
+.legal-toc ol li {
+    counter-increment: toc;
+    margin-bottom: 8px;
+}
+
+.legal-toc ol li a {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    line-height: 1.4;
+    transition: color 0.2s;
+}
+
+.legal-toc ol li a::before {
+    content: counter(toc) ".";
+    color: #0c19dd;
+    font-weight: 700;
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    margin-top: 1px;
+}
+
+.legal-toc ol li a:hover { color: var(--text-primary); }
+
+/* ── Content card ────────────────────────────────────────────────────────────── */
+.legal-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.legal-section {
+    padding: 32px 36px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.legal-section:last-child { border-bottom: none; }
+
+.legal-section h2 {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.section-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: var(--accent-gradient);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.legal-section p {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.75;
+    margin-bottom: 12px;
+}
+
+.legal-section p:last-child { margin-bottom: 0; }
+
+.legal-section h3 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 16px 0 8px;
+}
+
+.legal-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 12px;
+}
+
+.legal-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.legal-list li:last-child { border-bottom: none; }
+
+.legal-list li::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #0c19dd;
+    flex-shrink: 0;
+    margin-top: 7px;
+}
+
+/* highlight box */
+.legal-highlight {
+    background: color-mix(in srgb, #0c19dd 8%, var(--bg-primary));
+    border: 1px solid color-mix(in srgb, #0c19dd 25%, transparent);
+    border-left: 3px solid #0c19dd;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    margin-bottom: 12px;
+}
+
+.legal-highlight strong { color: var(--text-primary); }
+
+/* warning box */
+.legal-warning {
+    background: color-mix(in srgb, #f59e0b 8%, var(--bg-primary));
+    border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent);
+    border-left: 3px solid #f59e0b;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    margin-bottom: 12px;
+}
+
+/* support table */
+.support-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.83rem;
+    margin: 12px 0;
+}
+
+.support-table th {
+    background: var(--accent-gradient);
+    color: #fff;
+    font-weight: 700;
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
+}
+
+.support-table th:first-child { border-radius: 8px 0 0 0; }
+.support-table th:last-child  { border-radius: 0 8px 0 0; }
+
+.support-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    vertical-align: top;
+    transition: background 0.15s;
+}
+
+.support-table tr:nth-child(even) td { background: var(--bg-primary); }
+.support-table tbody tr:hover td { background: color-mix(in srgb, #0c19dd 5%, var(--bg-primary)); }
+
+/* ── Reading progress bar ───────────────────────────────────────────────────── */
+#reading-progress {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    width: 0%;
+    background: linear-gradient(90deg, #0c19dd, #5b6ef5);
+    z-index: 9999;
+    transition: width 0.1s linear;
+    border-radius: 0 2px 2px 0;
+}
+
+/* ── Back to top ────────────────────────────────────────────────────────────── */
+#back-to-top {
+    position: fixed;
+    bottom: 32px; right: 28px;
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: var(--accent-gradient);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    box-shadow: 0 4px 16px rgba(12,25,221,0.35);
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 999;
+    pointer-events: none;
+}
+#back-to-top.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+#back-to-top:hover { box-shadow: 0 6px 22px rgba(12,25,221,0.5); }
+
+/* ── Active TOC link ────────────────────────────────────────────────────────── */
+.legal-toc ol li a.active {
+    color: #0c19dd;
+    font-weight: 700;
+}
+.legal-toc ol li a.active::before { color: #0c19dd; }
+
+/* ── Mobile TOC accordion ───────────────────────────────────────────────────── */
+.mobile-toc {
+    display: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 12px;
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+.mobile-toc-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.mobile-toc-toggle i { color: #0c19dd; transition: transform 0.25s; }
+.mobile-toc-toggle.open i { transform: rotate(180deg); }
+.mobile-toc-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+.mobile-toc-body.open { max-height: 600px; }
+.mobile-toc-body ol {
+    list-style: none;
+    padding: 4px 18px 14px;
+    margin: 0;
+    counter-reset: mob-toc;
+}
+.mobile-toc-body ol li {
+    counter-increment: mob-toc;
+    margin-bottom: 6px;
+}
+.mobile-toc-body ol li a {
+    display: flex; gap: 8px; align-items: flex-start;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    line-height: 1.4;
+}
+.mobile-toc-body ol li a::before {
+    content: counter(mob-toc) ".";
+    color: #0c19dd;
+    font-weight: 700;
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    margin-top: 1px;
+}
+@media (max-width: 720px) {
+    .mobile-toc { display: block; }
+}
+
+/* ── Section entrance animations ───────────────────────────────────────────── */
+.legal-section {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.45s ease, transform 0.45s ease;
+}
+.legal-section.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* ── Copy button on contact items ───────────────────────────────────────────── */
+.copyable {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+.copy-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+    padding: 2px 8px;
+    font-size: 0.72rem;
+    border-radius: 5px;
+    border: 1px solid var(--border-color-light);
+    background: var(--bg-primary);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+    white-space: nowrap;
+}
+.copy-btn:hover { color: #0c19dd; border-color: #0c19dd; }
+.copy-btn.copied { color: #16a34a; border-color: #16a34a; background: color-mix(in srgb, #16a34a 8%, var(--bg-primary)); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="reading-progress"></div>
+<button id="back-to-top" aria-label="Back to top"><i class="fas fa-arrow-up"></i></button>
+<div class="legal-page">
+<div class="legal-layout">
+
+    <!-- Header -->
+    <div class="legal-header">
+        <div class="legal-header-text">
+            <h1>Terms of <span>Service</span></h1>
+            <div class="legal-meta">
+                <span class="legal-meta-item"><i class="fas fa-calendar-check"></i> Effective: {{ effective_date }}</span>
+                <span class="legal-meta-item"><i class="fas fa-building"></i> Prime Focus Uganda Limited</span>
+                <span class="legal-meta-item"><i class="fas fa-map-marker-alt"></i> Kampala, Uganda</span>
+            </div>
+        </div>
+        <a href="{% url 'public_router:terms_pdf' %}" class="btn-download">
+            <i class="fas fa-file-pdf"></i> Download PDF
+        </a>
+    </div>
+
+    <div class="legal-body">
+
+        <!-- Mobile TOC accordion (hidden on desktop) -->
+        <div class="mobile-toc">
+            <button class="mobile-toc-toggle" id="mobileTocToggle" aria-expanded="false">
+                <span><i class="fas fa-list" style="margin-right:8px;color:#0c19dd;"></i>Contents</span>
+                <i class="fas fa-chevron-down"></i>
+            </button>
+            <div class="mobile-toc-body" id="mobileTocBody">
+                <ol>
+                    <li><a href="#introduction">Introduction</a></li>
+                    <li><a href="#definitions">Definitions</a></li>
+                    <li><a href="#registration">Account Registration</a></li>
+                    <li><a href="#licence">Licence Grant</a></li>
+                    <li><a href="#acceptable-use">Acceptable Use</a></li>
+                    <li><a href="#fees">Fees &amp; Payment</a></li>
+                    <li><a href="#ip">Intellectual Property</a></li>
+                    <li><a href="#data">Data Security &amp; Privacy</a></li>
+                    <li><a href="#support">Support &amp; Uptime</a></li>
+                    <li><a href="#warranties">Warranties</a></li>
+                    <li><a href="#liability">Limitation of Liability</a></li>
+                    <li><a href="#termination">Term &amp; Termination</a></li>
+                    <li><a href="#confidentiality">Confidentiality</a></li>
+                    <li><a href="#modifications">Modifications</a></li>
+                    <li><a href="#governing-law">Governing Law</a></li>
+                    <li><a href="#contact">Contact Us</a></li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Desktop TOC sidebar -->
+        <nav class="legal-toc">
+            <h4>Contents</h4>
+            <ol>
+                <li><a href="#introduction">Introduction</a></li>
+                <li><a href="#definitions">Definitions</a></li>
+                <li><a href="#registration">Account Registration</a></li>
+                <li><a href="#licence">Licence Grant</a></li>
+                <li><a href="#acceptable-use">Acceptable Use</a></li>
+                <li><a href="#fees">Fees &amp; Payment</a></li>
+                <li><a href="#ip">Intellectual Property</a></li>
+                <li><a href="#data">Data Security &amp; Privacy</a></li>
+                <li><a href="#support">Support &amp; Uptime</a></li>
+                <li><a href="#warranties">Warranties</a></li>
+                <li><a href="#liability">Limitation of Liability</a></li>
+                <li><a href="#termination">Term &amp; Termination</a></li>
+                <li><a href="#confidentiality">Confidentiality</a></li>
+                <li><a href="#modifications">Modifications</a></li>
+                <li><a href="#governing-law">Governing Law</a></li>
+                <li><a href="#contact">Contact Us</a></li>
+            </ol>
+        </nav>
+
+        <!-- Content -->
+        <div class="legal-content">
+
+            <!-- Introduction -->
+            <div class="legal-section" id="introduction">
+                <h2><span class="section-num">i</span> Introduction</h2>
+                <p>These Terms of Service ("Terms") govern your access to and use of the <strong>Primebooks</strong> software-as-a-service platform ("Platform"), operated by <strong>Prime Focus Uganda Limited</strong> (BRN 80020003378756), Sentamu Kavule A, Nakawa, Kampala, Uganda ("we", "us", or "Licensor").</p>
+                <div class="legal-highlight">
+                    <strong>By creating an account, downloading the software, or otherwise using the Platform, you agree to be bound by these Terms.</strong> If you do not agree, do not use the Platform.
+                </div>
+            </div>
+
+            <!-- 1 Definitions -->
+            <div class="legal-section" id="definitions">
+                <h2><span class="section-num">1</span> Definitions</h2>
+                <ul class="legal-list">
+                    <li><strong>Platform</strong> — The Primebooks cloud-based business management application, including all modules, APIs, mobile and desktop clients, and related documentation.</li>
+                    <li><strong>Account / Workspace</strong> — The dedicated tenant environment provisioned for your organisation upon successful signup.</li>
+                    <li><strong>Authorised Users</strong> — Employees, contractors, or agents of your organisation permitted to use the Platform under your subscription.</li>
+                    <li><strong>Client Data</strong> — All data, records, and content you or your Authorised Users upload to or generate within the Platform.</li>
+                    <li><strong>Subscription Plan</strong> — The Free, Basic, Pro, or Enterprise tier selected at signup or subsequently upgraded to.</li>
+                    <li><strong>Support Period</strong> — The period during which we provide technical support and updates, as defined in your chosen plan.</li>
+                </ul>
+            </div>
+
+            <!-- 2 Registration -->
+            <div class="legal-section" id="registration">
+                <h2><span class="section-num">2</span> Account Registration</h2>
+                <p>To use the Platform you must complete the signup form and provide accurate, current, and complete information. You are responsible for:</p>
+                <ul class="legal-list">
+                    <li>Maintaining the confidentiality of your login credentials.</li>
+                    <li>All activity that occurs under your Account.</li>
+                    <li>Promptly notifying us of any unauthorised access at <strong>primefocusug@gmail.com</strong>.</li>
+                    <li>Ensuring all Authorised Users comply with these Terms.</li>
+                </ul>
+                <p>We reserve the right to suspend or terminate accounts that provide false information or violate these Terms.</p>
+            </div>
+
+            <!-- 3 Licence -->
+            <div class="legal-section" id="licence">
+                <h2><span class="section-num">3</span> Licence Grant</h2>
+                <p>Subject to your compliance with these Terms and timely payment of applicable fees, we grant you a <strong>limited, non-exclusive, non-transferable, revocable</strong> right to access and use the Platform solely for your internal business operations within Uganda (or as otherwise agreed in writing).</p>
+                <h3>3.1 Free Trial</h3>
+                <p>New accounts on the Free plan are provisioned as a free trial. Trial workspaces are subject to feature and storage limits set out on our pricing page. We may convert, suspend, or terminate a trial workspace at any time with reasonable notice.</p>
+                <h3>3.2 Restrictions</h3>
+                <p>The licence does not include the right to sublicense, redistribute, reverse engineer, or use the Platform to build competing products. See Section 5 for full acceptable use requirements.</p>
+            </div>
+
+            <!-- 4 Acceptable use -->
+            <div class="legal-section" id="acceptable-use">
+                <h2><span class="section-num">4</span> Acceptable Use</h2>
+                <p>You agree <strong>NOT</strong> to:</p>
+                <ul class="legal-list">
+                    <li>Reverse engineer, decompile, or attempt to derive the Platform's source code.</li>
+                    <li>Sublicense, resell, or provide Platform access to third parties without our written consent.</li>
+                    <li>Use the Platform to develop competing products or services.</li>
+                    <li>Share login credentials across the authorised-user limit.</li>
+                    <li>Upload content that is unlawful, harmful, or violates third-party rights.</li>
+                    <li>Circumvent security, licensing, or authentication mechanisms.</li>
+                    <li>Use the Platform for illegal purposes under Ugandan or applicable international law.</li>
+                    <li>Conduct denial-of-service attacks or introduce malicious code.</li>
+                </ul>
+                <div class="legal-warning">
+                    Violation of this section may result in <strong>immediate suspension or termination</strong> of your Account without refund.
+                </div>
+            </div>
+
+            <!-- 5 Fees -->
+            <div class="legal-section" id="fees">
+                <h2><span class="section-num">5</span> Subscription Fees &amp; Payment</h2>
+                <p>Fees for paid plans are set out on our <a href="{% url 'pricing' %}" style="color:#0c19dd;">pricing page</a> and may be updated with 30 days' notice.</p>
+                <ul class="legal-list">
+                    <li><strong>Payment due:</strong> Within 30 days of invoice unless otherwise specified.</li>
+                    <li><strong>Accepted methods:</strong> Bank transfer, MTN/Airtel mobile money.</li>
+                    <li><strong>Late payment:</strong> Licences may be suspended after a 15-day grace period; interest accrues at the maximum legal rate.</li>
+                    <li><strong>Taxes:</strong> All fees are exclusive of VAT and applicable taxes, which are the Licensee's responsibility.</li>
+                    <li><strong>Refunds:</strong> Fees are non-refundable except as required by applicable law or where we terminate without cause.</li>
+                </ul>
+            </div>
+
+            <!-- 6 IP -->
+            <div class="legal-section" id="ip">
+                <h2><span class="section-num">6</span> Intellectual Property</h2>
+                <p>Prime Focus Uganda Limited retains all right, title, and interest in the Platform, including all source code, algorithms, trademarks ("PrimeBooks", "Prime Focus"), and derivative works. These Terms do not transfer any ownership rights to you.</p>
+                <div class="legal-highlight">
+                    <strong>Client Data Ownership:</strong> You retain full ownership of all Client Data. We may access Client Data only to provide the service, for support purposes, or as required by law. We will never use your data for advertising.
+                </div>
+            </div>
+
+            <!-- 7 Data -->
+            <div class="legal-section" id="data">
+                <h2><span class="section-num">7</span> Data Security &amp; Privacy</h2>
+                <p>We implement industry-standard security measures. For full details see our <a href="{% url 'public_router:privacy' %}" style="color:#0c19dd;">Privacy Policy</a>.</p>
+                <ul class="legal-list">
+                    <li>AES-256 encryption at rest; TLS 1.2+ in transit.</li>
+                    <li>Cloud backups: automated with 30-day retention.</li>
+                    <li>Data location: Uganda. No transfer outside Uganda without your consent.</li>
+                    <li>Breach notification within 72 hours of discovery.</li>
+                    <li>Compliant with the Uganda Data Protection and Privacy Act, 2019.</li>
+                </ul>
+            </div>
+
+            <!-- 8 Support -->
+            <div class="legal-section" id="support">
+                <h2><span class="section-num">8</span> Support &amp; Uptime</h2>
+                <p>During the Support Period we provide email and phone support (5 AM – 12 PM EAT, Monday–Sunday, excluding public holidays). Cloud-hosted workspaces target <strong>99.5% uptime</strong> during business hours.</p>
+                <table class="support-table">
+                    <thead>
+                        <tr><th>Priority</th><th>Target Response</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Critical (system down)</td><td>4 business hours</td></tr>
+                        <tr><td>High (major feature broken)</td><td>1 business day</td></tr>
+                        <tr><td>Medium (workaround available)</td><td>3 business days</td></tr>
+                        <tr><td>Low (cosmetic issues)</td><td>5 business days</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 9 Warranties -->
+            <div class="legal-section" id="warranties">
+                <h2><span class="section-num">9</span> Warranties &amp; Disclaimers</h2>
+                <p>We warrant that the Platform will substantially conform to our published documentation for 90 days from delivery and that we have the right to licence it as described. If it fails to conform, our sole obligation is to correct the non-conformity, provide a conforming replacement, or refund fees paid for the non-conforming period.</p>
+                <div class="legal-warning">
+                    <strong>EXCEPT AS STATED ABOVE, THE PLATFORM IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR UNINTERRUPTED OPERATION.</strong> You are responsible for validating outputs and maintaining independent backup systems.
+                </div>
+            </div>
+
+            <!-- 10 Liability -->
+            <div class="legal-section" id="liability">
+                <h2><span class="section-num">10</span> Limitation of Liability</h2>
+                <div class="legal-warning">
+                    TO THE MAXIMUM EXTENT PERMITTED BY LAW, OUR TOTAL LIABILITY SHALL NOT EXCEED THE TOTAL FEES PAID BY YOU IN THE 12 MONTHS PRECEDING THE CLAIM. IN NO EVENT SHALL WE BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES, LOSS OF PROFITS, LOSS OF DATA, OR BUSINESS INTERRUPTION.
+                </div>
+            </div>
+
+            <!-- 11 Termination -->
+            <div class="legal-section" id="termination">
+                <h2><span class="section-num">11</span> Term &amp; Termination</h2>
+                <ul class="legal-list">
+                    <li><strong>Subscription licences</strong> auto-renew unless cancelled 30 days before the renewal date.</li>
+                    <li><strong>Free plans</strong> remain active until terminated by either party.</li>
+                    <li><strong>Termination for cause:</strong> Either party may terminate on 30 days' written notice if the other materially breaches and fails to cure.</li>
+                    <li><strong>Immediate termination:</strong> We may suspend or terminate without notice for IP violation, reverse engineering, illegal use, or security risk to other tenants.</li>
+                    <li><strong>Effect:</strong> All licences cease. You may export Client Data within 30 days of termination of a cloud workspace.</li>
+                </ul>
+            </div>
+
+            <!-- 12 Confidentiality -->
+            <div class="legal-section" id="confidentiality">
+                <h2><span class="section-num">12</span> Confidentiality</h2>
+                <p>Both parties agree to protect each other's Confidential Information with at least reasonable care, use it only for the purposes of this agreement, and not disclose it to third parties without prior written consent. Confidentiality obligations survive termination for <strong>5 years</strong>.</p>
+            </div>
+
+            <!-- 13 Modifications -->
+            <div class="legal-section" id="modifications">
+                <h2><span class="section-num">13</span> Modifications to These Terms</h2>
+                <p>We may update these Terms with <strong>30 days' notice</strong> by email or prominent notice on the Platform. Continued use of the Platform after the effective date of changes constitutes acceptance.</p>
+            </div>
+
+            <!-- 14 Governing law -->
+            <div class="legal-section" id="governing-law">
+                <h2><span class="section-num">14</span> Governing Law &amp; Dispute Resolution</h2>
+                <p>These Terms are governed by the <strong>laws of the Republic of Uganda</strong>. Disputes shall be resolved first by good-faith negotiation (30 days), then mediation before the Uganda Mediation Centre, then binding arbitration under the Arbitration and Conciliation Act (Uganda), with the seat in Kampala. Courts of Kampala have exclusive jurisdiction for matters not subject to arbitration.</p>
+            </div>
+
+            <!-- 15 Contact -->
+            <div class="legal-section" id="contact">
+                <h2><span class="section-num">15</span> Contact Us</h2>
+                <p>Questions about these Terms should be directed to:</p>
+                <ul class="legal-list">
+                    <li class="copyable"><span><strong>Email:</strong> primefocusug@gmail.com</span><button class="copy-btn" data-copy="primefocusug@gmail.com">Copy</button></li>
+                    <li class="copyable"><span><strong>Phone / WhatsApp:</strong> +256 785 230 670</span><button class="copy-btn" data-copy="+256785230670">Copy</button></li>
+                    <li><strong>Address:</strong> Prime Focus Uganda Limited, Sentamu Kavule A, Nakawa, Kampala, Uganda</li>
+                </ul>
+            </div>
+
+        </div>{# end legal-content #}
+    </div>{# end legal-body #}
+</div>{# end legal-layout #}
+</div>{# end legal-page #}
+
+<script>
+(function () {
+    /* ── Reading progress ─────────────────────────────────────────────── */
+    const bar = document.getElementById('reading-progress');
+    function updateProgress() {
+        const scrolled = window.scrollY;
+        const total = document.documentElement.scrollHeight - window.innerHeight;
+        bar.style.width = total > 0 ? (scrolled / total * 100) + '%' : '0%';
+    }
+
+    /* ── Back to top ──────────────────────────────────────────────────── */
+    const btn = document.getElementById('back-to-top');
+    function updateBackToTop() {
+        btn.classList.toggle('visible', window.scrollY > 400);
+    }
+    btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+    window.addEventListener('scroll', () => { updateProgress(); updateBackToTop(); }, { passive: true });
+    updateProgress();
+
+    /* ── Active TOC highlighting ──────────────────────────────────────── */
+    const sections = document.querySelectorAll('.legal-section[id]');
+    const tocLinks = document.querySelectorAll('.legal-toc ol li a');
+
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                tocLinks.forEach(a => a.classList.remove('active'));
+                const active = document.querySelector(`.legal-toc ol li a[href="#${entry.target.id}"]`);
+                if (active) active.classList.add('active');
+            }
+        });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+
+    sections.forEach(s => observer.observe(s));
+
+    /* ── Section entrance animations ─────────────────────────────────── */
+    const animObs = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('visible');
+                animObs.unobserve(entry.target);
+            }
+        });
+    }, { threshold: 0.08 });
+
+    sections.forEach(s => animObs.observe(s));
+
+    /* ── Mobile TOC accordion ─────────────────────────────────────────── */
+    const toggle = document.getElementById('mobileTocToggle');
+    const body   = document.getElementById('mobileTocBody');
+    if (toggle && body) {
+        toggle.addEventListener('click', () => {
+            const open = body.classList.toggle('open');
+            toggle.classList.toggle('open', open);
+            toggle.setAttribute('aria-expanded', open);
+        });
+        // close when a link is tapped
+        body.querySelectorAll('a').forEach(a => a.addEventListener('click', () => {
+            body.classList.remove('open');
+            toggle.classList.remove('open');
+            toggle.setAttribute('aria-expanded', false);
+        }));
+    }
+
+    /* ── Copy to clipboard ────────────────────────────────────────────── */
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            navigator.clipboard.writeText(btn.dataset.copy).then(() => {
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+            });
+        });
+    });
+})();
+</script>
+{% endblock %}

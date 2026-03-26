@@ -178,7 +178,7 @@ canvas{max-height:230px}
 .fg label{display:block;font-size:.7rem;font-weight:700;color:var(--tx2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem}
 /* TOASTS */
 .toasts{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem}
-.tn{background:var(--tx);color:#fff;padding:.8rem 1.1rem;border-radius:var(--rlg);font-size:.875rem;display:flex;align-items:center;gap:.75rem;box-shadow:var(--shlg);animation:su .22s ease;max-width:320px}
+.tn{background:#1e293b;color:#f1f5f9;padding:.8rem 1.1rem;border-radius:var(--rlg);font-size:.875rem;display:flex;align-items:center;gap:.75rem;box-shadow:var(--shlg);animation:su .22s ease;max-width:320px}
 .tn.success{border-left:4px solid var(--s)}.tn.error{border-left:4px solid var(--d)}.tn.info{border-left:4px solid var(--p)}
 @keyframes su{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
 /* SPINNER */
@@ -290,6 +290,12 @@ canvas{max-height:230px}
     <p>Products, stock, categories and suppliers — all in one place</p>
   </div>
   <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+      <a class="btn btno" href="{% url 'inventory_api:scan-session' %}" style="gap:.4rem">
+        <i class="fas fa-barcode"></i> Scan
+        {% if pending_labels_count > 0 %}
+        <span style="background:var(--w);color:#fff;padding:.1rem .4rem;border-radius:20px;font-size:.6rem;font-weight:700;">{{ pending_labels_count }}</span>
+        {% endif %}
+      </a>
     {% if perms.inventory.add_product %}
     <button class="btn btnp" onclick="openProdModal()"><i class="fas fa-plus"></i> Add Product</button>
     {% endif %}
@@ -328,6 +334,10 @@ canvas{max-height:230px}
   </button>
   <button class="htab" data-tab="tab-cat" onclick="sw(this)"><i class="fas fa-tags"></i> Categories</button>
   <button class="htab" data-tab="tab-sup" onclick="sw(this)"><i class="fas fa-truck"></i> Suppliers</button>
+  <button class="htab" data-tab="tab-scan" onclick="sw(this)">
+    <i class="fas fa-barcode"></i> Scanner
+    {% if pending_labels_count > 0 %}<span class="tcount d">{{ pending_labels_count }}</span>{% endif %}
+  </button>
 </nav>
 
 
@@ -538,7 +548,13 @@ canvas{max-height:230px}
                   </button>
                   <div class="pm">
                     <span class="bx bs">{{ product.sku }}</span>
-                    {% if product.barcode %}<span class="bx bp">{{ product.barcode }}</span>{% endif %}
+                    {% if product.barcode %}
+                    <span class="bx bp">{{ product.barcode }}</span>
+                    {% if product.barcode_image %}
+                    <img src="{{ product.barcode_image.url }}" alt="barcode"
+                      style="height:20px;margin-left:.3rem;vertical-align:middle;border-radius:3px;">
+                    {% endif %}
+                    {% endif %}
                   </div>
                 </div>
               </div>
@@ -568,6 +584,13 @@ canvas{max-height:230px}
                 <button class="ab abs qs-btn" data-product-id="{{ product.id }}" data-product-name="{{ product.name }}" title="Quick Stock" onclick="openSM(this)"><i class="fas fa-cubes"></i></button>
                 {% endif %}
                 {% if perms.inventory.delete_product %}<button class="ab abd" title="Delete" onclick="dProd({{ product.pk }},'{{ product.name|escapejs }}')"><i class="fas fa-trash"></i></button>{% endif %}
+                {% if product.barcode %}
+                <button class="ab" title="Print barcode label"
+                  style="background:var(--pult);color:var(--pu)"
+                  onclick="queueLabel({{ product.pk }}, '{{ product.name|escapejs }}')">
+                  <i class="fas fa-tag"></i>
+                </button>
+                {% endif %}
               </div>
             </td>
           </tr>
@@ -901,6 +924,190 @@ canvas{max-height:230px}
   </div>
 </div><!-- /pane-suppliers -->
 </div><!-- /tab-sup -->
+
+
+<!-- ═══ TAB: SCANNER ════════════════════════════════════════════════ -->
+<div id="tab-scan" class="tpane" style="display:none;">
+<div id="pane-scanner">
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem;">
+
+    <!-- Quick scan card -->
+    <div class="ic">
+      <div class="ich"><h6><i class="fas fa-barcode" style="color:var(--p);"></i> Quick Scan</h6></div>
+      <div class="icb">
+        <div class="safield">
+          <label>Barcode / SKU</label>
+          <div style="display:flex;gap:.5rem;">
+            <input type="text" id="hubBarcodeInput" class="form-control"
+              placeholder="Scan or type barcode…" autocomplete="off"
+              style="font-family:var(--mn);font-size:1rem;letter-spacing:.08em;">
+            <button class="btn btnp" onclick="hubScanBarcode()"><i class="fas fa-search"></i></button>
+          </div>
+          <div style="font-size:.72rem;color:var(--tx3);margin-top:.35rem;">USB/BT scanner: just scan — it types here automatically.</div>
+        </div>
+        <div id="hubScanResult" style="display:none;margin-top:.75rem;"></div>
+      </div>
+    </div>
+
+    <!-- Print queue card -->
+    <div class="ic">
+      <div class="ich">
+        <h6><i class="fas fa-print" style="color:var(--w);"></i> Label Print Queue</h6>
+        <a href="{% url 'inventory_api:label-pdf' %}?ids=pending&mark_printed=1" target="_blank" class="btn btno bsm"><i class="fas fa-file-pdf"></i> Print all</a>
+      </div>
+      <div class="icb">
+        {% if pending_labels_count == 0 %}
+        <div class="es" style="padding:1.5rem;">
+          <i class="fas fa-tag"></i><h5>No pending labels</h5>
+          <p>Use the tag icon on any product to queue a label.</p>
+        </div>
+        {% else %}
+        <p style="font-size:.875rem;color:var(--tx2);">
+          <strong style="font-size:1.4rem;font-family:var(--mn);color:var(--w);">{{ pending_labels_count }}</strong>
+          label job{{ pending_labels_count|pluralize }} pending
+        </p>
+        <a href="{% url 'inventory_api:label-pdf' %}?ids=pending&mark_printed=1" target="_blank"
+          class="btn btns" style="margin-top:.75rem;width:100%;justify-content:center;">
+          <i class="fas fa-print"></i> Open PDF &amp; Print
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Full scan session link -->
+  <div class="ic">
+    <div class="ich"><h6><i class="fas fa-camera" style="color:var(--t);"></i> Full Scan Session</h6></div>
+    <div class="icb" style="display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;">
+      <div style="flex:1;">
+        <div style="font-weight:600;margin-bottom:.25rem;">Camera, USB &amp; Bluetooth scanner</div>
+        <div style="font-size:.82rem;color:var(--tx2);">
+          Open the full scan session for receiving stock deliveries, stock counts, and adding new products from unknown barcodes.
+        </div>
+      </div>
+      <a href="{% url 'inventory_api:scan-session' %}" class="btn btnp">
+        <i class="fas fa-barcode"></i> Open Scanner
+      </a>
+    </div>
+  </div>
+
+</div><!-- /pane-scanner -->
+</div><!-- /tab-scan -->
+
+<script>
+// ── Hub inline barcode scan ──────────────────────────────────────────
+(function() {
+  const inp = document.getElementById('hubBarcodeInput');
+  if (!inp) return;
+
+  let timer;
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); hubScanBarcode(); inp.value = ''; }
+  });
+  inp.addEventListener('input', () => {
+    clearTimeout(timer);
+    const v = inp.value.trim();
+    if (v.length >= 6) {
+      timer = setTimeout(() => { if (inp.value.trim() === v) { hubScanBarcode(); inp.value = ''; } }, 280);
+    }
+  });
+})();
+
+async function hubScanBarcode() {
+  const inp = document.getElementById('hubBarcodeInput');
+  const res = document.getElementById('hubScanResult');
+  const val = (inp.value || '').trim();
+  if (!val) return;
+
+  res.style.display = 'block';
+  res.innerHTML = '<div style="color:var(--tx3);font-size:.82rem;"><i class="fas fa-spinner fa-spin"></i> Looking up…</div>';
+
+  const fd = new FormData();
+  fd.append('_hub_action', 'scan_barcode');
+  fd.append('barcode', val);
+  fd.append('store_id', '{{ default_store_id|default:"" }}');
+  fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+  try {
+    const r = await fetch(window.location.pathname, { method: 'POST', body: fd });
+    const data = await r.json();
+
+    if (data.found) {
+      const p = data.product;
+      const stk = data.stock !== null && data.stock !== undefined ? data.stock : '—';
+      const imgHtml = p.barcode_image_url
+        ? `<img src="${p.barcode_image_url}" style="height:32px;vertical-align:middle;margin-left:.5rem;border-radius:3px;">`
+        : '';
+      res.innerHTML = `
+        <div style="background:var(--slt);border:1px solid rgba(5,150,105,.2);border-left:3px solid var(--s);border-radius:var(--r);padding:.875rem 1rem;">
+          <div style="font-weight:700;font-size:.95rem;color:var(--tx);">${p.name} ${imgHtml}</div>
+          <div style="font-size:.75rem;color:var(--tx3);margin:.2rem 0 .6rem;">${p.barcode} · SKU: ${p.sku}</div>
+          <div style="display:flex;gap:1rem;font-size:.82rem;flex-wrap:wrap;">
+            <span><strong>Sell:</strong> UGX ${parseFloat(p.selling_price).toLocaleString()}</span>
+            <span><strong>Stock:</strong> ${stk}</span>
+            <span><strong>Category:</strong> ${p.category || '—'}</span>
+          </div>
+          <div style="margin-top:.6rem;display:flex;gap:.5rem;">
+            <a href="/inventory/products/${p.id}/" class="btn btno bsm"><i class="fas fa-eye"></i> View</a>
+            {% if perms.inventory.add_stockmovement %}
+            <button class="btn btns bsm" onclick="hubAddStock(${p.id},${JSON.stringify(p.name)})"><i class="fas fa-cubes"></i> Add stock</button>
+            {% endif %}
+          </div>
+        </div>`;
+    } else {
+      res.innerHTML = `
+        <div style="background:var(--dlt);border:1px solid rgba(220,38,38,.2);border-left:3px solid var(--d);border-radius:var(--r);padding:.875rem 1rem;">
+          <div style="font-weight:700;color:var(--d);">Not found: <code style="font-family:var(--mn);">${val}</code></div>
+          <div style="font-size:.82rem;color:var(--tx2);margin-top:.35rem;">${data.message || 'No product with this barcode.'}</div>
+          ${data.can_create ? `
+          <div style="margin-top:.6rem;">
+            ${data.external_lookup && data.external_lookup.found
+              ? `<div style="font-size:.78rem;color:var(--tx2);margin-bottom:.4rem;">Found online: <strong>${data.external_lookup.name}</strong></div>`
+              : ''}
+            <button class="btn btnp bsm" onclick="openProdModal();document.getElementById('id_barcode').value='${val}';">
+              <i class="fas fa-plus"></i> Create product
+            </button>
+          </div>` : ''}
+        </div>`;
+    }
+  } catch(e) {
+    res.innerHTML = `<div style="color:var(--d);font-size:.82rem;">Scan error: ${e.message}</div>`;
+  }
+}
+
+function hubAddStock(productId, productName) {
+  // Open the existing Stock Adjustment modal pre-filled with this product
+  oSA();
+  setTimeout(() => {
+    const inp = document.querySelector('#saProductSearch');
+    if (inp) { inp.value = productName; inp.dispatchEvent(new Event('input')); }
+  }, 200);
+}
+
+async function queueLabel(productId, productName) {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+  const qty = prompt(`How many labels for "${productName}"?`, '1');
+  if (!qty || isNaN(qty) || parseInt(qty) < 1) return;
+
+  try {
+    const r = await fetch('/api/scan/labels/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+      body: JSON.stringify({ product_ids: [productId], quantity: parseInt(qty) })
+    });
+    const data = await r.json();
+    if (data.created) {
+      toast(`Label queued for ${productName}`, 'success');
+    }
+  } catch(e) {
+    toast('Failed to queue label', 'error');
+  }
+}
+</script>
 
 
 <!-- MODALS -->
@@ -1781,6 +1988,12 @@ function sw(btn) {
     _activateTab('tab-ov');
     history.replaceState(null, '', '#tab-ov');
     if (!window._oi) { window._oi = true; setTimeout(initC, 60); }
+    return;
+  }
+  // Scanner tab is static (rendered server-side), just activate it directly
+  if (tabElId === 'tab-scan') {
+    _activateTab('tab-scan');
+    history.replaceState(null, '', '#tab-scan');
     return;
   }
   const nameMap = {'tab-prod':'products','tab-stk':'stock','tab-cat':'categories','tab-sup':'suppliers'};

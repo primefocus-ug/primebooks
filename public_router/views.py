@@ -49,59 +49,139 @@ class TutorialsView(TemplateView):
         })
         return context
 
+def _generate_secure_password(length=14):
+    """Generate a strong random password for auto-provisioned tenants."""
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+
 def tenant_signup_view(request):
-    """Public-facing tenant signup form"""
+    """
+    Public-facing tenant signup form.
+
+    Free plan  → PENDING (waits for manual approval).
+    Paid plan  → PROCESSING immediately, Celery provisions the tenant.
+
+    Accepts ?plan=PLAN_NAME to pre-select a plan from the pricing page.
+    """
+    # ── Resolve ?plan= query param for pre-selection ──────────────────────────
+    preselected_plan = None
+    preselected_plan_pk = None
+    plan_name_param = request.GET.get('plan', '').upper().strip()
+    if plan_name_param:
+        from company.models import SubscriptionPlan
+        preselected_plan = SubscriptionPlan.objects.filter(
+            name=plan_name_param, is_active=True
+        ).first()
+        if preselected_plan:
+            preselected_plan_pk = preselected_plan.pk
+
     if request.method == 'POST':
         form = TenantSignupForm(request.POST)
 
         if form.is_valid():
             try:
                 with transaction.atomic():
-                    # Save signup request
                     signup_request = form.save(commit=False)
 
                     # Capture request metadata
-                    signup_request.ip_address = get_client_ip(request)
+                    signup_request.ip_address = _get_client_ip(request)
                     signup_request.user_agent = request.META.get('HTTP_USER_AGENT', '')
-                    ref_code = request.GET.get('ref', '') or request.session.get('referral_code', '')
-                    signup_request.referral_source = ref_code
 
+                    ref_code = (
+                            request.GET.get('ref', '')
+                            or request.session.get('referral_code', '')
+                    )
+                    signup_request.referral_source = ref_code
                     if ref_code:
                         request.session['referral_code'] = ref_code
 
+                    # ── Routing decision ──────────────────────────────────────
+                    if signup_request.is_paid_plan:
+                        # Paid plan → mark PROCESSING immediately so the task
+                        # can be queued without a separate admin approval step.
+                        signup_request.status = 'PROCESSING'
+
                     signup_request.save()
 
-                    # Create the referral tracking record
+                    # ── Referral tracking ─────────────────────────────────────
                     if ref_code:
-                        from referral.models import Partner, ReferralSignup
-                        partner = Partner.objects.filter(
-                            referral_code=ref_code, is_active=True, is_approved=True
-                        ).first()
-                        ReferralSignup.objects.create(
-                            partner=partner,
-                            referral_code_used=ref_code,
-                            company_name=signup_request.company_name,
-                            company_email=signup_request.email,
-                            status='pending',
+                        try:
+                            from referral.models import Partner, ReferralSignup
+                            partner = Partner.objects.filter(
+                                referral_code=ref_code, is_active=True, is_approved=True
+                            ).first()
+                            ReferralSignup.objects.create(
+                                partner=partner,
+                                referral_code_used=ref_code,
+                                company_name=signup_request.company_name,
+                                company_email=signup_request.email,
+                                status='pending',
+                            )
+                        except Exception as ref_err:
+                            logger.warning('Referral tracking error: %s', ref_err)
+
+                    # ── For paid plans: store auto-generated password ──────────
+                    if signup_request.is_paid_plan:
+                        password = _generate_secure_password()
+                        TenantApprovalWorkflow.objects.create(
+                            signup_request=signup_request,
+                            generated_password=password,
+                            # No reviewer — auto-approved
+                            reviewed_at=timezone.now(),
+                            approval_notes='Auto-approved: paid plan signup.',
                         )
+                    # For free plans the signal (signals.py) creates the workflow.
 
-                    logger.info(f"New tenant signup: {signup_request.company_name}")
+                logger.info(
+                    'New tenant signup: %s | plan=%s | paid=%s',
+                    signup_request.company_name,
+                    signup_request.selected_plan,
+                    signup_request.is_paid_plan,
+                )
 
-                    # Redirect to success page
-                    return redirect('public_router:signup_success', request_id=signup_request.request_id)
+                # ── Queue Celery task ─────────────────────────────────────────
+                if signup_request.is_paid_plan:
+                    # Fire immediately — no countdown, no admin action needed.
+                    create_tenant_async.apply_async(
+                        args=[str(signup_request.request_id)],
+                        countdown=0,
+                    )
+                    logger.info(
+                        'Paid signup — provisioning task queued immediately for %s',
+                        signup_request.request_id,
+                    )
+                # Free plan: Celery task is queued later by admin_approve_signup.
+
+                return redirect(
+                    'public_router:signup_success',
+                    request_id=signup_request.request_id,
+                )
 
             except Exception as e:
-                logger.error(f"Signup error: {str(e)}")
-                messages.error(request, f'An error occurred: {str(e)}')
+                logger.error('Signup error: %s', e, exc_info=True)
+                messages.error(request, f'An error occurred: {e}')
         else:
             messages.error(request, 'Please correct the errors below.')
     else:
-        form = TenantSignupForm()
+        initial = {}
+        if preselected_plan:
+            initial['selected_plan'] = preselected_plan
+        form = TenantSignupForm(initial=initial)
 
     return render(request, 'public_router/signup.html', {
         'form': form,
-        'title': 'Try Primebooks - Sign Up'
+        'title': 'Try Primebooks — Sign Up',
+        'preselected_plan_pk': preselected_plan_pk,
     })
+
+
+def _get_client_ip(request):
+    """Extract the real client IP, respecting common proxy headers."""
+    forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', '')
 
 
 def signup_success_view(request, request_id):

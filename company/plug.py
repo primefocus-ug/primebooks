@@ -229,7 +229,7 @@ def deactivate_module(request, module_key):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Paid-module payment flow
+# Paid-module payment flow  (single module)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @login_required
@@ -434,4 +434,288 @@ def module_payment_cancelled(request, module_key):
         ).update(status='CANCELLED')
 
     messages.warning(request, f"Payment for '{module.label}' was cancelled. No charge was made.")
+    return redirect('companies:module_store')
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cart payment flow  (multiple modules, single Pesapal transaction)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+def initiate_cart_payment(request):
+    """
+    Step 1 — Accept a list of module_keys, validate each, then create ONE
+    combined Pesapal order for the total amount.
+
+    URL: POST companies/app-store/cart/pay/
+
+    The form posts:  module_keys=crm&module_keys=payroll&module_keys=...
+    (one hidden input per module, all named 'module_keys').
+    """
+    if request.method != 'POST':
+        return redirect('companies:module_store')
+
+    company      = request.tenant
+    module_keys  = request.POST.getlist('module_keys')
+
+    if not module_keys:
+        messages.warning(request, 'Your cart is empty — please add at least one module.')
+        return redirect('companies:module_store')
+
+    # ── Deduplicate ──────────────────────────────────────────────────────────
+    module_keys = list(dict.fromkeys(module_keys))   # preserves order, removes dupes
+
+    # ── Fetch & validate each module ────────────────────────────────────────
+    company_module_map = {
+        cm.module_id: cm
+        for cm in CompanyModule.objects.filter(company=company).select_related('module')
+    }
+
+    valid_modules   = []   # AvailableModule instances that pass all checks
+    skipped_labels  = []   # labels skipped with a reason (already active / pending / etc.)
+
+    for key in module_keys:
+        try:
+            module = AvailableModule.objects.prefetch_related('dependencies').get(
+                key=key, is_publicly_available=True
+            )
+        except AvailableModule.DoesNotExist:
+            logger.warning('Cart: unknown module key "%s" for tenant %s', key, company.schema_name)
+            continue
+
+        if module.monthly_price <= 0:
+            # Free modules should not be in the cart, skip silently
+            continue
+
+        cm = company_module_map.get(module.id)
+
+        if cm and cm.is_active:
+            skipped_labels.append(f'{module.label} (already active)')
+            continue
+
+        if cm and cm.within_paid_period:
+            # Re-activate for free instead of charging again
+            cm.activate()
+            _clear_module_cache(company.schema_name)
+            skipped_labels.append(f'{module.label} (reactivated free — still in paid period)')
+            continue
+
+        if _has_pending_payment(company, module):
+            skipped_labels.append(f'{module.label} (payment already pending)')
+            continue
+
+        # Check dependencies
+        dep_ok = True
+        for dep in module.dependencies.all():
+            dep_cm = company_module_map.get(dep.id)
+            if not dep_cm or not dep_cm.is_active:
+                skipped_labels.append(f'{module.label} (requires {dep.label} first)')
+                dep_ok = False
+                break
+        if not dep_ok:
+            continue
+
+        valid_modules.append(module)
+
+    # Notify user of any skipped modules
+    if skipped_labels:
+        messages.warning(
+            request,
+            'Some modules were skipped: ' + '; '.join(skipped_labels)
+        )
+
+    if not valid_modules:
+        messages.info(request, 'No modules needed payment — nothing to charge.')
+        return redirect('companies:module_store')
+
+    # ── Build combined order ─────────────────────────────────────────────────
+    total_amount       = sum(float(m.monthly_price) for m in valid_modules)
+    keys_slug          = '-'.join(m.key.upper()[:10] for m in valid_modules)[:40]
+    merchant_reference = f'CART-{keys_slug}-{uuid.uuid4().hex[:8].upper()}'
+    module_names       = ', '.join(m.label for m in valid_modules)
+    description        = f'App Store: {module_names[:80]} | {company.name[:30]}'
+    currency           = 'UGX'
+
+    user = request.user
+    billing_address = {
+        'email_address': getattr(user, 'email', '') or '',
+        'phone_number':  getattr(user, 'phone', '') or '',
+        'first_name':    (getattr(user, 'first_name', '') or getattr(user, 'username', ''))[:50],
+        'last_name':     getattr(user, 'last_name', '')[:50],
+        'country_code':  'UG',
+    }
+
+    svc     = PesapalService()
+    ipn_url = request.build_absolute_uri('/pesapal/ipn/platform/')
+    ipn_res = svc.get_or_register_ipn(ipn_url)
+
+    if not ipn_res['success']:
+        logger.error('Cart IPN registration failed: tenant=%s err=%s',
+                     company.schema_name, ipn_res.get('error'))
+        messages.error(request, 'Payment setup failed. Please try again or contact support.')
+        return redirect('companies:module_store')
+
+    # Encode all module keys into the callback URL so we know what to activate
+    cart_keys_param = ','.join(m.key for m in valid_modules)
+    callback_url     = request.build_absolute_uri(
+        reverse('companies:cart_payment_callback')
+    ) + f'?cart_keys={cart_keys_param}'
+    cancellation_url = request.build_absolute_uri(
+        reverse('companies:cart_payment_cancelled')
+    ) + f'?cart_keys={cart_keys_param}'
+
+    order_result = svc.submit_order(
+        merchant_reference = merchant_reference,
+        amount             = total_amount,
+        currency           = currency,
+        description        = description,
+        notification_id    = ipn_res['ipn_id'],
+        billing_address    = billing_address,
+        callback_url       = callback_url,
+        cancellation_url   = cancellation_url,
+        branch             = company.name[:50],
+    )
+
+    if not order_result['success']:
+        logger.error('Cart order submission failed: tenant=%s err=%s',
+                     company.schema_name, order_result.get('error'))
+        messages.error(request, 'Could not initiate payment. Please try again later.')
+        return redirect('companies:module_store')
+
+    # ── Create one PlatformInvoice per module (linked to same tracking ID) ───
+    tracking_id  = order_result['order_tracking_id']
+    redirect_url = order_result['redirect_url']
+
+    for module in valid_modules:
+        PlatformInvoice.objects.create(
+            company             = company,
+            module              = module,
+            plan                = None,
+            amount              = float(module.monthly_price),
+            currency            = currency,
+            description         = f'Cart: {module.label} | {company.name[:40]}',
+            merchant_reference  = merchant_reference,
+            pesapal_tracking_id = tracking_id,
+            redirect_url        = redirect_url,
+            status              = 'PENDING',
+        )
+
+    logger.info(
+        'Cart payment initiated | tenant=%s modules=%s total=%.2f tracking=%s',
+        company.schema_name, cart_keys_param, total_amount, tracking_id,
+    )
+
+    return redirect(redirect_url)
+
+
+@login_required
+def cart_payment_callback(request):
+    """
+    Pesapal redirects here after a cart (multi-module) payment.
+    URL: GET companies/app-store/cart/callback/?OrderTrackingId=...&cart_keys=crm,payroll
+    """
+    company     = request.tenant
+    tracking_id = request.GET.get('OrderTrackingId', '')
+    cart_keys   = request.GET.get('cart_keys', '')
+
+    if not tracking_id or not cart_keys:
+        messages.error(request, 'Payment verification failed — missing parameters.')
+        return redirect('companies:module_store')
+
+    svc           = PesapalService()
+    status_result = svc.get_transaction_status(tracking_id)
+
+    if not status_result['success']:
+        logger.error('Cart status check failed: tenant=%s tracking=%s err=%s',
+                     company.schema_name, tracking_id, status_result.get('error'))
+        messages.error(request, 'Could not verify payment status. Please contact support.')
+        return redirect('companies:module_store')
+
+    status_code = status_result.get('status_code')
+
+    if status_code == 1:
+        paid_through   = (timezone.now() + timedelta(days=MODULE_BILLING_DAYS)).date()
+        activated      = []
+
+        for key in cart_keys.split(','):
+            key = key.strip()
+            if not key:
+                continue
+            try:
+                module = AvailableModule.objects.get(key=key)
+            except AvailableModule.DoesNotExist:
+                continue
+
+            cm, _ = CompanyModule.objects.get_or_create(company=company, module=module)
+            if not cm.is_active:
+                cm.activate(paid_through=paid_through)
+                activated.append(module.label)
+            else:
+                cm.paid_through = paid_through
+                cm.save(update_fields=['paid_through'])
+
+        _clear_module_cache(company.schema_name)
+
+        # Mark invoices as paid
+        try:
+            PlatformInvoice.objects.filter(
+                pesapal_tracking_id=tracking_id,
+                company=company,
+                status='PENDING',
+            ).update(
+                status               = 'PAID',
+                pesapal_confirmation = status_result.get('confirmation_code', ''),
+                payment_method       = status_result.get('payment_method', ''),
+                payment_account      = status_result.get('payment_account', ''),
+                paid_at              = timezone.now(),
+            )
+        except Exception as exc:
+            logger.error('Cart PlatformInvoice update error: %s', exc)
+
+        logger.info('Cart payment succeeded: tenant=%s modules=%s tracking=%s paid_through=%s',
+                    company.schema_name, cart_keys, tracking_id, paid_through)
+
+        if activated:
+            labels = ', '.join(activated)
+            messages.success(
+                request,
+                f'✅ {len(activated)} module(s) activated: {labels}. '
+                f'Subscriptions run until {paid_through.strftime("%d %b %Y")}.'
+            )
+        else:
+            messages.info(request, 'Payment received — all selected modules are already active.')
+
+        return redirect('companies:module_store')
+
+    # Payment not complete
+    status_description = status_result.get('status_description', 'Unknown')
+    logger.warning('Cart payment not completed: tenant=%s status=%s tracking=%s',
+                   company.schema_name, status_description, tracking_id)
+
+    messages.error(
+        request,
+        f"Payment was not completed (status: {status_description}). "
+        "No charge was made. You can try again from the App Store."
+    )
+    return redirect('companies:module_store')
+
+
+@login_required
+def cart_payment_cancelled(request):
+    """Pesapal redirects here when user cancels a cart payment."""
+    tracking_id = request.GET.get('OrderTrackingId', '')
+    cart_keys   = request.GET.get('cart_keys', '')
+
+    if tracking_id:
+        PlatformInvoice.objects.filter(
+            pesapal_tracking_id=tracking_id,
+            company=request.tenant,
+            status='PENDING',
+        ).update(status='CANCELLED')
+
+    module_count = len([k for k in cart_keys.split(',') if k.strip()]) if cart_keys else 0
+    messages.warning(
+        request,
+        f"Cart payment cancelled ({module_count} module(s)). No charge was made."
+    )
     return redirect('companies:module_store')

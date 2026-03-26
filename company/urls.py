@@ -46,7 +46,7 @@ company_patterns = [
         plug.deactivate_module,
         name='deactivate_module'
     ),
-    # Paid-module payment flow
+    # Single paid-module payment flow
     path(
         'app-store/pay/<slug:module_key>/',
         plug.initiate_module_payment,
@@ -63,6 +63,24 @@ company_patterns = [
         name='module_payment_cancelled'
     ),
     path('app-store/reactivate/<slug:module_key>/', plug.reactivate_module, name='reactivate_module'),
+
+    # ── Cart payment flow (multiple modules, one Pesapal transaction) ─────────
+    path(
+        'app-store/cart/pay/',
+        plug.initiate_cart_payment,
+        name='initiate_cart_payment'
+    ),
+    path(
+        'app-store/cart/callback/',
+        plug.cart_payment_callback,
+        name='cart_payment_callback'
+    ),
+    path(
+        'app-store/cart/cancelled/',
+        plug.cart_payment_cancelled,
+        name='cart_payment_cancelled'
+    ),
+
     # ── Subscription ──────────────────────────────────────────────────────────
     path('subscription/upgrade/<int:plan_id>/', SubscriptionUpgradeView.as_view(), name='subscription_upgrade'),
     path('subscription/upgrade/<int:plan_id>/cost/', SubscriptionUpgradeView.as_view(), name='upgrade_cost'),

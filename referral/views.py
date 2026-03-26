@@ -12,7 +12,13 @@ from django.utils import timezone
 from django.conf import settings
 from django.db.models import Count
 from django.db.models.functions import TruncMonth
-
+from django.core.mail import send_mail
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.contrib.auth import update_session_auth_hash
+from .forms import (ChangePasswordForm, ChangeEmailForm,
+                   ForgotPasswordForm, PasswordResetForm)
 from .models import Partner, ReferralSignup
 from .forms import PartnerRegistrationForm, PartnerLoginForm, PartnerProfileForm, PartnerBrandingForm
 from .decorators import partner_required
@@ -71,6 +77,205 @@ def partner_logout(request):
 # ─────────────────────────────────────────────
 # Dashboard Views
 # ─────────────────────────────────────────────
+def forgot_password(request):
+    """
+    Step 1: partner enters their email.
+    We always show the same "check your inbox" message to avoid
+    leaking whether an account exists.
+    """
+    if request.user.is_authenticated:
+        return redirect('referral:dashboard')
+
+    if request.method == 'POST':
+        form = ForgotPasswordForm(request.POST)
+        if form.is_valid():
+            email = form.cleaned_data['email']
+            _send_password_reset_email(request, email)
+            return redirect('referral:forgot_password_done')
+    else:
+        form = ForgotPasswordForm()
+
+    return render(request, 'referral/forgot_password.html', {'form': form})
+
+
+def forgot_password_done(request):
+    """Step 2: confirmation page — "check your inbox"."""
+    return render(request, 'referral/forgot_password_done.html')
+
+
+def password_reset_confirm(request, uidb64, token):
+    """
+    Step 3: partner clicks the link in their email.
+    uidb64 + token are validated; on success the partner can set a new password.
+    """
+    partner = _get_partner_from_uid(uidb64)
+    valid_link = partner is not None and default_token_generator.check_token(partner, token)
+
+    if not valid_link:
+        return render(request, 'referral/password_reset_invalid.html')
+
+    if request.method == 'POST':
+        form = PasswordResetForm(request.POST)
+        if form.is_valid():
+            partner.set_password(form.cleaned_data['password1'])
+            partner.save(update_fields=['password'])
+            messages.success(request, "✓ Password updated. You can now sign in.")
+            return redirect('referral:login')
+    else:
+        form = PasswordResetForm()
+
+    return render(request, 'referral/password_reset_confirm.html', {
+        'form': form,
+        'uidb64': uidb64,
+        'token': token,
+    })
+
+
+# ── Change Password (authenticated) ────────────────────────────────────────
+
+@partner_required
+def change_password(request):
+    partner = request.user
+    if request.method == 'POST':
+        form = ChangePasswordForm(partner, request.POST)
+        if form.is_valid():
+            form.save()
+            # Keep the user logged in after password change
+            update_session_auth_hash(request, partner)
+            messages.success(request, "✓ Password changed successfully.")
+            return redirect('referral:change_password')
+    else:
+        form = ChangePasswordForm(partner)
+
+    return render(request, 'referral/change_password.html', {
+        'form': form,
+        'partner': partner,
+    })
+
+
+# ── Change Email (authenticated) ────────────────────────────────────────────
+
+@partner_required
+def change_email(request):
+    """
+    Partner requests an email change.
+    We send a confirmation link to the NEW address before committing the change.
+    """
+    partner = request.user
+    if request.method == 'POST':
+        form = ChangeEmailForm(partner, request.POST)
+        if form.is_valid():
+            new_email = form.cleaned_data['new_email']
+            _send_email_change_confirmation(request, partner, new_email)
+            messages.success(
+                request,
+                f"A confirmation link has been sent to {new_email}. "
+                "Click it to complete the email change."
+            )
+            return redirect('referral:change_email')
+    else:
+        form = ChangeEmailForm(partner)
+
+    return render(request, 'referral/change_email.html', {
+        'form': form,
+        'partner': partner,
+    })
+
+
+def confirm_email_change(request, uidb64, token):
+    """
+    Partner clicks the link in the new-email confirmation message.
+    We store the pending email in the token payload via a signed value in the session.
+    Because default_token_generator doesn't carry a payload, we encode the
+    new email in the uidb64 portion as: base64(partner_pk + ':' + new_email).
+    """
+    try:
+        decoded = force_str(urlsafe_base64_decode(uidb64))
+        pk_str, new_email = decoded.split(':', 1)
+        uid = uuid.UUID(pk_str)
+        partner = Partner.objects.get(pk=uid)
+    except Exception:
+        return render(request, 'referral/password_reset_invalid.html', {
+            'message': "This email-change link is invalid or has expired."
+        })
+
+    if not default_token_generator.check_token(partner, token):
+        return render(request, 'referral/password_reset_invalid.html', {
+            'message': "This email-change link is invalid or has expired."
+        })
+
+    # Check the new email is still available
+    if Partner.objects.filter(email__iexact=new_email).exclude(pk=partner.pk).exists():
+        messages.error(request, "That email address is already in use by another account.")
+        return redirect('referral:login')
+
+    partner.email = new_email
+    partner.save(update_fields=['email'])
+    messages.success(request, f"✓ Email updated to {new_email}. Please sign in again.")
+    return redirect('referral:login')
+
+
+# ── Private helpers ─────────────────────────────────────────────────────────
+
+def _get_partner_from_uid(uidb64):
+    try:
+        uid = uuid.UUID(force_str(urlsafe_base64_decode(uidb64)))
+        return Partner.objects.get(pk=uid)
+    except Exception:
+        return None
+
+
+def _send_password_reset_email(request, email):
+    try:
+        partner = Partner.objects.get(email__iexact=email, is_active=True)
+    except Partner.DoesNotExist:
+        return  # Silent — don't reveal account existence
+
+    uid = urlsafe_base64_encode(force_bytes(str(partner.pk)))
+    token = default_token_generator.make_token(partner)
+    reset_url = request.build_absolute_uri(
+        f'/partners/password-reset/{uid}/{token}/'
+    )
+
+    send_mail(
+        subject='Reset your PrimeBooks Partner password',
+        message=(
+            f"Hi {partner.full_name},\n\n"
+            f"Click the link below to reset your password (valid for 24 hours):\n\n"
+            f"{reset_url}\n\n"
+            f"If you didn't request this, you can safely ignore this email.\n\n"
+            f"— PrimeBooks Partner Team"
+        ),
+        from_email=None,  # uses DEFAULT_FROM_EMAIL from settings
+        recipient_list=[partner.email],
+        fail_silently=True,
+    )
+
+
+def _send_email_change_confirmation(request, partner, new_email):
+    # Encode both pk and new_email into uidb64
+    payload = f"{str(partner.pk)}:{new_email}"
+    uid = urlsafe_base64_encode(force_bytes(payload))
+    token = default_token_generator.make_token(partner)
+    confirm_url = request.build_absolute_uri(
+        f'/partners/confirm-email-change/{uid}/{token}/'
+    )
+
+    send_mail(
+        subject='Confirm your new PrimeBooks Partner email address',
+        message=(
+            f"Hi {partner.full_name},\n\n"
+            f"You requested to change your sign-in email to: {new_email}\n\n"
+            f"Click the link below to confirm (valid for 24 hours):\n\n"
+            f"{confirm_url}\n\n"
+            f"If you didn't request this, please ignore this email — "
+            f"your current address will remain unchanged.\n\n"
+            f"— PrimeBooks Partner Team"
+        ),
+        from_email=None,
+        recipient_list=[new_email],
+        fail_silently=True,
+    )
 
 @partner_required
 def dashboard(request):

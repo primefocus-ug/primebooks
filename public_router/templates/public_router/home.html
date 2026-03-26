@@ -888,63 +888,92 @@
     </div>
 </section>
 
-<!-- Pricing Section -->
+<!-- Pricing Section — dynamic from DB -->
 <section class="pricing">
     <h2>Choose Your Plan</h2>
     <p class="pricing-subtitle">Flexible pricing for businesses of all sizes</p>
     <div class="pricing-grid">
-        <div class="pricing-card">
-            <h3>Starter</h3>
-            <p class="description">Perfect for small businesses just getting started</p>
-            <div class="price">Free</div>
-            <span class="price-period">60-day trial, then UGX 50,000/month</span>
+
+        {% load humanize %}
+
+        {% for plan in plans %}
+        <div class="pricing-card {% if plan == popular_plan %}featured{% endif %}">
+
+            {% if plan == popular_plan %}
+            <div class="popular-badge">Most Popular</div>
+            {% endif %}
+
+            <h3>{{ plan.display_name|default:plan.get_name_display }}</h3>
+            <p class="description">{{ plan.description|default:"" }}</p>
+
+            {% if plan.price == 0 %}
+                <div class="price">Free</div>
+                <span class="price-period">{{ plan.trial_days }}-day trial included</span>
+            {% else %}
+                <div class="price">
+                    UGX {{ plan.price|floatformat:0|intcomma }}
+                    <span>/{{ plan.get_billing_cycle_display|lower }}</span>
+                </div>
+                <span class="price-period">Billed {{ plan.get_billing_cycle_display|lower }}</span>
+            {% endif %}
+
             <ul class="pricing-features">
-                <li>1 Store/Branch</li>
-                <li>Up to 5 users</li>
-                <li>Basic EFRIS integration</li>
-                <li>Stock management</li>
-                <li>Sales tracking</li>
-                <li>Basic reports</li>
+                <li>Up to {{ plan.max_users }} user{{ plan.max_users|pluralize }}</li>
+                <li>Up to {{ plan.max_branches }} branch{{ plan.max_branches|pluralize:"es" }}</li>
+                {% if plan.can_use_api %}<li>API access</li>{% endif %}
+                {% if plan.can_export_data %}<li>Data export</li>{% endif %}
+                {% if plan.can_use_integrations %}<li>Third-party integrations</li>{% endif %}
+                {% if plan.can_use_advanced_reports %}<li>Advanced reports &amp; analytics</li>{% endif %}
+                {% if plan.can_use_multi_currency %}<li>Multi-currency support</li>{% endif %}
+                {% if plan.can_use_custom_branding %}<li>Custom branding</li>{% endif %}
+                <li>{{ plan.get_support_level_display }}</li>
+                {% for feature in plan.features.additional_features %}
+                <li>{{ feature }}</li>
+                {% endfor %}
+            </ul>
+
+            {% if plan.price == 0 %}
+                <a href="{% url 'public_router:signup' %}?plan={{ plan.name }}"
+                   class="btn btn-outline btn-large"
+                   style="width:100%;display:block;text-align:center;">
+                   Start Free Trial
+                </a>
+            {% elif plan.name == 'ENTERPRISE' %}
+                <a href="{% url 'public_support:contact' %}"
+                   class="btn btn-outline btn-large"
+                   style="width:100%;display:block;text-align:center;">
+                   Contact Sales
+                </a>
+            {% else %}
+                <a href="{% url 'public_router:signup' %}?plan={{ plan.name }}"
+                   class="btn {% if plan == popular_plan %}btn-primary{% else %}btn-outline{% endif %} btn-large"
+                   style="width:100%;display:block;text-align:center;">
+                   Get Started
+                </a>
+            {% endif %}
+
+        </div>
+        {% empty %}
+        {# Fallback if no plans in DB yet #}
+        <div class="pricing-card">
+            <h3>Free Trial</h3>
+            <p class="description">Get started today — no credit card required.</p>
+            <div class="price">Free</div>
+            <span class="price-period">60-day trial</span>
+            <ul class="pricing-features">
+                <li>Full platform access</li>
                 <li>Email support</li>
             </ul>
             <a href="{% url 'public_router:signup' %}" class="btn btn-outline btn-large" style="width:100%;display:block;text-align:center;">Start Free Trial</a>
         </div>
-        <div class="pricing-card featured">
-            <div class="popular-badge">Most Popular</div>
-            <h3>Professional</h3>
-            <p class="description">For growing businesses with multiple locations</p>
-            <div class="price">UGX 150k <span>/mo</span></div>
-            <span class="price-period">Billed monthly</span>
-            <ul class="pricing-features">
-                <li>Up to 5 stores</li>
-                <li>Unlimited users</li>
-                <li>Full EFRIS integration</li>
-                <li>Advanced inventory</li>
-                <li>Multi-device POS</li>
-                <li>Advanced analytics</li>
-                <li>Priority support</li>
-                <li>Custom reports</li>
-            </ul>
-            <a href="{% url 'public_router:signup' %}" class="btn btn-primary btn-large" style="width:100%;display:block;text-align:center;">Get Started</a>
-        </div>
-        <div class="pricing-card">
-            <h3>Enterprise</h3>
-            <p class="description">For large organizations with complex needs</p>
-            <div class="price">Custom</div>
-            <span class="price-period">Contact sales for pricing</span>
-            <ul class="pricing-features">
-                <li>Unlimited stores</li>
-                <li>Unlimited users</li>
-                <li>White-label options</li>
-                <li>Custom integrations</li>
-                <li>Dedicated support</li>
-                <li>On-premise option</li>
-                <li>Training & onboarding</li>
-                <li>SLA guarantee</li>
-            </ul>
-            <a href="{% url 'public_support:contact' %}" class="btn btn-outline btn-large" style="width:100%;display:block;text-align:center;">Contact Sales</a>
-        </div>
+        {% endfor %}
+
     </div>
+    <p style="text-align:center;margin-top:2rem;">
+        <a href="{% url 'pricing' %}" style="color:var(--text-secondary);font-size:0.9rem;">
+            View full plan comparison →
+        </a>
+    </p>
 </section>
 
 <!-- ══════════════════════════════════════════════════

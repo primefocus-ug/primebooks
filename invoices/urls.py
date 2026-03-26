@@ -56,4 +56,7 @@ urlpatterns = [
 
     # AJAX endpoints
     path('ajax/status/', views.ajax_invoice_status, name='ajax_status'),
+
+    # ── NEW: search autocomplete ──────────────────────────────────────────────
+    path('ajax/search-autocomplete/', views.invoice_search_autocomplete, name='search_autocomplete'),
 ]

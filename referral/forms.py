@@ -3,6 +3,150 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.core.exceptions import ValidationError
 from .models import Partner
 
+# ── Add these classes to forms.py ──────────────────────────────────────────
+
+from django import forms
+from django.core.exceptions import ValidationError
+
+
+class ForgotPasswordForm(forms.Form):
+    email = forms.EmailField(
+        label='Email Address',
+        widget=forms.EmailInput(attrs={
+            'placeholder': 'your@email.com',
+            'class': 'form-input',
+            'autofocus': True,
+        }),
+    )
+
+    def clean_email(self):
+        from .models import Partner
+        email = self.cleaned_data['email'].lower().strip()
+        # We do NOT reveal whether the email exists — just validate format.
+        # The view will silently succeed either way.
+        return email
+
+
+class PasswordResetForm(forms.Form):
+    """Used on the reset-password page (token-gated)."""
+    password1 = forms.CharField(
+        label='New Password',
+        widget=forms.PasswordInput(attrs={
+            'placeholder': 'Create a new password',
+            'class': 'form-input',
+            'autofocus': True,
+        }),
+    )
+    password2 = forms.CharField(
+        label='Confirm New Password',
+        widget=forms.PasswordInput(attrs={
+            'placeholder': 'Repeat your new password',
+            'class': 'form-input',
+        }),
+    )
+
+    def clean_password1(self):
+        p1 = self.cleaned_data.get('password1', '')
+        if len(p1) < 8:
+            raise ValidationError("Password must be at least 8 characters.")
+        return p1
+
+    def clean_password2(self):
+        p1 = self.cleaned_data.get('password1')
+        p2 = self.cleaned_data.get('password2')
+        if p1 and p2 and p1 != p2:
+            raise ValidationError("Passwords do not match.")
+        return p2
+
+
+class ChangePasswordForm(forms.Form):
+    """Used by a logged-in partner from the profile/settings page."""
+    current_password = forms.CharField(
+        label='Current Password',
+        widget=forms.PasswordInput(attrs={
+            'placeholder': 'Your current password',
+            'class': 'form-input',
+        }),
+    )
+    new_password1 = forms.CharField(
+        label='New Password',
+        widget=forms.PasswordInput(attrs={
+            'placeholder': 'Create a new password',
+            'class': 'form-input',
+        }),
+    )
+    new_password2 = forms.CharField(
+        label='Confirm New Password',
+        widget=forms.PasswordInput(attrs={
+            'placeholder': 'Repeat your new password',
+            'class': 'form-input',
+        }),
+    )
+
+    def __init__(self, user, *args, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_current_password(self):
+        cp = self.cleaned_data.get('current_password')
+        if not self.user.check_password(cp):
+            raise ValidationError("Your current password is incorrect.")
+        return cp
+
+    def clean_new_password1(self):
+        p1 = self.cleaned_data.get('new_password1', '')
+        if len(p1) < 8:
+            raise ValidationError("Password must be at least 8 characters.")
+        return p1
+
+    def clean_new_password2(self):
+        p1 = self.cleaned_data.get('new_password1')
+        p2 = self.cleaned_data.get('new_password2')
+        if p1 and p2 and p1 != p2:
+            raise ValidationError("Passwords do not match.")
+        return p2
+
+    def save(self):
+        self.user.set_password(self.cleaned_data['new_password1'])
+        self.user.save(update_fields=['password'])
+        return self.user
+
+
+class ChangeEmailForm(forms.Form):
+    """Lets a logged-in partner request an email change (sends confirmation)."""
+    new_email = forms.EmailField(
+        label='New Email Address',
+        widget=forms.EmailInput(attrs={
+            'placeholder': 'new@email.com',
+            'class': 'form-input',
+        }),
+    )
+    password = forms.CharField(
+        label='Confirm with Password',
+        widget=forms.PasswordInput(attrs={
+            'placeholder': 'Your current password',
+            'class': 'form-input',
+        }),
+    )
+
+    def __init__(self, user, *args, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_new_email(self):
+        from .models import Partner
+        email = self.cleaned_data['new_email'].lower().strip()
+        if email == self.user.email.lower():
+            raise ValidationError("That's already your current email address.")
+        if Partner.objects.filter(email__iexact=email).exists():
+            raise ValidationError("An account with that email already exists.")
+        return email
+
+    def clean_password(self):
+        pw = self.cleaned_data.get('password')
+        if not self.user.check_password(pw):
+            raise ValidationError("Incorrect password.")
+        return pw
 
 class PartnerRegistrationForm(forms.ModelForm):
     password1 = forms.CharField(

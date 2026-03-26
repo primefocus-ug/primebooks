@@ -1,0 +1,940 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Scan Session | {{ company.trading_name|default:company.name }}{% endblock %}
+{% block meta_description %}Inventory scan session — scan barcodes to receive stock, count inventory, or look up products.{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ═══════════════════════════════════════════════════════════
+   SCAN SESSION — built on base.html design tokens
+   Dark-mode aware via [data-theme="dark"] cascade
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --sc-green:    #059669;
+  --sc-green-bg: #d1fae5;
+  --sc-red:      #dc2626;
+  --sc-red-bg:   #fee2e2;
+  --sc-blue:     var(--primary-600, #2563eb);
+  --sc-blue-bg:  var(--primary-50,  #eff6ff);
+  --sc-amber:    #d97706;
+  --sc-amber-bg: #fef3c7;
+}
+[data-theme="dark"] {
+  --sc-green-bg: rgba(5,150,105,.18);
+  --sc-red-bg:   rgba(220,38,38,.18);
+  --sc-blue-bg:  rgba(37,99,235,.18);
+  --sc-amber-bg: rgba(217,119,6,.18);
+}
+
+.scan-page * { box-sizing: border-box; }
+
+.scan-page {
+  padding-top: var(--header-height, 70px);
+  min-height: 100vh;
+  background: var(--bg-secondary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ════════════════════════════════════════════
+   SETUP SCREEN
+   ════════════════════════════════════════════ */
+#setup-screen { max-width: 460px; margin: 48px auto 0; padding: 0 16px; animation: fadeUp .3s ease; }
+#setup-screen.hidden { display: none; }
+
+.setup-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 20px; padding: 32px;
+  box-shadow: var(--shadow-lg);
+}
+.setup-logo {
+  width: 52px; height: 52px;
+  background: linear-gradient(135deg, var(--sc-blue), var(--primary-700, #1d4ed8));
+  border-radius: 14px; display: flex; align-items: center; justify-content: center;
+  font-size: 26px; margin-bottom: 20px;
+  box-shadow: 0 4px 14px rgba(37,99,235,.35);
+}
+.setup-title   { font-size: 22px; font-weight: 800; color: var(--text-primary); margin-bottom: 4px; }
+.setup-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 28px; }
+.setup-field   { margin-bottom: 18px; }
+.setup-label   { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 6px; }
+.setup-select  {
+  width: 100%; padding: 11px 36px 11px 14px;
+  border: 1.5px solid var(--border-color); border-radius: 10px; font-size: 14px;
+  background: var(--bg-primary); color: var(--text-primary);
+  transition: border-color .15s, box-shadow .15s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
+}
+.setup-select:focus { outline: none; border-color: var(--sc-blue); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+.btn-start {
+  width: 100%; padding: 13px;
+  background: linear-gradient(135deg, var(--sc-blue), var(--primary-700, #1d4ed8));
+  color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: 0 4px 14px rgba(37,99,235,.35);
+  transition: opacity .15s, transform .1s; margin-top: 8px;
+}
+.btn-start:hover  { opacity: .9; }
+.btn-start:active { transform: scale(.98); }
+
+/* ════════════════════════════════════════════
+   SCAN SCREEN
+   ════════════════════════════════════════════ */
+#scan-screen { display: none; }
+#scan-screen.visible { display: block; }
+
+.scan-bar {
+  position: sticky; top: var(--header-height, 70px); z-index: 200;
+  background: var(--bg-primary); border-bottom: 1px solid var(--border-color);
+  padding: 0 20px; display: flex; align-items: center; gap: 12px; height: 54px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+.mode-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--sc-green);
+  box-shadow: 0 0 0 3px var(--sc-green-bg); animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 3px var(--sc-green-bg); } 50% { box-shadow: 0 0 0 6px transparent; } }
+.mode-label { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.store-chip {
+  background: var(--bg-tertiary); border: 1px solid var(--border-color);
+  border-radius: 20px; padding: 3px 10px; font-size: 12px; color: var(--text-muted); white-space: nowrap;
+}
+.scan-bar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+.btn {
+  padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+  border: none; display: inline-flex; align-items: center; gap: 6px;
+  transition: opacity .12s, box-shadow .12s; text-decoration: none; white-space: nowrap;
+}
+.btn:hover    { opacity: .87; }
+.btn-primary  { background: var(--sc-blue);  color: #fff; }
+.btn-success  { background: var(--sc-green); color: #fff; }
+.btn-danger   { background: var(--sc-red);   color: #fff; }
+.btn-ghost    { background: transparent; color: var(--text-primary); border: 1px solid var(--border-color); }
+.btn-ghost:hover { background: var(--bg-tertiary); }
+.btn-icon {
+  width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center;
+  justify-content: center; font-size: 16px; cursor: pointer; border: none;
+  background: transparent; color: var(--text-secondary); transition: background .12s, color .12s;
+}
+.btn-icon:hover  { background: var(--bg-tertiary); color: var(--text-primary); }
+.btn-icon.active { background: var(--sc-blue-bg); color: var(--sc-blue); }
+
+.scan-body {
+  display: grid; grid-template-columns: 1fr 340px;
+  gap: 16px; padding: 16px 20px 32px; align-items: start;
+}
+@media (max-width: 860px) {
+  .scan-body { grid-template-columns: 1fr; }
+  .session-panel { position: static !important; }
+}
+
+.sc-card {
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: 14px; padding: 20px; box-shadow: var(--shadow-sm);
+}
+.sc-card + .sc-card { margin-top: 14px; }
+.sc-card-head {
+  font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 14px; display: flex; align-items: center; gap: 6px;
+}
+
+/* ── Barcode input ── */
+.barcode-wrap { position: relative; }
+.barcode-input {
+  width: 100%; padding: 16px 16px 16px 48px;
+  font-size: 20px; font-family: 'Courier New', monospace; letter-spacing: .08em;
+  border: 2px solid var(--sc-blue); border-radius: 12px; outline: none;
+  background: var(--bg-primary); color: var(--text-primary);
+  transition: border-color .18s, box-shadow .18s, background .18s;
+}
+.barcode-input::placeholder { color: var(--text-muted); font-size: 15px; font-family: inherit; letter-spacing: 0; }
+.barcode-input:focus { border-color: var(--sc-green); box-shadow: 0 0 0 4px rgba(5,150,105,.12); }
+.barcode-input.flash-ok  { border-color: var(--sc-green); background: var(--sc-green-bg); transition: none; }
+.barcode-input.flash-err { border-color: var(--sc-red);   background: var(--sc-red-bg);   transition: none; }
+.barcode-icon-l {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  font-size: 20px; color: var(--text-muted); pointer-events: none;
+}
+.barcode-hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; display: flex; align-items: center; gap: 5px; }
+
+.search-row { display: flex; gap: 8px; margin-top: 12px; }
+.search-input {
+  flex: 1; padding: 9px 12px; border: 1.5px solid var(--border-color);
+  border-radius: 8px; font-size: 14px; background: var(--bg-primary); color: var(--text-primary);
+  transition: border-color .15s;
+}
+.search-input:focus { outline: none; border-color: var(--sc-blue); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+.search-results { margin-top: 8px; border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; display: none; }
+.search-results.visible { display: block; }
+.search-result-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; cursor: pointer; font-size: 13px;
+  border-bottom: 1px solid var(--border-color); transition: background .1s;
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:hover { background: var(--bg-tertiary); }
+.sri-name { font-weight: 600; color: var(--text-primary); }
+.sri-meta { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.sri-price { font-weight: 700; color: var(--sc-blue); font-size: 13px; white-space: nowrap; }
+
+.camera-section { margin-top: 12px; }
+#camera-reader { border-radius: 10px; overflow: hidden; border: 2px solid var(--sc-blue); display: none; margin-top: 8px; }
+#camera-reader.active { display: block; }
+.camera-tip { font-size: 12px; color: var(--text-muted); margin-top: 6px; display: none; align-items: center; gap: 4px; }
+#camera-reader.active ~ .camera-tip { display: flex; }
+
+/* ── Result ── */
+.result-panel { display: none; animation: fadeUp .2s ease; }
+.result-panel.visible { display: block; }
+.result-card { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-md); }
+.result-card.found   { border-top: 3px solid var(--sc-green); }
+.result-card.bundle  { border-top: 3px solid var(--sc-amber); }
+.result-card.missing { border-top: 3px solid var(--sc-red); }
+.result-hero { padding: 16px 20px 14px; display: flex; align-items: flex-start; gap: 12px; }
+.result-status-dot {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; margin-top: 2px;
+}
+.result-status-dot.ok     { background: var(--sc-green-bg); }
+.result-status-dot.err    { background: var(--sc-red-bg); }
+.result-status-dot.bundle { background: var(--sc-amber-bg); }
+.result-name   { font-size: 17px; font-weight: 800; color: var(--text-primary); line-height: 1.2; margin-bottom: 4px; }
+.result-sub    { font-size: 12px; color: var(--text-muted); font-family: monospace; }
+.result-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.badge { padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.badge-green { background: var(--sc-green-bg); color: var(--sc-green); }
+.badge-red   { background: var(--sc-red-bg);   color: var(--sc-red); }
+.badge-blue  { background: var(--sc-blue-bg);  color: var(--sc-blue); }
+.badge-amber { background: var(--sc-amber-bg); color: var(--sc-amber); }
+.result-rows { border-top: 1px solid var(--border-color); }
+.result-row { display: flex; justify-content: space-between; padding: 9px 20px; font-size: 13px; border-bottom: 1px solid var(--border-color); }
+.result-row:last-child { border-bottom: none; }
+.row-label { color: var(--text-muted); }
+.row-val   { font-weight: 600; color: var(--text-primary); }
+.result-footer { padding: 14px 20px; display: flex; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--border-color); background: var(--bg-secondary); }
+
+.stock-form { display: none; padding: 16px 20px; border-top: 1px solid var(--border-color); background: var(--bg-tertiary); }
+.stock-form.visible { display: block; }
+.sf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.sf-label { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 4px; }
+.sf-input {
+  width: 100%; padding: 9px 11px; border: 1.5px solid var(--border-color);
+  border-radius: 8px; font-size: 14px; background: var(--bg-primary); color: var(--text-primary);
+  transition: border-color .12s;
+}
+.sf-input:focus { outline: none; border-color: var(--sc-blue); box-shadow: 0 0 0 2px rgba(37,99,235,.1); }
+.sf-qty { font-size: 24px !important; text-align: center; font-weight: 700; }
+
+/* ── Session panel ── */
+.session-panel { position: sticky; top: calc(var(--header-height, 70px) + 54px + 16px); }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.stat-tile { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; text-align: center; }
+.stat-n { font-size: 28px; font-weight: 900; line-height: 1; }
+.stat-l { font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-top: 4px; }
+.stat-n.g { color: var(--sc-green); }
+.stat-n.r { color: var(--sc-red); }
+.stat-n.b { color: var(--sc-blue); }
+.stat-n.d { color: var(--text-primary); }
+.log-scroll { max-height: 320px; overflow-y: auto; }
+.log-item { display: flex; align-items: flex-start; gap: 9px; padding: 8px 0; border-bottom: 1px solid var(--border-color); font-size: 12px; }
+.log-item:last-child { border-bottom: none; }
+.log-dot { width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 900; flex-shrink: 0; margin-top: 1px; }
+.log-dot.ok  { background: var(--sc-green-bg); color: var(--sc-green); }
+.log-dot.err { background: var(--sc-red-bg);   color: var(--sc-red); }
+.log-dot.new { background: var(--sc-blue-bg);  color: var(--sc-blue); }
+.log-name { font-weight: 600; color: var(--text-primary); line-height: 1.3; }
+.log-bc   { font-family: monospace; font-size: 10px; color: var(--text-muted); }
+.log-time { font-size: 10px; color: var(--text-muted); margin-left: auto; flex-shrink: 0; padding-top: 1px; }
+
+/* ── Quick create modal ── */
+.qc-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 1050;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  animation: fadeIn .15s ease;
+}
+.qc-modal {
+  background: var(--bg-primary); border-radius: 18px; padding: 28px;
+  width: 100%; max-width: 490px; max-height: 92vh; overflow-y: auto;
+  border: 1px solid var(--border-color); box-shadow: var(--shadow-xl);
+  animation: fadeUp .2s ease;
+}
+.qc-title  { font-size: 18px; font-weight: 800; color: var(--text-primary); margin-bottom: 4px; }
+.qc-bc     { font-size: 12px; color: var(--text-muted); margin-bottom: 20px; }
+.qc-bc code { background: var(--bg-tertiary); padding: 1px 6px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+.qc-field  { margin-bottom: 14px; }
+.qc-label  { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 5px; }
+.qc-input, .qc-select {
+  width: 100%; padding: 10px 12px; border: 1.5px solid var(--border-color);
+  border-radius: 9px; font-size: 14px; background: var(--bg-primary); color: var(--text-primary);
+  transition: border-color .12s;
+}
+.qc-input:focus, .qc-select:focus { outline: none; border-color: var(--sc-blue); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+.qc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.qc-actions { display: flex; gap: 10px; margin-top: 22px; }
+.qc-actions .btn-primary { flex: 1; justify-content: center; padding: 11px; font-size: 14px; border-radius: 10px; }
+
+/* ── Toasts ── */
+#toast-container { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 10px; z-index: 9999; pointer-events: none; }
+.toast-n {
+  display: flex; align-items: flex-start; gap: 12px; padding: 13px 15px; border-radius: 12px;
+  min-width: 280px; max-width: 340px; font-size: 13px; color: #fff;
+  box-shadow: 0 8px 28px rgba(0,0,0,.22); pointer-events: auto;
+  animation: toastIn .22s cubic-bezier(.34,1.56,.64,1); position: relative; overflow: hidden;
+}
+.toast-n::after {
+  content: ''; position: absolute; bottom: 0; left: 0; height: 3px;
+  background: rgba(255,255,255,.4); animation: toastBar var(--td, 3.5s) linear forwards;
+}
+.toast-n.success { background: linear-gradient(135deg,#059669,#047857); }
+.toast-n.error   { background: linear-gradient(135deg,#dc2626,#b91c1c); }
+.toast-n.info    { background: linear-gradient(135deg,#2563eb,#1d4ed8); }
+.toast-n.warning { background: linear-gradient(135deg,#d97706,#b45309); }
+.toast-icon  { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.toast-body  { flex: 1; }
+.toast-title { font-weight: 700; font-size: 12px; margin-bottom: 1px; }
+.toast-msg   { font-size: 12px; opacity: .9; }
+.toast-close { background: none; border: none; color: rgba(255,255,255,.65); cursor: pointer; font-size: 15px; padding: 0; flex-shrink: 0; }
+.toast-close:hover { color: #fff; }
+.toast-n.leaving { animation: toastOut .18s ease forwards; }
+@keyframes toastIn  { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes toastOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(110%); opacity: 0; } }
+@keyframes toastBar { from { width: 100%; } to { width: 0; } }
+
+.sound-btn {
+  display: flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 20px;
+  font-size: 12px; font-weight: 600; border: 1px solid var(--border-color);
+  background: var(--bg-primary); color: var(--text-secondary); cursor: pointer; transition: all .12s;
+}
+.sound-btn.on  { background: var(--sc-green-bg); color: var(--sc-green); border-color: var(--sc-green); }
+.sound-btn.off { background: var(--bg-tertiary); color: var(--text-muted); }
+
+.bundle-alert {
+  display: flex; align-items: flex-start; gap: 8px; background: var(--sc-amber-bg);
+  border: 1px solid var(--sc-amber); border-radius: 8px; padding: 10px 14px;
+  font-size: 13px; color: var(--sc-amber); margin-bottom: 12px;
+}
+.spin {
+  display: inline-block; width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+  border-radius: 50%; animation: spin .6s linear infinite;
+}
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes spin   { to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+
+
+{% block content %}
+<div class="scan-page">
+
+<!-- ══════════════════════════════════════════
+     SETUP SCREEN
+     ══════════════════════════════════════════ -->
+<div id="setup-screen">
+  <div class="setup-card">
+    <div class="setup-logo"><i class="bi bi-upc-scan" style="color:#fff"></i></div>
+    <div class="setup-title">Start scan session</div>
+    <div class="setup-subtitle">Choose mode and store to begin scanning.</div>
+
+    <div class="setup-field">
+      <label class="setup-label" for="setup-mode">Scan mode</label>
+      <select id="setup-mode" class="setup-select">
+        {% for val, label in scan_modes %}
+        <option value="{{ val }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="setup-field">
+      <label class="setup-label" for="setup-store">Store</label>
+      <select id="setup-store" class="setup-select">
+        <option value="">— Select store —</option>
+        {% for store in stores %}
+        <option value="{{ store.pk }}" {% if store.pk == user_default_store_id %}selected{% endif %}>{{ store.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button class="btn-start" onclick="startSession()" id="btn-start">
+      <i class="bi bi-play-fill"></i> Start scanning
+    </button>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     SCAN SCREEN
+     ══════════════════════════════════════════ -->
+<div id="scan-screen">
+
+  <!-- Command bar -->
+  <div class="scan-bar">
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="mode-dot"></div>
+      <span class="mode-label" id="hdr-mode">—</span>
+    </div>
+    <span class="store-chip" id="hdr-store">—</span>
+    <div class="scan-bar-actions">
+      <button class="sound-btn on" id="sound-btn" onclick="toggleSound()">
+        <i class="bi bi-volume-up-fill" id="sound-ico"></i>
+        <span id="sound-lbl">Sound</span>
+      </button>
+      <button class="btn-icon" id="camera-btn" onclick="toggleCamera()" title="Camera scanner">
+        <i class="bi bi-camera"></i>
+      </button>
+      <button class="btn-icon" id="search-btn" onclick="toggleSearch()" title="Manual search">
+        <i class="bi bi-search"></i>
+      </button>
+      <button class="btn btn-danger" onclick="endSession()">
+        <i class="bi bi-x-circle"></i> End
+      </button>
+    </div>
+  </div>
+
+  <div class="scan-body">
+
+    <!-- LEFT: input + result -->
+    <div>
+      <div class="sc-card">
+        <div class="sc-card-head"><i class="bi bi-upc"></i> Barcode scanner</div>
+
+        <div class="barcode-wrap">
+          <i class="bi bi-upc-scan barcode-icon-l"></i>
+          <input
+            type="text" id="barcode-input" class="barcode-input"
+            placeholder="Scan barcode…"
+            autocomplete="off" autocorrect="off" autocapitalize="off"
+            spellcheck="false" autofocus
+          >
+        </div>
+        <div class="barcode-hint">
+          <i class="bi bi-usb-symbol"></i> USB / Bluetooth scanner — just scan, no click needed.
+        </div>
+
+        <!-- Camera -->
+        <div class="camera-section">
+          <div id="camera-reader"></div>
+          <p class="camera-tip"><i class="bi bi-info-circle"></i> Hold barcode 15–25 cm from camera, steady, for fastest decode.</p>
+        </div>
+
+        <!-- Manual search (hidden by default) -->
+        <div id="search-panel" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-color)">
+          <div class="sc-card-head"><i class="bi bi-search"></i> Manual search</div>
+          <div class="search-row">
+            <input type="text" id="search-input" class="search-input" placeholder="Name, SKU, or barcode…" autocomplete="off">
+            <button class="btn btn-ghost" onclick="clearSearch()"><i class="bi bi-x"></i></button>
+          </div>
+          <div class="search-results" id="search-results"></div>
+        </div>
+      </div>
+
+      <!-- Result panel -->
+      <div class="result-panel" id="result-panel" style="margin-top:14px">
+        <div id="result-content"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: session stats + log -->
+    <div class="session-panel">
+      <div class="sc-card">
+        <div class="sc-card-head"><i class="bi bi-bar-chart-fill"></i> Session</div>
+        <div class="stats-grid">
+          <div class="stat-tile"><div class="stat-n d" id="stat-total">0</div><div class="stat-l">Scanned</div></div>
+          <div class="stat-tile"><div class="stat-n g" id="stat-ok">0</div><div class="stat-l">Added</div></div>
+          <div class="stat-tile"><div class="stat-n b" id="stat-new">0</div><div class="stat-l">New</div></div>
+          <div class="stat-tile"><div class="stat-n r" id="stat-err">0</div><div class="stat-l">Not found</div></div>
+        </div>
+        <div class="sc-card-head" style="margin-bottom:8px"><i class="bi bi-list-check"></i> Recent scans</div>
+        <div class="log-scroll" id="log-list"></div>
+        <button class="btn btn-success" style="width:100%;justify-content:center;margin-top:14px" onclick="endSession()">
+          <i class="bi bi-check2-all"></i> Complete session
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast-container"></div>
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script>
+// ══════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════
+const csrfToken = '{{ csrf_token }}';
+let sessionId = null, storeId = null, scanMode = null;
+let scanStats = { total: 0, ok: 0, err: 0, newProd: 0 };
+let lastBarcode = '', debounceTimer = null, searchDebounce = null;
+let cameraScanner = null, cameraActive = false;
+let soundEnabled = true, searchVisible = false;
+
+const MODE_LABELS = {
+  receive_stock: 'Receiving stock', stock_count: 'Stock count',
+  product_lookup: 'Product lookup', pos_checkout: 'POS checkout',
+};
+
+// ══════════════════════════════════════════════════════════
+//  AUDIO
+// ══════════════════════════════════════════════════════════
+let _actx = null;
+function _audioCtx() {
+  if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+  if (_actx.state === 'suspended') _actx.resume();
+  return _actx;
+}
+const BEEPS = {
+  success: [{ f:880,t:0,d:.07,g:.28 },{ f:1100,t:.09,d:.1,g:.28 }],
+  error:   [{ f:280,t:0,d:.14,g:.28 },{ f:200,t:.17,d:.2,g:.22 }],
+  new:     [{ f:600,t:0,d:.07,g:.22 },{ f:800,t:.09,d:.07,g:.22 },{ f:1000,t:.18,d:.12,g:.28 }],
+  start:   [{ f:523,t:0,d:.1,g:.22 },{ f:659,t:.12,d:.1,g:.22 },{ f:784,t:.24,d:.15,g:.28 }],
+};
+function playBeep(type = 'success') {
+  if (!soundEnabled) return;
+  try {
+    const ctx = _audioCtx();
+    (BEEPS[type] || BEEPS.success).forEach(({ f, t, d, g }) => {
+      const osc = ctx.createOscillator(), gn = ctx.createGain();
+      osc.connect(gn); gn.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, ctx.currentTime + t);
+      gn.gain.setValueAtTime(0, ctx.currentTime + t);
+      gn.gain.linearRampToValueAtTime(g, ctx.currentTime + t + .01);
+      gn.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + t + d);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + d + .05);
+    });
+  } catch (_) {}
+}
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  document.getElementById('sound-btn').className = 'sound-btn ' + (soundEnabled ? 'on' : 'off');
+  document.getElementById('sound-ico').className = soundEnabled ? 'bi bi-volume-up-fill' : 'bi bi-volume-mute-fill';
+  document.getElementById('sound-lbl').textContent = soundEnabled ? 'Sound' : 'Muted';
+  if (soundEnabled) playBeep('start');
+}
+
+// ══════════════════════════════════════════════════════════
+//  TOASTS
+// ══════════════════════════════════════════════════════════
+const TCFG = { success:{icon:'✓',title:'Success'}, error:{icon:'✗',title:'Error'}, info:{icon:'ℹ',title:'Info'}, warning:{icon:'⚠',title:'Warning'} };
+function showToast(msg, type = 'info', title = null, duration = 3500) {
+  const c = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast-n ${type}`;
+  el.style.setProperty('--td', duration + 'ms');
+  const cfg = TCFG[type] || TCFG.info;
+  el.innerHTML = `<div class="toast-icon">${cfg.icon}</div><div class="toast-body"><div class="toast-title">${title||cfg.title}</div><div class="toast-msg">${msg}</div></div><button class="toast-close" onclick="dismissToast(this.parentElement)">×</button>`;
+  c.appendChild(el);
+  setTimeout(() => dismissToast(el), duration);
+}
+function dismissToast(el) {
+  if (!el || !el.parentElement) return;
+  el.classList.add('leaving');
+  setTimeout(() => el.remove(), 200);
+}
+
+// ══════════════════════════════════════════════════════════
+//  FLASH INPUT
+// ══════════════════════════════════════════════════════════
+function flashInput(ok) {
+  const inp = document.getElementById('barcode-input');
+  const cls = ok ? 'flash-ok' : 'flash-err';
+  inp.classList.add(cls);
+  setTimeout(() => inp.classList.remove(cls), 400);
+}
+
+// ══════════════════════════════════════════════════════════
+//  SESSION
+// ══════════════════════════════════════════════════════════
+async function startSession() {
+  const mode = document.getElementById('setup-mode').value;
+  const store = document.getElementById('setup-store').value;
+  if (!store) { showToast('Please select a store.', 'warning', 'Store required'); return; }
+  const btn = document.getElementById('btn-start');
+  btn.innerHTML = '<span class="spin"></span> Starting…'; btn.disabled = true;
+  try {
+    const resp = await apiPost('/api/v1/api/scan/session/', { mode, store_id: store });
+    sessionId = resp.session_id; storeId = store; scanMode = mode;
+    document.getElementById('hdr-mode').textContent  = MODE_LABELS[mode] || mode;
+    document.getElementById('hdr-store').textContent = resp.store || '';
+    document.getElementById('setup-screen').classList.add('hidden');
+    document.getElementById('scan-screen').classList.add('visible');
+    playBeep('start');
+    showToast('Session started — start scanning!', 'success', 'Ready');
+    setTimeout(() => document.getElementById('barcode-input').focus(), 80);
+  } catch (e) {
+    showToast('Could not start session: ' + e.message, 'error', 'Start failed');
+    btn.innerHTML = '<i class="bi bi-play-fill"></i> Start scanning'; btn.disabled = false;
+  }
+}
+async function endSession() {
+  if (!sessionId) { window.location.href = '/inventory/'; return; }
+  try {
+    const resp = await apiPatch(`/api/v1/api/scan/session/${sessionId}/complete/`, {});
+    playBeep('start');
+    showToast(`${resp.total_scans} scans · ${resp.new_products_created} new products`, 'success', 'Session complete');
+    setTimeout(() => window.location.href = '/inventory/', 2000);
+  } catch (_) { window.location.href = '/inventory/'; }
+}
+
+// ══════════════════════════════════════════════════════════
+//  BARCODE INPUT
+// ══════════════════════════════════════════════════════════
+const barcodeInput = document.getElementById('barcode-input');
+barcodeInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { e.preventDefault(); const v = this.value.trim(); if (v) { handleScan(v); this.value = ''; } }
+});
+barcodeInput.addEventListener('input', function() {
+  clearTimeout(debounceTimer);
+  const v = this.value.trim();
+  if (v.length >= 6) debounceTimer = setTimeout(() => { if (this.value.trim() === v) { handleScan(v); this.value = ''; } }, 280);
+});
+document.addEventListener('click', (e) => {
+  if (document.getElementById('scan-screen')?.classList.contains('visible') &&
+    !e.target.closest('button,input,select,a,.qc-overlay,.search-result-item'))
+    barcodeInput.focus();
+});
+
+// ══════════════════════════════════════════════════════════
+//  SCAN — DB only, no external calls
+// ══════════════════════════════════════════════════════════
+async function handleScan(barcodeValue) {
+  if (!sessionId || barcodeValue === lastBarcode) return;
+  lastBarcode = barcodeValue;
+  setTimeout(() => { lastBarcode = ''; }, 1500);
+  scanStats.total++; updateStats();
+  try {
+    const resp = await apiPost('/api/v1/api/scan/barcode/', { barcode: barcodeValue, store_id: storeId, mode: scanMode, session_id: sessionId });
+    flashInput(resp.found);
+    playBeep(resp.found ? 'success' : 'error');
+    showResult(resp);
+  } catch (e) {
+    scanStats.err++; updateStats();
+    addLog('err', barcodeValue, 'Scan error');
+    flashInput(false); playBeep('error');
+    showToast(e.message, 'error', 'Scan error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  RESULT
+// ══════════════════════════════════════════════════════════
+function showResult(resp) {
+  const panel = document.getElementById('result-panel');
+  const content = document.getElementById('result-content');
+  panel.classList.add('visible');
+
+  if (!resp.found) {
+    scanStats.err++; updateStats();
+    addLog('err', resp.barcode, 'Not found');
+    showToast('Barcode not in database.', 'error', 'Not found');
+    content.innerHTML = `
+      <div class="result-card missing">
+        <div class="result-hero">
+          <div class="result-status-dot err"><i class="bi bi-x-lg" style="color:var(--sc-red)"></i></div>
+          <div>
+            <div class="result-name" style="color:var(--sc-red)">Product not found</div>
+            <div class="result-sub">${resp.barcode}</div>
+            <div class="result-badges"><span class="badge badge-red">Not in database</span></div>
+          </div>
+        </div>
+        ${resp.actions.includes('quick_create') ? `
+        <div class="result-footer">
+          <button class="btn btn-primary" onclick="openQuickCreate('${resp.barcode}',{})">
+            <i class="bi bi-plus-circle"></i> Create product
+          </button>
+          <button class="btn btn-ghost" onclick="hideResult()">Dismiss</button>
+        </div>` : `
+        <div class="result-footer">
+          <span style="font-size:13px;color:var(--text-muted)">${resp.message}</span>
+        </div>`}
+      </div>`;
+    return;
+  }
+
+  const p = resp.product;
+  const isBundle = resp.type === 'bundle';
+  const stockN = resp.stock;
+  const stockOk = stockN !== null && stockN !== undefined && stockN > 0;
+  scanStats.ok++; updateStats();
+  addLog('ok', resp.barcode, p.name);
+  showToast(p.name, 'success', 'Found');
+
+  const bundleAlert = isBundle ? `<div class="bundle-alert"><i class="bi bi-box-seam"></i><span>Bundle scan — adds <strong>${resp.bundle.child_qty}× ${resp.bundle.child_product.name}</strong> to stock.</span></div>` : '';
+  const stockBadge = stockN !== null && stockN !== undefined ? `<span class="badge ${stockOk?'badge-green':'badge-red'}">${stockN} in stock</span>` : '';
+  const price = parseFloat(p.selling_price).toLocaleString('en-UG', { maximumFractionDigits: 0 });
+
+  const stockSection = resp.actions.includes('add_stock') ? `
+    <div class="stock-form" id="stock-form">
+      <div class="sf-grid">
+        <div><label class="sf-label">Quantity</label><input type="number" id="sf-qty" class="sf-input sf-qty" min="1" value="1" step="1"></div>
+        <div><label class="sf-label">Cost (UGX)</label><input type="number" id="sf-cost" class="sf-input" value="${p.cost_price}" step="0.01"></div>
+      </div>
+      ${isBundle ? `<div style="margin-bottom:12px"><label class="sf-label">Bundle mode</label><select id="sf-bundle-mode" class="sf-input"><option value="expand">Expand → add ${resp.bundle?resp.bundle.child_qty:'N'} units to child product</option><option value="direct">Add carton as stock unit</option></select></div>` : ''}
+      <div style="margin-bottom:12px"><label class="sf-label">Notes</label><input type="text" id="sf-notes" class="sf-input" placeholder="Delivery ref…"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-success" style="flex:1;justify-content:center" onclick="submitStock('${resp.barcode}',${isBundle})"><i class="bi bi-check2"></i> Confirm</button>
+        <button class="btn btn-ghost" onclick="toggleStockForm()">Cancel</button>
+      </div>
+    </div>` : '';
+
+  const footer = resp.actions.includes('add_stock') ? `
+    <button class="btn btn-success" onclick="toggleStockForm()"><i class="bi bi-plus-lg"></i> Add stock</button>
+    <button class="btn btn-ghost" onclick="viewProduct(${p.id})"><i class="bi bi-box-arrow-up-right"></i> View</button>
+    <button class="btn btn-ghost" onclick="hideResult()">Dismiss</button>` :
+    resp.actions.includes('add_to_cart') ? `
+    <button class="btn btn-primary" onclick="addToCart(${p.id})"><i class="bi bi-cart-plus"></i> Add to cart</button>
+    <button class="btn btn-ghost" onclick="hideResult()">Dismiss</button>` : `
+    <button class="btn btn-ghost" onclick="viewProduct(${p.id})"><i class="bi bi-box-arrow-up-right"></i> View</button>
+    <button class="btn btn-ghost" onclick="hideResult()">Dismiss</button>`;
+
+  content.innerHTML = `
+    <div class="result-card ${isBundle?'bundle':'found'}">
+      <div class="result-hero">
+        <div class="result-status-dot ${isBundle?'bundle':'ok'}">
+          <i class="bi bi-${isBundle?'box-seam':'check-lg'}" style="color:var(--sc-${isBundle?'amber':'green'})"></i>
+        </div>
+        <div style="flex:1;min-width:0">
+          ${bundleAlert}
+          <div class="result-name">${p.name}</div>
+          <div class="result-sub">${p.barcode} · ${p.sku}</div>
+          <div class="result-badges">
+            ${stockBadge}
+            ${p.category ? `<span class="badge badge-blue">${p.category}</span>` : ''}
+            ${isBundle ? '<span class="badge badge-amber">Bundle</span>' : ''}
+          </div>
+        </div>
+      </div>
+      <div class="result-rows">
+        <div class="result-row"><span class="row-label">Selling price</span><span class="row-val">UGX ${price}</span></div>
+        <div class="result-row"><span class="row-label">Unit</span><span class="row-val">${p.unit_of_measure}</span></div>
+      </div>
+      ${stockSection}
+      <div class="result-footer">${footer}</div>
+    </div>`;
+}
+
+function hideResult() {
+  document.getElementById('result-panel').classList.remove('visible');
+  barcodeInput.focus();
+}
+
+function toggleStockForm() {
+  const f = document.getElementById('stock-form');
+  if (f) { f.classList.toggle('visible'); if (f.classList.contains('visible')) setTimeout(() => document.getElementById('sf-qty')?.focus(), 50); }
+}
+
+async function submitStock(barcode, isBundle) {
+  const qty = document.getElementById('sf-qty').value;
+  const cost = document.getElementById('sf-cost').value;
+  const notes = document.getElementById('sf-notes').value;
+  const bundleMode = document.getElementById('sf-bundle-mode')?.value;
+  try {
+    const resp = await apiPost('/api/v1/api/scan/receive-stock/', { barcode, store_id: storeId, quantity: qty, cost_price: cost, notes, session_id: sessionId, is_bundle_expand: bundleMode === 'expand' });
+    scanStats.ok++; updateStats();
+    playBeep('success');
+    showToast(resp.message, 'success', 'Stock added');
+    hideResult();
+  } catch (e) { showToast(e.message, 'error', 'Stock error'); }
+}
+
+// ══════════════════════════════════════════════════════════
+//  MANUAL SEARCH (DB-only)
+// ══════════════════════════════════════════════════════════
+function toggleSearch() {
+  searchVisible = !searchVisible;
+  document.getElementById('search-panel').style.display = searchVisible ? 'block' : 'none';
+  document.getElementById('search-btn').classList.toggle('active', searchVisible);
+  if (searchVisible) document.getElementById('search-input').focus();
+}
+function clearSearch() {
+  document.getElementById('search-input').value = '';
+  const r = document.getElementById('search-results');
+  r.classList.remove('visible'); r.innerHTML = '';
+}
+document.getElementById('search-input').addEventListener('input', function() {
+  clearTimeout(searchDebounce);
+  const q = this.value.trim();
+  if (q.length < 2) { clearSearch(); return; }
+  searchDebounce = setTimeout(() => runSearch(q), 260);
+});
+async function runSearch(q) {
+  const container = document.getElementById('search-results');
+  try {
+    const resp = await fetch(`/api/v1/api/scan/search/?q=${encodeURIComponent(q)}&store_id=${storeId||''}`, { headers: { 'X-CSRFToken': csrfToken }, credentials: 'include' });
+    const data = await resp.json();
+    renderSearchResults(data.results || []);
+  } catch (_) {
+    container.innerHTML = '<div style="padding:12px;font-size:13px;color:var(--text-muted)">Search failed</div>';
+    container.classList.add('visible');
+  }
+}
+function renderSearchResults(results) {
+  const c = document.getElementById('search-results');
+  if (!results.length) {
+    c.innerHTML = '<div style="padding:12px;font-size:13px;color:var(--text-muted)">No products found</div>';
+    c.classList.add('visible'); return;
+  }
+  c.innerHTML = results.map(p => `
+    <div class="search-result-item" onclick="selectSearchResult('${p.barcode}')">
+      <div>
+        <div class="sri-name">${p.name}</div>
+        <div class="sri-meta">${p.barcode} · ${p.sku}${p.stock!==null?' · '+p.stock+' in stock':''}</div>
+      </div>
+      <div class="sri-price">UGX ${parseFloat(p.selling_price).toLocaleString('en-UG',{maximumFractionDigits:0})}</div>
+    </div>`).join('');
+  c.classList.add('visible');
+}
+function selectSearchResult(barcode) { clearSearch(); toggleSearch(); handleScan(barcode); }
+
+// ══════════════════════════════════════════════════════════
+//  CAMERA — optimised for fast decode
+// ══════════════════════════════════════════════════════════
+function toggleCamera() {
+  const reader = document.getElementById('camera-reader');
+  const btn = document.getElementById('camera-btn');
+  if (cameraActive) {
+    cameraScanner?.stop().catch(() => {});
+    cameraActive = false; reader.classList.remove('active'); btn.classList.remove('active'); return;
+  }
+  reader.classList.add('active'); btn.classList.add('active');
+  cameraScanner = new Html5Qrcode('camera-reader');
+  cameraScanner.start(
+    { facingMode: 'environment' },
+    {
+      fps: 15,
+      qrbox: { width: 260, height: 120 },
+      aspectRatio: 2.0,
+      disableFlip: true,
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.QR_CODE,
+      ],
+    },
+    (decoded) => { handleScan(decoded); },
+    () => {}
+  ).catch(e => {
+    showToast('Camera error: ' + e, 'error', 'Camera');
+    reader.classList.remove('active'); btn.classList.remove('active'); cameraActive = false;
+  });
+  cameraActive = true;
+}
+
+// ══════════════════════════════════════════════════════════
+//  QUICK CREATE
+// ══════════════════════════════════════════════════════════
+function openQuickCreate(barcode, externalData = {}) {
+  const overlay = document.createElement('div');
+  overlay.id = 'qc-overlay'; overlay.className = 'qc-overlay';
+  overlay.innerHTML = `
+    <div class="qc-modal">
+      <div class="qc-title"><i class="bi bi-plus-circle" style="color:var(--sc-blue);margin-right:8px"></i>Add new product</div>
+      <div class="qc-bc">Barcode: <code>${barcode}</code></div>
+      <div class="qc-field"><label class="qc-label">Product name *</label><input id="qc-name" class="qc-input" type="text" value="${externalData.name||''}" placeholder="e.g. Coca-Cola 500ml"></div>
+      <div class="qc-grid">
+        <div class="qc-field"><label class="qc-label">Selling price (UGX) *</label><input id="qc-sell" class="qc-input" type="number" min="0" step="1"></div>
+        <div class="qc-field"><label class="qc-label">Cost price (UGX) *</label><input id="qc-cost" class="qc-input" type="number" min="0" step="1"></div>
+      </div>
+      <div class="qc-grid">
+        <div class="qc-field"><label class="qc-label">Category *</label><select id="qc-cat" class="qc-select"><option value="">— Select —</option></select></div>
+        <div class="qc-field"><label class="qc-label">Tax rate</label><select id="qc-tax" class="qc-select"><option value="A">Standard 18%</option><option value="B">Zero rate 0%</option><option value="C">Exempt</option></select></div>
+      </div>
+      <div class="qc-grid">
+        <div class="qc-field"><label class="qc-label">Initial stock qty</label><input id="qc-stock" class="qc-input" type="number" min="0" value="0"></div>
+        <div class="qc-field" style="display:flex;align-items:flex-end;padding-bottom:4px"><label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--text-primary)"><input type="checkbox" id="qc-print" checked> Queue label print</label></div>
+      </div>
+      <div class="qc-actions">
+        <button class="btn btn-primary" onclick="submitQuickCreate('${barcode}')"><i class="bi bi-check2-circle"></i> Save product</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('qc-overlay').remove()">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  if (window.CATEGORIES) {
+    const sel = document.getElementById('qc-cat');
+    window.CATEGORIES.forEach(cat => { const o = document.createElement('option'); o.value = cat.id; o.textContent = cat.name; sel.appendChild(o); });
+  }
+  setTimeout(() => document.getElementById('qc-name')?.focus(), 80);
+}
+
+async function submitQuickCreate(barcode) {
+  const payload = {
+    barcode, name: document.getElementById('qc-name').value,
+    selling_price: document.getElementById('qc-sell').value,
+    cost_price: document.getElementById('qc-cost').value,
+    category_id: document.getElementById('qc-cat').value,
+    tax_rate: document.getElementById('qc-tax').value,
+    initial_stock: document.getElementById('qc-stock').value,
+    store_id: storeId, add_to_print_queue: document.getElementById('qc-print').checked,
+    barcode_type: 'manufacturer', session_id: sessionId,
+  };
+  if (!payload.name || !payload.selling_price || !payload.cost_price || !payload.category_id) {
+    showToast('Please fill all required fields.', 'warning', 'Incomplete'); return;
+  }
+  try {
+    const resp = await apiPost('/api/v1/api/scan/quick-create/', payload);
+    scanStats.newProd++; scanStats.ok++; updateStats();
+    addLog('new', barcode, resp.product.name);
+    playBeep('new');
+    showToast(resp.message, 'success', 'Product created');
+    document.getElementById('qc-overlay')?.remove();
+    hideResult();
+  } catch (e) { showToast(e.message, 'error', 'Save failed'); }
+}
+
+// ══════════════════════════════════════════════════════════
+//  UI HELPERS
+// ══════════════════════════════════════════════════════════
+function updateStats() {
+  document.getElementById('stat-total').textContent = scanStats.total;
+  document.getElementById('stat-ok').textContent    = scanStats.ok;
+  document.getElementById('stat-new').textContent   = scanStats.newProd;
+  document.getElementById('stat-err').textContent   = scanStats.err;
+}
+function addLog(type, barcode, name) {
+  const list = document.getElementById('log-list');
+  const icons = { ok:'✓', err:'✗', new:'+' };
+  const now = new Date().toLocaleTimeString('en-UG', { hour:'2-digit', minute:'2-digit' });
+  const item = document.createElement('div');
+  item.className = 'log-item';
+  item.innerHTML = `<div class="log-dot ${type}">${icons[type]}</div><div style="flex:1;min-width:0"><div class="log-name">${name}</div><div class="log-bc">${barcode}</div></div><div class="log-time">${now}</div>`;
+  list.prepend(item);
+  while (list.children.length > 50) list.removeChild(list.lastChild);
+}
+function viewProduct(id) { window.open(`/inventory/products/${id}/`, '_blank'); }
+function addToCart(id)   { playBeep('success'); showToast('Added to cart', 'success', 'Cart'); }
+
+// ══════════════════════════════════════════════════════════
+//  API
+// ══════════════════════════════════════════════════════════
+async function apiPost(url, data) {
+  const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken}, body:JSON.stringify(data), credentials:'include' });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || JSON.stringify(j));
+  return j;
+}
+async function apiPatch(url, data) {
+  const r = await fetch(url, { method:'PATCH', headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken}, body:JSON.stringify(data), credentials:'include' });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || JSON.stringify(j));
+  return j;
+}
+
+window.CATEGORIES = {{ categories_json|safe }};
+</script>
+{% endblock %}

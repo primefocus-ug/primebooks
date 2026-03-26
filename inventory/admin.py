@@ -4,6 +4,26 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from .models import Category, Supplier, Product, Stock, StockMovement, Service
 
+from inventory.models import (
+   ProductBundle, BarcodeLabel, ScanSession, ScanEvent
+)
+
+@admin.register(ProductBundle)
+class ProductBundleAdmin(admin.ModelAdmin):
+   list_display = ['parent_product', 'child_product', 'child_qty', 'is_separate_product']
+   list_filter = ['is_separate_product', 'is_active']
+
+@admin.register(BarcodeLabel)
+class BarcodeLabelAdmin(admin.ModelAdmin):
+   list_display = ['product', 'quantity', 'label_size', 'status', 'created_at']
+   list_filter = ['status', 'label_size']
+   actions = ['mark_printed']
+
+@admin.register(ScanSession)
+class ScanSessionAdmin(admin.ModelAdmin):
+   list_display = ['user', 'mode', 'store', 'total_scans', 'status', 'started_at']
+   list_filter = ['mode', 'status']
+
 
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):

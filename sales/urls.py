@@ -31,6 +31,7 @@ urlpatterns = [
     path('', SalesHubView.as_view(), name='sales_list'),
     path('create/', views.create_sale, name='create_sale'),
     path('email-draft/', view.email_draft, name='email_draft'),
+    path('sales/scan/barcode/', views.barcode_scan_pos, name='barcode-scan-pos'),
     path('recent-customers/', views.recent_customers_api, name='recent_customers'),
     path('create-with-progress/', views.create_sale_with_progress, name='create_sale_with_progress'),
     path('task-status/<str:task_id>/', views.get_task_status, name='get_task_status'),

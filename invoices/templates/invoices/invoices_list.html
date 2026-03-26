@@ -5,109 +5,141 @@
 
 {% block title %}Invoices{% endblock %}
 
-{% block content %}
-
 {% block extra_css %}
     <link rel="stylesheet" href="{% static 'themes.css' %}">
     <style>
-        .badge {
-            font-size: 0.9em;
+        .badge { font-size: 0.9em; }
+        .table-responsive { overflow-x: auto; }
+
+        [data-theme="dark"] .table-responsive { background-color: #2c2c2c; }
+        [data-theme="dark"] .card { background-color: #3a3a3a; color: #f1f1f1; }
+        [data-theme="dark"] .form-control { background-color: #080808; border-color: #0d6efd; }
+        [data-theme="dark"] .badge.bg-secondary { background-color: #6c757d !important; color: #ffffff !important; }
+        [data-theme="dark"] .badge.bg-warning  { background-color: #ffc107 !important; color: #000000 !important; }
+        [data-theme="dark"] .badge.bg-success  { background-color: #198754 !important; color: #ffffff !important; }
+        [data-theme="dark"] .badge.bg-danger   { background-color: #dc3545 !important; color: #ffffff !important; }
+        [data-theme="dark"] .badge.bg-info     { background-color: #0dcaf0 !important; color: #000000 !important; }
+        [data-theme="dark"] .btn.btn-primary   { background-color: #0d6efd; border-color: #0d6efd; color: #ffffff; }
+        [data-theme="dark"] .btn.btn-primary:hover { background-color: #0b5ed7; border-color: #0a58ca; }
+        [data-theme="dark"] .btn.btn-info      { background-color: #0dcaf0; border-color: #0dcaf0; color: #000000; }
+        [data-theme="dark"] .btn.btn-info:hover { background-color: #31d2f2; border-color: #25cff2; }
+        [data-theme="dark"] .btn.btn-warning   { background-color: #ffc107; border-color: #ffc107; color: #000000; }
+        [data-theme="dark"] .btn.btn-warning:hover { background-color: #ffca2c; border-color: #ffc720; }
+        [data-theme="dark"] .pagination .page-link { background-color: #3a3a3a; border-color: #6c757d; color: #f1f1f1; }
+        [data-theme="dark"] .pagination .page-link:hover { background-color: #6c757d; border-color: #6c757d; color: #ffffff; }
+        [data-theme="dark"] .pagination .page-item.active .page-link { background-color: #0d6efd; border-color: #0d6efd; color: #ffffff; }
+        [data-theme="dark"] .text-muted { color: #adb5bd !important; }
+        [data-theme="dark"] h2, [data-theme="dark"] h6 { color: #f1f1f1; }
+        [data-theme="dark"] .form-label { color: #f1f1f1; }
+
+        /* ── Autocomplete dropdown ─────────────────────────────────────────── */
+        .search-wrapper { position: relative; }
+
+        #search-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            z-index: 1050;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            box-shadow: 0 6px 20px rgba(0,0,0,.12);
+            max-height: 340px;
+            overflow-y: auto;
         }
-        .table-responsive {
-            overflow-x: auto;
-        }
-        [data-theme="dark"] .table-responsive {
-            background-color: #2c2c2c;
-        }
-        [data-theme="dark"] .card {
-            background-color: #3a3a3a;
+        [data-theme="dark"] #search-dropdown {
+            background: #2c2c2c;
+            border-color: #495057;
             color: #f1f1f1;
         }
-        [data-theme="dark"] .form-control {
-            background-color: #080808;
-            border-color: #0d6efd;
+        #search-dropdown .ac-section-header {
+            padding: 6px 14px 4px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: #6c757d;
+            border-top: 1px solid #e9ecef;
         }
-        /* Dark theme for badges */
-        [data-theme="dark"] .badge.bg-secondary {
-            background-color: #6c757d !important;
-            color: #ffffff !important;
+        #search-dropdown .ac-section-header:first-child { border-top: none; }
+        [data-theme="dark"] #search-dropdown .ac-section-header { color: #adb5bd; border-color: #495057; }
+
+        #search-dropdown .ac-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            cursor: pointer;
+            transition: background .15s;
         }
-        [data-theme="dark"] .badge.bg-warning {
-            background-color: #ffc107 !important;
-            color: #000000 !important;
+        #search-dropdown .ac-item:hover,
+        #search-dropdown .ac-item.ac-active {
+            background: #f0f4ff;
         }
-        [data-theme="dark"] .badge.bg-success {
-            background-color: #198754 !important;
-            color: #ffffff !important;
+        [data-theme="dark"] #search-dropdown .ac-item:hover,
+        [data-theme="dark"] #search-dropdown .ac-item.ac-active {
+            background: #3d4a6b;
         }
-        [data-theme="dark"] .badge.bg-danger {
-            background-color: #dc3545 !important;
-            color: #ffffff !important;
+        .ac-item .ac-icon {
+            flex-shrink: 0;
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.8rem;
         }
-        [data-theme="dark"] .badge.bg-info {
-            background-color: #0dcaf0 !important;
-            color: #000000 !important;
+        .ac-item.customer .ac-icon { background: #e7f3ff; color: #0d6efd; }
+        .ac-item.invoice  .ac-icon { background: #e8f8f0; color: #198754; }
+        [data-theme="dark"] .ac-item.customer .ac-icon { background: #1a3a5c; color: #6ea8fe; }
+        [data-theme="dark"] .ac-item.invoice  .ac-icon { background: #1a3a2a; color: #75b798; }
+
+        .ac-item .ac-text { flex: 1; min-width: 0; }
+        .ac-item .ac-label { font-weight: 500; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ac-item .ac-sub   { font-size: 0.78rem; color: #6c757d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        [data-theme="dark"] .ac-item .ac-sub { color: #adb5bd; }
+
+        .ac-item .ac-badge {
+            flex-shrink: 0;
+            font-size: 0.68rem;
+            padding: 2px 7px;
+            border-radius: 20px;
         }
-        /* Dark theme for buttons */
-        [data-theme="dark"] .btn.btn-primary {
-            background-color: #0d6efd;
-            border-color: #0d6efd;
-            color: #ffffff;
+        .ac-item.customer .ac-badge { background: #cfe2ff; color: #0a58ca; }
+        .ac-item.invoice  .ac-badge { background: #d1e7dd; color: #146c43; }
+        [data-theme="dark"] .ac-item.customer .ac-badge { background: #1c3a6b; color: #6ea8fe; }
+        [data-theme="dark"] .ac-item.invoice  .ac-badge { background: #1a3a2a; color: #75b798; }
+
+        /* Customer filter tag */
+        #customer-filter-tag {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            background: #e7f3ff;
+            border: 1px solid #b6d4fe;
+            border-radius: 20px;
+            padding: 3px 10px 3px 10px;
+            font-size: 0.82rem;
+            color: #0a58ca;
+            font-weight: 500;
+            white-space: nowrap;
         }
-        [data-theme="dark"] .btn.btn-primary:hover {
-            background-color: #0b5ed7;
-            border-color: #0a58ca;
+        [data-theme="dark"] #customer-filter-tag {
+            background: #1a3a5c; border-color: #1c4f8a; color: #6ea8fe;
         }
-        [data-theme="dark"] .btn.btn-info {
-            background-color: #0dcaf0;
-            border-color: #0dcaf0;
-            color: #000000;
+        #customer-filter-tag .remove-tag {
+            cursor: pointer; line-height: 1;
+            font-size: 1rem; color: #6c757d;
         }
-        [data-theme="dark"] .btn.btn-info:hover {
-            background-color: #31d2f2;
-            border-color: #25cff2;
-        }
-        [data-theme="dark"] .btn.btn-warning {
-            background-color: #ffc107;
-            border-color: #ffc107;
-            color: #000000;
-        }
-        [data-theme="dark"] .btn.btn-warning:hover {
-            background-color: #ffca2c;
-            border-color: #ffc720;
-        }
-        /* Dark theme for pagination */
-        [data-theme="dark"] .pagination .page-link {
-            background-color: #3a3a3a;
-            border-color: #6c757d;
-            color: #f1f1f1;
-        }
-        [data-theme="dark"] .pagination .page-link:hover {
-            background-color: #6c757d;
-            border-color: #6c757d;
-            color: #ffffff;
-        }
-        [data-theme="dark"] .pagination .page-item.active .page-link {
-            background-color: #0d6efd;
-            border-color: #0d6efd;
-            color: #ffffff;
-        }
-        /* Dark theme for text-muted */
-        [data-theme="dark"] .text-muted {
-            color: #adb5bd !important;
-        }
-        /* Dark theme for headings */
-        [data-theme="dark"] h2, [data-theme="dark"] h6 {
-            color: #f1f1f1;
-        }
-        /* Dark theme for form labels */
-        [data-theme="dark"] .form-label {
-            color: #f1f1f1;
-        }
+        #customer-filter-tag .remove-tag:hover { color: #dc3545; }
+
+        .search-input-row { display: flex; gap: 8px; align-items: center; }
     </style>
 {% endblock %}
 
+{% block content %}
 <div class="container-fluid py-4">
+
     <!-- Header -->
     <div class="row mb-4">
         <div class="col-md-6">
@@ -143,169 +175,431 @@
             <div class="card bg-success text-white">
                 <div class="card-body">
                     <h6 class="card-title">Paid</h6>
-<h3>{{ stats.paid_count }}</h3>
-</div>
-</div>
-</div>
-<div class="col-md-3">
-<div class="card bg-danger text-white">
-<div class="card-body">
-<h6 class="card-title">Overdue</h6>
-<h3>{{ stats.overdue_count }}</h3>
-</div>
-</div>
-</div>
-</div>
-    <!-- Filters -->
-<div class="card mb-4">
-    <div class="card-body">
-        <form method="get" class="row g-3">
-            <div class="col-md-3">
-                <label class="form-label">Search</label>
-                <input type="text" name="search" class="form-control totall"
-                       placeholder="Invoice #, Customer..."
-                       value="{{ search_query }}">
+                    <h3>{{ stats.paid_count }}</h3>
+                </div>
             </div>
-            <div class="col-md-2">
-                <label class="form-label">Status</label>
-                <select name="status" class="form-select">
-                    <option value="">All</option>
-                    <option value="DRAFT" {% if status_filter == 'DRAFT' %}selected{% endif %}>Draft</option>
-                    <option value="PENDING_PAYMENT" {% if status_filter == 'PENDING_PAYMENT' %}selected{% endif %}>Pending</option>
-                    <option value="PAID" {% if status_filter == 'PAID' %}selected{% endif %}>Paid</option>
-                    <option value="CANCELLED" {% if status_filter == 'CANCELLED' %}selected{% endif %}>Cancelled</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Payment Status</label>
-                <select name="payment_status" class="form-select">
-                    <option value="">All</option>
-                    <option value="PENDING" {% if payment_status == 'PENDING' %}selected{% endif %}>Pending</option>
-                    <option value="PARTIALLY_PAID" {% if payment_status == 'PARTIALLY_PAID' %}selected{% endif %}>Partially Paid</option>
-                    <option value="PAID" {% if payment_status == 'PAID' %}selected{% endif %}>Paid</option>
-                    <option value="OVERDUE" {% if payment_status == 'OVERDUE' %}selected{% endif %}>Overdue</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">From Date</label>
-                <input type="date" name="date_from" class="form-control totall" value="{{ date_from }}">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">To Date</label>
-                <input type="date" name="date_to" class="form-control totall" value="{{ date_to }}">
-            </div>
-            <div class="col-md-1 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100">Filter</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Invoice Table -->
-<div class="card">
-    <div class="card-body dre">
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>Invoice #</th>
-                        <th>Customer</th>
-                        <th>Date</th>
-                        <th>Due Date</th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                        <th>Payment</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for invoice in invoices %}
-                    <tr>
-                        <td>
-                            <a href="{% url 'invoice:invoice_detail' invoice.pk %}">
-                                {{ invoice.sale.document_number }}
-                            </a>
-                        </td>
-                        <td>{{ invoice.sale.customer.name|default:"Walk-in Customer" }}</td>
-                        <td>{{ invoice.sale.created_at|date:"Y-m-d" }}</td>
-                        <td>
-                            {{ invoice.sale.due_date|date:"Y-m-d" }}
-                            {% if invoice.sale.days_overdue > 0 %}
-                            <span class="badge bg-danger">{{ invoice.sale.days_overdue }} days overdue</span>
-                            {% endif %}
-                        </td>
-                        <td>UGX {{ invoice.sale.total_amount|floatformat:2 }}</td>
-                        <td>
-                            {% if invoice.sale.status == 'DRAFT' %}
-                            <span class="badge bg-secondary">Draft</span>
-                            {% elif invoice.sale.status == 'PENDING_PAYMENT' %}
-                            <span class="badge bg-warning">Pending</span>
-                            {% elif invoice.sale.status == 'PAID' %}
-                            <span class="badge bg-success">Paid</span>
-                            {% elif invoice.sale.status == 'CANCELLED' %}
-                            <span class="badge bg-danger">Cancelled</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if invoice.sale.payment_status == 'PENDING' %}
-                            <span class="badge bg-warning">Unpaid</span>
-                            {% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}
-                            <span class="badge bg-info">Partial</span>
-                            {% elif invoice.sale.payment_status == 'PAID' %}
-                            <span class="badge bg-success">Paid</span>
-                            {% elif invoice.sale.payment_status == 'OVERDUE' %}
-                            <span class="badge bg-danger">Overdue</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <a href="{% url 'invoice:invoice_detail' invoice.pk %}"
-                               class="btn btn-sm btn-info" title="View">
-                                <i class="fas fa-eye"></i>
-                            </a>
-                            {% if invoice.sale.status == 'DRAFT' %}
-                            <a href="{% url 'invoice:invoice_edit' invoice.pk %}"
-                               class="btn btn-sm btn-warning" title="Edit">
-                                <i class="fas fa-edit"></i>
-                            </a>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="8" class="text-center py-4">
-                            <p class="text-muted mb-0">No invoices found</p>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
         </div>
-
-        <!-- Pagination -->
-        {% if page_obj.has_other_pages %}
-        <nav aria-label="Page navigation">
-            <ul class="pagination justify-content-center">
-                {% if page_obj.has_previous %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
-                </li>
-                {% endif %}
-
-                {% for num in page_obj.paginator.page_range %}
-                <li class="page-item {% if page_obj.number == num %}active{% endif %}">
-                    <a class="page-link" href="?page={{ num }}">{{ num }}</a>
-                </li>
-                {% endfor %}
-
-                {% if page_obj.has_next %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
-                </li>
-                {% endif %}
-            </ul>
-        </nav>
-        {% endif %}
+        <div class="col-md-3">
+            <div class="card bg-danger text-white">
+                <div class="card-body">
+                    <h6 class="card-title">Overdue</h6>
+                    <h3>{{ stats.overdue_count }}</h3>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" id="filter-form" class="row g-3">
+
+                {# Hidden field carries the selected customer_id for server-side filtering #}
+                <input type="hidden" name="customer_id" id="customer-id-input" value="{{ request.GET.customer_id }}">
+
+                <!-- Search with autocomplete -->
+                <div class="col-md-3">
+                    <label class="form-label">Search</label>
+                    <div class="search-wrapper">
+                        <div class="search-input-row">
+                            <div class="position-relative flex-grow-1">
+                                <input type="text"
+                                       id="search-input"
+                                       name="search"
+                                       class="form-control"
+                                       placeholder="Invoice #, Customer…"
+                                       value="{{ search_query }}"
+                                       autocomplete="off">
+                                <div id="search-dropdown"></div>
+                            </div>
+                        </div>
+                        <!-- Customer filter tag (shown when a customer is locked-in) -->
+                        <div id="customer-filter-tag" class="mt-1">
+                            <i class="fas fa-user fa-xs"></i>
+                            <span id="customer-tag-label"></span>
+                            <span class="remove-tag" id="remove-customer-tag" title="Clear customer filter">&times;</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="">All</option>
+                        <option value="DRAFT"           {% if status_filter == 'DRAFT' %}selected{% endif %}>Draft</option>
+                        <option value="PENDING_PAYMENT" {% if status_filter == 'PENDING_PAYMENT' %}selected{% endif %}>Pending</option>
+                        <option value="PAID"            {% if status_filter == 'PAID' %}selected{% endif %}>Paid</option>
+                        <option value="CANCELLED"       {% if status_filter == 'CANCELLED' %}selected{% endif %}>Cancelled</option>
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label">Payment Status</label>
+                    <select name="payment_status" class="form-select">
+                        <option value="">All</option>
+                        <option value="PENDING"         {% if payment_status == 'PENDING' %}selected{% endif %}>Pending</option>
+                        <option value="PARTIALLY_PAID"  {% if payment_status == 'PARTIALLY_PAID' %}selected{% endif %}>Partially Paid</option>
+                        <option value="PAID"            {% if payment_status == 'PAID' %}selected{% endif %}>Paid</option>
+                        <option value="OVERDUE"         {% if payment_status == 'OVERDUE' %}selected{% endif %}>Overdue</option>
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label">From Date</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label">To Date</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+                </div>
+
+                <div class="col-md-1 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">Filter</button>
+                </div>
+
+            </form>
+        </div>
+    </div>
+
+    <!-- Invoice Table -->
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Customer</th>
+                            <th>Date</th>
+                            <th>Due Date</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Payment</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for invoice in invoices %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'invoice:invoice_detail' invoice.pk %}">
+                                    {{ invoice.sale.document_number }}
+                                </a>
+                            </td>
+                            <td>{{ invoice.sale.customer.name|default:"Walk-in Customer" }}</td>
+                            <td>{{ invoice.sale.created_at|date:"Y-m-d" }}</td>
+                            <td>
+                                {{ invoice.sale.due_date|date:"Y-m-d" }}
+                                {% if invoice.sale.days_overdue > 0 %}
+                                <span class="badge bg-danger">{{ invoice.sale.days_overdue }} days overdue</span>
+                                {% endif %}
+                            </td>
+                            <td>UGX {{ invoice.sale.total_amount|floatformat:2 }}</td>
+                            <td>
+                                {% if invoice.sale.status == 'DRAFT' %}
+                                <span class="badge bg-secondary">Draft</span>
+                                {% elif invoice.sale.status == 'PENDING_PAYMENT' %}
+                                <span class="badge bg-warning">Pending</span>
+                                {% elif invoice.sale.status == 'PAID' %}
+                                <span class="badge bg-success">Paid</span>
+                                {% elif invoice.sale.status == 'CANCELLED' %}
+                                <span class="badge bg-danger">Cancelled</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if invoice.sale.payment_status == 'PENDING' %}
+                                <span class="badge bg-warning">Unpaid</span>
+                                {% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}
+                                <span class="badge bg-info">Partial</span>
+                                {% elif invoice.sale.payment_status == 'PAID' %}
+                                <span class="badge bg-success">Paid</span>
+                                {% elif invoice.sale.payment_status == 'OVERDUE' %}
+                                <span class="badge bg-danger">Overdue</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{% url 'invoice:invoice_detail' invoice.pk %}"
+                                   class="btn btn-sm btn-info" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                {% if invoice.sale.status == 'DRAFT' %}
+                                <a href="{% url 'invoice:invoice_edit' invoice.pk %}"
+                                   class="btn btn-sm btn-warning" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-4">
+                                <p class="text-muted mb-0">No invoices found</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination (preserve all GET params including customer_id) -->
+            {% if page_obj.has_other_pages %}
+            <nav aria-label="Page navigation">
+                <ul class="pagination justify-content-center">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}&{{ request.GET.urlencode }}">Previous</a>
+                    </li>
+                    {% endif %}
+                    {% for num in page_obj.paginator.page_range %}
+                    <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+                        <a class="page-link" href="?page={{ num }}&{{ request.GET.urlencode }}">{{ num }}</a>
+                    </li>
+                    {% endfor %}
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}&{{ request.GET.urlencode }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+        </div>
+    </div>
+
 </div>
-    </div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+(function () {
+    'use strict';
+
+    /* ── Config ─────────────────────────────────────────────────────────── */
+    const AUTOCOMPLETE_URL = '{% url "invoices:search_autocomplete" %}';
+    const MIN_CHARS        = 2;
+    const DEBOUNCE_MS      = 280;
+
+    /* ── DOM refs ───────────────────────────────────────────────────────── */
+    const searchInput      = document.getElementById('search-input');
+    const dropdown         = document.getElementById('search-dropdown');
+    const customerIdInput  = document.getElementById('customer-id-input');
+    const filterTag        = document.getElementById('customer-filter-tag');
+    const tagLabel         = document.getElementById('customer-tag-label');
+    const removeTag        = document.getElementById('remove-customer-tag');
+    const filterForm       = document.getElementById('filter-form');
+
+    /* ── State ──────────────────────────────────────────────────────────── */
+    let debounceTimer  = null;
+    let activeIndex    = -1;
+    let currentItems   = [];   // flat list of rendered ac-item elements
+
+    /* ── Init: restore tag if customer_id already in URL ────────────────── */
+    (function restoreCustomerTag() {
+        const cid   = customerIdInput.value.trim();
+        const cname = '{{ request.GET.customer_name|default:"" }}';
+        if (cid && cname) {
+            showCustomerTag(cname);
+            searchInput.value = '';
+            searchInput.placeholder = 'Filtered by customer…';
+        }
+    })();
+
+    /* ── Helpers ────────────────────────────────────────────────────────── */
+    function showCustomerTag(name) {
+        tagLabel.textContent = name;
+        filterTag.style.display = 'flex';
+    }
+    function hideCustomerTag() {
+        filterTag.style.display = 'none';
+        tagLabel.textContent    = '';
+    }
+    function closeDropdown() {
+        dropdown.style.display = 'none';
+        dropdown.innerHTML     = '';
+        activeIndex            = -1;
+        currentItems           = [];
+    }
+    function highlight(text, query) {
+        if (!query) return text;
+        const re = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        return text.replace(re, '<mark style="background:transparent;font-weight:700;padding:0">$1</mark>');
+    }
+
+    /* ── Render dropdown ────────────────────────────────────────────────── */
+    function renderDropdown(data, query) {
+        dropdown.innerHTML = '';
+        currentItems       = [];
+        activeIndex        = -1;
+
+        const { customers = [], invoices = [] } = data;
+
+        if (!customers.length && !invoices.length) {
+            dropdown.innerHTML = '<div class="ac-item text-muted" style="cursor:default">No results found</div>';
+            dropdown.style.display = 'block';
+            return;
+        }
+
+        /* ── Customers section ─────────────────────────────────────────── */
+        if (customers.length) {
+            const hdr = document.createElement('div');
+            hdr.className = 'ac-section-header';
+            hdr.textContent = 'Customers';
+            dropdown.appendChild(hdr);
+
+            customers.forEach(c => {
+                const item = document.createElement('div');
+                item.className = 'ac-item customer';
+                item.dataset.id   = c.id;
+                item.dataset.name = c.label;
+                item.dataset.type = 'customer';
+                item.innerHTML = `
+                    <div class="ac-icon"><i class="fas fa-user"></i></div>
+                    <div class="ac-text">
+                        <div class="ac-label">${highlight(c.label, query)}</div>
+                        ${c.sub ? `<div class="ac-sub">${c.sub}</div>` : ''}
+                    </div>
+                    <span class="ac-badge">Customer</span>`;
+                item.addEventListener('mousedown', e => {
+                    e.preventDefault();
+                    selectCustomer(c.id, c.label);
+                });
+                dropdown.appendChild(item);
+                currentItems.push(item);
+            });
+        }
+
+        /* ── Invoices section ──────────────────────────────────────────── */
+        if (invoices.length) {
+            const hdr = document.createElement('div');
+            hdr.className = 'ac-section-header';
+            hdr.textContent = 'Invoices';
+            dropdown.appendChild(hdr);
+
+            invoices.forEach(inv => {
+                const item = document.createElement('div');
+                item.className = 'ac-item invoice';
+                item.dataset.value = inv.label;
+                item.dataset.type  = 'invoice';
+                item.innerHTML = `
+                    <div class="ac-icon"><i class="fas fa-file-invoice"></i></div>
+                    <div class="ac-text">
+                        <div class="ac-label">${highlight(inv.label, query)}</div>
+                        <div class="ac-sub">${inv.sub}</div>
+                    </div>
+                    <span class="ac-badge">Invoice</span>`;
+                item.addEventListener('mousedown', e => {
+                    e.preventDefault();
+                    selectInvoice(inv.label);
+                });
+                dropdown.appendChild(item);
+                currentItems.push(item);
+            });
+        }
+
+        dropdown.style.display = 'block';
+    }
+
+    /* ── Selection actions ─────────────────────────────────────────────── */
+    function selectCustomer(id, name) {
+        /* Lock the filter to this specific customer and submit */
+        customerIdInput.value      = id;
+        searchInput.value          = '';
+        searchInput.name           = '';          // don't send "search" param
+        searchInput.placeholder    = 'Filtered by customer…';
+        showCustomerTag(name);
+        closeDropdown();
+
+        /* Append customer_name so we can restore the tag on page reload */
+        const hiddenName = document.getElementById('customer-name-input') ||
+            Object.assign(document.createElement('input'), {
+                type: 'hidden', id: 'customer-name-input', name: 'customer_name'
+            });
+        hiddenName.value = name;
+        filterForm.appendChild(hiddenName);
+        filterForm.submit();
+    }
+
+    function selectInvoice(docNumber) {
+        searchInput.value = docNumber;
+        closeDropdown();
+        filterForm.submit();
+    }
+
+    /* ── Remove customer tag ────────────────────────────────────────────── */
+    removeTag.addEventListener('click', () => {
+        customerIdInput.value   = '';
+        searchInput.name        = 'search';
+        searchInput.placeholder = 'Invoice #, Customer…';
+        hideCustomerTag();
+        const hiddenName = document.getElementById('customer-name-input');
+        if (hiddenName) hiddenName.value = '';
+        filterForm.submit();
+    });
+
+    /* ── Keyboard navigation ────────────────────────────────────────────── */
+    searchInput.addEventListener('keydown', e => {
+        if (dropdown.style.display !== 'block') return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIndex = Math.min(activeIndex + 1, currentItems.length - 1);
+            updateActive();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIndex = Math.max(activeIndex - 1, 0);
+            updateActive();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (activeIndex >= 0 && currentItems[activeIndex]) {
+                currentItems[activeIndex].dispatchEvent(new MouseEvent('mousedown'));
+            } else {
+                closeDropdown();
+                filterForm.submit();
+            }
+        } else if (e.key === 'Escape') {
+            closeDropdown();
+        }
+    });
+
+    function updateActive() {
+        currentItems.forEach((el, i) => el.classList.toggle('ac-active', i === activeIndex));
+        if (activeIndex >= 0) currentItems[activeIndex].scrollIntoView({ block: 'nearest' });
+    }
+
+    /* ── Input handler ──────────────────────────────────────────────────── */
+    searchInput.addEventListener('input', () => {
+        const q = searchInput.value.trim();
+        clearTimeout(debounceTimer);
+
+        if (q.length < MIN_CHARS) { closeDropdown(); return; }
+
+        debounceTimer = setTimeout(async () => {
+            try {
+                const res  = await fetch(`${AUTOCOMPLETE_URL}?q=${encodeURIComponent(q)}`,
+                    { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                const data = await res.json();
+                renderDropdown(data, q);
+            } catch (_) { closeDropdown(); }
+        }, DEBOUNCE_MS);
+    });
+
+    /* ── Click outside ──────────────────────────────────────────────────── */
+    document.addEventListener('click', e => {
+        if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
+            closeDropdown();
+        }
+    });
+
+    /* ── Re-open on focus if value present ─────────────────────────────── */
+    searchInput.addEventListener('focus', () => {
+        if (searchInput.value.trim().length >= MIN_CHARS) {
+            searchInput.dispatchEvent(new Event('input'));
+        }
+    });
+
+})();
+</script>
 {% endblock %}

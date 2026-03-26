@@ -462,6 +462,59 @@ body::before {
 #advancedFilters { margin-top: 1rem; }
 .adv-divider { border-color: var(--border); margin: 1rem 0; }
 
+/* ── LIVE SEARCH ── */
+.search-wrapper { position: relative; }
+
+.search-clear-btn {
+  position: absolute;
+  right: 0.55rem; top: 50%; transform: translateY(-50%);
+  background: none; border: none;
+  color: var(--text-3);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.2rem 0.3rem;
+  border-radius: var(--r-sm);
+  display: none;
+  align-items: center;
+  transition: color 0.15s;
+  z-index: 2;
+  line-height: 1;
+}
+.search-clear-btn:hover { color: var(--rose); }
+.search-clear-btn.visible { display: flex; }
+
+/* highlight matched text in rows */
+.search-highlight {
+  background: rgba(108,79,207,0.18);
+  color: var(--violet);
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 700;
+}
+
+/* no-results inline message */
+.live-empty-row td {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-3);
+  font-size: 0.875rem;
+  font-family: var(--font-mono);
+}
+.live-empty-row i { font-size: 2rem; display: block; margin-bottom: 0.5rem; opacity: 0.3; }
+
+/* count badge that updates live */
+#liveCount {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  background: rgba(108,79,207,0.12);
+  color: var(--violet);
+  padding: 0.15rem 0.55rem;
+  border-radius: 50px;
+  margin-left: 0.5rem;
+  transition: opacity 0.2s;
+}
+#liveCount.hidden { opacity: 0; pointer-events: none; }
+
 @media (max-width: 768px) {
   .page-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
   .inv-table { font-size: 0.82rem; }
@@ -503,9 +556,17 @@ body::before {
       <div class="row g-3">
         <div class="col-md-4">
           <label class="filter-label"><i class="bi bi-search me-1"></i>{% trans "Search" %}</label>
-          <input type="text" name="search" class="form-control"
-                 placeholder="{% trans 'Invoice number, customer...' %}"
-                 value="{{ request.GET.search }}">
+          <div class="search-wrapper">
+            <input type="text" name="search" id="liveSearchInput" class="form-control"
+                   placeholder="{% trans 'Invoice number, customer...' %}"
+                   value="{{ request.GET.search }}"
+                   autocomplete="off"
+                   style="padding-right: 2rem;">
+            <button type="button" class="search-clear-btn {% if request.GET.search %}visible{% endif %}"
+                    id="searchClearBtn" title="{% trans 'Clear' %}">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
         </div>
         <div class="col-md-2">
           <label class="filter-label"><i class="bi bi-funnel me-1"></i>{% trans "Status" %}</label>
@@ -588,6 +649,7 @@ body::before {
         {% else %}
           {% trans "Invoices" %}
         {% endif %}
+        <span id="liveCount" class="hidden"></span>
       </h5>
       <div style="display:flex; align-items:center; gap:0.75rem;">
         <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; color:var(--text-3); cursor:pointer;">
@@ -616,8 +678,9 @@ body::before {
         </thead>
         <tbody>
           {% for invoice in invoices %}
-          <tr class="{% if invoice.is_overdue %}overdue-row{% endif %}"
-              onclick="handleRowClick(event, '{% url 'invoices:detail' invoice.pk %}')">
+          <tr class="{% if invoice.is_overdue %}overdue-row{% endif %} invoice-row"
+              data-search="{{ invoice.invoice_number|lower }} {{ invoice.sale.document_number|lower }} {{ invoice.fiscal_document_number|lower }} {{ invoice.sale.customer.name|lower }} {{ invoice.sale.customer.email|lower }} {{ invoice.sale.customer.phone|lower }}"
+              onclick="handleRowClick(event, '{% url 'invoices:detail' invoice.pk %}')" >
             <td style="padding-left:1.25rem;" onclick="event.stopPropagation()">
               <input type="checkbox" class="form-check-input invoice-checkbox"
                      name="selected_invoices" value="{{ invoice.pk }}"
@@ -816,10 +879,123 @@ body::before {
 
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+
+  // ── LIVE TABLE FILTER ──────────────────────────────────────────────────────
+  const searchInput = document.getElementById('liveSearchInput');
+  const clearBtn    = document.getElementById('searchClearBtn');
+  const tbody       = document.querySelector('.inv-table tbody');
+  const liveCount   = document.getElementById('liveCount');
+  const allRows     = Array.from(document.querySelectorAll('tr.invoice-row'));
+
+  // Prevent form submit on Enter — let live filter handle it
+  document.getElementById('searchForm').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && document.activeElement === searchInput) {
+      e.preventDefault();
+    }
+  });
+
+  // Show/hide clear ×
+  function syncClearBtn() {
+    clearBtn.classList.toggle('visible', searchInput.value.length > 0);
+  }
+  syncClearBtn();
+
+  clearBtn.addEventListener('click', function () {
+    searchInput.value = '';
+    syncClearBtn();
+    filterRows('');
+    searchInput.focus();
+  });
+
+  searchInput.addEventListener('input', function () {
+    syncClearBtn();
+    filterRows(this.value.trim().toLowerCase());
+  });
+
+  // ── core filter function ───────────────────────────────────────────────────
+  function filterRows(q) {
+    // remove any previous empty-state row
+    const prev = tbody.querySelector('.live-empty-row');
+    if (prev) prev.remove();
+
+    let visible = 0;
+
+    allRows.forEach(row => {
+      const haystack = row.dataset.search || '';
+      const show = !q || haystack.includes(q);
+      row.style.display = show ? '' : 'none';
+      if (show) {
+        visible++;
+        // highlight matching text inside the row
+        highlightRow(row, q);
+      }
+    });
+
+    // live count badge
+    if (q) {
+      liveCount.textContent = visible + ' shown';
+      liveCount.classList.remove('hidden');
+    } else {
+      liveCount.classList.add('hidden');
+    }
+
+    // no-results row
+    if (visible === 0 && allRows.length > 0) {
+      const tr = document.createElement('tr');
+      tr.className = 'live-empty-row';
+      const colspan = document.querySelectorAll('.inv-table thead th').length;
+      tr.innerHTML = `<td colspan="${colspan}">
+        <i class="bi bi-search"></i>
+        No invoices match <strong>"${escHtml(q)}"</strong>
+      </td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  // ── highlight matched query inside visible cells ───────────────────────────
+  // We store the original HTML once and restore it before each highlight pass
+  allRows.forEach(row => {
+    row.querySelectorAll('.inv-number, .cust-name, .cust-email').forEach(el => {
+      el.dataset.originalHtml = el.innerHTML;
+    });
+  });
+
+  function highlightRow(row, q) {
+    row.querySelectorAll('.inv-number, .cust-name, .cust-email').forEach(el => {
+      // always restore original first
+      if (el.dataset.originalHtml !== undefined) {
+        el.innerHTML = el.dataset.originalHtml;
+      }
+      if (!q) return;
+      el.innerHTML = highlight(el.innerHTML, q);
+    });
+  }
+
+  function highlight(html, q) {
+    // only highlight text nodes — avoid breaking tags
+    const re = new RegExp('(' + escRegex(q) + ')', 'gi');
+    // simple approach: replace only outside of < > brackets
+    return html.replace(/>([^<]*)</g, (match, text) =>
+      '>' + text.replace(re, '<mark class="search-highlight">$1</mark>') + '<'
+    );
+  }
+
+  function escHtml(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function escRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // Run filter immediately on page load if a search value is pre-filled
+  if (searchInput.value) {
+    filterRows(searchInput.value.trim().toLowerCase());
+  }
 });
 
+// ── EXISTING FUNCTIONS ────────────────────────────────────────────────────────
 function handleRowClick(event, url) {
   if (event.target.tagName === 'INPUT' || event.target.tagName === 'BUTTON' ||
       event.target.tagName === 'A' || event.target.closest('button') || event.target.closest('a')) return;
@@ -837,7 +1013,7 @@ function updateBulkActions() {
   document.getElementById('selectedCount').textContent = count;
   document.getElementById('bulkBar').classList.toggle('show', count > 0);
   const all = document.querySelectorAll('.invoice-checkbox');
-  ['selectAll','selectAllHeader'].forEach(id => {
+  ['selectAll', 'selectAllHeader'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.checked = count === all.length && count > 0;
   });

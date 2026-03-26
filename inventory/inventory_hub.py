@@ -41,7 +41,7 @@ import json
 import logging
 import traceback as _traceback
 from decimal import Decimal, InvalidOperation
-
+from inventory.servicee.scanner_views import _can_create_products
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.core.cache import cache
 from django.core.paginator import Paginator
@@ -217,6 +217,7 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         'supplier_create':        ('_action_supplier_create', 'inventory.add_supplier'),
         'supplier_update':        ('_action_supplier_update', 'inventory.change_supplier'),
         'supplier_delete':        ('_action_supplier_delete', 'inventory.delete_supplier'),
+        'scan_barcode':           ('_action_scan_barcode', 'inventory.view_product'),
     }
 
     def post(self, request, *args, **kwargs):
@@ -978,6 +979,77 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
 
     # ─────────────────────────────────────────────────────────────────────────
+    #  Barcode scan — resolves a barcode within the hub context
+    #  Used by the Scanner tab's inline scan input
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _action_scan_barcode(self, request):
+        """
+        POST _hub_action=scan_barcode
+        Body: { barcode: "...", store_id: 3, mode: "product_lookup" }
+        Returns same payload shape as BarcodeScanView so the frontend JS is reusable.
+        """
+        from inventory.servicee.barcode_service import resolve_barcode, lookup_external_barcode
+
+        barcode_value = (request.POST.get('barcode') or '').strip()
+        store_id = request.POST.get('store_id')
+        mode = request.POST.get('mode', 'product_lookup')
+
+        if not barcode_value:
+            return JsonResponse({'ok': False, 'error': 'barcode is required.'}, status=400)
+
+        store = None
+        if store_id:
+            try:
+                store = Store.objects.get(pk=store_id, is_active=True)
+            except Store.DoesNotExist:
+                pass
+
+        resolution = resolve_barcode(barcode_value, store=store)
+
+        payload = {
+            'ok': True,
+            'found': resolution['found'],
+            'type': resolution['type'],
+            'message': resolution['message'],
+            'mode': mode,
+        }
+
+        if resolution['found']:
+            p = resolution['product']
+            payload['product'] = {
+                'id': p.pk,
+                'name': p.name,
+                'sku': p.sku,
+                'barcode': p.barcode,
+                'selling_price': str(p.selling_price),
+                'cost_price': str(p.cost_price),
+                'category': str(p.category) if p.category else None,
+                'barcode_image_url': (
+                    p.barcode_image.url
+                    if getattr(p, 'barcode_image', None) and p.barcode_image
+                    else None
+                ),
+            }
+            payload['stock'] = resolution.get('stock')
+
+            if resolution['type'] == 'bundle':
+                b = resolution['bundle']
+                payload['bundle'] = {
+                    'id': b.pk,
+                    'child_qty': b.child_qty,
+                    'child_product_name': b.child_product.name,
+                }
+        else:
+            if _can_create_products(request.user):
+                external = lookup_external_barcode(barcode_value)
+                payload['external_lookup'] = external
+                payload['can_create'] = True
+            else:
+                payload['can_create'] = False
+
+        return JsonResponse(payload)
+    # ─────────────────────────────────────────────────────────────────────────
     #  Per-tab AJAX context  (lightweight — skips other tabs' DB work)
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -1359,5 +1431,19 @@ class InventoryHubView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         context['supp_paginated'] = supp_pager.num_pages > 1
         context['supp_search']    = req.GET.get('supp_search', '')
         context['supp_status']    = req.GET.get('supp_status', '')
+
+        # ── Scanner tab context ───────────────────────────────────────────────
+        from inventory.models import BarcodeLabel, ScanSession
+        context['pending_labels_count'] = BarcodeLabel.objects.filter(status='pending').count()
+        context['active_scan_sessions'] = ScanSession.objects.filter(
+            status='active', user=req.user
+        ).count()
+        context['scan_mode_url'] = req.build_absolute_uri('/inventory/scan/')
+        import json as _json
+        context['categories_json'] = _json.dumps(list(
+            Category.objects.filter(is_active=True, category_type='product')
+            .values('id', 'name').order_by('name')
+        ))
+
 
         return context

@@ -358,15 +358,15 @@ def create_tenant_with_lock(signup_request, password):
     with suppress_signals():
         create_admin_user(signup_request, company, password)
 
-    # ── E. Default modules ────────────────────────────────────────────────
+    # ── E. Activate modules chosen at signup ──────────────────────────────
     # Must run AFTER migrations (CompanyModule table exists) and AFTER
     # create_admin_user (schema is fully functional).
     # Wrapped in try/except so a missing seed row never aborts provisioning.
     try:
-        _assign_default_modules(company)
+        _assign_selected_modules(company, signup_request)
     except Exception as module_err:
         logger.error(
-            f"_assign_default_modules failed for {company.company_id}: "
+            f"_assign_selected_modules failed for {company.company_id}: "
             f"{module_err}",
             exc_info=True,
         )
@@ -490,22 +490,65 @@ def wait_for_schema_ready(schema_name, max_retries=10, delay=2):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def create_company(signup_request, schema_name):
-    """Create the Company (tenant) row in the public schema."""
+    """
+    Create the Company (tenant) row in the public schema.
 
-    plan = SubscriptionPlan.objects.filter(
-        name=signup_request.selected_plan, is_active=True
-    ).first()
-    if not plan:
+    Plan resolution
+    ───────────────
+    selected_plan is now a FK.  We use it directly — no string lookup needed.
+    If it is NULL (e.g. the plan was retired after signup), we fall back to
+    the FREE plan exactly as before.
+
+    Status logic
+    ────────────
+    Free plan  → is_trial=True,  status='TRIAL',  trial_ends_at=today+trial_days
+    Paid plan  → is_trial=False, status='ACTIVE',
+                 subscription_starts_at=today,
+                 subscription_ends_at=today+30  (or plan billing cycle days)
+    """
+    # ── Resolve plan ──────────────────────────────────────────────────────────
+    plan = signup_request.selected_plan  # FK — already the object or None
+
+    if plan is None or not plan.is_active:
         logger.warning(
-            f"Plan '{signup_request.selected_plan}' not found; falling back to FREE"
+            "Plan FK is NULL or inactive for request %s — falling back to FREE.",
+            signup_request.request_id,
         )
         plan = SubscriptionPlan.objects.filter(name='FREE', is_active=True).first()
-    if not plan:
+
+    if plan is None:
         raise ValueError(
-            f"No subscription plan found for '{signup_request.selected_plan}' "
-            "and no FREE fallback exists. Cannot create company."
+            "No active FREE plan found in SubscriptionPlan. "
+            "Please create one in the admin before provisioning tenants."
         )
 
+    # ── Determine billing window ──────────────────────────────────────────────
+    today = timezone.now().date()
+    is_free = (plan.name == 'FREE' or plan.price == 0)
+
+    if is_free:
+        # Trial: access for trial_days from today
+        is_trial = True
+        status = 'TRIAL'
+        trial_ends_at = today + timedelta(days=plan.trial_days)
+        subscription_starts_at = None
+        subscription_ends_at = None
+    else:
+        # Paid: active from today, first billing period
+        is_trial = False
+        status = 'ACTIVE'
+        trial_ends_at = None
+
+        subscription_starts_at = today
+        # billing_cycle tells us the period length
+        cycle_days = {
+            'MONTHLY': 30,
+            'QUARTERLY': 90,
+            'YEARLY': 365,
+        }.get(plan.billing_cycle, 30)
+        subscription_ends_at = today + timedelta(days=cycle_days)
+
+    # ── Create the Company row ────────────────────────────────────────────────
     company = Company.objects.create(
         schema_name=schema_name,
         name=signup_request.company_name,
@@ -513,12 +556,19 @@ def create_company(signup_request, schema_name):
         email=signup_request.email,
         phone=signup_request.phone,
         plan=plan,
-        is_trial=True,
-        trial_ends_at=timezone.now().date() + timedelta(days=plan.trial_days),
-        status='TRIAL',
+        is_trial=is_trial,
+        status=status,
+        trial_ends_at=trial_ends_at,
+        subscription_starts_at=subscription_starts_at,
+        subscription_ends_at=subscription_ends_at,
+        next_billing_date=subscription_ends_at,  # None for free plans
     )
 
-    logger.info(f"Created company: {company.company_id} ({schema_name})")
+    logger.info(
+        "Created company: %s (%s) | plan=%s | status=%s | is_trial=%s",
+        company.company_id, schema_name,
+        plan.name, status, is_trial,
+    )
     return company
 
 
@@ -778,56 +828,95 @@ def create_admin_user(signup_request, company, password):
         return admin_user
 
 
-def _assign_default_modules(company):
+def _assign_selected_modules(company, signup_request):
     """
-    Activate the core modules every new tenant needs from day one.
+    Activate exactly the modules the tenant chose at signup.
 
-    Called from create_tenant_with_lock() as phase E, after migrations
-    have run (so CompanyModule table exists in the tenant schema) and
-    after create_admin_user (so the schema is fully functional).
+    Two bugs fixed vs the old _assign_default_modules():
 
-    Idempotent: get_or_create is safe to call on task retries.
-    Uses schema_context so queries target the tenant schema, not public.
-    If an AvailableModule key is missing (not yet seeded), it is skipped
-    with a warning — provisioning continues unaffected.
+    BUG 1 — wrong schema context:
+        AvailableModule and CompanyModule both live in the PUBLIC schema
+        (they reference the public Company row).  The old code wrapped
+        everything in schema_context(company.schema_name) which redirected
+        those queries to the tenant schema where the tables don't exist.
+        Fix: NO schema_context here — these are public-schema queries.
+
+    BUG 2 — user selection was never read:
+        The old function only received 'company' and hardcoded
+        default_keys = ['inventory', 'sales', 'reports'], completely
+        ignoring signup_request.selected_modules.
+        Fix: accept signup_request and read selected_modules from it.
+
+    Always-on modules (ALWAYS_ON_KEYS) are activated regardless of what
+    the user selected — they are the minimum viable set.
+
+    Falls back to ALWAYS_ON_KEYS if selected_modules is empty or null
+    (e.g. the record pre-dates this feature).
     """
     from company.models import AvailableModule, CompanyModule
 
-    # Extend this list whenever a new module should be on by default
-    default_keys = ['inventory', 'sales', 'reports']
+    # Modules that are always activated, regardless of user selection.
+    # Keep this in sync with the locked cards in the signup template.
+    ALWAYS_ON_KEYS = ['inventory', 'sales', 'reports']
 
-    activated = []
-    skipped = []
+    # Read what the user actually chose
+    chosen = getattr(signup_request, 'selected_modules', None) or []
 
-    with schema_context(company.schema_name):
-        for key in default_keys:
-            try:
-                module = AvailableModule.objects.get(key=key)
-                _, created = CompanyModule.objects.get_or_create(
-                    company=company,
-                    module=module,
-                    defaults={
-                        'is_active': True,
-                        'activated_at': timezone.now(),
-                    },
-                )
-                if created:
-                    activated.append(key)
-                else:
-                    logger.debug(
-                        f"Module '{key}' already assigned to "
-                        f"{company.company_id}, skipping."
-                    )
-            except AvailableModule.DoesNotExist:
-                skipped.append(key)
-                logger.warning(
-                    f"_assign_default_modules: AvailableModule key='{key}' "
-                    f"not found for company {company.company_id}. "
-                    f"Run the seed command to create it."
-                )
+    if not chosen:
+        logger.info(
+            f"No selected_modules on signup {signup_request.request_id}, "
+            f"falling back to always-on keys."
+        )
+
+    # Merge: always-on first, then user choices, deduplicated, order preserved
+    all_keys = list(dict.fromkeys(ALWAYS_ON_KEYS + list(chosen)))
 
     logger.info(
-        f"Default modules for {company.company_id}: "
+        f"Activating modules for {company.company_id}: "
+        f"always_on={ALWAYS_ON_KEYS}, chosen={chosen}, final={all_keys}"
+    )
+
+    activated = []
+    skipped   = []
+
+    # ── PUBLIC SCHEMA QUERIES — no schema_context needed ─────────────────
+    # AvailableModule and CompanyModule are in the public schema.
+    # schema_context() would wrongly redirect these queries to the tenant
+    # schema where these tables do not exist.
+    for key in all_keys:
+        try:
+            module = AvailableModule.objects.get(key=key)
+            _, created = CompanyModule.objects.get_or_create(
+                company=company,
+                module=module,
+                defaults={
+                    'is_active': True,
+                    'activated_at': timezone.now(),
+                },
+            )
+            activated.append(key)
+            if not created:
+                logger.debug(
+                    f"Module '{key}' already assigned to "
+                    f"{company.company_id} — already active."
+                )
+        except AvailableModule.DoesNotExist:
+            skipped.append(key)
+            logger.warning(
+                f"_assign_selected_modules: AvailableModule key='{key}' "
+                f"not found in public schema for company {company.company_id}. "
+                f"Run: python manage.py seed_modules"
+            )
+        except Exception as e:
+            skipped.append(key)
+            logger.error(
+                f"_assign_selected_modules: unexpected error for key='{key}' "
+                f"on company {company.company_id}: {e}",
+                exc_info=True,
+            )
+
+    logger.info(
+        f"Module activation complete for {company.company_id}: "
         f"activated={activated}, skipped={skipped}"
     )
 
@@ -863,6 +952,12 @@ def _generate_magic_token(user_id, tenant_schema, email, ttl_seconds=3600):
     )
     return token
 
+def _billing_line(company) -> str:
+    if company.is_trial and company.trial_ends_at:
+        return f"Trial ends:     {company.trial_ends_at}"
+    elif company.subscription_ends_at:
+        return f"Subscription:   active until {company.subscription_ends_at}"
+    return "Subscription:   active"
 
 # FIX 7: send_welcome_email now has bind=True + retry decorator so transient
 # mail-server failures don't permanently lose the welcome email.
@@ -979,7 +1074,7 @@ def send_welcome_email(self, company_id, signup_request_id):
             f"Workspace:   {company.name}\n"
             f"Login URL:   {login_url}\n"
             f"Your email:  {signup_request.admin_email}\n"
-            f"Trial ends:  {company.trial_ends_at}\n"
+            f"{_billing_line(company)}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"{access_section}\n"
             f"Need help getting started?\n"

@@ -779,26 +779,54 @@
                             Select Your Plan
                         </div>
 
+                        {# ModelChoiceField renders (pk, label) pairs.
+                           We loop form.selected_plan.field.queryset directly so
+                           we have the full plan object — price, name, icon etc.
+                           selected_plan_id is the pk of the ?plan= param resolved
+                           in the view, or the plan with name='FREE' as fallback. #}
                         <div class="plan-grid">
-                            {% for value, label in form.selected_plan.field.choices %}
+                            {% for plan in form.selected_plan.field.queryset %}
                             <label class="plan-option">
-                                <input type="radio" name="selected_plan" value="{{ value }}" id="plan_{{ value }}"
-                                       {% if form.selected_plan.value == value or value == 'FREE' and not form.selected_plan.value %}checked{% endif %}>
+                                <input type="radio"
+                                       name="selected_plan"
+                                       value="{{ plan.pk }}"
+                                       id="plan_{{ plan.pk }}"
+                                       {% if form.selected_plan.value == plan.pk|stringformat:"s" %}checked
+                                       {% elif not form.selected_plan.value and plan.name == 'FREE' %}checked
+                                       {% elif preselected_plan_pk == plan.pk %}checked
+                                       {% endif %}>
                                 <div class="plan-card">
                                     <span class="plan-icon">
-                                        {% if value == 'FREE' %}🚀
-                                        {% elif value == 'BASIC' %}⚡
-                                        {% elif value == 'PRO' %}💎
-                                        {% else %}🏢{% endif %}
+                                        {% if plan.name == 'FREE' %}🚀
+                                        {% elif plan.name == 'BASIC' %}⚡
+                                        {% elif plan.name == 'PRO' %}💎
+                                        {% elif plan.name == 'ENTERPRISE' %}🏢
+                                        {% else %}📦{% endif %}
                                     </span>
-                                    <span class="plan-name">{{ label }}</span>
+                                    <span class="plan-name">
+                                        {{ plan.display_name|default:plan.get_name_display }}
+                                        {% if plan.price > 0 %}
+                                        <small style="display:block;font-size:0.7em;color:var(--text-tertiary);font-weight:400;">
+                                            UGX {{ plan.price|floatformat:0 }}/{{ plan.get_billing_cycle_display|lower }}
+                                        </small>
+                                        {% else %}
+                                        <small style="display:block;font-size:0.7em;color:#22c55e;font-weight:400;">Free</small>
+                                        {% endif %}
+                                    </span>
                                 </div>
                             </label>
                             {% endfor %}
                         </div>
+
+                        {% if form.selected_plan.errors %}
+                        <p style="color:#e05252; font-size:0.8rem; margin-top:8px;">
+                            {{ form.selected_plan.errors }}
+                        </p>
+                        {% endif %}
+
                         <p style="font-size:0.78rem; color:var(--text-tertiary); margin-top:10px;">
                             <i class="fas fa-circle-info" style="color:var(--accent);"></i>
-                            Start with Free Trial — upgrade anytime, no credit card needed.
+                            Free Trial — no credit card needed. Upgrade anytime.
                         </p>
                     </div>
 

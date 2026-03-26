@@ -38,6 +38,41 @@ service_efris_synced = Signal()
 service_efris_sync_failed = Signal()
 
 
+@receiver(post_save, sender='inventory.Product')
+def auto_generate_barcode(sender, instance, created, **kwargs):
+    """
+    After a Product is saved:
+    - If it has no barcode image, generate one.
+    - If it has no barcode value AND barcode_type is 'internal', assign one.
+
+    We use update_fields to avoid recursion.
+    Skipped if the save was already triggered by this signal (_barcode_processing flag).
+    """
+    # Guard against recursion
+    if getattr(instance, '_barcode_processing', False):
+        return
+
+    needs_barcode = not instance.barcode
+    needs_image = not getattr(instance, 'barcode_image', None) or not instance.barcode_image
+
+    if not needs_barcode and not needs_image:
+        return
+
+    try:
+        from inventory.servicee.barcode_service import assign_and_generate_barcode
+
+        instance._barcode_processing = True
+        assign_and_generate_barcode(instance, save=True)
+
+    except Exception as e:
+        logger.error(
+            f"Barcode auto-generation failed for Product {instance.pk}: {e}",
+            exc_info=True
+        )
+    finally:
+        instance._barcode_processing = False
+
+
 @receiver(pre_save, sender=Service)
 def service_pre_save_handler(sender, instance, **kwargs):
     """

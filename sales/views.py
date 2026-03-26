@@ -467,6 +467,11 @@ def search_products_and_services(request):
                         'tax_rate': getattr(product, 'tax_rate', 'A'),
                         'unit_of_measure': product.unit_of_measure or 'pcs',
                         'stock': stock_info,
+                        'barcode_image_url': (
+                            product.barcode_image.url
+                            if getattr(product, 'barcode_image', None) and product.barcode_image
+                            else None
+                        ),
                         'category': product.category.name if product.category else '',
                         'item_type': 'PRODUCT',
                         'has_stock': stock_info['available'] > 0 if stock_info else True,
@@ -3049,6 +3054,11 @@ def search_products(request):
                 'stock': stock_info,
                 'category': product.category.name if product.category else '',
                 'supplier': product.supplier.name if product.supplier else '',
+                'barcode_image_url': (
+                    product.barcode_image.url
+                    if getattr(product, 'barcode_image', None) and product.barcode_image
+                    else None
+                ),
                 'efris': efris_data,
             })
 
@@ -3058,6 +3068,72 @@ def search_products(request):
         logger.error(f"Error in product search: {e}")
         return JsonResponse({'error': 'Search failed'}, status=500)
 
+@login_required
+@require_GET
+def barcode_scan_pos(request):
+    """
+    GET /sales/scan/barcode/?barcode=5000112637922&store_id=3
+
+    POS-specific barcode scan: only resolves existing products (no create),
+    returns same shape as search_products so the POS JS can reuse addToCart.
+    """
+    barcode_value = request.GET.get('barcode', '').strip()
+    store_id      = request.GET.get('store_id')
+
+    if not barcode_value:
+        return JsonResponse({'products': []})
+
+    store = None
+    if store_id:
+        try:
+            store = Store.objects.get(pk=store_id, is_active=True)
+        except Store.DoesNotExist:
+            return JsonResponse({'error': 'Invalid store'}, status=400)
+
+    # Exact barcode match only (no fuzzy)
+    from django.db.models import Prefetch
+    from inventory.models import Stock as StockModel
+
+    qs = Product.objects.filter(barcode=barcode_value, is_active=True)\
+                        .select_related('category', 'supplier')
+
+    if store:
+        qs = qs.prefetch_related(
+            Prefetch('store_inventory',
+                     queryset=StockModel.objects.filter(store=store),
+                     to_attr='filtered_stock')
+        )
+
+    product = qs.first()
+    if not product:
+        return JsonResponse({'products': [], 'barcode_not_found': True, 'barcode': barcode_value})
+
+    stock_info = None
+    if store:
+        stock_list = getattr(product, 'filtered_stock', [])
+        stock_info = {
+            'available': float(stock_list[0].quantity) if stock_list else 0,
+            'unit': product.unit_of_measure or 'pcs',
+        }
+
+    return JsonResponse({'products': [{
+        'id':                   product.id,
+        'name':                 product.name,
+        'sku':                  product.sku or '',
+        'barcode':              product.barcode or '',
+        'price':                float(product.selling_price or 0),
+        'final_price':          float(product.selling_price or 0),
+        'discount_percentage':  float(getattr(product, 'discount_percentage', 0)),
+        'tax_rate':             getattr(product, 'tax_rate', 'A'),
+        'unit_of_measure':      product.unit_of_measure or 'pcs',
+        'stock':                stock_info,
+        'category':             product.category.name if product.category else '',
+        'barcode_image_url':    (
+            product.barcode_image.url
+            if getattr(product, 'barcode_image', None) and product.barcode_image
+            else None
+        ),
+    }], 'exact_barcode_match': True})
 
 @login_required
 def search_customers(request):

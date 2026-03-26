@@ -1,0 +1,504 @@
+{% extends 'public_router/base.html' %}
+{% load static %}
+
+{% block title %}Privacy Policy — Primebooks{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Legal page shared styles ──────────────────────────────────────────────── */
+.legal-page {
+    min-height: calc(100vh - 80px);
+    padding: 56px 20px 80px;
+    background-color: var(--bg-primary);
+    position: relative;
+    overflow: hidden;
+}
+.legal-page::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+        linear-gradient(var(--border-color) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border-color) 1px, transparent 1px);
+    background-size: 48px 48px;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+}
+.legal-page > * { position: relative; z-index: 1; }
+
+.legal-layout { max-width: 860px; margin: 0 auto; }
+
+.legal-header {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 16px;
+    padding: 40px 48px 32px;
+    margin-bottom: 32px;
+    background: linear-gradient(135deg,
+        color-mix(in srgb, #0c19dd 10%, var(--bg-secondary)) 0%,
+        var(--bg-secondary) 60%);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 24px;
+}
+.legal-header-text h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+.legal-header-text h1 span {
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.legal-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.legal-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 20px;
+    padding: 4px 12px;
+}
+.legal-meta-item i { color: #0c19dd; font-size: 11px; }
+
+.btn-download {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 22px;
+    background: var(--accent-gradient);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.btn-download:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(12,25,221,0.3);
+}
+
+.legal-body {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 28px;
+    align-items: start;
+}
+@media (max-width: 720px) {
+    .legal-body { grid-template-columns: 1fr; }
+    .legal-toc  { display: none; }
+    .legal-header { padding: 28px 24px; }
+    .legal-header-text h1 { font-size: 1.5rem; }
+}
+
+.legal-toc {
+    position: sticky;
+    top: 100px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 12px;
+    padding: 20px;
+}
+.legal-toc h4 {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 14px;
+}
+.legal-toc ol {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    counter-reset: toc;
+}
+.legal-toc ol li {
+    counter-increment: toc;
+    margin-bottom: 8px;
+}
+.legal-toc ol li a {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    line-height: 1.4;
+    transition: color 0.2s;
+}
+.legal-toc ol li a::before {
+    content: counter(toc) ".";
+    color: #0c19dd;
+    font-weight: 700;
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    margin-top: 1px;
+}
+.legal-toc ol li a:hover { color: var(--text-primary); }
+
+.legal-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 16px;
+    overflow: hidden;
+}
+.legal-section {
+    padding: 32px 36px;
+    border-bottom: 1px solid var(--border-color);
+}
+.legal-section:last-child { border-bottom: none; }
+.legal-section h2 {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.section-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: var(--accent-gradient);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.legal-section p {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.75;
+    margin-bottom: 12px;
+}
+.legal-section p:last-child { margin-bottom: 0; }
+.legal-section h3 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 16px 0 8px;
+}
+.legal-list { list-style: none; padding: 0; margin: 0 0 12px; }
+.legal-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+.legal-list li:last-child { border-bottom: none; }
+.legal-list li::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #0c19dd;
+    flex-shrink: 0;
+    margin-top: 7px;
+}
+.legal-highlight {
+    background: color-mix(in srgb, #0c19dd 8%, var(--bg-primary));
+    border: 1px solid color-mix(in srgb, #0c19dd 25%, transparent);
+    border-left: 3px solid #0c19dd;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    margin-bottom: 12px;
+}
+.legal-highlight strong { color: var(--text-primary); }
+.legal-warning {
+    background: color-mix(in srgb, #f59e0b 8%, var(--bg-primary));
+    border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent);
+    border-left: 3px solid #f59e0b;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    margin-bottom: 12px;
+}
+
+/* rights grid */
+.rights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 14px 0;
+}
+.right-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color-light);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+.right-card .right-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: var(--accent-gradient);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+.right-card strong {
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    display: block;
+    margin-bottom: 4px;
+}
+.right-card span {
+    font-size: 0.78rem;
+    color: var(--text-tertiary);
+    line-height: 1.4;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="legal-page">
+<div class="legal-layout">
+
+    <!-- Header -->
+    <div class="legal-header">
+        <div class="legal-header-text">
+            <h1>Privacy <span>Policy</span></h1>
+            <div class="legal-meta">
+                <span class="legal-meta-item"><i class="fas fa-calendar-check"></i> Effective: {{ effective_date }}</span>
+                <span class="legal-meta-item"><i class="fas fa-shield-halved"></i> Uganda DPA 2019 Compliant</span>
+                <span class="legal-meta-item"><i class="fas fa-lock"></i> Data encrypted &amp; never sold</span>
+            </div>
+        </div>
+        <a href="{% url 'public_router:privacy_pdf' %}" class="btn-download">
+            <i class="fas fa-file-pdf"></i> Download PDF
+        </a>
+    </div>
+
+    <div class="legal-body">
+
+        <!-- TOC -->
+        <nav class="legal-toc">
+            <h4>Contents</h4>
+            <ol>
+                <li><a href="#commitment">Our Commitment</a></li>
+                <li><a href="#applies-to">Who This Applies To</a></li>
+                <li><a href="#data-collected">Data We Collect</a></li>
+                <li><a href="#how-we-use">How We Use It</a></li>
+                <li><a href="#legal-basis">Legal Basis</a></li>
+                <li><a href="#sharing">Data Sharing</a></li>
+                <li><a href="#location">Data Location</a></li>
+                <li><a href="#retention">Data Retention</a></li>
+                <li><a href="#cookies">Cookies</a></li>
+                <li><a href="#security">Security</a></li>
+                <li><a href="#your-rights">Your Rights</a></li>
+                <li><a href="#children">Children's Privacy</a></li>
+                <li><a href="#changes">Changes</a></li>
+                <li><a href="#contact">Contact &amp; Complaints</a></li>
+            </ol>
+        </nav>
+
+        <!-- Content -->
+        <div class="legal-content">
+
+            <div class="legal-section" id="commitment">
+                <h2><span class="section-num">i</span> Our Commitment to Your Privacy</h2>
+                <p>Prime Focus Uganda Limited ("we", "us", or "our") operates the Primebooks platform. We are committed to protecting your personal data in accordance with the <strong>Uganda Data Protection and Privacy Act, 2019</strong> and all other applicable laws.</p>
+                <div class="legal-highlight">
+                    <strong>We never sell, rent, or trade your personal data.</strong> We do not show you ads. Your Client Data belongs to you and is used only to provide the service you signed up for.
+                </div>
+            </div>
+
+            <div class="legal-section" id="applies-to">
+                <h2><span class="section-num">1</span> Who This Policy Applies To</h2>
+                <p>This policy applies to all visitors to primebooks.sale, registered account holders, Authorised Users of a Primebooks workspace, and anyone who contacts us for support. "You" refers to any of the above.</p>
+            </div>
+
+            <div class="legal-section" id="data-collected">
+                <h2><span class="section-num">2</span> Data We Collect</h2>
+                <h3>2.1 Information You Provide Directly</h3>
+                <ul class="legal-list">
+                    <li><strong>Account registration:</strong> company name, subdomain, email address, phone number, country, first/last name, password (hashed — never stored in plain text).</li>
+                    <li><strong>Business details:</strong> industry, business type, estimated number of users.</li>
+                    <li><strong>Client Data:</strong> invoices, inventory records, customer records, financial transactions, and all other data you enter into the Platform.</li>
+                    <li><strong>Support communications:</strong> tickets, chat messages, emails.</li>
+                </ul>
+                <h3>2.2 Data Collected Automatically</h3>
+                <ul class="legal-list">
+                    <li><strong>Log data:</strong> IP address, browser type and version, pages visited, timestamps, referring URL.</li>
+                    <li><strong>Device data:</strong> operating system, screen resolution, device type.</li>
+                    <li><strong>Usage data:</strong> features used, module interactions, session duration — used only for product improvement.</li>
+                    <li><strong>Cookies:</strong> essential session and preference cookies only. See Section 9.</li>
+                </ul>
+                <h3>2.3 Data from Third Parties</h3>
+                <p>If you sign up via a referral partner, we receive your company name and email from that partner solely to attribute the referral. We do not purchase marketing lists or receive data from data brokers.</p>
+            </div>
+
+            <div class="legal-section" id="how-we-use">
+                <h2><span class="section-num">3</span> How We Use Your Data</h2>
+                <ul class="legal-list">
+                    <li><strong>Provide the Platform:</strong> Provision your workspace, authenticate users, process transactions.</li>
+                    <li><strong>Billing &amp; payments:</strong> Generate invoices, process payments, handle subscription management.</li>
+                    <li><strong>Support:</strong> Respond to tickets, diagnose technical issues, provide onboarding assistance.</li>
+                    <li><strong>Security:</strong> Detect fraud, prevent abuse, monitor for unauthorised access.</li>
+                    <li><strong>Product improvement:</strong> Aggregate usage analytics to guide feature development. We never profile you individually for advertising.</li>
+                    <li><strong>Legal compliance:</strong> Meet obligations under Ugandan law and respond to lawful authority requests.</li>
+                    <li><strong>Communications:</strong> Transactional emails only (account creation, password reset, invoices). Marketing emails require your explicit consent.</li>
+                </ul>
+            </div>
+
+            <div class="legal-section" id="legal-basis">
+                <h2><span class="section-num">4</span> Legal Basis for Processing</h2>
+                <ul class="legal-list">
+                    <li><strong>Contract performance:</strong> Processing necessary to provide the Platform under our Terms of Service.</li>
+                    <li><strong>Legitimate interests:</strong> Fraud prevention, security monitoring, product analytics.</li>
+                    <li><strong>Legal obligation:</strong> Tax records, regulatory reporting.</li>
+                    <li><strong>Consent:</strong> Marketing communications — you may withdraw at any time.</li>
+                </ul>
+            </div>
+
+            <div class="legal-section" id="sharing">
+                <h2><span class="section-num">5</span> Data Sharing &amp; Disclosure</h2>
+                <p>We <strong>do not</strong> sell, rent, or trade your personal data. We may share data only as follows:</p>
+                <ul class="legal-list">
+                    <li><strong>Service providers:</strong> Hosting infrastructure, email delivery, payment processing — bound by data-processing agreements and confidentiality obligations.</li>
+                    <li><strong>Legal requirements:</strong> When required by Ugandan law, court order, or regulatory authority. We will notify you where legally permitted.</li>
+                    <li><strong>Business transfers:</strong> In the event of a merger or acquisition, data may transfer to the successor entity under equivalent protections.</li>
+                    <li><strong>Your consent:</strong> Any other sharing only with your explicit prior consent.</li>
+                </ul>
+            </div>
+
+            <div class="legal-section" id="location">
+                <h2><span class="section-num">6</span> Data Location &amp; International Transfers</h2>
+                <div class="legal-highlight">
+                    <strong>Your Client Data is stored on servers located in Uganda.</strong> We do not transfer personal data outside Uganda without your explicit consent and appropriate safeguards as required by the Uganda Data Protection and Privacy Act, 2019.
+                </div>
+            </div>
+
+            <div class="legal-section" id="retention">
+                <h2><span class="section-num">7</span> Data Retention</h2>
+                <ul class="legal-list">
+                    <li><strong>Active accounts:</strong> Data retained for the duration of your subscription.</li>
+                    <li><strong>After termination:</strong> Client Data available for export for 30 days, then securely deleted within 90 days.</li>
+                    <li><strong>Backups:</strong> Automated backups retained for 30 days.</li>
+                    <li><strong>Log data:</strong> Retained for up to 12 months for security and debugging.</li>
+                    <li><strong>Legal obligations:</strong> Financial records retained for 7 years as required by Ugandan tax law.</li>
+                </ul>
+            </div>
+
+            <div class="legal-section" id="cookies">
+                <h2><span class="section-num">8</span> Cookies</h2>
+                <p>We use <strong>only essential cookies</strong> required for the Platform to function:</p>
+                <ul class="legal-list">
+                    <li><strong>sessionid:</strong> Keeps you logged in during a browser session.</li>
+                    <li><strong>csrftoken:</strong> Protects against cross-site request forgery (security requirement).</li>
+                    <li><strong>Theme preference:</strong> Remembers your light/dark mode choice.</li>
+                </ul>
+                <p>We do <strong>not</strong> use advertising, tracking, or third-party analytics cookies. You can disable cookies in your browser, but some Platform features will not function correctly.</p>
+            </div>
+
+            <div class="legal-section" id="security">
+                <h2><span class="section-num">9</span> Security</h2>
+                <ul class="legal-list">
+                    <li>AES-256 encryption for data at rest.</li>
+                    <li>TLS 1.2+ encryption for all data in transit.</li>
+                    <li>Regular third-party security audits and vulnerability assessments.</li>
+                    <li>Role-based access controls; staff access to Client Data is limited and logged.</li>
+                    <li>Multi-tenant data isolation: your workspace data is logically separated from all other tenants.</li>
+                    <li>Breach notification within 72 hours of discovering a breach affecting your data.</li>
+                </ul>
+            </div>
+
+            <div class="legal-section" id="your-rights">
+                <h2><span class="section-num">10</span> Your Rights</h2>
+                <p>Under the Uganda Data Protection and Privacy Act, 2019, you have the following rights:</p>
+                <div class="rights-grid">
+                    <div class="right-card">
+                        <div class="right-icon"><i class="fas fa-eye"></i></div>
+                        <strong>Access</strong>
+                        <span>Request a copy of the personal data we hold about you.</span>
+                    </div>
+                    <div class="right-card">
+                        <div class="right-icon"><i class="fas fa-pen"></i></div>
+                        <strong>Correction</strong>
+                        <span>Request correction of inaccurate or incomplete data.</span>
+                    </div>
+                    <div class="right-card">
+                        <div class="right-icon"><i class="fas fa-trash"></i></div>
+                        <strong>Deletion</strong>
+                        <span>Request deletion of your personal data (subject to legal retention obligations).</span>
+                    </div>
+                    <div class="right-card">
+                        <div class="right-icon"><i class="fas fa-download"></i></div>
+                        <strong>Portability</strong>
+                        <span>Export your Client Data in a machine-readable format at any time.</span>
+                    </div>
+                    <div class="right-card">
+                        <div class="right-icon"><i class="fas fa-hand"></i></div>
+                        <strong>Object</strong>
+                        <span>Object to processing based on legitimate interests.</span>
+                    </div>
+                    <div class="right-card">
+                        <div class="right-icon"><i class="fas fa-rotate-left"></i></div>
+                        <strong>Withdraw Consent</strong>
+                        <span>Withdraw consent at any time without affecting prior processing.</span>
+                    </div>
+                </div>
+                <p>To exercise any of these rights, contact us at <strong>primefocusug@gmail.com</strong>. We will respond within 30 days.</p>
+            </div>
+
+            <div class="legal-section" id="children">
+                <h2><span class="section-num">11</span> Children's Privacy</h2>
+                <p>The Platform is intended for business use and is not directed at individuals under 18 years of age. We do not knowingly collect personal data from minors. If you believe we have inadvertently collected such data, please contact us immediately.</p>
+            </div>
+
+            <div class="legal-section" id="changes">
+                <h2><span class="section-num">12</span> Changes to This Policy</h2>
+                <p>We may update this Privacy Policy from time to time. We will notify you of material changes by email or by a prominent notice on the Platform at least <strong>30 days</strong> before the change takes effect. Continued use of the Platform after the effective date constitutes acceptance.</p>
+            </div>
+
+            <div class="legal-section" id="contact">
+                <h2><span class="section-num">13</span> Contact &amp; Complaints</h2>
+                <ul class="legal-list">
+                    <li><strong>Data Controller:</strong> Prime Focus Uganda Limited</li>
+                    <li><strong>Email:</strong> primefocusug@gmail.com</li>
+                    <li><strong>Phone / WhatsApp:</strong> +256 785 230 670</li>
+                    <li><strong>Address:</strong> Sentamu Kavule A, Nakawa, Kampala, Uganda</li>
+                </ul>
+                <div class="legal-highlight">
+                    You also have the right to lodge a complaint with the <strong>National Information Technology Authority (NITA-U)</strong>, which supervises data protection in Uganda.
+                </div>
+            </div>
+
+        </div>{# end legal-content #}
+    </div>{# end legal-body #}
+</div>{# end legal-layout #}
+</div>{# end legal-page #}
+{% endblock %}
