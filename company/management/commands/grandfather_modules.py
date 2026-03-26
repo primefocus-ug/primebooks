@@ -10,7 +10,7 @@ class Command(BaseCommand):
 
     GRANDFATHER_KEYS = [
         'sales', 'inventory', 'expenses', 'invoices',
-        'customers', 'reports', 'messaging',
+        'customers', 'reports', 'messaging','efris'
     ]
 
     def handle(self, *args, **kwargs):
